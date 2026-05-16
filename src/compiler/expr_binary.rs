@@ -323,6 +323,29 @@ impl Compiler {
                 });
                 return;
             }
+            // Mixed case: one side is a named variable (with a local slot holding
+            // a DeferredHashAccess from `:=` binding), the other is an Index expression.
+            // Use GetLocalRaw + IndexAutovivifyLazy + ContainerEqRaw.
+            if let Some(slot) = self.container_eq_var_slot(left)
+                && matches!(right, Expr::Index { .. })
+            {
+                self.code.emit(OpCode::GetLocalRaw(slot));
+                self.scalar_bind_autovivify = true;
+                self.compile_expr(right);
+                self.scalar_bind_autovivify = false;
+                self.code.emit(OpCode::ContainerEqRaw);
+                return;
+            }
+            if let Some(slot) = self.container_eq_var_slot(right)
+                && matches!(left, Expr::Index { .. })
+            {
+                self.scalar_bind_autovivify = true;
+                self.compile_expr(left);
+                self.scalar_bind_autovivify = false;
+                self.code.emit(OpCode::GetLocalRaw(slot));
+                self.code.emit(OpCode::ContainerEqRaw);
+                return;
+            }
             let left_fresh = Self::expr_is_fresh_container(left);
             let right_fresh = Self::expr_is_fresh_container(right);
             let flags =

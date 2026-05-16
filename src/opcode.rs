@@ -14,6 +14,9 @@ pub(crate) enum OpCode {
 
     // -- Variables --
     GetLocal(u32),
+    /// Like GetLocal but does NOT resolve DeferredHashAccess/HashSlotRef values.
+    /// Used by `=:=` to compare raw container references.
+    GetLocalRaw(u32),
     SetLocal(u32),
     GetGlobal(u32),
     SetGlobal(u32),
@@ -115,6 +118,10 @@ pub(crate) enum OpCode {
         left_name_idx: u32,
         right_name_idx: u32,
     },
+    /// Container identity (`=:=`) using raw container values.
+    /// Compares DeferredHashAccess/HashSlotRef values by checking if they
+    /// point to the same hash slot (Arc::ptr_eq + key equality).
+    ContainerEqRaw,
 
     // -- String comparison --
     StrEq,
