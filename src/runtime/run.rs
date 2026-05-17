@@ -871,13 +871,16 @@ impl Interpreter {
                 // Track which keys are being added from captured env
                 // (not already present) so we can remove them after.
                 let mut overlay_keys: Vec<String> = Vec::new();
-                // Overlay captured lexical env on top of current env
-                // so both globals and captured lexicals are visible
+                // Overlay captured lexical env on top of current env.
+                // Only add variables that are NOT already in self.env —
+                // variables that exist in both should keep their current
+                // (final) value, since the program may have continued to
+                // modify them after the END phaser was registered.
                 for (k, v) in captured_env {
                     if !self.env.contains_key(k) {
                         overlay_keys.push(k.clone());
+                        self.env.insert(k.clone(), v.clone());
                     }
-                    self.env.insert(k.clone(), v.clone());
                 }
                 self.run_block(body)?;
                 // Remove only the overlay keys (captured lexicals not in
