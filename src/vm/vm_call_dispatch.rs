@@ -1595,6 +1595,12 @@ impl VM {
                 if k == "_" || k == "@_" || k == "%_" {
                     continue;
                 }
+                // __mutsu_callable_id must not leak from callee back to
+                // caller; it identifies the current routine scope for
+                // non-local return targeting.
+                if k == "__mutsu_callable_id" {
+                    continue;
+                }
                 if restored_env.contains_key(k)
                     && !local_names.contains(k)
                     && !rw_sources.contains(k)
