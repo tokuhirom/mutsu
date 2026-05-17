@@ -531,7 +531,82 @@ impl Interpreter {
                                 .unwrap_or_else(|| Value::str(err.message)),
                         );
                     }
-                    emitted
+
+                    // Separate whenever subscription registrations from plain
+                    // emitted values. A subscription registration is an Array
+                    // [Supply, body_cb, last_cbs, quit_cbs] produced by
+                    // `whenever` inside a supply block.
+                    let mut plain_values = Vec::new();
+                    for item in emitted {
+                        if let Value::Array(ref arr, ..) = item
+                            && arr.len() == 4
+                            && matches!(&arr[0], Value::Instance { class_name, .. } if class_name == "Supply")
+                        {
+                            // This is a whenever subscription registration.
+                            // Set up a forwarding tap on the inner supply.
+                            let inner_supply = &arr[0];
+                            let body_cb = arr[1].clone();
+
+                            if let Value::Instance {
+                                attributes: inner_attrs,
+                                ..
+                            } = inner_supply
+                                && let Some(Value::Int(sid)) = inner_attrs.get("supplier_id")
+                            {
+                                let supplier_id = *sid as u64;
+                                // Register the body callback as a tap on the
+                                // inner supplier. Errors from this callback
+                                // will be caught during emit dispatch and
+                                // routed to the quit handler.
+                                register_supplier_tap(supplier_id, body_cb, 0.0);
+                                // Register the outer quit handler on the inner
+                                // supplier so that errors propagate correctly.
+                                if let Some(ref qf) = quit_cb {
+                                    register_supplier_quit_callback(supplier_id, qf.clone());
+                                }
+                                if let Some(ref df) = done_cb {
+                                    register_supplier_done_callback(supplier_id, df.clone());
+                                }
+                            } else {
+                                // Non-supplier supply: run body_cb for each
+                                // value synchronously (cold supply path).
+                                let empty_attrs = HashMap::new();
+                                let inner_attrs_ref =
+                                    if let Value::Instance { attributes: a, .. } = inner_supply {
+                                        a
+                                    } else {
+                                        &empty_attrs
+                                    };
+                                let inner_vals = self.supply_list_values(inner_attrs_ref, true)?;
+                                for v in inner_vals {
+                                    match self.call_sub_value(body_cb.clone(), vec![v], true) {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            let reason = err
+                                                .exception
+                                                .as_deref()
+                                                .cloned()
+                                                .unwrap_or_else(|| Value::str(err.message));
+                                            if let Some(ref qf) = quit_cb {
+                                                self.call_supply_quit_handler(qf.clone(), reason)?;
+                                            } else {
+                                                return Err(
+                                                    Self::runtime_error_from_supply_reason(reason),
+                                                );
+                                            }
+                                            return Ok(Value::make_instance(
+                                                Symbol::intern("Tap"),
+                                                HashMap::new(),
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            plain_values.push(item);
+                        }
+                    }
+                    plain_values
                 } else if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
                     // For live (hot) supplier-backed supplies, new taps should
                     // only see future emits, not replayed past values. For
@@ -1316,7 +1391,22 @@ impl Interpreter {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                                if let Err(err) = self.call_sub_value(tap, vec![emitted], true) {
+                                    // Route errors from tap callbacks to the
+                                    // supplier's quit handlers (e.g. die inside
+                                    // a whenever body in a supply block).
+                                    let reason = err
+                                        .exception
+                                        .as_deref()
+                                        .cloned()
+                                        .unwrap_or_else(|| Value::str(err.message));
+                                    let quit_cbs = take_supplier_quit_callbacks(supplier_id);
+                                    if !quit_cbs.is_empty() {
+                                        for qcb in quit_cbs {
+                                            self.call_supply_quit_handler(qcb, reason.clone())?;
+                                        }
+                                    }
+                                }
                             }
                             SupplierEmitAction::UniqueCheck {
                                 callback,
@@ -1545,7 +1635,23 @@ impl Interpreter {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                self.call_sub_value(tap, vec![emitted], true)?;
+                                if let Err(err) = self.call_sub_value(tap, vec![emitted], true) {
+                                    // Route errors from tap callbacks to the
+                                    // supplier's quit handlers.
+                                    let reason = err
+                                        .exception
+                                        .as_deref()
+                                        .cloned()
+                                        .unwrap_or_else(|| Value::str(err.message));
+                                    let quit_cbs = take_supplier_quit_callbacks(sid);
+                                    if !quit_cbs.is_empty() {
+                                        for qcb in quit_cbs {
+                                            self.call_supply_quit_handler(qcb, reason.clone())?;
+                                        }
+                                    } else {
+                                        return Err(Self::runtime_error_from_supply_reason(reason));
+                                    }
+                                }
                             }
                             SupplierEmitAction::UniqueCheck {
                                 callback,
@@ -1914,7 +2020,73 @@ impl Interpreter {
                                 .unwrap_or_else(|| Value::str(err.message)),
                         );
                     }
-                    emitted
+
+                    // Separate whenever subscription registrations from plain
+                    // emitted values (same logic as immutable tap path).
+                    let mut plain_values = Vec::new();
+                    for item in emitted {
+                        if let Value::Array(ref arr, ..) = item
+                            && arr.len() == 4
+                            && matches!(&arr[0], Value::Instance { class_name, .. } if class_name == "Supply")
+                        {
+                            let inner_supply = &arr[0];
+                            let body_cb = arr[1].clone();
+
+                            if let Value::Instance {
+                                attributes: inner_attrs,
+                                ..
+                            } = inner_supply
+                                && let Some(Value::Int(sid)) = inner_attrs.get("supplier_id")
+                            {
+                                let supplier_id = *sid as u64;
+                                register_supplier_tap(supplier_id, body_cb, 0.0);
+                                if let Some(ref qf) = quit_cb {
+                                    register_supplier_quit_callback(supplier_id, qf.clone());
+                                }
+                                if let Some(ref df) = done_cb {
+                                    register_supplier_done_callback(supplier_id, df.clone());
+                                }
+                            } else {
+                                let empty_attrs = HashMap::new();
+                                let inner_attrs_ref =
+                                    if let Value::Instance { attributes: a, .. } = inner_supply {
+                                        a
+                                    } else {
+                                        &empty_attrs
+                                    };
+                                let inner_vals = self.supply_list_values(inner_attrs_ref, true)?;
+                                for v in inner_vals {
+                                    match self.call_sub_value(body_cb.clone(), vec![v], true) {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            let reason = err
+                                                .exception
+                                                .as_deref()
+                                                .cloned()
+                                                .unwrap_or_else(|| Value::str(err.message));
+                                            if let Some(ref qf) = quit_cb {
+                                                self.call_supply_quit_handler(qf.clone(), reason)?;
+                                            } else {
+                                                return Err(
+                                                    Self::runtime_error_from_supply_reason(reason),
+                                                );
+                                            }
+                                            return Ok((
+                                                Value::make_instance(
+                                                    Symbol::intern("Tap"),
+                                                    HashMap::new(),
+                                                ),
+                                                attrs,
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            plain_values.push(item);
+                        }
+                    }
+                    plain_values
                 } else if has_unique {
                     if Self::supply_has_active_callback(&tap_cb) {
                         if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
