@@ -20,14 +20,10 @@ impl VM {
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
-            let cl = self
-                .interpreter
-                .env()
-                .get("?LINE")
-                .and_then(|v| match v {
-                    Value::Int(i) => Some(*i),
-                    _ => None,
-                });
+            let cl = self.interpreter.env().get("?LINE").and_then(|v| match v {
+                Value::Int(i) => Some(*i),
+                _ => None,
+            });
             self.interpreter.check_deprecation_for_method_with_line(
                 method_name,
                 owner_class,
