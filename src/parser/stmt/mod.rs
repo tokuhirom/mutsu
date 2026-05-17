@@ -291,7 +291,7 @@ fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
 }
 
 pub(super) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
-    let (input, stmts) = stmt_list_with_mode(input, false, false)?;
+    let (input, stmts) = stmt_list_with_mode(input, false, true)?;
     let (input, _) = ws(input)?;
     let (input, _) = parse_char(input, '}')?;
     Ok((input, stmts))
