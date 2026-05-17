@@ -150,6 +150,11 @@ impl Compiler {
         for pd in param_defs {
             if !pd.name.is_empty() {
                 sub_compiler.alloc_local(&pd.name);
+                // Track sigilless parameters so BareWord resolution uses
+                // GetLocal for them but not for `$`-sigiled params.
+                if pd.sigilless {
+                    sub_compiler.sigilless_locals.insert(pd.name.clone());
+                }
             }
             // Also allocate locals for sub_signature parameters (array unpacking)
             // so that they get proper local slots and don't leak between recursive calls.
@@ -479,6 +484,9 @@ impl Compiler {
         for pd in param_defs {
             if !pd.name.is_empty() {
                 sub_compiler.alloc_local(&pd.name);
+                if pd.sigilless {
+                    sub_compiler.sigilless_locals.insert(pd.name.clone());
+                }
             }
         }
         // Hoist sub declarations within the closure body

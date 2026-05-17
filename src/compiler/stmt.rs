@@ -479,6 +479,9 @@ impl Compiler {
                 // Handled by SyntheticBlock detection; no-op when compiled standalone.
             }
             Stmt::MarkSigillessReadonly(name) => {
+                // Track sigilless locals so BareWord compilation can
+                // distinguish them from `$`-sigiled variables.
+                self.sigilless_locals.insert(name.clone());
                 // Set __mutsu_sigilless_readonly::NAME = true in env
                 let key = format!("__mutsu_sigilless_readonly::{}", name);
                 let key_idx = self.code.add_constant(Value::str(key));

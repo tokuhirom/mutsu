@@ -68,6 +68,10 @@ pub(crate) struct Compiler {
     scalar_bind_autovivify: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
+    /// Local names that are sigilless bindings (declared with `my \Foo = ...`
+    /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
+    /// for names in this set; `$`-sigiled variables must not shadow type names.
+    sigilless_locals: std::collections::HashSet<String>,
     /// Last source line emitted via SetSourceLine (for tracking block definition lines).
     last_source_line: Option<i64>,
     /// Pending writebacks for Index expressions passed to function calls.
@@ -96,6 +100,7 @@ impl Compiler {
             bind_vardecl: false,
             scalar_bind_autovivify: false,
             constant_vars: std::collections::HashSet::new(),
+            sigilless_locals: std::collections::HashSet::new(),
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),
         }

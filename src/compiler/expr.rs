@@ -58,12 +58,25 @@ impl Compiler {
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
             Expr::BareWord(name) => {
+                // Only resolve to GetLocal for sigilless bindings (e.g. `my \Foo = ...`)
+                // or builtin-type-safe locals.  `$`-sigiled variables whose `$` was
+                // stripped share the same key in local_map but must NOT shadow type
+                // names, so they go through GetBareWord which checks the type registry.
                 if let Some(&slot) = self.local_map.get(name.as_str()) {
                     if crate::vm::VM::is_builtin_type(name) {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
-                    } else {
+                    } else if self.sigilless_locals.contains(name.as_str())
+                        || self.constant_vars.contains(name.as_str())
+                    {
+                        // Sigilless bindings and constants: the bare word IS the
+                        // variable, so read directly from the local slot.
                         self.code.emit(OpCode::GetLocal(slot));
+                    } else {
+                        // The local is a `$`-sigiled variable — a bare word with the
+                        // same name should resolve as a type/package, not the variable.
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.code.emit(OpCode::GetBareWord(name_idx));
                     }
                 } else {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
