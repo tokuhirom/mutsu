@@ -123,6 +123,10 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                             || ch == '{'
                             || ch == '('
                             || ch == '!'
+                            || ch == '*'
+                            || ch == '?'
+                            || ch == '^'
+                            || ch == '.'
                             || ch.is_ascii_digit()
                     });
                     if !is_var {
@@ -644,6 +648,15 @@ fn skip_variable_ref(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
         }
         Some(&c) if c.is_ascii_digit() => {
             while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                chars.next();
+            }
+        }
+        Some(&c) if c == '*' || c == '?' || c == '^' || c == '.' => {
+            chars.next();
+            while chars
+                .peek()
+                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+            {
                 chars.next();
             }
         }

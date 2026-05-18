@@ -325,8 +325,16 @@ impl Interpreter {
                     } else {
                         None
                     }
-                } else if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                } else if j < chars.len()
+                    && (chars[j].is_alphabetic()
+                        || chars[j] == '_'
+                        || matches!(chars[j], '*' | '?' | '^' | '.'))
+                {
                     let name_start = j;
+                    // Skip twigil if present
+                    if matches!(chars[j], '*' | '?' | '^' | '.') {
+                        j += 1;
+                    }
                     while j < chars.len()
                         && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
                     {
