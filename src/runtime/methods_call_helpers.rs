@@ -209,6 +209,32 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Interior mutation: if the target Array has shared references
+        // (Arc refcount > 1), mutate in-place so all references see the
+        // change. This matches Raku's container semantics.
+        if let Value::Array(ref arc, _) = target
+            && Arc::strong_count(arc) > 1
+            && matches!(method, "push" | "append" | "unshift" | "prepend")
+        {
+            let vals: Vec<Value> = match method {
+                "push" => Self::normalize_push_args_for_copy(args),
+                "append" => flatten_append_args(args),
+                "unshift" => Self::normalize_push_args_for_copy(args),
+                "prepend" => flatten_append_args(args),
+                _ => unreachable!(),
+            };
+            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            unsafe {
+                if matches!(method, "unshift" | "prepend") {
+                    let mut combined = vals;
+                    combined.append(&mut (*ptr));
+                    *ptr = combined;
+                } else {
+                    (*ptr).extend(vals);
+                }
+            }
+            return Ok(target);
+        }
         let mut items = match target {
             Value::Array(ref v, ..) => v.to_vec(),
             _ => Vec::new(),

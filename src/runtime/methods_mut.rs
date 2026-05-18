@@ -2254,6 +2254,22 @@ impl Interpreter {
                         }
                         return Ok(Value::Array(Arc::clone(arc_items), *kind));
                     }
+                    // Interior mutation: if the target Array has shared references
+                    // (Arc refcount > 1), mutate in-place so all references see the
+                    // change. This matches Raku's container semantics.
+                    if let Value::Array(ref arc_items, _) = target
+                        && Arc::strong_count(arc_items) > 1
+                    {
+                        let vals = if method == "append" {
+                            flatten_append_args(normalized_args)
+                        } else {
+                            normalized_args
+                        };
+                        for v in vals {
+                            target.array_push_in_place(v);
+                        }
+                        return Ok(target);
+                    }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
