@@ -55,7 +55,20 @@ impl Interpreter {
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        if args.is_empty() {
+        // Separate named args (Pair values like :with) from positional args
+        let mut with_fn: Option<Value> = None;
+        let mut supplies: Vec<Value> = Vec::new();
+        for arg in args {
+            if let Value::Pair(key, value) = arg
+                && key == "with"
+            {
+                with_fn = Some(*value.clone());
+            } else {
+                supplies.push(arg.clone());
+            }
+        }
+
+        if supplies.is_empty() {
             return Ok(Value::make_instance(
                 crate::symbol::Symbol::intern("Supply"),
                 {
@@ -67,9 +80,40 @@ impl Interpreter {
                 },
             ));
         }
+
+        // Validate all args are Supply instances
+        for arg in &supplies {
+            if !matches!(arg, Value::Instance { class_name, .. } if class_name == "Supply") {
+                let mut ex_attrs = HashMap::new();
+                ex_attrs.insert("combinator".to_string(), Value::str("zip".to_string()));
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Can only zip Supply objects, got {}",
+                        crate::value::types::what_type_name(arg)
+                    )),
+                );
+                let ex = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Supply::Combinator"),
+                    ex_attrs,
+                );
+                let mut err = RuntimeError::new(format!(
+                    "Can only zip Supply objects, got {}",
+                    crate::value::types::what_type_name(arg)
+                ));
+                err.exception = Some(Box::new(ex));
+                return Err(err);
+            }
+        }
+
+        // Single supply is a noop — return the same supply
+        if supplies.len() == 1 {
+            return Ok(supplies.into_iter().next().unwrap());
+        }
+
         // Collect values from all supplies
         let mut supply_values: Vec<Vec<Value>> = Vec::new();
-        for arg in args {
+        for arg in &supplies {
             if let Value::Instance { attributes, .. } = arg {
                 let items = match attributes.get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
@@ -82,7 +126,12 @@ impl Interpreter {
         let mut zipped = Vec::new();
         for i in 0..min_len {
             let tuple: Vec<Value> = supply_values.iter().map(|sv| sv[i].clone()).collect();
-            zipped.push(Value::array(tuple));
+            if let Some(ref wf) = with_fn {
+                let combined = self.call_sub_value(wf.clone(), tuple, false)?;
+                zipped.push(combined);
+            } else {
+                zipped.push(Value::array(tuple));
+            }
         }
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(zipped));

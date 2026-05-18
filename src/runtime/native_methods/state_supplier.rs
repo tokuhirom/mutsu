@@ -57,10 +57,18 @@ struct SupplierTapSubscription {
     /// SharedChannel instead of being delivered to a callback. Used by
     /// `Supply.Channel` to bridge a live supplier into a Channel.
     channel_sink: Option<crate::value::SharedChannel>,
+    /// Zip tap state: buffer values for multi-supply zip
+    zip_tap: Option<ZipTapState>,
     /// Stable identifier so taps can be closed individually.
     tap_id: u64,
     /// When set, this tap is closed and should no longer receive emits.
     closed: bool,
+}
+
+#[derive(Clone)]
+struct ZipTapState {
+    zip_state_id: u64,
+    source_index: usize,
 }
 
 #[derive(Clone)]
@@ -165,6 +173,7 @@ pub(in crate::runtime) fn register_supplier_channel_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: Some(channel),
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -214,6 +223,7 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -248,6 +258,7 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -282,6 +293,7 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -315,6 +327,7 @@ pub(in crate::runtime) fn register_supplier_words_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -355,6 +368,7 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -406,6 +420,12 @@ pub(in crate::runtime) enum SupplierEmitAction {
     FlatEmit {
         downstream_supplier_id: u64,
         items: Vec<Value>,
+    },
+    /// Zip buffer: a value needs to be buffered for zip
+    ZipBuffer {
+        zip_state_id: u64,
+        source_index: usize,
+        value: Value,
     },
 }
 
@@ -579,6 +599,12 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     value: emitted_value.clone(),
                     output_supplier_id: ss.output_supplier_id,
                 });
+            } else if let Some(ref zt) = tap.zip_tap {
+                actions.push(SupplierEmitAction::ZipBuffer {
+                    zip_state_id: zt.zip_state_id,
+                    source_index: zt.source_index,
+                    value: emitted_value.clone(),
+                });
             } else {
                 actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
@@ -666,6 +692,7 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -703,6 +730,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -742,6 +770,7 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -821,6 +850,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -999,6 +1029,7 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 words_buffer: String::new(),
                 flat_downstream: None,
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -1034,6 +1065,7 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
                 words_buffer: String::new(),
                 flat_downstream: Some(downstream_supplier_id),
                 channel_sink: None,
+                zip_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -1057,4 +1089,152 @@ pub(in crate::runtime) fn flush_supplier_batch_taps(supplier_id: u64) -> Vec<(u6
         }
     }
     result
+}
+
+/// Get zip state ids associated with a supplier's taps.
+pub(in crate::runtime) fn get_supplier_zip_state_ids(supplier_id: u64) -> Vec<u64> {
+    let mut result = Vec::new();
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        for tap in &subs.taps {
+            if let Some(ref zt) = tap.zip_tap {
+                result.push(zt.zip_state_id);
+            }
+        }
+    }
+    result
+}
+
+/// Register a zip tap on a supplier.
+pub(in crate::runtime) fn register_supplier_zip_tap(
+    supplier_id: u64,
+    zip_state_id: u64,
+    source_index: usize,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                flat_downstream: None,
+                channel_sink: None,
+                zip_tap: Some(ZipTapState {
+                    zip_state_id,
+                    source_index,
+                }),
+                tap_id: next_tap_id(),
+                closed: false,
+            });
+    }
+}
+
+// ── Zip state ────────────────────────────────────────────────────────
+
+#[derive(Clone)]
+struct ZipState {
+    buffers: Vec<Vec<Value>>,
+    output_supplier_id: u64,
+    done_count: usize,
+    source_count: usize,
+    with_fn: Option<Value>,
+}
+
+type ZipStateMap = std::sync::Mutex<HashMap<u64, ZipState>>;
+
+fn zip_state_map() -> &'static ZipStateMap {
+    static MAP: OnceLock<ZipStateMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn next_zip_state_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(in crate::runtime) fn register_zip_state(
+    source_count: usize,
+    output_supplier_id: u64,
+    with_fn: Option<Value>,
+) -> u64 {
+    let id = next_zip_state_id();
+    let state = ZipState {
+        buffers: (0..source_count).map(|_| Vec::new()).collect(),
+        output_supplier_id,
+        done_count: 0,
+        source_count,
+        with_fn,
+    };
+    if let Ok(mut map) = zip_state_map().lock() {
+        map.insert(id, state);
+    }
+    id
+}
+
+pub(in crate::runtime) enum ZipAction {
+    Emit(Value),
+    AllDone,
+    #[allow(dead_code)]
+    None,
+}
+
+pub(in crate::runtime) fn zip_buffer_value(
+    zip_state_id: u64,
+    source_index: usize,
+    value: Value,
+) -> ZipAction {
+    if let Ok(mut map) = zip_state_map().lock()
+        && let Some(state) = map.get_mut(&zip_state_id)
+    {
+        if source_index < state.buffers.len() {
+            state.buffers[source_index].push(value);
+        }
+        if state.buffers.iter().all(|b| !b.is_empty()) {
+            let mut tuple: Vec<Value> = Vec::with_capacity(state.source_count);
+            for buf in state.buffers.iter_mut() {
+                tuple.push(buf.remove(0));
+            }
+            return ZipAction::Emit(Value::array(tuple));
+        }
+    }
+    ZipAction::None
+}
+
+pub(in crate::runtime) fn zip_source_done(zip_state_id: u64) -> (ZipAction, u64) {
+    if let Ok(mut map) = zip_state_map().lock()
+        && let Some(state) = map.get_mut(&zip_state_id)
+    {
+        state.done_count += 1;
+        let output_id = state.output_supplier_id;
+        if state.done_count >= state.source_count {
+            return (ZipAction::AllDone, output_id);
+        }
+        return (ZipAction::None, output_id);
+    }
+    (ZipAction::None, 0)
+}
+
+pub(in crate::runtime) fn zip_state_info(zip_state_id: u64) -> (u64, Option<Value>) {
+    if let Ok(map) = zip_state_map().lock()
+        && let Some(state) = map.get(&zip_state_id)
+    {
+        return (state.output_supplier_id, state.with_fn.clone());
+    }
+    (0, None)
 }
