@@ -613,6 +613,19 @@ impl Interpreter {
         param: &Option<String>,
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        // If the source is a Supplier, convert it to its associated Supply
+        // so that subscription registration and tap dispatch work correctly.
+        // Without this, `whenever $supplier { ... }` inside a `supply` block
+        // would pass the Supplier object itself as the subscription source,
+        // which the tap dispatch code does not recognize (it expects Supply).
+        let supply_val = if let Value::Instance { class_name, .. } = &supply_val
+            && (class_name == "Supplier" || class_name == "Supplier::Preserving")
+        {
+            self.call_method_with_values(supply_val, "Supply", vec![])?
+        } else {
+            supply_val
+        };
+
         let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
         let callback = Value::make_sub(
             Symbol::intern(&self.current_package),

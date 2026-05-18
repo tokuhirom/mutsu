@@ -512,10 +512,20 @@ impl Interpreter {
                 // For on-demand supplies, execute the callback to produce values
                 let mut on_demand_quit: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+                    // Give the emitter a supplier_id so that when a `whenever`
+                    // body calls `$emitter.emit(val)`, the value can be dispatched
+                    // to taps registered on this emitter. The outer tap_cb will
+                    // be registered lazily below only when `whenever` subscriptions
+                    // are found, to avoid double-delivery for plain `emit` calls.
+                    let emitter_supplier_id = next_supplier_id();
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
                         a.insert("done".to_string(), Value::Bool(false));
+                        a.insert(
+                            "supplier_id".to_string(),
+                            Value::Int(emitter_supplier_id as i64),
+                        );
                         a
                     });
                     // Use supply_emit_buffer to collect emitted values
@@ -559,6 +569,16 @@ impl Interpreter {
                                 // will be caught during emit dispatch and
                                 // routed to the quit handler.
                                 register_supplier_tap(supplier_id, body_cb, 0.0);
+                                // Register the outer tap callback on the emitter
+                                // so that `$emitter.emit(val)` inside the body
+                                // forwards values to the outer tap subscriber.
+                                if Self::supply_has_active_callback(&tap_cb) {
+                                    register_supplier_tap(
+                                        emitter_supplier_id,
+                                        tap_cb.clone(),
+                                        delay_seconds,
+                                    );
+                                }
                                 // Register the outer quit handler on the inner
                                 // supplier so that errors propagate correctly.
                                 if let Some(ref qf) = quit_cb {
@@ -2003,10 +2023,20 @@ impl Interpreter {
                 let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                 let mut on_demand_quit: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
+                    // Give the emitter a supplier_id so that when a `whenever`
+                    // body calls `$emitter.emit(val)`, the value can be dispatched
+                    // to taps registered on this emitter. The outer tap_cb will
+                    // be registered lazily below only when `whenever` subscriptions
+                    // are found, to avoid double-delivery for plain `emit` calls.
+                    let emitter_supplier_id = next_supplier_id();
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
                         a.insert("done".to_string(), Value::Bool(false));
+                        a.insert(
+                            "supplier_id".to_string(),
+                            Value::Int(emitter_supplier_id as i64),
+                        );
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
@@ -2040,6 +2070,16 @@ impl Interpreter {
                             {
                                 let supplier_id = *sid as u64;
                                 register_supplier_tap(supplier_id, body_cb, 0.0);
+                                // Register the outer tap callback on the emitter
+                                // so that `$emitter.emit(val)` inside the body
+                                // forwards values to the outer tap subscriber.
+                                if Self::supply_has_active_callback(&tap_cb) {
+                                    register_supplier_tap(
+                                        emitter_supplier_id,
+                                        tap_cb.clone(),
+                                        delay_seconds,
+                                    );
+                                }
                                 if let Some(ref qf) = quit_cb {
                                     register_supplier_quit_callback(supplier_id, qf.clone());
                                 }
