@@ -15,13 +15,23 @@ impl Interpreter {
             let (stripped_chars, pos_map) = strip_marks_text(&orig_chars);
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
-            let matches =
+            let mut matches =
                 self.regex_match_ends_from_caps_in_pkg(&stripped_parsed, &stripped_chars, 0, &pkg);
             if matches.is_empty() {
                 return None;
             }
+            matches.sort_by_key(|(end, caps)| {
+                let total_named: usize = caps.named.values().map(|v| v.len()).sum();
+                (
+                    *end,
+                    caps.positional.len(),
+                    total_named,
+                    caps.code_blocks.len(),
+                )
+            });
             let (end, mut caps) = matches
                 .into_iter()
+                .rev()
                 .find(|(end, _)| *end == stripped_chars.len())?;
             let from = map_pos(caps.capture_start.unwrap_or(0), &pos_map, orig_len);
             let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
@@ -31,12 +41,22 @@ impl Interpreter {
             return Some(caps);
         }
 
-        let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, &orig_chars, 0, &pkg);
+        let mut matches = self.regex_match_ends_from_caps_in_pkg(&parsed, &orig_chars, 0, &pkg);
         if matches.is_empty() {
             return None;
         }
+        matches.sort_by_key(|(end, caps)| {
+            let total_named: usize = caps.named.values().map(|v| v.len()).sum();
+            (
+                *end,
+                caps.positional.len(),
+                total_named,
+                caps.code_blocks.len(),
+            )
+        });
         let (end, mut caps) = matches
             .into_iter()
+            .rev()
             .find(|(end, _)| *end == orig_chars.len())?;
         caps.from = caps.capture_start.unwrap_or(0);
         caps.to = caps.capture_end.unwrap_or(end);

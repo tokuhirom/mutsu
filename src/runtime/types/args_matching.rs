@@ -22,34 +22,13 @@ impl Interpreter {
         let result = (|| {
             let positional_params: Vec<&ParamDef> =
                 param_defs.iter().filter(|p| !p.named).collect();
-            let named_param_names: std::collections::HashSet<String> = param_defs
-                .iter()
-                .filter(|p| p.named)
-                .map(|p| {
-                    p.name
-                        .trim_start_matches('$')
-                        .trim_start_matches('%')
-                        .trim_start_matches('@')
-                        .to_string()
-                })
-                .collect();
-            let has_slurpy_named = param_defs.iter().any(|p| {
-                (p.named && (p.slurpy || p.double_slurpy))
-                    || (p.slurpy && p.name.starts_with('%'))
-                    || (p.slurpy && p.sigilless)
-            });
             let positional_arg_count = args
                 .iter()
                 .filter(|arg| {
-                    let v = unwrap_varref_value((*arg).clone());
-                    match &v {
-                        Value::Pair(key, _) => {
-                            // Only treat as named if key matches a named param or there's a slurpy named
-                            !(named_param_names.contains(key.as_str()) || has_slurpy_named)
-                        }
-                        Value::ValuePair(..) => true,
-                        _ => true,
-                    }
+                    !matches!(
+                        unwrap_varref_value((*arg).clone()),
+                        Value::Pair(..) | Value::ValuePair(..)
+                    )
                 })
                 .count();
             let mut required_positional_count = 0usize;
@@ -79,13 +58,6 @@ impl Interpreter {
             }
             let mut i = 0usize;
             for pd in positional_params {
-                // Skip Pair values that match named parameters
-                while i < args.len()
-                    && let Value::Pair(ref key, _) = unwrap_varref_value(args[i].clone())
-                    && (named_param_names.contains(key.as_str()) || has_slurpy_named)
-                {
-                    i += 1;
-                }
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
                 let mut arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
@@ -511,21 +483,17 @@ impl Interpreter {
         };
         let positional_params: Vec<&ParamDef> =
             filtered_params.iter().filter(|p| !p.named).collect();
-        let named_param_names_set: std::collections::HashSet<&str> = filtered_params
+        let positional_arg_count = args
             .iter()
-            .filter(|p| p.named)
-            .map(|p| {
-                p.name
-                    .strip_prefix('@')
-                    .or_else(|| p.name.strip_prefix('%'))
-                    .unwrap_or(p.name.as_str())
-            })
-            .collect();
+            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .count();
+        let mut required = 0usize;
         let mut has_positional_slurpy = false;
         let mut has_hash_slurpy = false;
         for pd in &positional_params {
             if pd.slurpy {
                 if pd.sigilless {
+                    // Capture parameter (|c) absorbs both positional and named args
                     has_positional_slurpy = true;
                     has_hash_slurpy = true;
                 } else if pd.name.starts_with('%') {
@@ -533,30 +501,7 @@ impl Interpreter {
                 } else {
                     has_positional_slurpy = true;
                 }
-            }
-        }
-        let has_slurpy_named_set = has_hash_slurpy
-            || filtered_params
-                .iter()
-                .any(|p| p.named && (p.slurpy || p.double_slurpy));
-        let positional_arg_count = args
-            .iter()
-            .filter(|arg| {
-                if let Value::Pair(key, _) = arg {
-                    !(named_param_names_set.contains(key.as_str()) || has_slurpy_named_set)
-                } else {
-                    true
-                }
-            })
-            .count();
-        let mut required = 0usize;
-        for pd in &positional_params {
-            if !pd.slurpy
-                && pd.default.is_none()
-                && !pd.optional_marker
-                && !pd.name.starts_with('@')
-                && !pd.name.starts_with('%')
-            {
+            } else if pd.default.is_none() && !pd.optional_marker {
                 required += 1;
             }
         }
@@ -569,28 +514,28 @@ impl Interpreter {
             return false;
         }
         if !has_hash_slurpy {
+            let named_params: std::collections::HashSet<&str> = filtered_params
+                .iter()
+                .filter(|p| p.named)
+                .map(|p| {
+                    // Strip sigil for named params with array/hash sigils: :@l -> "l", :%h -> "h"
+                    p.name
+                        .strip_prefix('@')
+                        .or_else(|| p.name.strip_prefix('%'))
+                        .unwrap_or(p.name.as_str())
+                })
+                .collect();
             for arg in args {
                 if let Value::Pair(key, _) = arg
                     && key != TEST_CALLSITE_LINE_KEY
-                    && named_param_names_set.contains(key.as_str())
+                    && !named_params.contains(key.as_str())
                 {
-                    // This Pair matches a named param — ok, it'll be bound as named
-                } else if let Value::Pair(key, _) = arg
-                    && key != TEST_CALLSITE_LINE_KEY
-                    && !named_param_names_set.contains(key.as_str())
-                    && has_slurpy_named_set
-                {
-                    // There's a slurpy named — it'll absorb this
-                } else if let Value::Pair(key, _) = arg
-                    && key != TEST_CALLSITE_LINE_KEY
-                    && !named_param_names_set.contains(key.as_str())
-                {
-                    // No matching named param and no slurpy — treat as positional, don't reject
+                    return false;
                 }
                 if let Value::ValuePair(key, _) = arg
                     && let Value::Str(name) = key.as_ref()
                     && name.as_str() != TEST_CALLSITE_LINE_KEY
-                    && !named_param_names_set.contains(name.as_str())
+                    && !named_params.contains(name.as_str())
                 {
                     return false;
                 }

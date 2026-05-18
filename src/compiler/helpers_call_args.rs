@@ -149,6 +149,7 @@ impl Compiler {
         match expr {
             Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow => true,
             Expr::Literal(crate::value::Value::Pair(..)) => true,
+            Expr::Unary { op, .. } if *op == crate::token_kind::TokenKind::Pipe => true,
             _ => false,
         }
     }
