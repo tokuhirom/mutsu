@@ -2938,8 +2938,8 @@ impl VM {
             }
 
             // -- Phaser END --
-            OpCode::PhaserEnd(idx) => {
-                self.exec_phaser_end_op(code, *idx);
+            OpCode::PhaserEnd { idx, site_id } => {
+                self.exec_phaser_end_op(code, *idx, *site_id);
                 *ip += 1;
             }
 

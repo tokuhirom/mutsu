@@ -694,7 +694,12 @@ pub(crate) enum OpCode {
     },
 
     // -- Phaser --
-    PhaserEnd(u32),
+    /// Register an END phaser. `site_id` ensures register-once semantics
+    /// for END phasers inside closures that may be called repeatedly.
+    PhaserEnd {
+        idx: u32,
+        site_id: u64,
+    },
 
     // -- HyperMethodCall (».method) --
     HyperMethodCall {
