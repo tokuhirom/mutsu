@@ -233,39 +233,6 @@ impl VM {
                     || Self::is_type_with_smiley(bare, &self.interpreter))
             {
                 Value::Package(Symbol::intern(Self::resolve_type_alias(bare)))
-            } else if self.interpreter.has_type(name)
-                || Self::is_builtin_type(name)
-                || self.interpreter.env().contains_key(name)
-            {
-                Value::Package(Symbol::intern(name))
-            } else if let Some((pkg_part, sub_part)) = name.rsplit_once("::") {
-                // If the last component starts with a lowercase letter, this is
-                // likely a sub/symbol reference, not a type name.
-                let looks_like_sub = sub_part
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_lowercase());
-                if looks_like_sub {
-                    // Check if the package prefix is known.
-                    let pkg_exists = self.interpreter.has_type(pkg_part)
-                        || Self::is_builtin_type(pkg_part)
-                        || self.interpreter.env().contains_key(pkg_part);
-                    if pkg_exists {
-                        // Package exists but the symbol inside it was not found.
-                        return Err(RuntimeError::new(format!(
-                            "Could not find symbol '&{}' in '{}'",
-                            sub_part, pkg_part,
-                        )));
-                    }
-                    // Package prefix is also unknown — report error.
-                    return Err(RuntimeError::new(format!(
-                        "Could not find symbol '&{}' in '{}'",
-                        sub_part, pkg_part,
-                    )));
-                }
-                // Uppercase last component — treat as a type object
-                // (many Raku types like X::AdHoc are referenced before declaration).
-                Value::Package(Symbol::intern(name))
             } else {
                 Value::Package(Symbol::intern(name))
             }
