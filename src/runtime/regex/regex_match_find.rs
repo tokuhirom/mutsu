@@ -20,7 +20,15 @@ impl Interpreter {
             if matches.is_empty() {
                 return None;
             }
-            matches.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
+            matches.sort_by_key(|(end, caps)| {
+                let total_named: usize = caps.named.values().map(|v| v.len()).sum();
+                (
+                    *end,
+                    caps.positional.len(),
+                    total_named,
+                    caps.code_blocks.len(),
+                )
+            });
             let (end, mut caps) = matches
                 .into_iter()
                 .rev()
@@ -37,7 +45,15 @@ impl Interpreter {
         if matches.is_empty() {
             return None;
         }
-        matches.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
+        matches.sort_by_key(|(end, caps)| {
+            let total_named: usize = caps.named.values().map(|v| v.len()).sum();
+            (
+                *end,
+                caps.positional.len(),
+                total_named,
+                caps.code_blocks.len(),
+            )
+        });
         let (end, mut caps) = matches
             .into_iter()
             .rev()

@@ -145,10 +145,22 @@ impl Compiler {
     /// Compile a function-call positional argument.
     /// Variable-like args are wrapped with source-name metadata so sigilless
     /// parameters (`\x`) can bind as writable aliases.
+    fn is_named_arg_expr(expr: &Expr) -> bool {
+        match expr {
+            Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow => true,
+            Expr::Literal(crate::value::Value::Pair(..)) => true,
+            Expr::Unary { op, .. } if *op == crate::token_kind::TokenKind::Pipe => true,
+            _ => false,
+        }
+    }
+
     pub(super) fn compile_call_arg(&mut self, arg: &Expr) {
         self.compile_expr(arg);
         if Self::needs_decont(arg) {
             self.code.emit(OpCode::Decont);
+        }
+        if !Self::is_named_arg_expr(arg) {
+            self.code.emit(OpCode::ContainerizePair);
         }
         let source_name = match arg {
             Expr::Var(n) => Some(n.clone()),
