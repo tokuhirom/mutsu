@@ -21,6 +21,9 @@ impl Interpreter {
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().extend(v);
                     }
+                    for (k, v) in inner_caps.named_subcaps.drain() {
+                        new_caps.named_subcaps.entry(k).or_default().extend(v);
+                    }
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps
                         .positional_subcaps
@@ -47,6 +50,9 @@ impl Interpreter {
                     let mut new_caps = current_caps.clone();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().extend(v);
+                    }
+                    for (k, v) in inner_caps.named_subcaps.drain() {
+                        new_caps.named_subcaps.entry(k).or_default().extend(v);
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps
@@ -81,6 +87,9 @@ impl Interpreter {
             let mut new_caps = current_caps.clone();
             for (k, v) in longest_caps.named {
                 new_caps.named.entry(k).or_default().extend(v);
+            }
+            for (k, v) in longest_caps.named_subcaps {
+                new_caps.named_subcaps.entry(k).or_default().extend(v);
             }
             new_caps.positional.append(&mut longest_caps.positional);
             new_caps
