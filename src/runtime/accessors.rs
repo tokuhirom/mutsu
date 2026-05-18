@@ -1412,6 +1412,9 @@ impl Interpreter {
         }
         if let Some(value) = self.env.get(name)
             && !matches!(value, Value::Nil)
+            // Skip `my`-scoped package items for indirect type lookup (::())
+            // since they should not be visible outside their declaring scope.
+            && !self.is_my_scoped_package_item(name)
         {
             return value.clone();
         }
