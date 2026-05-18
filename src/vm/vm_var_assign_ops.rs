@@ -3165,6 +3165,7 @@ impl VM {
                     | Value::RangeExclStart(..)
                     | Value::RangeExclBoth(..)
                     | Value::GenericRange { .. }
+                    | Value::Uni { .. }
                     | Value::Nil => true,
                     // Instance objects are Positional only if they implement
                     // the Positional role (or Array subclass etc.), but not

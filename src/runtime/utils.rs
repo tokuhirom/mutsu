@@ -461,6 +461,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
     };
     match value {
         Value::Hash(_) => value,
+        Value::Scalar(inner) => coerce_to_hash(*inner),
         Value::Array(items, ..) => {
             // Flatten nested Hashes into pairs before building the hash.
             // This handles `%h = %h1, %h2` where each hash should be merged.
