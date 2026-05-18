@@ -26,7 +26,7 @@
 - [x] `from-json` 配列 (#2227)
 - [x] `from-json` 文字列 (#2231)
 - [x] `from-json` オブジェクト (#2233)
-- [ ] JSON::Tiny テストスイート全 pass（エスケープ文字列、Unicode エスケープ、surrogate pair）
+- [x] JSON::Tiny テストスイート全 pass (#2329: ignoremark, Scalar hash coercion, Uni binding)
 
 ### Container semantics
 
@@ -44,8 +44,8 @@
 
 | レイヤー | モジュール | 状態 | 備考 |
 |----------|-----------|------|------|
-| JSON | JSON::Tiny | ⚠️ 基本動作、テスト残り | エスケープ/Unicode |
-| テンプレート | Template::Mustache | ❌ `.meta` 未対応 | pure Raku grammar ベース |
+| JSON | JSON::Tiny | ✅ テスト全 pass | #2329 |
+| テンプレート | Template::Mustache | ⚠️ コンテナ意味論がブロッカー | `$%x` 参照 vs コピー問題 |
 | HTTP サーバー | HTTP::Server::Tiny | ❌ 依存未解決 | HTTP::Parser, IO::Blob, HTTP::Status |
 | DB | (検討中) | ❌ | NativeCall 不可。JSON file / SQLite CLI wrapper |
 
@@ -104,10 +104,10 @@
 
 | 指標 | 現在 (5月) | Q2 目標 | Q3 目標 | Q4 目標 |
 |------|-----------|---------|---------|---------|
-| Whitelist | 1179 | 1180+ | 1190+ | 1200+ |
+| Whitelist | 1182 | 1185+ | 1190+ | 1200+ |
 | fib(25) vs raku | 8x | <10x ✅ | <10x | <10x |
 | 起動時間 vs raku | 0.04x | 0.04x | 0.04x | 0.04x |
-| JSON::Tiny | ⚠️ 基本動作 | テスト全pass | ✅ | ✅ |
+| JSON::Tiny | ✅ テスト全pass | ✅ | ✅ | ✅ |
 | Template::Mustache | ❌ | - | ✅ | ✅ |
 | HTTP::Server::Tiny | ❌ | - | ✅ | ✅ |
 | 動作モジュール数 | 1 | 2 | 5+ | 5+ |
