@@ -2918,6 +2918,9 @@ impl VM {
                     .chain_declared_packages
                     .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
+                // Mark as my-scoped so the package is hidden from global
+                // lookups and package stash resolution outside its scope.
+                self.interpreter.mark_my_scoped_package_item(name.clone());
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
                 if let Some(set) = self.block_declared_vars.last_mut() {

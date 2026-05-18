@@ -178,9 +178,15 @@ pub(super) fn try_keyword_dispatch(
     if keyword("module", rest).is_some() {
         return module_decl(rest).map(Some);
     }
-    // my package Name { ... }
+    // my/our package Name { ... }
+    // `our package` keeps `is_my = false` so the package stays visible
+    // outside its declaring block scope.
     if keyword("package", rest).is_some() {
-        return package_decl_my(rest).map(Some);
+        let (r, mut stmt) = package_decl_my(rest)?;
+        if is_our && let Stmt::Package { is_my, .. } = &mut stmt {
+            *is_my = false;
+        }
+        return Ok(Some((r, stmt)));
     }
     // my subset Name of BaseType where ...
     if keyword("subset", rest).is_some() {
