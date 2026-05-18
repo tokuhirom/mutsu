@@ -2758,6 +2758,7 @@ impl Interpreter {
                     let mut group_pattern = String::new();
                     let mut depth = 1;
                     let mut in_comment = false;
+                    let mut angle_depth = 0u32;
                     while let Some(ch) = chars.next() {
                         if in_comment {
                             group_pattern.push(ch);
@@ -2766,8 +2767,17 @@ impl Interpreter {
                             }
                             continue;
                         }
-                        if ch == '#' {
-                            // '#' starts a comment — everything until newline is comment
+                        if ch == '<' {
+                            angle_depth += 1;
+                            group_pattern.push(ch);
+                            continue;
+                        }
+                        if ch == '>' && angle_depth > 0 {
+                            angle_depth -= 1;
+                            group_pattern.push(ch);
+                            continue;
+                        }
+                        if ch == '#' && angle_depth == 0 {
                             in_comment = true;
                             group_pattern.push(ch);
                             continue;
@@ -3467,8 +3477,16 @@ impl Interpreter {
                         i = j + 1;
                         continue;
                     }
-                } else if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                } else if j < chars.len()
+                    && (chars[j].is_alphabetic()
+                        || chars[j] == '_'
+                        || matches!(chars[j], '*' | '?' | '^' | '.'))
+                {
                     let name_start = j;
+                    // Skip twigil if present
+                    if matches!(chars[j], '*' | '?' | '^' | '.') {
+                        j += 1;
+                    }
                     while j < chars.len()
                         && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
                     {
@@ -3653,15 +3671,20 @@ impl Interpreter {
         let mut i = 0;
         while i < chars.len() {
             if chars[i] == '$' {
-                let j = i + 1;
+                let mut j = i + 1;
+                // Skip twigil if present
+                if j < chars.len() && matches!(chars[j], '*' | '?' | '^' | '.') {
+                    j += 1;
+                }
                 if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                    let name_start = i + 1; // include twigil in name
                     let mut end = j;
                     while end < chars.len()
                         && (chars[end].is_alphanumeric() || chars[end] == '_' || chars[end] == '-')
                     {
                         end += 1;
                     }
-                    let name: String = chars[j..end].iter().collect();
+                    let name: String = chars[name_start..end].iter().collect();
                     if self.env.get(&name).is_none() && self.env.get(&format!("${name}")).is_none()
                     {
                         let symbol = format!("${name}");
