@@ -1881,6 +1881,23 @@ impl Value {
         }
     }
 
+    /// Push a value to an Array in-place using interior mutation.
+    /// This allows shared references (Arc refcount > 1) to see the mutation,
+    /// matching Raku's container semantics where all references share state.
+    /// Safety: same assumptions as hash_autovivify — callers ensure no
+    /// concurrent reads/writes to the same Arc.
+    pub fn array_push_in_place(&self, val: Value) -> bool {
+        if let Value::Array(arc, _) = self {
+            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            unsafe {
+                (*ptr).push(val);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     /// Read the current value from a DeferredHashAccess.
     /// Returns Any if the path doesn't exist yet.
     pub fn deferred_hash_read(&self) -> Value {
