@@ -403,7 +403,14 @@ impl Interpreter {
                 self.env.insert(format!("<{}>", k), v.clone());
             }
         }
-        // Set positional capture env vars ($0, $1, ...) so they work inside action methods
+        // Set positional capture env vars ($0, $1, ...) so they work inside action methods.
+        // First, save and clear any existing positional captures from parent/sibling action
+        // calls so they don't leak into this action method's scope.
+        let mut saved_positional: Vec<(usize, Option<Value>)> = Vec::new();
+        for i in 0..10 {
+            let key = i.to_string();
+            saved_positional.push((i, self.env.remove(&key)));
+        }
         if let Some(Value::Array(pos_arr, _)) = updated_attrs.get("list") {
             for (i, v) in pos_arr.iter().enumerate() {
                 self.env.insert(i.to_string(), v.clone());
@@ -492,6 +499,16 @@ impl Interpreter {
             }
             for (k, v) in saved_named_captures {
                 self.env.insert(k, v);
+            }
+        }
+
+        // Restore positional capture env vars from parent scope
+        for i in 0..10 {
+            self.env.remove(&i.to_string());
+        }
+        for (i, val) in saved_positional {
+            if let Some(v) = val {
+                self.env.insert(i.to_string(), v);
             }
         }
 
