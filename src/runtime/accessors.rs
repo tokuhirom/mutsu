@@ -1723,6 +1723,12 @@ impl Interpreter {
         self.end_phasers.push((body, captured_env));
     }
 
+    /// Register an END phaser site_id. Returns true if this is the first
+    /// registration (phaser should be pushed), false if already registered.
+    pub(crate) fn register_end_phaser_site(&mut self, site_id: u64) -> bool {
+        self.end_phaser_sites.insert(site_id)
+    }
+
     pub(crate) fn snapshot_routine_registry(&self) -> RoutineRegistrySnapshot {
         (
             self.functions.clone(),

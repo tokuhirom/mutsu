@@ -1633,7 +1633,9 @@ impl Compiler {
                     body: body.clone(),
                 };
                 let idx = self.code.add_stmt(end_stmt);
-                self.code.emit(OpCode::PhaserEnd(idx));
+                let site_id =
+                    super::STATE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u64;
+                self.code.emit(OpCode::PhaserEnd { idx, site_id });
             }
             Stmt::Phaser {
                 kind: PhaserKind::Pre,

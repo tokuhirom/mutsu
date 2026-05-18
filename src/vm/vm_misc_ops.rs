@@ -1845,7 +1845,12 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_phaser_end_op(&mut self, code: &CompiledCode, idx: u32) {
+    pub(super) fn exec_phaser_end_op(&mut self, code: &CompiledCode, idx: u32, site_id: u64) {
+        // Only register each END phaser once (by site_id), even if the
+        // opcode is encountered multiple times inside a repeatedly-called closure.
+        if !self.interpreter.register_end_phaser_site(site_id) {
+            return;
+        }
         let stmt = &code.stmt_pool[idx as usize];
         if let crate::ast::Stmt::Phaser { body, .. } = stmt {
             self.interpreter.push_end_phaser(body.clone());
