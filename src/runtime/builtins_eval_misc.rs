@@ -2,7 +2,11 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let value = args.first().cloned().unwrap_or(Value::Nil);
+        let value = if args.len() > 1 {
+            Value::Slip(std::sync::Arc::new(args.to_vec()))
+        } else {
+            args.first().cloned().unwrap_or(Value::Nil)
+        };
         self.env.insert("made".to_string(), value.clone());
         self.action_made = Some(value.clone());
         Ok(value)
