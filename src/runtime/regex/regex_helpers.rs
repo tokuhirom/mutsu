@@ -36,13 +36,17 @@ pub(super) fn strip_marks_text(orig_chars: &[char]) -> (Vec<char>, Vec<usize>) {
         let grapheme_char_count = grapheme.chars().count();
         // NFD-decompose the entire grapheme and keep only non-combining-mark chars
         let bases: Vec<char> = grapheme.nfd().filter(|c| !is_combining_mark(*c)).collect();
-        // Among the bases, also drop Prepend characters (GCB=Prepend): these
-        // are format characters (Cf) at specific codepoints that form part of
-        // the grapheme cluster but are not the "base" letter.
-        let filtered: Vec<char> = bases.into_iter().filter(|c| !is_prepend_char(*c)).collect();
+        // Among the bases, drop Prepend characters and format characters (Cf)
+        // that form part of multi-char grapheme clusters (e.g., ZWJ U+200D).
+        // These are not the "base" letter of the grapheme.
+        let is_multi_char = grapheme_char_count > 1;
+        let filtered: Vec<char> = bases
+            .into_iter()
+            .filter(|c| !(is_prepend_char(*c) || is_multi_char && is_format_char(*c)))
+            .collect();
         if filtered.is_empty() {
-            // The entire grapheme is marks/prepends with no base — keep the
-            // first non-combining char so the grapheme is not silently lost.
+            // The entire grapheme is marks/format/prepends with no base — keep
+            // the first non-combining char so the grapheme is not silently lost.
             for ch in grapheme.nfd() {
                 if !is_combining_mark(ch) {
                     stripped_chars.push(ch);
@@ -82,6 +86,24 @@ fn is_prepend_char(c: char) -> bool {
         | '\u{11A3A}'
         | '\u{11A84}'..='\u{11A89}'
         | '\u{11D46}'
+    )
+}
+
+/// Check whether a character is a Unicode Format character (General_Category=Cf)
+/// that commonly appears within grapheme clusters as a non-base element.
+fn is_format_char(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}'           // SOFT HYPHEN
+        | '\u{200B}'         // ZERO WIDTH SPACE
+        | '\u{200C}'         // ZERO WIDTH NON-JOINER
+        | '\u{200D}'         // ZERO WIDTH JOINER
+        | '\u{200E}'..='\u{200F}' // LRM, RLM
+        | '\u{2060}'..='\u{2064}' // WORD JOINER, etc.
+        | '\u{2066}'..='\u{2069}' // directional isolates
+        | '\u{206A}'..='\u{206F}' // deprecated format chars
+        | '\u{FEFF}'         // BOM / ZWNBSP
+        | '\u{FE00}'..='\u{FE0F}' // Variation Selectors 1-16
+        | '\u{E0100}'..='\u{E01EF}' // Variation Selectors 17-256
     )
 }
 

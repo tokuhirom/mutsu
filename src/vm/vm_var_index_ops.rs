@@ -1281,6 +1281,38 @@ impl VM {
                         .collect(),
                 )
             }
+            (Value::Uni { ref text, .. }, Value::Range(a, b)) => {
+                let chars: Vec<char> = text.chars().collect();
+                let start = a.max(0) as usize;
+                let end = if Self::range_end_is_unbounded(b) {
+                    chars.len().saturating_sub(1)
+                } else {
+                    b.max(0) as usize
+                };
+                let slice: Vec<Value> = chars
+                    .iter()
+                    .take(end.min(chars.len().saturating_sub(1)) + 1)
+                    .skip(start)
+                    .map(|c| Value::Int(*c as i64))
+                    .collect();
+                Value::array(slice)
+            }
+            (Value::Uni { ref text, .. }, Value::RangeExcl(a, b)) => {
+                let chars: Vec<char> = text.chars().collect();
+                let start = a.max(0) as usize;
+                let end_excl = if Self::range_end_is_unbounded(b) {
+                    chars.len()
+                } else {
+                    b.max(0) as usize
+                };
+                let slice: Vec<Value> = chars
+                    .iter()
+                    .take(end_excl.min(chars.len()))
+                    .skip(start)
+                    .map(|c| Value::Int(*c as i64))
+                    .collect();
+                Value::array(slice)
+            }
             // Capture indexing: $capture<key> (named) or $capture[idx] (positional)
             (
                 Value::Capture {
