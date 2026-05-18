@@ -119,9 +119,8 @@ impl Interpreter {
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 out.push((end, new_caps));
             }
-            // Ensure greedy semantics: sort by position so the LIFO stack
-            // tries the longest match first (same convention as Alternation).
-            out.sort_by(|a, b| a.0.cmp(&b.0));
+            // Reverse inner match order so LIFO stack respects frugal/greedy priority.
+            out.reverse();
             return out;
         }
         if let RegexAtom::GoalMatch {
@@ -183,22 +182,12 @@ impl Interpreter {
                 new_caps.positional_quantified.push(None);
                 out.push((end, new_caps));
             }
-            out.sort_by_key(|(end, caps)| {
-                (
-                    *end,
-                    caps.code_blocks.len(),
-                    caps.positional.len(),
-                    caps.named.len(),
-                )
-            });
-            let mut deduped: Vec<(usize, RegexCaptures)> = Vec::new();
-            for (end, caps) in out {
-                if deduped.last().is_some_and(|(last_end, _)| *last_end == end) {
-                    deduped.pop();
-                }
-                deduped.push((end, caps));
-            }
-            return deduped;
+            // Reverse the inner match order so the outer LIFO stack
+            // correctly respects frugal (shortest-first) vs greedy (longest-first).
+            out.reverse();
+            let mut seen = std::collections::HashSet::new();
+            out.retain(|(end, _)| seen.insert(*end));
+            return out;
         }
         if let RegexAtom::Alternation(alternatives)
         | RegexAtom::SequentialAlternation(alternatives) = atom

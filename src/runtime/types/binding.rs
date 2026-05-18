@@ -647,12 +647,27 @@ impl Interpreter {
                     }
                 }
             } else {
-                // Positional param -- skip over Value::Pair entries (named args)
+                // Positional param -- skip over Value::Pair entries that match named params
+                let named_param_names: std::collections::HashSet<String> = param_defs
+                    .iter()
+                    .filter(|p| p.named)
+                    .map(|p| {
+                        p.name
+                            .trim_start_matches('$')
+                            .trim_start_matches('%')
+                            .trim_start_matches('@')
+                            .to_string()
+                    })
+                    .collect();
+                let has_slurpy_named = param_defs.iter().any(|p| {
+                    (p.named && (p.slurpy || p.double_slurpy))
+                        || (p.slurpy && p.name.starts_with('%'))
+                        || (p.slurpy && p.sigilless)
+                });
                 while positional_idx < args.len()
-                    && matches!(
-                        unwrap_varref_value(args[positional_idx].clone()),
-                        Value::Pair(..)
-                    )
+                    && let Value::Pair(ref key, _) =
+                        unwrap_varref_value(args[positional_idx].clone())
+                    && (named_param_names.contains(key.as_str()) || has_slurpy_named)
                 {
                     positional_idx += 1;
                 }
@@ -1245,26 +1260,24 @@ impl Interpreter {
             .iter()
             .any(|pd| !pd.named && pd.sub_signature.is_some());
         if !has_hash_slurpy && !has_positional_sub_sig {
+            let has_any_named_param = param_defs.iter().any(|pd| pd.named);
             for arg in plain_args.iter() {
                 let arg = unwrap_varref_value(arg.clone());
                 if let Value::Pair(key, _) = arg {
-                    // Empty-string named args (e.g. from `'' => val` in a hash) are
-                    // silently ignored -- they cannot bind to any named parameter.
                     if key.is_empty() {
                         continue;
                     }
-                    // Check if this named arg was consumed by a named param or colon placeholder
-                    let consumed = param_defs.iter().any(|pd| {
+                    let matches_named = param_defs.iter().any(|pd| {
                         if (pd.named && pd.name == key)
                             || pd.name == format!(":{}", key)
                             || pd.name == format!("@:{}", key)
                             || pd.name == format!("%:{}", key)
-                            // Named params with sigils: :@l has name "@l", match key "l"
-                            || (pd.named && (pd.name == format!("@{}", key) || pd.name == format!("%{}", key)))
+                            || (pd.named
+                                && (pd.name == format!("@{}", key)
+                                    || pd.name == format!("%{}", key)))
                         {
                             return true;
                         }
-                        // Also check inner named aliases from sub-signatures
                         if let Some(sub_params) = &pd.sub_signature {
                             for sp in sub_params {
                                 if sp.named && sp.name == key {
@@ -1274,11 +1287,14 @@ impl Interpreter {
                         }
                         false
                     });
-                    if !consumed {
-                        return Err(RuntimeError::new(format!(
-                            "Unexpected named argument '{}' passed",
-                            key
-                        )));
+                    // If the Pair matches a named param, it's consumed as named — ok.
+                    // If it doesn't match any named param, treat it as a positional Pair
+                    // value (from a variable), not an unexpected named arg.
+                    if matches_named {
+                        // ok, consumed by named param
+                    } else if has_any_named_param {
+                        // There are named params but this Pair doesn't match any —
+                        // still treat as positional (could be Pair from a variable)
                     }
                 }
                 // Note: ValuePair is a positional pair (e.g. from parenthesized (:a(3))),
