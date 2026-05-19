@@ -19,94 +19,128 @@ impl VM {
                 _ => false,
             }
         }
-        let bypass_supply_extrema_fastpath = (method_sym == "max"
-            || method_sym == "min"
-            || method_sym == "lines"
-            || method_sym == "elems"
-            || method_sym == "head"
-            || method_sym == "flat"
-            || method_sym == "sort"
-            || method_sym == "comb"
-            || method_sym == "words"
-            || method_sym == "batch"
-            || method_sym == "rotor"
-            || method_sym == "rotate"
-            || method_sym == "produce"
-            || method_sym == "snip"
-            || method_sym == "minmax"
-            || method_sym == "start"
-            || method_sym == "wait"
-            || method_sym == "zip"
-            || method_sym == "zip-latest")
-            && (matches!(
-                target,
-                Value::Instance { class_name, .. } if class_name == "Supply"
-            ) || matches!(target, Value::Package(name) if name == "Supply"));
-        let bypass_supplier_supply_fastpath = method_sym == "Supply"
-            && args.is_empty()
-            && matches!(
-                target,
-                Value::Instance { class_name, .. } if class_name == "Supplier"
-            );
-        let bypass_gist_fastpath =
-            method_sym == "gist" && args.is_empty() && collection_contains_instance(target);
-        let bypass_pickroll_type_fastpath = (method_sym == "pick" || method_sym == "roll")
-            && args.len() <= 1
-            && matches!(target, Value::Package(_) | Value::Str(_));
-        let bypass_squish_fastpath = method_sym == "squish";
-        let bypass_tail_fastpath = method_sym == "tail";
-        let bypass_numeric_bridge_instance_fastpath = matches!(target, Value::Instance { .. })
-            && (self.interpreter.type_matches_value("Real", target)
-                || self.interpreter.type_matches_value("Numeric", target)
-                || matches!(target, Value::Instance { class_name, .. }
-                    if self.interpreter.has_user_method(&class_name.resolve(), "Bridge")));
         let method_name = method_sym.resolve();
-        let bypass_runtime_native_instance_fastpath = matches!(target, Value::Instance { class_name, .. }
-                if self
-                    .interpreter
-                    .is_native_method(&class_name.resolve(), &method_name));
-        // Constrained Hash: bypass builtins for .raku/.perl/.keyof so runtime handles them
-        let bypass_constrained_hash = matches!(target, Value::Hash(_))
+        // Early exit for Proxy containers
+        if matches!(target, Value::Proxy { .. })
+            && !matches!(
+                method_name.as_str(),
+                "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+            )
+        {
+            return None;
+        }
+        // Squish/tail always bypass native
+        if method_sym == "squish" || method_sym == "tail" {
+            return None;
+        }
+        // Mixin role method bypass
+        if self.interpreter.mixin_role_has_method(target, &method_name) {
+            return None;
+        }
+        // Instance-specific bypasses (avoid for non-Instance targets)
+        if matches!(target, Value::Instance { .. }) {
+            if let Value::Instance { class_name, .. } = target {
+                let cn = class_name.resolve();
+                // Supply methods
+                if cn == "Supply"
+                    && matches!(
+                        method_name.as_str(),
+                        "max"
+                            | "min"
+                            | "lines"
+                            | "elems"
+                            | "head"
+                            | "flat"
+                            | "sort"
+                            | "comb"
+                            | "words"
+                            | "batch"
+                            | "rotor"
+                            | "rotate"
+                            | "produce"
+                            | "snip"
+                            | "minmax"
+                            | "start"
+                            | "wait"
+                            | "zip"
+                            | "zip-latest"
+                    )
+                {
+                    return None;
+                }
+                // Supplier.Supply
+                if cn == "Supplier" && method_sym == "Supply" && args.is_empty() {
+                    return None;
+                }
+                // Numeric bridge
+                if self.interpreter.type_matches_value("Real", target)
+                    || self.interpreter.type_matches_value("Numeric", target)
+                    || self.interpreter.has_user_method(&cn, "Bridge")
+                {
+                    return None;
+                }
+                // Native method on instance class
+                if self.interpreter.is_native_method(&cn, &method_name) {
+                    return None;
+                }
+            }
+        } else if matches!(target, Value::Package(name) if name == "Supply")
+            && matches!(
+                method_name.as_str(),
+                "max"
+                    | "min"
+                    | "lines"
+                    | "elems"
+                    | "head"
+                    | "flat"
+                    | "sort"
+                    | "comb"
+                    | "words"
+                    | "batch"
+                    | "rotor"
+                    | "rotate"
+                    | "produce"
+                    | "snip"
+                    | "minmax"
+                    | "start"
+                    | "wait"
+                    | "zip"
+                    | "zip-latest"
+            )
+        {
+            return None;
+        }
+        // Collection gist bypass
+        if method_sym == "gist" && args.is_empty() && collection_contains_instance(target) {
+            return None;
+        }
+        // Pick/roll on Package/Str
+        if (method_sym == "pick" || method_sym == "roll")
+            && args.len() <= 1
+            && matches!(target, Value::Package(_) | Value::Str(_))
+        {
+            return None;
+        }
+        // Hash-specific bypasses
+        if matches!(target, Value::Hash(_)) && args.is_empty() {
+            let mn = method_name.as_str();
+            if (mn == "raku" || mn == "perl" || mn == "keyof")
+                && self.interpreter.container_type_metadata(target).is_some()
+            {
+                return None;
+            }
+            if mn == "keyof" {
+                return None;
+            }
+        }
+        // Typed array .raku/.perl bypass
+        if matches!(target, Value::Array(..))
             && args.is_empty()
-            && matches!(method_sym.resolve().as_ref(), "raku" | "perl" | "keyof")
-            && self.interpreter.container_type_metadata(target).is_some();
-        // Native typed array (e.g. array[int]): bypass builtins for .raku/.perl
-        // so the runtime can produce the correct type prefix (e.g. "array[int].new(...)")
-        let bypass_typed_array_raku = matches!(target, Value::Array(..))
-            && args.is_empty()
-            && matches!(method_sym.resolve().as_ref(), "raku" | "perl")
+            && matches!(method_name.as_str(), "raku" | "perl")
             && self
                 .interpreter
                 .container_type_metadata(target)
-                .is_some_and(|info| info.value_type != "Any" && info.value_type != "Mu");
-        // Unconstrained Hash .keyof must also bypass builtins (returns Str(Any))
-        let bypass_hash_keyof = matches!(target, Value::Hash(_))
-            && args.is_empty()
-            && method_sym == "keyof"
-            && !bypass_constrained_hash;
-        // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
-        // Mixin with a role-defined method: bypass native so role-method
-        // dispatch (including `handles` delegation forwarders) takes precedence
-        // over the built-in Cool fallbacks like `.uc`/`.lc`/`.gist`.
-        let bypass_mixin_role_method = self.interpreter.mixin_role_has_method(target, &method_name);
-        let bypass_proxy = matches!(target, Value::Proxy { .. })
-            && !matches!(
-                method_sym.resolve().as_ref(),
-                "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
-            );
-        if bypass_supply_extrema_fastpath
-            || bypass_supplier_supply_fastpath
-            || bypass_gist_fastpath
-            || bypass_pickroll_type_fastpath
-            || bypass_squish_fastpath
-            || bypass_tail_fastpath
-            || bypass_numeric_bridge_instance_fastpath
-            || bypass_runtime_native_instance_fastpath
-            || bypass_proxy
-            || bypass_constrained_hash
-            || bypass_hash_keyof
-            || bypass_typed_array_raku
-            || bypass_mixin_role_method
+                .is_some_and(|info| info.value_type != "Any" && info.value_type != "Mu")
         {
             return None;
         }
