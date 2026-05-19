@@ -49,7 +49,7 @@ jobs:
         run: cargo build
 
       - name: TAP tests (prove t/)
-        run: prove -e 'target/debug/mutsu' t/
+        run: prove -e 'timeout 30 target/debug/mutsu' t/
 
       - name: Build (release, for roast)
         run: cargo build --release
