@@ -243,6 +243,7 @@ impl Interpreter {
         if let Value::Package(class_name) = &target {
             let cn_resolved = class_name.resolve();
             // Fast path: simple class with no BUILD/TWEAK/custom new
+            // and only $-sigiled (scalar) attributes (no @/% which need container init)
             if let Some(class_def) = self.classes.get(&cn_resolved)
                 && !class_def.methods.contains_key("BUILD")
                 && !class_def.methods.contains_key("TWEAK")
@@ -253,6 +254,10 @@ impl Interpreter {
                     .parents
                     .iter()
                     .all(|p| p == "Any" || p == "Mu" || p == "Cool")
+                && class_def
+                    .attributes
+                    .iter()
+                    .all(|(_, _, _, _, _, sigil, _)| *sigil == '$')
             {
                 let mut attrs = HashMap::new();
                 for arg in &args {

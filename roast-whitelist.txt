@@ -575,6 +575,7 @@ roast/S12-construction/autopairs.t
 roast/S12-construction/construction.t
 roast/S12-construction/destruction.t
 roast/S12-construction/named-params-in-BUILD.t
+roast/S12-construction/new.t
 roast/S12-construction/roles-6e.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/as-role.t
@@ -972,6 +973,9 @@ roast/S32-io/seek.t
 roast/S32-io/signals.t
 roast/S32-io/slurp.t
 roast/S32-io/socket-accept-and-working-threads.t
+roast/S32-io/socket-fail-invalid-values.t
+roast/S32-io/socket-host-port-split.t
+roast/S32-io/spurt.t
 roast/S32-io/utf16.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
@@ -1009,6 +1013,7 @@ roast/S32-list/pick.t
 roast/S32-list/produce.t
 roast/S32-list/reduce.t
 roast/S32-list/repeated.t
+roast/S32-list/reverse.t
 roast/S32-list/roll.t
 roast/S32-list/rotor.t
 roast/S32-list/snip.t
@@ -1054,6 +1059,7 @@ roast/S32-str/chomp.t
 roast/S32-str/chop.t
 roast/S32-str/comb.t
 roast/S32-str/contains.t
+roast/S32-str/encode.t
 roast/S32-str/ends-with.t
 roast/S32-str/fc.t
 roast/S32-str/flip.t
@@ -1144,6 +1150,7 @@ roast/integration/advent2013-day07.t
 roast/integration/advent2013-day22.t
 roast/integration/advent2013-day23.t
 roast/integration/eval-and-threads.t
+roast/integration/failure-and-callsame.t
 roast/integration/lexical-array-in-inner-block.t
 roast/integration/method-calls-and-instantiation.t
 roast/integration/packages.t

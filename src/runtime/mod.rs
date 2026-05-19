@@ -356,7 +356,6 @@ struct MethodDispatchFrame {
     invocant: Value,
     args: Vec<Value>,
     remaining: Vec<(String, MethodDef)>,
-    resolved: bool,
 }
 
 /// Frame for navigating through wrapper chain during callsame/callwith.

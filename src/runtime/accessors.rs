@@ -661,50 +661,12 @@ impl Interpreter {
         args: &[Value],
         invocant: Value,
     ) -> bool {
+        // Always push samewith context so samewith() can find the method name/invocant
         self.samewith_context_stack
             .push((method_name.to_string(), Some(invocant.clone())));
-        // Defer expensive candidate resolution until callsame/nextsame/nextwith
-        // is actually invoked. Most methods never use these, so this avoids
-        // 2 full MRO walks + fingerprinting on every method call.
-        self.method_dispatch_stack.push(super::MethodDispatchFrame {
-            receiver_class: receiver_class.to_string(),
-            invocant,
-            args: args.to_vec(),
-            remaining: Vec::new(),
-            resolved: false,
-        });
-        true
-    }
-
-    pub(crate) fn ensure_method_dispatch_resolved(&mut self) {
-        let needs_resolve = self
-            .method_dispatch_stack
-            .last()
-            .is_some_and(|f| !f.resolved);
-        if !needs_resolve {
-            return;
-        }
-        if let Some(frame) = self.method_dispatch_stack.last_mut() {
-            frame.resolved = true;
-        }
-        let receiver_class = self
-            .method_dispatch_stack
-            .last()
-            .map(|f| f.receiver_class.clone())
-            .unwrap_or_default();
-        let args = self
-            .method_dispatch_stack
-            .last()
-            .map(|f| f.args.clone())
-            .unwrap_or_default();
-        let method_name = self
-            .samewith_context_stack
-            .last()
-            .map(|(n, _)| n.clone())
-            .unwrap_or_default();
-        let all_candidates =
-            self.resolve_all_methods_with_owner(&receiver_class, &method_name, &args);
-        let chosen = self.resolve_method_with_owner(&receiver_class, &method_name, &args);
+        let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
+        // Identify the chosen candidate and skip exactly that one
+        let chosen = self.resolve_method_with_owner(receiver_class, method_name, args);
         let chosen_fp = chosen.as_ref().map(|(_, def)| {
             crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
         });
@@ -716,14 +678,21 @@ impl Interpreter {
                 skipped_chosen = true;
                 continue;
             }
-            if self.should_skip_defer_method_candidate(&receiver_class, &owner) {
+            if self.should_skip_defer_method_candidate(receiver_class, &owner) {
                 continue;
             }
             remaining.push((owner, def));
         }
-        if let Some(frame) = self.method_dispatch_stack.last_mut() {
-            frame.remaining = remaining;
+        let pushed = !remaining.is_empty();
+        if pushed {
+            self.method_dispatch_stack.push(super::MethodDispatchFrame {
+                receiver_class: receiver_class.to_string(),
+                invocant,
+                args: args.to_vec(),
+                remaining,
+            });
         }
+        pushed
     }
 
     pub(crate) fn is_inside_wrap_dispatch(&self) -> bool {

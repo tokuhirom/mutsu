@@ -29,7 +29,6 @@ impl Interpreter {
         }
         // Try method dispatch stack.
         if let Some(frame) = self.method_dispatch_stack.last_mut() {
-            frame.resolved = true;
             frame.remaining.clear();
             return Ok(Value::Bool(true));
         }
@@ -130,7 +129,6 @@ impl Interpreter {
         }
         // Try method dispatch stack
         if !self.method_dispatch_stack.is_empty() {
-            self.ensure_method_dispatch_resolved();
             let frame_idx = self.method_dispatch_stack.len() - 1;
             let (receiver_class, invocant, call_args, owner_class, method_def) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];

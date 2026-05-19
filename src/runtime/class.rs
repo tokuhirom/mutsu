@@ -721,7 +721,6 @@ impl Interpreter {
                     invocant: invocant_for_dispatch,
                     args: args.clone(),
                     remaining,
-                    resolved: true,
                 });
             }
             let mut orig_env = crate::env::Env::new();
@@ -771,7 +770,6 @@ impl Interpreter {
                 invocant: invocant_for_dispatch,
                 args: args.clone(),
                 remaining,
-                resolved: true,
             });
         }
         // Check for `is DEPRECATED` trait on the method
