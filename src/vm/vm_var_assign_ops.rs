@@ -2911,11 +2911,13 @@ impl VM {
             {
                 return Err(err);
             }
-            // Also update env (and shared_vars if active) immediately so stale
-            // references don't keep old Instance values alive (preventing DESTROY
-            // from firing).
-            self.interpreter
-                .set_shared_var(name, self.locals[idx].clone());
+            // Update env when shared_vars is active; otherwise defer via locals_dirty.
+            if self.interpreter.shared_vars_active {
+                self.interpreter
+                    .set_shared_var(name, self.locals[idx].clone());
+            } else {
+                self.locals_dirty = true;
+            }
             // When rebinding (`$x := expr`), remove old bind pairs and reverse aliases.
             if is_rebind {
                 self.local_bind_pairs.retain(|&(source, _)| source != idx);
@@ -3737,11 +3739,13 @@ impl VM {
             {
                 return Err(err);
             }
-            // Also update env (and shared_vars if active) immediately so stale
-            // references don't keep old Instance values alive (preventing DESTROY
-            // from firing).
-            self.interpreter
-                .set_shared_var(name, self.locals[idx].clone());
+            // Update env when shared_vars is active; otherwise defer via locals_dirty.
+            if self.interpreter.shared_vars_active {
+                self.interpreter
+                    .set_shared_var(name, self.locals[idx].clone());
+            } else {
+                self.locals_dirty = true;
+            }
             // Track topic mutations for map rw writeback
             if name == "_" {
                 self.interpreter.env_mut().insert(

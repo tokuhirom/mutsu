@@ -717,30 +717,16 @@ impl VM {
             }
         }
 
-        // Save old env values for params so we can restore them later.
-        // Also write param values to both locals and env.
-        let mut saved_param_env: Vec<(String, Option<Value>)> =
-            Vec::with_capacity(positional_count);
-        // Save and restore readonly vars
+        // Bind params to locals only (skip env writes for performance).
+        // The env will be synced lazily via ensure_env_synced if needed.
         let saved_readonly = self.interpreter.save_readonly_vars();
         for (param_idx, slot) in param_slots.iter().enumerate() {
             if param_idx < actual_count {
                 let val = crate::runtime::types::unwrap_varref_value(args[param_idx].clone());
-                // Type check param if constraint exists
                 if let Some(ref tc) = cf.param_defs[param_idx].type_constraint
                     && !Self::fast_type_check(&val, tc)
                 {
                     self.interpreter.restore_readonly_vars(saved_readonly);
-                    for (name, old_val) in saved_param_env {
-                        match old_val {
-                            Some(v) => {
-                                self.interpreter.env_mut().insert(name, v);
-                            }
-                            None => {
-                                self.interpreter.env_mut().remove(&name);
-                            }
-                        }
-                    }
                     self.locals = saved_locals;
                     self.locals_dirty = saved_locals_dirty;
                     self.env_dirty = saved_env_dirty;
@@ -751,17 +737,12 @@ impl VM {
                         runtime::value_type_name(&val)
                     )));
                 }
-                self.locals[*slot] = val.clone();
-                let param_name = &cf.param_defs[param_idx].name;
-                saved_param_env.push((
-                    param_name.clone(),
-                    self.interpreter.env().get(param_name).cloned(),
-                ));
-                self.interpreter.env_mut().insert(param_name.clone(), val);
-                // Mark params as readonly by default (Raku semantics)
-                self.interpreter.mark_readonly(param_name);
+                self.locals[*slot] = val;
+                self.interpreter
+                    .mark_readonly(&cf.param_defs[param_idx].name);
             }
         }
+        self.locals_dirty = true;
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.interpreter.let_saves_len();
@@ -824,16 +805,6 @@ impl VM {
                 self.locals_dirty = saved_locals_dirty;
                 self.env_dirty = saved_env_dirty;
                 self.interpreter.restore_readonly_vars(saved_readonly);
-                for (name, old_val) in saved_param_env {
-                    match old_val {
-                        Some(v) => {
-                            self.interpreter.env_mut().insert(name, v);
-                        }
-                        None => {
-                            self.interpreter.env_mut().remove(&name);
-                        }
-                    }
-                }
                 return Err(RuntimeError::new(format!(
                     "Type check failed for return value; expected {}, got {}",
                     rt,
@@ -846,19 +817,7 @@ impl VM {
         self.locals_dirty = saved_locals_dirty;
         self.env_dirty = saved_env_dirty;
 
-        // Restore readonly vars
         self.interpreter.restore_readonly_vars(saved_readonly);
-        // Restore env param values
-        for (name, old_val) in saved_param_env {
-            match old_val {
-                Some(v) => {
-                    self.interpreter.env_mut().insert(name, v);
-                }
-                None => {
-                    self.interpreter.env_mut().remove(&name);
-                }
-            }
-        }
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
