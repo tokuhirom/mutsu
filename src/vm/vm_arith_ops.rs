@@ -195,13 +195,17 @@ impl VM {
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int + Int (most common case in numeric loops)
+        if let Value::Int(a) = &left
+            && let Value::Int(b) = &right
+        {
+            self.stack.push(Value::Int(a + b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            // Try user-defined infix:<+> before any coercion so typed multi
-            // candidates (e.g. `multi sub infix:<+>(Foo $x, Foo $y)`) can match.
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 return Ok(result);
             }
-            // Handle Date/Instant arithmetic before numeric coercion
             if crate::builtins::arith::is_temporal_operand(&l)
                 || crate::builtins::arith::is_temporal_operand(&r)
             {
@@ -217,13 +221,17 @@ impl VM {
     pub(super) fn exec_sub_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int - Int
+        if let Value::Int(a) = &left
+            && let Value::Int(b) = &right
+        {
+            self.stack.push(Value::Int(a - b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            // Try user-defined infix:<-> before any coercion so typed multi
-            // candidates can match.
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 return Ok(result);
             }
-            // Handle Date/Instant arithmetic before numeric coercion
             if crate::builtins::arith::is_temporal_operand(&l)
                 || crate::builtins::arith::is_temporal_operand(&r)
             {
@@ -256,6 +264,13 @@ impl VM {
     pub(super) fn exec_mul_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int * Int
+        if let Value::Int(a) = &left
+            && let Value::Int(b) = &right
+        {
+            self.stack.push(Value::Int(a * b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
