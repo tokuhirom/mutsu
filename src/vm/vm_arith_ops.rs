@@ -203,6 +203,13 @@ impl VM {
             self.stack.push(Value::Int(result));
             return Ok(());
         }
+        // Fast path: Num + Num
+        if let Value::Num(a) = &left
+            && let Value::Num(b) = &right
+        {
+            self.stack.push(Value::Num(a + b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 return Ok(result);
@@ -307,6 +314,27 @@ impl VM {
     pub(super) fn exec_pow_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int ** small non-negative Int
+        if let Value::Int(base) = &left
+            && let Value::Int(exp) = &right
+            && *exp >= 0
+            && *exp <= 30
+        {
+            let mut result: i64 = 1;
+            let mut overflow = false;
+            for _ in 0..*exp {
+                if let Some(r) = result.checked_mul(*base) {
+                    result = r;
+                } else {
+                    overflow = true;
+                    break;
+                }
+            }
+            if !overflow {
+                self.stack.push(Value::Int(result));
+                return Ok(());
+            }
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_pow(l, r))
