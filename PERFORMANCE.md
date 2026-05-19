@@ -16,7 +16,7 @@ cargo build --release
 | fib(25) | 1.12s | 0.27s | 4.1x | recursive function calls |
 | int-arith | 0.55s | 0.25s | 2.2x | `for ^100000 { $sum += $_ * 3 + 1 }` |
 | string-concat | 0.015s | 0.21s | 0.07x | `$s ~= 'x'` × 10000 (**faster than raku**) |
-| hash-access | 2.35s | 0.24s | 9.8x | 10K hash inserts + value iteration |
+| hash-access | 0.044s | 0.24s | 0.18x | 10K hash inserts + value iteration (**faster than raku**) |
 | method-call | 1.30s | 0.29s | 4.5x | Point.distance-to × 10000 |
 | array-ops | 0.14s | 0.30s | 0.5x | grep+map on 1000-elem array × 100 |
 
@@ -54,6 +54,11 @@ Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
 - **Change**: Add `is_ascii()` fast path before NFC normalization in string concat (~, interpolation) and repetition (x) operators
 - **Effect**: string-concat benchmark 0.69s → 0.015s (**46x speedup**, now 14x faster than raku); hash-access -6% from key construction
 - **Value**: Eliminates O(n²) NFC normalization in ASCII string append loops
+
+### 2026-05-19: Fast path for hash element assignment
+- **Change**: Add `try_fast_hash_element_assign()` that skips 16+ edge-case HashMap lookups when no constraints/mixins/bindings apply
+- **Effect**: hash-access benchmark ~2.4s → ~0.044s (**55x speedup**, now 5x faster than raku)
+- **Value**: Common hash assignment pattern is now fast-pathed
 
 ## Next Steps
 
