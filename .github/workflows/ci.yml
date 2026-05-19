@@ -11,7 +11,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,7 +49,7 @@ jobs:
         run: cargo build
 
       - name: TAP tests (prove t/)
-        run: prove -e 'timeout 30 target/debug/mutsu' t/ || true
+        run: prove -e 'target/debug/mutsu' t/
 
       - name: Build (release, for roast)
         run: cargo build --release
@@ -67,7 +67,7 @@ jobs:
 
   wasm-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
