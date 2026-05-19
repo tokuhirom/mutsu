@@ -237,6 +237,13 @@ impl VM {
             self.stack.push(Value::Int(result));
             return Ok(());
         }
+        // Fast path: Num - Num
+        if let Value::Num(a) = &left
+            && let Value::Num(b) = &right
+        {
+            self.stack.push(Value::Num(a - b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 return Ok(result);
@@ -279,6 +286,13 @@ impl VM {
             && let Some(result) = a.checked_mul(*b)
         {
             self.stack.push(Value::Int(result));
+            return Ok(());
+        }
+        // Fast path: Num * Num
+        if let Value::Num(a) = &left
+            && let Value::Num(b) = &right
+        {
+            self.stack.push(Value::Num(a * b));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
