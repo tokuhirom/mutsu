@@ -4154,6 +4154,12 @@ impl Interpreter {
         self.var_hash_key_constraints.get(key).cloned()
     }
 
+    /// Fast check for hash key constraint — only checks the HashMap,
+    /// skipping the `format!("__mutsu_hash_key_type::...")` + env lookup.
+    pub(crate) fn var_hash_key_constraint_fast(&self, name: &str) -> bool {
+        self.var_hash_key_constraints.contains_key(name)
+    }
+
     pub(crate) fn register_container_type_metadata(
         &mut self,
         value: &Value,
@@ -4234,6 +4240,13 @@ impl Interpreter {
             Value::Mixin(inner, _) => self.container_type_metadata(inner),
             _ => None,
         }
+    }
+
+    /// Fast check whether a hash (by pointer id) has type metadata registered.
+    /// Used by the hash-assignment fast path to avoid the full
+    /// `container_type_metadata` lookup.
+    pub(crate) fn hash_type_metadata_exists(&self, id: usize) -> bool {
+        self.hash_type_metadata.contains_key(&id)
     }
 
     fn register_var_container_type_metadata(&mut self, name: &str, info: &ContainerTypeInfo) {

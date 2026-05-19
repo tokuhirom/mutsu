@@ -1367,12 +1367,129 @@ impl VM {
         Ok(())
     }
 
+    /// Fast path for simple hash element assignment: `%h{$key} = $val`.
+    ///
+    /// Returns `Some(Ok(()))` if the fast path handled the assignment,
+    /// `None` if the caller should fall through to the full slow path.
+    /// The fast path never returns `Some(Err(...))` — any edge case that
+    /// might error falls through to the slow path instead.
+    ///
+    /// Preconditions checked (all must hold for the fast path to fire):
+    /// - Variable name starts with `%` (hash sigil)
+    /// - Stack top two values are a simple index (not Array/Junction/GenericRange/Nil)
+    ///   and a simple value (not a bind-mode marker)
+    /// - The variable exists in the env as `Value::Hash`
+    /// - No type constraints, no key constraints, no var defaults
+    /// - Variable is not readonly (not bound via `:=`)
+    /// - No container type metadata on the hash
+    #[inline]
+    fn try_fast_hash_element_assign(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        _is_positional: bool,
+    ) -> Option<Result<(), RuntimeError>> {
+        let var_name = Self::const_str(code, name_idx);
+        // Only handle %-sigiled hash variables
+        if !var_name.starts_with('%') {
+            return None;
+        }
+        // Peek at stack to check for bind-mode marker and complex indices
+        // without popping (we'll pop only if we commit to the fast path)
+        let stack_len = self.stack.len();
+        if stack_len < 2 {
+            return None;
+        }
+        // idx is on top of stack, val is below it
+        let idx_ref = &self.stack[stack_len - 1];
+        let val_ref = &self.stack[stack_len - 2];
+        // Reject complex index types that need special handling
+        if matches!(
+            idx_ref,
+            Value::Array(..) | Value::Junction { .. } | Value::GenericRange { .. } | Value::Nil
+        ) {
+            return None;
+        }
+        // Reject bind-mode marker values
+        if matches!(val_ref, Value::Pair(name, _) if name == "__mutsu_bind_index_value") {
+            return None;
+        }
+        // Reject Nil values (need default/type-object handling)
+        if matches!(val_ref, Value::Nil) {
+            return None;
+        }
+        // Check that no type constraints, key constraints, or defaults exist
+        // Use fast lookups that avoid format! allocations
+        if self
+            .interpreter
+            .var_type_constraint_fast(var_name)
+            .is_some()
+            || self.interpreter.var_default(var_name).is_some()
+            || self.interpreter.var_hash_key_constraint_fast(var_name)
+            || self.interpreter.readonly_vars().contains(var_name)
+        {
+            return None;
+        }
+        // Reject if any bound indices exist for this variable
+        // (e.g. `%h<a> := $foo` makes element writes propagate to $foo)
+        {
+            let bound_key = format!("__mutsu_bound_index::{}", var_name);
+            if self.interpreter.env().contains_key(&bound_key) {
+                return None;
+            }
+        }
+        // Check that the variable exists in env as a plain Hash
+        // and that it has no container type metadata
+        let env = self.interpreter.env();
+        match env.get(var_name) {
+            Some(Value::Hash(hash_arc)) => {
+                // Reject if there's container type metadata
+                let id = Arc::as_ptr(hash_arc) as usize;
+                if self.interpreter.hash_type_metadata_exists(id) {
+                    return None;
+                }
+                // All checks passed — commit to fast path
+                let idx = self.stack.pop().unwrap();
+                let val = self.stack.pop().unwrap();
+                let key = idx.to_string_value();
+                // Get mutable ref to the hash and insert
+                // Since var_name starts with '%' and is not bound,
+                // we use Arc::make_mut (COW semantics for %-sigiled vars)
+                if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
+                    Arc::make_mut(hash).insert(key, val.clone());
+                }
+                self.stack.push(val);
+                Some(Ok(()))
+            }
+            None => {
+                // Hash doesn't exist yet — auto-vivify and insert
+                let idx = self.stack.pop().unwrap();
+                let val = self.stack.pop().unwrap();
+                let key = idx.to_string_value();
+                let mut map = std::collections::HashMap::new();
+                map.insert(key, val.clone());
+                self.interpreter
+                    .env_mut()
+                    .insert(var_name.to_string(), Value::hash(map));
+                self.stack.push(val);
+                Some(Ok(()))
+            }
+            _ => None, // Not a Hash — fall through to slow path
+        }
+    }
+
     pub(super) fn exec_index_assign_expr_named_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // --- Fast path for simple hash element assignment ---
+        // Handles the common case: %h{$key} = $val with no type constraints,
+        // no binding, no special containers. Skips ~16 HashMap lookups.
+        if let Some(result) = self.try_fast_hash_element_assign(code, name_idx, is_positional) {
+            return result;
+        }
         // Save type metadata and container default by pointer BEFORE the
         // inner op runs. Auto-vivification and Arc::make_mut may
         // reconstruct the array Arc, changing the pointer used as the
