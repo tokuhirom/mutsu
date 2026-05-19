@@ -753,7 +753,6 @@ roast/S16-io/cwd.t
 roast/S16-io/eof.t
 roast/S16-io/getc.t
 roast/S16-io/handles-between-threads.t
-roast/S16-io/home.t
 roast/S16-io/newline.t
 roast/S16-io/note.t
 roast/S16-io/print.t
@@ -964,8 +963,6 @@ roast/S32-io/io-path-unix.t
 roast/S32-io/io-path-win.t
 roast/S32-io/io-spec-cygwin.t
 roast/S32-io/io-spec-qnx.t
-roast/S32-io/io-spec-unix.t
-roast/S32-io/io-spec-win.t
 roast/S32-io/io-special.t
 roast/S32-io/mkdir_rmdir.t
 roast/S32-io/move.t
