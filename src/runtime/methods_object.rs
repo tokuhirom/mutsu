@@ -242,6 +242,36 @@ impl Interpreter {
 
         if let Value::Package(class_name) = &target {
             let cn_resolved = class_name.resolve();
+            // Fast path: simple class with no BUILD/TWEAK/custom new
+            if let Some(class_def) = self.classes.get(&cn_resolved)
+                && !class_def.methods.contains_key("BUILD")
+                && !class_def.methods.contains_key("TWEAK")
+                && !class_def.methods.contains_key("BUILDALL")
+                && !class_def.methods.contains_key("new")
+                && !cn_resolved.contains('[')
+                && class_def
+                    .parents
+                    .iter()
+                    .all(|p| p == "Any" || p == "Mu" || p == "Cool")
+            {
+                let mut attrs = HashMap::new();
+                for arg in &args {
+                    if let Value::Pair(key, val) = arg {
+                        attrs.insert(key.clone(), *val.clone());
+                    }
+                }
+                // Fill defaults for missing attributes
+                let class_attrs = self.collect_class_attributes(&cn_resolved);
+                for (attr_name, _is_public, default_expr, _, _, _, _) in &class_attrs {
+                    if !attrs.contains_key(attr_name)
+                        && let Some(expr) = default_expr
+                    {
+                        let val = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
+                        attrs.insert(attr_name.clone(), val);
+                    }
+                }
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             let parametric = Self::parse_parametric_type_name(&cn_resolved);
             let (base_class_name, type_args) = if let Some((base, args)) = &parametric {
                 (base.as_str(), Some(args.clone()))
