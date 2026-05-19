@@ -242,22 +242,29 @@ impl Interpreter {
 
         if let Value::Package(class_name) = &target {
             let cn_resolved = class_name.resolve();
-            // Fast path: simple class with no BUILD/TWEAK/custom new
-            // and only $-sigiled (scalar) attributes (no @/% which need container init)
+            // Fast path: user-defined class with no BUILD/TWEAK/custom new,
+            // only simple parents (Any/Mu/Cool), only $-sigiled attributes,
+            // and no native methods (which indicates a built-in type).
             if let Some(class_def) = self.classes.get(&cn_resolved)
                 && !class_def.methods.contains_key("BUILD")
                 && !class_def.methods.contains_key("TWEAK")
                 && !class_def.methods.contains_key("BUILDALL")
                 && !class_def.methods.contains_key("new")
                 && !cn_resolved.contains('[')
+                && !cn_resolved.contains("::")
+                && class_def.native_methods.is_empty()
                 && class_def
                     .parents
                     .iter()
                     .all(|p| p == "Any" || p == "Mu" || p == "Cool")
-                && class_def
-                    .attributes
-                    .iter()
-                    .all(|(_, _, _, _, _, sigil, _)| *sigil == '$')
+                && class_def.attributes.iter().all(
+                    |(_, _, _, is_required, type_constraint, sigil, _)| {
+                        *sigil == '$' && !is_required && type_constraint.is_none()
+                    },
+                )
+                && !class_def.attributes.is_empty()
+                && class_def.attribute_types.is_empty()
+                && class_def.attribute_smileys.is_empty()
             {
                 let mut attrs = HashMap::new();
                 for arg in &args {
