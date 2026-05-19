@@ -1007,8 +1007,12 @@ impl VM {
             }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
-        let normalized: String = result.nfc().collect();
-        self.stack.push(Value::str(normalized));
+        if result.is_ascii() {
+            self.stack.push(Value::str(result));
+        } else {
+            let normalized: String = result.nfc().collect();
+            self.stack.push(Value::str(normalized));
+        }
         Ok(())
     }
 

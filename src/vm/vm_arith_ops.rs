@@ -568,6 +568,9 @@ impl VM {
                 crate::runtime::utils::coerce_to_str(&right)
             };
             let concatenated = format!("{}{}", left_str, right_str);
+            if concatenated.is_ascii() {
+                return Value::str(concatenated);
+            }
             let normalized: String = concatenated.nfc().collect();
             return Value::str(normalized);
         }
@@ -576,8 +579,12 @@ impl VM {
             crate::runtime::utils::coerce_to_str(&left),
             crate::runtime::utils::coerce_to_str(&right)
         );
-        let normalized: String = concatenated.nfc().collect();
-        Value::str(normalized)
+        if concatenated.is_ascii() {
+            Value::str(concatenated)
+        } else {
+            let normalized: String = concatenated.nfc().collect();
+            Value::str(normalized)
+        }
     }
 
     pub fn is_buf_value(val: &Value) -> bool {
@@ -797,8 +804,11 @@ impl VM {
         };
         let n = n_raw.max(0) as usize;
         let repeated = crate::runtime::utils::coerce_to_str(&left).repeat(n);
-        // NFC-normalize after repetition
-        let result = Value::str(repeated.nfc().collect::<String>());
+        let result = if repeated.is_ascii() {
+            Value::str(repeated)
+        } else {
+            Value::str(repeated.nfc().collect::<String>())
+        };
         self.stack.push(result);
         Ok(())
     }
