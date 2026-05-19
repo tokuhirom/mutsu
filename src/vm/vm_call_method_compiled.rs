@@ -189,9 +189,22 @@ impl VM {
             _ => None,
         };
         if let Some(cn) = class_name
-            && let Some((owner_class, method_def)) = self
-                .interpreter
-                .resolve_method_with_owner_invocant(&cn, method, &args, &target)
+            && let Some((owner_class, method_def)) = {
+                let cache_key = (
+                    crate::symbol::Symbol::intern(&cn),
+                    crate::symbol::Symbol::intern(method),
+                );
+                if let Some(cached) = self.method_resolve_cache.get(&cache_key) {
+                    cached.clone()
+                } else {
+                    let resolved = self
+                        .interpreter
+                        .resolve_method_with_owner_invocant(&cn, method, &args, &target);
+                    self.method_resolve_cache
+                        .insert(cache_key, resolved.clone());
+                    resolved
+                }
+            }
         {
             if let Some(result) =
                 self.check_method_wrap_chain(&cn, &owner_class, method, &method_def, &target, &args)
