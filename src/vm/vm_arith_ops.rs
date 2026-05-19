@@ -195,13 +195,18 @@ impl VM {
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int + Int (most common case in numeric loops)
+        if let Value::Int(a) = &left
+            && let Value::Int(b) = &right
+            && let Some(result) = a.checked_add(*b)
+        {
+            self.stack.push(Value::Int(result));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            // Try user-defined infix:<+> before any coercion so typed multi
-            // candidates (e.g. `multi sub infix:<+>(Foo $x, Foo $y)`) can match.
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 return Ok(result);
             }
-            // Handle Date/Instant arithmetic before numeric coercion
             if crate::builtins::arith::is_temporal_operand(&l)
                 || crate::builtins::arith::is_temporal_operand(&r)
             {
@@ -217,13 +222,18 @@ impl VM {
     pub(super) fn exec_sub_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int - Int
+        if let Value::Int(a) = &left
+            && let Value::Int(b) = &right
+            && let Some(result) = a.checked_sub(*b)
+        {
+            self.stack.push(Value::Int(result));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            // Try user-defined infix:<-> before any coercion so typed multi
-            // candidates can match.
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 return Ok(result);
             }
-            // Handle Date/Instant arithmetic before numeric coercion
             if crate::builtins::arith::is_temporal_operand(&l)
                 || crate::builtins::arith::is_temporal_operand(&r)
             {
@@ -256,6 +266,14 @@ impl VM {
     pub(super) fn exec_mul_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int * Int
+        if let Value::Int(a) = &left
+            && let Value::Int(b) = &right
+            && let Some(result) = a.checked_mul(*b)
+        {
+            self.stack.push(Value::Int(result));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
@@ -568,6 +586,9 @@ impl VM {
                 crate::runtime::utils::coerce_to_str(&right)
             };
             let concatenated = format!("{}{}", left_str, right_str);
+            if concatenated.is_ascii() {
+                return Value::str(concatenated);
+            }
             let normalized: String = concatenated.nfc().collect();
             return Value::str(normalized);
         }
@@ -576,8 +597,12 @@ impl VM {
             crate::runtime::utils::coerce_to_str(&left),
             crate::runtime::utils::coerce_to_str(&right)
         );
-        let normalized: String = concatenated.nfc().collect();
-        Value::str(normalized)
+        if concatenated.is_ascii() {
+            Value::str(concatenated)
+        } else {
+            let normalized: String = concatenated.nfc().collect();
+            Value::str(normalized)
+        }
     }
 
     pub fn is_buf_value(val: &Value) -> bool {
@@ -797,8 +822,11 @@ impl VM {
         };
         let n = n_raw.max(0) as usize;
         let repeated = crate::runtime::utils::coerce_to_str(&left).repeat(n);
-        // NFC-normalize after repetition
-        let result = Value::str(repeated.nfc().collect::<String>());
+        let result = if repeated.is_ascii() {
+            Value::str(repeated)
+        } else {
+            Value::str(repeated.nfc().collect::<String>())
+        };
         self.stack.push(result);
         Ok(())
     }

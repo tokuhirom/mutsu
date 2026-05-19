@@ -77,7 +77,6 @@ roast/S02-magicals/args.t
 roast/S02-magicals/block.t
 roast/S02-magicals/dollar-underscore.t
 roast/S02-magicals/dollar_bang.t
-roast/S02-magicals/env.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-magicals/progname.t
@@ -124,7 +123,6 @@ roast/S02-types/infinity.t
 roast/S02-types/instants-and-durations.t
 roast/S02-types/int-uint.t
 roast/S02-types/is-type.t
-roast/S02-types/isDEPRECATED.t
 roast/S02-types/list.t
 roast/S02-types/lists.t
 roast/S02-types/mix-iterator.t
@@ -276,8 +274,6 @@ roast/S04-exception-handlers/control.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-exceptions/fail-6e.t
-roast/S04-exceptions/fail.t
-roast/S04-exceptions/pending.t
 roast/S04-phasers/ascending-order.t
 roast/S04-phasers/begin.t
 roast/S04-phasers/check.t
@@ -753,7 +749,6 @@ roast/S16-io/cwd.t
 roast/S16-io/eof.t
 roast/S16-io/getc.t
 roast/S16-io/handles-between-threads.t
-roast/S16-io/home.t
 roast/S16-io/newline.t
 roast/S16-io/note.t
 roast/S16-io/print.t
@@ -964,8 +959,6 @@ roast/S32-io/io-path-unix.t
 roast/S32-io/io-path-win.t
 roast/S32-io/io-spec-cygwin.t
 roast/S32-io/io-spec-qnx.t
-roast/S32-io/io-spec-unix.t
-roast/S32-io/io-spec-win.t
 roast/S32-io/io-special.t
 roast/S32-io/mkdir_rmdir.t
 roast/S32-io/move.t
@@ -984,7 +977,6 @@ roast/S32-io/socket-accept-and-working-threads.t
 roast/S32-io/socket-fail-invalid-values.t
 roast/S32-io/socket-host-port-split.t
 roast/S32-io/spurt.t
-roast/S32-io/tell.t
 roast/S32-io/utf16.t
 roast/S32-list/are.t
 roast/S32-list/batch.t

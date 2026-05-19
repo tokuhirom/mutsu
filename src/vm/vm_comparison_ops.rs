@@ -326,6 +326,13 @@ impl VM {
     pub(super) fn exec_num_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int < Int
+        if let Value::Int(a) = &left
+            && let Value::Int(b) = &right
+        {
+            self.stack.push(Value::Bool(a < b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
