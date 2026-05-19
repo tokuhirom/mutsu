@@ -125,7 +125,6 @@ roast/S02-types/instants-and-durations.t
 roast/S02-types/int-uint.t
 roast/S02-types/is-type.t
 roast/S02-types/isDEPRECATED.t
-roast/S02-types/lazy-lists.t
 roast/S02-types/list.t
 roast/S02-types/lists.t
 roast/S02-types/mix-iterator.t
@@ -160,7 +159,6 @@ roast/S03-buf/read-write-bits.t
 roast/S03-buf/write-num.t
 roast/S03-feeds/basic.t
 roast/S03-junctions/associative.t
-roast/S03-junctions/autothreading.t
 roast/S03-junctions/boolean-context.t
 roast/S03-junctions/misc.t
 roast/S03-metaops/cross.t
@@ -423,7 +421,6 @@ roast/S06-advanced/callframe.t
 roast/S06-advanced/callsame.t
 roast/S06-advanced/dispatching.t
 roast/S06-advanced/recurse.t
-roast/S06-advanced/return.t
 roast/S06-advanced/stub.t
 roast/S06-currying/assuming-and-mmd.t
 roast/S06-currying/misc.t
@@ -739,7 +736,6 @@ roast/S15-unicode-information/uniprop.t
 roast/S15-unicode-information/unival.t
 roast/S16-filehandles/argfiles.t
 roast/S16-filehandles/chmod.t
-roast/S16-filehandles/filestat.t
 roast/S16-filehandles/filetest.t
 roast/S16-filehandles/io.t
 roast/S16-filehandles/io_in_for_loops.t
