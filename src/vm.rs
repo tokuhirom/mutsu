@@ -137,6 +137,9 @@ pub(crate) struct VM {
     pos_light_call_cache: HashMap<Symbol, (String, u64)>,
     /// The generation at which pos_light_call_cache was last valid.
     pos_light_call_cache_gen: u64,
+    /// Method resolution cache: maps (class_name, method_name) to resolved
+    /// (owner_class, MethodDef). Avoids repeated MRO walks for the same method.
+    method_resolve_cache: HashMap<(Symbol, Symbol), Option<(String, crate::runtime::MethodDef)>>,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
@@ -307,6 +310,7 @@ impl VM {
             light_call_cache_gen: 0,
             pos_light_call_cache: HashMap::new(),
             pos_light_call_cache_gen: 0,
+            method_resolve_cache: HashMap::new(),
             block_declared_vars: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),

@@ -333,6 +333,13 @@ impl VM {
             self.stack.push(Value::Bool(a < b));
             return Ok(());
         }
+        // Fast path: Num < Num
+        if let Value::Num(a) = &left
+            && let Value::Num(b) = &right
+        {
+            self.stack.push(Value::Bool(a < b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
