@@ -198,8 +198,9 @@ impl VM {
         // Fast path: Int + Int (most common case in numeric loops)
         if let Value::Int(a) = &left
             && let Value::Int(b) = &right
+            && let Some(result) = a.checked_add(*b)
         {
-            self.stack.push(Value::Int(a + b));
+            self.stack.push(Value::Int(result));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
@@ -224,8 +225,9 @@ impl VM {
         // Fast path: Int - Int
         if let Value::Int(a) = &left
             && let Value::Int(b) = &right
+            && let Some(result) = a.checked_sub(*b)
         {
-            self.stack.push(Value::Int(a - b));
+            self.stack.push(Value::Int(result));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
@@ -267,8 +269,9 @@ impl VM {
         // Fast path: Int * Int
         if let Value::Int(a) = &left
             && let Value::Int(b) = &right
+            && let Some(result) = a.checked_mul(*b)
         {
-            self.stack.push(Value::Int(a * b));
+            self.stack.push(Value::Int(result));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {

@@ -52,6 +52,76 @@ impl VM {
             err.return_value = Some(target);
             return Err(err);
         }
+        // Fast path: 0-arg attribute accessor on Instance (e.g. $obj.x)
+        if args.is_empty()
+            && modifier_idx.is_none()
+            && !quoted
+            && let Value::Instance {
+                attributes,
+                class_name,
+                ..
+            } = &target
+            && !matches!(
+                method.as_str(),
+                "new"
+                    | "BUILD"
+                    | "TWEAK"
+                    | "BUILDALL"
+                    | "DESTROY"
+                    | "Bool"
+                    | "so"
+                    | "not"
+                    | "defined"
+                    | "DEFINITE"
+                    | "WHAT"
+                    | "WHO"
+                    | "HOW"
+                    | "WHY"
+                    | "WHICH"
+                    | "WHERE"
+                    | "VAR"
+                    | "Str"
+                    | "gist"
+                    | "raku"
+                    | "perl"
+                    | "ACCEPTS"
+                    | "isa"
+                    | "does"
+                    | "can"
+                    | "^name"
+                    | "^mro"
+                    | "^methods"
+                    | "^attributes"
+                    | "sink"
+                    | "self"
+                    | "clone"
+                    | "return"
+            )
+        {
+            if let Some(val) = attributes.get(method.as_str()) {
+                self.stack.push(val.clone());
+                self.env_dirty = true;
+                return Ok(());
+            }
+            // Check if it's a public accessor (has $.x declared)
+            let attr_key = format!("{}!", &method);
+            if let Some(val) = attributes.get(&attr_key) {
+                self.stack.push(val.clone());
+                self.env_dirty = true;
+                return Ok(());
+            }
+            // Not a direct attribute — check if class has a user-defined method
+            // before falling through. If no user method exists and this looks
+            // like a simple accessor, return the type object (Any).
+            let cn = class_name.resolve();
+            if !self.interpreter.has_user_method(&cn, &method)
+                && self.interpreter.has_public_accessor(&cn, &method)
+            {
+                self.stack.push(Value::Nil);
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
