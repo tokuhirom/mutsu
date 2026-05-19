@@ -17,7 +17,7 @@ cargo build --release
 | int-arith | 0.11s | 0.25s | 0.4x | `for ^100000 { $sum += $_ * 3 + 1 }` (**faster than raku**) |
 | string-concat | 0.015s | 0.21s | 0.07x | `$s ~= 'x'` × 10000 (**faster than raku**) |
 | hash-access | 0.044s | 0.24s | 0.18x | 10K hash inserts + value iteration (**faster than raku**) |
-| method-call | 1.26s | 0.29s | 4.3x | Point.distance-to × 10000 |
+| method-call | 1.16s | 0.29s | 4.0x | Point.distance-to × 10000 |
 | array-ops | 0.14s | 0.30s | 0.5x | grep+map on 1000-elem array × 100 |
 
 Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
