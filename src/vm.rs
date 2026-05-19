@@ -847,10 +847,14 @@ impl VM {
                                 .next()
                                 .is_some_and(|c| c.is_alphanumeric() || c == '_')
                         {
-                            Err(RuntimeError::new(format!(
-                                "Variable $!{} used where no 'self' is available",
-                                &name[1..]
-                            )))
+                            if self.get_env_with_main_alias("self").is_some() {
+                                Ok(Value::Nil)
+                            } else {
+                                Err(RuntimeError::new(format!(
+                                    "Variable $!{} used where no 'self' is available",
+                                    &name[1..]
+                                )))
+                            }
                         } else {
                             Ok(Value::Nil)
                         }
