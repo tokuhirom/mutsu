@@ -175,7 +175,9 @@ impl VM {
         // slot (e.g. from a `&foo` parameter binding) or in the env — it
         // shadows package-level subs. Skip the fast path and dispatch via
         // the lexical callable below.
-        self.ensure_env_synced(code);
+        if self.locals_dirty {
+            self.ensure_env_synced(code);
+        }
         let lexical_override: Option<Value> = {
             let name_str = Self::const_str(code, name_idx);
             // Only look for a lexical override when there is actually a

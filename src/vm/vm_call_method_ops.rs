@@ -12,8 +12,9 @@ impl VM {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.ensure_env_synced(code);
-        // Set pending arg sources for `is rw` dispatch matching
+        if self.locals_dirty {
+            self.ensure_env_synced(code);
+        }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.interpreter
             .set_pending_call_arg_sources(arg_sources.clone());
