@@ -1389,6 +1389,10 @@ impl VM {
         name_idx: u32,
         _is_positional: bool,
     ) -> Option<Result<(), RuntimeError>> {
+        // Reject if there are any local bind pairs (`:=` bindings in scope)
+        if !self.local_bind_pairs.is_empty() {
+            return None;
+        }
         let var_name = Self::const_str(code, name_idx);
         // Only handle %-sigiled hash variables
         if !var_name.starts_with('%') {
@@ -1443,6 +1447,10 @@ impl VM {
         let env = self.interpreter.env();
         match env.get(var_name) {
             Some(Value::Hash(hash_arc)) => {
+                // Reject if the hash Arc is shared (e.g. HashSlotRef binding)
+                if Arc::strong_count(hash_arc) > 1 {
+                    return None;
+                }
                 // Reject if there's container type metadata
                 let id = Arc::as_ptr(hash_arc) as usize;
                 if self.interpreter.hash_type_metadata_exists(id) {
