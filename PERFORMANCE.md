@@ -17,7 +17,7 @@ cargo build --release
 | int-arith | 0.11s | 0.25s | 0.4x | `for ^100000 { $sum += $_ * 3 + 1 }` (**faster than raku**) |
 | string-concat | 0.015s | 0.21s | 0.07x | `$s ~= 'x'` × 10000 (**faster than raku**) |
 | hash-access | 0.044s | 0.24s | 0.18x | 10K hash inserts + value iteration (**faster than raku**) |
-| method-call | 1.30s | 0.29s | 4.5x | Point.distance-to × 10000 |
+| method-call | 1.26s | 0.29s | 4.3x | Point.distance-to × 10000 |
 | array-ops | 0.14s | 0.30s | 0.5x | grep+map on 1000-elem array × 100 |
 
 Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
@@ -55,10 +55,10 @@ Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
 - **Effect**: string-concat benchmark 0.69s → 0.015s (**46x speedup**, now 14x faster than raku); hash-access -6% from key construction
 - **Value**: Eliminates O(n²) NFC normalization in ASCII string append loops
 
-### 2026-05-19: Int arithmetic fast paths
-- **Change**: Add inline Int+Int, Int-Int, Int*Int, Int<Int fast paths that skip user-defined operator lookup, temporal checks, numeric coercion, and junction threading
-- **Effect**: int-arith 0.55s → 0.11s (**5x**, faster than raku); fib 1.05s → 0.21s (**5x**, faster than raku)
-- **Value**: Common integer operations are now as fast as direct Rust arithmetic + enum matching
+### 2026-05-19: Int arithmetic fast paths + attribute accessor fast path
+- **Change**: Add inline Int+Int, Int-Int, Int*Int, Int<Int fast paths with checked overflow; add 0-arg Instance attribute accessor fast path
+- **Effect**: int-arith 0.55s → 0.11s (**5x**, faster than raku); fib 1.05s → 0.21s (**5x**, faster than raku); method-call 1.30s → 1.26s (-3%)
+- **Value**: Common integer operations are now as fast as direct Rust arithmetic + enum matching; attribute access skips full method dispatch
 
 ### 2026-05-19: Fast path for hash element assignment
 - **Change**: Add `try_fast_hash_element_assign()` that skips 16+ edge-case HashMap lookups when no constraints/mixins/bindings apply
