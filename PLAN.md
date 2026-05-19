@@ -17,8 +17,9 @@
 ### 関数呼び出しパフォーマンス ✅
 
 - [x] positional-only 関数の軽量呼び出しパス (#2229)
-- [x] fib(25): 79x → 8x に改善
-- [ ] さらなる改善（環境 HashMap clone 回避、関数解決キャッシュ）
+- [x] fib(25): 79x → 0.8x に改善（**raku より高速**）
+- [x] Int/Num 算術 fast path、NFC skip、hash fast path、method cache 等 (#2341, #2342, #2343, #2344)
+- [x] 6ベンチマーク中5つで raku より高速を達成
 
 ### JSON::Tiny 完全対応
 
@@ -45,7 +46,7 @@
 | レイヤー | モジュール | 状態 | 備考 |
 |----------|-----------|------|------|
 | JSON | JSON::Tiny | ✅ テスト全 pass | #2329 |
-| テンプレート | Template::Mustache | ⚠️ コンテナ意味論がブロッカー | `$%x` 参照 vs コピー問題 |
+| テンプレート | Template::Mustache | ⚠️ grammar action dispatch がブロッカー | proto regex in alternation の action 呼び出し |
 | HTTP サーバー | HTTP::Server::Tiny | ❌ 依存未解決 | HTTP::Parser, IO::Blob, HTTP::Status |
 | DB | (検討中) | ❌ | NativeCall 不可。JSON file / SQLite CLI wrapper |
 
@@ -105,10 +106,10 @@
 | 指標 | 現在 (5月) | Q2 目標 | Q3 目標 | Q4 目標 |
 |------|-----------|---------|---------|---------|
 | Whitelist | 1182 | 1185+ | 1190+ | 1200+ |
-| fib(25) vs raku | 8x | <10x ✅ | <10x | <10x |
+| fib(25) vs raku | **0.8x** ✅ | <10x ✅ | <10x | <10x |
 | 起動時間 vs raku | 0.04x | 0.04x | 0.04x | 0.04x |
 | JSON::Tiny | ✅ テスト全pass | ✅ | ✅ | ✅ |
-| Template::Mustache | ❌ | - | ✅ | ✅ |
+| Template::Mustache | ⚠️ grammar action | - | ✅ | ✅ |
 | HTTP::Server::Tiny | ❌ | - | ✅ | ✅ |
 | 動作モジュール数 | 1 | 2 | 5+ | 5+ |
 | mise install | ❌ | ❌ | ✅ | ✅ |
