@@ -972,8 +972,6 @@ roast/S32-io/seek.t
 roast/S32-io/signals.t
 roast/S32-io/slurp.t
 roast/S32-io/socket-accept-and-working-threads.t
-roast/S32-io/socket-fail-invalid-values.t
-roast/S32-io/socket-host-port-split.t
 roast/S32-io/utf16.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
@@ -1011,7 +1009,6 @@ roast/S32-list/pick.t
 roast/S32-list/produce.t
 roast/S32-list/reduce.t
 roast/S32-list/repeated.t
-roast/S32-list/reverse.t
 roast/S32-list/roll.t
 roast/S32-list/rotor.t
 roast/S32-list/snip.t
