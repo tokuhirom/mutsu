@@ -43,6 +43,15 @@ impl VM {
             )
         };
 
+        // Pre-compute whether we can skip the expensive env merge on exit.
+        // When true, we also use a fresh env to avoid the deep clone on entry.
+        let has_rw_params = method_def
+            .param_defs
+            .iter()
+            .any(|pd| pd.traits.iter().any(|t| t == "rw"));
+        let has_env_writes = cc.has_env_writes;
+        let can_skip_merge = !has_rw_params && !has_env_writes;
+
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
 
@@ -469,100 +478,103 @@ impl VM {
             self.interpreter.set_state_var(key.clone(), val);
         }
 
-        // Sync locals back to env
-        for (i, local_name) in cc.locals.iter().enumerate() {
-            if !local_name.is_empty() {
-                self.interpreter
-                    .env_mut()
-                    .insert(local_name.clone(), self.locals[i].clone());
+        if can_skip_merge {
+            let method_var_bindings = self.interpreter.take_var_bindings();
+            let mut restored_bindings = saved_var_bindings;
+            for (k, v) in method_var_bindings {
+                restored_bindings.insert(k, v);
             }
-        }
+            self.interpreter.restore_var_bindings(restored_bindings);
 
-        writeback_attributes(self.interpreter.env(), &mut attributes);
-        // Collect keys introduced by the method frame so they don't bleed
-        // back into the caller's env (e.g. method param `$g` vs caller `$g`).
-        let mut method_local_keys: HashSet<String> = HashSet::from_iter([
-            "self".to_string(),
-            "__ANON_STATE__".to_string(),
-            "?CLASS".to_string(),
-            "?ROLE".to_string(),
-            "_".to_string(),
-        ]);
-        for p in &method_def.params {
-            method_local_keys.insert(p.clone());
-        }
-        for attr_name in attributes.keys() {
-            // Skip class-qualified private attribute keys
-            if attr_name.contains('\0') {
-                continue;
-            }
-            if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
-                // Add the alias name itself to method_local_keys
-                if let Some(Value::Str(alias_name)) = attributes.get(attr_name) {
-                    method_local_keys.insert(alias_name.to_string());
-                    method_local_keys.insert(actual_attr.to_string());
+            self.interpreter.pop_routine();
+            self.interpreter.pop_method_class();
+            self.interpreter.set_current_package(saved_package);
+            let frame = self.pop_call_frame();
+            *self.interpreter.env_mut() = frame.saved_env;
+        } else {
+            // Sync locals back to env
+            for (i, local_name) in cc.locals.iter().enumerate() {
+                if !local_name.is_empty() {
+                    self.interpreter
+                        .env_mut()
+                        .insert(local_name.clone(), self.locals[i].clone());
                 }
-                continue;
             }
-            method_local_keys.insert(format!("!{}", attr_name));
-            method_local_keys.insert(format!(".{}", attr_name));
-            method_local_keys.insert(format!("@!{}", attr_name));
-            method_local_keys.insert(format!("@.{}", attr_name));
-            method_local_keys.insert(format!("%!{}", attr_name));
-            method_local_keys.insert(format!("%.{}", attr_name));
-        }
-        for local_name in &cc.locals {
-            if !local_name.is_empty() {
-                method_local_keys.insert(local_name.clone());
+
+            writeback_attributes(self.interpreter.env(), &mut attributes);
+            // Collect keys introduced by the method frame so they don't bleed
+            // back into the caller's env (e.g. method param `$g` vs caller `$g`).
+            let mut method_local_keys: HashSet<String> = HashSet::from_iter([
+                "self".to_string(),
+                "__ANON_STATE__".to_string(),
+                "?CLASS".to_string(),
+                "?ROLE".to_string(),
+                "_".to_string(),
+            ]);
+            for p in &method_def.params {
+                method_local_keys.insert(p.clone());
             }
+            for attr_name in attributes.keys() {
+                if attr_name.contains('\0') {
+                    continue;
+                }
+                if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
+                    if let Some(Value::Str(alias_name)) = attributes.get(attr_name) {
+                        method_local_keys.insert(alias_name.to_string());
+                        method_local_keys.insert(actual_attr.to_string());
+                    }
+                    continue;
+                }
+                method_local_keys.insert(format!("!{}", attr_name));
+                method_local_keys.insert(format!(".{}", attr_name));
+                method_local_keys.insert(format!("@!{}", attr_name));
+                method_local_keys.insert(format!("@.{}", attr_name));
+                method_local_keys.insert(format!("%!{}", attr_name));
+                method_local_keys.insert(format!("%.{}", attr_name));
+            }
+            for local_name in &cc.locals {
+                if !local_name.is_empty() {
+                    method_local_keys.insert(local_name.clone());
+                }
+            }
+            let rw_writeback: Vec<(String, Value)> = rw_bindings
+                .iter()
+                .filter_map(|(param_name, source_name)| {
+                    self.interpreter
+                        .env()
+                        .get(param_name)
+                        .cloned()
+                        .or_else(|| {
+                            let qualified = format!("{}::{}", owner_class, param_name);
+                            self.interpreter.env().get(&qualified).cloned()
+                        })
+                        .map(|val| (source_name.clone(), val))
+                })
+                .collect();
+
+            let mut merged_env = merge_method_env(
+                &self.call_frames.last().unwrap().saved_env,
+                self.interpreter.env(),
+                &method_local_keys,
+            );
+
+            for (source_name, val) in &rw_writeback {
+                merged_env.insert(source_name.clone(), val.clone());
+            }
+
+            let method_var_bindings = self.interpreter.take_var_bindings();
+            let mut restored_bindings = saved_var_bindings;
+            for (k, v) in method_var_bindings {
+                restored_bindings.insert(k, v);
+            }
+            self.interpreter.restore_var_bindings(restored_bindings);
+
+            self.interpreter.pop_routine();
+            self.interpreter.pop_method_class();
+            self.interpreter.set_current_package(saved_package);
+            let _frame = self.pop_call_frame();
+            *self.interpreter.env_mut() = merged_env;
         }
-        // Collect `is rw` param writeback values before the env merge
-        // filters out method-local keys (params). The param value may exist
-        // under its bare name or a package-qualified name (e.g. "C::x")
-        // because the compiled method body qualifies variables with the class
-        // package.
-        let rw_writeback: Vec<(String, Value)> = rw_bindings
-            .iter()
-            .filter_map(|(param_name, source_name)| {
-                self.interpreter
-                    .env()
-                    .get(param_name)
-                    .cloned()
-                    .or_else(|| {
-                        let qualified = format!("{}::{}", owner_class, param_name);
-                        self.interpreter.env().get(&qualified).cloned()
-                    })
-                    .map(|val| (source_name.clone(), val))
-            })
-            .collect();
-
-        let mut merged_env = merge_method_env(
-            &self.call_frames.last().unwrap().saved_env,
-            self.interpreter.env(),
-            &method_local_keys,
-        );
-
-        // Apply `is rw` writebacks to the merged env so changes propagate
-        // back to the caller's variables.
-        for (source_name, val) in &rw_writeback {
-            merged_env.insert(source_name.clone(), val.clone());
-        }
-
-        // Merge var_bindings: keep any new bindings set during method execution
-        // (e.g. from $CALLER:: rebinding), then restore original bindings for
-        // keys not touched during execution.
-        let method_var_bindings = self.interpreter.take_var_bindings();
-        let mut restored_bindings = saved_var_bindings;
-        for (k, v) in method_var_bindings {
-            restored_bindings.insert(k, v);
-        }
-        self.interpreter.restore_var_bindings(restored_bindings);
-
-        self.interpreter.pop_routine();
-        self.interpreter.pop_method_class();
-        self.interpreter.set_current_package(saved_package);
-        let _frame = self.pop_call_frame();
-        *self.interpreter.env_mut() = merged_env;
 
         let final_result = match result {
             Ok(()) => Ok(explicit_return.unwrap_or(ret_val)),
