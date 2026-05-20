@@ -425,6 +425,7 @@ impl VM {
             None
         };
         let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
         let saved_stack_depth = self.stack.len();
         let saved_env_dirty = self.env_dirty;
         let saved_locals_dirty = self.locals_dirty;
@@ -447,6 +448,8 @@ impl VM {
         let num_locals = cf.code.locals.len();
         self.locals.clear();
         self.locals.resize(num_locals, Value::Nil);
+        self.locals_dirty_slots.clear();
+        self.locals_dirty_slots.resize(num_locals, false);
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -524,6 +527,7 @@ impl VM {
 
         // Restore state
         self.locals = saved_locals;
+        self.locals_dirty_slots = saved_locals_dirty_slots;
         self.env_dirty = saved_env_dirty;
         self.locals_dirty = saved_locals_dirty;
 
@@ -703,6 +707,7 @@ impl VM {
 
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_locals_dirty = self.locals_dirty;
+        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
         let saved_env_dirty = self.env_dirty;
         self.locals_dirty = false;
         self.env_dirty = false;
@@ -710,6 +715,7 @@ impl VM {
         let num_locals = cf.code.locals.len();
         self.locals.clear();
         self.locals.resize(num_locals, Value::Nil);
+        self.locals_dirty_slots = vec![false; num_locals];
 
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
@@ -734,6 +740,7 @@ impl VM {
                     self.interpreter.restore_readonly_vars(saved_readonly);
                     self.locals = saved_locals;
                     self.locals_dirty = saved_locals_dirty;
+                    self.locals_dirty_slots = saved_locals_dirty_slots;
                     self.env_dirty = saved_env_dirty;
                     return Err(RuntimeError::new(format!(
                         "Type check failed in binding ${}: expected {}, got {}",
@@ -756,7 +763,12 @@ impl VM {
                     .mark_readonly(&cf.param_defs[param_idx].name);
             }
         }
-        self.locals_dirty = true;
+        // Mark all param slots dirty so ensure_env_synced flushes them.
+        for (param_idx, slot) in param_slots.iter().enumerate() {
+            if param_idx < actual_count {
+                self.mark_local_dirty(*slot);
+            }
+        }
 
         // Save env values for function locals so we can restore them after
         // the function returns. This prevents function-local variables from
@@ -831,6 +843,7 @@ impl VM {
             if !Self::light_return_type_check(check_val, rt) {
                 self.locals = saved_locals;
                 self.locals_dirty = saved_locals_dirty;
+                self.locals_dirty_slots = saved_locals_dirty_slots;
                 self.env_dirty = saved_env_dirty;
                 self.interpreter.restore_readonly_vars(saved_readonly);
                 for (name, old_val) in saved_param_env {
@@ -853,6 +866,7 @@ impl VM {
 
         self.locals = saved_locals;
         self.locals_dirty = saved_locals_dirty;
+        self.locals_dirty_slots = saved_locals_dirty_slots;
         self.env_dirty = saved_env_dirty;
 
         self.interpreter.restore_readonly_vars(saved_readonly);
@@ -951,12 +965,14 @@ impl VM {
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_locals_dirty = self.locals_dirty;
+        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
         let saved_env_dirty = self.env_dirty;
         self.locals_dirty = false;
         self.env_dirty = false;
 
         let num_locals = cf.code.locals.len();
         self.locals = vec![Value::Nil; num_locals];
+        self.locals_dirty_slots = vec![false; num_locals];
 
         // Track which env keys we modify so we can restore them.
         let mut modified_env_keys: Vec<(String, Option<Value>)> =
@@ -1059,6 +1075,7 @@ impl VM {
                 } else if pd.required {
                     self.locals = saved_locals;
                     self.locals_dirty = saved_locals_dirty;
+                    self.locals_dirty_slots = saved_locals_dirty_slots;
                     self.env_dirty = saved_env_dirty;
                     return Err(RuntimeError::new(format!(
                         "Required named parameter '{}' not passed",
@@ -1083,6 +1100,7 @@ impl VM {
                 } else if pd.required {
                     self.locals = saved_locals;
                     self.locals_dirty = saved_locals_dirty;
+                    self.locals_dirty_slots = saved_locals_dirty_slots;
                     self.env_dirty = saved_env_dirty;
                     return Err(RuntimeError::new(format!(
                         "Too few positionals passed; expected {} arguments but got {}",
@@ -1245,6 +1263,7 @@ impl VM {
         // Restore locals
         self.locals = saved_locals;
         self.locals_dirty = saved_locals_dirty;
+        self.locals_dirty_slots = saved_locals_dirty_slots;
         self.env_dirty = saved_env_dirty;
 
         // Restore readonly vars
@@ -1452,6 +1471,7 @@ impl VM {
         }
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
+        self.locals_dirty_slots = vec![false; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
                 self.locals[i] = val.clone();

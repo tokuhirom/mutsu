@@ -3007,21 +3007,21 @@ impl VM {
             // (unless rebinding, which replaces the ref with a new value).
             if !is_rebind && let Value::HashSlotRef { .. } = &self.locals[idx] {
                 self.locals[idx].hash_slot_write(val);
-                self.locals_dirty = true;
+                self.mark_local_dirty(idx);
                 return Ok(());
             }
             // If the current value is a DeferredHashAccess (from lazy binding),
             // autovivify the path and write the value.
             if !is_rebind && let Value::DeferredHashAccess { .. } = &self.locals[idx] {
                 self.locals[idx].deferred_hash_write(val);
-                self.locals_dirty = true;
+                self.mark_local_dirty(idx);
                 return Ok(());
             }
             // If the current value is an ArraySlotRef, write back to the parent array
             // (unless rebinding, which replaces the ref with a new value).
             if !is_rebind && let Value::ArraySlotRef { .. } = &self.locals[idx] {
                 self.locals[idx].array_slot_write(val);
-                self.locals_dirty = true;
+                self.mark_local_dirty(idx);
                 return Ok(());
             }
             if !name.starts_with('@') && !name.starts_with('%') {
@@ -3082,7 +3082,7 @@ impl VM {
                 self.interpreter
                     .set_shared_var(name, self.locals[idx].clone());
             } else {
-                self.locals_dirty = true;
+                self.mark_local_dirty(idx);
             }
             // When rebinding (`$x := expr`), remove old bind pairs and reverse aliases.
             if is_rebind {
@@ -3132,7 +3132,7 @@ impl VM {
                     self.locals[idx].clone(),
                 );
             }
-            self.locals_dirty = true;
+            self.mark_local_dirty(idx);
             return Ok(());
         }
 
@@ -3598,7 +3598,7 @@ impl VM {
             && let Value::HashSlotRef { .. } = &self.locals[idx]
         {
             self.locals[idx].hash_slot_write(val);
-            self.locals_dirty = true;
+            self.mark_local_dirty(idx);
             return Ok(());
         }
         // If the current value is a DeferredHashAccess (from lazy binding),
@@ -3608,7 +3608,7 @@ impl VM {
             && let Value::DeferredHashAccess { .. } = &self.locals[idx]
         {
             self.locals[idx].deferred_hash_write(val);
-            self.locals_dirty = true;
+            self.mark_local_dirty(idx);
             return Ok(());
         }
         // If the current value is an ArraySlotRef, write back to the parent array
@@ -3618,7 +3618,7 @@ impl VM {
             && let Value::ArraySlotRef { .. } = &self.locals[idx]
         {
             self.locals[idx].array_slot_write(val);
-            self.locals_dirty = true;
+            self.mark_local_dirty(idx);
             return Ok(());
         }
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs
@@ -3910,7 +3910,7 @@ impl VM {
                 self.interpreter
                     .set_shared_var(name, self.locals[idx].clone());
             } else {
-                self.locals_dirty = true;
+                self.mark_local_dirty(idx);
             }
             // Track topic mutations for map rw writeback
             if name == "_" {
@@ -3919,7 +3919,7 @@ impl VM {
                     self.locals[idx].clone(),
                 );
             }
-            self.locals_dirty = true;
+            self.mark_local_dirty(idx);
             return Ok(());
         }
 

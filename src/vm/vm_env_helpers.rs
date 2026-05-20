@@ -24,6 +24,7 @@ impl VM {
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
             saved_locals_dirty: self.locals_dirty,
+            saved_locals_dirty_slots: std::mem::take(&mut self.locals_dirty_slots),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
         self.env_dirty = false;
@@ -39,6 +40,7 @@ impl VM {
             .pop()
             .expect("pop_call_frame: no frame to pop");
         self.locals = std::mem::take(&mut frame.saved_locals);
+        self.locals_dirty_slots = std::mem::take(&mut frame.saved_locals_dirty_slots);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         self.interpreter
             .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
@@ -303,6 +305,13 @@ impl VM {
     pub(super) fn ensure_env_synced(&mut self, code: &CompiledCode) {
         if self.locals_dirty {
             for (i, name) in code.locals.iter().enumerate() {
+                // Only flush slots that have actually been written to.
+                // This prevents uninitialized locals (from later code that
+                // hasn't executed yet) from clobbering env values set by
+                // other mechanisms (e.g. for-loop parameter binding).
+                if i < self.locals_dirty_slots.len() && !self.locals_dirty_slots[i] {
+                    continue;
+                }
                 // Flush simple locals ($ vars that use the SetLocal fast path)
                 // AND bare-name params (no sigil, set by exec_direct_compiled_call).
                 // Skip topic (_), attributes (.x, !x), dynamic vars ($*x), and
@@ -312,6 +321,9 @@ impl VM {
                 }
             }
             self.locals_dirty = false;
+            for slot in self.locals_dirty_slots.iter_mut() {
+                *slot = false;
+            }
         }
     }
 
@@ -329,6 +341,15 @@ impl VM {
             && name != "_"
             && !name.contains("::")
             && !name.starts_with("__mutsu_")
+    }
+
+    /// Mark a specific local slot as dirty so ensure_env_synced will flush it.
+    #[inline(always)]
+    pub(super) fn mark_local_dirty(&mut self, idx: usize) {
+        self.locals_dirty = true;
+        if idx < self.locals_dirty_slots.len() {
+            self.locals_dirty_slots[idx] = true;
+        }
     }
 
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
