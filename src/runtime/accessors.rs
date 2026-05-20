@@ -270,18 +270,47 @@ impl Interpreter {
     }
 
     /// Create an X::TypeCheck::Return exception
-    fn throw_type_check_return(&self, got: &Value) -> RuntimeError {
+    fn throw_type_check_return(&self, expected: &str, got: &Value) -> RuntimeError {
+        let got_type = Self::display_type_name(got);
+        let got_gist = Self::display_gist(got);
         let msg = format!(
-            "Type check failed for return value; expected a type object coercion, got {}",
-            super::utils::value_type_name(got)
+            "Type check failed for return value; expected {} but got {} ({})",
+            expected, got_type, got_gist
         );
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         attrs.insert("got".to_string(), got.clone());
+        attrs.insert(
+            "expected".to_string(),
+            Value::Package(Symbol::intern(expected)),
+        );
         let exception = Value::make_instance(Symbol::intern("X::TypeCheck::Return"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(exception));
         err
+    }
+
+    /// Get the display type name for error messages (Package shows its name)
+    fn display_type_name(value: &Value) -> String {
+        match value {
+            Value::Package(name) => name.resolve().to_string(),
+            _ => super::utils::value_type_name(value).to_string(),
+        }
+    }
+
+    /// Get a gist-like representation for error messages
+    fn display_gist(value: &Value) -> String {
+        match value {
+            Value::Package(name) => name.resolve().to_string(),
+            Value::Str(s) => format!("\"{}\"", s),
+            Value::Int(i) => i.to_string(),
+            Value::BigInt(n) => n.to_string(),
+            Value::Num(n) => format!("{}", n),
+            Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+            Value::Rat(n, d) => format!("{}", *n as f64 / *d as f64),
+            Value::Nil => "Nil".to_string(),
+            _ => value.to_string_value(),
+        }
     }
 
     /// Create an X::Coerce::Impossible exception
@@ -326,7 +355,7 @@ impl Interpreter {
             } else {
                 // Non-coercion subset: just check the base type
                 if !self.type_matches_value(&subset.base, &value) {
-                    return Err(self.throw_type_check_return(&value));
+                    return Err(self.throw_type_check_return(spec, &value));
                 }
                 value
             };
@@ -334,7 +363,7 @@ impl Interpreter {
             if let Some(ref pred) = subset.predicate {
                 let pred_clone = pred.clone();
                 if !self.check_where_constraint(&pred_clone, &coerced) {
-                    return Err(self.throw_type_check_return(&coerced));
+                    return Err(self.throw_type_check_return(spec, &coerced));
                 }
             }
             return Ok(coerced);
@@ -347,7 +376,7 @@ impl Interpreter {
 
         // Plain type constraint (e.g., Str, Int:D)
         if !self.type_matches_value(spec, &value) {
-            return Err(self.throw_type_check_return(&value));
+            return Err(self.throw_type_check_return(spec, &value));
         }
         Ok(value)
     }
@@ -382,7 +411,7 @@ impl Interpreter {
             if !self.type_matches_value(src, &value)
                 && !self.type_matches_value(base_target, &value)
             {
-                return Err(self.throw_type_check_return(&value));
+                return Err(self.throw_type_check_return(spec, &value));
             }
         }
 

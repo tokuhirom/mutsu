@@ -227,6 +227,7 @@ impl Interpreter {
             let same = existing.package == new_def.package
                 && existing.name == new_def.name
                 && existing.params == new_def.params
+                && existing.return_type == new_def.return_type
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
                 && body_debug_without_setline(&existing.body)
                     == body_debug_without_setline(&new_def.body);
