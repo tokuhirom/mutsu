@@ -101,6 +101,16 @@ impl VM {
             )
         {
             if let Some(val) = attributes.get(method.as_str()) {
+                // Check for deprecated attribute accessor (has $.foo is DEPRECATED)
+                let cn = class_name.resolve();
+                if let Some(msg) = self
+                    .interpreter
+                    .class_attribute_deprecated(&cn, &method)
+                    .cloned()
+                {
+                    self.interpreter
+                        .check_deprecation_for_method(&method, &cn, &msg);
+                }
                 self.stack.push(val.clone());
                 self.env_dirty = true;
                 return Ok(());
@@ -108,6 +118,16 @@ impl VM {
             // Check if it's a public accessor (has $.x declared)
             let attr_key = format!("{}!", &method);
             if let Some(val) = attributes.get(&attr_key) {
+                // Check for deprecated attribute accessor
+                let cn = class_name.resolve();
+                if let Some(msg) = self
+                    .interpreter
+                    .class_attribute_deprecated(&cn, &method)
+                    .cloned()
+                {
+                    self.interpreter
+                        .check_deprecation_for_method(&method, &cn, &msg);
+                }
                 self.stack.push(val.clone());
                 self.env_dirty = true;
                 return Ok(());

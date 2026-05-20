@@ -124,6 +124,7 @@ roast/S02-types/infinity.t
 roast/S02-types/instants-and-durations.t
 roast/S02-types/int-uint.t
 roast/S02-types/is-type.t
+roast/S02-types/isDEPRECATED.t
 roast/S02-types/lazy-lists.t
 roast/S02-types/list.t
 roast/S02-types/lists.t
@@ -420,6 +421,7 @@ roast/S05-transliteration/with-closure.t
 roast/S06-advanced/callframe.t
 roast/S06-advanced/callsame.t
 roast/S06-advanced/dispatching.t
+roast/S06-advanced/dispatching.t
 roast/S06-advanced/recurse.t
 roast/S06-advanced/return.t
 roast/S06-advanced/stub.t
@@ -553,6 +555,7 @@ roast/S12-class/attributes-required.t
 roast/S12-class/attributes.t
 roast/S12-class/augment-supersede.t
 roast/S12-class/basic.t
+roast/S12-class/basic.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
@@ -630,6 +633,7 @@ roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/metaoperators.t
 roast/S13-overloading/multiple-signatures.t
+roast/S13-overloading/operators.t
 roast/S13-overloading/operators.t
 roast/S13-overloading/typecasting-long.t
 roast/S13-syntax/aliasing.t
@@ -1030,6 +1034,7 @@ roast/S32-list/rotor.t
 roast/S32-list/snip.t
 roast/S32-list/sort.t
 roast/S32-list/squish.t
+roast/S32-list/tail.t
 roast/S32-list/tail.t
 roast/S32-list/toggle.t
 roast/S32-list/unique.t
