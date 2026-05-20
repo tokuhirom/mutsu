@@ -173,6 +173,7 @@ mod native_supply_methods;
 pub(crate) mod native_types;
 mod ops;
 pub(crate) mod phasers;
+mod react_died;
 mod regex;
 mod regex_parse;
 mod registration;
