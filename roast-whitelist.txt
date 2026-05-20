@@ -533,6 +533,7 @@ roast/S11-modules/require.t
 roast/S11-modules/runtime.t
 roast/S12-attributes/augment-and-initialization.t
 roast/S12-attributes/clone.t
+roast/S12-attributes/defaults.t
 roast/S12-attributes/delegation.t
 roast/S12-attributes/inheritance.t
 roast/S12-attributes/mutators.t
@@ -542,6 +543,7 @@ roast/S12-attributes/smiley.t
 roast/S12-attributes/undeclared.t
 roast/S12-class/anonymous.t
 roast/S12-class/attributes-required.t
+roast/S12-class/attributes.t
 roast/S12-class/augment-supersede.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
@@ -590,6 +592,7 @@ roast/S12-introspection/roles.t
 roast/S12-meta/classhow.t
 roast/S12-meta/grammarhow.t
 roast/S12-meta/primitives.t
+roast/S12-methods/attribute-params.t
 roast/S12-methods/calling_sets.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
