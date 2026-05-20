@@ -258,8 +258,11 @@ impl Interpreter {
                     .iter()
                     .all(|p| p == "Any" || p == "Mu" || p == "Cool")
                 && class_def.attributes.iter().all(
-                    |(_, _, _, is_required, type_constraint, sigil, _)| {
-                        *sigil == '$' && !is_required && type_constraint.is_none()
+                    |(_, _, _, is_required, type_constraint, sigil, where_constraint)| {
+                        *sigil == '$'
+                            && !is_required
+                            && type_constraint.is_none()
+                            && where_constraint.is_none()
                     },
                 )
                 && !class_def.attributes.is_empty()
@@ -272,16 +275,39 @@ impl Interpreter {
                         attrs.insert(key.clone(), *val.clone());
                     }
                 }
-                // Fill defaults for missing attributes
+                // Fill defaults for missing attributes (including Nil for uninitialized ones).
+                // Set up `self` as the partially-constructed instance so that
+                // default expressions referencing `self` (e.g. `has $.x = self.y`)
+                // work correctly. Update `self` after each default so that later
+                // defaults can see earlier defaults' values.
                 let class_attrs = self.collect_class_attributes(&cn_resolved);
+                let has_defaults = class_attrs.iter().any(|(_, _, d, ..)| d.is_some());
+                if has_defaults {
+                    let partial = Value::make_instance(*class_name, attrs.clone());
+                    self.env.insert("self".to_string(), partial.clone());
+                    self.env.insert("__ANON_STATE__".to_string(), partial);
+                }
                 for (attr_name, _is_public, default_expr, _, _, _, _) in &class_attrs {
-                    if !attrs.contains_key(attr_name)
-                        && let Some(expr) = default_expr
-                    {
-                        let val = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
-                        attrs.insert(attr_name.clone(), val);
+                    if !attrs.contains_key(attr_name) {
+                        if let Some(expr) = default_expr {
+                            let val =
+                                self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
+                            attrs.insert(attr_name.clone(), val);
+                            // Update self so later defaults see this value
+                            let updated = Value::make_instance(*class_name, attrs.clone());
+                            self.env.insert("self".to_string(), updated.clone());
+                            self.env.insert("__ANON_STATE__".to_string(), updated);
+                        } else {
+                            attrs.insert(attr_name.clone(), Value::Nil);
+                        }
                     }
                 }
+                if has_defaults {
+                    self.env.remove("self");
+                    self.env.remove("__ANON_STATE__");
+                }
+                // Add alias metadata for `has $x` (no twigil) attributes
+                self.add_alias_attribute_metadata(&cn_resolved, &mut attrs);
                 return Ok(Value::make_instance(*class_name, attrs));
             }
             let parametric = Self::parse_parametric_type_name(&cn_resolved);

@@ -29,6 +29,31 @@ impl VM {
         }
     }
 
+    /// Update any instances in `self.locals` that match the given class_name and id.
+    /// This is needed because the fast-path SetLocal for simple scalars writes only
+    /// to `self.locals` (not env), so `overwrite_instance_bindings_by_identity` which
+    /// only searches env will miss them.
+    pub(super) fn overwrite_instance_in_locals(
+        &mut self,
+        class_name: &str,
+        id: u64,
+        updated: &std::collections::HashMap<String, Value>,
+    ) {
+        let cn = crate::symbol::Symbol::intern(class_name);
+        for local in self.locals.iter_mut() {
+            if let Value::Instance {
+                class_name: existing_class,
+                id: existing_id,
+                ..
+            } = local
+                && *existing_class == cn
+                && *existing_id == id
+            {
+                *local = Value::make_instance_with_id(cn, updated.clone(), id);
+            }
+        }
+    }
+
     pub(super) fn try_exec_simple_shared_protect_block(
         &mut self,
         outer_code: &CompiledCode,
@@ -169,6 +194,7 @@ impl VM {
                                 id,
                                 new_attrs.clone(),
                             );
+                            self.overwrite_instance_in_locals(&cn, id, &new_attrs);
                             if !self.interpreter.in_lvalue_assignment
                                 && let Value::Proxy { ref fetcher, .. } = result
                             {
@@ -256,6 +282,7 @@ impl VM {
                         id,
                         new_attrs.clone(),
                     );
+                    self.overwrite_instance_in_locals(&cn, id, &new_attrs);
                     if !self.interpreter.in_lvalue_assignment
                         && let Value::Proxy { ref fetcher, .. } = result
                     {
@@ -356,6 +383,7 @@ impl VM {
                                 id,
                                 new_attrs.clone(),
                             );
+                            self.overwrite_instance_in_locals(&cn, id, &new_attrs);
                             if !self.interpreter.in_lvalue_assignment
                                 && let Value::Proxy { ref fetcher, .. } = result
                             {
@@ -429,6 +457,7 @@ impl VM {
                         id,
                         new_attrs.clone(),
                     );
+                    self.overwrite_instance_in_locals(&cn, id, &new_attrs);
                     if !self.interpreter.in_lvalue_assignment
                         && let Value::Proxy { ref fetcher, .. } = result
                     {
