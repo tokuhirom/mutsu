@@ -1755,6 +1755,46 @@ impl Interpreter {
         self.end_phasers.push((body, captured_env));
     }
 
+    /// Return the number of currently registered END phasers.
+    pub(crate) fn end_phaser_count(&self) -> usize {
+        self.end_phasers.len()
+    }
+
+    /// Update captured envs for END phasers registered since `start_idx`
+    /// with the current values from the given env.  This ensures that END
+    /// phasers see final variable values rather than stale copies captured
+    /// at registration time (e.g., inside closures or block scopes).
+    pub(crate) fn update_end_phaser_envs(&mut self, start_idx: usize, current_env: &Env) {
+        for phaser in self.end_phasers[start_idx..].iter_mut() {
+            let captured = &mut phaser.1;
+            for (k, v) in current_env {
+                if captured.contains_key(k) {
+                    captured.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+
+    /// Update captured envs of ALL END phasers, but only for the specified
+    /// variable names.  Used after closure calls to propagate changes to
+    /// captured variables without overwriting unrelated variables.
+    pub(crate) fn update_end_phaser_envs_for_keys(
+        &mut self,
+        keys: &std::collections::HashSet<&str>,
+        current_env: &Env,
+    ) {
+        for phaser in self.end_phasers.iter_mut() {
+            let captured = &mut phaser.1;
+            for k in keys {
+                if captured.contains_key(*k)
+                    && let Some(v) = current_env.get(*k)
+                {
+                    captured.insert(k.to_string(), v.clone());
+                }
+            }
+        }
+    }
+
     /// Register an END phaser site_id. Returns true if this is the first
     /// registration (phaser should be pushed), false if already registered.
     pub(crate) fn register_end_phaser_site(&mut self, site_id: u64) -> bool {

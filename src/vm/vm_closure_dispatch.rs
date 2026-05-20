@@ -558,6 +558,19 @@ impl VM {
 
         *self.interpreter.env_mut() = restored_env;
 
+        // After a closure returns, update captured envs of END phasers for
+        // variables that the closure captures (and may have modified).  This
+        // ensures END phasers see the final values rather than stale copies.
+        // Only update keys matching the closure's captured variable names to
+        // avoid overwriting unrelated captured lexicals in other END phasers.
+        if self.interpreter.end_phaser_count() > 0 && !data.env.is_empty() {
+            let captured_names: std::collections::HashSet<&str> =
+                data.env.keys().map(|s| s.as_str()).collect();
+            let current = self.interpreter.env().clone();
+            self.interpreter
+                .update_end_phaser_envs_for_keys(&captured_names, &current);
+        }
+
         let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
             Value::Str(s) => Some(s.to_string()),
             _ => None,

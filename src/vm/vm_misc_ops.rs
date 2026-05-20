@@ -2166,6 +2166,7 @@ impl VM {
         self.interpreter.push_enum_scope();
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
+        let end_phaser_count_before = self.interpreter.end_phaser_count();
         // If ENTER died, skip the body but still run LEAVE phasers
         let mut body_result = if let Err(e) = enter_result {
             Err(e)
@@ -2271,6 +2272,14 @@ impl VM {
         let block_declared = self.block_declared_vars.pop().unwrap_or_default();
 
         self.ensure_env_synced(code);
+        // Update captured envs of END phasers registered during this block
+        // so they see the final values of block-scoped variables (which will
+        // be removed from env when the block scope is restored below).
+        if self.interpreter.end_phaser_count() > end_phaser_count_before {
+            let current = self.interpreter.env().clone();
+            self.interpreter
+                .update_end_phaser_envs(end_phaser_count_before, &current);
+        }
         let current_env = self.interpreter.env().clone();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
