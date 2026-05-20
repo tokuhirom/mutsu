@@ -744,6 +744,20 @@ impl VM {
         }
         self.locals_dirty = true;
 
+        // Save env values for function locals so we can restore them after
+        // the function returns. This prevents function-local variables from
+        // leaking into the caller's env (the positional light path does not
+        // save/restore env unlike call_compiled_function_named).
+        let saved_env_locals: Vec<(String, Option<Value>)> = cf
+            .code
+            .locals
+            .iter()
+            .map(|name| {
+                let old = self.interpreter.env().get(name).cloned();
+                (name.clone(), old)
+            })
+            .collect();
+
         let saved_stack_depth = self.stack.len();
         let let_mark = self.interpreter.let_saves_len();
 
@@ -818,6 +832,19 @@ impl VM {
         self.env_dirty = saved_env_dirty;
 
         self.interpreter.restore_readonly_vars(saved_readonly);
+
+        // Clean up function-local variables that were INTRODUCED by the function
+        // body (not present in env before the call). Variables that existed before
+        // the call must keep their current value since the function body may have
+        // modified them through side effects (e.g., pushing to a closure-captured
+        // array). Only newly introduced locals are removed to prevent them from
+        // leaking into the caller's scope.
+        for (local_name, saved_val) in &saved_env_locals {
+            if saved_val.is_none() {
+                // This local was not in env before the call — remove it
+                self.interpreter.env_mut().remove(local_name);
+            }
+        }
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),

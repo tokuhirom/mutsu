@@ -77,6 +77,7 @@ roast/S02-magicals/args.t
 roast/S02-magicals/block.t
 roast/S02-magicals/dollar-underscore.t
 roast/S02-magicals/dollar_bang.t
+roast/S02-magicals/env.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-magicals/progname.t
@@ -724,6 +725,7 @@ roast/S15-unicode-information/uniprop.t
 roast/S15-unicode-information/unival.t
 roast/S16-filehandles/argfiles.t
 roast/S16-filehandles/chmod.t
+roast/S16-filehandles/filestat.t
 roast/S16-filehandles/filetest.t
 roast/S16-filehandles/io.t
 roast/S16-filehandles/io_in_for_loops.t
@@ -741,6 +743,7 @@ roast/S16-io/cwd.t
 roast/S16-io/eof.t
 roast/S16-io/getc.t
 roast/S16-io/handles-between-threads.t
+roast/S16-io/home.t
 roast/S16-io/newline.t
 roast/S16-io/note.t
 roast/S16-io/print.t
@@ -951,6 +954,8 @@ roast/S32-io/io-path-unix.t
 roast/S32-io/io-path-win.t
 roast/S32-io/io-spec-cygwin.t
 roast/S32-io/io-spec-qnx.t
+roast/S32-io/io-spec-unix.t
+roast/S32-io/io-spec-win.t
 roast/S32-io/io-special.t
 roast/S32-io/mkdir_rmdir.t
 roast/S32-io/move.t

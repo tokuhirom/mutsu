@@ -1464,7 +1464,26 @@ impl VM {
                 // Since var_name starts with '%' and is not bound,
                 // we use Arc::make_mut (COW semantics for %-sigiled vars)
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
-                    Arc::make_mut(hash).insert(key, val.clone());
+                    Arc::make_mut(hash).insert(key.clone(), val.clone());
+                }
+                // Sync OS environment when %*ENV is modified
+                #[cfg(not(target_family = "wasm"))]
+                if var_name == "%*ENV" {
+                    // SAFETY: mutsu is single-threaded
+                    unsafe {
+                        std::env::set_var(&key, val.to_string_value());
+                    }
+                    // Sync $*HOME when %*ENV<HOME> changes
+                    if key == "HOME" {
+                        let home_str = val.to_string_value();
+                        let home_val = self.interpreter.make_io_path_instance(&home_str);
+                        self.interpreter
+                            .env_mut()
+                            .insert("$*HOME".to_string(), home_val.clone());
+                        self.interpreter
+                            .env_mut()
+                            .insert("*HOME".to_string(), home_val);
+                    }
                 }
                 self.stack.push(val);
                 Some(Ok(()))
@@ -1475,10 +1494,28 @@ impl VM {
                 let val = self.stack.pop().unwrap();
                 let key = idx.to_string_value();
                 let mut map = std::collections::HashMap::new();
-                map.insert(key, val.clone());
+                map.insert(key.clone(), val.clone());
                 self.interpreter
                     .env_mut()
                     .insert(var_name.to_string(), Value::hash(map));
+                // Sync OS environment when %*ENV is modified
+                #[cfg(not(target_family = "wasm"))]
+                if var_name == "%*ENV" {
+                    // SAFETY: mutsu is single-threaded
+                    unsafe {
+                        std::env::set_var(&key, val.to_string_value());
+                    }
+                    if key == "HOME" {
+                        let home_str = val.to_string_value();
+                        let home_val = self.interpreter.make_io_path_instance(&home_str);
+                        self.interpreter
+                            .env_mut()
+                            .insert("$*HOME".to_string(), home_val.clone());
+                        self.interpreter
+                            .env_mut()
+                            .insert("*HOME".to_string(), home_val);
+                    }
+                }
                 self.stack.push(val);
                 Some(Ok(()))
             }
