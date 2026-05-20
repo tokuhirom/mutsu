@@ -96,6 +96,8 @@ impl VM {
                     | "self"
                     | "clone"
                     | "return"
+                    | "handled"
+                    | "bytes"
             )
         {
             if let Some(val) = attributes.get(method.as_str()) {
