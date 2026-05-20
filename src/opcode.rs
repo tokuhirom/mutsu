@@ -989,18 +989,23 @@ impl CompiledCode {
                     | OpCode::PostDecrement(_)
                     | OpCode::PostIncrementIndex(_)
                     | OpCode::PostDecrementIndex(_)
+                    | OpCode::PreIncrement(_)
+                    | OpCode::PreDecrement(_)
+                    | OpCode::PreIncrementIndex(_)
+                    | OpCode::PreDecrementIndex(_)
                     | OpCode::MultiDimIndexAssign { .. }
                     | OpCode::MultiDimIndexAssignGeneric(_)
                     | OpCode::CallFunc { .. }
                     | OpCode::CallFuncSlip { .. }
-                    | OpCode::ExecCall { .. }
-                    | OpCode::ExecCallPairs { .. }
                     | OpCode::CallMethod { .. }
                     | OpCode::CallMethodMut { .. }
                     | OpCode::CallMethodDynamic { .. }
                     | OpCode::CallMethodDynamicMut { .. }
+                    | OpCode::ExecCall { .. }
+                    | OpCode::ExecCallPairs { .. }
                     | OpCode::HyperMethodCall { .. }
                     | OpCode::HyperMethodCallDynamic { .. }
+                    | OpCode::BlockScope { .. }
                     | OpCode::RegisterSub(_)
                     | OpCode::RegisterClass(_)
                     | OpCode::RegisterRole(_)
