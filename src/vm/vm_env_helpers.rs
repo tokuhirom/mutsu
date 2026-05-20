@@ -296,14 +296,14 @@ impl VM {
         }
     }
 
-    /// Sync only simple locals to env (the ones whose SetLocal fast path
-    /// skips env writes). Only runs when locals_dirty is set.
+    /// Sync all dirty locals to env. This flushes both simple-scalar locals
+    /// (whose SetLocal fast path skips env writes) AND function parameters
+    /// that were bound directly to locals by `exec_direct_compiled_call`.
+    /// Only runs when locals_dirty is set.
     pub(super) fn ensure_env_synced(&mut self, code: &CompiledCode) {
         if self.locals_dirty {
             for (i, name) in code.locals.iter().enumerate() {
-                if code.simple_locals[i] {
-                    self.set_env_with_main_alias(name, self.locals[i].clone());
-                }
+                self.set_env_with_main_alias(name, self.locals[i].clone());
             }
             self.locals_dirty = false;
         }

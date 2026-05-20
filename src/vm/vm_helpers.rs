@@ -426,11 +426,9 @@ impl VM {
         // to the interpreter env. We must flush them so the merge logic below
         // can see the changes made by the gather body.
         for (i, name) in cc.locals.iter().enumerate() {
-            if cc.simple_locals[i] {
-                self.interpreter
-                    .env_mut()
-                    .insert(name.clone(), self.locals[i].clone());
-            }
+            self.interpreter
+                .env_mut()
+                .insert(name.clone(), self.locals[i].clone());
         }
 
         // Restore the outer environment, selectively merging changes from

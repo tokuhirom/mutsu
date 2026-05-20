@@ -123,6 +123,7 @@ roast/S02-types/infinity.t
 roast/S02-types/instants-and-durations.t
 roast/S02-types/int-uint.t
 roast/S02-types/is-type.t
+roast/S02-types/lazy-lists.t
 roast/S02-types/list.t
 roast/S02-types/lists.t
 roast/S02-types/mix-iterator.t
@@ -274,6 +275,8 @@ roast/S04-exception-handlers/control.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-exceptions/fail-6e.t
+roast/S04-exceptions/fail.t
+roast/S04-exceptions/pending.t
 roast/S04-phasers/ascending-order.t
 roast/S04-phasers/begin.t
 roast/S04-phasers/check.t
@@ -969,6 +972,7 @@ roast/S32-io/socket-accept-and-working-threads.t
 roast/S32-io/socket-fail-invalid-values.t
 roast/S32-io/socket-host-port-split.t
 roast/S32-io/spurt.t
+roast/S32-io/tell.t
 roast/S32-io/utf16.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
