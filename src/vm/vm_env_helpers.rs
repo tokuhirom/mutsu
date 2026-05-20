@@ -296,17 +296,39 @@ impl VM {
         }
     }
 
-    /// Sync all dirty locals to env. This flushes both simple-scalar locals
-    /// (whose SetLocal fast path skips env writes) AND function parameters
-    /// that were bound directly to locals by `exec_direct_compiled_call`.
+    /// Sync dirty locals to env. Flushes simple-scalar locals (whose SetLocal
+    /// fast path skips env writes) AND bare-name function parameters that were
+    /// bound directly to locals by `exec_direct_compiled_call`.
     /// Only runs when locals_dirty is set.
     pub(super) fn ensure_env_synced(&mut self, code: &CompiledCode) {
         if self.locals_dirty {
             for (i, name) in code.locals.iter().enumerate() {
-                self.set_env_with_main_alias(name, self.locals[i].clone());
+                // Flush simple locals ($ vars that use the SetLocal fast path)
+                // AND bare-name params (no sigil, set by exec_direct_compiled_call).
+                // Skip topic (_), attributes (.x, !x), dynamic vars ($*x), and
+                // package-qualified names (Foo::bar) to avoid corrupting outer scope.
+                if code.simple_locals[i] || Self::is_bare_param_name(name) {
+                    self.set_env_with_main_alias(name, self.locals[i].clone());
+                }
             }
             self.locals_dirty = false;
         }
+    }
+
+    /// Check if a local name looks like a bare function parameter (no sigil).
+    /// These are stored by the compiler for function params like `$n` → `n`.
+    fn is_bare_param_name(name: &str) -> bool {
+        !name.is_empty()
+            && !name.starts_with('$')
+            && !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && !name.starts_with('.')
+            && !name.starts_with('!')
+            && !name.starts_with('^')
+            && name != "_"
+            && !name.contains("::")
+            && !name.starts_with("__mutsu_")
     }
 
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
