@@ -17,7 +17,7 @@ cargo build --release
 | int-arith | 0.11s | 0.25s | 0.4x | `for ^100000 { $sum += $_ * 3 + 1 }` (**faster than raku**) |
 | string-concat | 0.015s | 0.21s | 0.07x | `$s ~= 'x'` × 10000 (**faster than raku**) |
 | hash-access | 0.044s | 0.24s | 0.18x | 10K hash inserts + value iteration (**faster than raku**) |
-| method-call | 1.01s | 0.29s | 3.5x | Point.distance-to × 10000 |
+| method-call | 0.78s | 0.29s | 2.7x | Point.distance-to × 10000 |
 | array-ops | 0.14s | 0.30s | 0.5x | grep+map on 1000-elem array × 100 |
 
 Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
@@ -69,6 +69,11 @@ Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
 - **Change**: Add `try_fast_hash_element_assign()` that skips 16+ edge-case HashMap lookups when no constraints/mixins/bindings apply
 - **Effect**: hash-access benchmark ~2.4s → ~0.044s (**55x speedup**, now 5x faster than raku)
 - **Value**: Common hash assignment pattern is now fast-pathed
+
+### 2026-05-20: Skip env merge for read-only compiled methods
+- **Change**: Pre-compute `has_env_writes` flag on CompiledCode during emission; when a compiled method has no env-writing opcodes (SetGlobal, AssignExpr, PostIncrement, etc.) and no `is rw` params, skip the expensive locals→env sync, method_local_keys HashSet construction, merge_method_env deep clone, and writeback_attributes on method exit
+- **Effect**: method-call 1.01s → 0.78s (**-23%**, ratio 3.5x → 2.7x vs raku)
+- **Value**: Eliminates one HashMap deep clone, one HashSet construction (~25 entries), and one full env iteration per call for pure/read-only methods
 
 ## Next Steps
 
