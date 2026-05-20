@@ -942,6 +942,10 @@ pub(crate) struct CompiledCode {
     /// Pointy blocks are NOT routine boundaries — `return` propagates through
     /// them to the enclosing routine, and `&?ROUTINE` sees the enclosing routine.
     pub(crate) is_pointy_block: bool,
+    /// Whether this code contains opcodes that write to env (SetGlobal,
+    /// AssignExpr, PostIncrement, etc.). Used by call_compiled_method to
+    /// skip the expensive env merge when the method body is read-only.
+    pub(crate) has_env_writes: bool,
 }
 
 impl CompiledCode {
@@ -958,6 +962,7 @@ impl CompiledCode {
             is_routine: false,
             source_line: None,
             is_pointy_block: false,
+            has_env_writes: false,
         }
     }
 
@@ -969,6 +974,35 @@ impl CompiledCode {
     }
 
     pub(crate) fn emit(&mut self, op: OpCode) -> usize {
+        if !self.has_env_writes {
+            self.has_env_writes = matches!(
+                op,
+                OpCode::SetGlobal(_)
+                    | OpCode::SetGlobalRaw(_)
+                    | OpCode::AssignExpr(_)
+                    | OpCode::AssignExprLocal(_)
+                    | OpCode::IndexAssignExprNamed { .. }
+                    | OpCode::IndexAssignExprNested { .. }
+                    | OpCode::IndexAssignGeneric
+                    | OpCode::IndexAssignPseudoStashNamed { .. }
+                    | OpCode::PostIncrement(_)
+                    | OpCode::PostDecrement(_)
+                    | OpCode::PostIncrementIndex(_)
+                    | OpCode::PostDecrementIndex(_)
+                    | OpCode::MultiDimIndexAssign { .. }
+                    | OpCode::MultiDimIndexAssignGeneric(_)
+                    | OpCode::CallFunc { .. }
+                    | OpCode::CallFuncSlip { .. }
+                    | OpCode::ExecCall { .. }
+                    | OpCode::ExecCallPairs { .. }
+                    | OpCode::RegisterSub(_)
+                    | OpCode::RegisterClass(_)
+                    | OpCode::RegisterRole(_)
+                    | OpCode::RegisterEnum(_)
+                    | OpCode::RegisterPackage { .. }
+                    | OpCode::RegisterPackageMy { .. }
+            );
+        }
         let idx = self.ops.len();
         self.ops.push(op);
         idx
