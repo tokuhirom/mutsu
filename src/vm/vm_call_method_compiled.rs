@@ -528,12 +528,14 @@ impl VM {
 
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_env_dirty = self.env_dirty;
         let saved_locals_dirty = self.locals_dirty;
 
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
+        self.locals_dirty_slots = vec![false; block_cc.locals.len()];
         self.env_dirty = false;
         self.locals_dirty = false;
         if captured_env.is_some() {
@@ -599,6 +601,7 @@ impl VM {
 
         // Restore outer state
         self.locals = saved_locals;
+        self.locals_dirty_slots = saved_locals_dirty_slots;
         self.stack = saved_stack;
         self.env_dirty = saved_env_dirty;
         self.locals_dirty = saved_locals_dirty;

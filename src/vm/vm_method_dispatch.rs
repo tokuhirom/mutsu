@@ -357,6 +357,7 @@ impl VM {
 
         // Initialize locals from env
         self.locals = vec![Value::Nil; cc.locals.len()];
+        self.locals_dirty_slots = vec![false; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
                 self.locals[i] = val.clone();

@@ -57,6 +57,7 @@ pub(super) struct VmCallFrame {
     pub saved_readonly: HashSet<String>,
     pub saved_env_dirty: bool,
     pub saved_locals_dirty: bool,
+    pub saved_locals_dirty_slots: Vec<bool>,
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
 }
 
@@ -89,6 +90,10 @@ pub(crate) struct VM {
     /// When true, env may be stale relative to locals (simple local SetLocal skipped env write).
     /// Cleared after ensure_env_synced or sync_env_from_locals.
     locals_dirty: bool,
+    /// Per-slot dirty bitmap: tracks which specific local slots have been written
+    /// via the SetLocal fast path. Only slots marked dirty are flushed by
+    /// ensure_env_synced, preventing uninitialized locals from clobbering env values.
+    locals_dirty_slots: Vec<bool>,
     /// The instruction pointer to resume at after a .resume call in a CATCH block.
     /// Set when Die/Fail creates an exception, used by exec_try_catch_op.
     resume_ip: Option<usize>,
@@ -292,6 +297,7 @@ impl VM {
             call_frames: Vec::new(),
             env_dirty: false,
             locals_dirty: false,
+            locals_dirty_slots: Vec::new(),
             resume_ip: None,
             bind_context: false,
             rebind_context: false,
@@ -330,6 +336,7 @@ impl VM {
         }
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
+        self.locals_dirty_slots = vec![false; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
