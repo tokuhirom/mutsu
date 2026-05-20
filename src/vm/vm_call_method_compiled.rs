@@ -220,14 +220,24 @@ impl VM {
                     crate::symbol::Symbol::intern(&cn),
                     crate::symbol::Symbol::intern(method),
                 );
-                if let Some(cached) = self.method_resolve_cache.get(&cache_key) {
-                    cached.clone()
+                // Check cache, but skip cached results for multi-methods since
+                // multi-dispatch depends on argument types/arity.
+                let cached = self.method_resolve_cache.get(&cache_key).cloned();
+                if let Some(ref hit) = cached
+                    && let Some((_, def)) = hit
+                    && !def.is_multi
+                {
+                    hit.clone()
                 } else {
                     let resolved = self
                         .interpreter
                         .resolve_method_with_owner_invocant(&cn, method, &args, &target);
-                    self.method_resolve_cache
-                        .insert(cache_key, resolved.clone());
+                    // Only cache non-multi methods; multi-method resolution depends
+                    // on argument types and must not be cached by name alone.
+                    if resolved.as_ref().is_none_or(|(_, def)| !def.is_multi) {
+                        self.method_resolve_cache
+                            .insert(cache_key, resolved.clone());
+                    }
                     resolved
                 }
             }

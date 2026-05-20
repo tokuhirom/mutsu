@@ -995,6 +995,12 @@ impl CompiledCode {
                     | OpCode::CallFuncSlip { .. }
                     | OpCode::ExecCall { .. }
                     | OpCode::ExecCallPairs { .. }
+                    | OpCode::CallMethod { .. }
+                    | OpCode::CallMethodMut { .. }
+                    | OpCode::CallMethodDynamic { .. }
+                    | OpCode::CallMethodDynamicMut { .. }
+                    | OpCode::HyperMethodCall { .. }
+                    | OpCode::HyperMethodCallDynamic { .. }
                     | OpCode::RegisterSub(_)
                     | OpCode::RegisterClass(_)
                     | OpCode::RegisterRole(_)

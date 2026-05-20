@@ -719,7 +719,12 @@ impl VM {
 
         // Bind params to locals only (skip env writes for performance).
         // The env will be synced lazily via ensure_env_synced if needed.
+        // Save old env values for param names so we can restore them after
+        // the call (ensure_env_synced may write param locals to env during
+        // execution, and those must not leak into the caller's scope).
         let saved_readonly = self.interpreter.save_readonly_vars();
+        let mut saved_param_env: Vec<(String, Option<Value>)> =
+            Vec::with_capacity(positional_count);
         for (param_idx, slot) in param_slots.iter().enumerate() {
             if param_idx < actual_count {
                 let val = crate::runtime::types::unwrap_varref_value(args[param_idx].clone());
@@ -737,7 +742,16 @@ impl VM {
                         runtime::value_type_name(&val)
                     )));
                 }
-                self.locals[*slot] = val;
+                let param_name = &cf.param_defs[param_idx].name;
+                saved_param_env.push((
+                    param_name.clone(),
+                    self.interpreter.env().get(param_name).cloned(),
+                ));
+                self.locals[*slot] = val.clone();
+                // Write params to env so sync_locals_from_env (triggered by
+                // ensure_locals_synced) doesn't clobber them with stale values
+                // from the caller's scope.
+                self.interpreter.env_mut().insert(param_name.clone(), val);
                 self.interpreter
                     .mark_readonly(&cf.param_defs[param_idx].name);
             }
@@ -819,6 +833,16 @@ impl VM {
                 self.locals_dirty = saved_locals_dirty;
                 self.env_dirty = saved_env_dirty;
                 self.interpreter.restore_readonly_vars(saved_readonly);
+                for (name, old_val) in saved_param_env {
+                    match old_val {
+                        Some(v) => {
+                            self.interpreter.env_mut().insert(name, v);
+                        }
+                        None => {
+                            self.interpreter.env_mut().remove(&name);
+                        }
+                    }
+                }
                 return Err(RuntimeError::new(format!(
                     "Type check failed for return value; expected {}, got {}",
                     rt,
@@ -832,6 +856,18 @@ impl VM {
         self.env_dirty = saved_env_dirty;
 
         self.interpreter.restore_readonly_vars(saved_readonly);
+        // Restore caller's env values for param names that may have leaked
+        // into env via ensure_env_synced during the function body execution.
+        for (name, old_val) in saved_param_env {
+            match old_val {
+                Some(v) => {
+                    self.interpreter.env_mut().insert(name, v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove(&name);
+                }
+            }
+        }
 
         // Clean up function-local variables that were INTRODUCED by the function
         // body (not present in env before the call). Variables that existed before
