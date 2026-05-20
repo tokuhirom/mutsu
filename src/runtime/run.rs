@@ -867,17 +867,42 @@ impl Interpreter {
             // Clear halted flag so END phasers can execute even after exit()
             self.halted = false;
             let phasers = self.end_phasers.clone();
+            // Save the env state before any END phasers run.  This lets us
+            // distinguish between variables set by prior END phasers (which
+            // should propagate) and stale captured values (which should not
+            // override live values).
+            let original_env = self.env.clone();
             for (body, captured_env) in phasers.iter().rev() {
                 // Track which keys are being added from captured env
                 // (not already present) so we can remove them after.
                 let mut overlay_keys: Vec<String> = Vec::new();
-                // Overlay captured lexical env on top of current env
-                // so both globals and captured lexicals are visible
+                // Overlay captured lexical env on top of current env.
+                // For keys already in the current env, only overlay if the
+                // key was NOT in the original env (meaning it was injected
+                // by a prior END phaser's overlay, not a live program
+                // variable).  This preserves live values and prior-END
+                // modifications while still providing access to captured
+                // lexicals from dead scopes.
                 for (k, v) in captured_env {
                     if !self.env.contains_key(k) {
                         overlay_keys.push(k.clone());
+                        self.env.insert(k.clone(), v.clone());
+                    } else if let Some(orig_v) = original_env.get(k) {
+                        // Key exists in both current and original env.
+                        // Overlay with captured value only if the captured
+                        // value differs from the original — this indicates
+                        // the captured value comes from a different lexical
+                        // scope (e.g. { my $a = 42; END { ... } }).
+                        if v != orig_v {
+                            self.env.insert(k.clone(), v.clone());
+                        }
+                        // If captured == original, it's the same variable —
+                        // keep the current (possibly mutated) value.
+                    } else {
+                        // Key was added by a prior END phaser's overlay.
+                        // Override with this phaser's captured value.
+                        self.env.insert(k.clone(), v.clone());
                     }
-                    self.env.insert(k.clone(), v.clone());
                 }
                 self.run_block(body)?;
                 // Remove only the overlay keys (captured lexicals not in
