@@ -256,13 +256,28 @@ impl Interpreter {
                             emitter_attrs.insert("done".to_string(), Value::Bool(false));
                             let emitter =
                                 Value::make_instance(Symbol::intern("Supplier"), emitter_attrs);
-                            // Execute the on-demand callback, which calls emit on the emitter
+                            // Execute the on-demand callback, which calls emit on the emitter.
+                            // If the callback dies, propagate as X::React::Died.
                             self.supply_emit_buffer.push(Vec::new());
-                            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                            let od_res =
+                                self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
                             let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
-                            // Replay emitted values
+                            if let Err(od_err) = od_res
+                                && !od_err.is_react_done
+                            {
+                                return Err(Self::wrap_react_died(od_err));
+                            }
+                            // The emitted items may include subscription registrations
+                            // from `whenever` inside the supply body. Convert them to
+                            // ReactSubscriptions for the event loop.
                             for v in emitted {
-                                let _ = self.call_sub_value(callback.clone(), vec![v], true);
+                                if Self::is_supply_subscription_registration(&v) {
+                                    if let Some(rsub) = self.value_to_react_subscription(&v) {
+                                        react_subs.push(rsub);
+                                    }
+                                } else {
+                                    let _ = self.call_sub_value(callback.clone(), vec![v], true);
+                                }
                             }
                         } else {
                             // No channel, no on-demand - replay static values
@@ -437,7 +452,8 @@ impl Interpreter {
                             continue;
                         }
                         Self::run_react_close_callbacks(self, &react_subs);
-                        return Err(Self::runtime_error_from_supply_reason(error));
+                        let quit_err = Self::runtime_error_from_supply_reason(error);
+                        return Err(Self::wrap_react_died(quit_err));
                     }
                     if done {
                         if sub.is_lines && !sub.line_buffer.is_empty() {
@@ -528,7 +544,8 @@ impl Interpreter {
                         }
                         sub.done = true;
                         if !handled {
-                            return Err(Self::runtime_error_from_supply_reason(error));
+                            let ch_quit_err = Self::runtime_error_from_supply_reason(error);
+                            return Err(Self::wrap_react_died(ch_quit_err));
                         }
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}

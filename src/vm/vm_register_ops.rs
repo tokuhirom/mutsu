@@ -1417,7 +1417,8 @@ impl VM {
         if let Err(err) = event_result
             && !err.is_react_done
         {
-            return Err(err);
+            // Wrap in X::React::Died if not already wrapped
+            return Err(crate::runtime::Interpreter::wrap_react_died_if_needed(err));
         }
         Ok(())
     }
