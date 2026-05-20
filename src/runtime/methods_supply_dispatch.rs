@@ -111,7 +111,21 @@ impl Interpreter {
             return Ok(supplies.into_iter().next().unwrap());
         }
 
-        // Collect values from all supplies
+        // Check if any supply is channel-based (has supply_id) — if so, create
+        // a live zip supply that coordinates via channels.
+        let has_channel_supply = supplies.iter().any(|s| {
+            if let Value::Instance { attributes, .. } = s {
+                attributes.contains_key("supply_id")
+            } else {
+                false
+            }
+        });
+
+        if has_channel_supply {
+            return Self::create_channel_zip_supply(&supplies);
+        }
+
+        // All-static path: collect values from all supplies
         let mut supply_values: Vec<Vec<Value>> = Vec::new();
         for arg in &supplies {
             if let Value::Instance { attributes, .. } = arg {
@@ -141,6 +155,118 @@ impl Interpreter {
             crate::symbol::Symbol::intern("Supply"),
             attrs,
         ))
+    }
+
+    /// Create a channel-based zip supply when at least one source is channel-based.
+    /// Spawns a coordination thread that reads from all sources and emits zipped values.
+    fn create_channel_zip_supply(supplies: &[Value]) -> Result<Value, RuntimeError> {
+        use super::native_methods::{
+            SupplyEvent, next_supply_id, supply_channel_map_pub, take_supply_channel,
+        };
+        use std::sync::mpsc;
+
+        let zip_supply_id = next_supply_id();
+        let (zip_tx, zip_rx) = mpsc::channel();
+
+        enum SourceKind {
+            Channel(mpsc::Receiver<SupplyEvent>),
+            Static(Vec<Value>),
+        }
+        let mut sources: Vec<SourceKind> = Vec::with_capacity(supplies.len());
+
+        for supply in supplies {
+            if let Value::Instance { attributes, .. } = supply {
+                if let Some(Value::Int(sid)) = attributes.get("supply_id")
+                    && let Some(rx) = take_supply_channel(*sid as u64)
+                {
+                    sources.push(SourceKind::Channel(rx));
+                    continue;
+                }
+                let items = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+                sources.push(SourceKind::Static(items));
+            }
+        }
+
+        std::thread::spawn(move || {
+            let n = sources.len();
+            let mut buffers: Vec<std::collections::VecDeque<Value>> =
+                vec![std::collections::VecDeque::new(); n];
+            let mut done: Vec<bool> = vec![false; n];
+
+            // Pre-fill buffers from static sources
+            for (i, source) in sources.iter().enumerate() {
+                if let SourceKind::Static(vals) = source {
+                    for v in vals {
+                        buffers[i].push_back(v.clone());
+                    }
+                    done[i] = true;
+                }
+            }
+
+            let timeout = std::time::Duration::from_millis(10);
+
+            loop {
+                // Emit zipped values while all buffers have at least one value
+                while buffers.iter().all(|b| !b.is_empty()) {
+                    let tuple: Vec<Value> =
+                        buffers.iter_mut().map(|b| b.pop_front().unwrap()).collect();
+                    if zip_tx.send(SupplyEvent::Emit(Value::array(tuple))).is_err() {
+                        return;
+                    }
+                }
+
+                // If any done source has an empty buffer, zip is complete
+                let any_done_empty = (0..n).any(|i| done[i] && buffers[i].is_empty());
+                if any_done_empty {
+                    let _ = zip_tx.send(SupplyEvent::Done);
+                    return;
+                }
+
+                // Poll channel sources for new values
+                for (i, source) in sources.iter().enumerate() {
+                    if done[i] {
+                        continue;
+                    }
+                    if let SourceKind::Channel(rx) = source {
+                        match rx.recv_timeout(timeout) {
+                            Ok(SupplyEvent::Emit(v)) => {
+                                buffers[i].push_back(v);
+                            }
+                            Ok(SupplyEvent::Done) => {
+                                done[i] = true;
+                            }
+                            Ok(SupplyEvent::Quit(_)) => {
+                                done[i] = true;
+                            }
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                done[i] = true;
+                            }
+                        }
+                    }
+                }
+
+                // If all sources are done, finish
+                if done.iter().all(|d| *d) {
+                    let _ = zip_tx.send(SupplyEvent::Done);
+                    return;
+                }
+            }
+        });
+
+        if let Ok(mut map) = supply_channel_map_pub().lock() {
+            map.insert(zip_supply_id, zip_rx);
+        }
+
+        let mut attrs = HashMap::new();
+        attrs.insert("values".to_string(), Value::array(Vec::new()));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("supply_id".to_string(), Value::Int(zip_supply_id as i64));
+        attrs.insert("live".to_string(), Value::Bool(false));
+        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
     /// Handle Supply.from-list class method

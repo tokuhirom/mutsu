@@ -268,6 +268,14 @@ impl Interpreter {
                             // No channel, no on-demand - replay static values
                             self.replay_static_supply(attributes, &callback)?;
                         }
+                        // Fire LAST callbacks after static/on-demand supply completes
+                        let last_cbs = items
+                            .get(2)
+                            .and_then(Self::value_array_items)
+                            .unwrap_or_default();
+                        for last_cb in &last_cbs {
+                            let _ = self.call_sub_value(last_cb.clone(), Vec::new(), true);
+                        }
                     }
                     // Promise source
                     Value::Promise(shared) => {
