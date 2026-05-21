@@ -136,6 +136,22 @@ impl Interpreter {
                 }
                 None
             }
+            "bind-udp" => {
+                if let Value::Package(ref cn) = target
+                    && cn == "IO::Socket::Async"
+                {
+                    return Some(self.dispatch_socket_async_bind_udp(&args));
+                }
+                None
+            }
+            "udp" => {
+                if let Value::Package(ref cn) = target
+                    && cn == "IO::Socket::Async"
+                {
+                    return Some(self.dispatch_socket_async_udp(&args));
+                }
+                None
+            }
             "now" => self.dispatch_datetime_now(&target, &args),
             "Date" if args.is_empty() => {
                 if let Value::Package(ref class_name) = target {

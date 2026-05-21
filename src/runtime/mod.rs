@@ -1861,6 +1861,8 @@ impl Interpreter {
                     "peer-port",
                     "socket-host",
                     "peer-host",
+                    "print-to",
+                    "write-to",
                 ]
                 .iter()
                 .map(|s| s.to_string())
