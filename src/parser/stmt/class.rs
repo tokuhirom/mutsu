@@ -1879,7 +1879,10 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
-    let rest = keyword("module", rest).ok_or_else(|| PError::expected("'module' after 'unit'"))?;
+    // Accept both `unit module Foo;` and `unit package Foo;`
+    let rest = keyword("module", rest)
+        .or_else(|| keyword("package", rest))
+        .ok_or_else(|| PError::expected("'module' or 'package' after 'unit'"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
