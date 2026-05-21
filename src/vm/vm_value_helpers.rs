@@ -386,6 +386,7 @@ impl VM {
                 | "byte"
                 | "int"
                 | "uint"
+                | "atomicint"
                 | "num"
                 | "num32"
                 | "num64"

@@ -191,6 +191,34 @@ impl Interpreter {
         Ok(next)
     }
 
+    /// Like `builtin_atomic_add_var` but returns the OLD value (before adding).
+    pub(super) fn builtin_atomic_fetch_add_var(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "atomic-fetch-add requires variable name and increment value",
+            ));
+        }
+        let raw_name = args[0].to_string_value();
+        let name = self.canonical_atomic_var_name(&raw_name, args.first());
+        let delta = args[1].clone();
+        self.check_readonly_for_modify(&name)?;
+        let value_key = self.atomic_value_key_for_name(&name);
+        let mut shared = self.shared_vars.write().unwrap();
+        let current = self.atomic_current_value(&shared, &name, &value_key);
+        let next = crate::builtins::arith_add(current.clone(), delta)?;
+        self.env.insert(name.clone(), next.clone());
+        shared.insert(value_key.clone(), next.clone());
+        drop(shared);
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(value_key);
+            dirty.insert(name);
+        }
+        Ok(current)
+    }
+
     pub(super) fn builtin_atomic_update_unit(
         &mut self,
         args: &[Value],

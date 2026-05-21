@@ -171,6 +171,114 @@ impl Compiler {
                 arg_sources_idx: None,
             });
             return;
+        } else if name == "atomic-assign"
+            && args.len() == 2
+            && let Expr::Var(var_name) = &args[0]
+        {
+            let call_name_idx = self
+                .code
+                .add_constant(Value::str_from("__mutsu_atomic_store_var"));
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.compile_expr(&args[1]);
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 2,
+                arg_sources_idx: None,
+            });
+            return;
+        } else if name == "atomic-fetch-inc"
+            && args.len() == 1
+            && let Expr::Var(var_name) = &args[0]
+        {
+            let call_name_idx = self
+                .code
+                .add_constant(Value::str_from("__mutsu_atomic_post_inc_var"));
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 1,
+                arg_sources_idx: None,
+            });
+            return;
+        } else if name == "atomic-inc-fetch"
+            && args.len() == 1
+            && let Expr::Var(var_name) = &args[0]
+        {
+            let call_name_idx = self
+                .code
+                .add_constant(Value::str_from("__mutsu_atomic_pre_inc_var"));
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 1,
+                arg_sources_idx: None,
+            });
+            return;
+        } else if name == "atomic-fetch-dec"
+            && args.len() == 1
+            && let Expr::Var(var_name) = &args[0]
+        {
+            let call_name_idx = self
+                .code
+                .add_constant(Value::str_from("__mutsu_atomic_post_dec_var"));
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 1,
+                arg_sources_idx: None,
+            });
+            return;
+        } else if name == "atomic-dec-fetch"
+            && args.len() == 1
+            && let Expr::Var(var_name) = &args[0]
+        {
+            let call_name_idx = self
+                .code
+                .add_constant(Value::str_from("__mutsu_atomic_pre_dec_var"));
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 1,
+                arg_sources_idx: None,
+            });
+            return;
+        } else if name == "atomic-fetch-add"
+            && args.len() == 2
+            && let Expr::Var(var_name) = &args[0]
+        {
+            let call_name_idx = self
+                .code
+                .add_constant(Value::str_from("__mutsu_atomic_fetch_add_var"));
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.compile_expr(&args[1]);
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 2,
+                arg_sources_idx: None,
+            });
+            return;
+        } else if name == "atomic-add-fetch"
+            && args.len() == 2
+            && let Expr::Var(var_name) = &args[0]
+        {
+            let call_name_idx = self
+                .code
+                .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.compile_expr(&args[1]);
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 2,
+                arg_sources_idx: None,
+            });
+            return;
         }
         // Rewrite cas($var, ...) -> __mutsu_cas_var($var_name_str, ...)
         if name == "cas"
