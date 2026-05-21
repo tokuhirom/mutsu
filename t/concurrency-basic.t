@@ -7,7 +7,8 @@ $p.keep(42);
 is $p.result, 42, 'promise result after keep';
 is $p.status, "Kept", 'promise status kept';
 
-my $p2 = $p.then(-> $x { $x + 1 });
+# .then passes the Promise itself to the callback, not the result
+my $p2 = $p.then(-> $x { $x.result + 1 });
 is $p2.result, 43, 'promise then transforms result';
 
 my $c = Channel.new();

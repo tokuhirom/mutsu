@@ -46,6 +46,7 @@ plan 10;
 # Test 6: Promise.then chains
 {
     my $p = start { 10 };
-    my $p2 = $p.then(-> $v { $v * 2 });
+    # .then passes the Promise itself to the callback, not the result
+    my $p2 = $p.then(-> $v { $v.result * 2 });
     is await($p2), 20, 'promise.then chains correctly';
 }
