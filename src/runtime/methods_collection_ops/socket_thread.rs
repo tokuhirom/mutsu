@@ -204,7 +204,7 @@ impl Interpreter {
             .unwrap_or_else(|| "utf-8".to_string());
 
         let promise = SharedPromise::new();
-        let result = if let Some((_listener_id, listener)) =
+        if let Some((_listener_id, listener)) =
             super::super::native_methods::lookup_async_listener(&host, port)
         {
             let defer_accept = Self::callback_uses_supply_list(&listener.callback);
@@ -279,29 +279,14 @@ impl Interpreter {
                 let _ = self.call_sub_value(listener.callback, vec![server_socket], true);
             }
 
-            let mut status_attrs = HashMap::new();
-            status_attrs.insert("status".to_string(), Value::str_from("Kept"));
-            status_attrs.insert("result".to_string(), client_socket);
-            status_attrs.insert("cause".to_string(), Value::Nil);
-            Value::make_instance(
-                Symbol::intern("IO::Socket::Async::StatusResult"),
-                status_attrs,
-            )
+            // Keep the promise with the client socket directly
+            promise.keep(client_socket, String::new(), String::new());
         } else {
-            let mut status_attrs = HashMap::new();
-            status_attrs.insert("status".to_string(), Value::str_from("Broken"));
-            status_attrs.insert("result".to_string(), Value::Nil);
-            status_attrs.insert(
-                "cause".to_string(),
-                Value::str(format!("Failed to connect to '{}:{}'", host, port)),
-            );
-            Value::make_instance(
-                Symbol::intern("IO::Socket::Async::StatusResult"),
-                status_attrs,
-            )
+            // Break the promise on connection failure
+            let err_msg = format!("Failed to connect to '{}:{}'", host, port);
+            let _ = promise.try_break(Value::str(err_msg));
         };
 
-        promise.keep(result, String::new(), String::new());
         Ok(Value::Promise(promise))
     }
 
