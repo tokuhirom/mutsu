@@ -1084,18 +1084,27 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
-            let limit = args.get(1).and_then(|arg| match arg {
-                Value::Int(i) => Some((*i).max(0) as usize),
-                Value::BigInt(bi) => {
-                    use num_traits::ToPrimitive;
-                    Some(bi.to_usize().unwrap_or(usize::MAX))
+            let mut limit: Option<usize> = None;
+            let mut close_after = false;
+            let extra_args = if args.len() > 1 { &args[1..] } else { &[] };
+            for arg in extra_args {
+                match arg {
+                    Value::Pair(k, v) if k == "close" => {
+                        close_after = v.truthy();
+                    }
+                    Value::Pair(..) => {}
+                    Value::Int(i) => limit = Some((*i).max(0) as usize),
+                    Value::BigInt(bi) => {
+                        use num_traits::ToPrimitive;
+                        limit = Some(bi.to_usize().unwrap_or(usize::MAX));
+                    }
+                    Value::Whatever => {}
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
+                    Value::Num(f) if *f >= 0.0 => limit = Some(*f as usize),
+                    Value::Rat(n, d) if *d == 0 && *n > 0 => {}
+                    _ => {}
                 }
-                Value::Whatever => None,
-                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
-                Value::Rat(n, d) if *d == 0 && *n > 0 => None,
-                _ => None,
-            });
+            }
             if limit.is_none() {
                 // No limit: return a lazy IO lines iterator so that
                 // consumers (e.g. for-loop) can read on demand.
@@ -1115,7 +1124,10 @@ impl Interpreter {
                     break;
                 }
             }
-            return Ok(Value::array(lines));
+            if close_after {
+                self.close_handle_value(&handle)?;
+            }
+            return Ok(Value::Seq(std::sync::Arc::new(lines)));
         }
         Ok(Value::array(Vec::new()))
     }
