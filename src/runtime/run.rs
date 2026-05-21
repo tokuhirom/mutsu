@@ -1211,10 +1211,10 @@ impl Interpreter {
         let mut dir = source_path.parent()?;
         for _ in 0..4 {
             let meta_path = dir.join("META6.json");
-            if meta_path.exists() {
-                if let Ok(content) = fs::read_to_string(&meta_path) {
-                    return Self::build_distribution_from_meta(&content);
-                }
+            if meta_path.exists()
+                && let Ok(content) = fs::read_to_string(&meta_path)
+            {
+                return Self::build_distribution_from_meta(&content);
             }
             dir = dir.parent()?;
         }
@@ -1267,12 +1267,12 @@ impl Interpreter {
                 let path = entry.path();
                 if path.is_file() {
                     for ext in &extensions {
-                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                            if name.ends_with(ext) {
-                                let module_name = name[..name.len() - ext.len()].replace('/', "::");
-                                let relative = format!("lib/{}", name);
-                                provides.insert(module_name, Value::str(relative));
-                            }
+                        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                            && let Some(stem) = name.strip_suffix(ext)
+                        {
+                            let module_name = stem.replace('/', "::");
+                            let relative = format!("lib/{}", name);
+                            provides.insert(module_name, Value::str(relative));
                         }
                     }
                 }
@@ -1286,11 +1286,11 @@ impl Interpreter {
         if let Ok(entries) = std::fs::read_dir(resources_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        let key = format!("resources/{}", name);
-                        files.insert(key.clone(), Value::str(key));
-                    }
+                if path.is_file()
+                    && let Some(name) = path.file_name().and_then(|n| n.to_str())
+                {
+                    let key = format!("resources/{}", name);
+                    files.insert(key.clone(), Value::str(key));
                 }
             }
         }
