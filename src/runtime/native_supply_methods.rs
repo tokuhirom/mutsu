@@ -1058,6 +1058,30 @@ impl Interpreter {
                 }
                 Ok(self.make_supply_from_values(batched, attributes))
             }
+            "throttle" => {
+                use crate::value::SharedPromise;
+                let source_values = self.supply_get_values(attributes)?;
+                let mut process_block: Option<Value> = None;
+                for arg in &args {
+                    if matches!(arg, Value::Sub(_) | Value::WeakSub(_)) {
+                        process_block = Some(arg.clone());
+                        break;
+                    }
+                }
+                if let Some(block) = process_block {
+                    let mut promises = Vec::with_capacity(source_values.len());
+                    for val in &source_values {
+                        let result =
+                            self.call_sub_value(block.clone(), vec![val.clone()], false)?;
+                        let promise = SharedPromise::new_kept(result);
+                        promises.push(Value::Promise(promise));
+                    }
+                    Ok(self.make_supply_from_values(promises, attributes))
+                } else {
+                    // TODO: implement time-based throttling
+                    Ok(self.make_supply_from_values(source_values, attributes))
+                }
+            }
             "rotor" => {
                 let source_values = self.supply_get_values(attributes)?;
                 let rotored = self.dispatch_rotor(Value::array(source_values), &args)?;

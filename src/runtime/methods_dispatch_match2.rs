@@ -217,7 +217,8 @@ impl Interpreter {
             }
             "minmax" => self.dispatch_minmax_method(target, method, args),
             "snip" => self.dispatch_snip_method(target, method, args),
-            "head" | "flat" | "batch" | "comb" | "words" | "wait" | "zip" | "zip-latest" => {
+            "head" | "flat" | "batch" | "throttle" | "comb" | "words" | "wait" | "zip"
+            | "zip-latest" => {
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"
                 {

@@ -777,6 +777,7 @@ roast/S16-io/tmpdir.t
 roast/S16-io/watch.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
+roast/S17-channel/basic.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-lowlevel/atomic-ops.t

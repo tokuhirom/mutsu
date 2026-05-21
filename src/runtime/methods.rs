@@ -1678,6 +1678,7 @@ impl Interpreter {
                 | "produce"
                 | "map"
                 | "batch"
+                | "throttle"
                 | "rotor"
                 | "rotate"
                 | "comb"
