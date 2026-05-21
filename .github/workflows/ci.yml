@@ -63,7 +63,7 @@ jobs:
           git checkout -- roast/
 
       - name: Roast tests (make roast)
-        run: prove -e 'timeout 30 target/release/mutsu' $(cat roast-whitelist.txt)
+        run: MUTSU_BIN=target/release/mutsu prove -e scripts/run-roast-test.sh $(cat roast-whitelist.txt)
 
   wasm-e2e:
     runs-on: ubuntu-latest
