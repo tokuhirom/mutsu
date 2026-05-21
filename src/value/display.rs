@@ -6,6 +6,32 @@ pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
 }
 
+/// Format a value for display inside a Capture gist.
+fn capture_value_gist(v: &Value) -> String {
+    match v {
+        Value::Str(s) => format!("\"{}\"", s),
+        Value::Mixin(inner, mixins) => {
+            if let Some(str_val) = mixins.get("Str") {
+                let str_s = str_val.to_string_value();
+                let type_name = match inner.as_ref() {
+                    Value::Int(_) | Value::BigInt(_) => "IntStr",
+                    Value::Num(_) => "NumStr",
+                    _ => "Allomorph",
+                };
+                format!(
+                    "{}.new({}, \"{}\")",
+                    type_name,
+                    inner.to_string_value(),
+                    str_s
+                )
+            } else {
+                v.to_string_value()
+            }
+        }
+        _ => v.to_string_value(),
+    }
+}
+
 /// Format a Num in scientific notation matching Raku's output (e.g. `1e+40`, `-1e-05`).
 fn format_num_scientific(f: f64) -> String {
     // Use Rust's {:e} format and ensure the exponent has an explicit sign
@@ -859,15 +885,20 @@ impl Value {
             Value::Capture { positional, named } => {
                 let mut parts = Vec::new();
                 for v in positional {
-                    parts.push(v.to_string_value());
+                    match v {
+                        Value::Str(s) => parts.push(format!("\"{}\"", s)),
+                        _ => parts.push(v.to_string_value()),
+                    }
                 }
-                for (k, v) in named {
+                let mut named_entries: Vec<_> = named.iter().collect();
+                named_entries.sort_by_key(|(k, _)| (*k).clone());
+                for (k, v) in named_entries {
                     if let Value::Bool(true) = v {
-                        parts.push(format!(":{}", k));
+                        parts.push(format!(":{}(Bool::True)", k));
                     } else if let Value::Bool(false) = v {
-                        parts.push(format!(":!{}", k));
+                        parts.push(format!(":{}(Bool::False)", k));
                     } else {
-                        parts.push(format!(":{}({})", k, v.to_string_value()));
+                        parts.push(format!(":{}({})", k, capture_value_gist(v)));
                     }
                 }
                 format!("\\({})", parts.join(", "))
