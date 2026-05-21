@@ -979,6 +979,59 @@ impl Interpreter {
             }
         }
 
+        // Handle private attribute assignment via trust: $a!A::foo = value
+        // The method name is "!Owner::attr" when the `!` modifier was used.
+        if let Some(private_rest) = method.strip_prefix('!')
+            && let Value::Instance {
+                ref class_name,
+                ref attributes,
+                id: target_id,
+            } = target
+        {
+            let caller_class = self
+                .method_class_stack
+                .last()
+                .cloned()
+                .or_else(|| Some(self.current_package().to_string()));
+            let (owner_class, attr_name) =
+                if let Some((owner, attr)) = private_rest.split_once("::") {
+                    (owner.to_string(), attr.to_string())
+                } else {
+                    (class_name.resolve(), private_rest.to_string())
+                };
+            let caller_allowed = caller_class.as_deref() == Some(owner_class.as_str())
+                || self.class_trusts.get(&owner_class).is_some_and(|trusted| {
+                    caller_class
+                        .as_ref()
+                        .is_some_and(|caller| trusted.contains(caller))
+                });
+            if !caller_allowed {
+                return Err(RuntimeError::new(format!(
+                    "X::Method::Private::Permission: Cannot call private method '{}' on {} because it does not trust {}",
+                    attr_name,
+                    owner_class,
+                    caller_class.as_deref().unwrap_or("GLOBAL")
+                )));
+            }
+            let mut updated = (**attributes).clone();
+            updated.insert(attr_name, value.clone());
+            let cn = *class_name;
+            if let Some(var_name) = target_var {
+                self.overwrite_instance_bindings_by_identity(
+                    &cn.resolve(),
+                    target_id,
+                    updated.clone(),
+                );
+                self.env.insert(
+                    var_name.to_string(),
+                    Value::make_instance_with_id(cn, updated, target_id),
+                );
+            } else {
+                self.overwrite_instance_bindings_by_identity(&cn.resolve(), target_id, updated);
+            }
+            return Ok(value);
+        }
+
         // Handle qualified method names early: Class::method (e.g., $o.Parent::x = 5)
         // Must be before call_method_mut_with_values which can't handle qualified names.
         if method.contains("::")

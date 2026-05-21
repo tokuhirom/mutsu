@@ -88,7 +88,14 @@ impl Interpreter {
                     );
                     return Ok(result);
                 }
-                // Private method not found
+                // Private method not found — fall back to private attribute access.
+                // In Raku, `$obj!Owner::attr` accesses the private attribute `$!attr`
+                // directly when no explicit private method is defined.
+                if args.is_empty()
+                    && let Some(val) = attributes.get(pm_name)
+                {
+                    return Ok(val.clone());
+                }
                 return Err(make_method_not_found_error(
                     pm_name,
                     &class_name.resolve(),
