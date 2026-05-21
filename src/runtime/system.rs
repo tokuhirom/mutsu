@@ -1107,7 +1107,7 @@ impl Interpreter {
         Value::hash(hash)
     }
 
-    fn build_annotations(&self, attrs: &HashMap<String, Value>) -> Value {
+    pub(crate) fn build_annotations(&self, attrs: &HashMap<String, Value>) -> Value {
         let mut map = HashMap::new();
         if let Some(file) = attrs.get("file") {
             map.insert("file".to_string(), file.clone());

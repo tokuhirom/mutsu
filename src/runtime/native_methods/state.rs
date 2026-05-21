@@ -68,16 +68,6 @@ pub(crate) struct AsyncSocketListenerState {
     pub(crate) encoding: String,
 }
 
-/// UDP bound socket state
-#[derive(Debug, Clone)]
-pub(crate) struct UdpBoundSocketState {
-    pub(crate) host: String,
-    pub(crate) port: u16,
-    pub(crate) closed: bool,
-    pub(crate) supply_ids: Vec<u64>,
-}
-
-type UdpBoundSocketMap = std::sync::Mutex<HashMap<u64, UdpBoundSocketState>>;
 type AsyncSocketConnMap = std::sync::Mutex<HashMap<u64, AsyncSocketConnState>>;
 type AsyncSocketSupplyMap = std::sync::Mutex<HashMap<u64, AsyncSocketSupplyState>>;
 type AsyncSocketListenerMap = std::sync::Mutex<HashMap<u64, AsyncSocketListenerState>>;
@@ -94,11 +84,6 @@ fn async_socket_supply_map() -> &'static AsyncSocketSupplyMap {
 
 fn async_socket_listener_map() -> &'static AsyncSocketListenerMap {
     static MAP: OnceLock<AsyncSocketListenerMap> = OnceLock::new();
-    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
-}
-
-fn udp_bound_socket_map() -> &'static UdpBoundSocketMap {
-    static MAP: OnceLock<UdpBoundSocketMap> = OnceLock::new();
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -509,60 +494,4 @@ pub(in crate::runtime) fn take_promise_combinator_sources(
     } else {
         None
     }
-}
-
-pub(in crate::runtime) fn register_udp_bound_socket(id: u64, state: UdpBoundSocketState) {
-    if let Ok(mut map) = udp_bound_socket_map().lock() {
-        map.insert(id, state);
-    }
-}
-
-pub(in crate::runtime) fn get_udp_bound_socket(id: u64) -> Option<UdpBoundSocketState> {
-    udp_bound_socket_map()
-        .lock()
-        .ok()
-        .and_then(|map| map.get(&id).cloned())
-}
-
-pub(in crate::runtime) fn update_udp_bound_socket<F>(id: u64, f: F)
-where
-    F: FnOnce(&mut UdpBoundSocketState),
-{
-    if let Ok(mut map) = udp_bound_socket_map().lock()
-        && let Some(state) = map.get_mut(&id)
-    {
-        f(state);
-    }
-}
-
-pub(in crate::runtime) fn udp_port_in_use(host: &str, port: u16) -> bool {
-    if let Ok(map) = udp_bound_socket_map().lock() {
-        return map.values().any(|s| {
-            !s.closed
-                && s.port == port
-                && (s.host == host || s.host == "0.0.0.0" || host == "0.0.0.0")
-        });
-    }
-    false
-}
-
-pub(in crate::runtime) fn lookup_udp_bound_socket(
-    host: &str,
-    port: u16,
-) -> Option<(u64, UdpBoundSocketState)> {
-    if let Ok(map) = udp_bound_socket_map().lock() {
-        for (id, state) in map.iter() {
-            if state.closed || state.port != port {
-                continue;
-            }
-            if state.host == host
-                || state.host == "0.0.0.0"
-                || state.host == "::"
-                || (host == "localhost" && state.host == "127.0.0.1")
-            {
-                return Some((*id, state.clone()));
-            }
-        }
-    }
-    None
 }

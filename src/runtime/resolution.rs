@@ -1246,6 +1246,8 @@ impl Interpreter {
                 name: data.name.resolve(),
                 line: None,
                 file: None,
+                is_method: false,
+                is_block: true,
             });
             self.block_stack.push(block_sub);
             let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {

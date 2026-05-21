@@ -1177,6 +1177,43 @@ impl Interpreter {
             name,
             line,
             file,
+            is_method: false,
+            is_block: false,
+        });
+    }
+
+    pub(crate) fn push_method_routine_with_location(
+        &mut self,
+        package: String,
+        name: String,
+        line: Option<u32>,
+        file: Option<String>,
+    ) {
+        self.routine_stack.push(super::RoutineFrame {
+            package,
+            name,
+            line,
+            file,
+            is_method: true,
+            is_block: false,
+        });
+    }
+
+    /// Push a block/closure routine frame.
+    pub(crate) fn push_block_routine_with_location(
+        &mut self,
+        package: String,
+        name: String,
+        line: Option<u32>,
+        file: Option<String>,
+    ) {
+        self.routine_stack.push(super::RoutineFrame {
+            package,
+            name,
+            line,
+            file,
+            is_method: false,
+            is_block: true,
         });
     }
 

@@ -212,6 +212,8 @@ impl Interpreter {
             name: def.name.resolve(),
             line: None,
             file: None,
+            is_method: false,
+            is_block: false,
         });
         // Set __mutsu_callable_id so blocks defined inside this routine
         // capture the correct target for non-local return.
@@ -364,6 +366,8 @@ impl Interpreter {
                         name: def.name.resolve(),
                         line: None,
                         file: None,
+                        is_method: false,
+                        is_block: false,
                     });
                     self.prepare_definite_return_slot(return_spec.as_deref());
                     let result = self.run_block(&def.body);

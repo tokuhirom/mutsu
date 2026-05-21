@@ -305,70 +305,7 @@ impl Interpreter {
         Ok(Value::Promise(promise))
     }
 
-    /// IO::Socket::Async.bind-udp($host, $port)
-    pub(in crate::runtime) fn dispatch_socket_async_bind_udp(
-        &mut self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let host = args
-            .first()
-            .map(Value::to_string_value)
-            .unwrap_or_else(|| "0.0.0.0".to_string());
-        let port = args
-            .get(1)
-            .map(|v| match v {
-                Value::Int(i) => *i as u16,
-                Value::Num(f) => *f as u16,
-                other => other.to_string_value().parse::<u16>().unwrap_or(0),
-            })
-            .unwrap_or(0);
-
-        if super::super::native_methods::udp_port_in_use(&host, port) {
-            return Err(RuntimeError::new(format!(
-                "Address already in use: {}:{}",
-                host, port
-            )));
-        }
-
-        let socket_id = super::super::native_methods::next_async_socket_id();
-        super::super::native_methods::register_udp_bound_socket(
-            socket_id,
-            super::super::native_methods::UdpBoundSocketState {
-                host: host.clone(),
-                port,
-                closed: false,
-                supply_ids: Vec::new(),
-            },
-        );
-
-        let mut attrs = HashMap::new();
-        attrs.insert("udp-socket-id".to_string(), Value::Int(socket_id as i64));
-        attrs.insert("socket-host".to_string(), Value::str(host));
-        attrs.insert("socket-port".to_string(), Value::Int(port as i64));
-        attrs.insert("is-udp".to_string(), Value::Bool(true));
-        Ok(Value::make_instance(
-            Symbol::intern("IO::Socket::Async"),
-            attrs,
-        ))
-    }
-
-    /// IO::Socket::Async.udp() - create an unbound UDP socket for sending
-    pub(in crate::runtime) fn dispatch_socket_async_udp(
-        &mut self,
-        _args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let socket_id = super::super::native_methods::next_async_socket_id();
-        let mut attrs = HashMap::new();
-        attrs.insert("udp-socket-id".to_string(), Value::Int(socket_id as i64));
-        attrs.insert("is-udp".to_string(), Value::Bool(true));
-        attrs.insert("is-udp-sender".to_string(), Value::Bool(true));
-        Ok(Value::make_instance(
-            Symbol::intern("IO::Socket::Async"),
-            attrs,
-        ))
-    }
-
-    /// Thread.start({ block }) -- spawn a real OS thread
+    /// Thread.start({ block }) — spawn a real OS thread
     pub(in crate::runtime) fn dispatch_thread_start(
         &mut self,
         args: &[Value],

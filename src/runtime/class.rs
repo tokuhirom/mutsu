@@ -1100,6 +1100,8 @@ impl Interpreter {
             name: method_name_for_stack,
             line: None,
             file: None,
+            is_method: true,
+            is_block: false,
         });
         // Set current_package to the receiver class so that the compiler
         // qualifies function calls with the correct package prefix,
