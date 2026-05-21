@@ -2850,6 +2850,7 @@ impl Interpreter {
                 type_param_defs: type_param_defs.to_vec(),
                 role_def: role_def.clone(),
                 parents: candidate_parents,
+                language_version: crate::parser::current_language_version(),
             });
         if self
             .roles
@@ -3115,6 +3116,19 @@ impl Interpreter {
         // Register the role and its composed roles
         self.class_composed_roles
             .insert(role_name.to_string(), composed_roles_list);
+        // When punning a bare role (no type params), update the language
+        // revision metadata from the matching candidate so that
+        // `.^language-revision` on the pun instance returns the correct
+        // revision (not the last-registered candidate's revision).
+        let candidate_lang_version = self.role_candidates.get(role_name).and_then(|candidates| {
+            candidates
+                .iter()
+                .find(|c| c.type_params.is_empty())
+                .map(|c| c.language_version.clone())
+        });
+        if let Some(version) = candidate_lang_version {
+            self.store_language_revision_from_version(role_name, &version);
+        }
     }
 
     /// Validate that all `$!attr` references in method bodies refer to attributes

@@ -52,7 +52,7 @@ impl Interpreter {
         let saved_class_trusts = self.class_trusts.clone();
         let saved_roles = self.roles.clone();
         let saved_subsets = self.subsets.clone();
-        let saved_type_metadata = self.type_metadata.clone();
+        let mut saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let run_result = self.call_sub_value(block, vec![], true);
         // If `plan skip-all` was used inside a Block callable, the error is fatal
@@ -76,6 +76,10 @@ impl Interpreter {
             self.class_trusts = saved_class_trusts;
             self.roles = saved_roles;
             self.subsets = saved_subsets;
+            // Merge type_metadata: preserve entries added during the subtest
+            for (key, val) in std::mem::take(&mut self.type_metadata) {
+                saved_type_metadata.entry(key).or_insert(val);
+            }
             self.type_metadata = saved_type_metadata;
             self.restore_var_type_constraints(saved_var_type_constraints);
             return Err(run_result.unwrap_err());
@@ -100,6 +104,10 @@ impl Interpreter {
         self.class_trusts = saved_class_trusts;
         self.roles = saved_roles;
         self.subsets = saved_subsets;
+        // Merge type_metadata: preserve entries added during the subtest
+        for (key, val) in std::mem::take(&mut self.type_metadata) {
+            saved_type_metadata.entry(key).or_insert(val);
+        }
         self.type_metadata = saved_type_metadata;
         self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
@@ -143,7 +151,7 @@ impl Interpreter {
         let saved_class_trusts = self.class_trusts.clone();
         let saved_roles = self.roles.clone();
         let saved_subsets = self.subsets.clone();
-        let saved_type_metadata = self.type_metadata.clone();
+        let mut saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
         self.test_fn_plan(&[Value::Int(plan)])?;
         let run_result = self.call_sub_value(block, vec![], true);
@@ -157,6 +165,10 @@ impl Interpreter {
         self.class_trusts = saved_class_trusts;
         self.roles = saved_roles;
         self.subsets = saved_subsets;
+        // Merge type_metadata: preserve entries added during the subtest
+        for (key, val) in std::mem::take(&mut self.type_metadata) {
+            saved_type_metadata.entry(key).or_insert(val);
+        }
         self.type_metadata = saved_type_metadata;
         self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &desc, run_result.map(|_| ()))?;

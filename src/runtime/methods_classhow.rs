@@ -783,7 +783,7 @@ impl Interpreter {
                     let values = candidates
                         .iter()
                         .enumerate()
-                        .map(|(idx, _)| {
+                        .map(|(idx, cand)| {
                             // Create Instance values with candidate index so
                             // .WHY can look up per-candidate doc comments
                             let mut attrs = std::collections::HashMap::new();
@@ -794,6 +794,17 @@ impl Interpreter {
                             attrs.insert(
                                 "__mutsu_role_base_name".to_string(),
                                 Value::str(base_name.clone()),
+                            );
+                            // Embed per-candidate language revision
+                            let revision: String =
+                                if let Some(letter) = cand.language_version.strip_prefix("6.") {
+                                    letter.chars().next().unwrap_or('c').to_string()
+                                } else {
+                                    "c".to_string()
+                                };
+                            attrs.insert(
+                                "__mutsu_language_revision".to_string(),
+                                Value::str(revision),
                             );
                             Value::make_instance(Symbol::intern(&base_name), attrs)
                         })
@@ -944,6 +955,20 @@ impl Interpreter {
                 }
             }
             "language-revision" if !args.is_empty() => {
+                // Check for per-candidate language revision embedded as an
+                // attribute (set by ^candidates for role candidate instances).
+                if let Value::Instance { attributes, .. } = &args[0]
+                    && let Some(rev) = attributes.get("__mutsu_language_revision")
+                {
+                    return Ok(rev.clone());
+                }
+                // Check for language revision in Mixin metadata (from
+                // parametric role pun instances).
+                if let Value::Mixin(_, mixins) = &args[0]
+                    && let Some(rev) = mixins.get("__mutsu_language_revision")
+                {
+                    return Ok(rev.clone());
+                }
                 let type_name = match &args[0] {
                     Value::Package(name) => name.resolve(),
                     Value::Instance { class_name, .. } => class_name.resolve(),

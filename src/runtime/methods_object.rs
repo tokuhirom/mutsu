@@ -100,6 +100,7 @@ impl Interpreter {
             let base_name_str = base_name.resolve();
             self.ensure_role_punned_to_class(&base_name_str);
             let mut selected_role = self.roles.get(&base_name_str).cloned();
+            let mut matched_lang_version: Option<String> = None;
             let mut selected_param_names = self
                 .role_type_params
                 .get(&base_name_str)
@@ -181,6 +182,7 @@ impl Interpreter {
                 matching.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
                 if let Some((candidate, _, _)) = matching.into_iter().next() {
                     selected_param_names = candidate.type_params.clone();
+                    matched_lang_version = Some(candidate.language_version.clone());
                     selected_role = Some(candidate.role_def.clone());
                 }
             }
@@ -233,6 +235,20 @@ impl Interpreter {
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
                 }
                 self.env = saved_role_param_env;
+                // Embed language revision in mixin metadata so
+                // ^language-revision on the punned instance returns
+                // the revision of the matched candidate.
+                if let Some(ref ver) = matched_lang_version {
+                    let revision: String = if let Some(letter) = ver.strip_prefix("6.") {
+                        letter.chars().next().unwrap_or('c').to_string()
+                    } else {
+                        "c".to_string()
+                    };
+                    mixins.insert(
+                        "__mutsu_language_revision".to_string(),
+                        Value::str(revision),
+                    );
+                }
                 return Ok(Value::mixin(
                     Value::make_instance(*base_name, HashMap::new()),
                     mixins,
@@ -2522,6 +2538,36 @@ impl Interpreter {
                         Value::Nil
                     };
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+                }
+                // Embed language revision from the matching candidate
+                // (no-params for bare role punning) so ^language-revision
+                // returns the correct value for this role's origin module.
+                let cn_str = class_name.resolve();
+                let bare_lang_ver = self
+                    .role_candidates
+                    .get(&cn_str)
+                    .and_then(|candidates| {
+                        candidates
+                            .iter()
+                            .find(|c| c.type_params.is_empty())
+                            .map(|c| c.language_version.clone())
+                    })
+                    .or_else(|| {
+                        self.type_metadata
+                            .get(&cn_str)
+                            .and_then(|m| m.get("language-revision"))
+                            .map(|v| format!("6.{}", v.to_string_value()))
+                    });
+                if let Some(ver) = bare_lang_ver {
+                    let revision: String = if let Some(letter) = ver.strip_prefix("6.") {
+                        letter.chars().next().unwrap_or('c').to_string()
+                    } else {
+                        "c".to_string()
+                    };
+                    mixins.insert(
+                        "__mutsu_language_revision".to_string(),
+                        Value::str(revision),
+                    );
                 }
                 return Ok(Value::mixin(
                     Value::make_instance(*class_name, HashMap::new()),

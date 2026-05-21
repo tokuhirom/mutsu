@@ -314,6 +314,8 @@ struct RoleCandidateDef {
     role_def: RoleDef,
     /// Parent classes/roles declared via `is` on this candidate.
     parents: Vec<String>,
+    /// Language version (e.g. "6.c") captured at registration time.
+    language_version: String,
 }
 
 #[derive(Debug, Clone)]
