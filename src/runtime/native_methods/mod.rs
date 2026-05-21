@@ -29,8 +29,8 @@ pub(in crate::runtime) use state::{
     register_async_connection, register_promise_combinator_sources, register_supply_tap,
     register_udp_bound_socket, set_supply_collected_output, supplier_done, supplier_done_deferred,
     supplier_emit, supplier_id_from_attrs, supplier_quit, supplier_register_promise,
-    supplier_snapshot, supply_channel_map, supply_channel_map_pub, take_promise_combinator_sources,
-    udp_port_in_use, update_async_connection,
+    supplier_reset, supplier_snapshot, supply_channel_map, supply_channel_map_pub,
+    take_promise_combinator_sources, udp_port_in_use, update_async_connection,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;
@@ -38,14 +38,14 @@ pub(in crate::runtime) use state_scheduler::{
     fake_scheduler_cue_counter, fake_scheduler_init, next_fake_scheduler_id,
 };
 pub(in crate::runtime) use state_supplier::{
-    SupplierEmitAction, ZipAction, close_supplier_channel_taps, flush_supplier_batch_taps,
-    flush_supplier_line_taps, flush_supplier_words_taps, get_classify_state,
-    get_classify_sub_supplier_ids, get_start_output_supplier_ids, get_supplier_zip_state_ids,
-    last_supplier_tap_id, register_supplier_batch_tap, register_supplier_channel_tap,
-    register_supplier_classify_tap, register_supplier_done_callback, register_supplier_elems_tap,
-    register_supplier_flat_tap, register_supplier_lines_tap, register_supplier_produce_tap,
-    register_supplier_quit_callback, register_supplier_start_tap, register_supplier_tap,
-    register_supplier_tap_with_head_limit, register_supplier_unique_tap,
+    SupplierEmitAction, ZipAction, close_all_supplier_taps, close_supplier_channel_taps,
+    flush_supplier_batch_taps, flush_supplier_line_taps, flush_supplier_words_taps,
+    get_classify_state, get_classify_sub_supplier_ids, get_start_output_supplier_ids,
+    get_supplier_zip_state_ids, last_supplier_tap_id, register_supplier_batch_tap,
+    register_supplier_channel_tap, register_supplier_classify_tap, register_supplier_done_callback,
+    register_supplier_elems_tap, register_supplier_flat_tap, register_supplier_lines_tap,
+    register_supplier_produce_tap, register_supplier_quit_callback, register_supplier_start_tap,
+    register_supplier_tap, register_supplier_tap_with_head_limit, register_supplier_unique_tap,
     register_supplier_words_tap, register_supplier_zip_tap, register_zip_state,
     supplier_emit_callbacks, supplier_produce_update_acc, supplier_tap_count,
     supplier_unique_get_seen, supplier_unique_mark_seen, take_supplier_done_callbacks,

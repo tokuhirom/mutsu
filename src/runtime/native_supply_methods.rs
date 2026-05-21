@@ -1715,6 +1715,8 @@ impl Interpreter {
                             }
                         }
                     }
+                    close_all_supplier_taps(supplier_id);
+                    supplier_reset(supplier_id);
                 }
                 Ok(Value::Nil)
             }
@@ -1738,9 +1740,9 @@ impl Interpreter {
                             self.call_supply_quit_handler(quit_cb, reason.clone())?;
                         }
                     }
-                    for done_cb in take_supplier_done_callbacks(supplier_id) {
-                        self.call_sub_value(done_cb, Vec::new(), true)?;
-                    }
+                    let _ = take_supplier_done_callbacks(supplier_id);
+                    close_all_supplier_taps(supplier_id);
+                    supplier_reset(supplier_id);
                 }
                 Ok(Value::Nil)
             }
@@ -2006,7 +2008,11 @@ impl Interpreter {
                             }
                         }
                     }
+                    close_all_supplier_taps(sid);
+                    supplier_reset(sid);
                 }
+                attrs.insert("done".to_string(), Value::Bool(false));
+                attrs.remove("emitted");
                 Ok((Value::Nil, attrs))
             }
             "quit" => {
@@ -2031,10 +2037,13 @@ impl Interpreter {
                     for quit_cb in take_supplier_quit_callbacks(sid) {
                         self.call_supply_quit_handler(quit_cb, reason.clone())?;
                     }
-                    for done_cb in take_supplier_done_callbacks(sid) {
-                        self.call_sub_value(done_cb, Vec::new(), true)?;
-                    }
+                    let _ = take_supplier_done_callbacks(sid);
+                    close_all_supplier_taps(sid);
+                    supplier_reset(sid);
                 }
+                attrs.insert("done".to_string(), Value::Bool(false));
+                attrs.remove("quit_reason");
+                attrs.remove("emitted");
                 Ok((Value::Nil, attrs))
             }
             _ => Err(RuntimeError::new(format!(
