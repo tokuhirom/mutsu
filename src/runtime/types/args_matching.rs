@@ -407,9 +407,23 @@ impl Interpreter {
                 // Check type constraint on named param
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(ref val) = arg_val
-                    && !self.type_matches_value(constraint, val)
                 {
-                    return false;
+                    let resolved_constraint = self.resolved_type_capture_name(constraint);
+                    // Apply the same numeric widening for named params as for
+                    // positional params: Int/Rat/FatRat can satisfy a Num
+                    // constraint in multi dispatch.
+                    let is_num_widening = resolved_constraint == "Num"
+                        && matches!(
+                            val,
+                            Value::Int(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        );
+                    if !is_num_widening && !self.type_matches_value(&resolved_constraint, val) {
+                        return false;
+                    }
                 }
 
                 // Check where constraint on named param

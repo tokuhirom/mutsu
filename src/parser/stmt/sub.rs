@@ -838,7 +838,8 @@ pub(super) fn sub_decl_body(
         loop {
             let (r2, _) = ws(r)?;
             if !r2.starts_with('|') {
-                break r2;
+                r = r2;
+                break;
             }
             let (r3, _) = ws(&r2[1..])?;
             if !r3.starts_with('(') {
@@ -854,6 +855,23 @@ pub(super) fn sub_decl_body(
             signature_alternates.push((alt_params, alt_param_defs));
             r = r4;
         }
+        // Validate: all alternate signatures must have the same set of
+        // formal variable names as the primary signature (S13).
+        if !signature_alternates.is_empty() {
+            let mut primary_names: Vec<&str> = params.iter().map(|s| s.as_str()).collect();
+            primary_names.sort();
+            for (alt_params, _alt_defs) in &signature_alternates {
+                let mut alt_names: Vec<&str> = alt_params.iter().map(|s| s.as_str()).collect();
+                alt_names.sort();
+                if alt_names != primary_names {
+                    return Err(PError::raw(
+                        "Multis with multiple signatures must have the same set of formal variable names".to_string(),
+                        None,
+                    ));
+                }
+            }
+        }
+        r
     } else {
         rest
     };
