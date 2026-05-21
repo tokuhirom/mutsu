@@ -1031,11 +1031,16 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
     matches!(
         name,
         "Backtrace::Frame"
+            | "CompUnit::DependencySpecification"
             | "CompUnit::RepositoryRegistry"
             | "CompUnit::Repository::FileSystem"
             | "CompUnit::Repository::Installation"
             | "CompUnit::Repository::NQP"
             | "CompUnit::Repository::Perl5"
+            | "Distribution"
+            | "Distribution::Hash"
+            | "Distribution::Installation"
+            | "Distribution::Path"
             | "IO::ArgFiles"
             | "IO::CatHandle"
             | "IO::Handle"

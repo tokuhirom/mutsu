@@ -1441,18 +1441,38 @@ impl Interpreter {
                     });
                 }
                 "CompUnit::DependencySpecification" => {
-                    // Extract :short-name from named args
                     let mut short_name: Option<String> = None;
+                    let mut auth_matcher: Option<String> = None;
+                    let mut version_matcher: Option<String> = None;
+                    let mut api_matcher: Option<String> = None;
                     for arg in &args {
-                        if let Value::Pair(key, value) = arg
-                            && key == "short-name"
-                        {
-                            if let Value::Str(s) = value.as_ref() {
-                                short_name = Some(s.to_string());
-                            } else {
-                                return Err(RuntimeError::new(
-                                    "CompUnit::DependencySpecification.new: :short-name must be a Str",
-                                ));
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "short-name" => {
+                                    if let Value::Str(s) = value.as_ref() {
+                                        short_name = Some(s.to_string());
+                                    } else {
+                                        return Err(RuntimeError::new(
+                                            "CompUnit::DependencySpecification.new: :short-name must be a Str",
+                                        ));
+                                    }
+                                }
+                                "auth-matcher" => {
+                                    if !matches!(value.as_ref(), Value::Bool(true)) {
+                                        auth_matcher = Some(value.to_string_value());
+                                    }
+                                }
+                                "version-matcher" => {
+                                    if !matches!(value.as_ref(), Value::Bool(true)) {
+                                        version_matcher = Some(value.to_string_value());
+                                    }
+                                }
+                                "api-matcher" => {
+                                    if !matches!(value.as_ref(), Value::Bool(true)) {
+                                        api_matcher = Some(value.to_string_value());
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -1461,9 +1481,100 @@ impl Interpreter {
                             "CompUnit::DependencySpecification.new: :short-name is required",
                         )
                     })?;
+                    if auth_matcher.is_some() || version_matcher.is_some() || api_matcher.is_some()
+                    {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("short-name".to_string(), Value::str(short_name));
+                        if let Some(a) = auth_matcher {
+                            attrs.insert("auth-matcher".to_string(), Value::str(a));
+                        }
+                        if let Some(v) = version_matcher {
+                            attrs.insert("version-matcher".to_string(), Value::str(v));
+                        }
+                        if let Some(a) = api_matcher {
+                            attrs.insert("api-matcher".to_string(), Value::str(a));
+                        }
+                        return Ok(Value::make_instance(
+                            Symbol::intern("CompUnit::DependencySpecification"),
+                            attrs,
+                        ));
+                    }
                     return Ok(Value::CompUnitDepSpec {
                         short_name: Symbol::intern(&short_name),
                     });
+                }
+                "Distribution::Path" => {
+                    let dir_path = args
+                        .first()
+                        .map(Value::to_string_value)
+                        .unwrap_or_else(|| ".".to_string());
+                    let meta_path = std::path::Path::new(&dir_path).join("META6.json");
+                    if !meta_path.exists() {
+                        return Err(RuntimeError::new(format!(
+                            "No meta file located at {}",
+                            meta_path.display()
+                        )));
+                    }
+                    let meta_json = std::fs::read_to_string(&meta_path).map_err(|e| {
+                        RuntimeError::new(format!("Cannot read {}: {e}", meta_path.display()))
+                    })?;
+                    let meta_hash = self.parse_json_to_value(&meta_json)?;
+                    let files_hash = self.build_dist_files_hash(&dir_path, &meta_hash);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("prefix".to_string(), self.make_io_path_instance(&dir_path));
+                    attrs.insert("meta".to_string(), meta_hash);
+                    attrs.insert("files".to_string(), files_hash);
+                    return Ok(Value::make_instance(
+                        Symbol::intern("Distribution::Path"),
+                        attrs,
+                    ));
+                }
+                "Distribution::Hash" => {
+                    let mut meta_hash = Value::Nil;
+                    let mut prefix = String::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Pair(key, value) if key == "prefix" => {
+                                prefix = value.to_string_value();
+                            }
+                            Value::Hash(_) => {
+                                if meta_hash == Value::Nil {
+                                    meta_hash = arg.clone();
+                                }
+                            }
+                            _ => {
+                                if meta_hash == Value::Nil {
+                                    meta_hash = arg.clone();
+                                }
+                            }
+                        }
+                    }
+                    let files_hash = self.build_dist_files_hash(&prefix, &meta_hash);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("prefix".to_string(), self.make_io_path_instance(&prefix));
+                    attrs.insert("meta".to_string(), meta_hash);
+                    attrs.insert("files".to_string(), files_hash);
+                    return Ok(Value::make_instance(
+                        Symbol::intern("Distribution::Hash"),
+                        attrs,
+                    ));
+                }
+                "CompUnit::Repository::Installation" => {
+                    let mut prefix = String::new();
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg
+                            && key == "prefix"
+                        {
+                            prefix = value.to_string_value();
+                        }
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert("prefix".to_string(), self.make_io_path_instance(&prefix));
+                    attrs.insert("short-id".to_string(), Value::str_from("inst"));
+                    return Ok(Value::make_instance(
+                        Symbol::intern("CompUnit::Repository::Installation"),
+                        attrs,
+                    ));
                 }
                 "CompUnit::Repository::FileSystem" => {
                     let mut prefix = ".".to_string();

@@ -1778,6 +1778,16 @@ impl Value {
     /// interpreter is single-threaded and no `&HashMap` borrows are live
     /// across this call.
     ///
+    /// Look up a key in a Hash value by string key.
+    pub fn hash_get_str(&self, key: &str) -> Option<Value> {
+        match self {
+            Value::Hash(arc) => arc.get(key).cloned(),
+            Value::Mixin(inner, _) => inner.hash_get_str(key),
+            Value::Scalar(inner) => inner.hash_get_str(key),
+            _ => None,
+        }
+    }
+
     /// Returns `None` if `self` is not a `Value::Hash`.
     pub fn hash_autovivify(&self, key: &str) -> Option<Value> {
         if let Value::Hash(arc) = self {
