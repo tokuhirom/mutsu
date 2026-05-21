@@ -234,8 +234,7 @@ fn decode_bytes_with_builtin_encoding(
             let enc = encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(|| {
                 RuntimeError::new(format!("Unknown encoding '{}'", encoding_name))
             })?;
-            let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
-            Ok(decoded.into_owned())
+            crate::runtime::Interpreter::decode_encoding_rs(enc, bytes, None)
         }
     }
 }

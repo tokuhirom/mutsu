@@ -246,6 +246,199 @@ impl Interpreter {
         }
     }
 
+    /// Decode bytes with an optional replacement string for unmappable/invalid
+    /// sequences.  When `replacement` is `None` and the input contains errors,
+    /// a `RuntimeError` is raised (Raku strict-decode semantics).  When
+    /// `replacement` is `Some(r)`, every error sequence is replaced by `r`.
+    pub(crate) fn decode_with_encoding_and_replacement(
+        &self,
+        bytes: &[u8],
+        encoding_name: &str,
+        replacement: Option<&str>,
+    ) -> Result<String, RuntimeError> {
+        let encoding = self
+            .find_encoding(encoding_name)
+            .map(|e| e.name.as_str())
+            .unwrap_or(encoding_name)
+            .to_lowercase();
+
+        match encoding.as_str() {
+            "utf8-c8" => Ok(super::utf8_c8::decode_utf8_c8(bytes)),
+            "ascii" => Ok(bytes
+                .iter()
+                .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
+                .collect()),
+            "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
+            "utf-16" | "utf16" => {
+                let (data, be) = if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
+                    (&bytes[2..], true)
+                } else if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+                    (&bytes[2..], false)
+                } else {
+                    (bytes, false)
+                };
+                if !data.len().is_multiple_of(2) {
+                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                }
+                let units: Vec<u16> = data
+                    .chunks_exact(2)
+                    .map(|c| {
+                        if be {
+                            u16::from_be_bytes([c[0], c[1]])
+                        } else {
+                            u16::from_le_bytes([c[0], c[1]])
+                        }
+                    })
+                    .collect();
+                Ok(String::from_utf16_lossy(&units))
+            }
+            "utf-16le" | "utf16le" => {
+                if !bytes.len().is_multiple_of(2) {
+                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                }
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                Ok(String::from_utf16_lossy(&units))
+            }
+            "utf-16be" | "utf16be" => {
+                if !bytes.len().is_multiple_of(2) {
+                    return Err(RuntimeError::new("Invalid utf-16be byte length"));
+                }
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                    .collect();
+                Ok(String::from_utf16_lossy(&units))
+            }
+            "utf-8" | "utf8" => match std::str::from_utf8(bytes) {
+                Ok(s) => Ok(s.strip_prefix('\u{FEFF}').unwrap_or(s).to_string()),
+                Err(e) => {
+                    if let Some(repl) = replacement {
+                        return Ok(Self::decode_utf8_with_replacement(bytes, repl));
+                    }
+                    let vup = e.valid_up_to();
+                    if e.error_len().is_none() {
+                        Err(RuntimeError::new(
+                            "Malformed termination of UTF-8 string".to_string(),
+                        ))
+                    } else {
+                        let pfx = std::str::from_utf8(&bytes[..vup]).unwrap_or("");
+                        let (mut line, mut col) = (1usize, 1usize);
+                        for ch in pfx.chars() {
+                            if ch == '\n' {
+                                line += 1;
+                                col = 1;
+                            } else {
+                                col += 1;
+                            }
+                        }
+                        let s = if vup > 0 { vup - 1 } else { 0 };
+                        let end = (vup + 2).min(bytes.len());
+                        let near: Vec<String> =
+                            bytes[s..end].iter().map(|b| format!("{:02x}", b)).collect();
+                        Err(RuntimeError::new(format!(
+                            "Malformed UTF-8 near bytes {} at line {} col {}",
+                            near.join(" "),
+                            line,
+                            col
+                        )))
+                    }
+                }
+            },
+            _ => {
+                if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
+                    return Self::decode_encoding_rs(enc, bytes, replacement);
+                }
+                Ok(String::from_utf8_lossy(bytes).into_owned())
+            }
+        }
+    }
+
+    /// Decode bytes using encoding_rs with proper error handling.
+    /// When `replacement` is None, throws on any decode error.
+    /// When `replacement` is Some(r), replaces error sequences with `r`.
+    pub(crate) fn decode_encoding_rs(
+        enc: &'static encoding_rs::Encoding,
+        bytes: &[u8],
+        replacement: Option<&str>,
+    ) -> Result<String, RuntimeError> {
+        // Fast path: if no replacement, try lossy decode and check for errors
+        if replacement.is_none() {
+            let (decoded, _used_encoding, had_errors) = enc.decode(bytes);
+            if had_errors {
+                return Err(RuntimeError::new(format!(
+                    "Error decoding {} byte(s) as {}",
+                    bytes.len(),
+                    enc.name()
+                )));
+            }
+            return Ok(decoded.into_owned());
+        }
+        let repl = replacement.unwrap();
+        // Slow path: incremental decode to insert custom replacement strings
+        let mut decoder = enc.new_decoder_without_bom_handling();
+        let max_len = decoder
+            .max_utf8_buffer_length_without_replacement(bytes.len())
+            .unwrap_or(bytes.len() * 4);
+        let mut output = String::with_capacity(max_len);
+        let mut total_read = 0;
+        loop {
+            if total_read > bytes.len() {
+                break;
+            }
+            let src = &bytes[total_read..];
+            let is_last = true; // We provide all remaining input at once
+            let needed = decoder
+                .max_utf8_buffer_length_without_replacement(src.len())
+                .unwrap_or(src.len() * 4 + 16);
+            output.reserve(needed);
+            let (result, read) =
+                decoder.decode_to_string_without_replacement(src, &mut output, is_last);
+            total_read += read;
+            match result {
+                encoding_rs::DecoderResult::InputEmpty => {
+                    break;
+                }
+                encoding_rs::DecoderResult::Malformed(_, _) => {
+                    output.push_str(repl);
+                    // The malformed bytes are already accounted for in `read`
+                    // (the decoder consumed them). Continue decoding the rest.
+                }
+                encoding_rs::DecoderResult::OutputFull => {
+                    // Grow output and retry
+                    output.reserve(needed + 1024);
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    /// Decode UTF-8 bytes with a replacement string for invalid sequences.
+    fn decode_utf8_with_replacement(bytes: &[u8], replacement: &str) -> String {
+        let mut result = String::new();
+        let mut pos = 0;
+        while pos < bytes.len() {
+            match std::str::from_utf8(&bytes[pos..]) {
+                Ok(s) => {
+                    result.push_str(s);
+                    break;
+                }
+                Err(e) => {
+                    let valid_up_to = e.valid_up_to();
+                    if valid_up_to > 0 {
+                        result
+                            .push_str(std::str::from_utf8(&bytes[pos..pos + valid_up_to]).unwrap());
+                    }
+                    result.push_str(replacement);
+                    pos += valid_up_to + e.error_len().unwrap_or(1);
+                }
+            }
+        }
+        result
+    }
+
     /// Check whether a character can be encoded in the given encoding following
     /// Raku's rules. This catches cases where `encoding_rs` (WHATWG) silently
     /// maps codepoints that Raku considers non-encodable:

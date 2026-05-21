@@ -104,9 +104,17 @@ impl Interpreter {
             let is_wide = cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]";
             let default_encoding = if is_wide { "utf-16" } else { "utf-8" };
             let encoding = args
-                .first()
+                .iter()
+                .find(|v| !matches!(v, Value::Pair(..)))
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| default_encoding.to_string());
+            let replacement = Self::named_value(args, "replacement").map(|v| {
+                if matches!(v, Value::Bool(true)) {
+                    "\u{FFFD}".to_string()
+                } else {
+                    v.to_string_value()
+                }
+            });
             let normalized_encoding = self
                 .find_encoding(&encoding)
                 .map(|e| e.name.as_str().to_lowercase())
@@ -142,7 +150,11 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            let decoded = match self.decode_with_encoding(&bytes, &encoding) {
+            let decoded = match self.decode_with_encoding_and_replacement(
+                &bytes,
+                &encoding,
+                replacement.as_deref(),
+            ) {
                 Ok(d) => d,
                 Err(e) => return Some(Err(e)),
             };

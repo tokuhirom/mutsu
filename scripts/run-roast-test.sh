@@ -40,4 +40,11 @@ per_file_timeout() {
 
 test_file="$1"
 file_timeout=$(per_file_timeout "$test_file")
-exec timeout "$file_timeout" "$MUTSU_BIN" "$test_file"
+# Roast tests that reference sibling files (e.g. text-samples/) expect to run
+# from the roast directory. Strip the "roast/" prefix and cd into roast/.
+if [[ "$test_file" == roast/* ]]; then
+  relative="${test_file#roast/}"
+  exec timeout "$file_timeout" bash -c "cd roast && \"$(pwd)/$MUTSU_BIN\" \"$relative\""
+else
+  exec timeout "$file_timeout" "$MUTSU_BIN" "$test_file"
+fi
