@@ -38,6 +38,80 @@ impl Interpreter {
         err
     }
 
+    /// Resolve a callback result into the new promise, keeping on success,
+    /// breaking on error.
+    fn resolve_promise_callback(
+        new_promise: &SharedPromise,
+        result: Result<Value, RuntimeError>,
+        output: String,
+        stderr: String,
+    ) {
+        match result {
+            Ok(v) => new_promise.keep(v, output, stderr),
+            Err(e) => {
+                let error_val = if let Some(ex) = e.exception {
+                    *ex
+                } else {
+                    Value::str(e.message)
+                };
+                new_promise.break_with(error_val, output, stderr);
+            }
+        }
+    }
+
+    /// Run a promise chaining method (.then, .andthen, .orelse).
+    /// `should_run` decides whether to invoke the callback based on the
+    /// resolved status; returns `None` to skip (propagate), `Some(true)` to
+    /// run the callback.  `propagate` produces the value to forward when
+    /// skipping.
+    fn promise_chain_method(
+        &mut self,
+        shared: &SharedPromise,
+        block: Value,
+        should_run: fn(&str) -> bool,
+        propagate_kept: bool,
+    ) -> Value {
+        let orig = shared.clone();
+        let new_promise = SharedPromise::new_with_class(shared.class_name());
+        let ret = Value::Promise(new_promise.clone());
+        if orig.is_resolved() {
+            let (result, output, stderr) = orig.wait();
+            let status = orig.status();
+            if should_run(&status) {
+                let promise_val = Value::Promise(orig.clone());
+                let cb_result = self.call_sub_value(block, vec![promise_val], true);
+                Self::resolve_promise_callback(&new_promise, cb_result, output, stderr);
+            } else if propagate_kept {
+                new_promise.keep(result, output, stderr);
+            } else {
+                new_promise.break_with(result, output, stderr);
+            }
+        } else {
+            let mut thread_interp = self.clone_for_thread();
+            std::thread::spawn(move || {
+                let (result, output, stderr) = orig.wait();
+                let status = orig.status();
+                if should_run(&status) {
+                    let promise_val = Value::Promise(orig.clone());
+                    let cb_result = thread_interp.call_sub_value(block, vec![promise_val], true);
+                    let out = std::mem::take(&mut thread_interp.output);
+                    let err = std::mem::take(&mut thread_interp.stderr_output);
+                    Self::resolve_promise_callback(
+                        &new_promise,
+                        cb_result,
+                        format!("{}{}", output, out),
+                        format!("{}{}", stderr, err),
+                    );
+                } else if propagate_kept {
+                    new_promise.keep(result, output, stderr);
+                } else {
+                    new_promise.break_with(result, output, stderr);
+                }
+            });
+        }
+        ret
+    }
+
     pub(super) fn dispatch_promise_method(
         &mut self,
         shared: &SharedPromise,
@@ -47,11 +121,12 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "result" => {
+                // Wait for the promise to resolve (blocks if Planned)
+                let (result, _, _) = shared.wait();
+                self.sync_shared_vars_to_env();
                 let status = shared.status();
                 if status == "Broken" {
                     // .result on a Broken promise throws the cause as X::AdHoc
-                    let (result, _, _) = shared.wait();
-                    self.sync_shared_vars_to_env();
                     let msg = result.to_string_value();
                     let mut attrs = HashMap::new();
                     attrs.insert("payload".to_string(), Value::str(msg.clone()));
@@ -61,9 +136,6 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     Err(err)
                 } else {
-                    // Planned blocks, Kept returns value
-                    let result = shared.result_blocking();
-                    self.sync_shared_vars_to_env();
                     // Replay deferred taps for Proc::Async results
                     if let Value::Instance {
                         ref class_name,
@@ -80,54 +152,18 @@ impl Interpreter {
             "status" => Ok(Value::str(shared.status())),
             "then" => {
                 let block = args.into_iter().next().unwrap_or(Value::Nil);
-                let orig = shared.clone();
-                let new_promise = SharedPromise::new_with_class(shared.class_name());
-                let ret = Value::Promise(new_promise.clone());
-                if orig.is_resolved() {
-                    let (result, output, stderr) = orig.wait();
-                    match self.call_sub_value(block, vec![result], true) {
-                        Ok(v) => new_promise.keep(v, output, stderr),
-                        Err(e) => {
-                            let error_val = if let Some(ex) = e.exception {
-                                *ex
-                            } else {
-                                Value::str(e.message)
-                            };
-                            new_promise.break_with(error_val, output, stderr);
-                        }
-                    }
-                } else {
-                    let mut thread_interp = self.clone_for_thread();
-                    std::thread::spawn(move || {
-                        let (result, output, stderr) = orig.wait();
-                        match thread_interp.call_sub_value(block, vec![result], true) {
-                            Ok(v) => {
-                                let out = std::mem::take(&mut thread_interp.output);
-                                let err = std::mem::take(&mut thread_interp.stderr_output);
-                                new_promise.keep(
-                                    v,
-                                    format!("{}{}", output, out),
-                                    format!("{}{}", stderr, err),
-                                );
-                            }
-                            Err(e) => {
-                                let out = std::mem::take(&mut thread_interp.output);
-                                let err = std::mem::take(&mut thread_interp.stderr_output);
-                                let error_val = if let Some(ex) = e.exception {
-                                    *ex
-                                } else {
-                                    Value::str(e.message)
-                                };
-                                new_promise.break_with(
-                                    error_val,
-                                    format!("{}{}", output, out),
-                                    format!("{}{}", stderr, err),
-                                );
-                            }
-                        }
-                    });
-                }
-                Ok(ret)
+                // .then always runs the callback regardless of Kept/Broken
+                Ok(self.promise_chain_method(shared, block, |_| true, true))
+            }
+            "andthen" => {
+                let block = args.into_iter().next().unwrap_or(Value::Nil);
+                // .andthen runs callback only if Kept; propagates Broken
+                Ok(self.promise_chain_method(shared, block, |s| s == "Kept", false))
+            }
+            "orelse" => {
+                let block = args.into_iter().next().unwrap_or(Value::Nil);
+                // .orelse runs callback only if Broken; propagates Kept
+                Ok(self.promise_chain_method(shared, block, |s| s == "Broken", true))
             }
             "keep" => {
                 let value = args.into_iter().next().unwrap_or(Value::Bool(true));
