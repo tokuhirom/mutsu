@@ -1563,9 +1563,10 @@ impl Interpreter {
                     let mut prefix = String::new();
                     for arg in &args {
                         if let Value::Pair(key, value) = arg
-                            && key == "prefix" {
-                                prefix = value.to_string_value();
-                            }
+                            && key == "prefix"
+                        {
+                            prefix = value.to_string_value();
+                        }
                     }
                     let mut attrs = HashMap::new();
                     attrs.insert("prefix".to_string(), self.make_io_path_instance(&prefix));

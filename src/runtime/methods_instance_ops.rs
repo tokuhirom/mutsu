@@ -369,15 +369,16 @@ impl Interpreter {
                     attributes,
                     method,
                     args.clone(),
-                ) {
-                    return result;
-                }
+                )
+            {
+                return result;
+            }
             if class_name == "CompUnit::Repository::Installation"
                 && let Some(result) =
                     self.dispatch_cur_installation_method(attributes, method, args.clone())
-                {
-                    return result;
-                }
+            {
+                return result;
+            }
             if class_name == "CompUnit::DependencySpecification" {
                 match method {
                     "short-name" => {

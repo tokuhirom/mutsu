@@ -17,48 +17,51 @@ impl Interpreter {
         let mut files = HashMap::new();
         let prefix_path = std::path::Path::new(prefix);
         if let Some(resources) = meta.hash_get_str("resources")
-            && let Value::Array(arr, _) = resources {
-                for resource in arr.iter() {
-                    let resource_str = resource.to_string_value();
-                    if resource_str.starts_with("libraries/") {
-                        let lib_name = resource_str.strip_prefix("libraries/").unwrap();
-                        let platform_name = platform_library_name(lib_name);
-                        let actual = prefix_path
-                            .join("resources")
-                            .join("libraries")
-                            .join(&platform_name);
-                        files.insert(
-                            format!("resources/{resource_str}"),
-                            Value::str(actual.to_string_lossy().to_string()),
-                        );
-                    } else {
-                        let actual_path = prefix_path.join("resources").join(&resource_str);
-                        files.insert(
-                            format!("resources/{resource_str}"),
-                            Value::str(actual_path.to_string_lossy().to_string()),
-                        );
-                    }
-                }
-            }
-        if let Some(provides) = meta.hash_get_str("provides")
-            && let Value::Hash(map) = provides {
-                for (_, v) in map.iter() {
-                    let path_str = v.to_string_value();
+            && let Value::Array(arr, _) = resources
+        {
+            for resource in arr.iter() {
+                let resource_str = resource.to_string_value();
+                if resource_str.starts_with("libraries/") {
+                    let lib_name = resource_str.strip_prefix("libraries/").unwrap();
+                    let platform_name = platform_library_name(lib_name);
+                    let actual = prefix_path
+                        .join("resources")
+                        .join("libraries")
+                        .join(&platform_name);
                     files.insert(
-                        path_str.clone(),
-                        Value::str(prefix_path.join(&path_str).to_string_lossy().to_string()),
+                        format!("resources/{resource_str}"),
+                        Value::str(actual.to_string_lossy().to_string()),
+                    );
+                } else {
+                    let actual_path = prefix_path.join("resources").join(&resource_str);
+                    files.insert(
+                        format!("resources/{resource_str}"),
+                        Value::str(actual_path.to_string_lossy().to_string()),
                     );
                 }
             }
+        }
+        if let Some(provides) = meta.hash_get_str("provides")
+            && let Value::Hash(map) = provides
+        {
+            for (_, v) in map.iter() {
+                let path_str = v.to_string_value();
+                files.insert(
+                    path_str.clone(),
+                    Value::str(prefix_path.join(&path_str).to_string_lossy().to_string()),
+                );
+            }
+        }
         let bin_dir = prefix_path.join("bin");
         if bin_dir.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&bin_dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let path = entry.path().to_string_lossy().to_string();
-                    files.insert(format!("bin/{name}"), Value::str(path));
-                }
+            && let Ok(entries) = std::fs::read_dir(&bin_dir)
+        {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let path = entry.path().to_string_lossy().to_string();
+                files.insert(format!("bin/{name}"), Value::str(path));
             }
+        }
         Value::Hash(Arc::new(files))
     }
 
@@ -290,58 +293,61 @@ impl Interpreter {
         );
         let mut installed_provides = HashMap::new();
         if let Some(provides) = meta.hash_get_str("provides")
-            && let Value::Hash(map) = provides {
-                for (k, v) in map.iter() {
-                    let source_path_str = v.to_string_value();
-                    let source_full = std::path::Path::new(&dist_prefix).join(&source_path_str);
-                    let source_id = format!("{:X}", hash_strings(&[k, &dist_id]));
-                    let dest = sources_dir.join(&source_id);
-                    if source_full.exists() {
-                        std::fs::copy(&source_full, &dest).ok();
-                    }
-                    let mut inner = HashMap::new();
-                    inner.insert("file".to_string(), Value::str(source_id));
-                    installed_provides.insert(k.clone(), Value::Hash(Arc::new(inner)));
+            && let Value::Hash(map) = provides
+        {
+            for (k, v) in map.iter() {
+                let source_path_str = v.to_string_value();
+                let source_full = std::path::Path::new(&dist_prefix).join(&source_path_str);
+                let source_id = format!("{:X}", hash_strings(&[k, &dist_id]));
+                let dest = sources_dir.join(&source_id);
+                if source_full.exists() {
+                    std::fs::copy(&source_full, &dest).ok();
                 }
+                let mut inner = HashMap::new();
+                inner.insert("file".to_string(), Value::str(source_id));
+                installed_provides.insert(k.clone(), Value::Hash(Arc::new(inner)));
             }
+        }
         let mut installed_resources = HashMap::new();
         if let Some(resources_val) = meta.hash_get_str("resources")
-            && let Value::Array(arr, _) = resources_val {
-                for resource in arr.iter() {
-                    let resource_str = resource.to_string_value();
-                    let source_path = if resource_str.starts_with("libraries/") {
-                        let lib_name = resource_str.strip_prefix("libraries/").unwrap();
-                        let platform_name = platform_library_name(lib_name);
-                        std::path::Path::new(&dist_prefix)
-                            .join("resources")
-                            .join("libraries")
-                            .join(&platform_name)
-                    } else {
-                        std::path::Path::new(&dist_prefix)
-                            .join("resources")
-                            .join(&resource_str)
-                    };
-                    let resource_id = format!("{:X}", hash_strings(&[&resource_str, &dist_id]));
-                    let dest = resources_dir.join(&resource_id);
-                    if source_path.exists() {
-                        std::fs::copy(&source_path, &dest).ok();
-                    }
-                    installed_resources
-                        .insert(format!("resources/{resource_str}"), Value::str(resource_id));
+            && let Value::Array(arr, _) = resources_val
+        {
+            for resource in arr.iter() {
+                let resource_str = resource.to_string_value();
+                let source_path = if resource_str.starts_with("libraries/") {
+                    let lib_name = resource_str.strip_prefix("libraries/").unwrap();
+                    let platform_name = platform_library_name(lib_name);
+                    std::path::Path::new(&dist_prefix)
+                        .join("resources")
+                        .join("libraries")
+                        .join(&platform_name)
+                } else {
+                    std::path::Path::new(&dist_prefix)
+                        .join("resources")
+                        .join(&resource_str)
+                };
+                let resource_id = format!("{:X}", hash_strings(&[&resource_str, &dist_id]));
+                let dest = resources_dir.join(&resource_id);
+                if source_path.exists() {
+                    std::fs::copy(&source_path, &dest).ok();
                 }
+                installed_resources
+                    .insert(format!("resources/{resource_str}"), Value::str(resource_id));
             }
+        }
         let mut installed_bin = HashMap::new();
         let source_bin_dir = std::path::Path::new(&dist_prefix).join("bin");
         if source_bin_dir.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&source_bin_dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let bin_id = format!("{:X}", hash_strings(&[&name, &dist_id]));
-                    let dest = bin_dir.join(&bin_id);
-                    std::fs::copy(entry.path(), &dest).ok();
-                    installed_bin.insert(format!("bin/{name}"), Value::str(bin_id));
-                }
+            && let Ok(entries) = std::fs::read_dir(&source_bin_dir)
+        {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let bin_id = format!("{:X}", hash_strings(&[&name, &dist_id]));
+                let dest = bin_dir.join(&bin_id);
+                std::fs::copy(entry.path(), &dest).ok();
+                installed_bin.insert(format!("bin/{name}"), Value::str(bin_id));
             }
+        }
         let meta_inner = match &meta {
             Value::Mixin(inner, _) => inner.as_ref(),
             other => other,
@@ -512,39 +518,38 @@ impl Interpreter {
                 let dist_dir = prefix_path.join("dist");
                 let mut results = Vec::new();
                 if dist_dir.is_dir()
-                    && let Ok(entries) = std::fs::read_dir(&dist_dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                                continue;
-                            }
-                            let Ok(json_str) = std::fs::read_to_string(&path) else {
-                                continue;
-                            };
-                            let Ok(meta) = self.parse_json_to_value(&json_str) else {
-                                continue;
-                            };
-                            if let Some(files) = meta.hash_get_str("files")
-                                && files.hash_get_str(&search_path).is_some() {
-                                    let dist_id = path
-                                        .file_stem()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .to_string();
-                                    let mut attrs = HashMap::new();
-                                    attrs.insert(
-                                        "prefix".to_string(),
-                                        self.make_io_path_instance(&prefix),
-                                    );
-                                    attrs.insert("meta".to_string(), meta);
-                                    attrs.insert("dist-id".to_string(), Value::str(dist_id));
-                                    results.push(Value::make_instance(
-                                        crate::symbol::Symbol::intern("Distribution::Installation"),
-                                        attrs,
-                                    ));
-                                }
+                    && let Ok(entries) = std::fs::read_dir(&dist_dir)
+                {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                            continue;
+                        }
+                        let Ok(json_str) = std::fs::read_to_string(&path) else {
+                            continue;
+                        };
+                        let Ok(meta) = self.parse_json_to_value(&json_str) else {
+                            continue;
+                        };
+                        if let Some(files) = meta.hash_get_str("files")
+                            && files.hash_get_str(&search_path).is_some()
+                        {
+                            let dist_id = path
+                                .file_stem()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            let mut attrs = HashMap::new();
+                            attrs.insert("prefix".to_string(), self.make_io_path_instance(&prefix));
+                            attrs.insert("meta".to_string(), meta);
+                            attrs.insert("dist-id".to_string(), Value::str(dist_id));
+                            results.push(Value::make_instance(
+                                crate::symbol::Symbol::intern("Distribution::Installation"),
+                                attrs,
+                            ));
                         }
                     }
+                }
                 Some(Ok(Value::array(results)))
             }
             _ => None,
@@ -642,9 +647,10 @@ fn parse_json_string(s: &str) -> Result<(Value, &str), String> {
                 Some('u') => {
                     let hex: String = chars.by_ref().take(4).collect();
                     if let Ok(cp) = u32::from_str_radix(&hex, 16)
-                        && let Some(ch) = char::from_u32(cp) {
-                            result.push(ch);
-                        }
+                        && let Some(ch) = char::from_u32(cp)
+                    {
+                        result.push(ch);
+                    }
                 }
                 Some(c) => {
                     result.push('\\');
