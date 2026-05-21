@@ -410,7 +410,12 @@ impl VM {
             if !custom_traits.is_empty() {
                 let has_trait_mod = self.interpreter.has_proto("trait_mod:<is>")
                     || self.interpreter.has_multi_candidates("trait_mod:<is>");
-                for trait_name in custom_traits {
+                for trait_name in custom_traits.iter().filter(|t| {
+                    !t.starts_with("__")
+                        && *t != "default"
+                        && !t.starts_with("DEPRECATED")
+                        && *t != "deep"
+                }) {
                     if !has_trait_mod {
                         return Err(RuntimeError::new(format!(
                             "Can't use unknown trait 'is' -> '{}' in sub declaration.",
