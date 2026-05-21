@@ -1043,6 +1043,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // Distribution methods: meta, Str, gist, defined
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+        && class_name == "Distribution"
+    {
+        match method {
+            "meta" => {
+                return Some(Ok(attributes.get("$!meta").cloned().unwrap_or(
+                    Value::Hash(std::sync::Arc::new(std::collections::HashMap::new())),
+                )));
+            }
+            "Str" | "gist" => {
+                return Some(Ok(Value::str(format!("Distribution<{}>", class_name))));
+            }
+            "defined" => return Some(Ok(Value::Bool(true))),
+            _ => {}
+        }
+    }
+
     // Exception/X:: methods: gist, Str, message
     if let Value::Instance {
         class_name,

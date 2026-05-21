@@ -1474,6 +1474,12 @@ impl Interpreter {
             self.current_package.clone()
         };
         compiler.set_current_package(scope);
+        // Resolve distribution context for $?DISTRIBUTION
+        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
+            self.package_distributions
+                .get(&self.current_package)
+                .cloned()
+        });
         let (code, compiled_fns) = compiler.compile(body);
         self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);

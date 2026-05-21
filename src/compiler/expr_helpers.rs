@@ -462,9 +462,10 @@ impl Compiler {
             let idx = self.code.add_constant(Value::str(slang_name.to_string()));
             self.code.emit(OpCode::LoadConst(idx));
         }
-        // $?DISTRIBUTION is Nil outside of a distribution context
+        // $?DISTRIBUTION resolves to the current distribution context, or Nil
         else if name == "?DISTRIBUTION" {
-            let idx = self.code.add_constant(Value::Nil);
+            let dist = self.current_distribution.clone().unwrap_or(Value::Nil);
+            let idx = self.code.add_constant(dist);
             self.code.emit(OpCode::LoadConst(idx));
         }
         // Compile-time package/module variables

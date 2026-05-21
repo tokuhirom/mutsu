@@ -79,6 +79,8 @@ pub(crate) struct Compiler {
     /// we need to write the temp variable value back to the original hash/array slot.
     /// Each entry is (original Index Expr, temp variable name).
     pub(super) pending_index_rw_writebacks: Vec<(Expr, String, String)>,
+    /// The current distribution context for $?DISTRIBUTION.
+    pub(crate) current_distribution: Option<Value>,
 }
 
 impl Compiler {
@@ -103,6 +105,7 @@ impl Compiler {
             sigilless_locals: std::collections::HashSet::new(),
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),
+            current_distribution: None,
         }
     }
 

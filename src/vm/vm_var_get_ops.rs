@@ -224,17 +224,27 @@ impl VM {
                     sym, pkg,
                 )));
             }
-            // Strip pseudo-package prefixes (OUR::, GLOBAL::, MY::, etc.)
-            // and resolve to the bare type name if it exists.
-            let bare = Interpreter::strip_pseudo_packages(name);
-            if bare != name
-                && (self.interpreter.has_type(bare)
-                    || Self::is_builtin_type(bare)
-                    || Self::is_type_with_smiley(bare, &self.interpreter))
+            // Try resolving as a package-qualified function call (e.g.
+            // `Module::func` used as a term without parens).
+            if let Some((_pkg, short)) = name.rsplit_once("::")
+                && self.interpreter.has_function(&format!("GLOBAL::{}", short))
             {
-                Value::Package(Symbol::intern(Self::resolve_type_alias(bare)))
+                let result = self.interpreter.call_function(name, Vec::new())?;
+                self.env_dirty = true;
+                result
             } else {
-                Value::Package(Symbol::intern(name))
+                // Strip pseudo-package prefixes (OUR::, GLOBAL::, MY::, etc.)
+                // and resolve to the bare type name if it exists.
+                let bare = Interpreter::strip_pseudo_packages(name);
+                if bare != name
+                    && (self.interpreter.has_type(bare)
+                        || Self::is_builtin_type(bare)
+                        || Self::is_type_with_smiley(bare, &self.interpreter))
+                {
+                    Value::Package(Symbol::intern(Self::resolve_type_alias(bare)))
+                } else {
+                    Value::Package(Symbol::intern(name))
+                }
             }
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.

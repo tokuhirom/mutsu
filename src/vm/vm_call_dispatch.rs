@@ -107,6 +107,13 @@ impl VM {
                 if !pkg.is_empty() && pkg != "GLOBAL" {
                     compiler.set_current_package(pkg.to_string());
                 }
+                // Resolve $?DISTRIBUTION from the function's defining package
+                compiler.current_distribution = self
+                    .interpreter
+                    .package_distributions
+                    .get(&pkg)
+                    .cloned()
+                    .or_else(|| self.interpreter.current_distribution.clone());
                 compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
             };
             let deprecated_info = def.deprecated_message.as_ref().map(|msg| {
