@@ -409,7 +409,10 @@ impl Interpreter {
                 !t.starts_with("__") && t != "default" && !t.starts_with("DEPRECATED")
             }) {
                 if !has_trait_mod {
-                    continue;
+                    return Err(RuntimeError::new(format!(
+                        "Can't use unknown trait 'is' -> '{}' in sub declaration.",
+                        trait_name
+                    )));
                 }
                 let sub_val = Value::make_sub(
                     Symbol::intern(&self.current_package),

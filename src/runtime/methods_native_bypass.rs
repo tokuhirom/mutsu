@@ -14,7 +14,7 @@ impl Interpreter {
     }
 
     /// Check if a method name is a ClassHOW method.
-    pub(super) fn is_classhow_method(method: &str) -> bool {
+    pub(crate) fn is_classhow_method(method: &str) -> bool {
         matches!(
             method,
             "can"

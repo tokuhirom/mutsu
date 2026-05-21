@@ -1593,11 +1593,19 @@ fn method_decl_body_with_my(
     } else {
         (input, false)
     };
+    // Handle ^name metamethods (e.g., method ^foo(Mu) { ... })
+    let (rest, is_meta) = if let Some(r) = rest.strip_prefix('^') {
+        (r, true)
+    } else {
+        (rest, false)
+    };
     let (rest, name, name_expr) = if rest.starts_with("::") {
         let (rest, (name, expr)) = parse_indirect_decl_name(rest)?;
+        let name = if is_meta { format!("^{}", name) } else { name };
         (rest, name, Some(expr))
     } else {
         let (rest, name) = parse_sub_name(rest)?;
+        let name = if is_meta { format!("^{}", name) } else { name };
         (rest, name, None)
     };
     let (rest, _) = ws(rest)?;

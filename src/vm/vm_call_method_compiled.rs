@@ -208,6 +208,27 @@ impl VM {
                 }
             }
         }
+        // User-defined ^method (metamethod) dispatch:
+        // Foo.^bar passes Foo as the first positional argument.
+        if method.starts_with('^')
+            && method.len() > 1
+            && !crate::runtime::Interpreter::is_classhow_method(&method[1..])
+        {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name
+                && self.interpreter.has_user_method(&cn, method)
+            {
+                let mut how_args = vec![target.clone()];
+                how_args.extend(args);
+                return self
+                    .interpreter
+                    .call_method_with_values(target, method, how_args);
+            }
+        }
         // Only attempt compiled path for Instance or Package targets
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -333,6 +354,27 @@ impl VM {
             return self
                 .interpreter
                 .call_method_mut_with_values(target_name, target, method, args);
+        }
+        // User-defined ^method (metamethod) dispatch:
+        // Foo.^bar passes Foo as the first positional argument.
+        if method.starts_with('^')
+            && method.len() > 1
+            && !crate::runtime::Interpreter::is_classhow_method(&method[1..])
+        {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name
+                && self.interpreter.has_user_method(&cn, method)
+            {
+                let mut how_args = vec![target.clone()];
+                how_args.extend(args);
+                return self
+                    .interpreter
+                    .call_method_with_values(target, method, how_args);
+            }
         }
         if method.starts_with('!') {
             let class_name = match &target {

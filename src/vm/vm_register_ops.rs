@@ -407,11 +407,16 @@ impl VM {
                     .register_proto_decl_as_global(&name_str, params, param_defs, body)?;
             }
             // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
-            if !custom_traits.is_empty()
-                && (self.interpreter.has_proto("trait_mod:<is>")
-                    || self.interpreter.has_multi_candidates("trait_mod:<is>"))
-            {
+            if !custom_traits.is_empty() {
+                let has_trait_mod = self.interpreter.has_proto("trait_mod:<is>")
+                    || self.interpreter.has_multi_candidates("trait_mod:<is>");
                 for trait_name in custom_traits {
+                    if !has_trait_mod {
+                        return Err(RuntimeError::new(format!(
+                            "Can't use unknown trait 'is' -> '{}' in sub declaration.",
+                            trait_name
+                        )));
+                    }
                     let sub_val = Value::make_sub(
                         Symbol::intern(self.interpreter.current_package()),
                         Symbol::intern(&name_str),

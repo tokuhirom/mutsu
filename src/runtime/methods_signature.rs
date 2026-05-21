@@ -1056,11 +1056,18 @@ impl Interpreter {
             }
             // If the method is defined but no multi candidate matched,
             // produce a dispatch error.
-            let method_exists = self.class_mro(&class_name.resolve()).iter().any(|cn| {
+            let own_class = class_name.resolve();
+            let method_exists = self.class_mro(&own_class).iter().any(|cn| {
                 self.classes
                     .get(cn.as_str())
                     .and_then(|c| c.methods.get(method))
-                    .is_some_and(|ovs| !ovs.is_empty())
+                    .is_some_and(|ovs| {
+                        // A submethod on an ancestor class is not visible to
+                        // the receiver, so don't count it as "method exists".
+                        let is_ancestor = cn.as_str() != own_class.as_str();
+                        ovs.iter()
+                            .any(|d| !d.is_private && (!d.is_my || !is_ancestor))
+                    })
             });
             if method_exists {
                 return Err(make_multi_no_match_error(method));

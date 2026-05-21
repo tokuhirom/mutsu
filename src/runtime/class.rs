@@ -662,8 +662,29 @@ impl Interpreter {
             &args,
             &inv_value,
         ) else {
-            return Err(super::methods_signature::make_multi_no_match_error(
+            // Distinguish X::Multi::NoMatch (method exists but no candidate
+            // matched) from X::Method::NotFound (method does not exist at all,
+            // e.g. submethod on ancestor only).
+            let has_visible_method = self.class_mro(receiver_class_name).iter().any(|cn| {
+                self.classes
+                    .get(cn.as_str())
+                    .and_then(|c| c.methods.get(method_name))
+                    .is_some_and(|ovs| {
+                        let is_ancestor = cn.as_str() != receiver_class_name;
+                        ovs.iter()
+                            .any(|d| !d.is_private && (!d.is_my || !is_ancestor))
+                    })
+            });
+            if has_visible_method {
+                return Err(super::methods_signature::make_multi_no_match_error(
+                    method_name,
+                ));
+            }
+            let type_name = receiver_class_name.to_string();
+            return Err(super::methods_signature::make_method_not_found_error(
                 method_name,
+                &type_name,
+                false,
             ));
         };
         // Helper to build remaining candidates, skipping the chosen one

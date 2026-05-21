@@ -208,6 +208,24 @@ impl Interpreter {
             }
             return self.call_method_with_values(*inner, method, args);
         }
+        // User-defined ^method (metamethod) dispatch.
+        // `method ^foo(Mu) { ... }` in a class body defines a metamethod.
+        // The caller (VM) already prepends the type object to args.
+        // Route through run_instance_method to execute the method body.
+        if method.starts_with('^') && method.len() > 1 && !Self::is_classhow_method(&method[1..]) {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name
+                && self.has_user_method(&cn, method)
+            {
+                let attrs = std::collections::HashMap::new();
+                let (result, _) = self.run_instance_method(&cn, attrs, method, args, None)?;
+                return Ok(result);
+            }
+        }
         // .return method: triggers a return from the enclosing sub with the invocant
         if method == "return" && args.is_empty() {
             let mut err = RuntimeError::new("return");
