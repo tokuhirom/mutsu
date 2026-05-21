@@ -764,30 +764,30 @@ impl Interpreter {
         } = value
             && class_name.resolve() == "IO::Pipe"
         {
-                opts.capture_in = true;
-                if let Some(Value::Int(pid)) = attributes.get("live-pid") {
-                    opts.in_pipe_pid = Some(*pid);
-                    return;
-                }
-                if let Some(Value::Int(pid)) = attributes.get("proc-pid") {
-                    opts.in_pipe_pid = Some(*pid);
-                    return;
-                }
-                let content = if let Some(Value::Int(id)) = attributes.get("pipe-id")
-                    && let Ok(mut map) = io_pipe_state_map().lock()
-                    && let Some(state) = map.get_mut(id)
-                {
-                    let c = state.content[state.cursor..].to_string();
-                    state.cursor = state.content.len();
-                    c
-                } else {
-                    attributes
-                        .get("content")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default()
-                };
-                opts.in_pipe_content = Some(content);
+            opts.capture_in = true;
+            if let Some(Value::Int(pid)) = attributes.get("live-pid") {
+                opts.in_pipe_pid = Some(*pid);
                 return;
+            }
+            if let Some(Value::Int(pid)) = attributes.get("proc-pid") {
+                opts.in_pipe_pid = Some(*pid);
+                return;
+            }
+            let content = if let Some(Value::Int(id)) = attributes.get("pipe-id")
+                && let Ok(mut map) = io_pipe_state_map().lock()
+                && let Some(state) = map.get_mut(id)
+            {
+                let c = state.content[state.cursor..].to_string();
+                state.cursor = state.content.len();
+                c
+            } else {
+                attributes
+                    .get("content")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default()
+            };
+            opts.in_pipe_content = Some(content);
+            return;
         }
         opts.capture_in = value.truthy();
     }
