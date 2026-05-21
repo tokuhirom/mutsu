@@ -124,6 +124,19 @@ impl VM {
     }
 
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+        // Raku allows underscore variants of kebab-case identifiers
+        // (e.g. $*EXECUTABLE_NAME is equivalent to $*EXECUTABLE-NAME).
+        // Try the kebab-case equivalent first if the name contains underscores.
+        if name.contains('_') {
+            let kebab = name.replace('_', "-");
+            if let Some(val) = self.get_env_with_main_alias_inner(&kebab) {
+                return Some(val);
+            }
+        }
+        self.get_env_with_main_alias_inner(name)
+    }
+
+    fn get_env_with_main_alias_inner(&self, name: &str) -> Option<Value> {
         // Atomic array CAS stores the authoritative copy under an internal key.
         // Always check it first so both thread-clone and non-clone reads
         // observe the latest CAS'd value.
