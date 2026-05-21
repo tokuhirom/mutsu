@@ -272,12 +272,155 @@ impl Interpreter {
         }
     }
 
+    /// Handle instance methods on UDP sockets (created by bind-udp / udp).
+    fn native_socket_async_udp(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let udp_id = attributes.get("udp-socket-id").and_then(|v| match v {
+            Value::Int(i) => Some(*i as u64),
+            _ => None,
+        });
+
+        match method {
+            "socket-port" => Ok(attributes
+                .get("socket-port")
+                .cloned()
+                .unwrap_or(Value::Int(0))),
+            "socket-host" => Ok(attributes
+                .get("socket-host")
+                .cloned()
+                .unwrap_or_else(|| Value::str_from("0.0.0.0"))),
+            "close" => {
+                if let Some(id) = udp_id
+                    && let Some(state) = get_udp_bound_socket(id)
+                {
+                    update_udp_bound_socket(id, |s| s.closed = true);
+                    for sid in &state.supply_ids {
+                        self.async_supplier_done_value(*sid);
+                    }
+                }
+                Ok(Value::Nil)
+            }
+            "Supply" => {
+                let id =
+                    udp_id.ok_or_else(|| RuntimeError::new("Missing UDP socket id for Supply"))?;
+                let supply_id = next_supply_id();
+                register_async_supply(
+                    supply_id,
+                    AsyncSocketSupplyState {
+                        is_bin: false,
+                        encoding: "utf-8".to_string(),
+                        text_buffer: String::new(),
+                        byte_buffer: Vec::new(),
+                    },
+                );
+                update_udp_bound_socket(id, |s| s.supply_ids.push(supply_id));
+
+                let mut attrs = HashMap::new();
+                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert("live".to_string(), Value::Bool(true));
+                attrs.insert("supplier_id".to_string(), Value::Int(supply_id as i64));
+                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+            }
+            "print-to" => {
+                let host = args
+                    .first()
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "127.0.0.1".to_string());
+                let port = args
+                    .get(1)
+                    .map(|v| match v {
+                        Value::Int(i) => *i as u16,
+                        Value::Num(f) => *f as u16,
+                        other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                    })
+                    .unwrap_or(0);
+                let text = args
+                    .get(2)
+                    .map(|v| self.render_str_value(v))
+                    .unwrap_or_default();
+
+                self.udp_deliver_data(&host, port, text.as_bytes())?;
+
+                let promise = SharedPromise::new();
+                promise.keep(
+                    Self::async_socket_kept(Value::Bool(true)),
+                    String::new(),
+                    String::new(),
+                );
+                Ok(Value::Promise(promise))
+            }
+            "write-to" => {
+                let host = args
+                    .first()
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "127.0.0.1".to_string());
+                let port = args
+                    .get(1)
+                    .map(|v| match v {
+                        Value::Int(i) => *i as u16,
+                        Value::Num(f) => *f as u16,
+                        other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                    })
+                    .unwrap_or(0);
+                let bytes = args
+                    .get(2)
+                    .and_then(Self::extract_bytes)
+                    .unwrap_or_else(|| {
+                        args.get(2)
+                            .map(Value::to_string_value)
+                            .unwrap_or_default()
+                            .into_bytes()
+                    });
+
+                self.udp_deliver_data(&host, port, &bytes)?;
+
+                let promise = SharedPromise::new();
+                promise.keep(
+                    Self::async_socket_kept(Value::Bool(true)),
+                    String::new(),
+                    String::new(),
+                );
+                Ok(Value::Promise(promise))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No method '{}' on IO::Socket::Async (UDP)",
+                method
+            ))),
+        }
+    }
+
+    /// Deliver UDP data to a bound socket listening on host:port.
+    fn udp_deliver_data(
+        &mut self,
+        host: &str,
+        port: u16,
+        bytes: &[u8],
+    ) -> Result<(), RuntimeError> {
+        if let Some((_id, state)) = lookup_udp_bound_socket(host, port) {
+            let text = String::from_utf8_lossy(bytes).to_string();
+            for sid in &state.supply_ids {
+                let _ = self.async_supplier_emit_value(*sid, Value::str(text.clone()));
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::runtime) fn native_socket_async(
         &mut self,
         attributes: &HashMap<String, Value>,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Dispatch to UDP handler if this is a UDP socket
+        if matches!(attributes.get("is-udp"), Some(Value::Bool(true))) {
+            return self.native_socket_async_udp(attributes, method, args);
+        }
+
         let conn_id = attributes.get("conn-id").and_then(|v| match v {
             Value::Int(i) => Some(*i as u64),
             _ => None,
