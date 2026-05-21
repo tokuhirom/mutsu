@@ -40,6 +40,37 @@ impl Interpreter {
                 }
                 None
             }
+            "repository-for-spec" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "CompUnit::RepositoryRegistry"
+                {
+                    let spec = args.first().map(Value::to_string_value).unwrap_or_default();
+                    if let Some(prefix) = spec.strip_prefix("inst#") {
+                        let new_args = vec![Value::Pair(
+                            "prefix".to_string(),
+                            Box::new(Value::str(prefix.to_string())),
+                        )];
+                        return Some(self.call_method_with_values(
+                            Value::Package(Symbol::intern("CompUnit::Repository::Installation")),
+                            "new",
+                            new_args,
+                        ));
+                    }
+                    if let Some(prefix) = spec.strip_prefix("file#") {
+                        let new_args = vec![Value::Pair(
+                            "prefix".to_string(),
+                            Box::new(Value::str(prefix.to_string())),
+                        )];
+                        return Some(self.call_method_with_values(
+                            Value::Package(Symbol::intern("CompUnit::Repository::FileSystem")),
+                            "new",
+                            new_args,
+                        ));
+                    }
+                    return Some(Ok(Value::Nil));
+                }
+                None
+            }
             "signal" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"

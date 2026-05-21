@@ -797,6 +797,33 @@ impl Interpreter {
             let builtin_mro: Option<Vec<&str>> = match class_name {
                 "Match" => Some(vec!["Match", "Capture", "Cool", "Any", "Mu"]),
                 "Capture" => Some(vec!["Capture", "Any", "Mu"]),
+                "Distribution::Path" => {
+                    Some(vec!["Distribution::Path", "Distribution", "Any", "Mu"])
+                }
+                "Distribution::Hash" => {
+                    Some(vec!["Distribution::Hash", "Distribution", "Any", "Mu"])
+                }
+                "Distribution::Installation" => Some(vec![
+                    "Distribution::Installation",
+                    "Distribution",
+                    "Any",
+                    "Mu",
+                ]),
+                "CompUnit::DependencySpecification" => {
+                    Some(vec!["CompUnit::DependencySpecification", "Any", "Mu"])
+                }
+                "CompUnit::Repository::FileSystem" => Some(vec![
+                    "CompUnit::Repository::FileSystem",
+                    "CompUnit::Repository",
+                    "Any",
+                    "Mu",
+                ]),
+                "CompUnit::Repository::Installation" => Some(vec![
+                    "CompUnit::Repository::Installation",
+                    "CompUnit::Repository",
+                    "Any",
+                    "Mu",
+                ]),
                 _ => None,
             };
             if let Some(mro) = builtin_mro {

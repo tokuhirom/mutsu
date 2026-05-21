@@ -362,8 +362,61 @@ impl Interpreter {
                 let pkg = Value::Package(*class_name);
                 return self.call_method_with_values(pkg, method, args);
             }
+            // Distribution::Path / ::Hash / ::Installation
+            if class_name.resolve().starts_with("Distribution::")
+                && let Some(result) = self.dispatch_distribution_method(
+                    &class_name.resolve(),
+                    attributes,
+                    method,
+                    args.clone(),
+                ) {
+                    return result;
+                }
+            if class_name == "CompUnit::Repository::Installation"
+                && let Some(result) =
+                    self.dispatch_cur_installation_method(attributes, method, args.clone())
+                {
+                    return result;
+                }
+            if class_name == "CompUnit::DependencySpecification" {
+                match method {
+                    "short-name" => {
+                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                    }
+                    "auth-matcher" => {
+                        return Ok(attributes
+                            .get("auth-matcher")
+                            .cloned()
+                            .unwrap_or(Value::Bool(true)));
+                    }
+                    "version-matcher" => {
+                        return Ok(attributes
+                            .get("version-matcher")
+                            .cloned()
+                            .unwrap_or(Value::Bool(true)));
+                    }
+                    "api-matcher" => {
+                        return Ok(attributes
+                            .get("api-matcher")
+                            .cloned()
+                            .unwrap_or(Value::Bool(true)));
+                    }
+                    "Str" | "gist" => {
+                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                    }
+                    _ => {}
+                }
+            }
             if class_name == "CompUnit::Repository::FileSystem" {
                 match method {
+                    "candidates" => {
+                        let prefix = attributes
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        let depspec = args.first().cloned().unwrap_or(Value::Nil);
+                        return self.cur_fs_candidates(&prefix, &depspec);
+                    }
                     "install" => {
                         return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
                     }
