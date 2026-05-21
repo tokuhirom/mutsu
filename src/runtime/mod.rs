@@ -748,6 +748,9 @@ pub(crate) struct RoutineFrame {
     pub name: String,
     pub line: Option<u32>,
     pub file: Option<String>,
+    pub is_method: bool,
+    /// Whether this frame is a block/closure (not a named routine).
+    pub is_block: bool,
 }
 
 pub struct Interpreter {

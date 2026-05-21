@@ -82,6 +82,8 @@ impl Interpreter {
                     name: def.name.resolve(),
                     line: None,
                     file: None,
+                    is_method: false,
+                    is_block: false,
                 });
                 let result = interp.eval_block_value(&def.body);
                 interp.routine_stack.pop();

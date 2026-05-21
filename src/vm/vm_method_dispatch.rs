@@ -371,7 +371,7 @@ impl VM {
         }
 
         // Push routine_stack so &?ROUTINE can find the current method
-        self.interpreter.push_routine_with_location(
+        self.interpreter.push_method_routine_with_location(
             owner_class.to_string(),
             method_name.to_string(),
             self.current_source_line(),

@@ -391,7 +391,7 @@ impl Interpreter {
             }
             // Introspection
             "callframe" => self.builtin_callframe(&args, 0),
-            "caller" => self.builtin_callframe(&args, 1),
+            "caller" => self.builtin_caller(&args),
             // EVAL
             "EVALFILE" => self.builtin_evalfile(&args),
             "EVAL" => self.builtin_eval(&args),

@@ -201,14 +201,14 @@ impl VM {
         let call_line = self.current_source_line();
         let call_file = self.current_source_file();
         if cc.is_pointy_block {
-            self.interpreter.push_routine_with_location(
+            self.interpreter.push_block_routine_with_location(
                 data.package.resolve(),
                 "<pointy-block>".to_string(),
                 call_line,
                 call_file,
             );
         } else {
-            self.interpreter.push_routine_with_location(
+            self.interpreter.push_block_routine_with_location(
                 data.package.resolve(),
                 data.name.resolve(),
                 call_line,

@@ -1041,6 +1041,8 @@ impl Interpreter {
             name: def.name.resolve(),
             line: None,
             file: None,
+            is_method: false,
+            is_block: false,
         });
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
@@ -1198,6 +1200,8 @@ impl Interpreter {
             name: def.name.resolve(),
             line: None,
             file: None,
+            is_method: false,
+            is_block: false,
         });
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec()));
@@ -1301,6 +1305,8 @@ impl Interpreter {
             name: def.name.resolve(),
             line: None,
             file: None,
+            is_method: false,
+            is_block: false,
         });
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
