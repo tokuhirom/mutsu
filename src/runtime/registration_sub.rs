@@ -409,6 +409,16 @@ impl Interpreter {
                 !t.starts_with("__") && t != "default" && !t.starts_with("DEPRECATED")
             }) {
                 if !has_trait_mod {
+                    // In EVAL context, report the error. Outside EVAL
+                    // (e.g. module loading), silently skip unknown traits
+                    // because the handler may not be visible yet.
+                    let in_eval = self.env.get("__mutsu_in_eval").is_some_and(|v| v.truthy());
+                    if in_eval {
+                        return Err(RuntimeError::new(format!(
+                            "Can't use unknown trait 'is' -> '{}' in sub declaration.",
+                            trait_name
+                        )));
+                    }
                     continue;
                 }
                 let sub_val = Value::make_sub(
