@@ -133,6 +133,19 @@ pub(in crate::runtime) fn close_supplier_tap(supplier_id: u64, tap_id: u64) {
     }
 }
 
+/// Close all taps on the given supplier so they stop receiving emits.
+pub(in crate::runtime) fn close_all_supplier_taps(supplier_id: u64) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+    {
+        for tap in subs.taps.iter_mut() {
+            tap.closed = true;
+        }
+        subs.done_callbacks.clear();
+        subs.quit_callbacks.clear();
+    }
+}
+
 /// Return the id of the most recently registered tap on the given supplier,
 /// if any. Used by `tap` to build a Tap handle that can be closed.
 pub(in crate::runtime) fn last_supplier_tap_id(supplier_id: u64) -> Option<u64> {

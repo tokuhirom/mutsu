@@ -133,7 +133,7 @@ impl Interpreter {
                 {
                     close_supplier_tap(*supplier_id as u64, *tap_id as u64);
                 }
-                Ok(Value::Nil)
+                Ok(Value::Bool(true))
             }
             "socket-port" => Ok(attributes
                 .get("socket-port")

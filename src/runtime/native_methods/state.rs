@@ -320,6 +320,17 @@ pub(in crate::runtime) fn supplier_quit(supplier_id: u64, reason: Value) {
     }
 }
 
+/// Reset the supplier state after done/quit so it can be reused.
+pub(in crate::runtime) fn supplier_reset(supplier_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock()
+        && let Some(state) = map.get_mut(&supplier_id)
+    {
+        state.done = false;
+        state.quit_reason = None;
+        state.emitted.clear();
+    }
+}
+
 pub(in crate::runtime) fn next_supply_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
