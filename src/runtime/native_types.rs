@@ -6,7 +6,18 @@ use num_bigint::BigInt as NumBigInt;
 
 /// All recognized native integer type names.
 pub(crate) const NATIVE_INT_TYPES: &[&str] = &[
-    "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "byte", "int", "uint",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "byte",
+    "int",
+    "uint",
+    "atomicint",
 ];
 
 /// Returns true if `name` is a native integer type.
@@ -30,7 +41,7 @@ pub(crate) fn native_int_bounds(type_name: &str) -> Option<(NumBigInt, NumBigInt
             NumBigInt::from(-2147483648i64),
             NumBigInt::from(2147483647i64),
         )),
-        "int64" | "int" => Some((
+        "int64" | "int" | "atomicint" => Some((
             NumBigInt::from(-9223372036854775808i64),
             NumBigInt::from(9223372036854775807i64),
         )),
