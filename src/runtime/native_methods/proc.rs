@@ -121,6 +121,17 @@ impl Interpreter {
                 return attributes.get("in").cloned().unwrap_or(Value::Nil);
             }
 
+            // .out / .err on a live proc: return a "live" IO::Pipe
+            if method == "out" || method == "err" {
+                let mut pipe_attrs = HashMap::new();
+                pipe_attrs.insert("live-pid".to_string(), Value::Int(pid));
+                pipe_attrs.insert("pipe-type".to_string(), Value::str(method.to_string()));
+                if matches!(attributes.get("bin"), Some(Value::Bool(true))) {
+                    pipe_attrs.insert("bin".to_string(), Value::Bool(true));
+                }
+                return Value::make_instance(crate::symbol::Symbol::intern("IO::Pipe"), pipe_attrs);
+            }
+
             // Finalize the child if not yet done
             if let Ok(mut map) = super::super::builtins_system::live_proc_map().lock()
                 && let Some(mut state) = map.remove(&pid)

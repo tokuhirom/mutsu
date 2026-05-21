@@ -64,6 +64,9 @@ struct ProcOptions {
     capture_err: bool,
     capture_out: bool,
     capture_in: bool,
+    in_pipe_pid: Option<i64>,
+    in_pipe_content: Option<String>,
+    bin: bool,
     win_verbatim_args: bool,
 }
 
@@ -602,14 +605,37 @@ impl Interpreter {
         captured_err: Option<String>,
         captured_out: Option<String>,
     ) -> Value {
+        Self::make_proc_instance_bin(
+            exitcode,
+            signal,
+            pid,
+            command,
+            captured_err,
+            captured_out,
+            false,
+        )
+    }
+
+    fn make_proc_instance_bin(
+        exitcode: i64,
+        signal: i64,
+        pid: i64,
+        command: Value,
+        captured_err: Option<String>,
+        captured_out: Option<String>,
+        bin: bool,
+    ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("exitcode".to_string(), Value::Int(exitcode));
         attrs.insert("signal".to_string(), Value::Int(signal));
         attrs.insert("pid".to_string(), Value::Int(pid));
         attrs.insert("command".to_string(), command);
+        if bin {
+            attrs.insert("bin".to_string(), Value::Bool(true));
+        }
         let mut pipe_ids = Vec::new();
         if let Some(err_content) = captured_err {
-            let pipe = Self::make_io_pipe(err_content);
+            let pipe = Self::make_io_pipe_bin(err_content, bin);
             if let Value::Instance {
                 attributes: ref a, ..
             } = pipe
@@ -620,7 +646,7 @@ impl Interpreter {
             attrs.insert("err".to_string(), pipe);
         }
         if let Some(out_content) = captured_out {
-            let pipe = Self::make_io_pipe(out_content);
+            let pipe = Self::make_io_pipe_bin(out_content, bin);
             if let Value::Instance {
                 attributes: ref a, ..
             } = pipe
@@ -631,7 +657,6 @@ impl Interpreter {
             attrs.insert("out".to_string(), pipe);
         }
         let proc_val = Value::make_instance(Symbol::intern("Proc"), attrs);
-        // Register pipe-id -> Proc mapping so IO::Pipe.close/.proc can return the Proc
         if !pipe_ids.is_empty()
             && let Ok(mut map) = pipe_proc_map().lock()
         {
@@ -642,10 +667,12 @@ impl Interpreter {
         proc_val
     }
 
-    /// Create an IO::Pipe instance wrapping captured content. Allocates
-    /// a persistent cursor id so repeated `.get` calls on the same pipe
-    /// advance through the buffered content.
+    /// Create an IO::Pipe instance wrapping captured content.
     pub(super) fn make_io_pipe(content: String) -> Value {
+        Self::make_io_pipe_bin(content, false)
+    }
+
+    fn make_io_pipe_bin(content: String, bin: bool) -> Value {
         use std::sync::atomic::{AtomicI64, Ordering};
         static NEXT_PIPE_ID: AtomicI64 = AtomicI64::new(1);
         let id = NEXT_PIPE_ID.fetch_add(1, Ordering::SeqCst);
@@ -662,6 +689,9 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("content".to_string(), Value::str(content));
         attrs.insert("pipe-id".to_string(), Value::Int(id));
+        if bin {
+            attrs.insert("bin".to_string(), Value::Bool(true));
+        }
         Value::make_instance(Symbol::intern("IO::Pipe"), attrs)
     }
 
@@ -673,6 +703,9 @@ impl Interpreter {
             capture_err: false,
             capture_out: false,
             capture_in: false,
+            in_pipe_pid: None,
+            in_pipe_content: None,
+            bin: false,
             win_verbatim_args: false,
         };
         for value in args.iter().skip(skip) {
@@ -696,7 +729,10 @@ impl Interpreter {
                             opts.capture_out = inner.truthy();
                         }
                         "in" => {
-                            opts.capture_in = inner.truthy();
+                            Self::extract_in_option(inner, &mut opts);
+                        }
+                        "bin" => {
+                            opts.bin = inner.truthy();
                         }
                         "win-verbatim-args" => {
                             opts.win_verbatim_args = inner.truthy();
@@ -710,13 +746,50 @@ impl Interpreter {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "err" => opts.capture_err = inner.truthy(),
                     "out" => opts.capture_out = inner.truthy(),
-                    "in" => opts.capture_in = inner.truthy(),
+                    "in" => Self::extract_in_option(inner, &mut opts),
+                    "bin" => opts.bin = inner.truthy(),
                     "win-verbatim-args" => opts.win_verbatim_args = inner.truthy(),
                     _ => {}
                 }
             }
         }
         opts
+    }
+
+    fn extract_in_option(value: &Value, opts: &mut ProcOptions) {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value
+            && class_name.resolve() == "IO::Pipe"
+        {
+            opts.capture_in = true;
+            if let Some(Value::Int(pid)) = attributes.get("live-pid") {
+                opts.in_pipe_pid = Some(*pid);
+                return;
+            }
+            if let Some(Value::Int(pid)) = attributes.get("proc-pid") {
+                opts.in_pipe_pid = Some(*pid);
+                return;
+            }
+            let content = if let Some(Value::Int(id)) = attributes.get("pipe-id")
+                && let Ok(mut map) = io_pipe_state_map().lock()
+                && let Some(state) = map.get_mut(id)
+            {
+                let c = state.content[state.cursor..].to_string();
+                state.cursor = state.content.len();
+                c
+            } else {
+                attributes
+                    .get("content")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default()
+            };
+            opts.in_pipe_content = Some(content);
+            return;
+        }
+        opts.capture_in = value.truthy();
     }
 
     #[cfg(windows)]
@@ -822,7 +895,21 @@ impl Interpreter {
         } else {
             cmd.stderr(std::process::Stdio::null());
         }
-        if opts.capture_in {
+        let mut piped_from_live = false;
+        if let Some(src_pid) = opts.in_pipe_pid {
+            let mut child_stdout: Option<std::process::ChildStdout> = None;
+            if let Ok(mut map) = live_proc_map().lock()
+                && let Some(state) = map.get_mut(&src_pid)
+            {
+                child_stdout = state.child.stdout.take();
+            }
+            if let Some(stdout) = child_stdout {
+                cmd.stdin(std::process::Stdio::from(stdout));
+                piped_from_live = true;
+            } else {
+                cmd.stdin(std::process::Stdio::piped());
+            }
+        } else if opts.capture_in || opts.in_pipe_content.is_some() {
             cmd.stdin(std::process::Stdio::piped());
         }
 
@@ -837,10 +924,16 @@ impl Interpreter {
             Ok(mut child) => {
                 let pid = child.id() as i64;
 
-                // When :in is specified, return a live Proc immediately.
-                // The child's stdin is accessible via $proc.in, and
-                // stdout/stderr/exitcode are read lazily when accessed.
-                if opts.capture_in {
+                if let Some(content) = &opts.in_pipe_content
+                    && let Some(mut stdin) = child.stdin.take()
+                {
+                    use std::io::Write;
+                    let _ = stdin.write_all(content.as_bytes());
+                }
+
+                let needs_live =
+                    (opts.capture_in && opts.in_pipe_content.is_none()) || piped_from_live;
+                if needs_live {
                     let stdin_handle = child.stdin.take();
                     // Store child in global map for later access
                     if let Ok(mut map) = live_proc_map().lock() {
@@ -872,6 +965,9 @@ impl Interpreter {
                     attrs.insert("command".to_string(), command_val);
                     attrs.insert("in".to_string(), in_pipe);
                     attrs.insert("live".to_string(), Value::Bool(true));
+                    if opts.bin {
+                        attrs.insert("bin".to_string(), Value::Bool(true));
+                    }
                     return Ok(Value::make_instance(Symbol::intern("Proc"), attrs));
                 }
 
@@ -905,22 +1001,24 @@ impl Interpreter {
                         };
                         #[cfg(not(unix))]
                         let signal = 0i64;
-                        Ok(Self::make_proc_instance(
+                        Ok(Self::make_proc_instance_bin(
                             exitcode,
                             signal,
                             pid,
                             command_val,
                             captured_err,
                             captured_out,
+                            opts.bin,
                         ))
                     }
-                    Err(_) => Ok(Self::make_proc_instance(
+                    Err(_) => Ok(Self::make_proc_instance_bin(
                         -1,
                         0,
                         pid,
                         command_val,
                         captured_err,
                         captured_out,
+                        opts.bin,
                     )),
                 }
             }

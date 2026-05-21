@@ -2783,7 +2783,7 @@ impl Interpreter {
                     return Ok(Value::Bool(true));
                 }
                 "write" => {
-                    // Write binary data (Buf/Blob) to stdin
+                    // Write binary data (Buf/Blob/utf8) to stdin
                     if let Ok(map) = super::native_methods::proc_stdin_map().lock()
                         && let Some(stdin_arc) = map.get(&pid_u32)
                         && let Ok(mut guard) = stdin_arc.lock()
@@ -2796,10 +2796,14 @@ impl Interpreter {
                                     class_name,
                                     attributes,
                                     ..
-                                } if class_name.resolve() == "Buf"
-                                    || class_name.resolve() == "Blob" =>
+                                } if crate::runtime::utils::is_buf_or_blob_class(
+                                    &class_name.resolve(),
+                                ) =>
                                 {
-                                    if let Some(Value::Array(bytes, _)) = attributes.get("data") {
+                                    // Try "bytes" first (make_buf), then "data"
+                                    let bytes_arr =
+                                        attributes.get("bytes").or_else(|| attributes.get("data"));
+                                    if let Some(Value::Array(bytes, _)) = bytes_arr {
                                         let data: Vec<u8> =
                                             bytes.iter().map(|v| v.to_f64() as u8).collect();
                                         let _ = stdin.write_all(&data);
@@ -2827,6 +2831,117 @@ impl Interpreter {
                 _ => {}
             }
         }
+        // Handle "live" IO::Pipe from a live Proc (has `live-pid`).
+        if let Some(Value::Int(live_pid)) = attributes.get("live-pid") {
+            let pipe_type = attributes
+                .get("pipe-type")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| "out".to_string());
+            let finalize_and_get_content = || -> String {
+                let pid = *live_pid;
+                if let Ok(mut map) = super::builtins_system::live_proc_map().lock()
+                    && let Some(mut state) = map.remove(&pid)
+                {
+                    // Do NOT close stdin here -- let the explicit .close handle it.
+                    // Closing stdin prematurely breaks concurrent writes from `start` blocks.
+                    let captured_out: Option<String> = if state.capture_out {
+                        state.child.stdout.take().map(|mut s| {
+                            let mut buf = String::new();
+                            use std::io::Read;
+                            let _ = s.read_to_string(&mut buf);
+                            buf
+                        })
+                    } else {
+                        None
+                    };
+                    let captured_err: Option<String> = if state.capture_err {
+                        state.child.stderr.take().map(|mut s| {
+                            let mut buf = String::new();
+                            use std::io::Read;
+                            let _ = s.read_to_string(&mut buf);
+                            buf
+                        })
+                    } else {
+                        None
+                    };
+                    let (exitcode, signal): (i64, i64) = match state.child.wait() {
+                        Ok(status) => {
+                            let ec = status.code().unwrap_or(-1) as i64;
+                            #[cfg(unix)]
+                            let sig = {
+                                use std::os::unix::process::ExitStatusExt;
+                                status.signal().unwrap_or(0) as i64
+                            };
+                            #[cfg(not(unix))]
+                            let sig = 0i64;
+                            (ec, sig)
+                        }
+                        Err(_) => (-1i64, 0i64),
+                    };
+                    if let Ok(mut fmap) = super::builtins_system::finalized_proc_map().lock() {
+                        fmap.insert(
+                            pid,
+                            super::builtins_system::FinalizedProc {
+                                exitcode,
+                                signal,
+                                captured_out,
+                                captured_err,
+                            },
+                        );
+                    }
+                }
+                if let Ok(fmap) = super::builtins_system::finalized_proc_map().lock()
+                    && let Some(finalized) = fmap.get(&pid)
+                {
+                    match pipe_type.as_str() {
+                        "out" => finalized.captured_out.clone().unwrap_or_default(),
+                        "err" => finalized.captured_err.clone().unwrap_or_default(),
+                        _ => String::new(),
+                    }
+                } else {
+                    String::new()
+                }
+            };
+            match method {
+                "slurp" | "Str" | "gist" => {
+                    let has_bin = Self::named_bool(args, "bin");
+                    let pipe_bin = matches!(attributes.get("bin"), Some(Value::Bool(true)));
+                    let content = finalize_and_get_content();
+                    if has_bin || pipe_bin {
+                        return Ok(Self::make_buf(content.into_bytes()));
+                    }
+                    return Ok(Value::str(content));
+                }
+                "lines" => {
+                    let content = finalize_and_get_content();
+                    let trimmed = content.strip_suffix('\n').unwrap_or(&content);
+                    let lines: Vec<Value> = if trimmed.is_empty() {
+                        Vec::new()
+                    } else {
+                        trimmed
+                            .split('\n')
+                            .map(|s| Value::str(s.trim_end_matches('\r').to_string()))
+                            .collect()
+                    };
+                    return Ok(Value::array(lines));
+                }
+                "get" => {
+                    let content = finalize_and_get_content();
+                    let line = content.lines().next().unwrap_or("");
+                    return Ok(Value::str(line.to_string()));
+                }
+                "close" => {
+                    let _ = finalize_and_get_content();
+                    return Ok(Value::Bool(true));
+                }
+                "encoding" => return Ok(Value::str("utf8".to_string())),
+                "IO" | "path" => {
+                    return Ok(Value::Package(crate::symbol::Symbol::intern("IO::Path")));
+                }
+                _ => {}
+            }
+        }
+
         // Look up persistent per-pipe cursor state (if any). Repeated calls
         // on the same logical IO::Pipe share this so `.get` / `.lines` can
         // advance through buffered content line by line.
@@ -2899,7 +3014,14 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         match method {
-            "slurp" | "Str" | "gist" => Ok(Value::str(content)),
+            "slurp" | "Str" | "gist" => {
+                let has_bin = Self::named_bool(args, "bin");
+                let pipe_bin = matches!(attributes.get("bin"), Some(Value::Bool(true)));
+                if has_bin || pipe_bin {
+                    return Ok(Self::make_buf(content.into_bytes()));
+                }
+                Ok(Value::str(content))
+            }
             "encoding" => Ok(Value::str("utf8".to_string())),
             "close" => {
                 if let Some(id) = pipe_id
