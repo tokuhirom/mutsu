@@ -473,6 +473,7 @@ roast/S06-signature/introspection.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
+roast/S06-signature/multiple-signatures.t
 roast/S06-signature/named-parameters.t
 roast/S06-signature/named-placeholders.t
 roast/S06-signature/named-renaming.t
