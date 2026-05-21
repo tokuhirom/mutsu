@@ -924,7 +924,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             name,
             args,
-            modifier: _,
+            modifier,
             quoted: _,
         } = &target_expr
         {
@@ -934,10 +934,15 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
                 _ => None,
             };
+            let method_name = if *modifier == Some('!') {
+                format!("!{}", name.resolve())
+            } else {
+                name.resolve()
+            };
             let assigned = method_lvalue_assign_expr(
                 (**target).clone(),
                 target_var_name,
-                name.resolve(),
+                method_name,
                 args.clone(),
                 expr,
             );
@@ -1022,7 +1027,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             name,
             args,
-            modifier: _,
+            modifier,
             quoted: _,
         } = &expr
         {
@@ -1040,10 +1045,15 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
                     _ => None,
                 };
+                let method_name = if *modifier == Some('!') {
+                    format!("!{}", name.resolve())
+                } else {
+                    name.resolve()
+                };
                 method_lvalue_assign_expr(
                     (**target).clone(),
                     target_var_name,
-                    name.resolve(),
+                    method_name,
                     args.clone(),
                     rhs,
                 )
@@ -1369,6 +1379,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ref target,
             ref name,
             ref args,
+            ref modifier,
             ..
         } = expr
         {
@@ -1379,11 +1390,16 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 "_".to_string()
             };
+            let method_name = if *modifier == Some('!') {
+                format!("!{}", name.resolve())
+            } else {
+                name.resolve()
+            };
             let stmt = Stmt::Expr(Expr::Call {
                 name: Symbol::intern("__mutsu_assign_method_lvalue"),
                 args: vec![
                     (**target).clone(),
-                    Expr::Literal(crate::value::Value::str(name.resolve())),
+                    Expr::Literal(crate::value::Value::str(method_name)),
                     Expr::ArrayLiteral(args.clone()),
                     assigned_value,
                     Expr::Literal(crate::value::Value::str(topic_name)),

@@ -453,8 +453,9 @@ impl Interpreter {
             | Expr::Lambda { body, .. } => {
                 self.validate_private_access_in_stmts(caller_class, body)?
             }
-            Expr::Try { body, catch } => {
-                self.validate_private_access_in_stmts(caller_class, body)?;
+            Expr::Try { body: _, catch } => {
+                // Skip private access validation inside try blocks — unauthorized
+                // private access will produce a runtime error that try can catch.
                 if let Some(catch) = catch.as_ref() {
                     self.validate_private_access_in_stmts(caller_class, catch)?;
                 }

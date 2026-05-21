@@ -1334,7 +1334,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             target,
             name,
             args,
-            modifier: _,
+            modifier,
             quoted: _,
         } => {
             if name == "AT-POS" && args.len() == 1 {
@@ -1352,7 +1352,12 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::BareWord(name) => Some(name.clone()),
                     _ => None,
                 };
-                method_lvalue_assign_expr(*target, target_var_name, name.resolve(), args, rhs)
+                let method_name = if modifier == Some('!') {
+                    format!("!{}", name.resolve())
+                } else {
+                    name.resolve()
+                };
+                method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
             }
         }
         Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),

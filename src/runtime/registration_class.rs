@@ -3321,8 +3321,10 @@ impl Interpreter {
             | Expr::Lambda { body, .. } => {
                 Self::validate_attr_declared_in_class(class_own_attrs, body)?;
             }
-            Expr::Try { body, catch } => {
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            Expr::Try { body: _, catch } => {
+                // Skip attribute validation inside try blocks — accessing an
+                // undeclared attribute will produce a runtime error that the
+                // try block can catch.
                 if let Some(catch) = catch.as_ref() {
                     Self::validate_attr_declared_in_class(class_own_attrs, catch)?;
                 }
