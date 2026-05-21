@@ -40,17 +40,4 @@ per_file_timeout() {
 
 test_file="$1"
 file_timeout=$(per_file_timeout "$test_file")
-# Roast tests that reference sibling files (e.g. text-samples/) expect to run
-# from the roast directory. Strip the "roast/" prefix and cd into roast/.
-if [[ "$test_file" == roast/* ]]; then
-  relative="${test_file#roast/}"
-  # Resolve MUTSU_BIN to an absolute path before changing directory
-  case "$MUTSU_BIN" in
-    /*) abs_bin="$MUTSU_BIN" ;;
-    *)  abs_bin="$(cd "$(dirname "$MUTSU_BIN")" && pwd)/$(basename "$MUTSU_BIN")" ;;
-  esac
-  cd roast || exit 1
-  exec timeout "$file_timeout" "$abs_bin" "$relative"
-else
-  exec timeout "$file_timeout" "$MUTSU_BIN" "$test_file"
-fi
+exec timeout "$file_timeout" "$MUTSU_BIN" "$test_file"
