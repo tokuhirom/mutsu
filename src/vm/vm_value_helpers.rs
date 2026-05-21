@@ -1,20 +1,16 @@
 use super::*;
+use crate::runtime::{current_mutsu_thread_id, is_initial_thread};
 use crate::symbol::Symbol;
 
 impl VM {
-    /// Create a Thread instance with the current OS thread's ID.
+    /// Create a Thread instance with the current thread's mutsu ID.
     pub(super) fn make_thread_instance() -> Value {
-        let thread_id = std::thread::current().id();
-        // Extract a numeric ID from ThreadId's Debug representation
-        let id_str = format!("{:?}", thread_id);
-        let numeric_id: i64 = id_str
-            .chars()
-            .filter(|c| c.is_ascii_digit())
-            .collect::<String>()
-            .parse()
-            .unwrap_or(0);
+        let numeric_id = current_mutsu_thread_id();
+        let is_initial = is_initial_thread();
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("id".to_string(), Value::Int(numeric_id));
+        attrs.insert("name".to_string(), Value::str_from("<anon>"));
+        attrs.insert("is_initial".to_string(), Value::Bool(is_initial));
         Value::make_instance(Symbol::intern("Thread"), attrs)
     }
 

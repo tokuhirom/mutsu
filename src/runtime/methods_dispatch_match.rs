@@ -90,6 +90,17 @@ impl Interpreter {
                 )))
             }
             "start" => self.dispatch_promise_start(&target, &args),
+            "is-initial-thread" => {
+                if matches!(&target, Value::Package(cn) if cn == "Thread")
+                    || matches!(&target, Value::Instance { class_name, .. } if class_name == "Thread")
+                {
+                    Some(Ok(Value::Bool(
+                        super::methods_collection_ops::is_initial_thread(),
+                    )))
+                } else {
+                    None
+                }
+            }
             "in" => self.dispatch_promise_in(&target, &args),
             "THREAD" => {
                 if let Value::Junction { values, .. } = &target {

@@ -420,6 +420,22 @@ impl Interpreter {
         if class_name == "IO::Path" && method_name == "comb" {
             return true;
         }
+        // Thread native methods
+        if class_name == "Thread"
+            && matches!(
+                method_name,
+                "finish"
+                    | "id"
+                    | "name"
+                    | "is-initial-thread"
+                    | "app_lifetime"
+                    | "Str"
+                    | "gist"
+                    | "WHAT"
+            )
+        {
+            return true;
+        }
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
