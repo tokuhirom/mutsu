@@ -369,46 +369,83 @@ impl Interpreter {
     }
 
     /// Thread.start({ block }) -- spawn a real OS thread
+    /// Supports named params: :name("..."), :app_lifetime
     pub(in crate::runtime) fn dispatch_thread_start(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let block = args.first().cloned().unwrap_or(Value::Nil);
+        // Extract the block and named parameters from args
+        let mut block = Value::Nil;
+        let mut thread_name = "<anon>".to_string();
+        let mut app_lifetime = false;
+
+        for arg in args {
+            match arg {
+                Value::Pair(k, v) if k.as_str() == "name" => {
+                    thread_name = v.to_string_value();
+                }
+                Value::Pair(k, v) if k.as_str() == "app_lifetime" => {
+                    app_lifetime = v.truthy();
+                }
+                _ => {
+                    block = arg.clone();
+                }
+            }
+        }
+
         let thread_id = NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let mut thread_interp = self.clone_for_thread();
+        // Enable immediate stdout so thread output goes directly to stdout
+        thread_interp.set_immediate_stdout(true);
+        let mutsu_tid = thread_id as i64;
         let handle = std::thread::spawn(move || {
+            // Set the mutsu thread ID for $*THREAD.id consistency
+            super::set_current_mutsu_thread_id(mutsu_tid);
             match thread_interp.call_sub_value(block, vec![], false) {
                 Ok(_) => {}
                 Err(e) => {
                     eprintln!("Thread error: {}", e.message);
                 }
             }
-            // Flush any output from the thread
+            // Flush any remaining buffered output from the thread
             let output = std::mem::take(&mut thread_interp.output);
             if !output.is_empty() {
-                print!("{}", output);
+                use std::io::Write;
+                let _ = std::io::stdout().write_all(output.as_bytes());
+                let _ = std::io::stdout().flush();
             }
             let stderr = std::mem::take(&mut thread_interp.stderr_output);
             if !stderr.is_empty() {
-                eprint!("{}", stderr);
+                use std::io::Write;
+                let _ = std::io::stderr().write_all(stderr.as_bytes());
+                let _ = std::io::stderr().flush();
             }
         });
 
-        THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
+        if app_lifetime {
+            // For app_lifetime threads, don't store the handle -- the thread
+            // will be killed when the main thread exits
+            drop(handle);
+        } else {
+            THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
+        }
 
         let mut attrs = HashMap::new();
-        attrs.insert("thread_id".to_string(), Value::Int(thread_id as i64));
+        attrs.insert("id".to_string(), Value::Int(thread_id as i64));
+        attrs.insert("name".to_string(), Value::str(thread_name));
+        attrs.insert("app_lifetime".to_string(), Value::Bool(app_lifetime));
         Ok(Value::make_instance(Symbol::intern("Thread"), attrs))
     }
 
-    /// Thread.finish — join the thread (block until it completes)
+    /// Thread.finish -- join the thread (block until it completes)
     pub(in crate::runtime) fn dispatch_thread_finish(
         &mut self,
         attributes: &HashMap<String, Value>,
     ) -> Result<Value, RuntimeError> {
         let thread_id = attributes
-            .get("thread_id")
+            .get("id")
+            .or_else(|| attributes.get("thread_id"))
             .and_then(|v| {
                 if let Value::Int(i) = v {
                     Some(*i as u64)

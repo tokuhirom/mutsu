@@ -410,8 +410,40 @@ impl Interpreter {
                 .or_else(|| attributes.get("thread_id"))
                 .cloned()
                 .unwrap_or(Value::Int(0))),
+            "name" => Ok(attributes
+                .get("name")
+                .cloned()
+                .unwrap_or_else(|| Value::str_from("<anon>"))),
+            "is-initial-thread" => {
+                let is_initial = attributes
+                    .get("is_initial")
+                    .map(|v| v.truthy())
+                    .unwrap_or(false);
+                Ok(Value::Bool(is_initial))
+            }
+            "app_lifetime" => Ok(attributes
+                .get("app_lifetime")
+                .cloned()
+                .unwrap_or(Value::Bool(false))),
             "WHAT" => Ok(Value::Package(crate::symbol::Symbol::intern("Thread"))),
-            "Str" | "gist" => Ok(Value::str_from("Thread")),
+            "Str" | "gist" => {
+                let id = attributes
+                    .get("id")
+                    .or_else(|| attributes.get("thread_id"))
+                    .and_then(|v| {
+                        if let Value::Int(i) = v {
+                            Some(*i)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0);
+                let name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "<anon>".to_string());
+                Ok(Value::str(format!("Thread<{id}>({name})")))
+            }
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on Thread",
                 method

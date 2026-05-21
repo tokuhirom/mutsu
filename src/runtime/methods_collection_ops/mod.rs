@@ -91,3 +91,46 @@ static THREAD_HANDLES: std::sync::LazyLock<Mutex<HashMap<u64, std::thread::JoinH
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The OS thread ID of the initial (main) thread, captured at first access.
+static INITIAL_THREAD_ID: std::sync::LazyLock<std::thread::ThreadId> =
+    std::sync::LazyLock::new(|| std::thread::current().id());
+
+/// Returns true if the current OS thread is the initial (main) thread.
+pub(crate) fn is_initial_thread() -> bool {
+    std::thread::current().id() == *INITIAL_THREAD_ID
+}
+
+// Thread-local mutsu thread ID. Set by Thread.start for spawned threads.
+thread_local! {
+    static MUTSU_THREAD_ID: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// Set the mutsu thread ID for the current thread.
+pub(super) fn set_current_mutsu_thread_id(id: i64) {
+    MUTSU_THREAD_ID.with(|cell| cell.set(id));
+}
+
+/// Get the mutsu thread ID for the current thread.
+/// Returns 1 for the main thread, the assigned ID for spawned threads.
+pub(crate) fn current_mutsu_thread_id() -> i64 {
+    let id = MUTSU_THREAD_ID.with(|cell| cell.get());
+    if id == 0 {
+        if is_initial_thread() {
+            MUTSU_THREAD_ID.with(|cell| cell.set(1));
+            1
+        } else {
+            // Fallback for threads not started via Thread.start
+            let thread_id = std::thread::current().id();
+            let id_str = format!("{:?}", thread_id);
+            id_str
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        }
+    } else {
+        id
+    }
+}

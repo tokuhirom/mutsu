@@ -200,6 +200,9 @@ pub(crate) use self::registration_class::ClassDeclModifiers;
 
 pub(crate) use utils::*;
 
+// Re-export thread utility functions for VM access
+pub(crate) use methods_collection_ops::{current_mutsu_thread_id, is_initial_thread};
+
 use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 
 pub(super) type ClassAttributeDef = (
