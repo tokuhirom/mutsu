@@ -944,6 +944,23 @@ impl Interpreter {
         Ok(Value::array(lines))
     }
 
+    /// Force a `LazyIoLines` value into an eager array by reading at most `n`
+    /// lines from the file handle, leaving the rest available for subsequent reads.
+    pub(crate) fn force_lazy_io_lines_n(
+        &mut self,
+        handle: &Value,
+        n: usize,
+    ) -> Result<Value, RuntimeError> {
+        let mut lines = Vec::new();
+        while lines.len() < n {
+            match self.read_line_from_handle_value(handle)? {
+                Some(line) => lines.push(Value::str(line)),
+                None => break,
+            }
+        }
+        Ok(Value::array(lines))
+    }
+
     pub(super) fn split_block_phasers(&self, stmts: &[Stmt]) -> SplitPhasers {
         let mut pre_ph = Vec::new();
         let mut enter_ph = Vec::new();

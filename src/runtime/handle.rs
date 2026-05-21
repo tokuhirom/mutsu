@@ -51,6 +51,51 @@ impl Interpreter {
         }
     }
 
+    /// Split a string into lines using the given line separators and chomp
+    /// setting.  Used by IO::Path.lines to honour :nl-in / :!chomp.
+    pub(super) fn split_content_by_separators(
+        content: &str,
+        separators: &[Vec<u8>],
+        chomp: bool,
+    ) -> Vec<Value> {
+        let bytes = content.as_bytes();
+        let mut result = Vec::new();
+        let mut pos = 0;
+        while pos < bytes.len() {
+            // Scan for the next separator starting from current position
+            let mut found: Option<(usize, usize)> = None; // (offset, sep_len)
+            'outer: for i in pos..bytes.len() {
+                for sep in separators {
+                    if bytes[i..].starts_with(sep) {
+                        found = Some((i, sep.len()));
+                        break 'outer;
+                    }
+                }
+            }
+            match found {
+                Some((offset, sep_len)) => {
+                    if chomp {
+                        let line = &bytes[pos..offset];
+                        result.push(Value::str(String::from_utf8_lossy(line).to_string()));
+                    } else {
+                        let line = &bytes[pos..offset + sep_len];
+                        result.push(Value::str(String::from_utf8_lossy(line).to_string()));
+                    }
+                    pos = offset + sep_len;
+                }
+                None => {
+                    // Remaining text (no trailing separator)
+                    let line = &bytes[pos..];
+                    if !line.is_empty() {
+                        result.push(Value::str(String::from_utf8_lossy(line).to_string()));
+                    }
+                    break;
+                }
+            }
+        }
+        result
+    }
+
     pub(super) fn handle_id_from_value(value: &Value) -> Option<usize> {
         if let Value::Instance {
             class_name,

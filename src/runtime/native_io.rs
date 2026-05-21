@@ -601,11 +601,24 @@ impl Interpreter {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
                 let content = super::utils::strip_utf8_bom(content);
-                let parts = content
-                    .lines()
-                    .map(|line| Value::str(line.to_string()))
-                    .collect();
-                Ok(Value::array(parts))
+
+                // Parse nl-in / chomp named args
+                let (_, _, _, _, chomp, nl_in, _, _, _, _) = self.parse_io_flags_values(&args);
+                let mut parts = Self::split_content_by_separators(&content, &nl_in, chomp);
+
+                // Check for a positional limit argument
+                let limit = args.iter().find_map(|arg| match arg {
+                    Value::Int(i) => Some((*i).max(0) as usize),
+                    Value::BigInt(bi) => {
+                        use num_traits::ToPrimitive;
+                        Some(bi.to_usize().unwrap_or(usize::MAX))
+                    }
+                    _ => None,
+                });
+                if let Some(n) = limit {
+                    parts.truncate(n);
+                }
+                Ok(Value::Seq(std::sync::Arc::new(parts)))
             }
             "words" => {
                 let content = fs::read_to_string(&path_buf)
@@ -2236,24 +2249,34 @@ impl Interpreter {
                 ))
             }
             "lines" => {
-                let limit = args.first().and_then(|arg| match arg {
-                    Value::Int(i) => Some((*i).max(0) as usize),
-                    Value::BigInt(bi) => {
-                        use num_traits::ToPrimitive;
-                        Some(bi.to_usize().unwrap_or(usize::MAX))
+                let mut limit: Option<usize> = None;
+                let mut close_after = false;
+                for arg in &args {
+                    match arg {
+                        Value::Pair(k, v) if k == "close" => {
+                            close_after = v.truthy();
+                        }
+                        Value::Pair(..) => {}
+                        Value::Int(i) => limit = Some((*i).max(0) as usize),
+                        Value::BigInt(bi) => {
+                            use num_traits::ToPrimitive;
+                            limit = Some(bi.to_usize().unwrap_or(usize::MAX));
+                        }
+                        Value::Whatever => {}
+                        Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
+                        Value::Num(f) if *f >= 0.0 => limit = Some(*f as usize),
+                        Value::Rat(n, d) if *d == 0 && *n > 0 => {}
+                        Value::Rat(n, d) if *d != 0 => {
+                            limit = Some(((*n as f64 / *d as f64) as i64).max(0) as usize);
+                        }
+                        Value::Complex(re, im) if *im == 0.0 && *re >= 0.0 => {
+                            limit = Some(*re as usize);
+                        }
+                        _ => {}
                     }
-                    Value::Whatever => None,
-                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                    Value::Num(f) if *f >= 0.0 => Some(*f as usize),
-                    Value::Rat(n, d) if *d == 0 && *n > 0 => None,
-                    Value::Rat(n, d) if *d != 0 => {
-                        Some(((*n as f64 / *d as f64) as i64).max(0) as usize)
-                    }
-                    Value::Complex(re, im) if *im == 0.0 && *re >= 0.0 => Some(*re as usize),
-                    _ => None,
-                });
+                }
                 if limit.is_some() {
-                    // Bounded: read eagerly
+                    // Bounded: read eagerly, return Seq
                     let mut lines = Vec::new();
                     while let Some(line) = self.read_line_from_handle_value(&target_val)? {
                         lines.push(Value::str(line));
@@ -2263,7 +2286,10 @@ impl Interpreter {
                             break;
                         }
                     }
-                    Ok(Value::array(lines))
+                    if close_after {
+                        self.close_handle_value(&target_val)?;
+                    }
+                    Ok(Value::Seq(std::sync::Arc::new(lines)))
                 } else {
                     // No limit: return a lazy IO lines iterator so that
                     // consumers (e.g. for-loop) can read on demand and

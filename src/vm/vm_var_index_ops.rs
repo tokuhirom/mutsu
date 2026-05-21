@@ -225,8 +225,52 @@ impl VM {
             self.stack.push(target);
             return Ok(());
         }
-        if let Value::LazyIoLines { .. } = target {
-            target = self.force_if_lazy_io_lines(target)?;
+        if let Value::LazyIoLines { ref handle, kv } = target {
+            // Determine the maximum index requested so we only read the
+            // minimum number of lines from the handle, leaving the rest
+            // available for subsequent reads.
+            let needed = match &index {
+                Value::Int(i) if *i >= 0 => Some((*i as usize).saturating_add(1)),
+                // Array index like [1,2] — find max element
+                Value::Array(items, _) => {
+                    let mut max_idx: Option<usize> = None;
+                    let mut has_negative = false;
+                    for item in items.iter() {
+                        match item {
+                            Value::Int(i) if *i >= 0 => {
+                                let u = *i as usize;
+                                max_idx = Some(max_idx.map_or(u, |m: usize| m.max(u)));
+                            }
+                            _ => {
+                                has_negative = true;
+                            }
+                        }
+                    }
+                    if has_negative {
+                        None // negative/whatever index — must read all
+                    } else {
+                        max_idx.map(|m| m.saturating_add(1))
+                    }
+                }
+                _ => None, // Whatever (*-1) or unknown — read all
+            };
+            target = match needed {
+                Some(n) => {
+                    let forced = self.interpreter.force_lazy_io_lines_n(handle, n)?;
+                    if kv {
+                        let items = crate::runtime::utils::value_to_list(&forced);
+                        let mut kv_items = Vec::with_capacity(items.len() * 2);
+                        for (i, v) in items.iter().enumerate() {
+                            kv_items.push(Value::Int(i as i64));
+                            kv_items.push(v.clone());
+                        }
+                        Value::array(kv_items)
+                    } else {
+                        forced
+                    }
+                }
+                None => self.force_if_lazy_io_lines(target)?,
+            };
         }
         if let Value::LazyList(ref ll) = target {
             let forced = if ll.scan_spec.is_some() {

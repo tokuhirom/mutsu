@@ -764,6 +764,7 @@ roast/S16-io/eof.t
 roast/S16-io/getc.t
 roast/S16-io/handles-between-threads.t
 roast/S16-io/home.t
+roast/S16-io/lines.t
 roast/S16-io/newline.t
 roast/S16-io/note.t
 roast/S16-io/print.t

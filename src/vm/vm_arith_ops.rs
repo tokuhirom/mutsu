@@ -466,6 +466,10 @@ impl VM {
                     ll.cache.lock().unwrap().clone().unwrap_or_default()
                 }
             }
+            Value::LazyIoLines { .. } => match self.force_if_lazy_io_lines(val) {
+                Ok(forced) => crate::runtime::utils::value_to_list(&forced),
+                Err(_) => vec![],
+            },
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)
