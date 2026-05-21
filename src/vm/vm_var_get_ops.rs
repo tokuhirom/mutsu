@@ -232,6 +232,23 @@ impl VM {
                 let result = self.interpreter.call_function(name, Vec::new())?;
                 self.env_dirty = true;
                 result
+            } else if let Some((pkg_prefix, last_seg)) = name.rsplit_once("::")
+                && !last_seg.is_empty()
+                && last_seg.starts_with(|c: char| c.is_ascii_lowercase())
+                && !self.interpreter.has_type(name)
+                && !Self::is_builtin_type(name)
+                && !self.interpreter.has_function(name)
+                && !self.interpreter.has_multi_function(name)
+                && !self.interpreter.has_function(last_seg)
+                && !self.interpreter.has_multi_function(last_seg)
+            {
+                // The last segment starts with lowercase, indicating a qualified
+                // function/sub call (e.g. `Our::Package::pkg`). If the prefix
+                // package and function are not known, throw an error like raku does.
+                return Err(RuntimeError::new(format!(
+                    "Could not find symbol '&{}' in '{}'",
+                    last_seg, pkg_prefix,
+                )));
             } else {
                 // Strip pseudo-package prefixes (OUR::, GLOBAL::, MY::, etc.)
                 // and resolve to the bare type name if it exists.
