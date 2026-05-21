@@ -895,6 +895,17 @@ impl VM {
             }
             OpCode::GetArrayVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
+                // Reject @!attr (private attribute twigil) when no self is available
+                if let Some(bare) = name.strip_prefix("@!")
+                    && !bare.is_empty()
+                    && bare.as_bytes()[0].is_ascii_alphabetic()
+                    && self.get_env_with_main_alias("self").is_none()
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::NoSelf: Variable {} used where no 'self' is available",
+                        name
+                    )));
+                }
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| self.get_local_by_bare_name(code, name))
@@ -927,6 +938,17 @@ impl VM {
             }
             OpCode::GetHashVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
+                // Reject %!attr (private attribute twigil) when no self is available
+                if let Some(bare) = name.strip_prefix("%!")
+                    && !bare.is_empty()
+                    && bare.as_bytes()[0].is_ascii_alphabetic()
+                    && self.get_env_with_main_alias("self").is_none()
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::NoSelf: Variable {} used where no 'self' is available",
+                        name
+                    )));
+                }
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| self.get_local_by_bare_name(code, name))
@@ -979,6 +1001,26 @@ impl VM {
                     Value::Str(s) => s.to_string(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
+                // Reject private attribute twigil (!) assignment when no self is available
+                {
+                    let bare = name.trim_start_matches(['$', '@', '%', '&']);
+                    if bare.starts_with('!')
+                        && bare.len() > 1
+                        && bare.as_bytes()[1].is_ascii_alphabetic()
+                        && self.get_env_with_main_alias("self").is_none()
+                    {
+                        // Reconstruct the display name with sigil
+                        let display = if name.starts_with('!') {
+                            format!("${}", name)
+                        } else {
+                            name.clone()
+                        };
+                        return Err(RuntimeError::new(format!(
+                            "X::Syntax::NoSelf: Variable {} used where no 'self' is available",
+                            display
+                        )));
+                    }
+                }
                 if self.interpreter.strict_mode
                     && !name.contains("::")
                     && !self.interpreter.env().contains_key(&name)
