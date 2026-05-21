@@ -873,6 +873,11 @@ pub struct Interpreter {
     protect_block_cache: ProtectBlockCache,
     private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
     module_load_stack: Vec<String>,
+    /// The current distribution context ($?DISTRIBUTION).
+    pub(crate) current_distribution: Option<Value>,
+    /// Maps package names to their distribution context.
+    /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
+    pub(crate) package_distributions: HashMap<String, Value>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.
@@ -2877,6 +2882,8 @@ impl Interpreter {
             protect_block_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
+            current_distribution: None,
+            package_distributions: HashMap::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
             unit_module_exported_subs: HashMap::new(),
@@ -4736,6 +4743,8 @@ impl Interpreter {
             protect_block_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
+            current_distribution: self.current_distribution.clone(),
+            package_distributions: self.package_distributions.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),

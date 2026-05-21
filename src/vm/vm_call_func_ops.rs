@@ -681,13 +681,6 @@ impl VM {
                         && !pd.name.starts_with('&')
                 })
             {
-                // On-the-fly compile: compile the function definition to
-                // bytecode and execute via the VM, avoiding the slow
-                // tree-walking interpreter path. The compiled result is
-                // cached in otf_compile_cache for subsequent calls.
-                // Skip functions with class/role declarations or complex
-                // parameter signatures as they need the full interpreter
-                // path for correct behavior.
                 self.compile_and_call_function_def(&def, args, compiled_fns)
             } else {
                 // Sync VM locals to env before spawning threads so closures capture them

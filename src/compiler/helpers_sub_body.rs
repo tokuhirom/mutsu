@@ -103,6 +103,8 @@ impl Compiler {
         // Propagate last_source_line so the sub body knows which line
         // the sub was defined at (for backtraces).
         sub_compiler.last_source_line = self.last_source_line;
+        // Propagate distribution context so $?DISTRIBUTION works inside subs
+        sub_compiler.current_distribution = self.current_distribution.clone();
         let arity = param_defs
             .iter()
             .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))

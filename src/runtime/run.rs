@@ -853,6 +853,14 @@ impl Interpreter {
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
         compiler.set_current_package(self.current_package.clone());
+        // Resolve distribution context: prefer the current one, then look up
+        // by the current package name in case we're running a function body
+        // from a module that had a distribution.
+        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
+            self.package_distributions
+                .get(&self.current_package)
+                .cloned()
+        });
         let (code, compiled_fns) = compiler.compile(stmts);
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
@@ -1149,6 +1157,20 @@ impl Interpreter {
                 self.imported_operator_names.insert(name);
             }
         }
+        // Detect distribution context (META6.json) for $?DISTRIBUTION.
+        let saved_distribution = self.current_distribution.clone();
+        if let Some(dist) = Self::detect_distribution(&source_path) {
+            self.current_distribution = Some(dist.clone());
+            // Record the distribution for the module's package name
+            // so OTF compilation can resolve $?DISTRIBUTION later.
+            self.package_distributions
+                .insert(module.to_string(), dist.clone());
+            // Also record under the current runtime package (typically GLOBAL
+            // for unit modules) since the interpreter's current_package may not
+            // match the module name during function body evaluation.
+            self.package_distributions
+                .insert(self.current_package.clone(), dist);
+        }
         // Save and restore the language version around module loading.
         // Each module may set its own `use v6.*` which should not leak
         // into the caller's language version.
@@ -1180,7 +1202,136 @@ impl Interpreter {
             result?;
         }
         crate::parser::set_current_language_version(&saved_language_version);
+        self.current_distribution = saved_distribution;
         Ok(())
+    }
+
+    /// Detect a distribution (META6.json) for the given module source path.
+    fn detect_distribution(source_path: &Path) -> Option<Value> {
+        let mut dir = source_path.parent()?;
+        for _ in 0..4 {
+            let meta_path = dir.join("META6.json");
+            if meta_path.exists() {
+                if let Ok(content) = fs::read_to_string(&meta_path) {
+                    return Self::build_distribution_from_meta(&content);
+                }
+            }
+            dir = dir.parent()?;
+        }
+        // No META6.json found; build a minimal auto-generated distribution
+        let lib_dir = source_path.parent()?;
+        Some(Self::build_distribution_from_lib_dir(lib_dir))
+    }
+
+    fn build_distribution_from_meta(json_content: &str) -> Option<Value> {
+        let meta_hash = Self::parse_meta6_json(json_content)?;
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "$!meta".to_string(),
+            Value::Hash(std::sync::Arc::new(meta_hash)),
+        );
+        Some(Value::make_instance_without_destroy(
+            crate::symbol::Symbol::intern("Distribution"),
+            attrs,
+        ))
+    }
+
+    fn build_distribution_from_lib_dir(lib_dir: &Path) -> Value {
+        let mut meta = HashMap::new();
+        let lib_path = lib_dir.to_string_lossy().to_string();
+        meta.insert("name".to_string(), Value::str(lib_path));
+        meta.insert("ver".to_string(), Value::str("*".to_string()));
+        meta.insert("api".to_string(), Value::str("*".to_string()));
+        meta.insert("auth".to_string(), Value::str(String::new()));
+        let provides = Self::scan_lib_provides(lib_dir);
+        meta.insert("provides".to_string(), provides);
+        let resources_dir = lib_dir.parent().map(|p| p.join("resources"));
+        let resources = if let Some(ref rd) = resources_dir
+            && rd.exists()
+        {
+            Self::scan_resources(rd)
+        } else {
+            Value::Hash(std::sync::Arc::new(HashMap::new()))
+        };
+        meta.insert("resources".to_string(), resources);
+        let mut attrs = HashMap::new();
+        attrs.insert("$!meta".to_string(), Value::Hash(std::sync::Arc::new(meta)));
+        Value::make_instance_without_destroy(crate::symbol::Symbol::intern("Distribution"), attrs)
+    }
+
+    fn scan_lib_provides(lib_dir: &Path) -> Value {
+        let mut provides = HashMap::new();
+        let extensions = [".rakumod", ".pm6", ".pm"];
+        if let Ok(entries) = std::fs::read_dir(lib_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    for ext in &extensions {
+                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                            if name.ends_with(ext) {
+                                let module_name = name[..name.len() - ext.len()].replace('/', "::");
+                                let relative = format!("lib/{}", name);
+                                provides.insert(module_name, Value::str(relative));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Value::Hash(std::sync::Arc::new(provides))
+    }
+
+    fn scan_resources(resources_dir: &Path) -> Value {
+        let mut files = HashMap::new();
+        if let Ok(entries) = std::fs::read_dir(resources_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        let key = format!("resources/{}", name);
+                        files.insert(key.clone(), Value::str(key));
+                    }
+                }
+            }
+        }
+        Value::Hash(std::sync::Arc::new(files))
+    }
+
+    fn parse_meta6_json(content: &str) -> Option<HashMap<String, Value>> {
+        let json: serde_json::Value = serde_json::from_str(content).ok()?;
+        let obj = json.as_object()?;
+        let mut meta = HashMap::new();
+        for (key, val) in obj {
+            meta.insert(key.clone(), Self::json_to_value(val));
+        }
+        Some(meta)
+    }
+
+    fn json_to_value(val: &serde_json::Value) -> Value {
+        match val {
+            serde_json::Value::Null => Value::Nil,
+            serde_json::Value::Bool(b) => Value::Bool(*b),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Value::Int(i)
+                } else if let Some(f) = n.as_f64() {
+                    Value::Num(f)
+                } else {
+                    Value::str(n.to_string())
+                }
+            }
+            serde_json::Value::String(s) => Value::str(s.clone()),
+            serde_json::Value::Array(arr) => {
+                Value::array(arr.iter().map(Self::json_to_value).collect())
+            }
+            serde_json::Value::Object(obj) => {
+                let mut map = HashMap::new();
+                for (k, v) in obj {
+                    map.insert(k.clone(), Self::json_to_value(v));
+                }
+                Value::Hash(std::sync::Arc::new(map))
+            }
+        }
     }
 
     /// Check for unresolved package/class stubs at program end.
