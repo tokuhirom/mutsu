@@ -3,39 +3,70 @@ use crate::ast::{FunctionDef, ParamDef};
 use crate::opcode::CompiledFunction;
 use std::collections::HashMap;
 
-/// Parsed CLI arguments for MAIN dispatch.
 struct ParsedMainArgs {
-    /// Positional arguments (strings from CLI).
     positional: Vec<Value>,
-    /// Named arguments as (name, value) pairs.
     named: Vec<(String, Value)>,
 }
 
-/// Information about a named parameter from MAIN's signature.
 struct NamedParamInfo {
-    /// All accepted names for this parameter (including aliases).
     names: Vec<String>,
-    /// Whether this parameter is typed as Bool.
     is_bool: bool,
-    /// Whether this parameter requires a value (typed as Str, Int, etc. but not Any/Bool).
     requires_value: bool,
-    /// Whether this is an array parameter (@foo).
     is_array: bool,
 }
 
+#[derive(Default)]
+struct SubMainOpts {
+    named_anywhere: bool,
+    bundling: bool,
+    allow_no: bool,
+    coerce_allomorphs_to: Option<String>,
+    numeric_suffix_as_value: bool,
+}
+
 impl Interpreter {
-    /// Entry point for MAIN dispatch after program body has executed.
+    fn read_sub_main_opts(&self) -> SubMainOpts {
+        let mut opts = SubMainOpts::default();
+        let hash = self
+            .env
+            .get("%*SUB-MAIN-OPTS")
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let items = match hash {
+            Value::Hash(h) => h,
+            _ => return opts,
+        };
+        for (key, value) in items.iter() {
+            match key.as_str() {
+                "named-anywhere" => opts.named_anywhere = value.truthy(),
+                "bundling" => opts.bundling = value.truthy(),
+                "allow-no" => opts.allow_no = value.truthy(),
+                "coerce-allomorphs-to" => {
+                    let name = match value {
+                        Value::Package(n) => n.resolve().to_string(),
+                        _ => value.to_string_value(),
+                    };
+                    opts.coerce_allomorphs_to = Some(name);
+                }
+                "numeric-suffix-as-value" => {
+                    opts.numeric_suffix_as_value = value.truthy();
+                }
+                _ => {}
+            }
+        }
+        opts
+    }
+
     pub(super) fn dispatch_main(
         &mut self,
         _compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        // Check if MAIN is defined (either as plain sub or multi candidates)
         let all_candidates = self.collect_main_candidates();
         if all_candidates.is_empty() {
             return Ok(());
         }
-        // Use first candidate as the default for usage generation
         let main_def = all_candidates[0].clone();
+        let sub_main_opts = self.read_sub_main_opts();
 
         let args_val = self
             .env
@@ -48,36 +79,52 @@ impl Interpreter {
             Vec::new()
         };
 
-        // Check for --help flag
         if raw_args.iter().any(|a| a == "--help") {
             let usage = self.generate_usage_message(&main_def);
-            // --help prints to stdout with "Usage:" prefix, exit 0
-            let text = format!("Usage:\n{}\n", usage);
-            self.emit_output(&text);
+            self.emit_output(&format!("Usage:\n{}\n", usage));
             return Ok(());
         }
 
-        // Try to parse args and dispatch against each candidate
+        // Emit warning for 'is rw' parameters on MAIN
+        'rw_check: for candidate in &all_candidates {
+            for pd in &candidate.param_defs {
+                if pd.traits.iter().any(|t| t == "rw") {
+                    self.emit_stderr(
+                        "Potential difficulties:\n    \
+                         'is rw' on parameters of 'sub MAIN' usually cannot \
+                         be satisfied.\n    \
+                         Did you mean 'is copy'?\n",
+                    );
+                    break 'rw_check;
+                }
+            }
+        }
+
         for candidate in &all_candidates {
             let named_info = Self::extract_named_param_info(candidate);
-            let has_slurpy_named = candidate
-                .param_defs
-                .iter()
-                .any(|p| p.double_slurpy || (p.named && p.slurpy));
+            let has_capture = candidate.param_defs.iter().any(|p| {
+                p.slurpy
+                    && !p.named
+                    && !p.double_slurpy
+                    && !p.name.starts_with(['$', '@', '%', '*'])
+            });
+            let has_slurpy_named = has_capture
+                || candidate
+                    .param_defs
+                    .iter()
+                    .any(|p| p.double_slurpy || (p.named && p.slurpy));
             let has_slurpy_positional = candidate
                 .param_defs
                 .iter()
                 .any(|p| p.slurpy && !p.named && !p.double_slurpy);
 
-            match Self::parse_cli_args(&raw_args, &named_info) {
+            match Self::parse_cli_args(&raw_args, &named_info, &sub_main_opts) {
                 Ok(parsed) => {
-                    // Check if positional count matches
                     let positional_params: Vec<&ParamDef> = candidate
                         .param_defs
                         .iter()
                         .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
                         .collect();
-
                     let required_positional = positional_params
                         .iter()
                         .filter(|p| p.default.is_none() && !p.optional_marker)
@@ -87,14 +134,11 @@ impl Interpreter {
                     } else {
                         positional_params.len()
                     };
-
                     if parsed.positional.len() < required_positional
                         || parsed.positional.len() > max_positional
                     {
                         continue;
                     }
-
-                    // Check that all required named params are provided
                     let mut named_ok = true;
                     for pd in &candidate.param_defs {
                         if pd.named && pd.required && pd.default.is_none() && !pd.optional_marker {
@@ -108,25 +152,16 @@ impl Interpreter {
                     if !named_ok {
                         continue;
                     }
-
-                    // Check for unexpected named args (unless slurpy named)
                     if !has_slurpy_named {
                         let all_accepted: Vec<String> =
                             named_info.iter().flat_map(|ni| ni.names.clone()).collect();
-                        let unexpected =
-                            parsed.named.iter().any(|(n, _)| !all_accepted.contains(n));
-                        if unexpected {
+                        if parsed.named.iter().any(|(n, _)| !all_accepted.contains(n)) {
                             continue;
                         }
                     }
-
-                    // Build args for the call
-                    match self.call_main_with_parsed_args(candidate, &parsed) {
+                    match self.call_main_with_parsed_args(candidate, &parsed, &sub_main_opts) {
                         Ok(()) => return Ok(()),
                         Err(e) => {
-                            // If MAIN call failed due to a constraint check or
-                            // similar runtime error, fall through to GENERATE-USAGE
-                            // rather than leaking the internal exception.
                             let msg = e.message.to_lowercase();
                             if msg.contains("constraint")
                                 || msg.contains("type check")
@@ -142,17 +177,13 @@ impl Interpreter {
             }
         }
 
-        // MAIN dispatch failed - call GENERATE-USAGE or auto-generate
         self.handle_main_dispatch_failure(&main_def)?;
         Ok(())
     }
 
-    /// Collect all MAIN candidates (including multi variants).
     fn collect_main_candidates(&self) -> Vec<FunctionDef> {
         let mut candidates = Vec::new();
         let mut seen_keys = std::collections::HashSet::new();
-
-        // Look for multi candidates in both GLOBAL and current package
         let prefixes: Vec<String> = {
             let mut p = vec!["GLOBAL::MAIN/".to_string()];
             let pkg = &self.current_package;
@@ -161,12 +192,9 @@ impl Interpreter {
             }
             p
         };
-
         for (key, def) in &self.functions {
             let ks = key.resolve();
-            let matches = prefixes.iter().any(|prefix| ks.starts_with(prefix));
-            if matches {
-                // Deduplicate by body fingerprint
+            if prefixes.iter().any(|prefix| ks.starts_with(prefix)) {
                 let fp =
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
                 if seen_keys.insert(fp) {
@@ -174,26 +202,16 @@ impl Interpreter {
                 }
             }
         }
-
-        // If no multi candidates found, use the plain MAIN
         if candidates.is_empty()
             && let Some(def) = self.resolve_function("MAIN")
         {
             candidates.push(def);
         }
-
-        // Sort candidates: more specific types first
-        candidates.sort_by(|a, b| {
-            let a_specificity = Self::candidate_specificity(a);
-            let b_specificity = Self::candidate_specificity(b);
-            b_specificity.cmp(&a_specificity)
-        });
-
+        candidates
+            .sort_by(|a, b| Self::candidate_specificity(b).cmp(&Self::candidate_specificity(a)));
         candidates
     }
 
-    /// Compute a specificity score for a MAIN candidate (higher = more specific).
-    /// Also penalizes array named params so Scalar candidates are preferred.
     fn candidate_specificity(def: &FunctionDef) -> i32 {
         let mut score = 0i32;
         for pd in &def.param_defs {
@@ -202,10 +220,9 @@ impl Interpreter {
                     "Any" | "Mu" => score += 1,
                     "Bool" => score += 2,
                     "Str" | "Int" | "Num" | "Rat" => score += 3,
-                    _ => score += 4, // Custom types like subsets are most specific
+                    _ => score += 4,
                 }
             }
-            // Penalize array named params so Scalar candidates are preferred
             if pd.named && pd.name.starts_with('@') {
                 score -= 1;
             }
@@ -213,34 +230,24 @@ impl Interpreter {
         score
     }
 
-    /// Extract named parameter info from a MAIN function definition.
     fn extract_named_param_info(def: &FunctionDef) -> Vec<NamedParamInfo> {
-        let mut result = Vec::new();
-        for pd in &def.param_defs {
-            if pd.named {
-                let names = Self::param_all_names(pd);
-                let is_bool = pd.type_constraint.as_ref().is_some_and(|t| t == "Bool");
-                let requires_value = pd
+        def.param_defs
+            .iter()
+            .filter(|pd| pd.named)
+            .map(|pd| NamedParamInfo {
+                names: Self::param_all_names(pd),
+                is_bool: pd.type_constraint.as_ref().is_some_and(|t| t == "Bool"),
+                requires_value: pd
                     .type_constraint
                     .as_ref()
-                    .is_some_and(|t| t != "Bool" && t != "Any");
-                let is_array = pd.name.starts_with('@');
-                result.push(NamedParamInfo {
-                    names,
-                    is_bool,
-                    requires_value,
-                    is_array,
-                });
-            }
-        }
-        result
+                    .is_some_and(|t| t != "Bool" && t != "Any"),
+                is_array: pd.name.starts_with('@'),
+            })
+            .collect()
     }
 
-    /// Get all names for a named parameter (including aliases).
     fn param_all_names(pd: &ParamDef) -> Vec<String> {
-        let mut names = Vec::new();
-        let primary = pd.name.trim_start_matches(['$', '@', '%']);
-        names.push(primary.to_string());
+        let mut names = vec![pd.name.trim_start_matches(['$', '@', '%']).to_string()];
         if let Some(sub_params) = &pd.sub_signature {
             for sp in sub_params {
                 let alias = sp.name.trim_start_matches(['$', '@', '%']);
@@ -252,12 +259,10 @@ impl Interpreter {
         names
     }
 
-    /// Parse CLI arguments according to MAIN's named parameter info.
-    /// Raku's MAIN CLI parsing requires named options before positional args.
-    /// Once a positional arg is seen, everything after it is positional.
     fn parse_cli_args(
         raw_args: &[String],
         named_info: &[NamedParamInfo],
+        opts: &SubMainOpts,
     ) -> Result<ParsedMainArgs, String> {
         let mut positional = Vec::new();
         let mut named: Vec<(String, Value)> = Vec::new();
@@ -267,34 +272,37 @@ impl Interpreter {
         while i < raw_args.len() {
             let arg = &raw_args[i];
 
-            if positional_started {
+            if positional_started && !opts.named_anywhere {
                 positional.push(Value::str(arg.clone()));
                 i += 1;
                 continue;
             }
-
             if arg == "--" {
                 positional_started = true;
                 i += 1;
                 continue;
             }
-
             if let Some(rest) = arg.strip_prefix("--/") {
                 named.push((rest.to_string(), Value::Bool(false)));
                 i += 1;
                 continue;
             }
-
+            if opts.allow_no
+                && let Some(rest) = arg.strip_prefix("--no-")
+                && !rest.is_empty()
+            {
+                named.push((rest.to_string(), Value::Bool(false)));
+                i += 1;
+                continue;
+            }
             if let Some(rest) = arg.strip_prefix("--") {
                 if rest.is_empty() {
                     i += 1;
                     continue;
                 }
-
                 if let Some(eq_pos) = rest.find('=') {
                     let key = &rest[..eq_pos];
                     let val = &rest[eq_pos + 1..];
-
                     let info = named_info
                         .iter()
                         .find(|ni| ni.names.iter().any(|n| n == key));
@@ -317,45 +325,30 @@ impl Interpreter {
                         i += 1;
                         continue;
                     }
-
                     named.push((key.to_string(), Value::str(val.to_string())));
                     i += 1;
                     continue;
                 }
-
-                // --flag (no =)
                 let key = rest;
                 let info = named_info
                     .iter()
                     .find(|ni| ni.names.iter().any(|n| n == key));
-
                 if let Some(ni) = info {
                     if ni.is_bool {
                         named.push((key.to_string(), Value::Bool(true)));
                         i += 1;
                         continue;
                     }
-                    if ni.requires_value {
-                        if i + 1 < raw_args.len() {
-                            named.push((key.to_string(), Value::str(raw_args[i + 1].clone())));
-                            i += 2;
-                            continue;
-                        } else {
-                            return Err(format!("Option --{} requires a value", key));
-                        }
+                    if ni.requires_value && i + 1 < raw_args.len() {
+                        named.push((key.to_string(), Value::str(raw_args[i + 1].clone())));
+                        i += 2;
+                        continue;
                     }
-                    // Any-typed or untyped: treat as Bool (no spacey value)
-                    named.push((key.to_string(), Value::Bool(true)));
-                    i += 1;
-                    continue;
                 }
-
-                // Unknown named option - treat as Bool flag
                 named.push((key.to_string(), Value::Bool(true)));
                 i += 1;
                 continue;
             }
-
             if arg.starts_with('-') && arg.len() > 1 && !arg.starts_with("--") {
                 let rest = &arg[1..];
                 if let Some(eq_pos) = rest.find('=') {
@@ -365,75 +358,84 @@ impl Interpreter {
                     i += 1;
                     continue;
                 }
-
+                if opts.numeric_suffix_as_value && rest.len() >= 2 {
+                    let first_char = rest.chars().next().unwrap();
+                    let suffix = &rest[first_char.len_utf8()..];
+                    if first_char.is_ascii_alphabetic()
+                        && suffix.chars().all(|c| c.is_ascii_digit())
+                    {
+                        let int_val: i64 = suffix.parse().unwrap_or(0);
+                        let mut mixins = std::collections::HashMap::new();
+                        mixins.insert("Str".to_string(), Value::str(suffix.to_string()));
+                        named.push((
+                            first_char.to_string(),
+                            Value::mixin(Value::Int(int_val), mixins),
+                        ));
+                        i += 1;
+                        continue;
+                    }
+                }
+                if opts.bundling && rest.len() >= 2 && rest.chars().all(|c| c.is_ascii_alphabetic())
+                {
+                    for ch in rest.chars() {
+                        named.push((ch.to_string(), Value::Bool(true)));
+                    }
+                    i += 1;
+                    continue;
+                }
                 let key = rest;
                 let info = named_info
                     .iter()
                     .find(|ni| ni.names.iter().any(|n| n == key));
-
                 if let Some(ni) = info {
                     if ni.is_bool {
                         named.push((key.to_string(), Value::Bool(true)));
                         i += 1;
                         continue;
                     }
-                    if ni.requires_value {
-                        if i + 1 < raw_args.len() {
-                            named.push((key.to_string(), Value::str(raw_args[i + 1].clone())));
-                            i += 2;
-                            continue;
-                        } else {
-                            return Err(format!("Option -{} requires a value", key));
-                        }
+                    if ni.requires_value && i + 1 < raw_args.len() {
+                        named.push((key.to_string(), Value::str(raw_args[i + 1].clone())));
+                        i += 2;
+                        continue;
                     }
-                    named.push((key.to_string(), Value::Bool(true)));
-                    i += 1;
-                    continue;
                 }
-
                 named.push((key.to_string(), Value::Bool(true)));
                 i += 1;
                 continue;
             }
-
-            // Positional argument - everything after is positional
             positional.push(Value::str(arg.clone()));
             positional_started = true;
             i += 1;
         }
-
         Ok(ParsedMainArgs { positional, named })
     }
 
-    /// Call MAIN with the parsed arguments.
     fn call_main_with_parsed_args(
         &mut self,
         candidate: &FunctionDef,
         parsed: &ParsedMainArgs,
+        opts: &SubMainOpts,
     ) -> Result<(), RuntimeError> {
-        // Coerce positional string args to match parameter type constraints.
-        // CLI args are always strings, but MAIN parameters may be typed as
-        // Int, Num, Rat, etc. and Raku coerces automatically.
         let positional_params: Vec<&ParamDef> = candidate
             .param_defs
             .iter()
             .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
             .collect();
-
         let mut args = Vec::new();
         for (i, arg) in parsed.positional.iter().enumerate() {
-            let coerced = if let Some(pd) = positional_params.get(i) {
+            let mut coerced = if let Some(pd) = positional_params.get(i) {
                 Self::coerce_cli_arg(arg, pd)
             } else {
                 arg.clone()
             };
+            if let Some(ref target_type) = opts.coerce_allomorphs_to {
+                coerced = Self::coerce_to_type(&coerced, target_type);
+            }
             args.push(coerced);
         }
         for (name, value) in &parsed.named {
             args.push(Value::Pair(name.clone(), Box::new(value.clone())));
         }
-
-        // Set $*USAGE (read-only)
         let all_candidates = self.collect_main_candidates();
         let usage_text = self.generate_usage_from_candidates(&all_candidates);
         self.env
@@ -442,8 +444,6 @@ impl Interpreter {
             .insert("*USAGE".to_string(), Value::str(usage_text));
         self.mark_readonly("$*USAGE");
         self.mark_readonly("*USAGE");
-
-        // Call the specific candidate directly
         match self.call_function_def(candidate, &args) {
             Ok(_) => Ok(()),
             Err(e) if e.return_value.is_some() => Ok(()),
@@ -452,32 +452,24 @@ impl Interpreter {
         }
     }
 
-    /// Handle MAIN dispatch failure: call GENERATE-USAGE or auto-generate usage.
     fn handle_main_dispatch_failure(&mut self, main_def: &FunctionDef) -> Result<(), RuntimeError> {
         let usage = self.generate_usage_message(main_def);
-
         self.env
             .insert("$*USAGE".to_string(), Value::str(usage.clone()));
         self.env
             .insert("*USAGE".to_string(), Value::str(usage.clone()));
         self.mark_readonly("$*USAGE");
         self.mark_readonly("*USAGE");
-
         if self.resolve_function("GENERATE-USAGE").is_some() {
             let result = self.call_function("GENERATE-USAGE", vec![])?;
-            let msg = result.to_string_value();
-            let output = format!("{}\n", msg);
-            self.emit_stderr(&output);
+            self.emit_stderr(&format!("{}\n", result.to_string_value()));
         } else {
-            let output = format!("Usage:\n{}\n", usage);
-            self.emit_stderr(&output);
+            self.emit_stderr(&format!("Usage:\n{}\n", usage));
         }
-
         self.exit_code = 2;
         Ok(())
     }
 
-    /// Generate usage message from all MAIN candidates.
     fn generate_usage_message(&self, main_def: &FunctionDef) -> String {
         let all_candidates = self.collect_main_candidates();
         if all_candidates.len() > 1 {
@@ -487,7 +479,6 @@ impl Interpreter {
         }
     }
 
-    /// Generate usage text from a list of MAIN candidates.
     fn generate_usage_from_candidates(&self, candidates: &[FunctionDef]) -> String {
         let program = self
             .env
@@ -495,11 +486,9 @@ impl Interpreter {
             .or_else(|| self.env.get("$*PROGRAM-NAME"))
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "program".to_string());
-
         let mut lines = Vec::new();
         for candidate in candidates {
-            let mut parts = Vec::new();
-            parts.push(format!("  {}", program));
+            let mut parts = vec![format!("  {}", program)];
             for pd in &candidate.param_defs {
                 if pd.named {
                     let name = pd.name.trim_start_matches(['$', '@', '%']);
@@ -515,9 +504,8 @@ impl Interpreter {
                     let name = pd.name.trim_start_matches(['$', '@', '%', '*']);
                     parts.push(format!("[<{}>...]", name));
                 } else if pd.double_slurpy {
-                    // Skip slurpy hash in usage
+                    // skip
                 } else if let Some(ref lit) = pd.literal_value {
-                    // Literal parameter — show the literal value
                     parts.push(lit.to_string_value());
                 } else {
                     let name = pd.name.trim_start_matches(['$', '@', '%', '\\']);
@@ -533,9 +521,6 @@ impl Interpreter {
         lines.join("\n")
     }
 
-    /// Coerce a CLI argument (always a string) to the type required by a
-    /// MAIN parameter definition.  Returns the original value if no
-    /// coercion is needed or if coercion fails.
     fn coerce_cli_arg(arg: &Value, pd: &ParamDef) -> Value {
         let tc = match &pd.type_constraint {
             Some(t) => t.as_str(),
@@ -543,22 +528,35 @@ impl Interpreter {
         };
         let s = arg.to_string_value();
         match tc {
-            "Int" => s.parse::<i64>().map(Value::Int).unwrap_or_else(|_| {
-                // Try big-int style
-                arg.clone()
-            }),
+            "Int" => s
+                .parse::<i64>()
+                .map(Value::Int)
+                .unwrap_or_else(|_| arg.clone()),
             "Num" => s
                 .parse::<f64>()
                 .map(Value::Num)
                 .unwrap_or_else(|_| arg.clone()),
-            "Rat" => {
-                if let Ok(n) = s.parse::<f64>() {
-                    Value::Num(n)
-                } else {
-                    arg.clone()
-                }
-            }
+            "Rat" => s
+                .parse::<f64>()
+                .map(Value::Num)
+                .unwrap_or_else(|_| arg.clone()),
             _ => arg.clone(),
+        }
+    }
+
+    fn coerce_to_type(val: &Value, target: &str) -> Value {
+        let s = val.to_string_value();
+        match target {
+            "Str" => Value::str(s),
+            "Int" => s
+                .parse::<i64>()
+                .map(Value::Int)
+                .unwrap_or_else(|_| val.clone()),
+            "Num" => s
+                .parse::<f64>()
+                .map(Value::Num)
+                .unwrap_or_else(|_| val.clone()),
+            _ => val.clone(),
         }
     }
 }

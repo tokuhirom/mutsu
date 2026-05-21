@@ -295,7 +295,24 @@ impl Interpreter {
 
     pub(super) fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned().unwrap_or(Value::Nil);
-        self.emit_output(&format!("{:?}\n", val));
+        let repr = Self::dd_format(&val);
+        self.emit_stderr(&format!("{}\n", repr));
         Ok(val)
+    }
+
+    /// Format a value for `dd` output (Raku-style debug representation).
+    fn dd_format(val: &Value) -> String {
+        match val {
+            Value::Bool(true) => "Bool::True".to_string(),
+            Value::Bool(false) => "Bool::False".to_string(),
+            Value::Nil => "Nil".to_string(),
+            Value::Int(n) => n.to_string(),
+            Value::Str(s) => format!("\"{}\"", s),
+            Value::Array(items, _) => {
+                let inner: Vec<String> = items.iter().map(Self::dd_format).collect();
+                format!("$[{}]", inner.join(", "))
+            }
+            _ => format!("{:?}", val),
+        }
     }
 }
