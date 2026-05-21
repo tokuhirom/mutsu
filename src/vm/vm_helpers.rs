@@ -310,6 +310,7 @@ impl VM {
                 | "rotor"
                 | "batch"
                 | "reduce"
+                | "Supply"
                 | "combinations"
                 | "permutations"
                 | "values"

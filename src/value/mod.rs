@@ -1284,6 +1284,7 @@ struct ChannelState {
     drained_closed: bool,
     failure: Option<Value>,
     closed_promise: SharedPromise,
+    supplier_ids: Vec<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -1307,6 +1308,7 @@ impl SharedChannel {
                     drained_closed: false,
                     failure: None,
                     closed_promise,
+                    supplier_ids: Vec::new(),
                 }),
                 Condvar::new(),
             )),
@@ -1392,6 +1394,16 @@ impl SharedChannel {
     pub(crate) fn can_send(&self) -> bool {
         let (lock, _) = &*self.inner;
         !lock.lock().unwrap().send_closed
+    }
+
+    pub(crate) fn add_supplier(&self, supplier_id: u64) {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().supplier_ids.push(supplier_id);
+    }
+
+    pub(crate) fn supplier_ids(&self) -> Vec<u64> {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().supplier_ids.clone()
     }
 }
 

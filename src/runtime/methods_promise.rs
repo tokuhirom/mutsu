@@ -323,6 +323,21 @@ impl Interpreter {
                     return Err(Self::channel_send_closed_error());
                 }
                 let value = args.into_iter().next().unwrap_or(Value::Nil);
+                let sids = ch.supplier_ids();
+                for sid in &sids {
+                    use crate::runtime::native_methods::state::supplier_emit;
+                    use crate::runtime::native_methods::state_supplier::{
+                        SupplierEmitAction, supplier_emit_callbacks,
+                    };
+                    supplier_emit(*sid, value.clone());
+                    let actions = supplier_emit_callbacks(*sid, &value);
+                    for action in actions {
+                        if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
+                            Self::sleep_for_supply_delay(delay_seconds);
+                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                        }
+                    }
+                }
                 ch.send(value);
                 Ok(Value::Nil)
             }
@@ -342,6 +357,13 @@ impl Interpreter {
                 Err(_) => Ok(Value::Nil),
             },
             "close" => {
+                let sids = ch.supplier_ids();
+                if !sids.is_empty() {
+                    use crate::runtime::native_methods::state::supplier_done;
+                    for sid in &sids {
+                        supplier_done(*sid);
+                    }
+                }
                 ch.close();
                 Ok(Value::Nil)
             }
@@ -374,6 +396,17 @@ impl Interpreter {
             "elems" => Err(RuntimeError::new(
                 "Cannot call '.elems' on a Channel instance".to_string(),
             )),
+            "Supply" => {
+                use crate::runtime::native_methods::state::next_supplier_id;
+                let sid = next_supplier_id();
+                ch.add_supplier(sid);
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert("supplier_id".to_string(), Value::Int(sid as i64));
+                attrs.insert("live".to_string(), Value::Bool(true));
+                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+            }
             "Bool" => Ok(Value::Bool(true)),
             "WHAT" => Ok(Value::Package(Symbol::intern("Channel"))),
             "Str" | "gist" => Ok(Value::str_from("Channel")),

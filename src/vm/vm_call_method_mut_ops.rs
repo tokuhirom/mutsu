@@ -349,6 +349,22 @@ impl VM {
         } else {
             target
         };
+        let target = if let Value::LazyList(ref ll) = target
+            && matches!(
+                ll.env.get("__mutsu_lazylist_from_gather"),
+                Some(crate::value::Value::Bool(true))
+            )
+            && Self::lazy_list_needs_forcing(&method)
+        {
+            let saved_env = self.interpreter.env().clone();
+            let items = self.force_lazy_list_vm(ll)?;
+            if !matches!(method.as_str(), "elems" | "hyper" | "race") {
+                *self.interpreter.env_mut() = saved_env;
+            }
+            Value::Seq(std::sync::Arc::new(items))
+        } else {
+            target
+        };
         // Detect calls on undeclared type names: when a BareWord resolved to a Str
         // (because the name wasn't a known type/class), and .new() is called on it,
         // this means the user tried to instantiate a nonexistent class.

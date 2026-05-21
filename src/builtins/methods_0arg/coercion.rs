@@ -461,8 +461,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             {
                 return None;
             }
+            if matches!(target, Value::LazyList(_) | Value::Channel(_)) {
+                return None;
+            }
             let values = match target {
                 Value::Array(items, ..) => items.to_vec(),
+                Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                    items.to_vec()
+                }
                 Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
                 Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
                 _ => vec![target.clone()],
