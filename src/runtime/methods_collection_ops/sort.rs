@@ -1,4 +1,61 @@
 use super::*;
+use crate::ast::{Expr, Stmt};
+use crate::token_kind::TokenKind;
+
+fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+        (Value::Num(x), Value::Num(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Int(x), Value::Num(y)) => (*x as f64)
+            .partial_cmp(y)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Num(x), Value::Int(y)) => x
+            .partial_cmp(&(*y as f64))
+            .unwrap_or(std::cmp::Ordering::Equal),
+        _ => compare_values(a, b).cmp(&0),
+    }
+}
+
+/// Detect simple comparison patterns in sort blocks and return an inline comparator.
+/// Handles `{ $^a <=> $^b }`, `{ $^b <=> $^a }`, `{ $^a cmp $^b }`, `{ $^b cmp $^a }`,
+/// and also negated (reversed) variants.
+/// Returns Some((reverse, is_string_cmp)) if the block is a simple two-var comparison.
+fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(bool, bool)> {
+    if data.params.len() < 2 {
+        return None;
+    }
+    let body = &data.body;
+    // Find the expression statement (skip SetLine)
+    let expr = body.iter().find_map(|s| match s {
+        Stmt::Expr(e) => Some(e),
+        _ => None,
+    })?;
+    match expr {
+        Expr::Binary { left, op, right } => {
+            let is_string_cmp = matches!(op, TokenKind::Ident(s) if s == "cmp");
+            let is_numeric_cmp = matches!(op, TokenKind::LtEqGt);
+            if !is_string_cmp && !is_numeric_cmp {
+                return None;
+            }
+            let param_a = &data.params[0];
+            let param_b = &data.params[1];
+            // { $^a <=> $^b } — normal order
+            if matches!(left.as_ref(), Expr::Var(v) if v == param_a)
+                && matches!(right.as_ref(), Expr::Var(v) if v == param_b)
+            {
+                return Some((false, is_string_cmp));
+            }
+            // { $^b <=> $^a } — reversed
+            if matches!(left.as_ref(), Expr::Var(v) if v == param_b)
+                && matches!(right.as_ref(), Expr::Var(v) if v == param_a)
+            {
+                return Some((true, is_string_cmp));
+            }
+            None
+        }
+        _ => None,
+    }
+}
 
 impl Interpreter {
     pub(crate) fn dispatch_sort(
@@ -111,10 +168,41 @@ impl Interpreter {
         ) {
             match callable {
                 Some(Value::Sub(data)) if arity >= 2 => {
+                    // Fast path: detect simple { $^a <=> $^b } or { $^b <=> $^a } patterns
+                    if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
+                        if is_string_cmp {
+                            merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
+                                let (l, r) = if reverse { (b, a) } else { (a, b) };
+                                l.to_str_context().cmp(&r.to_str_context())
+                            });
+                        } else {
+                            merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
+                                let (l, r) = if reverse { (b, a) } else { (a, b) };
+                                inline_numeric_cmp(l, r)
+                            });
+                        }
+                        return;
+                    }
                     // Sub comparator: use merge sort for correct (left, right) ordering
                     let data = data.clone();
+                    // Pre-collect keys we'll modify to avoid full env clone
+                    let touched_keys: Vec<String> = {
+                        let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                        if data.params.len() >= 2 {
+                            keys.push(data.params[0].clone());
+                            keys.push(data.params[1].clone());
+                        }
+                        keys.push("_".to_string());
+                        keys.sort();
+                        keys.dedup();
+                        keys
+                    };
                     merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
-                        let saved = interp.env.clone();
+                        // Save only touched keys
+                        let saved: Vec<(String, Option<Value>)> = touched_keys
+                            .iter()
+                            .map(|k| (k.clone(), interp.env.get(k).cloned()))
+                            .collect();
                         for (k, v) in &data.env {
                             interp.env.insert(k.clone(), v.clone());
                         }
@@ -124,14 +212,35 @@ impl Interpreter {
                         }
                         interp.env.insert("_".to_string(), a.clone());
                         let result = interp.eval_block_value(&data.body).unwrap_or(Value::Int(0));
-                        interp.env = saved;
+                        // Restore only touched keys
+                        for (k, v) in saved {
+                            if let Some(val) = v {
+                                interp.env.insert(k, val);
+                            } else {
+                                interp.env.remove(&k);
+                            }
+                        }
                         sort_result_to_ordering(&result)
                     });
                 }
                 Some(Value::Sub(data)) if arity <= 1 => {
-                    // Sub mapper: manual env to handle $_ and Pair values correctly
+                    // Sub mapper: save/restore only touched keys
+                    let touched_keys: Vec<String> = {
+                        let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                        if let Some(p) = data.params.first() {
+                            keys.push(p.clone());
+                        }
+                        keys.push("_".to_string());
+                        keys.sort();
+                        keys.dedup();
+                        keys
+                    };
+                    let data = data.clone();
                     items.sort_by(|a, b| {
-                        let saved = interp.env.clone();
+                        let saved: Vec<(String, Option<Value>)> = touched_keys
+                            .iter()
+                            .map(|k| (k.clone(), interp.env.get(k).cloned()))
+                            .collect();
                         for (k, v) in &data.env {
                             interp.env.insert(k.clone(), v.clone());
                         }
@@ -140,7 +249,6 @@ impl Interpreter {
                         }
                         interp.env.insert("_".to_string(), a.clone());
                         let key_a = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                        interp.env = saved.clone();
                         for (k, v) in &data.env {
                             interp.env.insert(k.clone(), v.clone());
                         }
@@ -149,7 +257,13 @@ impl Interpreter {
                         }
                         interp.env.insert("_".to_string(), b.clone());
                         let key_b = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                        interp.env = saved;
+                        for (k, v) in &saved {
+                            if let Some(val) = v {
+                                interp.env.insert(k.clone(), val.clone());
+                            } else {
+                                interp.env.remove(k);
+                            }
+                        }
                         compare_values(&key_a, &key_b).cmp(&0)
                     });
                 }
@@ -285,8 +399,22 @@ fn sort_indices(
 
     match callable {
         Some(Value::Sub(data)) if arity >= 2 => {
+            let touched_keys: Vec<String> = {
+                let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                if data.params.len() >= 2 {
+                    keys.push(data.params[0].clone());
+                    keys.push(data.params[1].clone());
+                }
+                keys.push("_".to_string());
+                keys.sort();
+                keys.dedup();
+                keys
+            };
             indexed.sort_by(|(_, a), (_, b)| {
-                let saved = interp.env.clone();
+                let saved: Vec<(String, Option<Value>)> = touched_keys
+                    .iter()
+                    .map(|k| (k.clone(), interp.env.get(k).cloned()))
+                    .collect();
                 for (k, v) in &data.env {
                     interp.env.insert(k.clone(), v.clone());
                 }
@@ -296,13 +424,32 @@ fn sort_indices(
                 }
                 interp.env.insert("_".to_string(), (*a).clone());
                 let result = interp.eval_block_value(&data.body).unwrap_or(Value::Int(0));
-                interp.env = saved;
+                for (k, v) in saved {
+                    if let Some(val) = v {
+                        interp.env.insert(k, val);
+                    } else {
+                        interp.env.remove(&k);
+                    }
+                }
                 idx_sort_result(&result)
             });
         }
         Some(Value::Sub(data)) if arity <= 1 => {
+            let touched_keys: Vec<String> = {
+                let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                if let Some(p) = data.params.first() {
+                    keys.push(p.clone());
+                }
+                keys.push("_".to_string());
+                keys.sort();
+                keys.dedup();
+                keys
+            };
             indexed.sort_by(|(_, a), (_, b)| {
-                let saved = interp.env.clone();
+                let saved: Vec<(String, Option<Value>)> = touched_keys
+                    .iter()
+                    .map(|k| (k.clone(), interp.env.get(k).cloned()))
+                    .collect();
                 for (k, v) in &data.env {
                     interp.env.insert(k.clone(), v.clone());
                 }
@@ -311,7 +458,6 @@ fn sort_indices(
                 }
                 interp.env.insert("_".to_string(), (*a).clone());
                 let key_a = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                interp.env = saved.clone();
                 for (k, v) in &data.env {
                     interp.env.insert(k.clone(), v.clone());
                 }
@@ -320,7 +466,13 @@ fn sort_indices(
                 }
                 interp.env.insert("_".to_string(), (*b).clone());
                 let key_b = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                interp.env = saved;
+                for (k, v) in &saved {
+                    if let Some(val) = v {
+                        interp.env.insert(k.clone(), val.clone());
+                    } else {
+                        interp.env.remove(k);
+                    }
+                }
                 compare_values(&key_a, &key_b).cmp(&0)
             });
         }
