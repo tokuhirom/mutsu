@@ -75,15 +75,25 @@ Many operations that should run in the VM fall back to the interpreter:
 
 ### Hash operations (13-18x slower)
 
-The #1 bottleneck. Two main costs:
-1. **String interpolation in keys** (`"key-$_"`): each iteration creates a new string with NFC check
-2. **Hash element access falls to interpreter** for non-trivial patterns (`:delete`, `.values` iteration)
-3. **HashMap<String, Value> vs indexed slots**: every hash access is a string hash + lookup
+The #1 bottleneck. Root cause identified (2026-05-22):
 
-Potential improvements:
-- Intern hash keys (symbol table) to avoid repeated string hashing
-- VM opcode for hash element delete
-- Compiled `.values`/`.keys` iteration (avoid materializing intermediate arrays)
+**`try_fast_hash_element_assign` rejects when `Arc::strong_count > 1`** — which is almost always true because both env and VM locals hold the same Hash Arc. This causes every `%h{$key} = $val` in a for loop to fall through to the slow path (`exec_index_assign_expr_named_op_inner`), which is 100-200x slower.
+
+Profiling breakdown for `for ^10000 { %h{$_} = 1 }`:
+- Plain `for` loop: 0.016s
+- With hash insert (slow path): 2.4s (150x overhead)
+- `raku`: 0.01s for the same operation
+
+The fix requires changing the fast path to either:
+1. Mutate via the locals slot (strong_count = 1) then sync back to env
+2. Drop the locals reference before calling `env_mut().get_mut()`
+3. Use a separate mutation path that doesn't require `Arc::strong_count == 1`
+
+This is blocked on the locals↔env synchronization design. The current architecture where both locals[] and env HashMap hold the same Arc<HashMap> makes in-place mutation impossible when both references exist.
+
+Additional costs:
+- `:delete` on hash elements goes through interpreter slow path
+- `.values` / `.keys` materializes intermediate arrays
 
 ### Method dispatch (4-5x slower)
 
