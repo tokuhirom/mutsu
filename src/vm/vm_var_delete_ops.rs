@@ -99,7 +99,7 @@ impl VM {
         var_name: &str,
         idx: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
-        if !var_name.starts_with('%') {
+        if !var_name.starts_with('%') || var_name == "%*ENV" {
             return None;
         }
         if !self.local_bind_pairs.is_empty() {
