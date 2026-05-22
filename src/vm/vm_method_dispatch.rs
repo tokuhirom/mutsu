@@ -762,19 +762,19 @@ impl VM {
                 if let Some(ref constraint) = pd.and_then(|pd| pd.type_constraint.as_ref())
                     && !self.interpreter.type_matches_value(constraint, &val)
                 {
-                        // Type mismatch — fall back to slow path for proper error
-                        self.interpreter.restore_var_bindings(saved_var_bindings);
-                        self.interpreter.pop_method_class();
-                        self.interpreter.set_current_package(saved_package);
-                        self.stack.truncate(saved_stack_depth);
-                        let frame = self.pop_call_frame();
-                        self.interpreter.set_env(frame.saved_env);
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
-                            param_name,
-                            constraint,
-                            crate::runtime::value_type_name(&val)
-                        )));
+                    // Type mismatch — fall back to slow path for proper error
+                    self.interpreter.restore_var_bindings(saved_var_bindings);
+                    self.interpreter.pop_method_class();
+                    self.interpreter.set_current_package(saved_package);
+                    self.stack.truncate(saved_stack_depth);
+                    let frame = self.pop_call_frame();
+                    self.interpreter.set_env(frame.saved_env);
+                    return Err(RuntimeError::new(format!(
+                        "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                        param_name,
+                        constraint,
+                        crate::runtime::value_type_name(&val)
+                    )));
                 }
                 param_values.push((param_name, val));
                 arg_idx += 1;

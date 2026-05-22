@@ -998,34 +998,34 @@ impl CompiledCode {
             if let Some(idx) = name_idx
                 && let Some(Value::Str(name)) = self.constants.get(idx as usize)
             {
-                    let name = name.as_str();
-                    if locals_set.contains(name) {
-                        continue;
-                    }
-                    // Skip known method-specific/internal names
-                    if name == "self"
-                        || name == "__ANON_STATE__"
-                        || name == "?CLASS"
-                        || name == "?ROLE"
-                        || name == "_"
-                        || name == "!"
-                        || name == "/"
-                        || name == "__mutsu_callable_id"
-                        || name.starts_with('!')
-                        || name.starts_with('.')
-                        || name.starts_with("@!")
-                        || name.starts_with("@.")
-                        || name.starts_with("%!")
-                        || name.starts_with("%.")
-                        || name.starts_with("__mutsu_")
-                        || name.starts_with('*')
-                        || name.starts_with("?")
-                        || name.starts_with('^')
-                    {
-                        continue;
-                    }
-                    self.may_capture_outer_vars = true;
-                    return;
+                let name = name.as_str();
+                if locals_set.contains(name) {
+                    continue;
+                }
+                // Skip known method-specific/internal names
+                if name == "self"
+                    || name == "__ANON_STATE__"
+                    || name == "?CLASS"
+                    || name == "?ROLE"
+                    || name == "_"
+                    || name == "!"
+                    || name == "/"
+                    || name == "__mutsu_callable_id"
+                    || name.starts_with('!')
+                    || name.starts_with('.')
+                    || name.starts_with("@!")
+                    || name.starts_with("@.")
+                    || name.starts_with("%!")
+                    || name.starts_with("%.")
+                    || name.starts_with("__mutsu_")
+                    || name.starts_with('*')
+                    || name.starts_with("?")
+                    || name.starts_with('^')
+                {
+                    continue;
+                }
+                self.may_capture_outer_vars = true;
+                return;
             }
         }
     }
