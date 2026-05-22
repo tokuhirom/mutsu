@@ -56,11 +56,13 @@ impl Compiler {
             _ => unreachable!(),
         };
         // Fast path: @arr.push(single_expr) with no modifiers → ArrayPush opcode
+        // Only for local variables (not captured closures) to avoid COW env sync issues
         if name.resolve() == "push"
             && args.len() == 1
             && modifier.is_none()
             && !quoted
             && matches!(target, Expr::ArrayVar(_))
+            && self.code.locals.contains(&target_name)
         {
             for arg in args {
                 self.compile_method_arg(arg);

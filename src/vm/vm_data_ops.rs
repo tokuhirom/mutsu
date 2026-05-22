@@ -321,6 +321,28 @@ impl VM {
         }
         let val = self.stack.pop().unwrap_or(Value::Nil);
 
+        // Check the target exists as a simple Array in env.
+        // If not (e.g., captured closure var, or non-Array), fall back to interpreter.
+        let is_simple_array = self
+            .interpreter
+            .env()
+            .get(target_name)
+            .is_some_and(|v| matches!(v, Value::Array(..)));
+        if !is_simple_array {
+            let target = self
+                .interpreter
+                .env()
+                .get(target_name)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let result = self
+                .interpreter
+                .call_method_with_values(target, "push", vec![val])?;
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+
         // Check type constraint on the array variable
         if let Some(type_name) = self
             .interpreter
