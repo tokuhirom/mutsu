@@ -55,6 +55,21 @@ impl Compiler {
             }
             _ => unreachable!(),
         };
+        // Fast path: @arr.push(single_expr) with no modifiers → ArrayPush opcode
+        if name.resolve() == "push"
+            && args.len() == 1
+            && modifier.is_none()
+            && !quoted
+            && matches!(target, Expr::ArrayVar(_))
+        {
+            for arg in args {
+                self.compile_method_arg(arg);
+            }
+            let target_name_idx = self.code.add_constant(Value::str(target_name));
+            self.emit_source_line_if_known();
+            self.code.emit(OpCode::ArrayPush { target_name_idx });
+            return;
+        }
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
