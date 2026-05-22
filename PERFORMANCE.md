@@ -13,24 +13,25 @@ cargo build --release
 
 | Benchmark | mutsu | raku | ratio | notes |
 |-----------|-------|------|-------|-------|
-| fib(25) | 2.0s | 1.2s | 1.7x | recursive function calls (bench-fib: 6.0s / 1.4s = 4.4x with type constraint) |
-| int-arith | 0.80s | 1.0s | **0.8x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
-| string-concat | 0.10s | 0.84s | **0.1x** | `$s ~= 'x'` × 10000 |
-| hash-access | 0.035s | 0.21s | **0.17x** | 10K hash inserts + value iteration |
-| method-call | 6.0s | 1.2s | 4.9x | Point.distance-to × 10000 |
-| array-ops | 0.92s | 1.2s | **0.8x** | grep+map on 1000-elem array × 100 |
-| bench-array | 0.59s | 1.3s | **0.45x** | push+map+grep+sort+reverse on 10K |
-| bench-hash | 0.035s | 0.27s | **0.13x** | 10K insert+lookup+delete+keys+values |
-| bench-class | 9.2s | 2.1s | 4.5x | class instantiation + method calls + inheritance |
-| bench-startup | 0.03s | 0.65s | **0.04x** | startup overhead |
-| bench-string | 0.41s | 1.4s | **0.3x** | string operations |
+| fib(25) | 0.37s | 0.36s | 1.0x | recursive function calls (bench-fib: 1.13s / 0.31s = 3.6x with type constraint) |
+| int-arith | 0.16s | 0.22s | **0.7x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
+| string-concat | 0.02s | 0.21s | **0.09x** | `$s ~= 'x'` × 10000 |
+| hash-access | 0.04s | 0.23s | **0.17x** | 10K hash inserts + value iteration |
+| method-call | 1.21s | 0.29s | 4.2x | Point.distance-to × 10000 |
+| array-ops | 0.16s | 0.26s | **0.6x** | grep+map on 1000-elem array × 100 |
+| bench-array | 0.59s | 0.30s | 2.0x | push+map+grep+sort+reverse on 10K |
+| bench-hash | 0.03s | 0.30s | **0.1x** | 10K insert+lookup+delete+keys+values |
+| bench-class | 1.49s | 0.37s | 4.0x | class instantiation + method calls + inheritance |
+| bench-startup | 0.004s | 0.17s | **0.02x** | startup overhead |
+| bench-string | 0.08s | 0.33s | **0.2x** | string operations |
 
-Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
+Note: raku times include ~170ms startup overhead. mutsu startup is ~4ms.
 
 ### Summary
 
-- **Faster than raku (8/11)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, bench-array, bench-hash
-- **2-5x slower (3/11)**: fib, bench-class, method-call
+- **Faster than raku (8/11)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, fib, bench-hash
+- **2x slower (1/11)**: bench-array
+- **4x slower (2/11)**: bench-class, method-call
 
 ## Architecture Overview: Execution Paths
 
@@ -78,21 +79,23 @@ Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by te
 
 ### Method dispatch (4-5x slower)
 
-Every method call currently:
-1. Checks native method bypass list (string comparison)
-2. Resolves via MRO walk if no bypass match
-3. Type-checks parameters
-4. Clones env or syncs locals for the method body
+Every compiled method call (via `call_compiled_method`) does:
+1. Method resolution (cached via `method_resolve_cache` for non-multi)
+2. COW env clone (`push_call_frame` → `clone_env()` is O(1) Arc bump, but first `env_mut()` triggers full HashMap clone)
+3. 7+ `env_mut().insert()` calls for `?CLASS`, `self`, `__ANON_STATE__`, `$_`, `$!`, `__mutsu_callable_id`, `?ROLE`
+4. Attribute binding: iterate all instance attributes, insert `$!name`, `$.name`, `@!name`, etc. into env
+5. Parameter binding via interpreter
+6. Initialize locals from env
+7. On exit (if `can_skip_merge`): skip env merge, just pop frame
 
-The `has_env_writes` optimization helps for read-only methods, but:
-- Object creation (`.new`) still goes through full interpreter dispatch
-- Typed parameters require `type_matches_value()` per arg per call
-- MRO walk is O(depth) per call, not cached
+**Root cause**: The env HashMap is cloned on every method call because `env_mut()` (Arc::make_mut) triggers COW. With ~100 entries in env, this is ~100 key-value clones per call. For a simple method like `bark() { "Woof!" }`, the setup is 30+ HashMap operations while the method body is 1 opcode.
+
+**.new() is fast**: 5000 `Dog.new()` calls take only 0.14s. The bottleneck is method calls (5000 iterations × 3 methods = 15000 calls taking 1.4s).
 
 Potential improvements:
-- Inline cache (PIC) for monomorphic call sites
-- Compile `.new()` to a VM opcode sequence
-- Cache type check results for stable class hierarchies
+- **Layered scope for methods**: Instead of cloning env, use a scope overlay that gets checked first. This would avoid the COW clone entirely for method calls.
+- **Inline cache (PIC)**: Cache resolved method + skip resolution for monomorphic call sites.
+- **Skip attribute env binding**: For methods that don't access `$!attr` (detectable from locals list), skip the attribute iteration loop.
 
 ### Function calls with type constraints (4.4x slower)
 
