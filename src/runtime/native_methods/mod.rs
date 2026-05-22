@@ -29,8 +29,9 @@ pub(in crate::runtime) use state::{
     register_async_connection, register_promise_combinator_sources, register_supply_tap,
     register_udp_bound_socket, set_supply_collected_output, supplier_done, supplier_done_deferred,
     supplier_emit, supplier_id_from_attrs, supplier_quit, supplier_register_promise,
-    supplier_reset, supplier_snapshot, supply_channel_map, supply_channel_map_pub,
-    take_promise_combinator_sources, udp_port_in_use, update_async_connection,
+    supplier_reset, supplier_reset_keep_quit, supplier_snapshot, supply_channel_map,
+    supply_channel_map_pub, take_promise_combinator_sources, udp_port_in_use,
+    update_async_connection,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;

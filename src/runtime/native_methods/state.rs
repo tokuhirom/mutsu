@@ -331,6 +331,16 @@ pub(in crate::runtime) fn supplier_reset(supplier_id: u64) {
     }
 }
 
+/// Reset supplier state but preserve quit_reason and emitted values
+/// so react can observe them.
+pub(in crate::runtime) fn supplier_reset_keep_quit(supplier_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock()
+        && let Some(state) = map.get_mut(&supplier_id)
+    {
+        state.done = false;
+    }
+}
+
 pub(in crate::runtime) fn next_supply_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)

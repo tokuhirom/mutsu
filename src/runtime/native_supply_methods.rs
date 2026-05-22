@@ -1742,7 +1742,7 @@ impl Interpreter {
                     }
                     let _ = take_supplier_done_callbacks(supplier_id);
                     close_all_supplier_taps(supplier_id);
-                    supplier_reset(supplier_id);
+                    supplier_reset_keep_quit(supplier_id);
                 }
                 Ok(Value::Nil)
             }
@@ -2039,10 +2039,9 @@ impl Interpreter {
                     }
                     let _ = take_supplier_done_callbacks(sid);
                     close_all_supplier_taps(sid);
-                    supplier_reset(sid);
+                    supplier_reset_keep_quit(sid);
                 }
                 attrs.insert("done".to_string(), Value::Bool(false));
-                attrs.remove("quit_reason");
                 attrs.remove("emitted");
                 Ok((Value::Nil, attrs))
             }
