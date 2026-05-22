@@ -275,3 +275,122 @@ impl VM {
         Ok(())
     }
 }
+
+impl VM {
+    /// Fast path for @arr.push(val) — directly appends to the array Arc.
+    pub(super) fn exec_array_push_op(
+        &mut self,
+        code: &CompiledCode,
+        target_name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let target_name = Self::const_str(code, target_name_idx);
+        // Fall back to interpreter for shared arrays (threaded context)
+        if self.interpreter.shared_vars_active {
+            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let target = self
+                .interpreter
+                .env()
+                .get(target_name)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let result = self
+                .interpreter
+                .call_method_with_values(target, "push", vec![val])?;
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // Check for shaped arrays — must fall back to interpreter
+        // (push is illegal on fixed-dimension arrays)
+        if let Some(Value::Array(_, kind)) = self.interpreter.env().get(target_name)
+            && *kind == crate::value::ArrayKind::Shaped
+        {
+            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let target = self
+                .interpreter
+                .env()
+                .get(target_name)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let result = self
+                .interpreter
+                .call_method_with_values(target, "push", vec![val])?;
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+        let val = self.stack.pop().unwrap_or(Value::Nil);
+
+        // Check the target exists as a simple Array in env.
+        // If not (e.g., captured closure var, or non-Array), fall back to interpreter.
+        let is_simple_array = self
+            .interpreter
+            .env()
+            .get(target_name)
+            .is_some_and(|v| matches!(v, Value::Array(..)));
+        if !is_simple_array {
+            let target = self
+                .interpreter
+                .env()
+                .get(target_name)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let result = self
+                .interpreter
+                .call_method_with_values(target, "push", vec![val])?;
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+
+        // Check type constraint on the array variable
+        if let Some(type_name) = self
+            .interpreter
+            .var_type_constraint_fast(target_name)
+            .map(|s| s.to_string())
+            && !self.interpreter.type_matches_value(&type_name, &val)
+        {
+            return Err(RuntimeError::typecheck_assignment(
+                &type_name,
+                crate::runtime::value_type_name(&val),
+                Some(target_name),
+            ));
+        }
+
+        // Find the local slot and drop it to allow in-place mutation
+        let local_slot = self.find_local_slot(code, target_name);
+        if let Some(slot) = local_slot {
+            self.locals[slot] = Value::Nil;
+        }
+
+        let result = if let Some(Value::Array(arr, kind)) =
+            self.interpreter.env_mut().get_mut(target_name)
+        {
+            let items = Arc::make_mut(arr);
+            match &val {
+                Value::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
+                _ => items.push(val),
+            }
+            Value::Array(arr.clone(), *kind)
+        } else {
+            // Auto-vivify: create new array
+            let arr = match &val {
+                Value::Slip(slip_items) => Value::real_array(slip_items.to_vec()),
+                _ => Value::real_array(vec![val]),
+            };
+            self.interpreter
+                .env_mut()
+                .insert(target_name.to_string(), arr.clone());
+            arr
+        };
+
+        // Restore local slot
+        if let Some(slot) = local_slot {
+            self.locals[slot] = result.clone();
+        }
+
+        self.stack.push(result);
+        self.env_dirty = true;
+        Ok(())
+    }
+}

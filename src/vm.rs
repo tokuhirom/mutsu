@@ -2329,6 +2329,10 @@ impl VM {
                 )?;
                 *ip += 1;
             }
+            OpCode::ArrayPush { target_name_idx } => {
+                self.exec_array_push_op(code, *target_name_idx)?;
+                *ip += 1;
+            }
             OpCode::CallMethodMut {
                 name_idx,
                 arity,

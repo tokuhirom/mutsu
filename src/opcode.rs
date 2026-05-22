@@ -316,6 +316,11 @@ pub(crate) enum OpCode {
         arg_sources_idx: Option<u32>,
     },
     /// Method call with writeback: target is a variable that may be mutated.
+    /// Fast path for @arr.push(val) — directly appends to the array Arc,
+    /// bypassing full method dispatch. Stack: [val] -> [array].
+    ArrayPush {
+        target_name_idx: u32,
+    },
     CallMethodMut {
         name_idx: u32,
         arity: u32,
