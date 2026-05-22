@@ -833,6 +833,21 @@ impl VM {
             for (param_name, param_val) in &param_values {
                 method_env.insert(param_name.to_string(), param_val.clone());
             }
+            // Copy dynamic variables ($*FOO), caller-visible keys, and
+            // other entries from the outer env that the method might need.
+            for (k, v) in self.interpreter.env().iter() {
+                if k.starts_with('*')
+                    || k.starts_with("$*")
+                    || k.starts_with("@*")
+                    || k.starts_with("%*")
+                    || k.starts_with('&')
+                    || k.starts_with("?LINE")
+                    || k.starts_with("?FILE")
+                    || k == "/"
+                {
+                    method_env.insert(k.clone(), v.clone());
+                }
+            }
             self.interpreter.set_env(crate::env::Env::from(method_env));
         }
 
