@@ -300,6 +300,25 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // Check for shaped arrays — must fall back to interpreter
+        // (push is illegal on fixed-dimension arrays)
+        if let Some(Value::Array(_, kind)) = self.interpreter.env().get(target_name)
+            && *kind == crate::value::ArrayKind::Shaped
+        {
+            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let target = self
+                .interpreter
+                .env()
+                .get(target_name)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let result = self
+                .interpreter
+                .call_method_with_values(target, "push", vec![val])?;
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
         let val = self.stack.pop().unwrap_or(Value::Nil);
 
         // Check type constraint on the array variable
@@ -309,12 +328,11 @@ impl VM {
             .map(|s| s.to_string())
             && !self.interpreter.type_matches_value(&type_name, &val)
         {
-            return Err(RuntimeError::new(format!(
-                "Type check failed in assignment to {}; expected {}, got {}",
-                target_name,
-                type_name,
-                crate::runtime::value_type_name(&val)
-            )));
+            return Err(RuntimeError::typecheck_assignment(
+                &type_name,
+                crate::runtime::value_type_name(&val),
+                Some(target_name),
+            ));
         }
 
         // Find the local slot and drop it to allow in-place mutation
