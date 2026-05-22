@@ -171,8 +171,8 @@ Low-risk, high-impact changes that reduce interpreter fallbacks without architec
 
 **1a. Inline common higher-order function patterns** ✅ (sort done)
 - [x] `sort { $^a <=> $^b }` / `{ $^b <=> $^a }` — AST pattern match → Rust comparison
-- [ ] `sort { .key }` (1-arity mapper) — detect `.method` on `$_` → extract key, sort by key
-- [ ] `sort { $^a.method <=> $^b.method }` — detect attribute/method access pattern
+- [x] `sort { .key }` (1-arity mapper) — Schwartzian transform with direct method dispatch
+- [x] `sort { $^a.method <=> $^b.method }` — Schwartzian transform with method key extraction
 - [ ] `grep { ... }` with simple conditions — inline truthiness check
 - [ ] `map { ... }` with simple expressions — inline evaluation
 
