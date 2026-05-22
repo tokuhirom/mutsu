@@ -1410,7 +1410,12 @@ impl VM {
         // Reject complex index types that need special handling
         if matches!(
             idx_ref,
-            Value::Array(..) | Value::Junction { .. } | Value::GenericRange { .. } | Value::Nil
+            Value::Array(..)
+                | Value::Junction { .. }
+                | Value::GenericRange { .. }
+                | Value::Nil
+                | Value::Seq(..)
+                | Value::Slip(..)
         ) {
             return None;
         }
@@ -1447,24 +1452,60 @@ impl VM {
         let env = self.interpreter.env();
         match env.get(var_name) {
             Some(Value::Hash(hash_arc)) => {
-                // Reject if the hash Arc is shared (e.g. HashSlotRef binding)
-                if Arc::strong_count(hash_arc) > 1 {
+                let strong_count = Arc::strong_count(hash_arc);
+                // Reject if the hash Arc has more than 2 refs (e.g. HashSlotRef binding)
+                // strong_count == 1: only env holds it (no local slot)
+                // strong_count == 2: env + locals hold it (common case in for loops)
+                // strong_count > 2: external binding exists, fall through to slow path
+                if strong_count > 2 {
                     return None;
                 }
+                let local_slot = if strong_count == 2 {
+                    // The extra ref should be from locals — verify
+                    match self.find_local_slot(code, var_name) {
+                        Some(slot) => Some(slot),
+                        None => return None,
+                    }
+                } else {
+                    None
+                };
                 // Reject if there's container type metadata
                 let id = Arc::as_ptr(hash_arc) as usize;
                 if self.interpreter.hash_type_metadata_exists(id) {
                     return None;
                 }
+                // Peek at the key to check if the existing element is a bound ref
+                let peek_key = self.stack[stack_len - 1].to_string_value();
+                if let Some(existing) = hash_arc.get(&peek_key) {
+                    let is_bound = match existing {
+                        Value::HashSlotRef { .. }
+                        | Value::ArraySlotRef { .. }
+                        | Value::Scalar(..) => true,
+                        Value::Pair(name, _) if name.starts_with("__mutsu_bound") => true,
+                        _ => false,
+                    };
+                    if is_bound {
+                        return None;
+                    }
+                }
                 // All checks passed — commit to fast path
                 let idx = self.stack.pop().unwrap();
                 let val = self.stack.pop().unwrap();
                 let key = idx.to_string_value();
-                // Get mutable ref to the hash and insert
-                // Since var_name starts with '%' and is not bound,
-                // we use Arc::make_mut (COW semantics for %-sigiled vars)
+                // When locals and env share the same Arc (strong_count == 2),
+                // drop the local ref first so Arc::make_mut can mutate in-place
+                // instead of cloning the entire HashMap (O(n) → O(1) per insert).
+                if let Some(slot) = local_slot {
+                    self.locals[slot] = Value::Nil;
+                }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
                     Arc::make_mut(hash).insert(key.clone(), val.clone());
+                }
+                // Restore the local slot to point to the (now mutated) env Arc
+                if let Some(slot) = local_slot
+                    && let Some(env_val) = self.interpreter.env().get(var_name).cloned()
+                {
+                    self.locals[slot] = env_val;
                 }
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
