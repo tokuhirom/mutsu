@@ -91,6 +91,75 @@ impl VM {
         }
     }
 
+    /// Fast path for simple `%h{$key}:delete` — skip metadata lookups.
+    #[inline]
+    fn try_fast_hash_delete(
+        &mut self,
+        code: &CompiledCode,
+        var_name: &str,
+        idx: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !var_name.starts_with('%') {
+            return None;
+        }
+        if !self.local_bind_pairs.is_empty() {
+            return None;
+        }
+        // Reject complex index types
+        if matches!(
+            idx,
+            Value::Array(..) | Value::Whatever | Value::GenericRange { .. }
+        ) {
+            return None;
+        }
+        if self
+            .interpreter
+            .var_type_constraint_fast(var_name)
+            .is_some()
+            || self.interpreter.readonly_vars().contains(var_name)
+        {
+            return None;
+        }
+        let env = self.interpreter.env();
+        match env.get(var_name) {
+            Some(Value::Hash(hash_arc)) => {
+                let strong_count = Arc::strong_count(hash_arc);
+                if strong_count > 2 {
+                    return None;
+                }
+                let local_slot = if strong_count == 2 {
+                    match self.find_local_slot(code, var_name) {
+                        Some(slot) => Some(slot),
+                        None => return None,
+                    }
+                } else {
+                    None
+                };
+                let id = Arc::as_ptr(hash_arc) as usize;
+                if self.interpreter.hash_type_metadata_exists(id) {
+                    return None;
+                }
+                let key = idx.to_string_value();
+                if let Some(slot) = local_slot {
+                    self.locals[slot] = Value::Nil;
+                }
+                let removed =
+                    if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
+                        Arc::make_mut(hash).remove(&key).unwrap_or(Value::Nil)
+                    } else {
+                        Value::Nil
+                    };
+                if let Some(slot) = local_slot
+                    && let Some(env_val) = self.interpreter.env().get(var_name).cloned()
+                {
+                    self.locals[slot] = env_val;
+                }
+                Some(Ok(removed))
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn exec_delete_index_named_op(
         &mut self,
         code: &CompiledCode,
@@ -98,6 +167,11 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        // Fast path for simple hash delete
+        if let Some(result) = self.try_fast_hash_delete(code, &var_name, &idx) {
+            self.stack.push(result?);
+            return Ok(());
+        }
         let declared_type_del = self
             .interpreter
             .env()

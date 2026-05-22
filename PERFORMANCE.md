@@ -20,7 +20,7 @@ cargo build --release
 | method-call | 6.0s | 1.2s | 4.9x | Point.distance-to × 10000 |
 | array-ops | 0.92s | 1.2s | **0.8x** | grep+map on 1000-elem array × 100 |
 | bench-array | 0.59s | 1.3s | **0.45x** | push+map+grep+sort+reverse on 10K |
-| bench-hash | 1.79s | 0.27s | 6.6x | 10K insert+lookup+delete+keys+values |
+| bench-hash | 0.035s | 0.27s | **0.13x** | 10K insert+lookup+delete+keys+values |
 | bench-class | 9.2s | 2.1s | 4.5x | class instantiation + method calls + inheritance |
 | bench-startup | 0.03s | 0.65s | **0.04x** | startup overhead |
 | bench-string | 0.41s | 1.4s | **0.3x** | string operations |
@@ -29,9 +29,8 @@ Note: raku times include ~170ms startup overhead. mutsu startup is ~3ms.
 
 ### Summary
 
-- **Faster than raku (7/11)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, bench-array
-- **2-5x slower (2/11)**: fib, bench-class
-- **5-7x slower (2/11)**: method-call, bench-hash
+- **Faster than raku (8/11)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, bench-array, bench-hash
+- **2-5x slower (3/11)**: fib, bench-class, method-call
 
 ## Architecture Overview: Execution Paths
 
@@ -73,13 +72,9 @@ Many operations that should run in the VM fall back to the interpreter:
 
 ## Bottleneck Analysis
 
-### Hash operations (6.6x slower on bench-hash, hash-access now faster than raku)
+### Hash operations — RESOLVED (now 7.7x faster than raku)
 
-Hash insert fast path fixed (2026-05-22): `try_fast_hash_element_assign` now handles `Arc::strong_count == 2` by temporarily dropping the locals reference before `Arc::make_mut`, avoiding O(n) clone per insert.
-
-**Remaining costs** (bench-hash still 6.6x slower):
-- `:delete` on hash elements goes through interpreter slow path
-- `.values` / `.keys` materializes intermediate arrays
+Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by temporarily dropping the locals reference before `Arc::make_mut`. bench-hash: 22.7s → 0.035s.
 
 ### Method dispatch (4-5x slower)
 
@@ -116,6 +111,16 @@ Potential improvements:
 - **Change**: When `Arc::strong_count == 2` (locals + env share the Arc), temporarily drop the locals reference before `Arc::make_mut`, enabling O(1) in-place mutation instead of O(n) clone per insert. Sync the mutated Arc back to locals afterward.
 - **Effect**: hash-access 12.8s → 0.035s (**365x speedup**, now 6x faster than raku); bench-hash 22.7s → 1.79s (**12.7x speedup**, ratio 17.9x → 6.6x); bench-array 3.0s → 0.59s (**5x speedup**, now faster than raku)
 - **Value**: Eliminates the #1 bottleneck. Hash insert in for loops was doing full HashMap clone per iteration due to shared Arc preventing in-place mutation.
+
+### 2026-05-22: Fast path for hash delete (shared Arc)
+- **Change**: Add `try_fast_hash_delete` that handles `Arc::strong_count == 2` like the insert fast path — drop locals ref, mutate in-place, sync back.
+- **Effect**: bench-hash 1.79s → 0.035s (**51x speedup**, now 7.7x faster than raku); hash delete: 1.7s → 0.031s (**55x speedup**)
+- **Value**: Combined with insert fast path, all hash operations now fast-pathed. bench-hash went from 22.7s to 0.035s total (**649x improvement**).
+
+### 2026-05-22: Inline sort mapper patterns (Schwartzian transform)
+- **Change**: Detect `{ .method }` and `{ $^a.method <=> $^b.method }` sort blocks. Use Schwartzian transform (pre-compute keys once, sort by keys) instead of calling mapper N*log(N) times.
+- **Effect**: sort with mapper on 1000 elements × 10 iterations: faster than raku (0.10s vs 0.22s)
+- **Value**: Reduces mapper calls from N*log(N) to N, eliminating interpreter overhead per comparison.
 
 ### 2026-05-22: Inline sort comparator for simple patterns
 - **Change**: Detect `{ $^a <=> $^b }`, `{ $^b <=> $^a }`, `{ $^a cmp $^b }`, `{ $^b cmp $^a }` at sort time via AST pattern matching; execute as direct Rust comparison instead of eval_block_value
