@@ -951,6 +951,10 @@ pub(crate) struct CompiledCode {
     /// AssignExpr, PostIncrement, etc.). Used by call_compiled_method to
     /// skip the expensive env merge when the method body is read-only.
     pub(crate) has_env_writes: bool,
+    /// Whether this code reads/writes outer-scope variables via GetGlobal
+    /// that are NOT method-local (attributes, params, special vars).
+    /// When true, the fast method path cannot use a fresh env.
+    pub(crate) may_capture_outer_vars: bool,
 }
 
 impl CompiledCode {
@@ -968,6 +972,61 @@ impl CompiledCode {
             source_line: None,
             is_pointy_block: false,
             has_env_writes: false,
+            may_capture_outer_vars: false,
+        }
+    }
+
+    /// Scan opcodes to detect if this code references outer-scope variables
+    /// that aren't method-local (attributes, params, or special vars).
+    pub(crate) fn compute_may_capture_outer_vars(&mut self) {
+        let locals_set: std::collections::HashSet<&str> =
+            self.locals.iter().map(|s| s.as_str()).collect();
+        for op in &self.ops {
+            let name_idx = match op {
+                OpCode::GetGlobal(idx)
+                | OpCode::SetGlobal(idx)
+                | OpCode::SetGlobalRaw(idx)
+                | OpCode::PostIncrement(idx)
+                | OpCode::PostDecrement(idx)
+                | OpCode::PreIncrement(idx)
+                | OpCode::PreDecrement(idx)
+                | OpCode::GetArrayVar(idx)
+                | OpCode::GetHashVar(idx) => Some(*idx),
+                OpCode::AssignExpr(idx) => Some(*idx),
+                _ => None,
+            };
+            if let Some(idx) = name_idx
+                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+            {
+                let name = name.as_str();
+                if locals_set.contains(name) {
+                    continue;
+                }
+                // Skip known method-specific/internal names
+                if name == "self"
+                    || name == "__ANON_STATE__"
+                    || name == "?CLASS"
+                    || name == "?ROLE"
+                    || name == "_"
+                    || name == "!"
+                    || name == "/"
+                    || name == "__mutsu_callable_id"
+                    || name.starts_with('!')
+                    || name.starts_with('.')
+                    || name.starts_with("@!")
+                    || name.starts_with("@.")
+                    || name.starts_with("%!")
+                    || name.starts_with("%.")
+                    || name.starts_with("__mutsu_")
+                    || name.starts_with('*')
+                    || name.starts_with("?")
+                    || name.starts_with('^')
+                {
+                    continue;
+                }
+                self.may_capture_outer_vars = true;
+                return;
+            }
         }
     }
 

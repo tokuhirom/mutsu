@@ -404,10 +404,14 @@ impl Compiler {
         if let Some(attr_name) = name.strip_prefix('.')
             && !attr_name.is_empty()
         {
-            // Load self
-            let self_name = self.qualify_variable_name("self");
-            let self_idx = self.code.add_constant(Value::str(self_name));
-            self.code.emit(OpCode::GetGlobal(self_idx));
+            // Load self — use GetLocal when available (method bodies)
+            if let Some(&slot) = self.local_map.get("self") {
+                self.code.emit(OpCode::GetLocal(slot));
+            } else {
+                let self_name = self.qualify_variable_name("self");
+                let self_idx = self.code.add_constant(Value::str(self_name));
+                self.code.emit(OpCode::GetGlobal(self_idx));
+            }
             // Call method
             let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
             self.code.emit(OpCode::CallMethod {

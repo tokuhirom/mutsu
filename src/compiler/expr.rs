@@ -68,6 +68,8 @@ impl Compiler {
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     } else if self.sigilless_locals.contains(name.as_str())
                         || self.constant_vars.contains(name.as_str())
+                        || name == "self"
+                        || name == "__ANON_STATE__"
                     {
                         // Sigilless bindings and constants: the bare word IS the
                         // variable, so read directly from the local slot.
