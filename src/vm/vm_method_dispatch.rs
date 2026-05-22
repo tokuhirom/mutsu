@@ -866,13 +866,14 @@ impl VM {
                         Value::Nil
                     }
                 }
-                "_" => any_val.clone(),
                 "!" => Value::Nil,
                 "__mutsu_callable_id" => Value::Int(method_callable_id as i64),
                 name => {
-                    // Check params first
+                    // Check params first (handles $_ invocant binding too)
                     if let Some((_, val)) = param_values.iter().find(|(n, _)| *n == name) {
                         val.clone()
+                    } else if name == "_" {
+                        any_val.clone()
                     }
                     // Private attribute: !attr_name
                     else if let Some(attr_name) = name.strip_prefix('!') {
