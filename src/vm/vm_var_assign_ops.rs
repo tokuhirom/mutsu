@@ -1410,7 +1410,12 @@ impl VM {
         // Reject complex index types that need special handling
         if matches!(
             idx_ref,
-            Value::Array(..) | Value::Junction { .. } | Value::GenericRange { .. } | Value::Nil
+            Value::Array(..)
+                | Value::Junction { .. }
+                | Value::GenericRange { .. }
+                | Value::Nil
+                | Value::Seq(..)
+                | Value::Slip(..)
         ) {
             return None;
         }
