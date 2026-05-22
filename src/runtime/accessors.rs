@@ -864,11 +864,16 @@ impl Interpreter {
                         .or(def.role_origin.as_deref())
                         .unwrap_or(package_name);
                     compiler.set_current_package(method_package.to_string());
-                    let cc = compiler.compile_routine_closure_body(
-                        &def.params,
+                    // Pre-allocate "self" and "__ANON_STATE__" as locals so that
+                    // $.attr and $!attr can use GetLocal instead of GetGlobal.
+                    let mut method_params = vec!["self".to_string(), "__ANON_STATE__".to_string()];
+                    method_params.extend(def.params.iter().cloned());
+                    let mut cc = compiler.compile_routine_closure_body(
+                        &method_params,
                         &def.param_defs,
                         &def.body,
                     );
+                    cc.compute_may_capture_outer_vars();
                     to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
                 }
             }

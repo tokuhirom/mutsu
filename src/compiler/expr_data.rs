@@ -33,9 +33,13 @@ impl Compiler {
             && !attr_name.is_empty()
         {
             // Load self and call the accessor method to validate it exists
-            let self_name = self.qualify_variable_name("self");
-            let self_idx = self.code.add_constant(Value::str(self_name));
-            self.code.emit(OpCode::GetGlobal(self_idx));
+            if let Some(&slot) = self.local_map.get("self") {
+                self.code.emit(OpCode::GetLocal(slot));
+            } else {
+                let self_name = self.qualify_variable_name("self");
+                let self_idx = self.code.add_constant(Value::str(self_name));
+                self.code.emit(OpCode::GetGlobal(self_idx));
+            }
             let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
             self.emit_source_line_if_known();
             self.code.emit(OpCode::CallMethod {
