@@ -84,6 +84,10 @@ impl VM {
                     || pd.sub_signature.is_some()
                     || pd.outer_sub_signature.is_some()
                     || pd.code_signature.is_some()
+                    || pd
+                        .type_constraint
+                        .as_ref()
+                        .is_some_and(|tc| tc.contains('('))
             });
             // If a default expr needs evaluation and args are missing, fall back
             let needs_default_eval = {
@@ -97,13 +101,26 @@ impl VM {
                     result
                 })
             };
+            // Count positional params to check for arg count mismatch
+            let positional_count = method_def
+                .param_defs
+                .iter()
+                .filter(|pd| {
+                    !pd.is_invocant
+                        && !pd.traits.iter().any(|t| t == "invocant")
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && !pd.named
+                })
+                .count();
+            let has_arg_mismatch = args.len() > positional_count;
 
             if !has_invocant_constraint
                 && !has_attr_aliases
                 && !has_role_bindings
                 && !has_complex_params
                 && !needs_default_eval
-                && !cc.may_capture_outer_vars
+                && !has_arg_mismatch
             {
                 return self.call_compiled_method_fast(
                     receiver_class_name,
@@ -788,26 +805,26 @@ impl VM {
         let method_callable_id = crate::value::next_instance_id();
         let any_val = Value::Package(crate::symbol::Symbol::intern("Any"));
 
-        // Build a small method env for $!attr reads (GetGlobal needs env).
-        // Instead of cloning the full outer env (~100 entries, ~12μs), build
-        // a fresh HashMap with just method-specific entries (~20 entries).
+        // Batch all env writes through a single env_mut() hold to minimize
+        // overhead after the initial Arc::make_mut deep clone.
         {
-            let capacity = 10 + attributes.len() * 4;
-            let mut method_env = HashMap::with_capacity(capacity);
-            method_env.insert("self".to_string(), base.clone());
-            method_env.insert("__ANON_STATE__".to_string(), base.clone());
-            method_env.insert("?CLASS".to_string(), class_val.clone());
-            method_env.insert("_".to_string(), any_val.clone());
-            method_env.insert("!".to_string(), Value::Nil);
-            method_env.insert(
+            let env = self.interpreter.env_mut();
+            env.insert("self".to_string(), base.clone());
+            env.insert("__ANON_STATE__".to_string(), base.clone());
+            env.insert("?CLASS".to_string(), class_val.clone());
+            env.insert("_".to_string(), any_val.clone());
+            env.insert("!".to_string(), Value::Nil);
+            env.insert(
                 "__mutsu_callable_id".to_string(),
                 Value::Int(method_callable_id as i64),
             );
             if let Some(ref role_name) = role_context {
-                method_env.insert(
+                env.insert(
                     "?ROLE".to_string(),
                     Value::Package(crate::symbol::Symbol::intern(role_name)),
                 );
+            } else {
+                env.remove("?ROLE");
             }
             for (attr_name, attr_val) in &attributes {
                 if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
@@ -815,40 +832,23 @@ impl VM {
                 }
                 let qualified_key = format!("{}\0{}", owner_class, attr_name);
                 let private_val = attributes.get(&qualified_key).unwrap_or(attr_val);
-                method_env.insert(format!("!{}", attr_name), private_val.clone());
-                method_env.insert(format!(".{}", attr_name), attr_val.clone());
+                env.insert(format!("!{}", attr_name), private_val.clone());
+                env.insert(format!(".{}", attr_name), attr_val.clone());
                 match private_val {
                     Value::Array(..) => {
-                        method_env.insert(format!("@!{}", attr_name), private_val.clone());
-                        method_env.insert(format!("@.{}", attr_name), attr_val.clone());
+                        env.insert(format!("@!{}", attr_name), private_val.clone());
+                        env.insert(format!("@.{}", attr_name), attr_val.clone());
                     }
                     Value::Hash(..) => {
-                        method_env.insert(format!("%!{}", attr_name), private_val.clone());
-                        method_env.insert(format!("%.{}", attr_name), attr_val.clone());
+                        env.insert(format!("%!{}", attr_name), private_val.clone());
+                        env.insert(format!("%.{}", attr_name), attr_val.clone());
                     }
                     _ => {}
                 }
             }
-            // Add parameter bindings
             for (param_name, param_val) in &param_values {
-                method_env.insert(param_name.to_string(), param_val.clone());
+                env.insert(param_name.to_string(), param_val.clone());
             }
-            // Copy dynamic variables ($*FOO), caller-visible keys, and
-            // other entries from the outer env that the method might need.
-            for (k, v) in self.interpreter.env().iter() {
-                if k.starts_with('*')
-                    || k.starts_with("$*")
-                    || k.starts_with("@*")
-                    || k.starts_with("%*")
-                    || k.starts_with('&')
-                    || k.starts_with("?LINE")
-                    || k.starts_with("?FILE")
-                    || k == "/"
-                {
-                    method_env.insert(k.clone(), v.clone());
-                }
-            }
-            self.interpreter.set_env(crate::env::Env::from(method_env));
         }
 
         // Populate locals directly
