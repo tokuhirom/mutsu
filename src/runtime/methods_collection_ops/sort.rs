@@ -20,6 +20,106 @@ fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
 /// Handles `{ $^a <=> $^b }`, `{ $^b <=> $^a }`, `{ $^a cmp $^b }`, `{ $^b cmp $^a }`,
 /// and also negated (reversed) variants.
 /// Returns Some((reverse, is_string_cmp)) if the block is a simple two-var comparison.
+/// Detect simple mapper blocks like `{ .method }` (method call on $_ with no args).
+/// Returns Some(method_name) if detected.
+fn detect_simple_mapper_block(data: &crate::value::SubData) -> Option<String> {
+    let body = &data.body;
+    let expr = body.iter().find_map(|s| match s {
+        Stmt::Expr(e) => Some(e),
+        _ => None,
+    })?;
+    match expr {
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            ..
+        } if args.is_empty() => {
+            if matches!(target.as_ref(), Expr::Var(v) if v == "_") {
+                return Some(name.to_string());
+            }
+            if let Some(p) = data.params.first()
+                && matches!(target.as_ref(), Expr::Var(v) if v == p)
+            {
+                return Some(name.to_string());
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Detect `{ $^a.method <=> $^b.method }` or `{ $^a.method cmp $^b.method }` patterns.
+/// Returns Some((method_name, reverse, is_string_cmp)) if detected.
+fn detect_method_cmp_block(data: &crate::value::SubData) -> Option<(String, bool, bool)> {
+    if data.params.len() < 2 {
+        return None;
+    }
+    let body = &data.body;
+    let expr = body.iter().find_map(|s| match s {
+        Stmt::Expr(e) => Some(e),
+        _ => None,
+    })?;
+    match expr {
+        Expr::Binary { left, op, right } => {
+            let is_string_cmp = matches!(op, TokenKind::Ident(s) if s == "cmp");
+            let is_numeric_cmp = matches!(op, TokenKind::LtEqGt);
+            if !is_string_cmp && !is_numeric_cmp {
+                return None;
+            }
+            let param_a = &data.params[0];
+            let param_b = &data.params[1];
+            // Extract method calls on both sides
+            let (left_var, left_method) = match left.as_ref() {
+                Expr::MethodCall {
+                    target,
+                    name,
+                    args,
+                    modifier: None,
+                    ..
+                } if args.is_empty() => {
+                    if let Expr::Var(v) = target.as_ref() {
+                        Some((v.as_str(), name.to_string()))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }?;
+            let (right_var, right_method) = match right.as_ref() {
+                Expr::MethodCall {
+                    target,
+                    name,
+                    args,
+                    modifier: None,
+                    ..
+                } if args.is_empty() => {
+                    if let Expr::Var(v) = target.as_ref() {
+                        Some((v.as_str(), name.to_string()))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }?;
+            if left_method != right_method {
+                return None;
+            }
+            // { $^a.method <=> $^b.method } — normal order
+            if left_var == param_a && right_var == param_b {
+                return Some((left_method, false, is_string_cmp));
+            }
+            // { $^b.method <=> $^a.method } — reversed
+            if left_var == param_b && right_var == param_a {
+                return Some((left_method, true, is_string_cmp));
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(bool, bool)> {
     if data.params.len() < 2 {
         return None;
@@ -183,6 +283,33 @@ impl Interpreter {
                         }
                         return;
                     }
+                    // Fast path: detect { $^a.method <=> $^b.method } pattern
+                    // Uses Schwartzian transform: pre-compute keys, then sort by keys
+                    if let Some((method_name, reverse, is_string_cmp)) =
+                        detect_method_cmp_block(data)
+                    {
+                        let keys: Vec<Value> = items
+                            .iter()
+                            .map(|item| {
+                                interp
+                                    .call_method_with_values(item.clone(), &method_name, vec![])
+                                    .unwrap_or(Value::Nil)
+                            })
+                            .collect();
+                        let mut indices: Vec<usize> = (0..items.len()).collect();
+                        indices.sort_by(|&i, &j| {
+                            let (l, r) = if reverse { (j, i) } else { (i, j) };
+                            if is_string_cmp {
+                                keys[l].to_str_context().cmp(&keys[r].to_str_context())
+                            } else {
+                                inline_numeric_cmp(&keys[l], &keys[r])
+                            }
+                        });
+                        let sorted: Vec<Value> =
+                            indices.iter().map(|&i| items[i].clone()).collect();
+                        items.clone_from_slice(&sorted);
+                        return;
+                    }
                     // Sub comparator: use merge sort for correct (left, right) ordering
                     let data = data.clone();
                     // Pre-collect keys we'll modify to avoid full env clone
@@ -224,6 +351,26 @@ impl Interpreter {
                     });
                 }
                 Some(Value::Sub(data)) if arity <= 1 => {
+                    // Fast path: detect { .method } pattern and use Schwartzian transform
+                    if let Some(method_name) = detect_simple_mapper_block(data) {
+                        // Pre-compute keys (N calls instead of N*log(N))
+                        let keys: Vec<Value> = items
+                            .iter()
+                            .map(|item| {
+                                interp
+                                    .call_method_with_values(item.clone(), &method_name, vec![])
+                                    .unwrap_or(Value::Nil)
+                            })
+                            .collect();
+                        // Build index array and sort by pre-computed keys
+                        let mut indices: Vec<usize> = (0..items.len()).collect();
+                        indices.sort_by(|&i, &j| compare_values(&keys[i], &keys[j]).cmp(&0));
+                        // Rearrange items in-place by sorted indices
+                        let sorted: Vec<Value> =
+                            indices.iter().map(|&i| items[i].clone()).collect();
+                        items.clone_from_slice(&sorted);
+                        return;
+                    }
                     // Sub mapper: save/restore only touched keys
                     let touched_keys: Vec<String> = {
                         let mut keys: Vec<String> = data.env.keys().cloned().collect();
