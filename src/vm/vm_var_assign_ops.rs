@@ -1469,6 +1469,20 @@ impl VM {
                 if self.interpreter.hash_type_metadata_exists(id) {
                     return None;
                 }
+                // Peek at the key to check if the existing element is a bound ref
+                let peek_key = self.stack[stack_len - 1].to_string_value();
+                if let Some(existing) = hash_arc.get(&peek_key) {
+                    let is_bound = match existing {
+                        Value::HashSlotRef { .. }
+                        | Value::ArraySlotRef { .. }
+                        | Value::Scalar(..) => true,
+                        Value::Pair(name, _) if name.starts_with("__mutsu_bound") => true,
+                        _ => false,
+                    };
+                    if is_bound {
+                        return None;
+                    }
+                }
                 // All checks passed — commit to fast path
                 let idx = self.stack.pop().unwrap();
                 let val = self.stack.pop().unwrap();
