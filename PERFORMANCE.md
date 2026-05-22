@@ -17,11 +17,11 @@ cargo build --release
 | int-arith | 0.16s | 0.22s | **0.7x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
 | string-concat | 0.02s | 0.21s | **0.09x** | `$s ~= 'x'` × 10000 |
 | hash-access | 0.04s | 0.23s | **0.17x** | 10K hash inserts + value iteration |
-| method-call | 1.21s | 0.29s | 4.2x | Point.distance-to × 10000 |
+| method-call | 1.04s | 0.29s | 3.6x | Point.distance-to × 10000 |
 | array-ops | 0.16s | 0.26s | **0.6x** | grep+map on 1000-elem array × 100 |
-| bench-array | 0.59s | 0.30s | 2.0x | push+map+grep+sort+reverse on 10K |
+| bench-array | 0.04s | 0.30s | **0.1x** | push+map+grep+sort+reverse on 10K |
 | bench-hash | 0.03s | 0.30s | **0.1x** | 10K insert+lookup+delete+keys+values |
-| bench-class | 1.49s | 0.37s | 4.0x | class instantiation + method calls + inheritance |
+| bench-class | 1.34s | 0.37s | 3.6x | class instantiation + method calls + inheritance |
 | bench-startup | 0.004s | 0.17s | **0.02x** | startup overhead |
 | bench-string | 0.08s | 0.33s | **0.2x** | string operations |
 
@@ -29,9 +29,8 @@ Note: raku times include ~170ms startup overhead. mutsu startup is ~4ms.
 
 ### Summary
 
-- **Faster than raku (8/11)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, fib, bench-hash
-- **2x slower (1/11)**: bench-array
-- **4x slower (2/11)**: bench-class, method-call
+- **Faster than raku (9/11)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, fib, bench-hash, bench-array
+- **3.6x slower (2/11)**: bench-class, method-call
 
 ## Architecture Overview: Execution Paths
 
@@ -61,43 +60,67 @@ Many operations that should run in the VM fall back to the interpreter:
 
 | Operation | Current path | Impact |
 |-----------|-------------|--------|
-| `sort { $^b <=> $^a }` | ~~Interpreter~~ **Inlined** (2026-05-22) | ~~1300x slower~~ Fixed |
-| `sort { .key }` (mapper) | Interpreter: env clone per comparison | Very slow for large arrays |
+| `sort { $^b <=> $^a }` | ~~Interpreter~~ **Inlined** (2026-05-22) | Fixed |
+| `sort { .key }` (mapper) | ~~Interpreter~~ **Schwartzian transform** (2026-05-22) | Fixed |
 | `map { ... }` | VM compiles block, but interpreter dispatches for some closures | Mixed |
 | `grep { ... }` | Similar to map | Mixed |
-| Class `.new()` | Interpreter: `dispatch_new` | 4-5x overhead per instantiation |
-| Method call with types | Interpreter: type checking + candidate resolution | Per-call overhead |
-| Hash element access | VM fast path for simple cases, interpreter for complex | 13x on bench-hash |
+| Class `.new()` | Interpreter: `dispatch_new` | Fast (0.03ms/call) |
+| **Method call** | **`call_compiled_method`: env deep clone + 30+ HashMap ops** | **#1 bottleneck (54μs/call)** |
+| Hash element access | ~~interpreter for complex~~ **VM fast path** (2026-05-22) | Fixed |
+| `@arr.push(val)` | ~~CallMethodMut dispatch~~ **ArrayPush opcode** (2026-05-22) | Fixed |
 | `for` loop body | VM compiled | Fast |
 | `EVAL` body | Interpreter only | Inherently slow |
 
 ## Bottleneck Analysis
 
-### Hash operations — RESOLVED (now 7.7x faster than raku)
+### Hash operations — RESOLVED (now 10x faster than raku)
 
-Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by temporarily dropping the locals reference before `Arc::make_mut`. bench-hash: 22.7s → 0.035s.
+Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by temporarily dropping the locals reference before `Arc::make_mut`. bench-hash: 22.7s → 0.03s.
 
-### Method dispatch (4-5x slower)
+### Array push — RESOLVED (now 10x faster than raku)
 
-Every compiled method call (via `call_compiled_method`) does:
-1. Method resolution (cached via `method_resolve_cache` for non-multi)
-2. COW env clone (`push_call_frame` → `clone_env()` is O(1) Arc bump, but first `env_mut()` triggers full HashMap clone)
-3. 7+ `env_mut().insert()` calls for `?CLASS`, `self`, `__ANON_STATE__`, `$_`, `$!`, `__mutsu_callable_id`, `?ROLE`
-4. Attribute binding: iterate all instance attributes, insert `$!name`, `$.name`, `@!name`, etc. into env
-5. Parameter binding via interpreter
-6. Initialize locals from env
-7. On exit (if `can_skip_merge`): skip env merge, just pop frame
+`ArrayPush` opcode emitted at compile time for `@arr.push(val)` on local arrays, bypassing the full CallMethodMut dispatch chain. bench-array: 0.59s → 0.04s.
 
-**Root cause**: The env HashMap is cloned on every method call because `env_mut()` (Arc::make_mut) triggers COW. With ~100 entries in env, this is ~100 key-value clones per call. For a simple method like `bark() { "Woof!" }`, the setup is 30+ HashMap operations while the method body is 1 opcode.
+### Method dispatch (3.6x slower) — THE REMAINING BOTTLENECK
 
-**.new() is fast**: 5000 `Dog.new()` calls take only 0.14s. The bottleneck is method calls (5000 iterations × 3 methods = 15000 calls taking 1.4s).
+**Current cost**: ~54μs per method call. raku achieves ~5μs.
 
-Potential improvements:
-- **Layered scope for methods**: Instead of cloning env, use a scope overlay that gets checked first. This would avoid the COW clone entirely for method calls.
-- **Inline cache (PIC)**: Cache resolved method + skip resolution for monomorphic call sites.
-- **Skip attribute env binding**: For methods that don't access `$!attr` (detectable from locals list), skip the attribute iteration loop.
+**Detailed cost breakdown** (for a 0-param method like `noop()`):
 
-### Function calls with type constraints (4.4x slower)
+| Step | Cost | Description |
+|------|------|-------------|
+| `exec_call_method_op` entry | ~5μs | Method name String alloc, arg processing, stack ops |
+| Method resolution | ~2μs | Cache hit: Symbol pair lookup in HashMap |
+| `push_call_frame` | ~0.1μs | Arc bump for env (O(1)) |
+| **First `env_mut()` call** | **~12μs** | **Arc::make_mut deep clones ~100-entry HashMap** |
+| 6 more `env_mut().insert()` | ~3μs | `?CLASS`, `__ANON_STATE__`, `$_`, `$!`, `__mutsu_callable_id`, `?ROLE` |
+| Attribute binding loop | ~5μs | 3 attrs × ~4 inserts each (Dog example) |
+| `bind_function_args_values` | ~3μs | Parameter binding via interpreter |
+| Locals init from env | ~5μs | Iterate `cc.locals`, lookup each in env |
+| **Bytecode execution** | **~1μs** | The actual method body |
+| Method exit cleanup | ~8μs | pop_method_class, pop_call_frame, env restore |
+| Instance writeback | ~5μs | overwrite_instance_bindings_by_identity |
+| **Total** | **~54μs** | **Method body is 2% of total time** |
+
+**Root cause**: `call_compiled_method` uses the interpreter's `env: HashMap<String, Value>` as an intermediary. Every method call:
+1. Clones env via `Arc::make_mut` (O(n) where n ≈ 100 entries)
+2. Inserts 7+ special variables into env
+3. Inserts N attribute bindings (`$!name`, `$.name`, etc.) into env
+4. Calls `bind_function_args_values` which writes params to env
+5. Copies env values into `self.locals[]` array
+6. After execution, restores the saved env
+
+The fundamental problem is the **env-as-intermediary pattern**: values flow from source → env → locals, when they should flow directly from source → locals.
+
+### Approaches investigated and rejected
+
+**Two-level Env (base + delta HashMap)**: Tested 2026-05-22. Made `clone()` O(delta) instead of O(n), but added a branch to every `get()` call. Since `get()` is called ~300 times per method call (across all paths), the branch overhead (~2ns × 300 = 0.6μs) offset the clone savings for non-method-call code paths. Net result: method-call improved 22%, but bench-fib and bench-class regressed 15-20%.
+
+**Skip attribute binding for non-attribute methods**: Tested 2026-05-22. Skipping the attribute loop when `cc.locals` doesn't reference `!name`/`.name` broke chained method calls (`$obj.set-to(20).add(5)`) because the attribute writeback path depends on attributes being in env even when the current method doesn't read them. The dependency chain between attribute binding, `self` construction, and exit-time writeback makes partial skipping unsafe.
+
+**Batched env_mut() calls**: Tested 2026-05-22. Reducing 7 separate `env_mut()` calls to 1 (by holding the `&mut HashMap` reference across all inserts) saved ~8% on bench-class. Marginal.
+
+### Function calls with type constraints (3.6x slower)
 
 bench-fib uses `sub fib(Int $n --> Int)` which adds:
 - Type constraint checking per call (~150ns)
@@ -109,6 +132,11 @@ Potential improvements:
 - Specialize compiled code for known-Int arguments
 
 ## Optimization History
+
+### 2026-05-22: ArrayPush opcode for @arr.push(val)
+- **Change**: Detect `@arr.push(single_expr)` at compile time, emit specialized `ArrayPush` opcode that directly appends to the array Arc. Uses same locals-drop technique as hash fast paths. Falls back to interpreter for shared arrays, typed arrays, shaped arrays, and non-local (captured) variables.
+- **Effect**: push 10K elements: 0.51s → 0.008s (**64x speedup**); bench-array: 0.59s → 0.04s (**16x**, now 10x faster than raku)
+- **Value**: Demonstrates the power of compile-time pattern recognition + specialized opcodes. The full CallMethodMut dispatch chain (54μs/call) is bypassed entirely for the common case.
 
 ### 2026-05-22: Fix hash fast path for shared Arc (locals + env)
 - **Change**: When `Arc::strong_count == 2` (locals + env share the Arc), temporarily drop the locals reference before `Arc::make_mut`, enabling O(1) in-place mutation instead of O(n) clone per insert. Sync the mutated Arc back to locals afterward.
@@ -173,85 +201,145 @@ Potential improvements:
 
 ## Improvement Plan
 
-### Phase 1: Interpreter Bypass (Q2 2026) — target: all benchmarks < 5x
+The remaining bottleneck is method dispatch (3.6x slower than raku). Everything else is at parity or faster. The plan below is ordered by impact and feasibility, informed by hands-on experiments conducted 2026-05-22.
 
-Low-risk, high-impact changes that reduce interpreter fallbacks without architectural changes.
+### Phase 1: Eliminate env-as-intermediary in method calls — target: method-call < 2x
 
-**1a. Inline common higher-order function patterns** ✅ (sort done)
-- [x] `sort { $^a <=> $^b }` / `{ $^b <=> $^a }` — AST pattern match → Rust comparison
-- [x] `sort { .key }` (1-arity mapper) — Schwartzian transform with direct method dispatch
-- [x] `sort { $^a.method <=> $^b.method }` — Schwartzian transform with method key extraction
-- [ ] `grep { ... }` with simple conditions — inline truthiness check
-- [ ] `map { ... }` with simple expressions — inline evaluation
+The core problem: `call_compiled_method` flows values through `env: HashMap` when they should go directly to `self.locals[]`. This causes a ~12μs deep clone per call.
 
-**1b. Hash operation fast paths**
-- [ ] VM opcode for `:delete` on hash elements
-- [ ] Compiled `.values` / `.keys` iteration (avoid intermediate array materialization)
-- [ ] String key interning for repeated hash access patterns (e.g., `"key-$_"`)
+**Step 1: Direct locals initialization (bypass env for method setup)**
 
-**1c. Object instantiation fast path**
-- [ ] Compile `Class.new(named => args)` to a VM opcode sequence
-- [ ] Skip full `dispatch_new` interpreter path for simple classes (no BUILD/TWEAK)
-- [ ] Pre-compute attribute slot layout at class registration time
+Currently, `call_compiled_method` does:
+```
+env_mut().insert("self", base)          // triggers Arc::make_mut (deep clone!)
+env_mut().insert("?CLASS", class_val)   // 6 more inserts...
+env_mut().insert("!attr_name", val)     // N attribute inserts...
+bind_function_args_values(params)       // writes params to env...
+for local in cc.locals { locals[i] = env.get(local) }  // copy env→locals
+```
 
-### Phase 2: Method Dispatch Optimization (Q3 2026) — target: all benchmarks < 3x
+Target: for `can_skip_merge` methods, replace with:
+```
+push_call_frame()                       // saves env (O(1) Arc bump)
+// NO env_mut() calls — env stays shared, no deep clone
+locals = vec![Nil; cc.locals.len()]
+for (i, name) in cc.locals {
+    locals[i] = match name {
+        "self" | "__ANON_STATE__" => base,
+        "?CLASS" => class_val,
+        "_" => Any,  "!" => Nil,
+        name if name.starts_with('!') => attributes[name],
+        param_name => args[param_idx],
+        _ => outer_env.get(name),       // read-only, no clone!
+    }
+}
+```
 
-Reduce per-call overhead for method dispatch.
+This eliminates:
+- The 12μs deep clone (env_mut never called)
+- 7 special-variable inserts (~3μs)
+- N attribute inserts (~5μs)
+- The locals-from-env copy loop (~5μs)
+- Total savings: ~25μs per call (54μs → ~29μs)
 
-**2a. Inline caching (Polymorphic Inline Cache)**
-- Cache resolved method + type check result at each call site
-- Monomorphic sites (>95% of calls): 1 type check + direct jump
-- Megamorphic fallback: current MRO walk
-- Requires: call site IDs in bytecode, cache invalidation on class mutation
+**Complexity**: Medium. Need to:
+- Build a name→slot index for `cc.locals` (once per method, cacheable)
+- Map attribute names to their `!name`/`.name` env equivalents
+- Handle `bind_function_args_values` bypass for simple positional params
+- Fall back to current path for methods with: `is rw` params, invocant constraints, role bindings, multi-dispatch, `$_:` invocant
 
-**2b. Type specialization for compiled methods**
-- When all callers pass Int, compile an Int-specialized variant
-- Skip runtime type checks for specialized calls
-- Deoptimize to generic version on type mismatch
+**Risk**: High — attribute writeback on method exit reads from env. The `can_skip_merge` path already skips this, so for read-only methods it's safe. For write methods, keep the current env path.
 
-**2c. Eliminate env HashMap for compiled code**
-- Currently: VM locals[] ↔ interpreter env HashMap sync on every fallback
-- Goal: compiled methods never touch env HashMap
-- Requires: all built-in methods callable without interpreter env
-- Blocker: ~35 runtime/ submodules still read from `self.env`
+**Step 2: Eliminate `exec_call_method_op` overhead**
 
-### Phase 3: Interpreter Elimination (Q4 2026) — target: all benchmarks < 2x
+The VM entry point `exec_call_method_op` does:
+- `Self::const_str(code, name_idx).to_string()` — String allocation per call
+- `Self::rewrite_method_name()` — modifier processing
+- `Self::append_flattened_call_arg()` — Slip flattening check per arg
+- Junction autothread check
 
-Systematic removal of interpreter fallbacks.
+For the common case (no modifier, no junction, no slip), most of this is wasted:
+- Use `Symbol` (interned string) for method names instead of `String`
+- Skip junction check when target is `Value::Instance`
+- Skip slip flattening when args have no Slip values (checkable via flag)
 
-**3a. Compile all block callbacks to bytecode**
-- `sort`, `map`, `grep`, `first`, `reduce` callbacks compiled at parse time
-- VM invokes compiled closures directly via `call_compiled_closure`
-- No env clone needed — closure captures are indexed slots
+**Step 3: Lightweight call frame for simple methods**
 
-**3b. Full VM method dispatch**
-- Method resolution at compile time where possible (sealed classes)
-- Runtime dispatch via vtable for non-sealed classes
-- Remove `methods.rs` / `methods_mut.rs` interpreter dispatch
+`push_call_frame` saves: env, readonly_vars, locals, stack_depth, env_dirty, locals_dirty, locals_dirty_slots, local_bind_pairs. For simple methods, most of these are unnecessary:
+- `readonly_vars`: only needed if method uses `:=` binding
+- `local_bind_pairs`: only needed if method uses `:=` binding
+- `locals_dirty_slots`: Vec allocation per call
 
-**3c. Remove env HashMap entirely**
-- All variables in indexed local/closure slots
-- Dynamic variables (`$*FOO`) via dedicated dynamic scope chain
-- `EVAL` gets its own mini-interpreter (only case that needs AST walk)
+Create a `push_light_call_frame` that only saves env + locals + stack_depth.
 
-### Phase 4: Advanced Optimizations (2027+)
+### Phase 2: Compile-time method resolution — target: method-call < 1.5x
 
-**4a. VM instruction dispatch**
-- Computed goto / threaded code for opcode dispatch
-- Currently: `match` on ~100 OpCode variants (indirect branch prediction)
-- Threaded code: direct jump to next handler (1 branch vs 2)
-- Expected: 10-30% improvement on CPU-bound benchmarks
+**2a. Monomorphic inline cache**
 
-**4b. Value representation**
-- NaN-boxing or tagged pointers for small integers (avoid heap allocation)
-- Currently: `Value::Int(i64)` is 16 bytes enum + 8 bytes payload
-- NaN-boxed: 8 bytes total for Int/Num/Bool/Nil
-- Expected: 2x improvement on arithmetic-heavy benchmarks
+Method resolution is already cached in `method_resolve_cache: HashMap<(Symbol, Symbol), ...>`, but each call still does a HashMap lookup. For monomorphic call sites (>95% of all calls), the target class never changes:
+
+- Add a `last_class: Symbol` + `last_result: (String, MethodDef)` pair to each `CallMethod` opcode
+- On dispatch: compare target class with `last_class` (1 pointer comparison)
+- On hit: use cached result directly (0 HashMap lookups)
+- On miss: fall through to `method_resolve_cache`, then update inline cache
+
+Expected: ~2μs savings per call (HashMap lookup elimination).
+
+**2b. Direct compiled function pointer in method cache**
+
+Currently, even after resolution, the call path goes through:
+```
+try_compiled_method_or_interpret → check_method_wrap_chain → call_compiled_method
+```
+
+For the common case (compiled method, no wrap chain), store a direct function pointer in the cache:
+```
+CallMethod { cache: Option<(Symbol, Arc<CompiledCode>)> }
+```
+
+Skip all intermediate dispatch and call `vm.run()` with the cached compiled code.
+
+### Phase 3: Remove env dependency from VM — target: all benchmarks < 1.5x
+
+**3a. Self-contained VM execution**
+
+Currently, compiled method execution reads/writes `self.interpreter.env` for:
+- Variable lookup (when not in locals)
+- `$*DYNAMIC` variable resolution
+- `EVAL` body execution
+- `callsame`/`nextsame` dispatch
+
+Goal: VM execution never touches env except for:
+- `EVAL` (inherently needs AST interpreter)
+- Dynamic variable lookup (small dedicated chain)
+- Interpreter fallback calls (decreasing as coverage improves)
+
+**3b. Closure captures as indexed slots**
+
+Currently, closures capture the entire env HashMap. Replace with indexed capture slots:
+- At compile time, analyze which variables the closure reads/writes
+- Store only those values in a `Vec<Value>` (indexed by slot)
+- Closure execution reads/writes slots directly, no HashMap
+
+This eliminates env clone for closure creation (currently clones ~100 entries).
+
+### Phase 4: Advanced optimizations — target: faster than raku
+
+**4a. Value representation (NaN-boxing)**
+- `Value` enum is currently 72 bytes (discriminant + largest variant)
+- NaN-boxing: 8 bytes for Int/Num/Bool/Nil (common cases)
+- Heap-allocated Box for large variants (String, Array, Hash, Instance)
+- Expected: 2x improvement on arithmetic benchmarks, significant memory reduction
+
+**4b. Threaded dispatch**
+- Replace `match` on ~100 OpCode variants with computed goto
+- Each opcode handler jumps directly to the next (1 indirect branch vs 2)
+- Expected: 10-30% improvement on instruction-bound benchmarks
 
 **4c. JIT compilation**
-- Cranelift or LLVM backend for hot loops
+- Cranelift backend for hot loops
 - Trace-based: detect hot bytecode sequences, compile to native
-- Most ambitious optimization; depends on stable bytecode format
+- Depends on stable bytecode format and value representation
 
 ## Measurement Notes
 
