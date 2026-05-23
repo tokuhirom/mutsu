@@ -826,14 +826,15 @@ impl VM {
             } else {
                 env.remove("?ROLE");
             }
+            // Attribute values (!attr, .attr) are populated directly into locals
+            // below, bypassing env entirely. Only insert array/hash sigiled
+            // attribute entries that might still be read from env by legacy paths.
             for (attr_name, attr_val) in &attributes {
                 if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
                     continue;
                 }
                 let qualified_key = format!("{}\0{}", owner_class, attr_name);
                 let private_val = attributes.get(&qualified_key).unwrap_or(attr_val);
-                env.insert(format!("!{}", attr_name), private_val.clone());
-                env.insert(format!(".{}", attr_name), attr_val.clone());
                 match private_val {
                     Value::Array(..) => {
                         env.insert(format!("@!{}", attr_name), private_val.clone());

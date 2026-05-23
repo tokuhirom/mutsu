@@ -34,6 +34,9 @@ impl Compiler {
             }
             TokenKind::PlusPlus => {
                 if let Expr::Var(name) = expr {
+                    if name.starts_with('!') && name.len() > 1 {
+                        self.alloc_local(name);
+                    }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PreIncrement(name_idx));
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -59,6 +62,9 @@ impl Compiler {
             }
             TokenKind::MinusMinus => {
                 if let Expr::Var(name) = expr {
+                    if name.starts_with('!') && name.len() > 1 {
+                        self.alloc_local(name);
+                    }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PreDecrement(name_idx));
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {

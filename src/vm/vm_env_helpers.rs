@@ -267,6 +267,11 @@ impl VM {
             ) {
                 continue;
             }
+            // Attribute locals (!attr) are managed exclusively via GetLocal/SetLocal.
+            // Never overwrite them from env, which may hold stale method-entry values.
+            if name.starts_with('!') {
+                continue;
+            }
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
                 continue;

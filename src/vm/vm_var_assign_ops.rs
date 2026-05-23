@@ -1059,6 +1059,18 @@ impl VM {
             return Ok(());
         }
         self.interpreter.check_readonly_for_increment(name)?;
+        if name.starts_with('!')
+            && let Some(slot) = self.find_local_slot(code, name)
+            && !matches!(self.locals[slot], Value::Proxy { .. })
+        {
+            let raw_val = self.locals[slot].clone();
+            let val = self.normalize_incdec_source_with_type(name, raw_val);
+            let new_val = self.increment_value_smart(&val)?;
+            self.locals[slot] = new_val;
+            self.mark_local_dirty(slot);
+            self.stack.push(val);
+            return Ok(());
+        }
         let raw_val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
@@ -1141,6 +1153,18 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         self.interpreter.check_readonly_for_increment(name)?;
+        if name.starts_with('!')
+            && let Some(slot) = self.find_local_slot(code, name)
+            && !matches!(self.locals[slot], Value::Proxy { .. })
+        {
+            let raw_val = self.locals[slot].clone();
+            let val = self.normalize_incdec_source_with_type(name, raw_val);
+            let new_val = self.decrement_value_smart(&val)?;
+            self.locals[slot] = new_val;
+            self.mark_local_dirty(slot);
+            self.stack.push(val);
+            return Ok(());
+        }
         let raw_val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))

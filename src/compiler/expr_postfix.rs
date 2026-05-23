@@ -5,6 +5,9 @@ impl Compiler {
     /// Compile postfix ++ on variable/index/method target.
     pub(super) fn compile_expr_postfix_inc(&mut self, expr: &Expr) {
         if let Expr::Var(name) = expr {
+            if name.starts_with('!') && name.len() > 1 {
+                self.alloc_local(name);
+            }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::PostIncrement(name_idx));
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -81,6 +84,9 @@ impl Compiler {
     /// Compile postfix -- on variable/index/method target.
     pub(super) fn compile_expr_postfix_dec(&mut self, expr: &Expr) {
         if let Expr::Var(name) = expr {
+            if name.starts_with('!') && name.len() > 1 {
+                self.alloc_local(name);
+            }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::PostDecrement(name_idx));
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {

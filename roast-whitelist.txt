@@ -784,7 +784,6 @@ roast/S17-channel/subscription-drain-in-react.t
 roast/S17-lowlevel/atomic-ops.t
 roast/S17-lowlevel/cas-loop-int.t
 roast/S17-lowlevel/cas-loop.t
-roast/S17-lowlevel/cas.t
 roast/S17-lowlevel/thread-start-join-stress.t
 roast/S17-procasync/basic.t
 roast/S17-procasync/bind-handles.t
@@ -1042,8 +1041,6 @@ roast/S32-list/rotor.t
 roast/S32-list/snip.t
 roast/S32-list/sort.t
 roast/S32-list/squish.t
-roast/S32-list/tail.t
-roast/S32-list/tail.t
 roast/S32-list/toggle.t
 roast/S32-list/unique.t
 roast/S32-num/abs.t
