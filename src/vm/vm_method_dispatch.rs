@@ -740,7 +740,7 @@ impl VM {
             );
         }
 
-        self.push_call_frame();
+        self.push_light_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         let saved_var_bindings = self.interpreter.take_var_bindings();
         self.interpreter.push_method_class(owner_class.to_string());
