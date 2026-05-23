@@ -96,7 +96,7 @@ Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by te
 
 | Step | Cost | Description |
 |------|------|-------------|
-| `exec_call_method_op` entry | ~5μs | Method name String alloc, arg processing, stack ops |
+| `exec_call_method_op` entry | ~3μs | Arg processing, stack ops (no String alloc — Cow borrows from const pool) |
 | Method resolution | ~2μs | Cache hit: Symbol pair lookup in HashMap |
 | `push_call_frame` | ~0.1μs | Arc bump for env (O(1)) |
 | **env deep clone + batched inserts** | **~15μs** | **Arc::make_mut + all special vars + attrs in one hold** |
@@ -132,6 +132,11 @@ Potential improvements:
 - Specialize compiled code for known-Int arguments
 
 ## Optimization History
+
+### 2026-05-23: Avoid String allocation and skip wrap chain check
+- **Change**: Two optimizations: (1) Use `Cow<str>` in `rewrite_method_name` for `exec_call_method_op` — avoids a String allocation on every method call when no modifier (`^`/`!`) is present (the common case). The method name stays as a borrowed `&str` from the constant pool. (2) Add `has_any_wrap_chains()` early return in `check_method_wrap_chain` — skip the expensive `find_method_candidate_index` (which computes AST fingerprints) and `get_method_wrap_chain` when no wrap chains exist.
+- **Effect**: method-call ~10% faster, bench-class ~8% faster, bench-fib ~5% faster
+- **Value**: Eliminates the last String allocation per method call in the common path, and avoids O(n) AST fingerprint computation on every method call when wrapping is unused.
 
 ### 2026-05-23: Reduce method dispatch entry overhead
 - **Change**: Three optimizations: (1) Wrap MethodDef in Arc in method resolve cache — cache hit clone is now O(1) instead of deep-cloning Vec<String>/Vec<ParamDef>. (2) Avoid String allocations for method_raw and modifier — use `&str` from constant pool, only allocate when modifier requires `^`/`!` prefix (rare). (3) Skip Slip flattening when no Slip args present — check discriminants first, reuse raw_args Vec directly.
@@ -242,9 +247,10 @@ Done:
 - Avoid String allocation for `method_raw` and `modifier` — use `&str` from constant pool
 - Skip Slip flattening when no Slip args present
 - Arc<MethodDef> in resolve cache to avoid deep clone on cache hit
+- `Cow<str>` for `rewrite_method_name` — eliminates the last String allocation in the common path (no modifier)
+- Skip `check_method_wrap_chain` when no wrap chains exist — avoids expensive AST fingerprinting
 
 Remaining:
-- Use `Symbol` (interned string) for method names to avoid the one remaining `.to_string()` in `rewrite_method_name`
 - Skip junction check when target is `Value::Instance` (minimal impact — pattern match already fast-fails)
 
 **Step 3: Lightweight call frame — PARTIAL (2026-05-23)**
