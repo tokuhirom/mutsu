@@ -182,6 +182,17 @@ impl VM {
         }
     }
 
+    pub(super) fn rewrite_method_name_cow<'a>(
+        method_raw: &'a str,
+        modifier: Option<&str>,
+    ) -> std::borrow::Cow<'a, str> {
+        match modifier {
+            Some("^") => std::borrow::Cow::Owned(format!("^{}", method_raw)),
+            Some("!") => std::borrow::Cow::Owned(format!("!{}", method_raw)),
+            _ => std::borrow::Cow::Borrowed(method_raw),
+        }
+    }
+
     pub(super) fn call_method_all_with_fallback(
         &mut self,
         target: &Value,

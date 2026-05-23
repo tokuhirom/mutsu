@@ -20,7 +20,8 @@ impl VM {
             .set_pending_call_arg_sources(arg_sources.clone());
         let method_raw = Self::const_str(code, name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
-        let method = Self::rewrite_method_name(method_raw, modifier);
+        let method_cow = Self::rewrite_method_name_cow(method_raw, modifier);
+        let method = &*method_cow;
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallMethod"));
@@ -28,7 +29,7 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         let args = if raw_args.iter().any(|a| matches!(a, Value::Slip(_))) {
-            let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
+            let preserve_empty_slip = Self::preserve_empty_slip_arg(method);
             let mut args = Vec::new();
             for arg in raw_args {
                 Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
@@ -43,7 +44,7 @@ impl VM {
         // Force LazyIoLines into an eager array when calling methods on it,
         // unless the method preserves laziness (e.g., .kv).
         let target = if matches!(&target, Value::LazyIoLines { .. })
-            && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
+            && !matches!(method, "kv" | "iterator" | "lazy")
         {
             self.force_if_lazy_io_lines(target)?
         } else {
@@ -66,7 +67,7 @@ impl VM {
                 ..
             } = &target
             && !matches!(
-                method.as_str(),
+                method,
                 "new"
                     | "BUILD"
                     | "TWEAK"
@@ -104,33 +105,33 @@ impl VM {
                     | "bytes"
             )
         {
-            if let Some(val) = attributes.get(method.as_str()) {
+            if let Some(val) = attributes.get(method) {
                 // Check for deprecated attribute accessor (has $.foo is DEPRECATED)
                 let cn = class_name.resolve();
                 if let Some(msg) = self
                     .interpreter
-                    .class_attribute_deprecated(&cn, &method)
+                    .class_attribute_deprecated(&cn, method)
                     .cloned()
                 {
                     self.interpreter
-                        .check_deprecation_for_method(&method, &cn, &msg);
+                        .check_deprecation_for_method(method, &cn, &msg);
                 }
                 self.stack.push(val.clone());
                 self.env_dirty = true;
                 return Ok(());
             }
             // Check if it's a public accessor (has $.x declared)
-            let attr_key = format!("{}!", &method);
+            let attr_key = format!("{}!", method);
             if let Some(val) = attributes.get(&attr_key) {
                 // Check for deprecated attribute accessor
                 let cn = class_name.resolve();
                 if let Some(msg) = self
                     .interpreter
-                    .class_attribute_deprecated(&cn, &method)
+                    .class_attribute_deprecated(&cn, method)
                     .cloned()
                 {
                     self.interpreter
-                        .check_deprecation_for_method(&method, &cn, &msg);
+                        .check_deprecation_for_method(method, &cn, &msg);
                 }
                 self.stack.push(val.clone());
                 self.env_dirty = true;
@@ -140,8 +141,8 @@ impl VM {
             // before falling through. If no user method exists and this looks
             // like a simple accessor, return the type object (Any).
             let cn = class_name.resolve();
-            if !self.interpreter.has_user_method(&cn, &method)
-                && self.interpreter.has_public_accessor(&cn, &method)
+            if !self.interpreter.has_user_method(&cn, method)
+                && self.interpreter.has_public_accessor(&cn, method)
             {
                 self.stack.push(Value::Nil);
                 self.env_dirty = true;
@@ -151,7 +152,7 @@ impl VM {
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
-                method.as_str(),
+                method,
                 "Bool"
                     | "so"
                     | "WHAT"
@@ -170,13 +171,13 @@ impl VM {
             let mut results = Vec::new();
             for v in values.iter() {
                 let r = if let Some(threaded) =
-                    self.maybe_autothread_method_args(v, &method, &args)?
+                    self.maybe_autothread_method_args(v, method, &args)?
                 {
                     threaded
-                } else if let Some(nr) = self.try_native_method(v, Symbol::intern(&method), &args) {
+                } else if let Some(nr) = self.try_native_method(v, Symbol::intern(method), &args) {
                     nr?
                 } else {
-                    self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
+                    self.try_compiled_method_or_interpret(v.clone(), method, args.clone())?
                 };
                 results.push(r);
             }
@@ -191,7 +192,7 @@ impl VM {
 
         // Junction auto-threading for method arguments:
         // If any method arg is a Junction, auto-thread over it.
-        if let Some(result) = self.maybe_autothread_method_args(&target, &method, &args)? {
+        if let Some(result) = self.maybe_autothread_method_args(&target, method, &args)? {
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -248,7 +249,7 @@ impl VM {
         let mut skip_native = method == "VAR"
             || (quoted
                 && matches!(
-                    method.as_str(),
+                    method,
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 ));
         let is_junction_target = match &target {
@@ -256,14 +257,14 @@ impl VM {
             Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
             _ => false,
         };
-        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+        if matches!(method, "gist" | "raku" | "perl") && is_junction_target {
             skip_native = true;
         }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
             && !matches!(
-                method.as_str(),
+                method,
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
@@ -273,13 +274,13 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(&cn, &method)
+                && self.interpreter.has_user_method(&cn, method)
             {
                 skip_native = true;
             }
         }
         if !skip_native
-            && matches!(method.as_str(), "AT-KEY" | "keys")
+            && matches!(method, "AT-KEY" | "keys")
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
         {
             skip_native = true;
@@ -287,7 +288,7 @@ impl VM {
         if !skip_native
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
             && matches!(
-                method.as_str(),
+                method,
                 "start"
                     | "kill"
                     | "write"
@@ -312,7 +313,7 @@ impl VM {
         if !skip_native
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
-                method.as_str(),
+                method,
                 "elems"
                     | "AT-POS"
                     | "BIND-POS"
@@ -331,11 +332,11 @@ impl VM {
         if quoted
             && skip_native
             && matches!(
-                method.as_str(),
+                method,
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
-            self.interpreter.skip_pseudo_method_native = Some(method.clone());
+            self.interpreter.skip_pseudo_method_native = Some(method.to_string());
         }
         // Auto-FETCH Proxy containers for non-meta method calls
         // Skip auto-FETCH for Proxy subclass attribute access and decontainerized proxies
@@ -346,11 +347,11 @@ impl VM {
         } = &target
             && !decontainerized
             && !matches!(
-                method.as_str(),
+                method,
                 "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
             ) {
             let has_subclass_attr = if let Some((_, attrs)) = subclass {
-                attrs.lock().unwrap().contains_key(method.as_str())
+                attrs.lock().unwrap().contains_key(method)
             } else {
                 false
             };
@@ -372,11 +373,11 @@ impl VM {
                 ll.env.get("__mutsu_lazylist_from_gather"),
                 Some(crate::value::Value::Bool(true))
             )
-            && Self::lazy_list_needs_forcing(&method)
+            && Self::lazy_list_needs_forcing(method)
         {
             let saved_env = self.interpreter.env().clone();
             let items = self.force_lazy_list_vm(ll)?;
-            if !matches!(method.as_str(), "elems" | "hyper" | "race") {
+            if !matches!(method, "elems" | "hyper" | "race") {
                 *self.interpreter.env_mut() = saved_env;
             }
             Value::Seq(std::sync::Arc::new(items))
@@ -384,7 +385,7 @@ impl VM {
             target
         };
         // .hyper/.race with named arguments (batch, degree): validate and wrap
-        if matches!(method.as_str(), "hyper" | "race") && !args.is_empty() {
+        if matches!(method, "hyper" | "race") && !args.is_empty() {
             // Extract named args (batch, degree) and validate
             let mut batch: Option<i64> = None;
             let mut degree: Option<i64> = None;
@@ -405,19 +406,12 @@ impl VM {
                 && b <= 0
             {
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert(
-                    "method".to_string(),
-                    Value::str(method.as_str().to_string()),
-                );
+                attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
                 attrs.insert("value".to_string(), Value::Int(b));
                 attrs.insert(
                     "message".to_string(),
-                    Value::str(format!(
-                        "Invalid value '{}' for 'batch' on '{}'",
-                        b,
-                        method.as_str()
-                    )),
+                    Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
                 );
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
             }
@@ -426,18 +420,14 @@ impl VM {
                 && d <= 0
             {
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert(
-                    "method".to_string(),
-                    Value::str(method.as_str().to_string()),
-                );
+                attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
                 attrs.insert("value".to_string(), Value::Int(d));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
                         "Invalid value '{}' for 'degree' on '{}'",
-                        d,
-                        method.as_str()
+                        d, method
                     )),
                 );
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
@@ -456,7 +446,7 @@ impl VM {
         }
         // HyperSeq/RaceSeq delegation: unwrap, dispatch on inner list, wrap back for map/grep
         let hyper_race_wrap = if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
-            match method.as_str() {
+            match method {
                 "hyper" => {
                     let items_arc = match &target {
                         Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
@@ -565,7 +555,7 @@ impl VM {
             other => other,
         };
         // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
-        if matches!(method.as_str(), "Bool" | "so")
+        if matches!(method, "Bool" | "so")
             && args.is_empty()
             && matches!(
                 &target,
@@ -591,7 +581,7 @@ impl VM {
             && class_name.resolve() == "Failure"
             && !target.is_failure_handled()
             && !matches!(
-                method.as_str(),
+                method,
                 "exception"
                     | "handled"
                     | "self"
@@ -623,7 +613,7 @@ impl VM {
         // Pseudo-methods (WHAT, WHICH, etc.) cannot be used with .* or .+
         if matches!(modifier, Some("*") | Some("+"))
             && matches!(
-                method.as_str(),
+                method,
                 "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "WHO" | "DEFINITE" | "VAR"
             )
         {
@@ -637,12 +627,12 @@ impl VM {
         match modifier {
             Some("+") => {
                 let vals =
-                    self.call_method_all_with_fallback(&target, &method, &args, skip_native)?;
+                    self.call_method_all_with_fallback(&target, method, &args, skip_native)?;
                 self.stack.push(Value::array(vals));
                 self.env_dirty = true;
             }
             Some("*") => {
-                match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
+                match self.call_method_all_with_fallback(&target, method, &args, skip_native) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(e) if Self::is_method_not_found_error(&e) => {
                         self.stack.push(Value::array(vec![]))
@@ -662,7 +652,7 @@ impl VM {
                 } = &target
                 {
                     let cn = class_name.resolve();
-                    if !self.interpreter.has_user_method(&cn, &method)
+                    if !self.interpreter.has_user_method(&cn, method)
                         && attributes.contains_key("__mutsu_array_storage")
                         && self
                             .interpreter
@@ -678,14 +668,14 @@ impl VM {
                         // (the actual mutation is handled in the mut path)
                         if !skip_native
                             && let Some(native_result) =
-                                self.try_native_method(&storage, Symbol::intern(&method), &args)
+                                self.try_native_method(&storage, Symbol::intern(method), &args)
                         {
                             self.stack.push(native_result?);
                             self.env_dirty = true;
                             return Ok(());
                         }
                         let result =
-                            self.try_compiled_method_or_interpret(storage, &method, args.clone());
+                            self.try_compiled_method_or_interpret(storage, method, args.clone());
                         if let Ok(val) = result {
                             self.stack.push(val);
                             self.env_dirty = true;
@@ -699,7 +689,7 @@ impl VM {
                 // This must be in the VM path (not the interpreter's call_method_with_values)
                 // to avoid affecting internal dispatch (e.g. max :by comparators).
                 if matches!(&target, Value::Nil) {
-                    match method.as_str() {
+                    match method {
                         "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
                             return Err(RuntimeError::new(format!(
                                 "Invocant of method '{}' must be an object instance of type \
@@ -711,7 +701,7 @@ impl VM {
                         // Any:U autovivification: push/append/unshift/prepend on
                         // an undefined value creates a new Array.
                         "push" | "append" | "unshift" | "prepend" => {
-                            let arr: Vec<Value> = match method.as_str() {
+                            let arr: Vec<Value> = match method {
                                 "append" | "prepend" => {
                                     // Flatten list arguments for append/prepend
                                     let mut flat = Vec::new();
@@ -749,10 +739,10 @@ impl VM {
                 }
                 // Any:U autovivification: push/append/unshift/prepend on a type
                 // object (e.g. Any from hash miss) creates a new Array.
-                if matches!(method.as_str(), "push" | "append" | "unshift" | "prepend")
+                if matches!(method, "push" | "append" | "unshift" | "prepend")
                     && matches!(&target, Value::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu")
                 {
-                    let arr: Vec<Value> = match method.as_str() {
+                    let arr: Vec<Value> = match method {
                         "append" | "prepend" => {
                             let mut flat = Vec::new();
                             for arg in &args {
@@ -778,7 +768,7 @@ impl VM {
                 // is a mutating array method, delegate to the shared storage mutator
                 // so the mutation is visible through the Proxy subclass.
                 if matches!(
-                    method.as_str(),
+                    method,
                     "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
                 ) && matches!(&target, Value::Array(..))
                     && let Some((attrs_ref, attr_name)) =
@@ -786,7 +776,7 @@ impl VM {
                 {
                     let result = self
                         .interpreter
-                        .proxy_subclass_array_mutate(&attrs_ref, &attr_name, &method, &args)?;
+                        .proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args)?;
                     self.stack.push(result);
                     self.env_dirty = true;
                     return Ok(());
@@ -796,18 +786,18 @@ impl VM {
                 // any variable. This handles cases like [1,2,3].shift where there
                 // is no variable to mutate. The CallMethodMut path handles variable
                 // targets separately.
-                let call_result = if matches!(method.as_str(), "shift" | "pop")
+                let call_result = if matches!(method, "shift" | "pop")
                     && args.is_empty()
                     && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
                 {
                     if let Value::Array(_, kind) = &target
                         && kind.is_lazy()
                     {
-                        return Err(RuntimeError::cannot_lazy(&method));
+                        return Err(RuntimeError::cannot_lazy(method));
                     }
                     if let Value::Array(items, _) = &target {
                         Ok(if items.is_empty() {
-                            crate::runtime::make_empty_array_failure(&method)
+                            crate::runtime::make_empty_array_failure(method)
                         } else if method == "shift" {
                             items[0].clone()
                         } else {
@@ -824,7 +814,7 @@ impl VM {
                     {
                         let resolved = self.resolve_hash_for_iteration(items);
                         if let Some(native_result) =
-                            self.try_native_method(&resolved, Symbol::intern(&method), &args)
+                            self.try_native_method(&resolved, Symbol::intern(method), &args)
                         {
                             let result = native_result;
                             match modifier {
@@ -859,21 +849,21 @@ impl VM {
                                 .collect();
                             Ok(Value::Slip(std::sync::Arc::new(converted)))
                         } else if let Some(native_result) =
-                            self.try_native_method(&target, Symbol::intern(&method), &args)
+                            self.try_native_method(&target, Symbol::intern(method), &args)
                         {
                             native_result
                         } else {
-                            self.try_compiled_method_or_interpret(target, &method, args)
+                            self.try_compiled_method_or_interpret(target, method, args)
                         }
                     } else if let Some(native_result) =
-                        self.try_native_method(&target, Symbol::intern(&method), &args)
+                        self.try_native_method(&target, Symbol::intern(method), &args)
                     {
                         native_result
                     } else {
-                        self.try_compiled_method_or_interpret(target, &method, args)
+                        self.try_compiled_method_or_interpret(target, method, args)
                     }
                 } else {
-                    self.try_compiled_method_or_interpret(target, &method, args)
+                    self.try_compiled_method_or_interpret(target, method, args)
                 };
                 match modifier {
                     Some("?") => match call_result {
