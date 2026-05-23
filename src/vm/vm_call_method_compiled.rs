@@ -249,21 +249,24 @@ impl VM {
                 } else {
                     let cache_key = (class_sym, method_sym);
                     let cached = self.method_resolve_cache.get(&cache_key).cloned();
-                    let result = if let Some(ref hit) = cached
-                        && let Some((_, def)) = hit
-                        && !def.is_multi
-                    {
-                        hit.clone()
-                    } else {
-                        let resolved = self
-                            .interpreter
-                            .resolve_method_with_owner_invocant(&cn, method, &args, &target);
-                        if resolved.as_ref().is_none_or(|(_, def)| !def.is_multi) {
-                            self.method_resolve_cache
-                                .insert(cache_key, resolved.clone());
-                        }
-                        resolved
-                    };
+                    let result: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
+                        if let Some(ref hit) = cached
+                            && let Some((_, def)) = hit
+                            && !def.is_multi
+                        {
+                            hit.clone()
+                        } else {
+                            let resolved = self
+                                .interpreter
+                                .resolve_method_with_owner_invocant(&cn, method, &args, &target);
+                            let resolved_arc =
+                                resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
+                            if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
+                                self.method_resolve_cache
+                                    .insert(cache_key, resolved_arc.clone());
+                            }
+                            resolved_arc
+                        };
                     if let Some((ref owner, ref def)) = result
                         && !def.is_multi
                     {

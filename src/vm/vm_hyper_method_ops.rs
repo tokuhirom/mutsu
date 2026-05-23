@@ -11,8 +11,8 @@ impl VM {
         quoted: bool,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
-        let method_raw = Self::const_str(code, name_idx).to_string();
-        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let method_raw = Self::const_str(code, name_idx);
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in HyperMethodCall"));
@@ -50,7 +50,7 @@ impl VM {
         };
         let mut results = Vec::with_capacity(items.len());
         for (idx, item) in items.iter_mut().enumerate() {
-            let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
+            let method = Self::rewrite_method_name(method_raw, modifier);
             // Special case: CALL-ME on callable items (from >>.(args) syntax).
             // Instead of method dispatch, invoke the item directly as a callable.
             if method == "CALL-ME"
@@ -100,7 +100,7 @@ impl VM {
                 }
             }
             let item_args = args.clone();
-            match modifier.as_deref() {
+            match modifier {
                 Some("?") => {
                     let val = if !skip_native {
                         if let Some(native_result) =
@@ -445,7 +445,7 @@ impl VM {
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
-        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new(
@@ -468,7 +468,7 @@ impl VM {
         ))
         .then(|| {
             let method_raw = name_val.to_string_value();
-            Self::rewrite_method_name(&method_raw, modifier.as_deref())
+            Self::rewrite_method_name(&method_raw, modifier)
         });
         for (idx, item) in items.iter_mut().enumerate() {
             let item_args = args.clone();
@@ -479,7 +479,7 @@ impl VM {
                 let mut call_args = Vec::with_capacity(item_args.len() + 1);
                 call_args.push(item.clone());
                 call_args.extend(item_args);
-                match modifier.as_deref() {
+                match modifier {
                     Some("?") => {
                         results.push(
                             self.vm_call_on_value(name_val.clone(), call_args, None)
@@ -503,7 +503,7 @@ impl VM {
             let method = method
                 .as_ref()
                 .expect("method string exists for non-callables");
-            match modifier.as_deref() {
+            match modifier {
                 Some("?") => {
                     let val = if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
