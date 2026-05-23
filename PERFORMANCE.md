@@ -102,7 +102,7 @@ Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by te
 | **env deep clone + batched inserts** | **~15μs** | **Arc::make_mut + all special vars + attrs in one hold** |
 | Direct locals init | ~2μs | Populate from source data (attrs, params, special vars) |
 | **Bytecode execution** | **~1μs** | The actual method body |
-| Cleanup (can_skip_merge) | ~5μs | Writeback attrs from locals, restore env |
+| Cleanup (can_skip_merge) | ~3μs | Writeback attrs via pre-computed slot indices, restore env |
 | Cleanup (non-can_skip_merge) | ~10μs | Sync locals→env, merge, writeback |
 | **Total** | **~40μs** | **Down from ~54μs (26% faster)** |
 
@@ -132,6 +132,11 @@ Potential improvements:
 - Specialize compiled code for known-Int arguments
 
 ## Optimization History
+
+### 2026-05-23: Pre-compute attribute slot indices for method exit writeback
+- **Change**: Add `AttrSlots` struct to `CompiledCode` that pre-computes local slot indices for each attribute (private, public, array, hash variants) at compile time. `writeback_attributes_from_locals` uses these pre-computed indices instead of 6 × N_attrs linear searches with `format!()` allocations per method exit. Also eliminate env round-trip in `call_compiled_method_fast`'s `can_skip_merge` path — attribute writeback goes directly from locals to attributes.
+- **Effect**: method-call ~4% faster, bench-class ~3% faster
+- **Value**: Eliminates O(6 × N_attrs × N_locals) string comparisons and 6 × N_attrs `format!()` allocations per method exit. For a class with 3 attributes and 10 locals, this saves ~18 heap allocations and ~90 string comparisons per method call.
 
 ### 2026-05-23: Avoid String allocation and skip wrap chain check
 - **Change**: Two optimizations: (1) Use `Cow<str>` in `rewrite_method_name` for `exec_call_method_op` — avoids a String allocation on every method call when no modifier (`^`/`!`) is present (the common case). The method name stays as a borrowed `&str` from the constant pool. (2) Add `has_any_wrap_chains()` early return in `check_method_wrap_chain` — skip the expensive `find_method_candidate_index` (which computes AST fingerprints) and `get_method_wrap_chain` when no wrap chains exist.
