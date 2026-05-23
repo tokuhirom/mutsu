@@ -796,9 +796,29 @@ impl VM {
         let method_callable_id = crate::value::next_instance_id();
         let any_val = Value::Package(crate::symbol::Symbol::intern("Any"));
 
-        // Batch all env writes through a single env_mut() hold to minimize
-        // overhead after the initial Arc::make_mut deep clone.
-        {
+        // For can_skip_merge methods with no closures, reduce env inserts.
+        // Only insert ?CLASS/?ROLE (used by ::?CLASS/::?ROLE resolution and
+        // GetGlobal in non-compiled paths). Skip self, params, attrs, and other
+        // method-local vars since all reads go through GetLocal.
+        let skip_env_setup = can_skip_merge && cc.closure_compiled_codes.is_empty();
+        if skip_env_setup {
+            let env = self.interpreter.env_mut();
+            env.insert("self".to_string(), base.clone());
+            env.insert("__ANON_STATE__".to_string(), base.clone());
+            env.insert("?CLASS".to_string(), class_val.clone());
+            env.insert("_".to_string(), any_val.clone());
+            if let Some(ref role_name) = role_context {
+                env.insert(
+                    "?ROLE".to_string(),
+                    Value::Package(crate::symbol::Symbol::intern(role_name)),
+                );
+            } else {
+                env.remove("?ROLE");
+            }
+            for (param_name, param_val) in &param_values {
+                env.insert(param_name.to_string(), param_val.clone());
+            }
+        } else {
             let env = self.interpreter.env_mut();
             env.insert("self".to_string(), base.clone());
             env.insert("__ANON_STATE__".to_string(), base.clone());
@@ -817,9 +837,6 @@ impl VM {
             } else {
                 env.remove("?ROLE");
             }
-            // Attribute values (!attr, .attr) are populated directly into locals
-            // below, bypassing env entirely. Only insert array/hash sigiled
-            // attribute entries that might still be read from env by legacy paths.
             for (attr_name, attr_val) in &attributes {
                 if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
                     continue;
