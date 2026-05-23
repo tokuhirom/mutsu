@@ -11,6 +11,8 @@ use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, Value, make_rat};
 use num_traits::{Signed, Zero};
 
+type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
+
 mod vm_arith_ops;
 mod vm_call_autothread;
 mod vm_call_dispatch;
@@ -144,10 +146,10 @@ pub(crate) struct VM {
     pos_light_call_cache_gen: u64,
     /// Method resolution cache: maps (class_name, method_name) to resolved
     /// (owner_class, MethodDef). Avoids repeated MRO walks for the same method.
-    method_resolve_cache: HashMap<(Symbol, Symbol), Option<(String, crate::runtime::MethodDef)>>,
+    method_resolve_cache: HashMap<(Symbol, Symbol), MethodResolveEntry>,
     /// Monomorphic inline cache: stores the last (class, method, owner, def)
     /// resolution result. Skips HashMap lookup for repeated same-class calls.
-    last_method_resolve: Option<(Symbol, Symbol, String, crate::runtime::MethodDef)>,
+    last_method_resolve: Option<(Symbol, Symbol, String, Arc<crate::runtime::MethodDef>)>,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.

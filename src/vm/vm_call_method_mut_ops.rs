@@ -10,7 +10,7 @@ impl VM {
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
-        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new("VM stack underflow in CallMethodDynamic"));
@@ -31,7 +31,7 @@ impl VM {
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic target"))?;
         // Force lazy IO lines for non-lazy-preserving methods
         let method_name_str = name_val.to_string_value();
-        let method = Self::rewrite_method_name(&method_name_str, modifier.as_deref());
+        let method = Self::rewrite_method_name(&method_name_str, modifier);
         let target = if matches!(&target, Value::LazyIoLines { .. })
             && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
         {
@@ -40,7 +40,7 @@ impl VM {
             target
         };
         // Handle .* and .+ modifiers
-        match modifier.as_deref() {
+        match modifier {
             Some("+") => {
                 let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
                 self.stack.push(Value::array(vals));
@@ -222,7 +222,7 @@ impl VM {
                 self.try_compiled_method_or_interpret(target, &method, args)
             }
         };
-        match modifier.as_deref() {
+        match modifier {
             Some("?") => match call_result {
                 Ok(val) => self.stack.push(val),
                 Err(e) if Self::is_method_not_found_error(&e) => self.stack.push(Value::Nil),
@@ -245,7 +245,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
         let target_name = Self::const_str(code, target_name_idx).to_string();
-        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new(
@@ -267,9 +267,9 @@ impl VM {
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
         let method_name_str = name_val.to_string_value();
-        let method = Self::rewrite_method_name(&method_name_str, modifier.as_deref());
+        let method = Self::rewrite_method_name(&method_name_str, modifier);
         // Handle .* and .+ modifiers
-        match modifier.as_deref() {
+        match modifier {
             Some("+") => {
                 let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
                 self.stack.push(Value::array(vals));
@@ -322,22 +322,26 @@ impl VM {
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.interpreter
             .set_pending_call_arg_sources(arg_sources.clone());
-        let method_raw = Self::const_str(code, name_idx).to_string();
+        let method_raw = Self::const_str(code, name_idx);
         let target_name = Self::const_str(code, target_name_idx).to_string();
-        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
+        let method = Self::rewrite_method_name(method_raw, modifier);
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallMethodMut"));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // Flatten any Slip values in the argument list (from |capture slipping)
-        let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
-        let mut args = Vec::new();
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
-        }
+        let args = if raw_args.iter().any(|a| matches!(a, Value::Slip(_))) {
+            let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
+            let mut args = Vec::new();
+            for arg in raw_args {
+                Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
+            }
+            args
+        } else {
+            raw_args
+        };
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
@@ -1079,7 +1083,7 @@ impl VM {
         };
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
-        match modifier.as_deref() {
+        match modifier {
             Some("+") => {
                 let vals =
                     self.call_method_all_with_fallback(&target, &method, &args, skip_native)?;
@@ -1233,7 +1237,7 @@ impl VM {
                 } else {
                     self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
                 };
-                match modifier.as_deref() {
+                match modifier {
                     Some("?") => match call_result {
                         Ok(val) => {
                             self.stack.push(val);
