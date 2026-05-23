@@ -854,22 +854,19 @@ impl Interpreter {
     fn compile_methods_for_map(
         methods: &mut HashMap<String, Vec<super::MethodDef>>,
         package_name: &str,
+        attr_names: &[String],
     ) {
         let mut to_compile = Vec::new();
         for (method_name, overloads) in methods.iter() {
             for (idx, def) in overloads.iter().enumerate() {
                 if def.compiled_code.is_none() && !def.body.is_empty() {
                     let mut compiler = crate::compiler::Compiler::new();
-                    // For $?PACKAGE: use the original role name if this method
-                    // was composed from a role, otherwise use the class/package name.
                     let method_package = def
                         .original_role
                         .as_deref()
                         .or(def.role_origin.as_deref())
                         .unwrap_or(package_name);
                     compiler.set_current_package(method_package.to_string());
-                    // Pre-allocate "self" and "__ANON_STATE__" as locals so that
-                    // $.attr and $!attr can use GetLocal instead of GetGlobal.
                     let mut method_params = vec!["self".to_string(), "__ANON_STATE__".to_string()];
                     method_params.extend(def.params.iter().cloned());
                     let mut cc = compiler.compile_routine_closure_body(
@@ -878,6 +875,7 @@ impl Interpreter {
                         &def.body,
                     );
                     cc.compute_may_capture_outer_vars();
+                    cc.compute_attr_slots(attr_names);
                     to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
                 }
             }
@@ -926,14 +924,17 @@ impl Interpreter {
     /// Compile method bodies for a given class using the bytecode compiler.
     pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
         if let Some(class_def) = self.classes.get_mut(class_name) {
-            Self::compile_methods_for_map(&mut class_def.methods, class_name);
+            let attr_names: Vec<String> =
+                class_def.attributes.iter().map(|a| a.0.clone()).collect();
+            Self::compile_methods_for_map(&mut class_def.methods, class_name, &attr_names);
         }
     }
 
     /// Compile method bodies for a given role.
     pub(crate) fn compile_role_methods(&mut self, role_name: &str) {
         if let Some(role_def) = self.roles.get_mut(role_name) {
-            Self::compile_methods_for_map(&mut role_def.methods, role_name);
+            let attr_names: Vec<String> = role_def.attributes.iter().map(|a| a.0.clone()).collect();
+            Self::compile_methods_for_map(&mut role_def.methods, role_name, &attr_names);
         }
     }
 
