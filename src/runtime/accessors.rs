@@ -867,7 +867,12 @@ impl Interpreter {
                         .or(def.role_origin.as_deref())
                         .unwrap_or(package_name);
                     compiler.set_current_package(method_package.to_string());
-                    let mut method_params = vec!["self".to_string(), "__ANON_STATE__".to_string()];
+                    let mut method_params = vec![
+                        "self".to_string(),
+                        "__ANON_STATE__".to_string(),
+                        "?CLASS".to_string(),
+                        "?ROLE".to_string(),
+                    ];
                     method_params.extend(def.params.iter().cloned());
                     let mut cc = compiler.compile_routine_closure_body(
                         &method_params,

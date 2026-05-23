@@ -1814,8 +1814,12 @@ impl Compiler {
                 let idx = self.code.add_stmt(lowered);
                 self.code.emit(OpCode::RegisterSub(idx));
                 if name_expr.is_none() {
-                    let mut method_params: Vec<String> =
-                        vec!["self".to_string(), "__ANON_STATE__".to_string()];
+                    let mut method_params: Vec<String> = vec![
+                        "self".to_string(),
+                        "__ANON_STATE__".to_string(),
+                        "?CLASS".to_string(),
+                        "?ROLE".to_string(),
+                    ];
                     method_params.extend(params.iter().cloned());
                     self.compile_sub_body(
                         &name.resolve(),
