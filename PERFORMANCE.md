@@ -9,7 +9,7 @@ cargo build --release
 ./benchmarks/run-all.sh
 ```
 
-## Current Status (2026-05-22)
+## Current Status (2026-05-23)
 
 | Benchmark | mutsu | raku | ratio | notes |
 |-----------|-------|------|-------|-------|
@@ -17,11 +17,11 @@ cargo build --release
 | int-arith | 0.16s | 0.22s | **0.7x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
 | string-concat | 0.02s | 0.21s | **0.09x** | `$s ~= 'x'` × 10000 |
 | hash-access | 0.04s | 0.23s | **0.17x** | 10K hash inserts + value iteration |
-| method-call | 1.04s | 0.29s | 3.6x | Point.distance-to × 10000 |
+| method-call | 0.85s | 0.29s | 2.9x | Point.distance-to × 10000 |
 | array-ops | 0.16s | 0.26s | **0.6x** | grep+map on 1000-elem array × 100 |
 | bench-array | 0.04s | 0.30s | **0.1x** | push+map+grep+sort+reverse on 10K |
 | bench-hash | 0.03s | 0.30s | **0.1x** | 10K insert+lookup+delete+keys+values |
-| bench-class | 1.34s | 0.37s | 3.6x | class instantiation + method calls + inheritance |
+| bench-class | 1.03s | 0.37s | 2.8x | class instantiation + method calls + inheritance |
 | bench-startup | 0.004s | 0.17s | **0.02x** | startup overhead |
 | bench-string | 0.08s | 0.33s | **0.2x** | string operations |
 
@@ -30,7 +30,7 @@ Note: raku times include ~170ms startup overhead. mutsu startup is ~4ms.
 ### Summary
 
 - **Faster than raku (9/11)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, fib, bench-hash, bench-array
-- **3.6x slower (2/11)**: bench-class, method-call
+- **~3x slower (2/11)**: bench-class (2.8x), method-call (2.9x)
 
 ## Architecture Overview: Execution Paths
 
@@ -65,7 +65,7 @@ Many operations that should run in the VM fall back to the interpreter:
 | `map { ... }` | VM compiles block, but interpreter dispatches for some closures | Mixed |
 | `grep { ... }` | Similar to map | Mixed |
 | Class `.new()` | Interpreter: `dispatch_new` | Fast (0.03ms/call) |
-| **Method call** | **`call_compiled_method`: env deep clone + 30+ HashMap ops** | **#1 bottleneck (54μs/call)** |
+| **Method call** | **`call_compiled_method`: env deep clone + batched setup** | **#1 bottleneck (~40μs/call)** |
 | Hash element access | ~~interpreter for complex~~ **VM fast path** (2026-05-22) | Fixed |
 | `@arr.push(val)` | ~~CallMethodMut dispatch~~ **ArrayPush opcode** (2026-05-22) | Fixed |
 | `for` loop body | VM compiled | Fast |
@@ -81,36 +81,34 @@ Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by te
 
 `ArrayPush` opcode emitted at compile time for `@arr.push(val)` on local arrays, bypassing the full CallMethodMut dispatch chain. bench-array: 0.59s → 0.04s.
 
-### Method dispatch (3.6x slower) — THE REMAINING BOTTLENECK
+### Method dispatch (~3x slower) — THE REMAINING BOTTLENECK
 
-**Current cost**: ~54μs per method call. raku achieves ~5μs.
+**Current cost**: ~40μs per method call (fast path). raku achieves ~5μs.
 
-**Detailed cost breakdown** (for a 0-param method like `noop()`):
+**What the fast path (`call_compiled_method_fast`) saves** (2026-05-22):
+- Batched env_mut(): single `&mut HashMap` hold for all inserts (~3μs saved)
+- Direct locals initialization: skip env→locals copy loop (~5μs saved)
+- Bypass `bind_function_args_values`: direct param mapping (~3μs saved)
+- Simplified cleanup for read-only methods (~5μs saved)
+- Compiler emits GetLocal("self") for `$.attr` / bare `self` access
+
+**Remaining cost breakdown** (fast path):
 
 | Step | Cost | Description |
 |------|------|-------------|
 | `exec_call_method_op` entry | ~5μs | Method name String alloc, arg processing, stack ops |
 | Method resolution | ~2μs | Cache hit: Symbol pair lookup in HashMap |
 | `push_call_frame` | ~0.1μs | Arc bump for env (O(1)) |
-| **First `env_mut()` call** | **~12μs** | **Arc::make_mut deep clones ~100-entry HashMap** |
-| 6 more `env_mut().insert()` | ~3μs | `?CLASS`, `__ANON_STATE__`, `$_`, `$!`, `__mutsu_callable_id`, `?ROLE` |
-| Attribute binding loop | ~5μs | 3 attrs × ~4 inserts each (Dog example) |
-| `bind_function_args_values` | ~3μs | Parameter binding via interpreter |
-| Locals init from env | ~5μs | Iterate `cc.locals`, lookup each in env |
+| **env deep clone + batched inserts** | **~15μs** | **Arc::make_mut + all special vars + attrs in one hold** |
+| Direct locals init | ~2μs | Populate from source data (attrs, params, special vars) |
 | **Bytecode execution** | **~1μs** | The actual method body |
-| Method exit cleanup | ~8μs | pop_method_class, pop_call_frame, env restore |
-| Instance writeback | ~5μs | overwrite_instance_bindings_by_identity |
-| **Total** | **~54μs** | **Method body is 2% of total time** |
+| Cleanup (can_skip_merge) | ~5μs | Writeback attrs from locals, restore env |
+| Cleanup (non-can_skip_merge) | ~10μs | Sync locals→env, merge, writeback |
+| **Total** | **~40μs** | **Down from ~54μs (26% faster)** |
 
-**Root cause**: `call_compiled_method` uses the interpreter's `env: HashMap<String, Value>` as an intermediary. Every method call:
-1. Clones env via `Arc::make_mut` (O(n) where n ≈ 100 entries)
-2. Inserts 7+ special variables into env
-3. Inserts N attribute bindings (`$!name`, `$.name`, etc.) into env
-4. Calls `bind_function_args_values` which writes params to env
-5. Copies env values into `self.locals[]` array
-6. After execution, restores the saved env
+**Root cause**: The env deep clone (~12-15μs) remains the dominant cost. The `Env` is `Arc<HashMap<String, Value>>` and `Arc::make_mut` deep clones the entire ~100-entry HashMap when shared.
 
-The fundamental problem is the **env-as-intermediary pattern**: values flow from source → env → locals, when they should flow directly from source → locals.
+**Why the env clone can't be eliminated**: `$!attr` reads use `GetGlobal` which reads from env. PostIncrement/PreIncrement on attributes also read/write env. Closure captures of outer-scope variables need the full env. Dynamic variables (`$*VAR`) must be visible from the caller's env.
 
 ### Approaches investigated and rejected
 
@@ -118,7 +116,9 @@ The fundamental problem is the **env-as-intermediary pattern**: values flow from
 
 **Skip attribute binding for non-attribute methods**: Tested 2026-05-22. Skipping the attribute loop when `cc.locals` doesn't reference `!name`/`.name` broke chained method calls (`$obj.set-to(20).add(5)`) because the attribute writeback path depends on attributes being in env even when the current method doesn't read them. The dependency chain between attribute binding, `self` construction, and exit-time writeback makes partial skipping unsafe.
 
-**Batched env_mut() calls**: Tested 2026-05-22. Reducing 7 separate `env_mut()` calls to 1 (by holding the `&mut HashMap` reference across all inserts) saved ~8% on bench-class. Marginal.
+**Batched env_mut() calls**: Tested 2026-05-22. Reducing 7 separate `env_mut()` calls to 1 (by holding the `&mut HashMap` reference across all inserts) saved ~8% on bench-class. Now adopted in the fast path.
+
+**Fresh env (bypass clone entirely)**: Tested 2026-05-22. Build a small HashMap with only method-specific entries instead of cloning the ~100-entry outer env. Achieved 23-27% improvement but broke: (1) closure captures of outer-scope variables, (2) dynamic variable (`$*VAR`) visibility, (3) package-scoped sub resolution. Adding `may_capture_outer_vars` detection helped but too many edge cases remained (coercion types, `is hidden` classes, caller env changes). Reverted to clone-based approach with batched inserts + direct locals init.
 
 ### Function calls with type constraints (3.6x slower)
 
@@ -132,6 +132,12 @@ Potential improvements:
 - Specialize compiled code for known-Int arguments
 
 ## Optimization History
+
+### 2026-05-22: Fast method dispatch path (batched env + direct locals init)
+- **Change**: Add `call_compiled_method_fast()` that batches all env inserts through a single `env_mut()` hold, directly initializes locals from source data (skipping env→locals copy), and bypasses `bind_function_args_values` for simple positional params. Pre-allocate "self" and "__ANON_STATE__" as locals in method body compilation so `$.attr` and bare `self` use `GetLocal` instead of `GetGlobal`. Add `may_capture_outer_vars` flag on `CompiledCode`.
+- **Effect**: bench-class 1.34s → 1.03s (**23% faster**, ratio 3.6x → 2.8x); method-call 1.04s → 0.85s (**18% faster**, ratio 3.6x → 2.9x)
+- **Value**: Reduces per-call overhead from ~54μs to ~40μs by eliminating redundant env→locals copy, parameter binding overhead, and simplified cleanup. Compiler change makes `self` resolution O(1) via local slot instead of env HashMap lookup.
+- **Limitations**: Falls back to slow path for: `is rw` params, invocant type constraints, coercion types, attribute aliases, role param bindings, complex params (slurpy/named/where), arg count mismatches.
 
 ### 2026-05-22: ArrayPush opcode for @arr.push(val)
 - **Change**: Detect `@arr.push(single_expr)` at compile time, emit specialized `ArrayPush` opcode that directly appends to the array Arc. Uses same locals-drop technique as hash fast paths. Falls back to interpreter for shared arrays, typed arrays, shaped arrays, and non-local (captured) variables.
@@ -201,54 +207,19 @@ Potential improvements:
 
 ## Improvement Plan
 
-The remaining bottleneck is method dispatch (3.6x slower than raku). Everything else is at parity or faster. The plan below is ordered by impact and feasibility, informed by hands-on experiments conducted 2026-05-22.
+The remaining bottleneck is method dispatch (~3x slower than raku). Everything else is at parity or faster. The plan below is ordered by impact and feasibility.
 
-### Phase 1: Eliminate env-as-intermediary in method calls — target: method-call < 2x
+### Phase 1: Reduce method call overhead — target: method-call < 2x
 
-The core problem: `call_compiled_method` flows values through `env: HashMap` when they should go directly to `self.locals[]`. This causes a ~12μs deep clone per call.
+**Step 1: Direct locals initialization — DONE (2026-05-22)**
 
-**Step 1: Direct locals initialization (bypass env for method setup)**
+Implemented `call_compiled_method_fast()` with batched env inserts, direct locals init, and simplified cleanup. Also pre-allocated "self" in method body compilation for GetLocal access. Achieved 18-23% improvement.
 
-Currently, `call_compiled_method` does:
-```
-env_mut().insert("self", base)          // triggers Arc::make_mut (deep clone!)
-env_mut().insert("?CLASS", class_val)   // 6 more inserts...
-env_mut().insert("!attr_name", val)     // N attribute inserts...
-bind_function_args_values(params)       // writes params to env...
-for local in cc.locals { locals[i] = env.get(local) }  // copy env→locals
-```
+**Remaining bottleneck**: The env deep clone (~12-15μs) can't be eliminated because `$!attr` uses GetGlobal (reads env), PostIncrement/PreIncrement on attrs use env, and closure captures need the full env.
 
-Target: for `can_skip_merge` methods, replace with:
-```
-push_call_frame()                       // saves env (O(1) Arc bump)
-// NO env_mut() calls — env stays shared, no deep clone
-locals = vec![Nil; cc.locals.len()]
-for (i, name) in cc.locals {
-    locals[i] = match name {
-        "self" | "__ANON_STATE__" => base,
-        "?CLASS" => class_val,
-        "_" => Any,  "!" => Nil,
-        name if name.starts_with('!') => attributes[name],
-        param_name => args[param_idx],
-        _ => outer_env.get(name),       // read-only, no clone!
-    }
-}
-```
+**Step 1b: Compile $!attr to GetLocal (NOT YET DONE)**
 
-This eliminates:
-- The 12μs deep clone (env_mut never called)
-- 7 special-variable inserts (~3μs)
-- N attribute inserts (~5μs)
-- The locals-from-env copy loop (~5μs)
-- Total savings: ~25μs per call (54μs → ~29μs)
-
-**Complexity**: Medium. Need to:
-- Build a name→slot index for `cc.locals` (once per method, cacheable)
-- Map attribute names to their `!name`/`.name` env equivalents
-- Handle `bind_function_args_values` bypass for simple positional params
-- Fall back to current path for methods with: `is rw` params, invocant constraints, role bindings, multi-dispatch, `$_:` invocant
-
-**Risk**: High — attribute writeback on method exit reads from env. The `can_skip_merge` path already skips this, so for read-only methods it's safe. For write methods, keep the current env path.
+Currently `$!attr` compiles to `GetGlobal("!attr")` which reads from env. If the compiler allocated "!attr" as a local and used `GetLocal`, the env clone could potentially be eliminated for methods without closure captures. However, `$!attr++` and `$!attr = val` also need to work via locals, requiring changes to PostIncrement/PreIncrement/AssignExpr opcodes to check locals first. This is a larger change that could enable the full "bypass env clone" optimization.
 
 **Step 2: Eliminate `exec_call_method_op` overhead**
 
