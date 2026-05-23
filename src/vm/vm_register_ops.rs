@@ -315,6 +315,7 @@ impl VM {
             )?;
             self.fn_resolve_gen += 1;
             self.method_resolve_cache.clear();
+            self.last_method_resolve = None;
             if *is_export && !self.interpreter.suppress_exports {
                 self.interpreter.register_exported_sub(
                     self.interpreter.current_package().to_string(),
@@ -486,6 +487,7 @@ impl VM {
         self.interpreter.use_module_with_tags(module, &tags)?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
+        self.last_method_resolve = None;
         self.env_dirty = true;
         Ok(())
     }
@@ -512,6 +514,7 @@ impl VM {
         self.interpreter.import_module(module, &tags)?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
+        self.last_method_resolve = None;
         self.env_dirty = true;
         Ok(())
     }
@@ -525,6 +528,7 @@ impl VM {
         self.interpreter.no_module(module)?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
+        self.last_method_resolve = None;
         self.env_dirty = true;
         Ok(())
     }
@@ -538,6 +542,7 @@ impl VM {
         self.interpreter.need_module(module)?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
+        self.last_method_resolve = None;
         self.env_dirty = true;
         Ok(())
     }

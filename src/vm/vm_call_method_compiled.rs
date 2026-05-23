@@ -237,29 +237,40 @@ impl VM {
         };
         if let Some(cn) = class_name
             && let Some((owner_class, method_def)) = {
-                let cache_key = (
-                    crate::symbol::Symbol::intern(&cn),
-                    crate::symbol::Symbol::intern(method),
-                );
-                // Check cache, but skip cached results for multi-methods since
-                // multi-dispatch depends on argument types/arity.
-                let cached = self.method_resolve_cache.get(&cache_key).cloned();
-                if let Some(ref hit) = cached
-                    && let Some((_, def)) = hit
-                    && !def.is_multi
+                let class_sym = crate::symbol::Symbol::intern(&cn);
+                let method_sym = crate::symbol::Symbol::intern(method);
+                // Monomorphic inline cache: single-entry check before HashMap.
+                if let Some((cc, cm, ref co, ref cd)) = self.last_method_resolve
+                    && cc == class_sym
+                    && cm == method_sym
+                    && !cd.is_multi
                 {
-                    hit.clone()
+                    Some((co.clone(), cd.clone()))
                 } else {
-                    let resolved = self
-                        .interpreter
-                        .resolve_method_with_owner_invocant(&cn, method, &args, &target);
-                    // Only cache non-multi methods; multi-method resolution depends
-                    // on argument types and must not be cached by name alone.
-                    if resolved.as_ref().is_none_or(|(_, def)| !def.is_multi) {
-                        self.method_resolve_cache
-                            .insert(cache_key, resolved.clone());
+                    let cache_key = (class_sym, method_sym);
+                    let cached = self.method_resolve_cache.get(&cache_key).cloned();
+                    let result = if let Some(ref hit) = cached
+                        && let Some((_, def)) = hit
+                        && !def.is_multi
+                    {
+                        hit.clone()
+                    } else {
+                        let resolved = self
+                            .interpreter
+                            .resolve_method_with_owner_invocant(&cn, method, &args, &target);
+                        if resolved.as_ref().is_none_or(|(_, def)| !def.is_multi) {
+                            self.method_resolve_cache
+                                .insert(cache_key, resolved.clone());
+                        }
+                        resolved
+                    };
+                    if let Some((ref owner, ref def)) = result
+                        && !def.is_multi
+                    {
+                        self.last_method_resolve =
+                            Some((class_sym, method_sym, owner.clone(), def.clone()));
                     }
-                    resolved
+                    result
                 }
             }
         {
