@@ -21,6 +21,14 @@
 - [x] Int/Num 算術 fast path、NFC skip、hash fast path、method cache 等 (#2341, #2342, #2343, #2344)
 - [x] 6ベンチマーク中5つで raku より高速を達成
 
+### メソッド呼び出しパフォーマンス (進行中)
+
+- [x] fast method dispatch path: batched env + direct locals init (#2389)
+  - bench-class: 3.6x → 2.8x、method-call: 3.6x → 2.9x
+- [ ] `$!attr` を GetLocal に変更（env clone 完全回避の前提条件）
+- [ ] `exec_call_method_op` のオーバーヘッド削減（Symbol化、junction skip）
+- [ ] monomorphic inline cache（メソッド解決の HashMap lookup 回避）
+
 ### JSON::Tiny 完全対応
 
 - [x] `to-json` (#2216)
@@ -86,8 +94,9 @@
 
 ### パフォーマンス Phase 2
 
-- [ ] 配列操作 (map/grep/sort) の最適化
-- [ ] ベンチマークで全項目 10x 以内を目指す
+- [ ] method-call を 2x 以下にする（$!attr GetLocal 化、monomorphic inline cache）
+- [ ] bench-class を 2x 以下にする
+- [ ] bench-fib (型制約付き) を 2x 以下にする
 
 ### ドキュメントとコミュニティ
 
@@ -106,7 +115,9 @@
 | 指標 | 現在 (5月) | Q2 目標 | Q3 目標 | Q4 目標 |
 |------|-----------|---------|---------|---------|
 | Whitelist | 1182 | 1185+ | 1190+ | 1200+ |
-| fib(25) vs raku | **0.8x** ✅ | <10x ✅ | <10x | <10x |
+| fib(25) vs raku | **1.0x** ✅ | <10x ✅ | <10x | <10x |
+| method-call vs raku | **2.9x** | - | <2x | <1.5x |
+| bench-class vs raku | **2.8x** | - | <2x | <1.5x |
 | 起動時間 vs raku | 0.04x | 0.04x | 0.04x | 0.04x |
 | JSON::Tiny | ✅ テスト全pass | ✅ | ✅ | ✅ |
 | Template::Mustache | ⚠️ grammar action | - | ✅ | ✅ |
