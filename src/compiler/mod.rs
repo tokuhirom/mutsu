@@ -186,6 +186,9 @@ impl Compiler {
     fn emit_set_named_var(&mut self, name: &str) {
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));
+        } else if name.starts_with('!') && name.len() > 1 {
+            let slot = self.alloc_local(name);
+            self.code.emit(OpCode::SetLocal(slot));
         } else {
             let idx = self
                 .code
