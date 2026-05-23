@@ -728,6 +728,10 @@ impl Interpreter {
         !self.wrap_dispatch_stack.is_empty()
     }
 
+    pub(crate) fn has_any_wrap_chains(&self) -> bool {
+        !self.method_wrap_chains.is_empty()
+    }
+
     pub(crate) fn push_wrap_dispatch_frame(&mut self, frame: super::WrapDispatchFrame) {
         self.wrap_dispatch_stack.push(frame);
     }

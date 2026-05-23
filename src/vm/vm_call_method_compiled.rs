@@ -679,7 +679,7 @@ impl VM {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.interpreter.is_inside_wrap_dispatch() {
+        if !self.interpreter.has_any_wrap_chains() || self.interpreter.is_inside_wrap_dispatch() {
             return None;
         }
         let cand_idx =
