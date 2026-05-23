@@ -108,7 +108,7 @@ Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by te
 
 **Root cause**: The env deep clone (~12-15μs) remains the dominant cost. The `Env` is `Arc<HashMap<String, Value>>` and `Arc::make_mut` deep clones the entire ~100-entry HashMap when shared.
 
-**Why the env clone can't be eliminated**: `$!attr` reads use `GetGlobal` which reads from env. PostIncrement/PreIncrement on attributes also read/write env. Closure captures of outer-scope variables need the full env. Dynamic variables (`$*VAR`) must be visible from the caller's env.
+**Why the env clone can't be eliminated**: Although `$!attr` now uses `GetLocal` (2026-05-23), the env clone is still needed because: (1) inner method calls inherit the current env as their outer scope, (2) closure captures of outer-scope variables need the full env, (3) dynamic variables (`$*VAR`) must be visible through the env chain, (4) package-scoped subs (`&foo`) are resolved from env.
 
 ### Approaches investigated and rejected
 
@@ -118,7 +118,7 @@ Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by te
 
 **Batched env_mut() calls**: Tested 2026-05-22. Reducing 7 separate `env_mut()` calls to 1 (by holding the `&mut HashMap` reference across all inserts) saved ~8% on bench-class. Now adopted in the fast path.
 
-**Fresh env (bypass clone entirely)**: Tested 2026-05-22. Build a small HashMap with only method-specific entries instead of cloning the ~100-entry outer env. Achieved 23-27% improvement but broke: (1) closure captures of outer-scope variables, (2) dynamic variable (`$*VAR`) visibility, (3) package-scoped sub resolution. Adding `may_capture_outer_vars` detection helped but too many edge cases remained (coercion types, `is hidden` classes, caller env changes). Reverted to clone-based approach with batched inserts + direct locals init.
+**Fresh env (bypass clone entirely)**: Tested 2026-05-22 and 2026-05-23. Build a small HashMap with only method-specific entries instead of cloning the ~100-entry outer env. Achieved 23-27% improvement but broke: (1) closure captures of outer-scope variables, (2) dynamic variable (`$*VAR`) visibility through method chains, (3) package-scoped sub resolution (`&foo` not found in fresh env). The 2026-05-23 attempt added `may_capture_outer_vars` detection and selective copying of `$*`, `&`, `?` entries, but inner method calls that inherit the calling method's env still lose outer-scope variables needed by sub-calls. **Root issue**: env serves as the scope chain — a fresh env breaks the chain for all transitive callees, not just the current method. Requires a proper scope chain data structure to fix.
 
 ### Function calls with type constraints (3.6x slower)
 
@@ -132,6 +132,16 @@ Potential improvements:
 - Specialize compiled code for known-Int arguments
 
 ## Optimization History
+
+### 2026-05-23: Monomorphic inline cache for method resolution
+- **Change**: Add `last_method_resolve` single-entry cache to VM. Before HashMap lookup, compare (class_sym, method_sym) with last result using pointer equality. Populate cache on HashMap hit or full resolution.
+- **Effect**: bench-class ~2-4% improvement
+- **Value**: Eliminates HashMap lookup for monomorphic call sites (same class+method in tight loops). Low overhead for polymorphic sites (one extra comparison before fallthrough).
+
+### 2026-05-23: Compile $!attr to GetLocal + skip env inserts
+- **Change**: Allocate local slots for `!attr` names across all compiler paths (Var, Assign, PostIncrement, PreIncrement, PostDecrement, PreDecrement). Skip `!attr`/`.attr` env inserts in fast method dispatch — locals handle all reads/writes. `sync_locals_from_env` skips `!attr` to prevent stale overwrites. Inc/dec fast paths skip Proxy-bound attributes, falling back to env-based path for `:=` bindings.
+- **Effect**: Foundation for env clone reduction. Eliminates ~6 env HashMap inserts per method call for scalar attributes.
+- **Value**: `$!attr` access is now O(1) array index instead of HashMap lookup. Prerequisite for future env-free method execution.
 
 ### 2026-05-22: Fast method dispatch path (batched env + direct locals init)
 - **Change**: Add `call_compiled_method_fast()` that batches all env inserts through a single `env_mut()` hold, directly initializes locals from source data (skipping env→locals copy), and bypasses `bind_function_args_values` for simple positional params. Pre-allocate "self" and "__ANON_STATE__" as locals in method body compilation so `$.attr` and bare `self` use `GetLocal` instead of `GetGlobal`. Add `may_capture_outer_vars` flag on `CompiledCode`.
@@ -215,11 +225,11 @@ The remaining bottleneck is method dispatch (~3x slower than raku). Everything e
 
 Implemented `call_compiled_method_fast()` with batched env inserts, direct locals init, and simplified cleanup. Also pre-allocated "self" in method body compilation for GetLocal access. Achieved 18-23% improvement.
 
-**Remaining bottleneck**: The env deep clone (~12-15μs) can't be eliminated because `$!attr` uses GetGlobal (reads env), PostIncrement/PreIncrement on attrs use env, and closure captures need the full env.
+**Remaining bottleneck**: The env deep clone (~12-15μs) can't be eliminated because inner method calls inherit the env as their scope chain, closure captures need the full env, and dynamic variables must be visible through the env.
 
-**Step 1b: Compile $!attr to GetLocal (NOT YET DONE)**
+**Step 1b: Compile $!attr to GetLocal — DONE (2026-05-23)**
 
-Currently `$!attr` compiles to `GetGlobal("!attr")` which reads from env. If the compiler allocated "!attr" as a local and used `GetLocal`, the env clone could potentially be eliminated for methods without closure captures. However, `$!attr++` and `$!attr = val` also need to work via locals, requiring changes to PostIncrement/PreIncrement/AssignExpr opcodes to check locals first. This is a larger change that could enable the full "bypass env clone" optimization.
+`$!attr` now compiles to `GetLocal` instead of `GetGlobal`. Attribute locals are allocated for all `!attr` references (Var, Assign, PostIncrement, PreIncrement, PostDecrement, PreDecrement). The fast method dispatch path skips `!attr`/`.attr` env inserts since locals handle all reads/writes. `sync_locals_from_env` skips `!attr` locals to prevent stale overwrites. Inc/dec fast paths skip Proxy-bound attributes (`:=` bindings) and fall back to the env-based path.
 
 **Step 2: Eliminate `exec_call_method_op` overhead**
 
@@ -245,16 +255,9 @@ Create a `push_light_call_frame` that only saves env + locals + stack_depth.
 
 ### Phase 2: Compile-time method resolution — target: method-call < 1.5x
 
-**2a. Monomorphic inline cache**
+**2a. Monomorphic inline cache — DONE (2026-05-23)**
 
-Method resolution is already cached in `method_resolve_cache: HashMap<(Symbol, Symbol), ...>`, but each call still does a HashMap lookup. For monomorphic call sites (>95% of all calls), the target class never changes:
-
-- Add a `last_class: Symbol` + `last_result: (String, MethodDef)` pair to each `CallMethod` opcode
-- On dispatch: compare target class with `last_class` (1 pointer comparison)
-- On hit: use cached result directly (0 HashMap lookups)
-- On miss: fall through to `method_resolve_cache`, then update inline cache
-
-Expected: ~2μs savings per call (HashMap lookup elimination).
+Added `last_method_resolve: Option<(Symbol, Symbol, String, MethodDef)>` to VM. Before the HashMap lookup, checks if the last resolution matches (class_sym, method_sym) — two Symbol comparisons (pointer equality). On hit: returns cached result with 0 HashMap lookups. On miss: falls through to `method_resolve_cache`, then updates inline cache. Effect: ~2-4% improvement on bench-class.
 
 **2b. Direct compiled function pointer in method cache**
 
@@ -270,20 +273,23 @@ CallMethod { cache: Option<(Symbol, Arc<CompiledCode>)> }
 
 Skip all intermediate dispatch and call `vm.run()` with the cached compiled code.
 
-### Phase 3: Remove env dependency from VM — target: all benchmarks < 1.5x
+### Phase 3: Scope chain architecture — target: all benchmarks < 1.5x
 
-**3a. Self-contained VM execution**
+The env deep clone (~12-15μs) is the dominant remaining cost. Current `Env` is a flat `Arc<HashMap<String, Value>>` that gets deep-cloned on every method call via `Arc::make_mut`. A scope chain would replace this with a linked list of small, scope-local HashMaps.
 
-Currently, compiled method execution reads/writes `self.interpreter.env` for:
-- Variable lookup (when not in locals)
-- `$*DYNAMIC` variable resolution
-- `EVAL` body execution
-- `callsame`/`nextsame` dispatch
+**3a. Scope chain data structure**
 
-Goal: VM execution never touches env except for:
-- `EVAL` (inherently needs AST interpreter)
-- Dynamic variable lookup (small dedicated chain)
-- Interpreter fallback calls (decreasing as coverage improves)
+Replace `Env = Arc<HashMap<String, Value>>` with:
+```
+Env = { local: HashMap<String, Value>, parent: Option<Arc<Env>> }
+```
+
+- Method entry: create a new scope with only method-specific entries (self, params, attrs). O(8-10 inserts) instead of O(100 clone).
+- Variable lookup: check local first, then walk parent chain.
+- Closure captures: closures hold an Arc to their enclosing scope (O(1) instead of HashMap clone).
+- Dynamic variable visibility: maintained through parent chain traversal.
+
+**Risk**: Every `env.get()` becomes a chain walk. For variables in the immediate scope this is O(1), but deeply nested lookups add latency. Need to benchmark the tradeoff.
 
 **3b. Closure captures as indexed slots**
 
