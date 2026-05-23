@@ -133,6 +133,11 @@ Potential improvements:
 
 ## Optimization History
 
+### 2026-05-23: Reduce method dispatch entry overhead
+- **Change**: Three optimizations: (1) Wrap MethodDef in Arc in method resolve cache — cache hit clone is now O(1) instead of deep-cloning Vec<String>/Vec<ParamDef>. (2) Avoid String allocations for method_raw and modifier — use `&str` from constant pool, only allocate when modifier requires `^`/`!` prefix (rare). (3) Skip Slip flattening when no Slip args present — check discriminants first, reuse raw_args Vec directly.
+- **Effect**: Incremental (~1-3μs per call, hard to measure on noisy 1-core system)
+- **Value**: Reduces allocation count per method call from 3-4 Strings to 1, eliminates MethodDef deep clone on cache hit, and avoids Vec copy for non-Slip args.
+
 ### 2026-05-23: Monomorphic inline cache for method resolution
 - **Change**: Add `last_method_resolve` single-entry cache to VM. Before HashMap lookup, compare (class_sym, method_sym) with last result using pointer equality. Populate cache on HashMap hit or full resolution.
 - **Effect**: bench-class ~2-4% improvement
@@ -231,18 +236,16 @@ Implemented `call_compiled_method_fast()` with batched env inserts, direct local
 
 `$!attr` now compiles to `GetLocal` instead of `GetGlobal`. Attribute locals are allocated for all `!attr` references (Var, Assign, PostIncrement, PreIncrement, PostDecrement, PreDecrement). The fast method dispatch path skips `!attr`/`.attr` env inserts since locals handle all reads/writes. `sync_locals_from_env` skips `!attr` locals to prevent stale overwrites. Inc/dec fast paths skip Proxy-bound attributes (`:=` bindings) and fall back to the env-based path.
 
-**Step 2: Eliminate `exec_call_method_op` overhead**
+**Step 2: Eliminate `exec_call_method_op` overhead — PARTIAL (2026-05-23)**
 
-The VM entry point `exec_call_method_op` does:
-- `Self::const_str(code, name_idx).to_string()` — String allocation per call
-- `Self::rewrite_method_name()` — modifier processing
-- `Self::append_flattened_call_arg()` — Slip flattening check per arg
-- Junction autothread check
+Done:
+- Avoid String allocation for `method_raw` and `modifier` — use `&str` from constant pool
+- Skip Slip flattening when no Slip args present
+- Arc<MethodDef> in resolve cache to avoid deep clone on cache hit
 
-For the common case (no modifier, no junction, no slip), most of this is wasted:
-- Use `Symbol` (interned string) for method names instead of `String`
-- Skip junction check when target is `Value::Instance`
-- Skip slip flattening when args have no Slip values (checkable via flag)
+Remaining:
+- Use `Symbol` (interned string) for method names to avoid the one remaining `.to_string()` in `rewrite_method_name`
+- Skip junction check when target is `Value::Instance` (minimal impact — pattern match already fast-fails)
 
 **Step 3: Lightweight call frame for simple methods**
 
