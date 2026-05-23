@@ -92,19 +92,19 @@ Both hash insert and delete fast paths now handle `Arc::strong_count == 2` by te
 - Simplified cleanup for read-only methods (~5μs saved)
 - Compiler emits GetLocal("self") for `$.attr` / bare `self` access
 
-**Remaining cost breakdown** (fast path):
+**Remaining cost breakdown** (fast path, after 2026-05-23 optimizations):
 
 | Step | Cost | Description |
 |------|------|-------------|
 | `exec_call_method_op` entry | ~3μs | Arg processing, stack ops (no String alloc — Cow borrows from const pool) |
 | Method resolution | ~2μs | Cache hit: Symbol pair lookup in HashMap |
 | `push_call_frame` | ~0.1μs | Arc bump for env (O(1)) |
-| **env deep clone + batched inserts** | **~15μs** | **Arc::make_mut + all special vars + attrs in one hold** |
-| Direct locals init | ~2μs | Populate from source data (attrs, params, special vars) |
+| **env deep clone + reduced inserts** | **~13μs** | **Arc::make_mut + ~6 inserts (skip !, callable_id, attrs for can_skip_merge)** |
+| Direct locals init | ~2μs | Populate from source data (attrs, params, special vars); ?CLASS/?ROLE via GetLocal |
 | **Bytecode execution** | **~1μs** | The actual method body |
 | Cleanup (can_skip_merge) | ~3μs | Writeback attrs via pre-computed slot indices, restore env |
 | Cleanup (non-can_skip_merge) | ~10μs | Sync locals→env, merge, writeback |
-| **Total** | **~40μs** | **Down from ~54μs (26% faster)** |
+| **Total** | **~35μs** | **Down from ~54μs (35% faster from start)** |
 
 **Root cause**: The env deep clone (~12-15μs) remains the dominant cost. The `Env` is `Arc<HashMap<String, Value>>` and `Arc::make_mut` deep clones the entire ~100-entry HashMap when shared.
 
@@ -132,6 +132,12 @@ Potential improvements:
 - Specialize compiled code for known-Int arguments
 
 ## Optimization History
+
+### 2026-05-23: Reduce env inserts and compile ?CLASS/?ROLE to GetLocal
+- **Change**: Two optimizations: (1) Pre-allocate local slots for `?CLASS` and `?ROLE` in method bodies (both compile-time via `compile_sub_body` and runtime via `compile_methods_for_map`). `$?CLASS` and `$?ROLE` now compile to `GetLocal` instead of `GetGlobal`, avoiding env HashMap lookups. (2) For `can_skip_merge` methods with no closures, skip inserting `!`, `__mutsu_callable_id`, and array/hash attribute entries into env. Only insert self, __ANON_STATE__, ?CLASS, ?ROLE, _, and param values (~6 inserts instead of ~15+).
+- **Effect**: method-call ~11% faster, bench-class ~10% faster
+- **Value**: Reduces per-method-call env insert count and eliminates two GetGlobal→env lookups for ?CLASS/?ROLE. Foundation for further env optimization.
+- **Limitation**: env_mut() still called (triggering Arc::make_mut deep clone). Full env_mut() skip was attempted but breaks `when` smartmatch which reads topic `_` from env, and creates stale ?CLASS values across different class method calls.
 
 ### 2026-05-23: Pre-compute attribute slot indices for method exit writeback
 - **Change**: Add `AttrSlots` struct to `CompiledCode` that pre-computes local slot indices for each attribute (private, public, array, hash variants) at compile time. `writeback_attributes_from_locals` uses these pre-computed indices instead of 6 × N_attrs linear searches with `format!()` allocations per method exit. Also eliminate env round-trip in `call_compiled_method_fast`'s `can_skip_merge` path — attribute writeback goes directly from locals to attributes.
@@ -232,7 +238,9 @@ Potential improvements:
 
 ## Improvement Plan
 
-The remaining bottleneck is method dispatch (~3x slower than raku). Everything else is at parity or faster. The plan below is ordered by impact and feasibility.
+**Goal: world-class performance — faster than raku on all benchmarks, competitive with V8/LuaJIT on numeric workloads.**
+
+The remaining bottleneck is method dispatch (~2.5x slower than raku). Everything else is at parity or faster. Achieving world-class performance requires structural changes to the runtime — incremental optimizations have diminishing returns. The plan below is ordered by impact. Phases 3 and 4 are the critical path; Phase 5 is a fallback only if Phase 3 proves architecturally impossible.
 
 ### Phase 1: Reduce method call overhead — target: method-call < 2x
 
@@ -284,23 +292,63 @@ CallMethod { cache: Option<(Symbol, Arc<CompiledCode>)> }
 
 Skip all intermediate dispatch and call `vm.run()` with the cached compiled code.
 
+**Step 1c: Reduce env inserts for read-only methods — DONE (2026-05-23)**
+
+For `can_skip_merge` methods with no closures, skip inserting `!`, `__mutsu_callable_id`, and array/hash attribute entries into env. `$?CLASS` and `$?ROLE` now compile to GetLocal. Reduces inserts from ~15+ to ~6 per call. Effect: method-call ~11% faster, bench-class ~10% faster.
+
+**Remaining env deep clone cost**: env_mut() is still called, triggering Arc::make_mut deep clone (~12-15μs). Full env_mut() skip was attempted but breaks `when` smartmatch (reads topic `_` from env) and causes stale `?CLASS` across different class method calls.
+
 ### Phase 3: Scope chain architecture — target: all benchmarks < 1.5x
 
-The env deep clone (~12-15μs) is the dominant remaining cost. Current `Env` is a flat `Arc<HashMap<String, Value>>` that gets deep-cloned on every method call via `Arc::make_mut`. A scope chain would replace this with a linked list of small, scope-local HashMaps.
+The env deep clone (~12-15μs) is the dominant remaining cost. Current `Env` is `Arc<HashMap<String, Value>>` (defined in `src/env.rs` as a struct wrapping `Arc<HashMap>`, with `Deref`/`DerefMut` impls that call `Arc::make_mut` on mutation). The clone is triggered by `push_light_call_frame` bumping the Arc refcount, then `env_mut()` seeing refcount > 1.
 
 **3a. Scope chain data structure**
 
-Replace `Env = Arc<HashMap<String, Value>>` with:
-```
-Env = { local: HashMap<String, Value>, parent: Option<Arc<Env>> }
+Replace the flat env with a linked scope chain:
+```rust
+pub struct Env {
+    local: HashMap<String, Value>,   // method-specific entries
+    parent: Option<Arc<Env>>,        // outer scope (shared, not cloned)
+}
 ```
 
-- Method entry: create a new scope with only method-specific entries (self, params, attrs). O(8-10 inserts) instead of O(100 clone).
-- Variable lookup: check local first, then walk parent chain.
-- Closure captures: closures hold an Arc to their enclosing scope (O(1) instead of HashMap clone).
-- Dynamic variable visibility: maintained through parent chain traversal.
+**Implementation plan** (can be parallelized across 3-4 agents):
 
-**Risk**: Every `env.get()` becomes a chain walk. For variables in the immediate scope this is O(1), but deeply nested lookups add latency. Need to benchmark the tradeoff.
+1. **Agent 1: Core Env refactor** (`src/env.rs`, ~200 LOC)
+   - Replace `inner: Arc<HashMap<String, Value>>` with `local: HashMap<String, Value>` + `parent: Option<Arc<Env>>`
+   - Implement `get()` — check local first, walk parent chain
+   - Implement `insert()` — always into local
+   - Implement `contains_key()` — check local + parents
+   - Implement `iter()` — merge local entries over shadowed parent entries
+   - Implement `clone_for_method_entry()` — create a new empty scope with current env as parent (O(1))
+   - Implement `flatten()` — merge all scopes into a flat HashMap (needed for closures/debugging)
+   - Keep `ptr_eq` for the fast-path checks
+   - **Key constraint**: `get()` must be a tight loop — inline the local check, only call a `get_parent()` method on miss
+
+2. **Agent 2: VM call frame adaptation** (`src/vm/vm_env_helpers.rs`, `src/vm/vm_method_dispatch.rs`)
+   - `push_light_call_frame`: Instead of `clone_env()`, use `env.clone_for_method_entry()` — creates a child scope with empty local, parent = current env
+   - `pop_call_frame`: Instead of `set_env(saved_env)`, detach the method scope and restore parent
+   - `call_compiled_method_fast`: Insert method vars (self, ?CLASS, params, etc.) into the local scope only — no deep clone needed
+   - `can_skip_merge` path: just drop the local scope (O(1))
+   - `merge_method_env`: walk the local scope entries and propagate non-local changes to parent
+
+3. **Agent 3: Interpreter env usage audit** (`src/runtime/` — ~35 files)
+   - Grep all `env()`, `env_mut()`, `env.get()`, `env.insert()`, `env.remove()`, `env.iter()`, `env.contains_key()` call sites
+   - Classify each as: (a) reads local vars — works with chain, (b) reads outer-scope vars — needs chain walk, (c) writes — needs local scope, (d) iterates — needs flatten or chain iter
+   - Most reads are for `self`, params, `$_`, `?CLASS` — all in the immediate scope
+   - Outer scope reads: `$*` dynamic vars, `&` subs, `%*ENV` — need parent chain walk
+   - Flag any patterns that assume flat env (e.g., `env.len()`, `env.keys()`)
+
+4. **Agent 4: Closure capture refactor** (`src/vm/vm_register_ops.rs`, `src/compiler/`)
+   - Closures currently capture `env.clone()` — with scope chain, they hold `Arc<Env>` (parent chain)
+   - Verify closure reads/writes work through the parent chain
+   - `may_capture_outer_vars` flag already exists — use it to skip parent chain for methods that don't create closures
+
+**Expected impact**: Method entry goes from O(100 clone) to O(6-10 insert into empty HashMap). Estimated ~12μs savings per call → method-call ~30% faster, bench-class ~25% faster.
+
+**Risk**: `env.get()` adds 1 branch (check local, then parent) per lookup. For variables in the immediate scope, this is ~1ns extra. For outer-scope lookups (rare in method bodies), add ~2-5ns per parent hop. Total overhead: ~0.3μs per method call (assuming ~300 env reads, mostly local-scope hits). Net gain: ~12μs saved − ~0.3μs overhead = ~11.7μs net improvement.
+
+**Mitigation**: If `get()` overhead is worse than expected, add a "scope depth" counter to Env. For depth 1 (most method calls), `get()` checks local then falls through to a guaranteed flat parent. LLVM can optimize this to a predictable branch.
 
 **3b. Closure captures as indexed slots**
 
@@ -311,23 +359,126 @@ Currently, closures capture the entire env HashMap. Replace with indexed capture
 
 This eliminates env clone for closure creation (currently clones ~100 entries).
 
+**Implementation plan**:
+1. Extend `CompiledCode` with `captured_vars: Vec<String>` — list of outer-scope variables referenced
+2. At closure creation time, copy only those variables from env into a `Vec<Value>`
+3. At closure execution time, bind captured values to local slots
+
+**Prerequisite**: Phase 3a (scope chain) makes this easier because captures become "grab N values from parent scope" instead of "clone entire HashMap".
+
 ### Phase 4: Advanced optimizations — target: faster than raku
 
 **4a. Value representation (NaN-boxing)**
-- `Value` enum is currently 72 bytes (discriminant + largest variant)
-- NaN-boxing: 8 bytes for Int/Num/Bool/Nil (common cases)
-- Heap-allocated Box for large variants (String, Array, Hash, Instance)
-- Expected: 2x improvement on arithmetic benchmarks, significant memory reduction
 
-**4b. Threaded dispatch**
-- Replace `match` on ~100 OpCode variants with computed goto
-- Each opcode handler jumps directly to the next (1 indirect branch vs 2)
-- Expected: 10-30% improvement on instruction-bound benchmarks
+`Value` enum is currently 72 bytes (discriminant + largest variant). NaN-boxing encodes common types (Int, Num, Bool, Nil) in 8 bytes using NaN payload bits.
 
-**4c. JIT compilation**
-- Cranelift backend for hot loops
-- Trace-based: detect hot bytecode sequences, compile to native
-- Depends on stable bytecode format and value representation
+**Implementation plan** (can be parallelized across 2-3 agents):
+
+1. **Agent 1: Core NanBoxedValue type** (new file `src/nanbox.rs`, ~300 LOC)
+   - Define `NanBoxedValue` as a `u64` with encoding:
+     - Quiet NaN pattern: `0x7FF8_xxxx_xxxx_xxxx`
+     - Double (f64): any non-NaN bit pattern → extract directly
+     - Int (i48): `0x7FF9_xxxx_xxxx_xxxx` — 48-bit signed int in payload
+     - Bool: `0x7FFA_0000_0000_000{0,1}`
+     - Nil: `0x7FFA_0000_0000_0002`
+     - Pointer (heap types): `0x7FFB_xxxx_xxxx_xxxx` — 48-bit pointer to `Box<HeapValue>`
+   - `HeapValue` enum: Str, Array, Hash, Instance, Sub, Pair, Range, etc.
+   - Implement `From<i64>`, `From<f64>`, `From<bool>`, arithmetic methods, comparison methods
+   - Implement `Display`, `Debug`, `Clone` (pointer variants bump refcount), `Drop` (pointer variants decrement)
+
+2. **Agent 2: Bridge layer** (modify `src/value.rs`)
+   - Add `impl From<NanBoxedValue> for Value` and vice versa for gradual migration
+   - OR: replace `Value` enum entirely (more aggressive, bigger diff)
+   - The gradual approach is safer — use NanBoxedValue internally in hot paths (VM locals, stack) while keeping Value at API boundaries
+
+3. **Agent 3: VM integration** (modify `src/vm/vm_arith_ops.rs`, `src/vm/vm_comparison_ops.rs`)
+   - Replace `Value::Int(a) + Value::Int(b)` with NanBoxedValue arithmetic
+   - The fast paths for Int+Int, Int*Int, etc. become direct u64 operations
+   - Stack and locals become `Vec<NanBoxedValue>` instead of `Vec<Value>`
+
+**Expected impact**: 2x improvement on int-arith, ~30% on fib (due to smaller stack/locals, better cache utilization). Memory reduction: 9x for Int/Num/Bool values.
+
+**Risk**: Pointer types still require heap allocation. String operations won't benefit. Complex to implement correctly (especially GC/refcounting for heap types).
+
+**4b. Threaded dispatch (direct threading)**
+
+Replace the `match` opcode dispatch in `exec_one()` with direct threading:
+
+```rust
+// Current: indirect dispatch (2 branches per instruction)
+fn exec_one(&mut self, code: &CompiledCode, ip: &mut usize) {
+    match code.ops[*ip] {
+        OpCode::Add => { ... }
+        OpCode::Sub => { ... }
+        // ~100 arms
+    }
+}
+
+// Threaded: direct dispatch (1 branch per instruction)
+// Each handler ends with: goto handlers[code.ops[ip + 1]]
+```
+
+**Implementation plan**:
+1. Convert `OpCode` handlers from match arms to individual functions
+2. Build a dispatch table: `[fn(&mut VM, &CompiledCode, &mut usize); NUM_OPCODES]`
+3. Each handler calls the next handler directly via the dispatch table
+4. Use `#[inline(never)]` to prevent LLVM from re-merging into a match
+
+**Note**: Rust doesn't support computed goto. The closest is a function pointer table + tail calls. LLVM may or may not optimize this well. Benchmark before committing.
+
+**Expected impact**: 10-30% on instruction-bound benchmarks (fib, int-arith). Minimal impact on method-call (dominated by env overhead, not instruction dispatch).
+
+**Alternative**: Use Rust's `unsafe` + inline assembly for computed goto on x86-64. This is fragile and non-portable. Only consider if the function pointer approach doesn't help.
+
+**4c. JIT compilation (Cranelift)**
+
+Compile hot bytecode sequences to native code using Cranelift:
+
+**Implementation plan** (multi-session project):
+
+1. **Profiling infrastructure**: Add execution counters to loop headers and function entries. When a counter exceeds threshold (e.g., 100 iterations), trigger JIT compilation.
+
+2. **IR lowering**: Translate `OpCode` sequences to Cranelift IR. Start with a subset:
+   - Arithmetic: Add, Sub, Mul, Div, Mod, Pow
+   - Comparison: Lt, Le, Gt, Ge, Eq, Ne
+   - Control flow: Jump, JumpIfFalse, ForLoop
+   - Variable access: GetLocal, SetLocal, LoadConst
+   - Type guards: check Value discriminant, deoptimize on unexpected type
+
+3. **Type specialization**: Most hot loops operate on Int or Num values. Generate specialized code paths for known types, with deoptimization traps for type mismatches.
+
+4. **Integration**: Replace `exec_one()` loop with JIT-compiled function for hot code. Fallback to interpreter for cold code and deoptimization.
+
+**Dependencies**: Stable bytecode format (Phase 1-2 done), NaN-boxing (Phase 4a) for efficient type guards.
+
+**Expected impact**: 5-10x for tight numeric loops. Method dispatch overhead becomes the bottleneck once loop bodies are JIT-compiled.
+
+### Phase 5: Env key optimization — target: reduce clone cost
+
+If Phase 3a (scope chain) proves too risky, this is an alternative approach to reduce env clone cost without changing the data structure.
+
+**5a. Symbol keys for env**
+
+Replace env key type from `String` to `Symbol`:
+```rust
+pub struct Env {
+    inner: Arc<HashMap<Symbol, Value>>,  // Was: HashMap<String, Value>
+}
+```
+
+- Key clone becomes O(1) (pointer copy) instead of O(n) (heap alloc + memcpy)
+- Key comparison becomes O(1) (pointer equality) instead of O(n) (string compare)
+- For a 100-entry env, saves ~40ns × 100 = ~4μs on deep clone
+
+**Implementation plan**: Grep all `env.insert(String, ...)` and `env.get(&str)` calls, convert to Symbol. Moderate-sized refactor (~50 files).
+
+**5b. Env compaction**
+
+Periodically compact the env by removing entries that are only accessible via GetLocal (and thus not needed in env). This reduces env size for the next clone.
+
+- Track which env entries were actually read via GetGlobal during method execution
+- On method exit, remove entries that were never read from env (they were in locals)
+- Over time, the env shrinks to only truly global/dynamic entries
 
 ## Measurement Notes
 
