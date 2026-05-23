@@ -56,7 +56,8 @@ pub(super) struct VmCallFrame {
     pub saved_env: Env,
     pub saved_locals: Vec<Value>,
     pub saved_stack_depth: usize,
-    pub saved_readonly: HashSet<String>,
+    /// None when using light call frame (simple methods that don't use `:=` binding).
+    pub saved_readonly: Option<HashSet<String>>,
     pub saved_env_dirty: bool,
     pub saved_locals_dirty: bool,
     pub saved_locals_dirty_slots: Vec<bool>,

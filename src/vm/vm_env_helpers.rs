@@ -19,7 +19,25 @@ impl VM {
     pub(super) fn push_call_frame(&mut self) {
         let frame = VmCallFrame {
             saved_env: self.interpreter.clone_env(),
-            saved_readonly: self.interpreter.save_readonly_vars(),
+            saved_readonly: Some(self.interpreter.save_readonly_vars()),
+            saved_locals: std::mem::take(&mut self.locals),
+            saved_stack_depth: self.stack.len(),
+            saved_env_dirty: self.env_dirty,
+            saved_locals_dirty: self.locals_dirty,
+            saved_locals_dirty_slots: std::mem::take(&mut self.locals_dirty_slots),
+            saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
+        };
+        self.env_dirty = false;
+        self.locals_dirty = false;
+        self.call_frames.push(frame);
+    }
+
+    /// Lightweight call frame for simple methods: skips saving readonly vars
+    /// since simple methods don't use `:=` binding.
+    pub(super) fn push_light_call_frame(&mut self) {
+        let frame = VmCallFrame {
+            saved_env: self.interpreter.clone_env(),
+            saved_readonly: None,
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
@@ -42,8 +60,9 @@ impl VM {
         self.locals = std::mem::take(&mut frame.saved_locals);
         self.locals_dirty_slots = std::mem::take(&mut frame.saved_locals_dirty_slots);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
-        self.interpreter
-            .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
+        if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
+            self.interpreter.restore_readonly_vars(readonly);
+        }
         self.env_dirty = frame.saved_env_dirty;
         self.locals_dirty = frame.saved_locals_dirty;
         frame

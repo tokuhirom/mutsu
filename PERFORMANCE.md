@@ -247,14 +247,11 @@ Remaining:
 - Use `Symbol` (interned string) for method names to avoid the one remaining `.to_string()` in `rewrite_method_name`
 - Skip junction check when target is `Value::Instance` (minimal impact — pattern match already fast-fails)
 
-**Step 3: Lightweight call frame for simple methods**
+**Step 3: Lightweight call frame — PARTIAL (2026-05-23)**
 
-`push_call_frame` saves: env, readonly_vars, locals, stack_depth, env_dirty, locals_dirty, locals_dirty_slots, local_bind_pairs. For simple methods, most of these are unnecessary:
-- `readonly_vars`: only needed if method uses `:=` binding
-- `local_bind_pairs`: only needed if method uses `:=` binding
-- `locals_dirty_slots`: Vec allocation per call
+Added `push_light_call_frame()` that skips cloning `readonly_vars: HashSet<String>`. The fast method dispatch path uses this since simple methods don't use `:=` binding. `VmCallFrame.saved_readonly` is now `Option<HashSet<String>>` — `pop_call_frame` only restores when `Some`.
 
-Create a `push_light_call_frame` that only saves env + locals + stack_depth.
+Remaining: `locals_dirty_slots` and `local_bind_pairs` are moved via `std::mem::take` (O(1)), so skipping them would not improve performance.
 
 ### Phase 2: Compile-time method resolution — target: method-call < 1.5x
 
