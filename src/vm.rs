@@ -145,6 +145,9 @@ pub(crate) struct VM {
     /// Method resolution cache: maps (class_name, method_name) to resolved
     /// (owner_class, MethodDef). Avoids repeated MRO walks for the same method.
     method_resolve_cache: HashMap<(Symbol, Symbol), Option<(String, crate::runtime::MethodDef)>>,
+    /// Monomorphic inline cache: stores the last (class, method, owner, def)
+    /// resolution result. Skips HashMap lookup for repeated same-class calls.
+    last_method_resolve: Option<(Symbol, Symbol, String, crate::runtime::MethodDef)>,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
@@ -317,6 +320,7 @@ impl VM {
             pos_light_call_cache: HashMap::new(),
             pos_light_call_cache_gen: 0,
             method_resolve_cache: HashMap::new(),
+            last_method_resolve: None,
             block_declared_vars: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),
