@@ -565,17 +565,8 @@ impl VM {
         }
 
         if can_skip_merge {
-            // Sync only attribute-related locals to env for writeback.
-            // Full locals→env sync is unnecessary since we skip the merge,
-            // but attribute values must be written back for instance updates.
-            for (i, local_name) in cc.locals.iter().enumerate() {
-                if local_name.starts_with('.') || local_name.starts_with('!') {
-                    self.interpreter
-                        .env_mut()
-                        .insert(local_name.clone(), self.locals[i].clone());
-                }
-            }
-            writeback_attributes(self.interpreter.env(), &mut attributes);
+            // Write back attributes directly from locals (skip env round-trip).
+            writeback_attributes_from_locals(cc, &self.locals, &mut attributes, owner_class);
 
             let method_var_bindings = self.interpreter.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -1150,81 +1141,129 @@ fn writeback_attributes_from_locals(
     attributes: &mut HashMap<String, Value>,
     owner_class: &str,
 ) {
-    for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
-        if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) || attr_name.contains('\0') {
-            continue;
-        }
-        let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
+    // Fast path: use pre-computed slot indices when available
+    if !cc.attr_slots.is_empty() {
+        for slots in &cc.attr_slots {
+            let original = attributes
+                .get(&slots.attr_name)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let private_val = slots.private.map(|i| &locals[i]);
+            let public_val = slots.public.map(|i| &locals[i]);
+            let arr_private_val = slots.arr_private.map(|i| &locals[i]);
+            let arr_public_val = slots.arr_public.map(|i| &locals[i]);
+            let hash_private_val = slots.hash_private.map(|i| &locals[i]);
+            let hash_public_val = slots.hash_public.map(|i| &locals[i]);
 
-        let private_key = format!("!{}", attr_name);
-        let public_key = format!(".{}", attr_name);
-        let private_val = cc
-            .locals
-            .iter()
-            .rposition(|n| n == &private_key)
-            .map(|i| locals[i].clone());
-        let public_val = cc
-            .locals
-            .iter()
-            .rposition(|n| n == &public_key)
-            .map(|i| locals[i].clone());
+            if let (Some(priv_val), Some(pub_val)) = (arr_private_val, arr_public_val) {
+                if *priv_val == original && *pub_val != original {
+                    attributes.insert(slots.attr_name.clone(), pub_val.clone());
+                } else {
+                    attributes.insert(slots.attr_name.clone(), priv_val.clone());
+                }
+                continue;
+            }
+            if let (Some(priv_val), Some(pub_val)) = (hash_private_val, hash_public_val) {
+                if *priv_val == original && *pub_val != original {
+                    attributes.insert(slots.attr_name.clone(), pub_val.clone());
+                } else {
+                    attributes.insert(slots.attr_name.clone(), priv_val.clone());
+                }
+                continue;
+            }
+            if let (Some(priv_val), Some(pub_val)) = (private_val, public_val) {
+                if *priv_val == original && *pub_val != original {
+                    attributes.insert(slots.attr_name.clone(), pub_val.clone());
+                } else {
+                    attributes.insert(slots.attr_name.clone(), priv_val.clone());
+                }
+                continue;
+            }
+            if let Some(val) = arr_private_val.or(hash_private_val).or(private_val) {
+                attributes.insert(slots.attr_name.clone(), val.clone());
+                continue;
+            }
+            if let Some(val) = arr_public_val.or(hash_public_val).or(public_val) {
+                attributes.insert(slots.attr_name.clone(), val.clone());
+            }
+        }
+    } else {
+        // Fallback: linear search (for methods compiled without attr info)
+        for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+            if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) || attr_name.contains('\0') {
+                continue;
+            }
+            let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
 
-        // Also check array/hash variants
-        let arr_private_key = format!("@!{}", attr_name);
-        let arr_public_key = format!("@.{}", attr_name);
-        let hash_private_key = format!("%!{}", attr_name);
-        let hash_public_key = format!("%.{}", attr_name);
-        let arr_private_val = cc
-            .locals
-            .iter()
-            .rposition(|n| n == &arr_private_key)
-            .map(|i| locals[i].clone());
-        let arr_public_val = cc
-            .locals
-            .iter()
-            .rposition(|n| n == &arr_public_key)
-            .map(|i| locals[i].clone());
-        let hash_private_val = cc
-            .locals
-            .iter()
-            .rposition(|n| n == &hash_private_key)
-            .map(|i| locals[i].clone());
-        let hash_public_val = cc
-            .locals
-            .iter()
-            .rposition(|n| n == &hash_public_key)
-            .map(|i| locals[i].clone());
+            let private_key = format!("!{}", attr_name);
+            let public_key = format!(".{}", attr_name);
+            let private_val = cc
+                .locals
+                .iter()
+                .rposition(|n| n == &private_key)
+                .map(|i| locals[i].clone());
+            let public_val = cc
+                .locals
+                .iter()
+                .rposition(|n| n == &public_key)
+                .map(|i| locals[i].clone());
 
-        if let (Some(priv_val), Some(pub_val)) = (&arr_private_val, &arr_public_val) {
-            if *priv_val == original && *pub_val != original {
-                attributes.insert(attr_name.clone(), pub_val.clone());
-            } else {
-                attributes.insert(attr_name.clone(), priv_val.clone());
+            let arr_private_key = format!("@!{}", attr_name);
+            let arr_public_key = format!("@.{}", attr_name);
+            let hash_private_key = format!("%!{}", attr_name);
+            let hash_public_key = format!("%.{}", attr_name);
+            let arr_private_val = cc
+                .locals
+                .iter()
+                .rposition(|n| n == &arr_private_key)
+                .map(|i| locals[i].clone());
+            let arr_public_val = cc
+                .locals
+                .iter()
+                .rposition(|n| n == &arr_public_key)
+                .map(|i| locals[i].clone());
+            let hash_private_val = cc
+                .locals
+                .iter()
+                .rposition(|n| n == &hash_private_key)
+                .map(|i| locals[i].clone());
+            let hash_public_val = cc
+                .locals
+                .iter()
+                .rposition(|n| n == &hash_public_key)
+                .map(|i| locals[i].clone());
+
+            if let (Some(priv_val), Some(pub_val)) = (&arr_private_val, &arr_public_val) {
+                if *priv_val == original && *pub_val != original {
+                    attributes.insert(attr_name.clone(), pub_val.clone());
+                } else {
+                    attributes.insert(attr_name.clone(), priv_val.clone());
+                }
+                continue;
             }
-            continue;
-        }
-        if let (Some(priv_val), Some(pub_val)) = (&hash_private_val, &hash_public_val) {
-            if *priv_val == original && *pub_val != original {
-                attributes.insert(attr_name.clone(), pub_val.clone());
-            } else {
-                attributes.insert(attr_name.clone(), priv_val.clone());
+            if let (Some(priv_val), Some(pub_val)) = (&hash_private_val, &hash_public_val) {
+                if *priv_val == original && *pub_val != original {
+                    attributes.insert(attr_name.clone(), pub_val.clone());
+                } else {
+                    attributes.insert(attr_name.clone(), priv_val.clone());
+                }
+                continue;
             }
-            continue;
-        }
-        if let (Some(priv_val), Some(pub_val)) = (&private_val, &public_val) {
-            if *priv_val == original && *pub_val != original {
-                attributes.insert(attr_name.clone(), pub_val.clone());
-            } else {
-                attributes.insert(attr_name.clone(), priv_val.clone());
+            if let (Some(priv_val), Some(pub_val)) = (&private_val, &public_val) {
+                if *priv_val == original && *pub_val != original {
+                    attributes.insert(attr_name.clone(), pub_val.clone());
+                } else {
+                    attributes.insert(attr_name.clone(), priv_val.clone());
+                }
+                continue;
             }
-            continue;
-        }
-        if let Some(val) = arr_private_val.or(hash_private_val).or(private_val) {
-            attributes.insert(attr_name.clone(), val);
-            continue;
-        }
-        if let Some(val) = arr_public_val.or(hash_public_val).or(public_val) {
-            attributes.insert(attr_name, val);
+            if let Some(val) = arr_private_val.or(hash_private_val).or(private_val) {
+                attributes.insert(attr_name.clone(), val);
+                continue;
+            }
+            if let Some(val) = arr_public_val.or(hash_public_val).or(public_val) {
+                attributes.insert(attr_name, val);
+            }
         }
     }
 

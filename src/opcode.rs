@@ -955,6 +955,22 @@ pub(crate) struct CompiledCode {
     /// that are NOT method-local (attributes, params, special vars).
     /// When true, the fast method path cannot use a fresh env.
     pub(crate) may_capture_outer_vars: bool,
+    /// Pre-computed attribute slot mapping for fast writeback on method exit.
+    /// Each entry: (attr_name, private_slot, public_slot, arr_private, arr_public, hash_private, hash_public).
+    /// Slots are `None` if not found in `locals`. Avoids 6 × N_attrs linear searches.
+    pub(crate) attr_slots: Vec<AttrSlots>,
+}
+
+/// Pre-computed local slot indices for a single attribute.
+#[derive(Debug, Clone)]
+pub(crate) struct AttrSlots {
+    pub(crate) attr_name: String,
+    pub(crate) private: Option<usize>,
+    pub(crate) public: Option<usize>,
+    pub(crate) arr_private: Option<usize>,
+    pub(crate) arr_public: Option<usize>,
+    pub(crate) hash_private: Option<usize>,
+    pub(crate) hash_public: Option<usize>,
 }
 
 impl CompiledCode {
@@ -973,6 +989,26 @@ impl CompiledCode {
             is_pointy_block: false,
             has_env_writes: false,
             may_capture_outer_vars: false,
+            attr_slots: Vec::new(),
+        }
+    }
+
+    pub(crate) fn compute_attr_slots(&mut self, attr_names: &[String]) {
+        self.attr_slots.clear();
+        for attr_name in attr_names {
+            let find = |prefix: &str| -> Option<usize> {
+                let key = format!("{}{}", prefix, attr_name);
+                self.locals.iter().rposition(|n| *n == key)
+            };
+            self.attr_slots.push(AttrSlots {
+                attr_name: attr_name.clone(),
+                private: find("!"),
+                public: find("."),
+                arr_private: find("@!"),
+                arr_public: find("@."),
+                hash_private: find("%!"),
+                hash_public: find("%."),
+            });
         }
     }
 
