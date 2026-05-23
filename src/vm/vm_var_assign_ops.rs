@@ -1059,9 +1059,9 @@ impl VM {
             return Ok(());
         }
         self.interpreter.check_readonly_for_increment(name)?;
-        // For attribute locals (!attr), read/write via local slot directly
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
+            && !matches!(self.locals[slot], Value::Proxy { .. })
         {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
@@ -1155,6 +1155,7 @@ impl VM {
         self.interpreter.check_readonly_for_increment(name)?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
+            && !matches!(self.locals[slot], Value::Proxy { .. })
         {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);

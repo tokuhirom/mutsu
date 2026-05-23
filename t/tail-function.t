@@ -26,7 +26,7 @@ sub make-predictive-seq($i = 0) {
 }
 
 is-deeply make-predictive-seq.tail, 10, 'tail uses PredictiveIterator count-only path';
-# TODO: tail should call pull-one once to get the last element
-todo 'tail does not call pull-one for PredictiveIterator yet';
+# TODO: $!attr := binding doesn't propagate through $!attr++ (pre-existing)
+todo '$!attr binding propagation';
 is $pulled, 1, 'PredictiveIterator tail calls pull-one once';
 is-deeply (4, 5, 6, 7).tail(-2**100), (), 'tail accepts large negative Int counts';

@@ -762,6 +762,7 @@ impl VM {
         let name = Self::const_str(code, name_idx);
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
+            && !matches!(self.locals[slot], Value::Proxy { .. })
         {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
@@ -792,6 +793,7 @@ impl VM {
         let name = Self::const_str(code, name_idx);
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
+            && !matches!(self.locals[slot], Value::Proxy { .. })
         {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
