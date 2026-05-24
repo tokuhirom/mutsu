@@ -565,6 +565,7 @@ impl Compiler {
                 self.compile_stmt(stmt);
             }
         }
+        self.code.compute_needs_env_sync();
         (self.code, self.compiled_functions)
     }
 
