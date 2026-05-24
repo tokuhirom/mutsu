@@ -3067,9 +3067,7 @@ impl VM {
             let mut val = raw_popped;
             let name = &code.locals[idx];
             // Write through ContainerRef: update inner value without breaking sharing
-            if !is_rebind
-                && let Value::ContainerRef(arc) = &self.locals[idx]
-            {
+            if !is_rebind && let Value::ContainerRef(arc) = &self.locals[idx] {
                 let arc = arc.clone();
                 if !name.starts_with('@') && !name.starts_with('%') {
                     val = Self::normalize_scalar_assignment_value(val);
