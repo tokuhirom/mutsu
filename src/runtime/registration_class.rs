@@ -2837,7 +2837,7 @@ impl Interpreter {
             .iter()
             .any(|(_, _, default, ..)| default.is_some());
         if has_expr_default {
-            role_def.captured_env = Some((*self.env).clone());
+            role_def.captured_env = Some(self.env.flatten());
         }
         // Capture the parents that were added during this registration
         // (these are the parents specific to this candidate).

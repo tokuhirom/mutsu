@@ -1838,8 +1838,8 @@ impl Interpreter {
         for phaser in self.end_phasers.iter_mut() {
             let captured = &mut phaser.1;
             for k in keys {
-                if captured.contains_key(*k)
-                    && let Some(v) = current_env.get(*k)
+                if captured.contains_key(k)
+                    && let Some(v) = current_env.get(k)
                 {
                     captured.insert(k.to_string(), v.clone());
                 }

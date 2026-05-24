@@ -5137,12 +5137,8 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn merge_sigilless_alias_writes(
-        &self,
-        saved_env: &mut HashMap<String, Value>,
-        current_env: &HashMap<String, Value>,
-    ) {
-        for (key, alias) in current_env {
+    pub(crate) fn merge_sigilless_alias_writes(&self, saved_env: &mut Env, current_env: &Env) {
+        for (key, alias) in current_env.iter() {
             if !key.starts_with("__mutsu_sigilless_alias::") {
                 continue;
             }
@@ -5175,7 +5171,7 @@ impl Interpreter {
                 saved_env.insert(alias_name.to_string(), value);
             }
         }
-        for (key, value) in current_env {
+        for (key, value) in current_env.iter() {
             if key.starts_with("__mutsu_predictive_seq_iter::")
                 || key.starts_with("__mutsu_sigilless_alias::!")
             {

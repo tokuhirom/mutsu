@@ -1302,7 +1302,7 @@ fn writeback_attributes_from_locals(
 ///
 /// Compares original attribute values with private (`!name`) and public (`.name`)
 /// env entries, preferring public when private is unchanged and public differs.
-fn writeback_attributes(env: &HashMap<String, Value>, attributes: &mut HashMap<String, Value>) {
+fn writeback_attributes(env: &Env, attributes: &mut HashMap<String, Value>) {
     for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
         if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
             continue;
