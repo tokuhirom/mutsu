@@ -307,7 +307,8 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         | Value::LazyIoLines { .. }
         | Value::HashSlotRef { .. }
         | Value::ArraySlotRef { .. }
-        | Value::DeferredHashAccess { .. } => Err(format!(
+        | Value::DeferredHashAccess { .. }
+        | Value::ContainerRef(_) => Err(format!(
             "cannot serialize Value variant: {:?}",
             std::mem::discriminant(v)
         )),

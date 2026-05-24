@@ -10,12 +10,20 @@ impl Value {
     ///   1 eqv 1.0  → False  (Int vs Num)
     ///   [1,2] eqv (1,2)  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
-        // Unwrap Scalar containers: eqv looks through containerization
+        // Unwrap Scalar/ContainerRef containers: eqv looks through containerization
         if let Value::Scalar(inner) = self {
             return inner.eqv(other);
         }
         if let Value::Scalar(inner) = other {
             return self.eqv(inner);
+        }
+        if let Value::ContainerRef(arc) = self {
+            let inner = arc.lock().unwrap();
+            return inner.eqv(other);
+        }
+        if let Value::ContainerRef(arc) = other {
+            let inner = arc.lock().unwrap();
+            return self.eqv(&inner);
         }
         // Junction threading: if either side is a junction, thread eqv
         // through it and return the boolean result of the junction.
@@ -421,6 +429,10 @@ impl Value {
             Value::CustomType { .. } => false,
             Value::CustomTypeInstance { .. } => true,
             Value::Scalar(inner) => inner.truthy(),
+            Value::ContainerRef(arc) => {
+                let inner = arc.lock().unwrap();
+                inner.truthy()
+            }
             Value::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
@@ -554,6 +566,10 @@ impl Value {
                 return tn.resolve() == type_name;
             }
             Value::Scalar(inner) => return inner.isa_check(type_name),
+            Value::ContainerRef(arc) => {
+                let inner = arc.lock().unwrap();
+                return inner.isa_check(type_name);
+            }
             Value::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
@@ -853,6 +869,10 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Uni { .. } => "Uni".to_string(),
         Value::Mixin(inner, mixins) => {
             allomorph_type_name(inner, mixins).unwrap_or_else(|| what_type_name(inner))
+        }
+        Value::ContainerRef(arc) => {
+            let inner = arc.lock().unwrap();
+            what_type_name(&inner)
         }
         _ => "Any".to_string(),
     }
