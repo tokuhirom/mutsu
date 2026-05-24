@@ -1,6 +1,6 @@
 use super::*;
 
-const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
+pub(super) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl VM {
     /// Call a compiled method body (MethodDef with compiled_code).
@@ -709,7 +709,7 @@ impl VM {
     /// to avoid the ~12μs Arc::make_mut deep clone. Populates locals directly
     /// from source data (attributes, args, special variables).
     #[allow(clippy::too_many_arguments)]
-    fn call_compiled_method_fast(
+    pub(super) fn call_compiled_method_fast(
         &mut self,
         receiver_class_name: &str,
         owner_class: &str,

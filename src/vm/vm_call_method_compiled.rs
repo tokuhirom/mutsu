@@ -235,10 +235,54 @@ impl VM {
             Value::Package(name) => Some(name.resolve()),
             _ => None,
         };
-        if let Some(cn) = class_name
-            && let Some((owner_class, method_def)) = {
-                let class_sym = crate::symbol::Symbol::intern(&cn);
-                let method_sym = crate::symbol::Symbol::intern(method);
+        if let Some(ref cn) = class_name {
+            let class_sym = crate::symbol::Symbol::intern(cn);
+            let method_sym = crate::symbol::Symbol::intern(method);
+            let cache_key = (class_sym, method_sym);
+
+            // Fast method dispatch cache: skip wrap chain check, compiled_code
+            // extraction, and param_def eligibility scans for known-fast methods.
+            if !self.interpreter.has_any_wrap_chains()
+                && let Some(entry) = self.fast_method_cache.get(&cache_key)
+                && args.len() <= entry.positional_count
+            {
+                let needs_default_eval =
+                    entry.has_defaults && args.len() < entry.positional_count && {
+                        let mut pos = 0;
+                        entry.method_def.param_defs.iter().any(|pd| {
+                            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+                                return false;
+                            }
+                            let result = pos >= args.len() && pd.default.is_some();
+                            pos += 1;
+                            result
+                        })
+                    };
+                let has_attr_aliases = match &target {
+                    Value::Instance { attributes, .. } => attributes
+                        .keys()
+                        .any(|k| k.starts_with(super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX)),
+                    _ => false,
+                };
+                if !needs_default_eval && !has_attr_aliases {
+                    let owner_class = entry.owner_class.resolve();
+                    let method_def = entry.method_def.clone();
+                    let cc = entry.compiled_code.clone();
+                    let can_skip_merge = entry.can_skip_merge;
+                    return self.dispatch_compiled_method(
+                        cn,
+                        &owner_class,
+                        method,
+                        &method_def,
+                        &cc,
+                        target,
+                        args,
+                        Some(can_skip_merge),
+                    );
+                }
+            }
+
+            if let Some((owner_class, method_def)) = {
                 // Monomorphic inline cache: single-entry check before HashMap.
                 if let Some((cc, cm, ref co, ref cd)) = self.last_method_resolve
                     && cc == class_sym
@@ -247,7 +291,6 @@ impl VM {
                 {
                     Some((co.clone(), cd.clone()))
                 } else {
-                    let cache_key = (class_sym, method_sym);
                     let cached = self.method_resolve_cache.get(&cache_key).cloned();
                     let result: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
                         if let Some(ref hit) = cached
@@ -258,7 +301,7 @@ impl VM {
                         } else {
                             let resolved = self
                                 .interpreter
-                                .resolve_method_with_owner_invocant(&cn, method, &args, &target);
+                                .resolve_method_with_owner_invocant(cn, method, &args, &target);
                             let resolved_arc =
                                 resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
                             if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
@@ -275,72 +318,215 @@ impl VM {
                     }
                     result
                 }
-            }
-        {
-            if let Some(result) =
-                self.check_method_wrap_chain(&cn, &owner_class, method, &method_def, &target, &args)
-            {
-                return result;
-            }
-            if let Some(ref cc) = method_def.compiled_code {
-                let cc = cc.clone();
-                let target_id = match &target {
-                    Value::Instance { id, .. } => Some(*id),
-                    _ => None,
-                };
-                let attributes = match &target {
-                    Value::Instance { attributes, .. } => (**attributes).clone(),
-                    _ => std::collections::HashMap::new(),
-                };
-                let invocant_for_dispatch = if attributes.is_empty() {
-                    Value::Package(crate::symbol::Symbol::intern(&cn))
-                } else {
-                    target.clone()
-                };
-                let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                    &cn,
-                    method,
-                    &args,
-                    invocant_for_dispatch,
-                );
-                let invocant = Some(target);
-                let empty_fns = HashMap::new();
-                let method_result = self.call_compiled_method(
-                    &cn,
+            } {
+                if let Some(result) = self.check_method_wrap_chain(
+                    cn,
                     &owner_class,
                     method,
                     &method_def,
-                    &cc,
-                    attributes,
-                    args,
-                    invocant,
-                    &empty_fns,
-                );
-                if pushed_dispatch {
-                    self.interpreter.pop_method_dispatch();
+                    &target,
+                    &args,
+                ) {
+                    return result;
                 }
-                self.interpreter.pop_method_samewith_context();
-                let (result, new_attrs) = method_result?;
-                if let Some(id) = target_id {
-                    self.interpreter.overwrite_instance_bindings_by_identity(
-                        &cn,
-                        id,
-                        new_attrs.clone(),
-                    );
-                    self.overwrite_instance_in_locals(&cn, id, &new_attrs);
-                    if !self.interpreter.in_lvalue_assignment
-                        && let Value::Proxy { ref fetcher, .. } = result
-                    {
-                        return self
-                            .interpreter
-                            .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                if let Some(ref compiled) = method_def.compiled_code {
+                    let cc = compiled.clone();
+
+                    // Try to populate fast_method_cache for future calls
+                    if !method_def.is_multi {
+                        self.try_populate_fast_cache(cache_key, cn, &owner_class, &method_def, &cc);
                     }
+
+                    return self.dispatch_compiled_method(
+                        cn,
+                        &owner_class,
+                        method,
+                        &method_def,
+                        &cc,
+                        target,
+                        args,
+                        None,
+                    );
                 }
-                return Ok(result);
             }
         }
         self.interpreter
             .call_method_with_values(target, method, args)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_compiled_method(
+        &mut self,
+        cn: &str,
+        owner_class: &str,
+        method: &str,
+        method_def: &std::sync::Arc<crate::runtime::MethodDef>,
+        cc: &std::sync::Arc<CompiledCode>,
+        target: Value,
+        args: Vec<Value>,
+        can_skip_merge: Option<bool>,
+    ) -> Result<Value, RuntimeError> {
+        let target_id = match &target {
+            Value::Instance { id, .. } => Some(*id),
+            _ => None,
+        };
+        let attributes = match &target {
+            Value::Instance { attributes, .. } => (**attributes).clone(),
+            _ => std::collections::HashMap::new(),
+        };
+        let empty_fns = HashMap::new();
+        let method_result = if let Some(csm) = can_skip_merge {
+            // Fast path: move target directly as base (avoid extra clone).
+            let invocant_for_dispatch = if attributes.is_empty() {
+                Value::Package(crate::symbol::Symbol::intern(cn))
+            } else {
+                target.clone()
+            };
+            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                cn,
+                method,
+                &args,
+                invocant_for_dispatch,
+            );
+            let result = self.call_compiled_method_fast(
+                cn,
+                owner_class,
+                method,
+                method_def,
+                cc,
+                attributes,
+                args,
+                target,
+                &empty_fns,
+                csm,
+            );
+            if pushed_dispatch {
+                self.interpreter.pop_method_dispatch();
+            }
+            self.interpreter.pop_method_samewith_context();
+            result
+        } else {
+            let invocant_for_dispatch = if attributes.is_empty() {
+                Value::Package(crate::symbol::Symbol::intern(cn))
+            } else {
+                target.clone()
+            };
+            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                cn,
+                method,
+                &args,
+                invocant_for_dispatch,
+            );
+            let invocant = Some(target);
+            let result = self.call_compiled_method(
+                cn,
+                owner_class,
+                method,
+                method_def,
+                cc,
+                attributes,
+                args,
+                invocant,
+                &empty_fns,
+            );
+            if pushed_dispatch {
+                self.interpreter.pop_method_dispatch();
+            }
+            self.interpreter.pop_method_samewith_context();
+            result
+        };
+        let (result, new_attrs) = method_result?;
+        if let Some(id) = target_id {
+            self.interpreter
+                .overwrite_instance_bindings_by_identity(cn, id, new_attrs.clone());
+            self.overwrite_instance_in_locals(cn, id, &new_attrs);
+            if !self.interpreter.in_lvalue_assignment
+                && let Value::Proxy { ref fetcher, .. } = result
+            {
+                return self
+                    .interpreter
+                    .proxy_fetch(fetcher, None, cn, &new_attrs, id);
+            }
+        }
+        Ok(result)
+    }
+
+    /// Pre-compute and cache fast dispatch eligibility for a method.
+    fn try_populate_fast_cache(
+        &mut self,
+        cache_key: (crate::symbol::Symbol, crate::symbol::Symbol),
+        receiver_class: &str,
+        owner_class: &str,
+        method_def: &std::sync::Arc<crate::runtime::MethodDef>,
+        cc: &std::sync::Arc<CompiledCode>,
+    ) {
+        let has_rw_params = method_def
+            .param_defs
+            .iter()
+            .any(|pd| pd.traits.iter().any(|t| t == "rw"));
+        if has_rw_params {
+            return;
+        }
+        let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
+            (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+                && pd.type_constraint.is_some()
+        });
+        let has_complex_params = method_def.param_defs.iter().any(|pd| {
+            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+                return false;
+            }
+            if pd.slurpy && pd.name == "%_" {
+                return false;
+            }
+            pd.slurpy
+                || pd.double_slurpy
+                || pd.named
+                || pd.where_constraint.is_some()
+                || pd.sub_signature.is_some()
+                || pd.outer_sub_signature.is_some()
+                || pd.code_signature.is_some()
+                || pd
+                    .type_constraint
+                    .as_ref()
+                    .is_some_and(|tc| tc.contains('('))
+        });
+        let has_role_bindings = self
+            .interpreter
+            .class_role_param_bindings(owner_class)
+            .is_some()
+            || self
+                .interpreter
+                .class_role_param_bindings(receiver_class)
+                .is_some();
+        if has_invocant_constraint || has_complex_params || has_role_bindings {
+            return;
+        }
+        let positional_count = method_def
+            .param_defs
+            .iter()
+            .filter(|pd| {
+                !pd.is_invocant
+                    && !pd.traits.iter().any(|t| t == "invocant")
+                    && !pd.slurpy
+                    && !pd.double_slurpy
+                    && !pd.named
+            })
+            .count();
+        let can_skip_merge = !cc.has_env_writes;
+        let has_defaults = method_def.param_defs.iter().any(|pd| {
+            !pd.is_invocant && !pd.traits.iter().any(|t| t == "invocant") && pd.default.is_some()
+        });
+        self.fast_method_cache.insert(
+            cache_key,
+            super::FastMethodCacheEntry {
+                owner_class: crate::symbol::Symbol::intern(owner_class),
+                method_def: method_def.clone(),
+                compiled_code: cc.clone(),
+                can_skip_merge,
+                positional_count,
+                has_defaults,
+            },
+        );
     }
 
     pub(super) fn try_compiled_method_mut_or_interpret(

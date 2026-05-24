@@ -316,6 +316,7 @@ impl VM {
             self.fn_resolve_gen += 1;
             self.method_resolve_cache.clear();
             self.last_method_resolve = None;
+            self.fast_method_cache.clear();
             if *is_export && !self.interpreter.suppress_exports {
                 self.interpreter.register_exported_sub(
                     self.interpreter.current_package().to_string(),
@@ -488,6 +489,7 @@ impl VM {
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
+        self.fast_method_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
@@ -515,6 +517,7 @@ impl VM {
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
+        self.fast_method_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
@@ -529,6 +532,7 @@ impl VM {
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
+        self.fast_method_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
@@ -543,6 +547,7 @@ impl VM {
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
+        self.fast_method_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
