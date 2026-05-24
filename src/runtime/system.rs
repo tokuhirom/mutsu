@@ -1074,13 +1074,9 @@ impl Interpreter {
         Value::Nil
     }
 
-    fn build_lexical_hash(
-        &self,
-        env: &HashMap<String, Value>,
-        callframe_depth: Option<usize>,
-    ) -> Value {
+    fn build_lexical_hash(&self, env: &Env, callframe_depth: Option<usize>) -> Value {
         let mut hash = HashMap::new();
-        for (k, v) in env {
+        for (k, v) in env.iter() {
             // Skip internal keys and special variables
             if k.starts_with("__") || k.starts_with('?') || k.starts_with('*') || k.starts_with('=')
             {

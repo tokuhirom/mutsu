@@ -302,53 +302,18 @@ For `can_skip_merge` methods with no closures, skip inserting `!`, `__mutsu_call
 
 The env deep clone (~12-15μs) is the dominant remaining cost. Current `Env` is `Arc<HashMap<String, Value>>` (defined in `src/env.rs` as a struct wrapping `Arc<HashMap>`, with `Deref`/`DerefMut` impls that call `Arc::make_mut` on mutation). The clone is triggered by `push_light_call_frame` bumping the Arc refcount, then `env_mut()` seeing refcount > 1.
 
-**3a. Scope chain data structure**
+**3a. Scope chain data structure — PARTIALLY COMPLETED (2026-05-24)**
 
-Replace the flat env with a linked scope chain:
-```rust
-pub struct Env {
-    local: HashMap<String, Value>,   // method-specific entries
-    parent: Option<Arc<Env>>,        // outer scope (shared, not cloned)
-}
-```
+**Completed**: API refactoring of `Env` — removed `Deref`/`DerefMut` impls and added explicit methods (`get`, `insert`, `remove`, `contains_key`, `get_mut`, `retain`, `iter`, `keys`, `values`, `values_mut`, `flatten`, `entry_or_insert`, `entry_or_insert_with`). Zero performance regression. This decouples the Env API from the internal representation, allowing future scope chain changes without touching callers.
 
-**Implementation plan** (can be parallelized across 3-4 agents):
+**Attempted and rejected**: Adding a `parent: Option<Arc<EnvParent>>` field to the Env struct for scope chain lookups. Benchmarked with three approaches:
+1. `Arc<EnvInner { local: HashMap, parent: Option<Arc<EnvInner>> }>` — 16-24% regression on bench-class/method-call due to extra indirection in every get()/insert() call
+2. `Arc<HashMap> + Option<Arc<EnvParent>>` — 10-20% regression from extra struct size (16 bytes vs 8 bytes) and parent-check branch in get()
+3. Fresh env for can_skip_merge methods — broke `test-util-test-iter-opt.t` because `overwrite_instance_bindings_by_identity` needs instance references in the env for attribute propagation
 
-1. **Agent 1: Core Env refactor** (`src/env.rs`, ~200 LOC)
-   - Replace `inner: Arc<HashMap<String, Value>>` with `local: HashMap<String, Value>` + `parent: Option<Arc<Env>>`
-   - Implement `get()` — check local first, walk parent chain
-   - Implement `insert()` — always into local
-   - Implement `contains_key()` — check local + parents
-   - Implement `iter()` — merge local entries over shadowed parent entries
-   - Implement `clone_for_method_entry()` — create a new empty scope with current env as parent (O(1))
-   - Implement `flatten()` — merge all scopes into a flat HashMap (needed for closures/debugging)
-   - Keep `ptr_eq` for the fast-path checks
-   - **Key constraint**: `get()` must be a tight loop — inline the local check, only call a `get_parent()` method on miss
+**Root cause**: Env is in the hottest possible path (every variable read/write). Even a single extra field or branch in `get()` causes measurable regression across all benchmarks. The estimated ~0.3μs overhead per method call (from PERFORMANCE.md risk analysis) was correct for individual calls, but the aggregate impact across ALL env operations (not just method dispatch) was 3-5x higher than estimated.
 
-2. **Agent 2: VM call frame adaptation** (`src/vm/vm_env_helpers.rs`, `src/vm/vm_method_dispatch.rs`)
-   - `push_light_call_frame`: Instead of `clone_env()`, use `env.clone_for_method_entry()` — creates a child scope with empty local, parent = current env
-   - `pop_call_frame`: Instead of `set_env(saved_env)`, detach the method scope and restore parent
-   - `call_compiled_method_fast`: Insert method vars (self, ?CLASS, params, etc.) into the local scope only — no deep clone needed
-   - `can_skip_merge` path: just drop the local scope (O(1))
-   - `merge_method_env`: walk the local scope entries and propagate non-local changes to parent
-
-3. **Agent 3: Interpreter env usage audit** (`src/runtime/` — ~35 files)
-   - Grep all `env()`, `env_mut()`, `env.get()`, `env.insert()`, `env.remove()`, `env.iter()`, `env.contains_key()` call sites
-   - Classify each as: (a) reads local vars — works with chain, (b) reads outer-scope vars — needs chain walk, (c) writes — needs local scope, (d) iterates — needs flatten or chain iter
-   - Most reads are for `self`, params, `$_`, `?CLASS` — all in the immediate scope
-   - Outer scope reads: `$*` dynamic vars, `&` subs, `%*ENV` — need parent chain walk
-   - Flag any patterns that assume flat env (e.g., `env.len()`, `env.keys()`)
-
-4. **Agent 4: Closure capture refactor** (`src/vm/vm_register_ops.rs`, `src/compiler/`)
-   - Closures currently capture `env.clone()` — with scope chain, they hold `Arc<Env>` (parent chain)
-   - Verify closure reads/writes work through the parent chain
-   - `may_capture_outer_vars` flag already exists — use it to skip parent chain for methods that don't create closures
-
-**Expected impact**: Method entry goes from O(100 clone) to O(6-10 insert into empty HashMap). Estimated ~12μs savings per call → method-call ~30% faster, bench-class ~25% faster.
-
-**Risk**: `env.get()` adds 1 branch (check local, then parent) per lookup. For variables in the immediate scope, this is ~1ns extra. For outer-scope lookups (rare in method bodies), add ~2-5ns per parent hop. Total overhead: ~0.3μs per method call (assuming ~300 env reads, mostly local-scope hits). Net gain: ~12μs saved − ~0.3μs overhead = ~11.7μs net improvement.
-
-**Mitigation**: If `get()` overhead is worse than expected, add a "scope depth" counter to Env. For depth 1 (most method calls), `get()` checks local then falls through to a guaranteed flat parent. LLVM can optimize this to a predictable branch.
+**Alternative approach needed**: Instead of changing the Env data structure, optimize the deep clone by reducing the env SIZE before cloning. The `skip_env_setup` optimization already reduces inserts from ~15+ to ~6. Further reducing the env size (by moving more variables to locals-only) would shrink the clone cost proportionally. See Phase 3b for the complementary approach of indexed closure captures.
 
 **3b. Closure captures as indexed slots**
 

@@ -1125,9 +1125,9 @@ impl VM {
                 // Do not shadow built-in types (e.g. `my class X::Roast::Channel`
                 // must not make the bare name `Channel` resolve to the user class).
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    let env = self.interpreter.env_mut();
-                    env.entry(short)
-                        .or_insert_with(|| Value::Package(Symbol::intern(&qualified_name)));
+                    self.interpreter.env_mut().entry_or_insert_with(short, || {
+                        Value::Package(Symbol::intern(&qualified_name))
+                    });
                 }
             }
             // When `my class` is used, register the class name as lexically scoped
@@ -1290,10 +1290,9 @@ impl VM {
                     .map(|(_, s)| s.to_string())
                     .unwrap_or_else(|| qualified_name.clone());
                 if !short.is_empty() && short != qualified_name {
-                    self.interpreter
-                        .env_mut()
-                        .entry(short)
-                        .or_insert_with(|| Value::Package(Symbol::intern(&qualified_name)));
+                    self.interpreter.env_mut().entry_or_insert_with(short, || {
+                        Value::Package(Symbol::intern(&qualified_name))
+                    });
                 }
             }
             self.env_dirty = true;

@@ -142,11 +142,10 @@ impl VM {
         self.interpreter.inject_pending_callsite_line();
 
         // Merge captured environment into current env (or_insert = don't overwrite existing)
-        for (k, v) in &data.env {
+        for (k, v) in data.env.iter() {
             self.interpreter
                 .env_mut()
-                .entry(k.clone())
-                .or_insert_with(|| v.clone());
+                .entry_or_insert(k.clone(), v.clone());
         }
         // Override with persisted per-closure-instance captured variable state.
         // This ensures that each closure instance maintains independent mutable
@@ -537,7 +536,7 @@ impl VM {
             for k in captured_names.iter() {
                 let meta_key = format!("__mutsu_state_key::{}", k);
                 if let Some(Value::Str(state_key)) = self.interpreter.env().get(&meta_key).cloned()
-                    && let Some(val) = self.interpreter.env().get(*k).cloned()
+                    && let Some(val) = self.interpreter.env().get(k).cloned()
                 {
                     self.interpreter.set_state_var(state_key.to_string(), val);
                 }

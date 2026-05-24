@@ -1172,7 +1172,7 @@ impl Interpreter {
             let mut new_env = saved_env.clone();
             for (k, v) in &closure_base_env {
                 if merge_all {
-                    new_env.entry(k.clone()).or_insert(v.clone());
+                    new_env.entry_or_insert(k.clone(), v.clone());
                     continue;
                 }
                 if matches!(new_env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..))
@@ -1641,7 +1641,7 @@ impl Interpreter {
                 .locals
                 .iter()
                 .enumerate()
-                .filter(|(_, name)| data.env.contains_key(*name))
+                .filter(|(_, name)| data.env.contains_key(name))
                 .map(|(idx, name)| (idx, name.clone()))
                 .collect();
             let mut assigned_slots = std::collections::HashSet::new();
