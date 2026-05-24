@@ -1075,6 +1075,15 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
+        // ContainerRef: deref for increment, write back through the shared container
+        if let Value::ContainerRef(ref arc) = raw_val {
+            let inner = arc.lock().unwrap().clone();
+            let val = self.normalize_incdec_source_with_type(name, inner);
+            let new_val = self.increment_value_smart(&val)?;
+            arc.lock().unwrap().clone_from(&new_val);
+            self.stack.push(val);
+            return Ok(());
+        }
         // If the value is a Proxy, FETCH → increment → STORE
         if let Value::Proxy { storer, .. } = &raw_val
             && !matches!(storer.as_ref(), Value::Nil)
@@ -1169,6 +1178,15 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
+        // ContainerRef: deref for decrement, write back through the shared container
+        if let Value::ContainerRef(ref arc) = raw_val {
+            let inner = arc.lock().unwrap().clone();
+            let val = self.normalize_incdec_source_with_type(name, inner);
+            let new_val = self.decrement_value_smart(&val)?;
+            arc.lock().unwrap().clone_from(&new_val);
+            self.stack.push(val);
+            return Ok(());
+        }
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.decrement_value_smart(&val)?;
         let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
@@ -3663,9 +3681,18 @@ impl VM {
             {
                 self.local_bind_pairs.push((source_idx, idx));
             }
-            // Create a shared ContainerRef so the binding persists across scopes.
-            // Both the source and target variables will hold the same Arc<Mutex<Value>>.
-            if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            // Create a shared ContainerRef only when the source variable exists in
+            // an outer call frame (cross-scope binding, e.g., method attribute binding).
+            // Same-scope bindings use the existing alias mechanism.
+            let source_in_outer_frame = self
+                .call_frames
+                .iter()
+                .any(|f| f.saved_env.contains_key(&resolved_source));
+            if source_in_outer_frame
+                && !name.starts_with('@')
+                && !name.starts_with('%')
+                && !name.starts_with('&')
+            {
                 let container = if let Value::ContainerRef(ref arc) = val {
                     Value::ContainerRef(arc.clone())
                 } else {
