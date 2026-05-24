@@ -13,6 +13,18 @@ use num_traits::{Signed, Zero};
 
 type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
 
+/// Pre-computed fast dispatch entry for compiled methods.
+/// Caches all the information needed to skip intermediate dispatch steps
+/// (wrap chain check, compiled_code extraction, fast-path eligibility checks).
+struct FastMethodCacheEntry {
+    owner_class: Symbol,
+    method_def: Arc<crate::runtime::MethodDef>,
+    compiled_code: Arc<CompiledCode>,
+    can_skip_merge: bool,
+    positional_count: usize,
+    has_defaults: bool,
+}
+
 mod vm_arith_ops;
 mod vm_call_autothread;
 mod vm_call_dispatch;
@@ -151,6 +163,10 @@ pub(crate) struct VM {
     /// Monomorphic inline cache: stores the last (class, method, owner, def)
     /// resolution result. Skips HashMap lookup for repeated same-class calls.
     last_method_resolve: Option<(Symbol, Symbol, String, Arc<crate::runtime::MethodDef>)>,
+    /// Fast method dispatch cache: maps (class, method) to pre-computed dispatch
+    /// info including compiled code and fast-path eligibility. Skips wrap chain
+    /// checks, compiled_code extraction, and param_def eligibility scans.
+    fast_method_cache: HashMap<(Symbol, Symbol), FastMethodCacheEntry>,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
@@ -324,6 +340,7 @@ impl VM {
             pos_light_call_cache_gen: 0,
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
+            fast_method_cache: HashMap::new(),
             block_declared_vars: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),
