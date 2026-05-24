@@ -40,8 +40,13 @@
 ### Container semantics
 
 - [x] WhateverCode 複数引数 (#2232)
-- [ ] Scalar コンテナの生成・束縛が raku 互換
-- [ ] 関連 roast テストの通過率改善
+- [x] ContainerRef による `:=` バインドの共有コンテナ (#2401)
+  - `$!x := $var` 属性バインド（メソッド戻り後も維持）
+  - sigilless `has $x; $x := $var` 属性バインド
+  - post-increment/decrement の ContainerRef 対応
+- [ ] `our $x` クラス属性のバインド (attributes.t tests 11-12)
+- [ ] 多次元構造のエレメントレベルバインド (nested.t 16 failures)
+- [ ] `undefine` の aggregate 参照セマンティクス (undef.t 3 failures)
 
 ---
 
