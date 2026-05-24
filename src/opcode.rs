@@ -474,6 +474,9 @@ pub(crate) enum OpCode {
     /// Tag the current value as coming from a reversed named container (for `@a.reverse` writeback)
     TagContainerRefReversed(u32),
 
+    /// Clear an aggregate variable (@/%) in-place so references see the change.
+    UndefineAggregate(u32),
+
     // -- Unary coercion --
     NumCoerce,
     StrCoerce,
