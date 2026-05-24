@@ -962,6 +962,11 @@ pub(crate) struct CompiledCode {
     /// Each entry: (attr_name, private_slot, public_slot, arr_private, arr_public, hash_private, hash_public).
     /// Slots are `None` if not found in `locals`. Avoids 6 × N_attrs linear searches.
     pub(crate) attr_slots: Vec<AttrSlots>,
+    /// Bitmap: true if local[i] needs to be synced to env (because it's
+    /// referenced by GetGlobal/SetGlobal in this code or closures exist).
+    /// Locals that are only accessed via GetLocal don't need env sync,
+    /// reducing env size and clone cost.
+    pub(crate) needs_env_sync: Vec<bool>,
 }
 
 /// Pre-computed local slot indices for a single attribute.
@@ -993,6 +998,7 @@ impl CompiledCode {
             has_env_writes: false,
             may_capture_outer_vars: false,
             attr_slots: Vec::new(),
+            needs_env_sync: Vec::new(),
         }
     }
 
@@ -1065,6 +1071,51 @@ impl CompiledCode {
                 }
                 self.may_capture_outer_vars = true;
                 return;
+            }
+        }
+    }
+
+    /// Compute which locals need to be synced to env.
+    /// A local needs env sync if it's referenced by GetGlobal/SetGlobal/etc.
+    /// in this code. Locals only accessed via GetLocal don't need env sync,
+    /// which reduces env size and makes method call env clones cheaper.
+    pub(crate) fn compute_needs_env_sync(&mut self) {
+        let n = self.locals.len();
+        self.needs_env_sync = vec![false; n];
+        if n == 0 {
+            return;
+        }
+        // If closures exist, conservatively mark all locals as needing env sync
+        // because closures may capture any outer variable via GetGlobal.
+        if !self.closure_compiled_codes.is_empty() {
+            self.needs_env_sync.fill(true);
+            return;
+        }
+        let locals_map: std::collections::HashMap<&str, usize> = self
+            .locals
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (name.as_str(), i))
+            .collect();
+        for op in &self.ops {
+            let name_idx = match op {
+                OpCode::GetGlobal(idx)
+                | OpCode::SetGlobal(idx)
+                | OpCode::SetGlobalRaw(idx)
+                | OpCode::PostIncrement(idx)
+                | OpCode::PostDecrement(idx)
+                | OpCode::PreIncrement(idx)
+                | OpCode::PreDecrement(idx)
+                | OpCode::GetArrayVar(idx)
+                | OpCode::GetHashVar(idx)
+                | OpCode::AssignExpr(idx) => Some(*idx),
+                _ => None,
+            };
+            if let Some(idx) = name_idx
+                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && let Some(&slot) = locals_map.get(name.as_str())
+            {
+                self.needs_env_sync[slot] = true;
             }
         }
     }

@@ -881,6 +881,7 @@ impl Interpreter {
                     );
                     cc.compute_may_capture_outer_vars();
                     cc.compute_attr_slots(attr_names);
+                    cc.compute_needs_env_sync();
                     to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
                 }
             }

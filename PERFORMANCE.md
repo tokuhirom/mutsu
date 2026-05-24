@@ -432,13 +432,21 @@ pub struct Env {
 
 **Implementation plan**: Grep all `env.insert(String, ...)` and `env.get(&str)` calls, convert to Symbol. Moderate-sized refactor (~50 files).
 
-**5b. Env compaction**
+**5b. Env compaction — PARTIALLY COMPLETED (2026-05-24)**
 
-Periodically compact the env by removing entries that are only accessible via GetLocal (and thus not needed in env). This reduces env size for the next clone.
+**Completed**: Infrastructure — `needs_env_sync: Vec<bool>` bitmap on `CompiledCode` computed at compile time. For each local slot, `true` if the variable is referenced by GetGlobal/SetGlobal/etc. in this code (meaning it needs env visibility). If the code has closures, all locals are conservatively marked `true`. Computed by `compute_needs_env_sync()` for all compiled code (subs, methods, closures, top-level).
 
-- Track which env entries were actually read via GetGlobal during method execution
-- On method exit, remove entries that were never read from env (they were in locals)
-- Over time, the env shrinks to only truly global/dynamic entries
+**Attempted and rejected**: Three approaches to active compaction:
+
+1. **Skip env sync in `ensure_env_synced`** — Prevent locals-only variables from being synced to env. Broke `let`/`temp` (BlockScope restoration reads vars from env), CATCH blocks, and dynamic variable resolution. Root cause: env serves as the communication channel between `ensure_env_synced` (writes) and `sync_locals_from_env` (reads). Skipping writes causes stale reads.
+
+2. **Filtered `sync_locals_from_env`** — Skip reading env→locals for locals-only variables. Broke `let`/`temp` restoration (which restores values VIA env) and BlockScope exit (which uses env to propagate changes across block boundaries).
+
+3. **Remove entries before method call** (`compact_env_for_method_call`) — Remove env entries matching locals-only variables before `push_light_call_frame`. Broke test-assertion line tracking and other mechanisms that read variables from env in called functions. The env removal triggers `Arc::make_mut` (the same deep clone we're trying to avoid), negating any benefit.
+
+**Root cause**: The env serves multiple purposes beyond variable lookup: (1) scope chain for BlockScope save/restore, (2) `let`/`temp` value preservation, (3) caller-callee communication, (4) line number tracking, (5) closure capture at creation time. Removing entries breaks any of these mechanisms.
+
+**Alternative path**: Phase 5a (Symbol keys) is more promising — reduces clone cost without removing entries. Or reduce env SIZE by preventing `ensure_env_synced` from adding entries in the first place (requires architectural change to BlockScope restoration to use locals directly instead of env round-trip).
 
 ## Measurement Notes
 

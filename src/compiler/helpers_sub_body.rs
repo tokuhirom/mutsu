@@ -317,6 +317,7 @@ impl Compiler {
         // Named subs are always routines — mark the compiled code so
         // call_compiled_closure catches CX::Return at the right boundary.
         sub_compiler.code.is_routine = true;
+        sub_compiler.code.compute_needs_env_sync();
         let mut cf = CompiledFunction {
             code: sub_compiler.code,
             params: params.to_vec(),
@@ -695,6 +696,7 @@ impl Compiler {
         // within the body, otherwise fall back to the parent compiler's
         // last_source_line.
         sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
+        sub_compiler.code.compute_needs_env_sync();
         sub_compiler.code
     }
 }
