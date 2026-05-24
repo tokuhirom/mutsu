@@ -144,6 +144,13 @@ impl VM {
                     self.stack.push(Value::Nil);
                 }
             }
+            // When resolved is an Array (from a HashSlotRef or ArraySlotRef), create
+            // an ArraySlotRef so nested binding like `$struct[1]<key><subkey>[1]` works.
+            Value::Array(..) => {
+                self.stack.push(resolved);
+                self.stack.push(index);
+                return self.exec_index_autovivify_op();
+            }
             // When the target is a HashSlotRef pointing to a non-existent key
             // (resolved to Any/Nil), in lazy mode create a DeferredHashAccess
             // that will autovivify on write.
