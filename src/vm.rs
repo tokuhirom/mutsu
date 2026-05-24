@@ -2610,6 +2610,44 @@ impl VM {
                 *ip += 1;
             }
 
+            OpCode::UndefineAggregate(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                if let Some(val) = self.get_env_with_main_alias(name) {
+                    match &val {
+                        Value::Array(arc, _) => {
+                            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+                            unsafe { (*ptr).clear() };
+                        }
+                        Value::Hash(arc) => {
+                            let ptr =
+                                Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                            unsafe { (*ptr).clear() };
+                        }
+                        _ => {}
+                    }
+                }
+                // Also update locals if present
+                if let Some(slot) = self.find_local_slot(code, name) {
+                    match &self.locals[slot] {
+                        Value::Array(arc, _) => {
+                            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+                            unsafe { (*ptr).clear() };
+                        }
+                        Value::Hash(arc) => {
+                            let ptr =
+                                Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                            unsafe { (*ptr).clear() };
+                        }
+                        _ => {
+                            self.locals[slot] = Value::Nil;
+                            self.mark_local_dirty(slot);
+                        }
+                    }
+                }
+                self.stack.push(Value::Nil);
+                *ip += 1;
+            }
+
             // -- Postfix operators --
             OpCode::PostIncrement(name_idx) => {
                 self.exec_post_increment_op(code, *name_idx)?;

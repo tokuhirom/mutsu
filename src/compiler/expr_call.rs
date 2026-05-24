@@ -344,10 +344,16 @@ impl Compiler {
                     arg_sources_idx: None,
                 });
             } else if let Some(vname) = var_name {
-                // Push Nil and assign to the variable
-                self.code.emit(OpCode::LoadNil);
-                let name_idx = self.code.add_constant(Value::str(vname));
-                self.code.emit(OpCode::AssignExpr(name_idx));
+                // For @/% variables, clear in-place so references see the change.
+                // For scalars, assign Nil.
+                if vname.starts_with('@') || vname.starts_with('%') {
+                    let name_idx = self.code.add_constant(Value::str(vname));
+                    self.code.emit(OpCode::UndefineAggregate(name_idx));
+                } else {
+                    self.code.emit(OpCode::LoadNil);
+                    let name_idx = self.code.add_constant(Value::str(vname));
+                    self.code.emit(OpCode::AssignExpr(name_idx));
+                }
             } else if matches!(&args[0], Expr::Index { target, .. } if matches!(**target, Expr::HashVar(_) | Expr::ArrayVar(_) | Expr::Var(_)))
             {
                 // undefine %hash<key> or undefine @arr[idx] -> target[index] = Nil
