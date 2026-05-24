@@ -857,6 +857,9 @@ pub enum Value {
     /// A Scalar container wrapping a value (from `.item` or `$()`).
     /// Prevents one level of flattening in list/array context.
     Scalar(Box<Value>),
+    /// A shared mutable Scalar container for `:=` binding.
+    /// Two variables bound together share the same `ContainerRef`.
+    ContainerRef(Arc<Mutex<Value>>),
     /// A lazy thunk: wraps a Sub that is evaluated on first access and cached.
     /// Used by `lazy { ... }` statement prefix.
     LazyThunk(Arc<LazyThunkData>),
@@ -1709,6 +1712,20 @@ impl PartialEq for Value {
             (Value::Uni { form: af, text: at }, Value::Uni { form: bf, text: bt }) => {
                 af == bf && at == bt
             }
+            // ContainerRef: deref and compare inner values.
+            // Check Arc pointer identity first to avoid deadlock on same-Arc comparison.
+            (Value::ContainerRef(a), Value::ContainerRef(b)) => {
+                if Arc::ptr_eq(a, b) {
+                    return true;
+                }
+                let a_val = a.lock().unwrap().clone();
+                let b_val = b.lock().unwrap().clone();
+                a_val == b_val
+            }
+            (Value::ContainerRef(a), other) | (other, Value::ContainerRef(a)) => {
+                let a_val = a.lock().unwrap().clone();
+                a_val == *other
+            }
             _ => false,
         }
     }
@@ -1781,6 +1798,39 @@ impl Value {
             Value::Hash(_) => Value::Scalar(Box::new(self)),
             other => other,
         }
+    }
+
+    /// Read through a `ContainerRef`, returning the inner value.
+    /// Non-ContainerRef values are returned as-is.
+    pub fn deref_container(&self) -> Value {
+        match self {
+            Value::ContainerRef(arc) => {
+                let inner = arc.lock().unwrap();
+                inner.clone()
+            }
+            other => other.clone(),
+        }
+    }
+
+    /// Assign a value into a `ContainerRef`.
+    /// Returns `true` if the value was a ContainerRef and the assignment happened.
+    pub fn assign_into_container(&self, new_val: Value) -> bool {
+        if let Value::ContainerRef(arc) = self {
+            let mut inner = arc.lock().unwrap();
+            *inner = new_val;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Create a new shared container holding this value.
+    pub fn into_container_ref(self) -> Value {
+        Value::ContainerRef(Arc::new(Mutex::new(self)))
+    }
+
+    pub fn is_container_ref(&self) -> bool {
+        matches!(self, Value::ContainerRef(_))
     }
 
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.

@@ -920,6 +920,10 @@ impl Value {
             }
             Value::CustomTypeInstance { type_name, .. } => format!("{}()", type_name),
             Value::Scalar(inner) => inner.to_string_value(),
+            Value::ContainerRef(arc) => {
+                let inner = arc.lock().unwrap();
+                inner.to_string_value()
+            }
             Value::LazyThunk(thunk_data) => {
                 // If already forced, display the cached value
                 let cache = thunk_data.cache.lock().unwrap();

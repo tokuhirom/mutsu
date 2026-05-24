@@ -172,6 +172,10 @@ impl Interpreter {
                 return self.dispatch_what(&target.array_slot_read(), args);
             }
             Value::DeferredHashAccess { .. } => "Any",
+            Value::ContainerRef(arc) => {
+                let inner = arc.lock().unwrap();
+                return self.dispatch_what(&inner, args);
+            }
         };
         let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
             ""

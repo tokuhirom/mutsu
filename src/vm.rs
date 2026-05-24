@@ -897,6 +897,12 @@ impl VM {
                 } else {
                     val
                 };
+                // Auto-deref ContainerRef for stack use
+                let val = if let Value::ContainerRef(ref arc) = val {
+                    arc.lock().unwrap().clone()
+                } else {
+                    val
+                };
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -1003,7 +1009,12 @@ impl VM {
             }
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
                 let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
+                let is_rebind = self.rebind_context;
                 self.bind_context = false;
+                // Only clear rebind_context if this is actually a binding operation
+                if is_rebind {
+                    self.rebind_context = false;
+                }
                 let name = match &code.constants[*name_idx as usize] {
                     Value::Str(s) => s.to_string(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
@@ -1215,6 +1226,14 @@ impl VM {
                         };
                         resolved_source = next.to_string();
                     }
+                    // Save old alias target before overwriting (for ContainerRef propagation)
+                    let old_alias_target = self.interpreter.env().get(&alias_key).and_then(|v| {
+                        if let Value::Str(s) = v {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        }
+                    });
                     self.interpreter
                         .env_mut()
                         .insert(alias_key.clone(), Value::str(resolved_source.clone()));
@@ -1228,11 +1247,81 @@ impl VM {
                     if source_readonly {
                         self.interpreter.mark_readonly(&name);
                     }
+                    // Create a shared ContainerRef for cross-scope binding persistence.
+                    if !name.starts_with('@')
+                        && !name.starts_with('%')
+                        && !name.starts_with('&')
+                        && !source_readonly
+                    {
+                        let container = if let Value::ContainerRef(ref arc) = val {
+                            Value::ContainerRef(arc.clone())
+                        } else {
+                            val.clone().into_container_ref()
+                        };
+                        // Store ContainerRef in target and source env
+                        self.set_env_with_main_alias(&name, container.clone());
+                        self.interpreter
+                            .env_mut()
+                            .insert(resolved_source.clone(), container.clone());
+                        // Also update the aliased attribute local if present (e.g., !x for sigilless x)
+                        if let Some(alias_target) = &old_alias_target {
+                            self.interpreter
+                                .env_mut()
+                                .insert(alias_target.to_string(), container.clone());
+                            // Update the matching local slot
+                            if let Some(alias_idx) =
+                                code.locals.iter().rposition(|n| n == alias_target.as_str())
+                            {
+                                self.locals[alias_idx] = container.clone();
+                                self.mark_local_dirty(alias_idx);
+                            }
+                        }
+                        // Update source local if present
+                        if let Some(source_idx) =
+                            code.locals.iter().rposition(|n| n == &resolved_source)
+                        {
+                            self.locals[source_idx] = container.clone();
+                            self.mark_local_dirty(source_idx);
+                        }
+                        // Propagate to saved call frames
+                        for frame in self.call_frames.iter_mut().rev() {
+                            if frame.saved_env.contains_key(&resolved_source) {
+                                frame
+                                    .saved_env
+                                    .insert(resolved_source.clone(), container.clone());
+                            }
+                        }
+                        *ip += 1;
+                        return Ok(());
+                    }
                     // Record pending alias bind for the caller to create
                     // local_bind_pairs after the closure returns.
                     if !source_readonly {
                         self.pending_alias_bind_names
                             .push((name.clone(), resolved_source));
+                    }
+                }
+                // Write through ContainerRef: update inner value for env-based variables.
+                // Return early to avoid overwriting the ContainerRef in env with a plain value.
+                if !is_rebind && !raw_mode {
+                    // Check env directly (not through alias resolution to avoid circular lookups)
+                    if let Some(Value::ContainerRef(arc)) =
+                        self.interpreter.env().get(&name).cloned()
+                    {
+                        arc.lock().unwrap().clone_from(&val);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    // Also check alias target for sigilless attributes
+                    let alias_key_check = format!("__mutsu_sigilless_alias::{}", name);
+                    if let Some(Value::Str(alias_target)) =
+                        self.interpreter.env().get(&alias_key_check).cloned()
+                        && let Some(Value::ContainerRef(arc)) =
+                            self.interpreter.env().get(alias_target.as_str()).cloned()
+                    {
+                        arc.lock().unwrap().clone_from(&val);
+                        *ip += 1;
+                        return Ok(());
                     }
                 }
                 if raw_mode && name.starts_with('@') {

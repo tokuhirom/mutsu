@@ -1075,6 +1075,15 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
+        // ContainerRef: deref for increment, write back through the shared container
+        if let Value::ContainerRef(ref arc) = raw_val {
+            let inner = arc.lock().unwrap().clone();
+            let val = self.normalize_incdec_source_with_type(name, inner);
+            let new_val = self.increment_value_smart(&val)?;
+            arc.lock().unwrap().clone_from(&new_val);
+            self.stack.push(val);
+            return Ok(());
+        }
         // If the value is a Proxy, FETCH → increment → STORE
         if let Value::Proxy { storer, .. } = &raw_val
             && !matches!(storer.as_ref(), Value::Nil)
@@ -1169,6 +1178,15 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
+        // ContainerRef: deref for decrement, write back through the shared container
+        if let Value::ContainerRef(ref arc) = raw_val {
+            let inner = arc.lock().unwrap().clone();
+            let val = self.normalize_incdec_source_with_type(name, inner);
+            let new_val = self.decrement_value_smart(&val)?;
+            arc.lock().unwrap().clone_from(&new_val);
+            self.stack.push(val);
+            return Ok(());
+        }
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.decrement_value_smart(&val)?;
         let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
@@ -2985,6 +3003,12 @@ impl VM {
             self.stack.push(forced);
             return Ok(());
         }
+        // Auto-deref ContainerRef: read the inner value for stack use
+        if let Value::ContainerRef(ref arc) = val {
+            let inner = arc.lock().unwrap().clone();
+            self.stack.push(inner);
+            return Ok(());
+        }
         // Fast path: non-Nil values are always valid — skip env lookup
         if matches!(val, Value::Nil) {
             if let Some(shared_val) = self.interpreter.get_shared_var(&name) {
@@ -3060,6 +3084,16 @@ impl VM {
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
             let mut val = raw_popped;
             let name = &code.locals[idx];
+            // Write through ContainerRef: update inner value without breaking sharing
+            if !is_rebind && let Value::ContainerRef(arc) = &self.locals[idx] {
+                let arc = arc.clone();
+                if !name.starts_with('@') && !name.starts_with('%') {
+                    val = Self::normalize_scalar_assignment_value(val);
+                }
+                arc.lock().unwrap().clone_from(&val);
+                self.mark_local_dirty(idx);
+                return Ok(());
+            }
             // If the current value is a Proxy, invoke STORE instead of overwriting
             if let Value::Proxy { storer, .. } = &self.locals[idx]
                 && !matches!(storer.as_ref(), Value::Nil)
@@ -3647,6 +3681,70 @@ impl VM {
             {
                 self.local_bind_pairs.push((source_idx, idx));
             }
+            // Create a shared ContainerRef only when the source variable exists in
+            // an outer call frame (cross-scope binding, e.g., method attribute binding).
+            // Same-scope bindings use the existing alias mechanism.
+            let source_in_outer_frame = self
+                .call_frames
+                .iter()
+                .any(|f| f.saved_env.contains_key(&resolved_source));
+            if source_in_outer_frame
+                && !name.starts_with('@')
+                && !name.starts_with('%')
+                && !name.starts_with('&')
+            {
+                let container = if let Value::ContainerRef(ref arc) = val {
+                    Value::ContainerRef(arc.clone())
+                } else {
+                    val.clone().into_container_ref()
+                };
+                self.locals[idx] = container.clone();
+                // Update source in locals if present
+                if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
+                    self.locals[source_idx] = container.clone();
+                    self.mark_local_dirty(source_idx);
+                }
+                // Update source in env
+                self.interpreter
+                    .env_mut()
+                    .insert(resolved_source.clone(), container.clone());
+                // Propagate ContainerRef to all saved call frame envs so the
+                // binding survives method returns (env restore).
+                for frame in self.call_frames.iter_mut().rev() {
+                    if frame.saved_env.contains_key(&resolved_source) {
+                        frame
+                            .saved_env
+                            .insert(resolved_source.clone(), container.clone());
+                    }
+                }
+                // Propagate ContainerRef to aliased attribute locals (e.g., when
+                // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
+                let alias_key_for_target = format!("__mutsu_sigilless_alias::{}", name);
+                if let Some(Value::Str(alias_target)) =
+                    self.interpreter.env().get(&alias_key_for_target).cloned()
+                    && let Some(alias_idx) =
+                        code.locals.iter().rposition(|n| n == alias_target.as_str())
+                {
+                    self.locals[alias_idx] = container.clone();
+                    self.mark_local_dirty(alias_idx);
+                }
+                self.set_env_with_main_alias(name, container);
+                self.mark_local_dirty(idx);
+                return Ok(());
+            }
+        }
+        // Write through ContainerRef in slow path: update inner value
+        if !is_bind
+            && !is_rebind
+            && let Value::ContainerRef(arc) = &self.locals[idx]
+        {
+            let arc = arc.clone();
+            if !name.starts_with('@') && !name.starts_with('%') {
+                val = Self::normalize_scalar_assignment_value(val);
+            }
+            arc.lock().unwrap().clone_from(&val);
+            self.mark_local_dirty(idx);
+            return Ok(());
         }
         // If the current value is a Proxy, invoke STORE instead of overwriting
         if let Value::Proxy { storer, .. } = &self.locals[idx]
