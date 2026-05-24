@@ -1283,14 +1283,24 @@ impl VM {
                             self.locals[source_idx] = container.clone();
                             self.mark_local_dirty(source_idx);
                         }
-                        // Propagate to saved call frames
+                        // Propagate to saved call frames (env AND locals)
                         for frame in self.call_frames.iter_mut().rev() {
                             if frame.saved_env.contains_key(&resolved_source) {
                                 frame
                                     .saved_env
                                     .insert(resolved_source.clone(), container.clone());
                             }
+                            // Also update saved locals so ensure_env_synced doesn't
+                            // overwrite the ContainerRef with a stale plain value.
+                            for (i, local_name) in code.locals.iter().enumerate() {
+                                if local_name == &resolved_source && i < frame.saved_locals.len() {
+                                    frame.saved_locals[i] = container.clone();
+                                }
+                            }
                         }
+                        // Persist ContainerRef in our_vars for `our` variables
+                        self.interpreter
+                            .set_our_var(name.clone(), container.clone());
                         *ip += 1;
                         return Ok(());
                     }
