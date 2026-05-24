@@ -133,6 +133,11 @@ Potential improvements:
 
 ## Optimization History
 
+### 2026-05-24: Fast method dispatch cache
+- **Change**: Add `FastMethodCacheEntry` cache that stores pre-computed dispatch info (compiled code, `can_skip_merge`, positional count, default presence) for non-multi compiled methods. On cache hit, skip wrap chain check, `compiled_code` extraction, and `param_defs` eligibility scans — call `call_compiled_method_fast` directly. Also avoid extra `target.clone()` on fast path by moving target as base value. Use `Symbol` for cached `owner_class`.
+- **Effect**: method-call ~4% faster, bench-class ~2% faster
+- **Value**: Eliminates ~2-3μs of dispatch overhead per method call. Savings are modest because env deep clone (~13μs) dominates.
+
 ### 2026-05-23: Reduce env inserts and compile ?CLASS/?ROLE to GetLocal
 - **Change**: Two optimizations: (1) Pre-allocate local slots for `?CLASS` and `?ROLE` in method bodies (both compile-time via `compile_sub_body` and runtime via `compile_methods_for_map`). `$?CLASS` and `$?ROLE` now compile to `GetLocal` instead of `GetGlobal`, avoiding env HashMap lookups. (2) For `can_skip_merge` methods with no closures, skip inserting `!`, `__mutsu_callable_id`, and array/hash attribute entries into env. Only insert self, __ANON_STATE__, ?CLASS, ?ROLE, _, and param values (~6 inserts instead of ~15+).
 - **Effect**: method-call ~11% faster, bench-class ~10% faster
@@ -278,19 +283,9 @@ Remaining: `locals_dirty_slots` and `local_bind_pairs` are moved via `std::mem::
 
 Added `last_method_resolve: Option<(Symbol, Symbol, String, MethodDef)>` to VM. Before the HashMap lookup, checks if the last resolution matches (class_sym, method_sym) — two Symbol comparisons (pointer equality). On hit: returns cached result with 0 HashMap lookups. On miss: falls through to `method_resolve_cache`, then updates inline cache. Effect: ~2-4% improvement on bench-class.
 
-**2b. Direct compiled function pointer in method cache**
+**2b. Fast method dispatch cache — DONE (2026-05-24)**
 
-Currently, even after resolution, the call path goes through:
-```
-try_compiled_method_or_interpret → check_method_wrap_chain → call_compiled_method
-```
-
-For the common case (compiled method, no wrap chain), store a direct function pointer in the cache:
-```
-CallMethod { cache: Option<(Symbol, Arc<CompiledCode>)> }
-```
-
-Skip all intermediate dispatch and call `vm.run()` with the cached compiled code.
+Added `FastMethodCacheEntry` that pre-computes and caches compiled code, `can_skip_merge`, positional count, and default presence for non-multi compiled methods. On cache hit (no wrap chains, arg count matches), skips wrap chain check, `compiled_code` extraction, and 5-6 `param_defs` eligibility scans — calls `call_compiled_method_fast` directly. Also avoids an extra `target.clone()` on the fast path by moving target directly as base value. Uses `Symbol` for cached `owner_class` to make clone O(1). Effect: method-call ~4% faster, bench-class ~2% faster.
 
 **Step 1c: Reduce env inserts for read-only methods — DONE (2026-05-23)**
 

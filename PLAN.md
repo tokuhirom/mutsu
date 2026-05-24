@@ -25,9 +25,12 @@
 
 - [x] fast method dispatch path: batched env + direct locals init (#2389)
   - bench-class: 3.6x → 2.8x、method-call: 3.6x → 2.9x
-- [ ] `$!attr` を GetLocal に変更（env clone 完全回避の前提条件）
-- [ ] `exec_call_method_op` のオーバーヘッド削減（Symbol化、junction skip）
-- [ ] monomorphic inline cache（メソッド解決の HashMap lookup 回避）
+- [x] `$!attr` を GetLocal に変更（env clone 完全回避の前提条件）
+- [x] `exec_call_method_op` のオーバーヘッド削減（Cow<str>、wrap chain skip、Slip check）
+- [x] monomorphic inline cache（メソッド解決の HashMap lookup 回避）
+- [x] fast method dispatch cache: コンパイル済みメソッドの直接ディスパッチ (#2407)
+- 現状: method-call 2.9x、bench-class 2.8x（目標: 2x 以下）
+- 残りのボトルネックは env deep clone (~13μs/call)。Phase 5a (Symbol keys) → Phase 3b (closure captures) で削減予定
 
 ### JSON::Tiny 完全対応
 
@@ -99,7 +102,7 @@
 
 ### パフォーマンス Phase 2
 
-- [ ] method-call を 2x 以下にする（$!attr GetLocal 化、monomorphic inline cache）
+- [ ] method-call を 2x 以下にする（env Symbol keys、closure captures indexed slots）
 - [ ] bench-class を 2x 以下にする
 - [ ] bench-fib (型制約付き) を 2x 以下にする
 
