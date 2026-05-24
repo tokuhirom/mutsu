@@ -3075,6 +3075,17 @@ impl VM {
             // same-named variable in an outer scope.
             let deleted_key = format!("__mutsu_deleted_index::{}", name);
             self.interpreter.env_mut().remove(&deleted_key);
+            // Replace stale ContainerRef in env with Nil so a new `my $var`
+            // doesn't inherit a binding from an earlier scope. Keep the key
+            // so saved frame propagation can still find it.
+            if matches!(
+                self.interpreter.env().get(name),
+                Some(Value::ContainerRef(_))
+            ) {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.to_string(), Value::Nil);
+            }
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.
@@ -3084,6 +3095,17 @@ impl VM {
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
             let mut val = raw_popped;
             let name = &code.locals[idx];
+            // Lazy sync: if env has a ContainerRef for this variable but the
+            // local doesn't, update the local from env. This handles the case
+            // where a cross-scope binding was created during a method call and
+            // the ContainerRef was propagated to saved_env but not saved_locals.
+            if !is_rebind
+                && !self.locals[idx].is_container_ref()
+                && !is_vardecl
+                && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
+            {
+                self.locals[idx] = Value::ContainerRef(arc);
+            }
             // Write through ContainerRef: update inner value without breaking sharing
             if !is_rebind && let Value::ContainerRef(arc) = &self.locals[idx] {
                 let arc = arc.clone();
@@ -3708,13 +3730,19 @@ impl VM {
                 self.interpreter
                     .env_mut()
                     .insert(resolved_source.clone(), container.clone());
-                // Propagate ContainerRef to all saved call frame envs so the
-                // binding survives method returns (env restore).
+                // Propagate ContainerRef to all saved call frame envs AND locals
+                // so the binding survives method returns (env restore) and
+                // ensure_env_synced doesn't overwrite with stale values.
                 for frame in self.call_frames.iter_mut().rev() {
                     if frame.saved_env.contains_key(&resolved_source) {
                         frame
                             .saved_env
                             .insert(resolved_source.clone(), container.clone());
+                    }
+                    for (i, local_name) in code.locals.iter().enumerate() {
+                        if local_name == &resolved_source && i < frame.saved_locals.len() {
+                            frame.saved_locals[i] = container.clone();
+                        }
                     }
                 }
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
@@ -3728,7 +3756,17 @@ impl VM {
                     self.locals[alias_idx] = container.clone();
                     self.mark_local_dirty(alias_idx);
                 }
-                self.set_env_with_main_alias(name, container);
+                self.set_env_with_main_alias(name, container.clone());
+                // For `our` variables, persist ContainerRef in our_vars so that
+                // subsequent method calls (e.g., get_x) see the binding.
+                for (slot, qualified_name) in &code.our_locals {
+                    if *slot == idx {
+                        self.interpreter
+                            .set_our_var(qualified_name.clone(), container.clone());
+                        self.interpreter
+                            .set_our_var(name.to_string(), container.clone());
+                    }
+                }
                 self.mark_local_dirty(idx);
                 return Ok(());
             }
