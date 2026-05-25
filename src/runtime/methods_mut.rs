@@ -1271,13 +1271,11 @@ impl Interpreter {
                     && !self.type_matches_value(&type_constraint, &value)
                     && !self.is_container_subclass(&type_constraint)
                 {
-                    return Err(RuntimeError::new(format!(
-                        "Type check failed in assignment to $!{}; expected {}, got {} ({})",
-                        method,
-                        type_constraint,
+                    return Err(RuntimeError::typecheck_assignment(
+                        &type_constraint,
                         super::utils::value_type_name(&value),
-                        value.to_string_value()
-                    )));
+                        Some(&format!("$!{}", method)),
+                    ));
                 }
                 // Element-level type check for @ attributes (e.g. `has @.a of int`)
                 if attr_sigil == '@'

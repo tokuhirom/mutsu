@@ -538,11 +538,28 @@ impl Interpreter {
         let has_type_captures = param_defs
             .iter()
             .any(|pd| pd.name.starts_with("::") || pd.name == "__type_capture__");
-        let is_type_only_mismatch = err.exception.is_none()
+        let is_binding_param_exception = err.exception.as_ref().is_some_and(|ex| {
+            if let Value::Instance { class_name, .. } = ex.as_ref() {
+                class_name.resolve() == "X::TypeCheck::Binding::Parameter"
+            } else {
+                false
+            }
+        });
+        let is_type_only_mismatch = (is_binding_param_exception
+            || (err.exception.is_none()
+                && err
+                    .message
+                    .contains("X::TypeCheck::Binding::Parameter: Type check failed")))
             && !has_type_captures
-            && err
-                .message
-                .contains("X::TypeCheck::Binding::Parameter: Type check failed")
+            // Only convert when ALL typed parameters are simple scalar types.
+            // Sigiled parameters (@, %, &) have container-level type constraints
+            // that should remain as binding errors.
+            && !param_defs.iter().any(|pd| {
+                pd.type_constraint.is_some()
+                    && (pd.name.starts_with('@')
+                        || pd.name.starts_with('%')
+                        || pd.name.starts_with('&'))
+            })
             && param_defs.iter().any(|pd| {
                 pd.type_constraint.as_ref().is_some_and(|tc| {
                     matches!(
@@ -580,7 +597,9 @@ impl Interpreter {
                     )
                 })
             });
-        if (is_arity_error || is_type_only_mismatch) && err.exception.is_none() {
+        if (is_arity_error || is_type_only_mismatch)
+            && (err.exception.is_none() || is_binding_param_exception)
+        {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(enhanced_msg.clone()));
             attrs.insert("objname".to_string(), Value::str(func_name.to_string()));

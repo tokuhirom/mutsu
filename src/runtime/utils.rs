@@ -3160,6 +3160,24 @@ pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &
     }
 }
 
+/// Build a structured X::TypeCheck::Assignment RuntimeError.
+/// This creates a proper exception object that `throws-like` can match.
+pub(crate) fn type_check_assignment_typed_error(
+    var_name: &str,
+    expected: &str,
+    val: &Value,
+) -> RuntimeError {
+    let msg = type_check_assignment_error(var_name, expected, val);
+    let got_type = value_type_name(val);
+    let display_name = format_var_name_for_error(var_name);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+    attrs.insert("got".to_string(), Value::str(got_type.to_string()));
+    attrs.insert("symbol".to_string(), Value::str(display_name));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    RuntimeError::typed("X::TypeCheck::Assignment", attrs)
+}
+
 /// Build the standard X::TypeCheck::Assignment error for array/hash elements:
 /// `Type check failed for an element of @a; expected Int but got Str ("hi")`
 pub(crate) fn type_check_element_error(var_name: &str, expected: &str, val: &Value) -> String {
@@ -3177,4 +3195,21 @@ pub(crate) fn type_check_element_error(var_name: &str, expected: &str, val: &Val
             display_name, expected, got_type, repr
         )
     }
+}
+
+/// Build a structured X::TypeCheck::Assignment RuntimeError for element type checks.
+pub(crate) fn type_check_element_typed_error(
+    var_name: &str,
+    expected: &str,
+    val: &Value,
+) -> RuntimeError {
+    let msg = type_check_element_error(var_name, expected, val);
+    let got_type = value_type_name(val);
+    let display_name = format_var_name_for_error(var_name);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+    attrs.insert("got".to_string(), Value::str(got_type.to_string()));
+    attrs.insert("symbol".to_string(), Value::str(display_name));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    RuntimeError::typed("X::TypeCheck::Assignment", attrs)
 }

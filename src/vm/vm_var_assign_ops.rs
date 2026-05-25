@@ -710,11 +710,11 @@ impl VM {
                         .interpreter
                         .type_matches_value(&target_type, &key_as_typed_value)
                     {
-                        return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                        return Err(runtime::utils::type_check_element_typed_error(
                             var_name,
                             constraint,
                             &Value::str(key.clone()),
-                        )));
+                        ));
                     }
                     key.clone()
                 } else {
@@ -727,8 +727,8 @@ impl VM {
                         } else if explicit_initializer
                             && self.interpreter.is_definite_constraint(constraint)
                         {
-                            return Err(RuntimeError::new(
-                                runtime::utils::type_check_element_error(var_name, constraint, val),
+                            return Err(runtime::utils::type_check_element_typed_error(
+                                var_name, constraint, val,
                             ));
                         } else {
                             val.clone()
@@ -743,8 +743,8 @@ impl VM {
                                 .try_coerce_value_for_constraint(constraint, val.clone())?
                         };
                         if !self.interpreter.type_matches_value(&target_type, &coerced) {
-                            return Err(RuntimeError::new(
-                                runtime::utils::type_check_element_error(var_name, constraint, val),
+                            return Err(runtime::utils::type_check_element_typed_error(
+                                var_name, constraint, val,
                             ));
                         }
                         coerced
@@ -783,9 +783,9 @@ impl VM {
                 } else if explicit_initializer
                     && self.interpreter.is_definite_constraint(constraint)
                 {
-                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                    return Err(runtime::utils::type_check_element_typed_error(
                         var_name, constraint, item,
-                    )));
+                    ));
                 } else {
                     coerced_items.push(item.clone());
                 }
@@ -835,9 +835,9 @@ impl VM {
                     .try_coerce_value_for_constraint(constraint, item.clone())?
             };
             if !self.interpreter.type_matches_value(&target_type, &coerced) {
-                return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                return Err(runtime::utils::type_check_element_typed_error(
                     var_name, constraint, item,
-                )));
+                ));
             }
             coerced_items.push(coerced);
         }
@@ -2015,8 +2015,10 @@ impl VM {
                         if !matches!(v, Value::Nil)
                             && !self.interpreter.type_matches_value(&constraint, v)
                         {
-                            return Err(RuntimeError::new(
-                                runtime::utils::type_check_element_error(&var_name, &constraint, v),
+                            return Err(runtime::utils::type_check_element_typed_error(
+                                &var_name,
+                                &constraint,
+                                v,
                             ));
                         }
                     }
@@ -2025,12 +2027,10 @@ impl VM {
                 if let Some(key_constraint) = self.interpreter.var_hash_key_constraint(&var_name) {
                     for key in keys.iter() {
                         if !self.interpreter.type_matches_value(&key_constraint, key) {
-                            return Err(RuntimeError::new(
-                                runtime::utils::type_check_element_error(
-                                    &var_name,
-                                    &key_constraint,
-                                    key,
-                                ),
+                            return Err(runtime::utils::type_check_element_typed_error(
+                                &var_name,
+                                &key_constraint,
+                                key,
                             ));
                         }
                     }
@@ -2086,11 +2086,11 @@ impl VM {
                     )
                     && !self.interpreter.is_container_subclass(&constraint)
                 {
-                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                    return Err(runtime::utils::type_check_element_typed_error(
                         &var_name,
                         &constraint,
                         &val,
-                    )));
+                    ));
                 }
                 // Check key type constraint for single-key hash element assignment
                 if var_name.starts_with('%')
@@ -2098,11 +2098,11 @@ impl VM {
                         self.interpreter.var_hash_key_constraint(&var_name)
                     && !self.interpreter.type_matches_value(&key_constraint, &idx)
                 {
-                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                    return Err(runtime::utils::type_check_element_typed_error(
                         &var_name,
                         &key_constraint,
                         &idx,
-                    )));
+                    ));
                 }
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
@@ -2624,12 +2624,10 @@ impl VM {
                         val = Value::Package(Symbol::intern(&nominal));
                     }
                 } else if !self.interpreter.type_matches_value(&constraint, &val) {
-                    return Err(RuntimeError::new(
-                        runtime::utils::type_check_assignment_error(
-                            &resolved_name,
-                            &constraint,
-                            &val,
-                        ),
+                    return Err(runtime::utils::type_check_assignment_typed_error(
+                        &resolved_name,
+                        &constraint,
+                        &val,
                     ));
                 }
                 if !matches!(val, Value::Nil | Value::Package(_)) {
@@ -3214,8 +3212,10 @@ impl VM {
                 if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
                 {
                     if has_explicit_initializer {
-                        return Err(RuntimeError::new(
-                            runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                        return Err(runtime::utils::type_check_assignment_typed_error(
+                            name,
+                            &constraint,
+                            &val,
                         ));
                     }
                     return Err(RuntimeError::new(format!(
@@ -3226,8 +3226,10 @@ impl VM {
                 if !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
                 {
-                    return Err(RuntimeError::new(
-                        runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                    return Err(runtime::utils::type_check_assignment_typed_error(
+                        name,
+                        &constraint,
+                        &val,
                     ));
                 }
                 let val = if !matches!(val, Value::Nil) {
@@ -3342,8 +3344,10 @@ impl VM {
                 && matches!(raw_popped, Value::Nil)
                 && let Some(constraint) = self.interpreter.var_type_constraint(name)
             {
-                return Err(RuntimeError::new(
-                    runtime::utils::type_check_assignment_error(name, &constraint, &Value::Nil),
+                return Err(runtime::utils::type_check_assignment_typed_error(
+                    name,
+                    &constraint,
+                    &Value::Nil,
                 ));
             }
             // Prevent re-initialization of immutable containers (Mix, Set, Bag)
@@ -3384,8 +3388,10 @@ impl VM {
                 && matches!(raw_popped, Value::Nil)
                 && let Some(constraint) = self.interpreter.var_type_constraint(name)
             {
-                return Err(RuntimeError::new(
-                    runtime::utils::type_check_assignment_error(name, &constraint, &Value::Nil),
+                return Err(runtime::utils::type_check_assignment_typed_error(
+                    name,
+                    &constraint,
+                    &Value::Nil,
                 ));
             }
             let mut assigned = if is_constant {
@@ -3687,8 +3693,10 @@ impl VM {
         {
             if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
                 if has_explicit_initializer {
-                    return Err(RuntimeError::new(
-                        runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                    return Err(runtime::utils::type_check_assignment_typed_error(
+                        name,
+                        &constraint,
+                        &val,
                     ));
                 }
                 return Err(RuntimeError::new(format!(
@@ -3698,8 +3706,10 @@ impl VM {
             }
             if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
             {
-                return Err(RuntimeError::new(
-                    runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                return Err(runtime::utils::type_check_assignment_typed_error(
+                    name,
+                    &constraint,
+                    &val,
                 ));
             }
             if !matches!(val, Value::Nil) {
@@ -4140,8 +4150,10 @@ impl VM {
                         Value::Package(Symbol::intern(&nominal))
                     }
                 } else if !self.interpreter.type_matches_value(&constraint, &val) {
-                    return Err(RuntimeError::new(
-                        runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                    return Err(runtime::utils::type_check_assignment_typed_error(
+                        name,
+                        &constraint,
+                        &val,
                     ));
                 } else if !matches!(val, Value::Nil | Value::Package(_)) {
                     self.interpreter
@@ -4241,8 +4253,10 @@ impl VM {
                     val = Value::Package(Symbol::intern(&nominal));
                 }
             } else if !self.interpreter.type_matches_value(&constraint, &val) {
-                return Err(RuntimeError::new(
-                    runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                return Err(runtime::utils::type_check_assignment_typed_error(
+                    name,
+                    &constraint,
+                    &val,
                 ));
             }
             if !matches!(val, Value::Nil | Value::Package(_)) {

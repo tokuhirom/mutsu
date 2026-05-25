@@ -1160,9 +1160,16 @@ impl Interpreter {
                 self.env = saved_env;
                 self.restore_readonly_vars(saved_readonly);
                 // Convert binding type-check errors to X::TypeCheck::Argument for proto calls
-                if e.message
-                    .contains("X::TypeCheck::Binding::Parameter: Type check failed")
-                {
+                let is_binding_param = e.exception.as_ref().is_some_and(|ex| {
+                    if let Value::Instance { class_name, .. } = ex.as_ref() {
+                        class_name.resolve() == "X::TypeCheck::Binding::Parameter"
+                    } else {
+                        false
+                    }
+                }) || e
+                    .message
+                    .contains("X::TypeCheck::Binding::Parameter: Type check failed");
+                if is_binding_param {
                     let type_names: Vec<String> = args
                         .iter()
                         .filter(|a| !matches!(a, Value::Pair(..)))

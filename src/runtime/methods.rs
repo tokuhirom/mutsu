@@ -1797,12 +1797,10 @@ impl Interpreter {
                             })
                         && !self.type_matches_value(&constraint, value)
                     {
-                        return Err(RuntimeError::new(
-                            crate::runtime::utils::type_check_element_error(
-                                &var_name,
-                                &constraint,
-                                value,
-                            ),
+                        return Err(crate::runtime::utils::type_check_element_typed_error(
+                            &var_name,
+                            &constraint,
+                            value,
                         ));
                     }
 

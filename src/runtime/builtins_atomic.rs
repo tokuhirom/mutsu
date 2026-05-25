@@ -70,8 +70,10 @@ impl Interpreter {
             if matches!(value, Value::Nil) {
                 value = Value::Package(Symbol::intern(&constraint));
             } else if !self.type_matches_value(&constraint, &value) {
-                return Err(RuntimeError::new(
-                    crate::runtime::utils::type_check_assignment_error(name, &constraint, &value),
+                return Err(crate::runtime::utils::type_check_assignment_typed_error(
+                    name,
+                    &constraint,
+                    &value,
                 ));
             }
             if !matches!(value, Value::Nil | Value::Package(_)) {

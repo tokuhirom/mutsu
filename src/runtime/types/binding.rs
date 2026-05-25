@@ -127,25 +127,28 @@ impl Interpreter {
                 } else if positional_idx < positional_args.len() {
                     let value = positional_args[positional_idx].clone();
                     if param.starts_with("&^") && !self.type_matches_value("Callable", &value) {
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable, got {}",
+                        return Err(RuntimeError::typecheck_binding_parameter(
                             param,
-                            crate::runtime::value_type_name(&value)
-                        )));
+                            "Callable",
+                            crate::runtime::value_type_name(&value),
+                            None,
+                        ));
                     }
                     if param.starts_with("@^") && !self.type_matches_value("Positional", &value) {
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Positional, got {}",
+                        return Err(RuntimeError::typecheck_binding_parameter(
                             param,
-                            crate::runtime::value_type_name(&value)
-                        )));
+                            "Positional",
+                            crate::runtime::value_type_name(&value),
+                            None,
+                        ));
                     }
                     if param.starts_with("%^") && !self.type_matches_value("Associative", &value) {
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Associative, got {}",
+                        return Err(RuntimeError::typecheck_binding_parameter(
                             param,
-                            crate::runtime::value_type_name(&value)
-                        )));
+                            "Associative",
+                            crate::runtime::value_type_name(&value),
+                            None,
+                        ));
                     }
                     self.bind_param_value(param, value);
                     positional_idx += 1;
@@ -921,13 +924,16 @@ impl Interpreter {
                             } else {
                                 pd.name.clone()
                             };
-                            return Err(RuntimeError::new(format!(
-                                "{}: Type check failed for {}: expected {}, got {}",
-                                type_error_kind,
-                                display_name,
-                                resolved_constraint,
-                                crate::runtime::value_type_name(&value)
-                            )));
+                            let got = crate::runtime::value_type_name(&value);
+                            return Err(RuntimeError::typecheck_binding_parameter(
+                                &display_name,
+                                &resolved_constraint,
+                                got,
+                                Some(format!(
+                                    "{}: Type check failed for {}: expected {}, got {}",
+                                    type_error_kind, display_name, resolved_constraint, got
+                                )),
+                            ));
                         } else {
                             value = self
                                 .try_coerce_value_for_constraint(&resolved_constraint, value)

@@ -851,10 +851,9 @@ impl VM {
                             if let Some(ref typed_val) = coerced {
                                 if !self.interpreter.type_matches_value(constraint, typed_val) {
                                     let got_type = crate::value::what_type_name(typed_val);
-                                    return Err(RuntimeError::new(format!(
-                                        "Type check failed in binding; expected {} but got {} (\"{}\")",
-                                        constraint, got_type, key
-                                    )));
+                                    return Err(RuntimeError::typecheck_binding_parameter(
+                                        key, constraint, &got_type, None,
+                                    ));
                                 }
                                 typed_keys.insert(key.clone(), typed_val.clone());
                             } else {
@@ -862,10 +861,9 @@ impl VM {
                                 let key_val = Value::str(key.clone());
                                 if !self.interpreter.type_matches_value(constraint, &key_val) {
                                     let got_type = crate::value::what_type_name(&key_val);
-                                    return Err(RuntimeError::new(format!(
-                                        "Type check failed in binding; expected {} but got {} (\"{}\")",
-                                        constraint, got_type, key
-                                    )));
+                                    return Err(RuntimeError::typecheck_binding_parameter(
+                                        key, constraint, &got_type, None,
+                                    ));
                                 }
                             }
                         }
