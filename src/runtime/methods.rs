@@ -1794,6 +1794,9 @@ impl Interpreter {
         if method == "zip" && matches!(&target, Value::Package(name) if name == "Supply") {
             return self.dispatch_supply_zip_class(&args);
         }
+        if method == "zip-latest" && matches!(&target, Value::Package(name) if name == "Supply") {
+            return self.dispatch_supply_zip_latest_class(&args);
+        }
         // Supply.delayed with non-positive delay
         if method == "delayed"
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")

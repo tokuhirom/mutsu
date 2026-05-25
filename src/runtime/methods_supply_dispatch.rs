@@ -500,4 +500,89 @@ impl Interpreter {
         reduce_attrs.insert("live".to_string(), Value::Bool(false));
         Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs))
     }
+
+    /// Supply.zip-latest(...) as a class method
+    pub(super) fn dispatch_supply_zip_latest_class(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut with_fn: Option<Value> = None;
+        let mut initial: Option<Vec<Value>> = None;
+        let mut supplies: Vec<Value> = Vec::new();
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                if key == "with" {
+                    with_fn = Some(*value.clone());
+                } else if key == "initial" {
+                    if let Value::Array(items, ..) = &**value {
+                        initial = Some(items.to_vec());
+                    }
+                } else {
+                    supplies.push(arg.clone());
+                }
+            } else {
+                supplies.push(arg.clone());
+            }
+        }
+
+        if supplies.is_empty() {
+            return Ok(Value::make_instance(Symbol::intern("Supply"), {
+                let mut a = HashMap::new();
+                a.insert("values".to_string(), Value::array(Vec::new()));
+                a.insert("taps".to_string(), Value::array(Vec::new()));
+                a.insert("live".to_string(), Value::Bool(false));
+                a
+            }));
+        }
+
+        // Validate all args are Supply instances
+        for arg in &supplies {
+            if !matches!(arg, Value::Instance { class_name, .. } if class_name == "Supply") {
+                let mut ex_attrs = HashMap::new();
+                ex_attrs.insert(
+                    "combinator".to_string(),
+                    Value::str("zip-latest".to_string()),
+                );
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Can only zip-latest Supply objects, got {}",
+                        crate::value::types::what_type_name(arg)
+                    )),
+                );
+                let ex = Value::make_instance(Symbol::intern("X::Supply::Combinator"), ex_attrs);
+                let mut err = RuntimeError::new(format!(
+                    "Can only zip-latest Supply objects, got {}",
+                    crate::value::types::what_type_name(arg)
+                ));
+                err.exception = Some(Box::new(ex));
+                return Err(err);
+            }
+        }
+
+        // Single supply is a noop
+        if supplies.len() == 1 {
+            return Ok(supplies.into_iter().next().unwrap());
+        }
+
+        // Delegate to instance method on first supply
+        let first = supplies.remove(0);
+        if let Value::Instance { attributes, .. } = &first {
+            let mut method_args: Vec<Value> = supplies;
+            if let Some(wf) = with_fn {
+                method_args.push(Value::Pair("with".to_string(), Box::new(wf)));
+            }
+            if let Some(init) = initial {
+                method_args.push(Value::Pair(
+                    "initial".to_string(),
+                    Box::new(Value::array(init)),
+                ));
+            }
+            self.native_supply(attributes, "zip-latest", method_args)
+        } else {
+            Err(RuntimeError::new(
+                "Cannot call zip-latest on non-Supply".to_string(),
+            ))
+        }
+    }
 }
