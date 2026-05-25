@@ -749,12 +749,19 @@ impl VM {
                     self.locals_dirty = saved_locals_dirty;
                     self.locals_dirty_slots = saved_locals_dirty_slots;
                     self.env_dirty = saved_env_dirty;
-                    return Err(RuntimeError::new(format!(
-                        "Type check failed in binding ${}: expected {}, got {}",
-                        cf.param_defs[param_idx].name,
-                        tc,
-                        runtime::value_type_name(&val)
-                    )));
+                    {
+                        let param_name = &cf.param_defs[param_idx].name;
+                        let got = runtime::value_type_name(&val);
+                        let msg = format!(
+                            "Type check failed in binding ${}: expected {}, got {}",
+                            param_name, tc, got
+                        );
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("expected".to_string(), Value::str(tc.to_string()));
+                        attrs.insert("got".to_string(), Value::str(got.to_string()));
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+                    }
                 }
                 let param_name = &cf.param_defs[param_idx].name;
                 saved_param_env.push((

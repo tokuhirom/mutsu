@@ -298,27 +298,29 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         if let Some(tc) = &sub_pd.type_constraint
             && !interpreter.type_matches_value(tc, value)
         {
-            return Err(RuntimeError::new(format!(
-                "Type check failed in binding to parameter '{}'; expected {}, got {}",
+            return Err(RuntimeError::typecheck_binding_parameter(
                 bind_name,
                 tc,
-                crate::runtime::value_type_name(value)
-            )));
+                crate::runtime::value_type_name(value),
+                None,
+            ));
         }
         // Sigil-based type check: %param requires Associative, @param requires Positional
         if bind_name.starts_with('%') && !matches!(value, Value::Hash(..)) {
-            return Err(RuntimeError::new(format!(
-                "Type check failed in binding to parameter '{}'; expected Associative, got {}",
+            return Err(RuntimeError::typecheck_binding_parameter(
                 bind_name,
-                crate::runtime::value_type_name(value)
-            )));
+                "Associative",
+                crate::runtime::value_type_name(value),
+                None,
+            ));
         }
         if bind_name.starts_with('@') && !matches!(value, Value::Array(..) | Value::Nil) {
-            return Err(RuntimeError::new(format!(
-                "Type check failed in binding to parameter '{}'; expected Positional, got {}",
+            return Err(RuntimeError::typecheck_binding_parameter(
                 bind_name,
-                crate::runtime::value_type_name(value)
-            )));
+                "Positional",
+                crate::runtime::value_type_name(value),
+                None,
+            ));
         }
         interpreter.bind_param_value(bind_name, value.clone());
         interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());

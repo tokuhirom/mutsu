@@ -1206,8 +1206,10 @@ impl VM {
                         {
                             return Err(err);
                         }
-                        return Err(RuntimeError::new(
-                            runtime::utils::type_check_assignment_error(&name, &constraint, &val),
+                        return Err(runtime::utils::type_check_assignment_typed_error(
+                            &name,
+                            &constraint,
+                            &val,
                         ));
                     }
                     if !matches!(val, Value::Nil) {

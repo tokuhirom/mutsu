@@ -1059,12 +1059,12 @@ impl Interpreter {
                                     pd.is_invocant,
                                 ));
                             }
-                            return Err(RuntimeError::new(format!(
-                                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                            return Err(RuntimeError::typecheck_binding_parameter(
                                 param_name,
                                 constraint,
-                                super::value_type_name(&base)
-                            )));
+                                super::value_type_name(&base),
+                                None,
+                            ));
                         }
                     }
                 }

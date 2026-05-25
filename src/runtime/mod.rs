@@ -4396,8 +4396,10 @@ impl Interpreter {
         if let Some(constraint) = self.var_type_constraint(var_name) {
             for val in values {
                 if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, val) {
-                    return Err(RuntimeError::new(
-                        crate::runtime::utils::type_check_element_error(var_name, &constraint, val),
+                    return Err(crate::runtime::utils::type_check_element_typed_error(
+                        var_name,
+                        &constraint,
+                        val,
                     ));
                 }
             }
@@ -4417,17 +4419,9 @@ impl Interpreter {
             if constraint != "Mu" && constraint != "Any" {
                 for val in values {
                     if !matches!(val, Value::Nil) && !self.type_matches_value(constraint, val) {
-                        let msg =
-                            crate::runtime::utils::type_check_element_error("@_", constraint, val);
-                        let mut err = RuntimeError::new(msg.clone());
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(msg));
-                        let ex = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::TypeCheck::Assignment"),
-                            attrs,
-                        );
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
+                        return Err(crate::runtime::utils::type_check_element_typed_error(
+                            "@_", constraint, val,
+                        ));
                     }
                 }
             }

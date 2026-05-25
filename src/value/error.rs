@@ -739,6 +739,27 @@ impl RuntimeError {
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Bind", attrs)
     }
+
+    /// X::TypeCheck::Binding::Parameter - Type check failed in binding to parameter
+    pub(crate) fn typecheck_binding_parameter(
+        param: &str,
+        expected: &str,
+        got: &str,
+        message: Option<String>,
+    ) -> Self {
+        let msg = message.unwrap_or_else(|| {
+            format!(
+                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                param, expected, got
+            )
+        });
+        let mut attrs = HashMap::new();
+        attrs.insert("parameter".to_string(), Value::str(param.to_string()));
+        attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+        attrs.insert("got".to_string(), Value::str(got.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::TypeCheck::Binding::Parameter", attrs)
+    }
 }
 
 #[cfg(test)]
