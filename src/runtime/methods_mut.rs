@@ -641,6 +641,13 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // Handle AT-POS lvalue assignment: @arr.AT-POS(idx...) = v  =>  ASSIGN-POS(idx..., v)
+        if method == "AT-POS" && !method_args.is_empty() && matches!(&target, Value::Array(..)) {
+            let mut assign_args = method_args.clone();
+            assign_args.push(value.clone());
+            self.call_method_with_values(target, "ASSIGN-POS", assign_args)?;
+            return Ok(value);
+        }
         // Handle AT-KEY assignment on Hash: h.AT-KEY("k") = v  =>  ASSIGN-KEY("k", v)
         if method == "AT-KEY" && method_args.len() == 1 {
             let inner = match &target {
