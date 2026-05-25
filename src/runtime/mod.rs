@@ -4675,13 +4675,18 @@ impl Interpreter {
         {
             let mut sv = shared.write().unwrap();
             for (key, val) in &self.env {
-                // Skip internal variables and topic variables
+                // Skip internal variables and topic variables.
+                // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
+                // are thread-local; mutations inside `start` blocks must not
+                // propagate back to the parent thread.
                 if key == "_"
                     || key == "@_"
                     || key == "/"
                     || key == "!"
                     || key == "$/"
                     || key == "$!"
+                    || key == "$*CWD"
+                    || key == "*CWD"
                     || key.starts_with("__mutsu_")
                     || key.starts_with("&")
                     || key == "?LINE"
