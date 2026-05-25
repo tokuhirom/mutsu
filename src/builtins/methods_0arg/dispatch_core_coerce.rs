@@ -560,6 +560,21 @@ pub(super) fn dispatch(
             Some(Some(Ok(result)))
         }
         "Real" => {
+            // Calling .Real on a type object (Package) should warn and return zero
+            if let Value::Package(name) = target {
+                let type_name = name.resolve();
+                let zero = match type_name.as_str() {
+                    "Int" | "IntStr" => Value::Int(0),
+                    "Rat" | "FatRat" | "RatStr" => Value::Rat(0, 1),
+                    "Num" | "NumStr" | "Complex" | "ComplexStr" => Value::Num(0.0),
+                    _ => return Some(None),
+                };
+                let msg = format!(
+                    "Use of uninitialized value of type {} in numeric context",
+                    type_name
+                );
+                return Some(Some(Err(RuntimeError::warn_signal_with_resume(msg, zero))));
+            }
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
@@ -607,6 +622,22 @@ pub(super) fn dispatch(
             Some(Some(Ok(result)))
         }
         "Numeric" => {
+            // Calling .Numeric on a type object (Package) should warn and return zero
+            if let Value::Package(name) = target {
+                let type_name = name.resolve();
+                let zero = match type_name.as_str() {
+                    "Int" | "IntStr" => Value::Int(0),
+                    "Rat" | "FatRat" | "RatStr" => Value::Rat(0, 1),
+                    "Num" | "NumStr" => Value::Num(0.0),
+                    "Complex" | "ComplexStr" => Value::Complex(0.0, 0.0),
+                    _ => return Some(None),
+                };
+                let msg = format!(
+                    "Use of uninitialized value of type {} in numeric context",
+                    type_name
+                );
+                return Some(Some(Err(RuntimeError::warn_signal_with_resume(msg, zero))));
+            }
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
