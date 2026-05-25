@@ -499,7 +499,16 @@ impl Interpreter {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
             }
-            IoHandleTarget::Stdin => Ok(Vec::new()),
+            IoHandleTarget::Stdin => {
+                use std::io::Read;
+                let mut stdin = std::io::stdin().lock();
+                let mut buffer = vec![0u8; count];
+                let bytes_read = stdin.read(&mut buffer).map_err(|err| {
+                    RuntimeError::new(format!("Failed to read from stdin: {}", err))
+                })?;
+                buffer.truncate(bytes_read);
+                Ok(buffer)
+            }
             IoHandleTarget::ArgFiles => {
                 // Read bytes from files listed in @*ARGS sequentially
                 let argfiles_list: Vec<String> = self
@@ -514,7 +523,15 @@ impl Interpreter {
                     })
                     .unwrap_or_default();
                 if argfiles_list.is_empty() {
-                    return Ok(Vec::new());
+                    // No file args — read from stdin
+                    use std::io::Read;
+                    let mut stdin = std::io::stdin().lock();
+                    let mut buffer = vec![0u8; count];
+                    let bytes_read = stdin.read(&mut buffer).map_err(|err| {
+                        RuntimeError::new(format!("Failed to read from stdin: {}", err))
+                    })?;
+                    buffer.truncate(bytes_read);
+                    return Ok(buffer);
                 }
                 // Re-borrow state after extracting args list
                 let state = self.handle_state_mut(handle_value)?;
