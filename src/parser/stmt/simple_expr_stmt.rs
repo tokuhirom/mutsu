@@ -1619,6 +1619,36 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     )
 }
 
+/// Parse a variable from `undefine(...)` or `undefine $var` inside a `temp` context.
+fn parse_temp_undefine_var(input: &str) -> Result<(&str, String), PError> {
+    if let Some(inner) = input.strip_prefix('(') {
+        let (inner, _) = ws(inner)?;
+        let s = inner.chars().next().unwrap_or(' ');
+        if s == '$' || s == '@' || s == '%' {
+            let after_s = &inner[1..];
+            let (after_id, id) = super::ident(after_s)?;
+            let (after_id, _) = ws(after_id)?;
+            let after_id = after_id
+                .strip_prefix(')')
+                .ok_or_else(|| PError::expected("closing paren"))?;
+            let full = if s == '$' { id } else { format!("{}{}", s, id) };
+            Ok((after_id, full))
+        } else {
+            Err(PError::expected("variable after undefine("))
+        }
+    } else {
+        let s = input.chars().next().unwrap_or(' ');
+        if s == '$' || s == '@' || s == '%' {
+            let after_s = &input[1..];
+            let (after_id, id) = super::ident(after_s)?;
+            let full = if s == '$' { id } else { format!("{}{}", s, id) };
+            Ok((after_id, full))
+        } else {
+            Err(PError::expected("variable after undefine"))
+        }
+    }
+}
+
 /// Parse `temp` statement — same semantics as `let` (save/restore at scope exit).
 pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("temp", input).ok_or_else(|| PError::expected("temp statement"))?;
@@ -1650,6 +1680,51 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 },
             );
         }
+    }
+    // temp undefine($var) [= value]:
+    // With assignment: temp saves $d, undefine, assign "baz"; restore at scope exit.
+    // Without assignment: just undefine (temp on return value is a no-op).
+    if let Some(after_undef) = rest.strip_prefix("undefine")
+        && (after_undef.starts_with('(') || after_undef.starts_with(' '))
+    {
+        let (after_undef, _) = ws(after_undef)?;
+        let (var_rest, var_name) = parse_temp_undefine_var(after_undef)?;
+        let (var_rest, _) = ws(var_rest)?;
+        let make_var_expr = |vn: &str| -> Expr {
+            if let Some(stripped) = vn.strip_prefix('@') {
+                Expr::ArrayVar(stripped.to_string())
+            } else if let Some(stripped) = vn.strip_prefix('%') {
+                Expr::HashVar(stripped.to_string())
+            } else {
+                Expr::Var(vn.to_string())
+            }
+        };
+        // With assignment: temp undefine($d) = "baz"
+        // Semantics: save $d with temp, then assign "baz" to it.
+        // (undefine step is implicit — temp save + assign is sufficient)
+        if var_rest.starts_with('=') && !var_rest.starts_with("==") {
+            let rhs_rest = &var_rest[1..];
+            let (rhs_rest, _) = ws(rhs_rest)?;
+            let (rhs_rest, rhs_expr) = expression(rhs_rest)?;
+            // Emit as `temp $var = rhs` — saves current value, assigns new one
+            return parse_statement_modifier(
+                rhs_rest,
+                Stmt::Let {
+                    name: var_name.clone(),
+                    index: None,
+                    value: Some(Box::new(rhs_expr)),
+                    is_temp: true,
+                },
+            );
+        }
+        // Bare: temp undefine($c) — just undefine (no temp wrapping)
+        return parse_statement_modifier(
+            var_rest,
+            Stmt::Expr(Expr::Call {
+                name: crate::symbol::Symbol::intern("undefine"),
+                args: vec![make_var_expr(&var_name)],
+            }),
+        );
     }
     // Parse sigil + optional twigil + var name
     let sigil = rest

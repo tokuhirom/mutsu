@@ -109,7 +109,22 @@ impl Compiler {
         match expr {
             Expr::DoBlock { body, .. } => Self::has_let_deep(body),
             Expr::Try { body, .. } => Self::has_let_deep(body),
-            Expr::Call { args, .. } => args.iter().any(Self::expr_has_let_deep),
+            // Detect `undefine temp $var`: Call("undefine", [Call("temp", ...)])
+            // The compiler expands this to LetSave + assign, so the enclosing block
+            // needs LetBlock wrapping for proper save/restore.
+            Expr::Call { name, args, .. } => {
+                if name.resolve() == "undefine"
+                    && args.len() == 1
+                    && matches!(
+                        &args[0],
+                        Expr::Call { name: inner, .. }
+                            if inner.resolve() == "temp"
+                    )
+                {
+                    return true;
+                }
+                args.iter().any(Self::expr_has_let_deep)
+            }
             Expr::MethodCall { args, target, .. }
             | Expr::DynamicMethodCall { args, target, .. }
             | Expr::HyperMethodCall { args, target, .. }

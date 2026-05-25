@@ -263,7 +263,7 @@ impl Interpreter {
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
             "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "__mutsu_unknown_backslash_escape" => self.builtin_unknown_backslash_escape(&args),
-            "undefine" => Ok(Value::Nil),
+            "undefine" => Ok(Value::Package(crate::symbol::Symbol::intern("Any"))),
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
                 // Immutable types (Bool, Int, Str, etc.) must die.
