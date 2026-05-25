@@ -437,6 +437,20 @@ impl VM {
             return Ok(());
         }
 
+        // .WHO on pseudo-package Package values: build the stash in the VM
+        // where we have access to locals (which the interpreter doesn't have).
+        if method == "WHO"
+            && args.is_empty()
+            && matches!(&target, Value::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
+        {
+            if let Value::Package(pkg_name) = &target {
+                let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
+                self.stack.push(stash);
+            }
+            self.env_dirty = true;
+            return Ok(());
+        }
+
         // Fast path for Lock::Async.protect — execute block inline in current VM
         if method == "protect"
             && args.len() == 1

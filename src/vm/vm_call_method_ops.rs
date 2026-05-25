@@ -567,6 +567,19 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // .WHO on pseudo-package Package values: build the stash in the VM
+        // where we have access to locals (which the interpreter doesn't have).
+        if method == "WHO"
+            && args.is_empty()
+            && matches!(&target, Value::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
+        {
+            if let Value::Package(pkg_name) = &target {
+                let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
+                self.stack.push(stash);
+            }
+            self.env_dirty = true;
+            return Ok(());
+        }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let Value::Instance { class_name, .. } = &target

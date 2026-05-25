@@ -1458,6 +1458,26 @@ impl Interpreter {
         None
     }
 
+    /// Check if a name is a known pseudo-package (MY, OUTER, CORE, etc.)
+    pub(crate) fn is_pseudo_package_name(name: &str) -> bool {
+        matches!(
+            name,
+            "SETTING"
+                | "CALLER"
+                | "CALLERS"
+                | "OUTER"
+                | "OUTERS"
+                | "CORE"
+                | "GLOBAL"
+                | "MY"
+                | "OUR"
+                | "DYNAMIC"
+                | "UNIT"
+                | "LEXICAL"
+                | "CLIENT"
+        )
+    }
+
     fn no_such_symbol_failure(name: &str) -> Value {
         let mut ex_attrs = HashMap::new();
         ex_attrs.insert(
@@ -1474,6 +1494,11 @@ impl Interpreter {
     pub(crate) fn resolve_indirect_type_name(&self, name: &str) -> Value {
         if name.is_empty() {
             return Self::no_such_symbol_failure(name);
+        }
+        // Pseudo-package names like MY, CORE, OUTER, CALLER, etc. should
+        // resolve to Package values so that .WHO can produce the stash.
+        if Self::is_pseudo_package_name(name) {
+            return Value::Package(Symbol::intern(name));
         }
         if let Some(code_name) = name.strip_prefix('&') {
             let val = self.resolve_code_var(code_name);
