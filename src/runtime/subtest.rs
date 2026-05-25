@@ -289,7 +289,10 @@ impl Interpreter {
                             .and_then(Self::value_array_items)
                             .unwrap_or_default();
                         for last_cb in &last_cbs {
-                            let _ = self.call_sub_value(last_cb.clone(), Vec::new(), true);
+                            match self.call_sub_value(last_cb.clone(), Vec::new(), true) {
+                                Err(e) if e.is_react_done => return Ok(()),
+                                _ => {}
+                            }
                         }
                     }
                     // Promise source
