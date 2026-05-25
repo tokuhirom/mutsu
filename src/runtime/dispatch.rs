@@ -638,6 +638,17 @@ impl Interpreter {
             .count();
         if name.contains("::") {
             if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
+                // Block access to my-scoped (non-our) package items from outside
+                // their declaring package.
+                if self.is_my_scoped_package_item(name)
+                    && let Some((pkg_prefix, _)) = name.rsplit_once("::")
+                    && pkg_prefix != self.current_package
+                    && !self
+                        .current_package
+                        .starts_with(&format!("{}::", pkg_prefix))
+                {
+                    return None;
+                }
                 return Some(def);
             }
             let prefix = format!("{}/{arity}:", name);
@@ -660,7 +671,16 @@ impl Interpreter {
                 return Some(def);
             }
             if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
-                return Some(def);
+                if !self.is_my_scoped_package_item(name) {
+                    return Some(def);
+                } else if let Some((pkg_prefix, _)) = name.rsplit_once("::")
+                    && (pkg_prefix == self.current_package
+                        || self
+                            .current_package
+                            .starts_with(&format!("{}::", pkg_prefix)))
+                {
+                    return Some(def);
+                }
             }
             // Try qualifying with the current package prefix when the
             // prefix package is visible in the current scope (i.e., exists
