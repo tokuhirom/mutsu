@@ -6,14 +6,14 @@ impl Interpreter {
     /// Clear `$/` and all numeric capture variables (`$0`, `$1`, ...) after a failed match.
     pub(in crate::runtime) fn clear_match_state(&mut self) {
         self.env.insert("/".to_string(), Value::Nil);
-        let numeric_keys: Vec<String> = self
+        let numeric_keys: Vec<Symbol> = self
             .env
             .keys()
-            .filter(|k| !k.is_empty() && k.chars().all(|ch| ch.is_ascii_digit()))
-            .cloned()
+            .filter(|k| k.with_str(|s| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit())))
+            .copied()
             .collect();
         for key in numeric_keys {
-            self.env.insert(key, Value::Nil);
+            self.env.insert_sym(key, Value::Nil);
         }
     }
 
@@ -86,14 +86,14 @@ impl Interpreter {
         self.env.insert("/".to_string(), match_obj.clone());
 
         // Reset stale numeric captures before applying new ones.
-        let numeric_keys: Vec<String> = self
+        let numeric_keys: Vec<Symbol> = self
             .env
             .keys()
-            .filter(|k| !k.is_empty() && k.chars().all(|ch| ch.is_ascii_digit()))
-            .cloned()
+            .filter(|k| k.with_str(|s| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit())))
+            .copied()
             .collect();
         for key in numeric_keys {
-            self.env.insert(key, Value::Nil);
+            self.env.insert_sym(key, Value::Nil);
         }
 
         for (i, slot) in captures.positional_slots.iter().enumerate() {

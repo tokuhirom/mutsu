@@ -225,6 +225,17 @@ impl VM {
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+        self.set_env_with_main_alias_sym(name, None, value);
+    }
+
+    /// Like `set_env_with_main_alias` but accepts a pre-interned Symbol
+    /// to avoid Symbol::intern() overhead on hot paths.
+    pub(super) fn set_env_with_main_alias_sym(
+        &mut self,
+        name: &str,
+        _name_sym: Option<Symbol>,
+        value: Value,
+    ) {
         if name.starts_with("__ANON_STATE_") {
             self.interpreter.env_mut().insert(name.to_string(), value);
             return;
@@ -265,13 +276,10 @@ impl VM {
         // bare variable name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
             self.interpreter.env_mut().insert(bare, value);
-        } else if let Some(bare) = name.strip_prefix("GLOBAL::") {
-            // For unsigiled GLOBAL-qualified names (e.g. "GLOBAL::x" from
-            // `$x` at top level), also update the bare name in the env so
-            // that lookups by bare name see the latest value.
-            if self.interpreter.env().contains_key(bare) {
-                self.interpreter.env_mut().insert(bare.to_string(), value);
-            }
+        } else if let Some(bare) = name.strip_prefix("GLOBAL::")
+            && self.interpreter.env().contains_key(bare)
+        {
+            self.interpreter.env_mut().insert(bare.to_string(), value);
         }
     }
 
@@ -354,7 +362,12 @@ impl VM {
                 // Skip topic (_), attributes (.x, !x), dynamic vars ($*x), and
                 // package-qualified names (Foo::bar) to avoid corrupting outer scope.
                 if code.simple_locals[i] || Self::is_bare_param_name(name) {
-                    self.set_env_with_main_alias(name, self.locals[i].clone());
+                    let sym = if i < code.locals_sym.len() {
+                        Some(code.locals_sym[i])
+                    } else {
+                        None
+                    };
+                    self.set_env_with_main_alias_sym(name, sym, self.locals[i].clone());
                 }
             }
             self.locals_dirty = false;

@@ -1853,9 +1853,9 @@ impl VM {
         self.ensure_env_synced(code);
         let current_env = self.interpreter.env().clone();
         let mut restored_env = saved_env.clone();
-        for (k, v) in current_env {
-            if saved_env.contains_key(&k) || k.contains("::") {
-                restored_env.insert(k, v);
+        for (k, v) in current_env.iter() {
+            if saved_env.contains_key_sym(*k) || k.contains_str("::") {
+                restored_env.insert_sym(*k, v.clone());
             }
         }
         self.locals = saved_locals;
@@ -2312,10 +2312,12 @@ impl VM {
             // Sigils may appear before the qualifier (e.g. &Test1::ns, $Foo::var).
             // Skip internal VM metadata keys (which contain `::` but are not
             // user-visible package names, e.g. `__mutsu_var_meta::x`).
-            let stripped = k.trim_start_matches(['$', '@', '%', '&']);
-            let is_package_qualified = stripped.contains("::") && !stripped.starts_with("__mutsu_");
+            let is_package_qualified = k.with_str(|s| {
+                let stripped = s.trim_start_matches(['$', '@', '%', '&']);
+                stripped.contains("::") && !stripped.starts_with("__mutsu_")
+            });
             if is_package_qualified {
-                restored_env.insert(k, v);
+                restored_env.insert_sym(k, v);
                 continue;
             }
             // Package type objects declared inside a block (e.g.
@@ -2326,13 +2328,13 @@ impl VM {
             // package identifier (uppercase ASCII start, not internal/
             // special variables like `_` or `__mutsu_*`).
             if matches!(&v, Value::Package(_))
-                && !saved_env.contains_key(&k)
-                && k.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                && !saved_env.contains_key_sym(k)
+                && k.with_str(|s| s.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
             {
-                restored_env.insert(k, v);
+                restored_env.insert_sym(k, v);
                 continue;
             }
-            if saved_env.contains_key(&k) {
+            if saved_env.contains_key_sym(k) {
                 // Lexical topic is block-scoped; don't write inner `$_` back
                 // to the outer scope on block exit.
                 if k == "_" {
@@ -2340,16 +2342,16 @@ impl VM {
                 }
                 // Dynamic variables (e.g. $*VAR) are scoped to the block:
                 // restore to the saved value rather than propagating the inner value.
-                if k.starts_with('*') {
+                if k.starts_with("*") {
                     continue;
                 }
                 // Variables declared with `my` inside this block should not
                 // propagate their values to the outer scope. Restore the outer
                 // scope's original value instead.
-                if block_declared.contains(&k) {
+                if k.with_str(|s| block_declared.contains(s)) {
                     continue;
                 }
-                restored_env.insert(k, v);
+                restored_env.insert_sym(k, v);
             }
         }
         self.locals = saved_locals;
@@ -2558,12 +2560,12 @@ impl VM {
             // Only hash variables are preserved to avoid side effects
             // on other container types.
             let current_env = self.interpreter.env().clone();
-            let mut new_vars: Vec<(String, Value)> = Vec::new();
+            let mut new_vars: Vec<(Symbol, Value)> = Vec::new();
             for (name, value) in current_env.iter() {
-                if !name.starts_with('%') || name.starts_with("%*") {
+                if !name.starts_with("%") || name.starts_with("%*") {
                     continue;
                 }
-                let is_new_or_changed = match saved_env.get(name) {
+                let is_new_or_changed = match saved_env.get_sym(*name) {
                     None => true,
                     Some(saved_val) => match (value, saved_val) {
                         (Value::Hash(a), Value::Hash(b)) => !std::sync::Arc::ptr_eq(a, b),
@@ -2571,14 +2573,14 @@ impl VM {
                     },
                 };
                 if is_new_or_changed {
-                    new_vars.push((name.clone(), value.clone()));
+                    new_vars.push((*name, value.clone()));
                 }
             }
             let restored_env = saved_env.clone();
             *self.interpreter.env_mut() = restored_env;
             // Re-insert newly declared user variables
             for (name, value) in new_vars {
-                self.interpreter.env_mut().insert(name, value);
+                self.interpreter.env_mut().insert_sym(name, value);
             }
             self.locals = saved_locals;
             for (idx, name) in code.locals.iter().enumerate() {

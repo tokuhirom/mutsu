@@ -2971,8 +2971,8 @@ impl Interpreter {
                 // on variables that already existed in the caller environment.
                 let mut restored_env = saved_default_env.clone();
                 for (key, value) in self.env.iter() {
-                    if restored_env.contains_key(key) {
-                        restored_env.insert(key.clone(), value.clone());
+                    if restored_env.contains_key_sym(*key) {
+                        restored_env.insert_sym(*key, value.clone());
                     }
                 }
                 self.env = restored_env;

@@ -1375,18 +1375,18 @@ fn merge_method_env(saved: &Env, current: &Env, method_local_keys: &HashSet<Stri
     for (k, v) in current.iter() {
         // Skip keys that were introduced by the method frame (params, self,
         // attributes, locals) — these must not leak back into the caller.
-        if method_local_keys.contains(k) {
+        if k.with_str(|s| method_local_keys.contains(s)) {
             continue;
         }
-        if saved.contains_key(k) {
-            merged.insert(k.clone(), v.clone());
+        if saved.contains_key_sym(*k) {
+            merged.insert_sym(*k, v.clone());
         }
-        if (k.starts_with('&') && !k.starts_with("&?"))
+        if (k.starts_with("&") && !k.starts_with("&?"))
             || k.starts_with("__mutsu_method_value::")
             || k.starts_with("__mutsu_sigilless_alias::!")
             || k.starts_with("__mutsu_predictive_seq_iter::")
         {
-            merged.insert(k.clone(), v.clone());
+            merged.insert_sym(*k, v.clone());
         }
     }
     merged

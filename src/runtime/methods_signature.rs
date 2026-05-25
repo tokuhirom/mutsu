@@ -786,7 +786,7 @@ impl Interpreter {
         // Must match the key format used by collect_doc_comments:
         // - Subs use "&name" prefix
         // - Methods use "ClassName::name" format
-        let sub_key = if data.name != "" {
+        let sub_key = if !data.name.is_empty() {
             let name = data.name.resolve();
             // Check if the sub is a method (has a non-GLOBAL package context
             // and uses Class::method format in doc comments)

@@ -1764,7 +1764,7 @@ impl Interpreter {
                     if let Value::Hash(env_arc) = env_val
                         && std::sync::Arc::ptr_eq(target_arc, env_arc)
                     {
-                        return Some(name.clone());
+                        return Some(name.resolve());
                     }
                 }
                 None
@@ -1774,7 +1774,7 @@ impl Interpreter {
                     if let Value::Bag(env_arc, _) = env_val
                         && std::sync::Arc::ptr_eq(target_arc, env_arc)
                     {
-                        return Some(name.clone());
+                        return Some(name.resolve());
                     }
                 }
                 None
@@ -1784,7 +1784,7 @@ impl Interpreter {
                     if let Value::Mix(env_arc, _) = env_val
                         && std::sync::Arc::ptr_eq(target_arc, env_arc)
                     {
-                        return Some(name.clone());
+                        return Some(name.resolve());
                     }
                 }
                 None

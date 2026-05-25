@@ -1415,11 +1415,11 @@ impl VM {
                         .env()
                         .iter()
                         .filter_map(|(k, v)| {
-                            if let Some(var_name) = k.strip_prefix(prefix)
+                            if let Some(var_name) = k.strip_prefix_str(prefix)
                                 && let Value::Str(target) = v
                                 && target.as_str() == name
                             {
-                                Some(var_name.to_string())
+                                Some(var_name)
                             } else {
                                 None
                             }

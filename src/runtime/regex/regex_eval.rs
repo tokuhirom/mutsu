@@ -1,5 +1,6 @@
 use super::super::*;
 use super::regex_helpers::{CaseFoldIter, matches_named_builtin};
+use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Evaluate a closure interpolation `<{ code }>` inside a regex.
@@ -429,10 +430,10 @@ impl Interpreter {
                 self.env.insert(format!("<{}>", k), value);
             }
             // Snapshot env keys and values before execution
-            let snapshot: HashMap<String, String> = self
+            let snapshot: HashMap<Symbol, String> = self
                 .env
                 .iter()
-                .map(|(k, v)| (k.clone(), format!("{:?}", v)))
+                .map(|(k, v)| (*k, format!("{:?}", v)))
                 .collect();
             let _ = self.eval_block_value(&stmts);
             // Record changed env variables as pending local updates for the outer VM
@@ -440,7 +441,7 @@ impl Interpreter {
                 let old_repr = snapshot.get(k).map(|s| s.as_str()).unwrap_or("");
                 let new_repr = format!("{:?}", v);
                 if old_repr != new_repr {
-                    self.pending_local_updates.push((k.clone(), v.clone()));
+                    self.pending_local_updates.push((k.resolve(), v.clone()));
                 }
             }
         }

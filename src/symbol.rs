@@ -89,6 +89,51 @@ impl Symbol {
     pub fn id(&self) -> u32 {
         self.0
     }
+
+    /// Execute a closure with a borrowed reference to the underlying string.
+    /// Holds the read lock only for the duration of the closure.
+    pub fn with_str<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&str) -> R,
+    {
+        let table = global_table().read().unwrap();
+        f(&table.id_to_str[self.0 as usize])
+    }
+
+    pub fn starts_with(&self, prefix: &str) -> bool {
+        self.with_str(|s| s.starts_with(prefix))
+    }
+
+    pub fn ends_with(&self, suffix: &str) -> bool {
+        self.with_str(|s| s.ends_with(suffix))
+    }
+
+    pub fn contains_str(&self, needle: &str) -> bool {
+        self.with_str(|s| s.contains(needle))
+    }
+
+    pub fn strip_prefix_str(&self, prefix: &str) -> Option<String> {
+        self.with_str(|s| s.strip_prefix(prefix).map(|r| r.to_owned()))
+    }
+
+    pub fn strip_prefix_char(&self, prefix: char) -> Option<String> {
+        self.with_str(|s| s.strip_prefix(prefix).map(|r| r.to_owned()))
+    }
+
+    pub fn rsplit_once_str(&self, delimiter: &str) -> Option<(String, String)> {
+        self.with_str(|s| {
+            s.rsplit_once(delimiter)
+                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.with_str(|s| s.len())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.with_str(|s| s.is_empty())
+    }
 }
 
 impl fmt::Debug for Symbol {

@@ -891,25 +891,25 @@ impl Interpreter {
                 // variable).  This preserves live values and prior-END
                 // modifications while still providing access to captured
                 // lexicals from dead scopes.
-                for (k, v) in captured_env {
-                    if !self.env.contains_key(k) {
-                        overlay_keys.push(k.clone());
-                        self.env.insert(k.clone(), v.clone());
-                    } else if let Some(orig_v) = original_env.get(k) {
+                for (k, v) in captured_env.iter() {
+                    if !self.env.contains_key_sym(*k) {
+                        overlay_keys.push(k.resolve());
+                        self.env.insert_sym(*k, v.clone());
+                    } else if let Some(orig_v) = original_env.get_sym(*k) {
                         // Key exists in both current and original env.
                         // Overlay with captured value only if the captured
                         // value differs from the original — this indicates
                         // the captured value comes from a different lexical
                         // scope (e.g. { my $a = 42; END { ... } }).
                         if v != orig_v {
-                            self.env.insert(k.clone(), v.clone());
+                            self.env.insert_sym(*k, v.clone());
                         }
                         // If captured == original, it's the same variable —
                         // keep the current (possibly mutated) value.
                     } else {
                         // Key was added by a prior END phaser's overlay.
                         // Override with this phaser's captured value.
-                        self.env.insert(k.clone(), v.clone());
+                        self.env.insert_sym(*k, v.clone());
                     }
                 }
                 self.run_block(body)?;

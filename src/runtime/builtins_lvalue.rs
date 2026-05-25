@@ -152,10 +152,10 @@ impl Interpreter {
             if key.starts_with("__mutsu_") || key.starts_with("&?") || key == "?LINE" {
                 continue;
             }
-            if let Some(store_val) = store_env.get(key)
-                && fetch_base.get(key) != Some(store_val)
+            if let Some(store_val) = store_env.get_sym(*key)
+                && fetch_base.get_sym(*key) != Some(store_val)
             {
-                updated_fetch.insert(key.clone(), store_val.clone());
+                updated_fetch.insert_sym(*key, store_val.clone());
                 changed = true;
             }
         }
@@ -230,7 +230,7 @@ impl Interpreter {
                 let mut found = None;
                 for (k, v) in self.env.iter() {
                     if crate::runtime::values_identical(v, &target) && !k.starts_with("__") {
-                        found = Some(k.clone());
+                        found = Some(k.resolve());
                         break;
                     }
                 }
@@ -255,7 +255,7 @@ impl Interpreter {
                 let mut found = None;
                 for (k, v) in self.env.iter() {
                     if crate::runtime::values_identical(v, &target) && !k.starts_with("__") {
-                        found = Some(k.clone());
+                        found = Some(k.resolve());
                         break;
                     }
                 }

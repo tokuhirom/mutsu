@@ -3211,15 +3211,15 @@ impl VM {
                 let mut aliases_to_remove = Vec::new();
                 let prefix = "__mutsu_sigilless_alias::";
                 for (k, v) in self.interpreter.env().iter() {
-                    if let Some(_var_name) = k.strip_prefix(prefix)
+                    if let Some(_var_name) = k.strip_prefix_str(prefix)
                         && let Value::Str(target) = v
                         && target.as_str() == name
                     {
-                        aliases_to_remove.push(k.clone());
+                        aliases_to_remove.push(*k);
                     }
                 }
                 for k in aliases_to_remove {
-                    self.interpreter.env_mut().remove(&k);
+                    self.interpreter.env_mut().remove_sym(k);
                 }
             }
             // Propagate value to variables bound to this one via `:=` binding.
@@ -3675,15 +3675,15 @@ impl VM {
             let mut aliases_to_remove = Vec::new();
             let prefix = "__mutsu_sigilless_alias::";
             for (k, v) in self.interpreter.env().iter() {
-                if let Some(_var_name) = k.strip_prefix(prefix)
+                if let Some(_var_name) = k.strip_prefix_str(prefix)
                     && let Value::Str(target) = v
                     && target.as_str() == name
                 {
-                    aliases_to_remove.push(k.clone());
+                    aliases_to_remove.push(*k);
                 }
             }
             for k in aliases_to_remove {
-                self.interpreter.env_mut().remove(&k);
+                self.interpreter.env_mut().remove_sym(k);
             }
         }
         if let Some(source_name) = bind_source {
@@ -4264,11 +4264,12 @@ impl VM {
             // OUTER:: is lexical, not package-based. Expose captured lexical vars
             // from the current interpreter environment as stash entries.
             let mut entries: HashMap<String, Value> = HashMap::new();
-            for (key, val) in self.interpreter.env() {
-                if self.interpreter.should_hide_from_my_global_stash(key) {
+            for (key, val) in self.interpreter.env().iter() {
+                let key_str = key.resolve();
+                if self.interpreter.should_hide_from_my_global_stash(&key_str) {
                     continue;
                 }
-                let display_key = Self::add_sigil_prefix(key);
+                let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
             self.stack.push(Value::Hash(Arc::new(entries)));
@@ -4299,11 +4300,12 @@ impl VM {
             let key = Self::add_sigil_prefix(var_name);
             entries.insert(key, val);
         }
-        for (key, val) in self.interpreter.env() {
-            if self.interpreter.should_hide_from_my_global_stash(key) {
+        for (key, val) in self.interpreter.env().iter() {
+            let key_str = key.resolve();
+            if self.interpreter.should_hide_from_my_global_stash(&key_str) {
                 continue;
             }
-            let display_key = Self::add_sigil_prefix(key);
+            let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
         self.stack.push(Value::Hash(Arc::new(entries)));

@@ -376,8 +376,8 @@ impl Interpreter {
                     let _ = interp.eval_block_value(&stmts);
                     let mut new_caps = current_caps.clone();
                     for (k, v) in &interp.env {
-                        if !self.env.contains_key(k) || self.env.get(k) != Some(v) {
-                            new_caps.regex_vars.insert(k.clone(), v.clone());
+                        if !self.env.contains_key_sym(*k) || self.env.get_sym(*k) != Some(v) {
+                            new_caps.regex_vars.insert(k.resolve(), v.clone());
                         }
                     }
                     return Some((pos, new_caps));

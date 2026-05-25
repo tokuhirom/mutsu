@@ -1788,9 +1788,10 @@ impl Interpreter {
                             self.env.iter().find_map(|(name, bound)| {
                                 if let Value::Array(existing, ..) = bound
                                     && std::sync::Arc::ptr_eq(existing, items)
-                                    && let Some(constraint) = self.var_type_constraint(name)
+                                    && let Some(constraint) =
+                                        self.var_type_constraint(&name.resolve())
                                 {
-                                    return Some((name.clone(), constraint));
+                                    return Some((name.resolve(), constraint));
                                 }
                                 None
                             })
@@ -1824,7 +1825,7 @@ impl Interpreter {
                     let is_native = self.env.iter().any(|(name, bound)| {
                         if let Value::Array(existing, ..) = bound
                             && std::sync::Arc::ptr_eq(existing, items)
-                            && let Some(constraint) = self.var_type_constraint(name)
+                            && let Some(constraint) = self.var_type_constraint(&name.resolve())
                         {
                             crate::runtime::native_types::is_native_array_element_type(&constraint)
                         } else {
@@ -1858,7 +1859,7 @@ impl Interpreter {
                     let is_native = self.env.iter().any(|(name, bound)| {
                         if let Value::Array(existing, ..) = bound
                             && std::sync::Arc::ptr_eq(existing, items)
-                            && let Some(constraint) = self.var_type_constraint(name)
+                            && let Some(constraint) = self.var_type_constraint(&name.resolve())
                         {
                             crate::runtime::native_types::is_native_array_element_type(&constraint)
                         } else {

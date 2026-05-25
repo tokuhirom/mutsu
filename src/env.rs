@@ -2,19 +2,18 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 /// Copy-on-write environment wrapper.
 ///
-/// Wraps `Arc<HashMap<String, Value>>` so that cloning is O(1) (just an Arc bump).
+/// Wraps `Arc<HashMap<Symbol, Value>>` so that cloning is O(1) (just an Arc bump).
 /// Mutation goes through `Arc::make_mut`, triggering a deep clone only when
-/// the Arc is shared.
-///
-/// Previously exposed `HashMap` via `Deref`/`DerefMut`. Now uses explicit
-/// methods to allow future scope-chain extensions without changing callers.
+/// the Arc is shared.  Symbol keys make the deep clone cheaper: key clone is
+/// O(1) (Copy) instead of O(n) heap allocation for String keys.
 #[derive(Clone)]
 pub struct Env {
-    inner: Arc<HashMap<String, Value>>,
+    inner: Arc<HashMap<Symbol, Value>>,
 }
 
 impl Env {
@@ -32,52 +31,83 @@ impl Env {
 
     #[inline(always)]
     pub fn get(&self, key: &str) -> Option<&Value> {
-        self.inner.get(key)
+        let sym = Symbol::intern(key);
+        self.inner.get(&sym)
+    }
+
+    #[inline(always)]
+    pub fn get_sym(&self, key: Symbol) -> Option<&Value> {
+        self.inner.get(&key)
     }
 
     #[inline]
     pub fn contains_key(&self, key: &str) -> bool {
-        self.inner.contains_key(key)
+        let sym = Symbol::intern(key);
+        self.inner.contains_key(&sym)
+    }
+
+    #[inline]
+    pub fn contains_key_sym(&self, key: Symbol) -> bool {
+        self.inner.contains_key(&key)
     }
 
     #[inline]
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
+        let sym = Symbol::intern(&key);
+        Arc::make_mut(&mut self.inner).insert(sym, value)
+    }
+
+    #[inline]
+    pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
         Arc::make_mut(&mut self.inner).insert(key, value)
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Value> {
-        Arc::make_mut(&mut self.inner).remove(key)
+        let sym = Symbol::intern(key);
+        Arc::make_mut(&mut self.inner).remove(&sym)
+    }
+
+    pub fn remove_sym(&mut self, key: Symbol) -> Option<Value> {
+        Arc::make_mut(&mut self.inner).remove(&key)
     }
 
     pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
-        Arc::make_mut(&mut self.inner).get_mut(key)
+        let sym = Symbol::intern(key);
+        Arc::make_mut(&mut self.inner).get_mut(&sym)
+    }
+
+    pub fn get_mut_sym(&mut self, key: Symbol) -> Option<&mut Value> {
+        Arc::make_mut(&mut self.inner).get_mut(&key)
     }
 
     pub fn retain<F>(&mut self, f: F)
     where
-        F: FnMut(&String, &mut Value) -> bool,
+        F: FnMut(&Symbol, &mut Value) -> bool,
     {
         Arc::make_mut(&mut self.inner).retain(f);
     }
 
-    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Value> {
+    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
         self.inner.iter()
     }
 
-    pub fn keys(&self) -> std::collections::hash_map::Keys<'_, String, Value> {
+    pub fn keys(&self) -> std::collections::hash_map::Keys<'_, Symbol, Value> {
         self.inner.keys()
     }
 
-    pub fn values(&self) -> std::collections::hash_map::Values<'_, String, Value> {
+    pub fn values(&self) -> std::collections::hash_map::Values<'_, Symbol, Value> {
         self.inner.values()
     }
 
-    pub fn values_mut(&mut self) -> std::collections::hash_map::ValuesMut<'_, String, Value> {
+    pub fn values_mut(&mut self) -> std::collections::hash_map::ValuesMut<'_, Symbol, Value> {
         Arc::make_mut(&mut self.inner).values_mut()
     }
 
     pub fn flatten(&self) -> HashMap<String, Value> {
-        (*self.inner).clone()
+        self.inner
+            .iter()
+            .map(|(k, v)| (k.resolve(), v.clone()))
+            .collect()
     }
 
     pub fn len(&self) -> usize {
@@ -91,16 +121,30 @@ impl Env {
 
     /// Insert only if key is not present.
     pub fn entry_or_insert(&mut self, key: String, value: Value) {
-        if !self.inner.contains_key(&key) {
-            Arc::make_mut(&mut self.inner).insert(key, value);
+        let sym = Symbol::intern(&key);
+        if !self.inner.contains_key(&sym) {
+            Arc::make_mut(&mut self.inner).insert(sym, value);
         }
     }
 
     /// Insert only if key is not present (lazy value).
     pub fn entry_or_insert_with<F: FnOnce() -> Value>(&mut self, key: String, f: F) {
-        if !self.inner.contains_key(&key) {
-            Arc::make_mut(&mut self.inner).insert(key, f());
+        let sym = Symbol::intern(&key);
+        if !self.inner.contains_key(&sym) {
+            Arc::make_mut(&mut self.inner).insert(sym, f());
         }
+    }
+
+    /// Direct access to the inner HashMap (for bulk mutation).
+    #[allow(dead_code)]
+    pub(crate) fn inner_mut(&mut self) -> &mut HashMap<Symbol, Value> {
+        Arc::make_mut(&mut self.inner)
+    }
+
+    /// Direct read access to the inner HashMap.
+    #[allow(dead_code)]
+    pub(crate) fn inner(&self) -> &HashMap<Symbol, Value> {
+        &self.inner
     }
 }
 
@@ -112,6 +156,18 @@ impl Default for Env {
 
 impl From<HashMap<String, Value>> for Env {
     fn from(map: HashMap<String, Value>) -> Self {
+        let sym_map: HashMap<Symbol, Value> = map
+            .into_iter()
+            .map(|(k, v)| (Symbol::intern(&k), v))
+            .collect();
+        Self {
+            inner: Arc::new(sym_map),
+        }
+    }
+}
+
+impl From<HashMap<Symbol, Value>> for Env {
+    fn from(map: HashMap<Symbol, Value>) -> Self {
         Self {
             inner: Arc::new(map),
         }
@@ -125,8 +181,8 @@ impl fmt::Debug for Env {
 }
 
 impl<'a> IntoIterator for &'a Env {
-    type Item = (&'a String, &'a Value);
-    type IntoIter = std::collections::hash_map::Iter<'a, String, Value>;
+    type Item = (&'a Symbol, &'a Value);
+    type IntoIter = std::collections::hash_map::Iter<'a, Symbol, Value>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.iter()
@@ -134,8 +190,8 @@ impl<'a> IntoIterator for &'a Env {
 }
 
 impl IntoIterator for Env {
-    type Item = (String, Value);
-    type IntoIter = std::collections::hash_map::IntoIter<String, Value>;
+    type Item = (Symbol, Value);
+    type IntoIter = std::collections::hash_map::IntoIter<Symbol, Value>;
 
     fn into_iter(self) -> Self::IntoIter {
         Arc::try_unwrap(self.inner)

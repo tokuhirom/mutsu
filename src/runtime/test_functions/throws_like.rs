@@ -41,10 +41,10 @@ impl Interpreter {
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();
                 nested.restore_var_type_constraints(self.snapshot_var_type_constraints());
                 for (k, v) in &self.env {
-                    if k.contains("::") {
+                    if k.contains_str("::") {
                         continue;
                     }
-                    nested.env.insert(k.clone(), v.clone());
+                    nested.env.insert_sym(*k, v.clone());
                 }
                 // Pre-check for undeclared names (compile-time errors in Raku).
                 // Parse the code and check for undeclared type names before running.
@@ -341,8 +341,8 @@ impl Interpreter {
                 nested.enum_types = self.enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 for (k, v) in &self.env {
-                    if !k.contains("::") {
-                        nested.env.insert(k.clone(), v.clone());
+                    if !k.contains_str("::") {
+                        nested.env.insert_sym(*k, v.clone());
                     }
                 }
                 let pre_check_result = {

@@ -912,7 +912,7 @@ impl Value {
             }
             Value::Proxy { .. } => "Proxy".to_string(),
             Value::CustomType { name, .. } => {
-                if *name == "" {
+                if name.is_empty() {
                     "(CustomType)".to_string()
                 } else {
                     format!("({})", name)

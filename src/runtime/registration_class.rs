@@ -1931,7 +1931,7 @@ impl Interpreter {
                     for outer_name in saved_env.keys() {
                         let class_scoped_name = format!("{}::{}", name, outer_name);
                         if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
-                            self.env.insert(outer_name.clone(), updated);
+                            self.env.insert_sym(*outer_name, updated);
                         }
                     }
                     if let Some(updated) = self.classes.get(name).cloned() {
@@ -1967,7 +1967,7 @@ impl Interpreter {
                         for outer_name in saved_env.keys() {
                             let class_scoped_name = format!("{}::{}", name, outer_name);
                             if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
-                                self.env.insert(outer_name.clone(), updated);
+                                self.env.insert_sym(*outer_name, updated);
                             }
                         }
                     }

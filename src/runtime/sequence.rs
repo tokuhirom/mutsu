@@ -536,7 +536,7 @@ impl Interpreter {
                 for (i, _) in seeds.iter().enumerate() {
                     let saved = self.env.clone();
                     for (k, v) in &data.env {
-                        self.env.insert(k.clone(), v.clone());
+                        self.env.insert_sym(*k, v.clone());
                     }
 
                     // Collect the appropriate number of previous values up to position i+1
@@ -847,8 +847,8 @@ impl Interpreter {
                                  -> crate::env::Env {
                                     let mut merged = saved;
                                     for (k, v) in current.iter() {
-                                        if merged.contains_key(k) {
-                                            merged.insert(k.clone(), v.clone());
+                                        if merged.contains_key_sym(*k) {
+                                            merged.insert_sym(*k, v.clone());
                                         }
                                     }
                                     merged
@@ -885,8 +885,8 @@ impl Interpreter {
                                 // Use the mutable closure env so side-effects persist
                                 // across iterations (e.g. `my $i = 0; { ++$i } ... *`).
                                 let closure_env = generator_closure_env.as_ref().unwrap();
-                                for (k, v) in closure_env {
-                                    self.env.insert(k.clone(), v.clone());
+                                for (k, v) in closure_env.iter() {
+                                    self.env.insert_sym(*k, v.clone());
                                 }
 
                                 // Bind parameters
@@ -952,8 +952,8 @@ impl Interpreter {
                                 // so the next iteration sees updated values.
                                 if let Some(ref mut gen_env) = generator_closure_env {
                                     for (k, v) in self.env.iter() {
-                                        if gen_env.contains_key(k) {
-                                            gen_env.insert(k.clone(), v.clone());
+                                        if gen_env.contains_key_sym(*k) {
+                                            gen_env.insert_sym(*k, v.clone());
                                         }
                                     }
                                 }
@@ -1165,8 +1165,8 @@ impl Interpreter {
                                 }
 
                                 let saved = self.env.clone();
-                                for (k, v) in &data.env {
-                                    self.env.insert(k.clone(), v.clone());
+                                for (k, v) in data.env.iter() {
+                                    self.env.insert_sym(*k, v.clone());
                                 }
 
                                 let args: Vec<Value> = if result_len == 0 {

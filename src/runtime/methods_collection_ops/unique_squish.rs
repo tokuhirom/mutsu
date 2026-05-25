@@ -276,13 +276,13 @@ impl Interpreter {
             let mut revert_remove = Vec::new();
             if let Some(before) = env_before_callbacks {
                 for (k, old_v) in &before {
-                    if self.env.get(k) != Some(old_v) {
-                        revert_values.insert(k.clone(), old_v.clone());
+                    if self.env.get_sym(*k) != Some(old_v) {
+                        revert_values.insert(k.resolve(), old_v.clone());
                     }
                 }
                 for k in self.env.keys() {
-                    if !before.contains_key(k) {
-                        revert_remove.push(k.clone());
+                    if !before.contains_key_sym(*k) {
+                        revert_remove.push(k.resolve());
                     }
                 }
             }

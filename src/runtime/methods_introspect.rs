@@ -415,20 +415,20 @@ impl Interpreter {
                         _ => None,
                     });
                 if let Some(idx) = multi_idx {
-                    if sub_data.package != "" && sub_data.name != "" {
+                    if !sub_data.package.is_empty() && !sub_data.name.is_empty() {
                         k.push(format!(
                             "{}::{}/multi.{}",
                             sub_data.package, sub_data.name, idx
                         ));
                     }
-                    if sub_data.name != "" {
+                    if !sub_data.name.is_empty() {
                         k.push(format!("&{}/multi.{}", sub_data.name.resolve(), idx));
                     }
                 }
-                if sub_data.package != "" && sub_data.name != "" {
+                if !sub_data.package.is_empty() && !sub_data.name.is_empty() {
                     k.push(format!("{}::{}", sub_data.package, sub_data.name));
                 }
-                if sub_data.name != "" {
+                if !sub_data.name.is_empty() {
                     // Try &-prefixed key first (to disambiguate from package names)
                     k.push(format!("&{}", sub_data.name.resolve()));
                     k.push(sub_data.name.resolve());
@@ -440,10 +440,10 @@ impl Interpreter {
             }
             Value::Routine { package, name, .. } => {
                 let mut k = Vec::new();
-                if *package != "" && *name != "" {
+                if !package.is_empty() && !name.is_empty() {
                     k.push(format!("{}::{}", package.resolve(), name.resolve()));
                 }
-                if *name != "" {
+                if !name.is_empty() {
                     k.push(format!("&{}", name.resolve()));
                     k.push(name.resolve());
                 }
@@ -464,7 +464,7 @@ impl Interpreter {
         }
         // For anonymous subs/bare blocks, try to find a doc comment by source line proximity
         if let Value::Sub(sub_data) = target
-            && sub_data.name == ""
+            && sub_data.name.is_empty()
             && let Some(src_line) = sub_data.source_line
         {
             let prefix = if sub_data.is_bare_block {

@@ -236,8 +236,9 @@ impl Interpreter {
         self.pop_caller_env_with_writeback(&mut restored_env);
         let excluded_names = Self::routine_writeback_excluded_names(def);
         for (k, v) in self.env.iter() {
-            let scalar_writeback = restored_env.contains_key(k)
-                && !excluded_names.contains(k)
+            let k_str = k.resolve();
+            let scalar_writeback = restored_env.contains_key_sym(*k)
+                && !excluded_names.contains(&k_str)
                 && !matches!(
                     v,
                     Value::Array(..)
@@ -249,13 +250,13 @@ impl Interpreter {
             if k != "_"
                 && k != "@_"
                 && k != "%_"
-                && ((restored_env.contains_key(k)
-                    && !excluded_names.contains(k)
+                && ((restored_env.contains_key_sym(*k)
+                    && !excluded_names.contains(&k_str)
                     && matches!(v, Value::Array(..) | Value::Hash(..)))
                     || scalar_writeback
                     || k.starts_with("__mutsu_var_meta::"))
             {
-                restored_env.insert(k.clone(), v.clone());
+                restored_env.insert_sym(*k, v.clone());
             }
         }
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
@@ -380,8 +381,9 @@ impl Interpreter {
                     self.pop_caller_env_with_writeback(&mut restored_env);
                     let excluded_names = Self::routine_writeback_excluded_names(&def);
                     for (k, v) in self.env.iter() {
-                        let scalar_writeback = restored_env.contains_key(k)
-                            && !excluded_names.contains(k)
+                        let k_str = k.resolve();
+                        let scalar_writeback = restored_env.contains_key_sym(*k)
+                            && !excluded_names.contains(&k_str)
                             && !matches!(
                                 v,
                                 Value::Array(..)
@@ -393,12 +395,12 @@ impl Interpreter {
                         if k != "_"
                             && k != "@_"
                             && k != "%_"
-                            && ((restored_env.contains_key(k)
+                            && ((restored_env.contains_key_sym(*k)
                                 && matches!(v, Value::Array(..) | Value::Hash(..)))
                                 || scalar_writeback
                                 || k.starts_with("__mutsu_var_meta::"))
                         {
-                            restored_env.insert(k.clone(), v.clone());
+                            restored_env.insert_sym(*k, v.clone());
                         }
                     }
                     self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);

@@ -3311,7 +3311,7 @@ impl Interpreter {
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
         let role_snapshot: HashSet<String> = self.roles.keys().cloned().collect();
-        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
+        let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let func_keys_before: HashSet<Symbol> = self.functions.keys().copied().collect();
 
         let result = if module == "Test"
@@ -3374,17 +3374,18 @@ impl Interpreter {
                 if env_snapshot.contains(key) {
                     continue;
                 }
-                if key.starts_with('$')
-                    || key.starts_with('@')
-                    || key.starts_with('%')
-                    || key.starts_with('&')
+                if key.starts_with("$")
+                    || key.starts_with("@")
+                    || key.starts_with("%")
+                    || key.starts_with("&")
                 {
                     continue;
                 }
-                let key_short = key
+                let key_s = key.resolve();
+                let key_short = key_s
                     .rsplit_once("::")
                     .map(|(_, short)| short)
-                    .unwrap_or(key.as_str());
+                    .unwrap_or(key_s.as_str());
                 if !key_short
                     .chars()
                     .next()
@@ -3393,7 +3394,7 @@ impl Interpreter {
                     continue;
                 }
                 if key_short != module_short {
-                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_s.clone());
                     self.need_hidden_classes.insert(key_short.to_string());
                 }
             }
@@ -3799,7 +3800,7 @@ impl Interpreter {
         }
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
-        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
+        let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let saved = self.suppress_exports;
         self.suppress_exports = true;
         let result = self.load_module(module);
@@ -3823,17 +3824,18 @@ impl Interpreter {
                 if env_snapshot.contains(key) {
                     continue;
                 }
-                if key.starts_with('$')
-                    || key.starts_with('@')
-                    || key.starts_with('%')
-                    || key.starts_with('&')
+                if key.starts_with("$")
+                    || key.starts_with("@")
+                    || key.starts_with("%")
+                    || key.starts_with("&")
                 {
                     continue;
                 }
-                let key_short = key
+                let key_s = key.resolve();
+                let key_short = key_s
                     .rsplit_once("::")
                     .map(|(_, short)| short)
-                    .unwrap_or(key.as_str());
+                    .unwrap_or(key_s.as_str());
                 if !key_short
                     .chars()
                     .next()
@@ -3842,7 +3844,7 @@ impl Interpreter {
                     continue;
                 }
                 if is_nested_need || key_short != short_name {
-                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_s.clone());
                     self.need_hidden_classes.insert(key_short.to_string());
                 }
             }
@@ -4410,9 +4412,11 @@ impl Interpreter {
     pub(crate) fn pop_caller_env_with_writeback(&mut self, restored_env: &mut Env) {
         if let Some(popped) = self.caller_env_stack.pop() {
             for (key, value) in &popped {
-                if self.is_var_dynamic(key) && restored_env.get(key) != Some(value) {
-                    restored_env.insert(key.clone(), value.clone());
-                }
+                key.with_str(|key_str| {
+                    if self.is_var_dynamic(key_str) && restored_env.get_sym(*key) != Some(value) {
+                        restored_env.insert_sym(*key, value.clone());
+                    }
+                });
             }
         }
         self.callframe_stack.pop();
@@ -4617,7 +4621,7 @@ impl Interpreter {
                 }
                 // Only insert if not already present — existing values may have
                 // been updated by earlier threads that are already running.
-                sv.entry(key.clone()).or_insert_with(|| val.clone());
+                sv.entry(key.resolve()).or_insert_with(|| val.clone());
             }
         }
         self.shared_vars_active = true;
@@ -5159,13 +5163,13 @@ impl Interpreter {
                 saved_env.insert(bare.to_string(), value);
                 continue;
             }
-            saved_env.insert(key.clone(), alias.clone());
+            saved_env.insert_sym(*key, alias.clone());
             if let Some(value) = current_env.get(alias_name.as_str()).cloned() {
                 saved_env.insert(alias_name.to_string(), value);
                 continue;
             }
-            if let Some(bare_name) = key.strip_prefix("__mutsu_sigilless_alias::")
-                && let Some(value) = current_env.get(bare_name).cloned()
+            if let Some(bare_name) = key.strip_prefix_str("__mutsu_sigilless_alias::")
+                && let Some(value) = current_env.get(&bare_name).cloned()
             {
                 saved_env.insert(bare_name.to_string(), value.clone());
                 saved_env.insert(alias_name.to_string(), value);
@@ -5175,7 +5179,7 @@ impl Interpreter {
             if key.starts_with("__mutsu_predictive_seq_iter::")
                 || key.starts_with("__mutsu_sigilless_alias::!")
             {
-                saved_env.insert(key.clone(), value.clone());
+                saved_env.insert_sym(*key, value.clone());
             }
         }
     }
