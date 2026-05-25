@@ -1688,6 +1688,18 @@ impl VM {
             .as_deref()
             .unwrap_or(&original_var_name)
             .to_string();
+        // Capture the old Arc pointer before any mutation so the post-mutation
+        // sync code can distinguish stale COW copies from unrelated containers.
+        let old_container_arc_ptr: Option<usize> =
+            if let Some(container) = self.interpreter.env().get(&var_name) {
+                match container {
+                    Value::Array(arc, _) => Some(Arc::as_ptr(arc) as usize),
+                    Value::Hash(arc) => Some(Arc::as_ptr(arc) as usize),
+                    _ => None,
+                }
+            } else {
+                None
+            };
         let declared_type = self
             .interpreter
             .env()
@@ -2512,9 +2524,11 @@ impl VM {
             self.update_local_if_exists(code, &original_var_name, &updated_container);
         }
         // After element assignment, Arc::make_mut may have created a new Arc
-        // (COW). Sync ArraySlotRef/HashSlotRef locals so they reference the
-        // current container Arc, not a stale pre-COW copy.
-        {
+        // (COW). Sync ArraySlotRef/HashSlotRef locals that pointed to the OLD
+        // container Arc so they reference the new one. Only update refs that
+        // pointed to the same container (identified by old_container_arc_ptr),
+        // not refs to unrelated nested containers.
+        if let Some(old_ptr) = old_container_arc_ptr {
             let current = self
                 .get_env_with_main_alias(&var_name)
                 .or_else(|| self.interpreter.env().get(&original_var_name).cloned());
@@ -2525,23 +2539,28 @@ impl VM {
                     _ => None,
                 };
                 if let Some(new_ptr) = new_arc_ptr {
-                    for local in self.locals.iter_mut() {
-                        match local {
-                            Value::ArraySlotRef { array, .. } => {
-                                if Arc::as_ptr(array) as usize != new_ptr
-                                    && let Value::Array(new_arc, _) = container
-                                {
-                                    *array = new_arc.clone();
+                    // Only sync if the Arc pointer actually changed (COW happened)
+                    if new_ptr != old_ptr {
+                        for local in self.locals.iter_mut() {
+                            match local {
+                                Value::ArraySlotRef { array, .. } => {
+                                    // Only update refs that pointed to the OLD container
+                                    if Arc::as_ptr(array) as usize == old_ptr
+                                        && let Value::Array(new_arc, _) = container
+                                    {
+                                        *array = new_arc.clone();
+                                    }
                                 }
-                            }
-                            Value::HashSlotRef { hash, .. } => {
-                                if Arc::as_ptr(hash) as usize != new_ptr
-                                    && let Value::Hash(new_arc) = container
-                                {
-                                    *hash = new_arc.clone();
+                                Value::HashSlotRef { hash, .. } => {
+                                    // Only update refs that pointed to the OLD container
+                                    if Arc::as_ptr(hash) as usize == old_ptr
+                                        && let Value::Hash(new_arc) = container
+                                    {
+                                        *hash = new_arc.clone();
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
                 }
