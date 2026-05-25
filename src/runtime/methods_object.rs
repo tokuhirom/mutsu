@@ -952,7 +952,7 @@ impl Interpreter {
                                 self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
                             let val =
                                 self.call_method_with_values(current_iter, "pull-one", vec![])?;
-                            if iterations > 10_000 {
+                            if iterations > 1_000 {
                                 return Err(RuntimeError::new(format!(
                                     "Seq.new iterator did not terminate (last value: {})",
                                     val.to_string_value()
