@@ -52,7 +52,7 @@ impl Interpreter {
                 SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
                     let deferred_promises = supplier_done_deferred(sid2);
                     for done_cb in take_supplier_done_callbacks(sid2) {
-                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        let _ = self.invoke_done_callback(done_cb);
                     }
                     for (promise, result) in deferred_promises {
                         promise.keep(result, String::new(), String::new());
@@ -155,7 +155,7 @@ impl Interpreter {
             let _ = self.call_sub_value(tap, vec![emitted], true);
         }
         for done_cb in take_supplier_done_callbacks(supplier_id) {
-            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+            let _ = self.invoke_done_callback(done_cb);
         }
     }
 
@@ -171,7 +171,7 @@ impl Interpreter {
             let _ = self.call_sub_value(quit_cb, vec![reason.clone()], true);
         }
         for done_cb in take_supplier_done_callbacks(supplier_id) {
-            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+            let _ = self.invoke_done_callback(done_cb);
         }
     }
 
