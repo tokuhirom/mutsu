@@ -2143,9 +2143,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok(parsed);
     }
 
-    // Check if followed by `(` for function call
-    if rest.starts_with('(') {
-        let (rest, _) = parse_char(rest, '(')?;
+    // Check if followed by `(` for function call (including degenerate unspace: `foo\(42)`)
+    let rest_unspaced = consume_unspace(rest);
+    if rest_unspaced.starts_with('(') {
+        let (rest, _) = parse_char(rest_unspaced, '(')?;
         let (rest, _) = ws(rest)?;
         // Try invocant colon syntax: foo($obj:) or foo($obj: $a, $b)
         // Parse first arg, then check for ':'
@@ -2306,26 +2307,50 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             ));
         }
         let (r3, _) = ws(r2)?;
-        if let Some(r3) = r3.strip_prefix(',').or_else(|| r3.strip_prefix(':')) {
-            // Consume comma and remaining args
+        // Also consume unspace before separator: `{ block }\ : args`
+        let r3_unspaced = consume_unspace(r3);
+        let is_comma = r3_unspaced.starts_with(',');
+        let is_colon = r3_unspaced.starts_with(':') && !r3_unspaced.starts_with("::");
+        if is_comma || is_colon {
+            let r3 = &r3_unspaced[1..];
             let (r3, _) = ws(r3)?;
-            let mut args = vec![make_anon_sub(block_body)];
+            let block_expr = make_anon_sub(block_body);
+            let mut method_args = Vec::new();
             let (mut r3, first_arg) = expression(r3)?;
-            args.push(first_arg);
+            method_args.push(first_arg);
             loop {
                 let (r4, _) = ws(r3)?;
                 if !r4.starts_with(',') {
-                    return Ok((r3, make_call_expr(name, input, args)));
+                    break;
                 }
                 let r4 = &r4[1..];
                 let (r4, _) = ws(r4)?;
                 if r4.starts_with(';') || r4.is_empty() || r4.starts_with('}') {
-                    return Ok((r4, make_call_expr(name, input, args)));
+                    r3 = r4;
+                    break;
                 }
                 let (r4, next_arg) = expression(r4)?;
-                args.push(next_arg);
+                method_args.push(next_arg);
                 r3 = r4;
             }
+            if is_colon {
+                // Invocant colon: `name { block }: args` → `{ block }.name(args)`
+                let sym_name = Symbol::intern(&name);
+                return Ok((
+                    r3,
+                    Expr::MethodCall {
+                        target: Box::new(block_expr),
+                        name: sym_name,
+                        args: method_args,
+                        modifier: None,
+                        quoted: false,
+                    },
+                ));
+            }
+            // Comma separator: `name { block }, args` → `name(block, args)`
+            let mut args = vec![block_expr];
+            args.extend(method_args);
+            return Ok((r3, make_call_expr(name, input, args)));
         }
         // Block without trailing comma — return as separate expressions
         // Fall through to BareWord
