@@ -272,6 +272,14 @@ impl VM {
         if args.iter().any(|a| matches!(a, Value::LazyList(_))) {
             let name = name_sym.resolve();
             if matches!(name.as_str(), "flat" | "eager") {
+                // For `flat`, if the single argument is lazy, preserve laziness
+                // by returning the lazy list directly (flat of a lazy list is still lazy).
+                if name.as_str() == "flat"
+                    && args.len() == 1
+                    && matches!(&args[0], Value::LazyList(_))
+                {
+                    return Some(Ok(args[0].clone()));
+                }
                 let mut forced_args = Vec::with_capacity(args.len());
                 for arg in args {
                     if let Value::LazyList(ll) = arg {

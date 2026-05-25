@@ -56,7 +56,7 @@ pub(super) fn dispatch(
                 Some(Ok(Value::Seq(Arc::new(result))))
             }
             other if is_infinite_range(other) => Some(Ok(other.clone())),
-            Value::LazyList(_) => None, // fall through to runtime to force
+            Value::LazyList(_) => Some(Ok(target.clone())), // flat of a lazy list is still lazy
             _ => {
                 let mut result = Vec::new();
                 flatten_deep_value(target, &mut result, false);
