@@ -1310,7 +1310,19 @@ impl VM {
             Value::Nil
         };
         let effective = match &current {
-            Value::Nil => Value::Int(0),
+            Value::Nil => {
+                // Check if the container has an `is default(...)` value;
+                // e.g. `my @a is default(42); @a[0]++` should increment 42.
+                if let Some(def) = self.interpreter.var_default(&name) {
+                    if matches!(def, Value::Nil) {
+                        Value::Int(0)
+                    } else {
+                        def.clone()
+                    }
+                } else {
+                    Value::Int(0)
+                }
+            }
             other => other.clone(),
         };
         let effective = Self::normalize_incdec_source(effective);
@@ -3072,7 +3084,16 @@ impl VM {
             }
             let is_internal = name.starts_with("__");
             let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
-            if !is_internal && !is_special && !self.interpreter.env().contains_key(&name) {
+            // Private attribute locals (!attr) are populated directly from
+            // instance attributes in fast-path method calls; they may not be
+            // in the env (when skip_env_setup is active) but are still valid.
+            let is_private_attr =
+                name.starts_with('!') && name.len() > 1 && !name.starts_with("__");
+            if !is_internal
+                && !is_special
+                && !is_private_attr
+                && !self.interpreter.env().contains_key(&name)
+            {
                 return Err(RuntimeError::new(format!(
                     "X::Undeclared::Symbols: Variable '{name}' is not declared"
                 )));
