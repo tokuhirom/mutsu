@@ -64,6 +64,7 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             is_default: None,
             is_type: None,
             deprecated_message: None,
+            is_built: None,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -185,6 +186,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_default_trait: Option<Expr> = None;
     let mut is_type: Option<String> = None;
     let mut deprecated_message: Option<String> = None;
+    let mut is_built: Option<bool> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -308,6 +310,53 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 continue;
             }
             deprecated_message = Some(String::new());
+        } else if trait_name == "built" {
+            // `is built` or `is built(False)`
+            let (r_ws, _) = ws(r)?;
+            if let Some(inner) = r_ws.strip_prefix('(') {
+                let (inner, _) = ws(inner)?;
+                if let Some(after) = inner.strip_prefix("False") {
+                    let (after, _) = ws(after)?;
+                    let after = after
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is built"))?;
+                    is_built = Some(false);
+                    let (r2, _) = ws(after)?;
+                    rest = r2;
+                    continue;
+                } else if let Some(after) = inner.strip_prefix("True") {
+                    let (after, _) = ws(after)?;
+                    let after = after
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is built"))?;
+                    is_built = Some(true);
+                    let (r2, _) = ws(after)?;
+                    rest = r2;
+                    continue;
+                }
+                // Skip unknown content in parens
+                let mut depth = 1u32;
+                let mut idx = 0;
+                for (i, ch) in inner.char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                idx = i;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let after = &inner[idx + 1..];
+                is_built = Some(true);
+                let (r2, _) = ws(after)?;
+                rest = r2;
+                continue;
+            }
+            is_built = Some(true);
         } else if trait_name
             .chars()
             .next()
@@ -561,6 +610,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_default: is_default_trait,
             is_type,
             deprecated_message,
+            is_built,
         },
     ))
 }

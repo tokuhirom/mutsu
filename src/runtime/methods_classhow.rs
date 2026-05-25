@@ -619,6 +619,7 @@ impl Interpreter {
                             attributes: vec![],
                             attribute_types: HashMap::new(),
                             attribute_smileys: HashMap::new(),
+                            attribute_built: HashMap::new(),
                             alias_attributes: HashSet::new(),
                             methods: HashMap::new(),
                             native_methods: HashSet::new(),

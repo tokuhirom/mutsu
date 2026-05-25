@@ -56,7 +56,7 @@ is $r.area(), 48, 'area after scaling';
 
 # Private attribute mutation
 class SecretBox {
-    has $!secret;
+    has $!secret is built;
     has $.label;
     method set-secret($val) {
         $!secret = $val;

@@ -105,48 +105,40 @@ impl VM {
                     | "bytes"
             )
         {
-            if let Some(val) = attributes.get(method) {
-                // Check for deprecated attribute accessor (has $.foo is DEPRECATED)
-                let cn = class_name.resolve();
-                if let Some(msg) = self
-                    .interpreter
-                    .class_attribute_deprecated(&cn, method)
-                    .cloned()
-                {
-                    self.interpreter
-                        .check_deprecation_for_method(method, &cn, &msg);
-                }
-                self.stack.push(val.clone());
-                self.env_dirty = true;
-                return Ok(());
-            }
-            // Check if it's a public accessor (has $.x declared)
-            let attr_key = format!("{}!", method);
-            if let Some(val) = attributes.get(&attr_key) {
-                // Check for deprecated attribute accessor
-                let cn = class_name.resolve();
-                if let Some(msg) = self
-                    .interpreter
-                    .class_attribute_deprecated(&cn, method)
-                    .cloned()
-                {
-                    self.interpreter
-                        .check_deprecation_for_method(method, &cn, &msg);
-                }
-                self.stack.push(val.clone());
-                self.env_dirty = true;
-                return Ok(());
-            }
-            // Not a direct attribute — check if class has a user-defined method
-            // before falling through. If no user method exists and this looks
-            // like a simple accessor, return the type object (Any).
             let cn = class_name.resolve();
-            if !self.interpreter.has_user_method(&cn, method)
-                && self.interpreter.has_public_accessor(&cn, method)
-            {
-                self.stack.push(Value::Nil);
-                self.env_dirty = true;
-                return Ok(());
+            if !self.interpreter.has_user_method(&cn, method) {
+                if let Some(val) = attributes.get(method) {
+                    if let Some(msg) = self
+                        .interpreter
+                        .class_attribute_deprecated(&cn, method)
+                        .cloned()
+                    {
+                        self.interpreter
+                            .check_deprecation_for_method(method, &cn, &msg);
+                    }
+                    self.stack.push(val.clone());
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                let attr_key = format!("{}!", method);
+                if let Some(val) = attributes.get(&attr_key) {
+                    if let Some(msg) = self
+                        .interpreter
+                        .class_attribute_deprecated(&cn, method)
+                        .cloned()
+                    {
+                        self.interpreter
+                            .check_deprecation_for_method(method, &cn, &msg);
+                    }
+                    self.stack.push(val.clone());
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                if self.interpreter.has_public_accessor(&cn, method) {
+                    self.stack.push(Value::Nil);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
             }
         }
         // Junction auto-threading: thread method calls over junction values

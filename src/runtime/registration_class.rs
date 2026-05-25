@@ -887,6 +887,7 @@ impl Interpreter {
             attributes: Vec::new(),
             attribute_types: HashMap::new(),
             attribute_smileys: HashMap::new(),
+            attribute_built: HashMap::new(),
             methods: HashMap::new(),
             native_methods: HashSet::new(),
             mro: Vec::new(),
@@ -1186,6 +1187,7 @@ impl Interpreter {
                     attributes: Vec::new(),
                     attribute_types: HashMap::new(),
                     attribute_smileys: HashMap::new(),
+                    attribute_built: HashMap::new(),
                     methods: HashMap::new(),
                     native_methods: HashSet::new(),
                     mro: Vec::new(),
@@ -1374,6 +1376,7 @@ impl Interpreter {
                     is_default,
                     is_type,
                     deprecated_message,
+                    is_built,
                 } => {
                     let attr_name_str = attr_name.resolve();
 
@@ -1447,6 +1450,11 @@ impl Interpreter {
                         class_def
                             .attribute_smileys
                             .insert(attr_name_str.clone(), ts.clone());
+                    }
+                    if let Some(built) = is_built {
+                        class_def
+                            .attribute_built
+                            .insert(attr_name_str.clone(), *built);
                     }
                     if let Some(it) = is_type {
                         self.class_attribute_is_types
@@ -2218,6 +2226,7 @@ impl Interpreter {
                     is_default: _,
                     is_type: _,
                     deprecated_message: _,
+                    is_built: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     let attr_var_name = if *is_public {
@@ -2434,6 +2443,7 @@ impl Interpreter {
                     is_default: _,
                     is_type: _,
                     deprecated_message: _,
+                    is_built: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.own_attribute_names.insert(attr_name_str.clone());
@@ -3105,6 +3115,7 @@ impl Interpreter {
             attributes: all_attributes,
             attribute_types: HashMap::new(),
             attribute_smileys: HashMap::new(),
+            attribute_built: HashMap::new(),
             methods: all_methods,
             native_methods: HashSet::new(),
             mro: vec![role_name.to_string(), "Any".to_string(), "Mu".to_string()],

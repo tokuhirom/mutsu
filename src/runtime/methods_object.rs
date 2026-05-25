@@ -287,7 +287,9 @@ impl Interpreter {
             {
                 let mut attrs = HashMap::new();
                 for arg in &args {
-                    if let Value::Pair(key, val) = arg {
+                    if let Value::Pair(key, val) = arg
+                        && self.is_attribute_buildable(&cn_resolved, key)
+                    {
                         attrs.insert(key.clone(), *val.clone());
                     }
                 }
@@ -343,6 +345,7 @@ impl Interpreter {
                         mro: Vec::new(),
                         attribute_types: HashMap::new(),
                         attribute_smileys: HashMap::new(),
+                        attribute_built: HashMap::new(),
                         wildcard_handles: Vec::new(),
                         alias_attributes: HashSet::new(),
                         class_level_attrs: HashMap::new(),
@@ -2723,7 +2726,7 @@ impl Interpreter {
                 for val in &args {
                     match val {
                         Value::Pair(k, v) => {
-                            if !any_build {
+                            if !any_build && self.is_attribute_buildable(class_key, k) {
                                 let coerced = Self::coerce_attr_value_by_sigil(
                                     *v.clone(),
                                     sigil_map.get(k).copied().unwrap_or('$'),

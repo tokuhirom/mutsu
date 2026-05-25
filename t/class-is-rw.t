@@ -31,7 +31,7 @@ is $f.x, 11, 'postfix ++ updates the accessor-backed value';
 dies-ok { $f.z = 9 }, 'private attribute is still not writable via public accessor';
 
 $f.bump-z();
-is $f.z, 4, 'private attribute mutates through method as usual';
+is $f.z, 2, 'private attribute mutates through method as usual';
 
 class Baz {
     has $.a;

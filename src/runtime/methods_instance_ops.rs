@@ -663,8 +663,11 @@ impl Interpreter {
                     .iter()
                     .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
                     .collect();
+                let cn = class_name.resolve();
                 for arg in &args {
-                    if let Value::Pair(key, boxed) = arg {
+                    if let Value::Pair(key, boxed) = arg
+                        && self.is_attribute_buildable(&cn, key)
+                    {
                         let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
                         let coerced = Self::coerce_attr_value_by_sigil(*boxed.clone(), sigil);
                         attrs.insert(key.clone(), coerced);

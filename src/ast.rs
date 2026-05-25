@@ -689,6 +689,7 @@ pub(crate) enum Stmt {
         /// `is DEPRECATED` message: None = not deprecated, Some("") = deprecated without message,
         /// Some(msg) = deprecated with custom message.
         deprecated_message: Option<String>,
+        is_built: Option<bool>,
     },
     MethodDecl {
         name: Symbol,
