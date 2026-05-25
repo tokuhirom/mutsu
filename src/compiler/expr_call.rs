@@ -757,6 +757,30 @@ impl Compiler {
                     is_bind: false,
                 };
                 self.compile_expr(&assign_expr);
+            } else if let Expr::Index {
+                target,
+                index,
+                is_positional: _,
+            } = &args[0]
+                && let Some(hash_name) = match target.as_ref() {
+                    Expr::HashVar(n) => Some(format!("%{}", n)),
+                    Expr::Var(n) if n.starts_with('%') => Some(n.clone()),
+                    _ => None,
+                }
+            {
+                // cas(%hash{key}, &code) -> __mutsu_cas_hash_elem("%hash", key, code)
+                let call_name_idx = self
+                    .code
+                    .add_constant(Value::str_from("__mutsu_cas_hash_elem"));
+                let name_idx = self.code.add_constant(Value::str(hash_name));
+                self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(index);
+                self.compile_expr(&args[1]);
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: call_name_idx,
+                    arity: 3,
+                    arg_sources_idx: None,
+                });
             } else {
                 let arity = args.len() as u32;
                 let arg_sources_idx = self.add_arg_sources_constant(args);
