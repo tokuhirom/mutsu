@@ -321,6 +321,20 @@ impl VM {
         }
         let val = self.stack.pop().unwrap_or(Value::Nil);
 
+        // Empty (empty Slip) means nothing to push -- return the array as-is.
+        if let Value::Slip(ref items) = val
+            && items.is_empty()
+        {
+            let result = self
+                .interpreter
+                .env()
+                .get(target_name)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            self.stack.push(result);
+            return Ok(());
+        }
+
         // Check the target exists as a simple Array in env.
         // If not (e.g., captured closure var, or non-Array), fall back to interpreter.
         let is_simple_array = self
@@ -343,18 +357,26 @@ impl VM {
             return Ok(());
         }
 
-        // Check type constraint on the array variable
+        // Check type constraint on the array variable.
+        // For Slip values, check each element individually.
         if let Some(type_name) = self
             .interpreter
             .var_type_constraint_fast(target_name)
             .map(|s| s.to_string())
-            && !self.interpreter.type_matches_value(&type_name, &val)
         {
-            return Err(RuntimeError::typecheck_assignment(
-                &type_name,
-                crate::runtime::value_type_name(&val),
-                Some(target_name),
-            ));
+            let items_to_check: Vec<&Value> = match &val {
+                Value::Slip(items) => items.iter().collect(),
+                other => vec![other],
+            };
+            for item in items_to_check {
+                if !self.interpreter.type_matches_value(&type_name, item) {
+                    return Err(RuntimeError::typecheck_assignment(
+                        &type_name,
+                        crate::runtime::value_type_name(item),
+                        Some(target_name),
+                    ));
+                }
+            }
         }
 
         // Find the local slot and drop it to allow in-place mutation

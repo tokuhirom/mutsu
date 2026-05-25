@@ -137,13 +137,17 @@ impl Interpreter {
         let needs_normalize = args.iter().any(|arg| match arg {
             Value::Scalar(_) => true,
             Value::Array(_, kind) => kind.is_itemized(),
+            Value::Slip(_) => true,
             _ => false,
         });
         if !needs_normalize {
             return args;
         }
         args.into_iter()
-            .map(Self::normalize_push_unshift_arg)
+            .flat_map(|arg| match arg {
+                Value::Slip(items) => items.to_vec(),
+                other => vec![Self::normalize_push_unshift_arg(other)],
+            })
             .collect()
     }
 
