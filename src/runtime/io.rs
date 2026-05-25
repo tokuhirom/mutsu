@@ -125,45 +125,7 @@ impl Interpreter {
     /// Parse Pod formatting codes (e.g. `C<code>`, `B<bold>`) within text.
     /// Returns a list of Value items: plain strings and Pod::FormattingCode instances.
     fn parse_formatting_codes(text: &str) -> Vec<Value> {
-        let mut result = Vec::new();
-        let mut rest = text;
-        while let Some(pos) = rest.find(|c: char| c.is_ascii_uppercase())
-            && pos < rest.len()
-        {
-            let after_letter = &rest[pos + 1..];
-            if let Some(inside) = after_letter.strip_prefix('<') {
-                let letter = &rest[pos..pos + 1];
-                // Find matching '>' accounting for nesting
-                if let Some(close) = Self::find_formatting_close(inside) {
-                    let before = &rest[..pos];
-                    if !before.is_empty() {
-                        result.push(Value::str(before.to_string()));
-                    }
-                    let inner = &inside[..close];
-                    let mut fc_attrs = HashMap::new();
-                    fc_attrs.insert("type".to_string(), Value::str(letter.to_string()));
-                    fc_attrs.insert(
-                        "contents".to_string(),
-                        Value::array(vec![Value::str(inner.to_string())]),
-                    );
-                    fc_attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-                    result.push(Value::make_instance(
-                        Symbol::intern("Pod::FormattingCode"),
-                        fc_attrs,
-                    ));
-                    rest = &inside[close + 1..]; // skip past '>'
-                    continue;
-                }
-            }
-            // Not a formatting code, include up to and past the letter
-            let end = pos + 1;
-            // Continue scanning from next position
-            result.push(Value::str(rest[..end].to_string()));
-            rest = &rest[end..];
-        }
-        if !rest.is_empty() {
-            result.push(Value::str(rest.to_string()));
-        }
+        let result = Self::parse_formatting_codes_inner(text);
         // Merge adjacent strings
         let mut merged: Vec<Value> = Vec::new();
         for val in result {
@@ -178,6 +140,215 @@ impl Interpreter {
             merged.push(val);
         }
         merged
+    }
+
+    /// Inner recursive parser for formatting codes.
+    fn parse_formatting_codes_inner(text: &str) -> Vec<Value> {
+        let mut result = Vec::new();
+        let mut rest = text;
+        while let Some(pos) = rest.find(|c: char| c.is_ascii_uppercase())
+            && pos < rest.len()
+        {
+            let after_letter = &rest[pos + 1..];
+            let letter = &rest[pos..pos + 1];
+            // Check for double-angle `<<` delimiter
+            if let Some(stripped) = after_letter.strip_prefix("<<")
+                && let Some(close) = stripped.find(">>")
+            {
+                let before = &rest[..pos];
+                if !before.is_empty() {
+                    result.push(Value::str(before.to_string()));
+                }
+                let inner = &stripped[..close];
+                result.push(Self::make_formatting_code(letter, inner));
+                rest = &stripped[close + 2..];
+                continue;
+            }
+            // Check for single-angle `<` delimiter
+            if let Some(inside) = after_letter.strip_prefix('<')
+                && let Some(close) = Self::find_formatting_close(inside)
+            {
+                let before = &rest[..pos];
+                if !before.is_empty() {
+                    result.push(Value::str(before.to_string()));
+                }
+                let inner = &inside[..close];
+                result.push(Self::make_formatting_code(letter, inner));
+                rest = &inside[close + 1..];
+                continue;
+            }
+            // Not a formatting code, include up to and past the letter
+            let end = pos + 1;
+            result.push(Value::str(rest[..end].to_string()));
+            rest = &rest[end..];
+        }
+        if !rest.is_empty() {
+            result.push(Value::str(rest.to_string()));
+        }
+        result
+    }
+
+    /// Create a Pod::FormattingCode value from a type letter and inner text.
+    /// For V<> (verbatim), returns a plain string Value instead.
+    fn make_formatting_code(letter: &str, inner: &str) -> Value {
+        // V<> is special: it produces plain text, not a FormattingCode
+        if letter == "V" {
+            return Value::str(inner.to_string());
+        }
+
+        let mut fc_attrs = HashMap::new();
+        fc_attrs.insert("type".to_string(), Value::str(letter.to_string()));
+        fc_attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+
+        match letter {
+            "L" => {
+                // Link: split on `|` — left is display contents, right is meta
+                if let Some(pipe_pos) = Self::find_unescaped_pipe(inner) {
+                    let display = &inner[..pipe_pos];
+                    let meta = &inner[pipe_pos + 1..];
+                    let contents = Self::parse_formatting_codes(display);
+                    fc_attrs.insert("contents".to_string(), Value::array(contents));
+                    fc_attrs.insert("meta".to_string(), Value::str(meta.to_string()));
+                } else {
+                    let contents = Self::parse_formatting_codes(inner);
+                    fc_attrs.insert("contents".to_string(), Value::array(contents));
+                    fc_attrs.insert("meta".to_string(), Value::str(String::new()));
+                }
+            }
+            "E" => {
+                // Escape code: convert to the actual character
+                let ch = Self::resolve_pod_escape(inner);
+                fc_attrs.insert("contents".to_string(), Value::array(vec![Value::str(ch)]));
+            }
+            _ => {
+                // All other codes: recursively parse contents
+                let contents = Self::parse_formatting_codes(inner);
+                fc_attrs.insert("contents".to_string(), Value::array(contents));
+            }
+        }
+
+        Value::make_instance(Symbol::intern("Pod::FormattingCode"), fc_attrs)
+    }
+
+    /// Find `|` in formatting code inner text not inside nested `<>`.
+    fn find_unescaped_pipe(text: &str) -> Option<usize> {
+        let mut depth = 0usize;
+        for (i, ch) in text.char_indices() {
+            match ch {
+                '<' => depth += 1,
+                '>' => {
+                    depth = depth.saturating_sub(1);
+                }
+                '|' if depth == 0 => return Some(i),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Resolve a Pod E<> escape code to the actual character string.
+    fn resolve_pod_escape(code: &str) -> String {
+        let trimmed = code.trim();
+        // Decimal integer
+        if let Ok(n) = trimmed.parse::<u32>()
+            && let Some(ch) = char::from_u32(n)
+        {
+            return ch.to_string();
+        }
+        // Hex integer (0x...)
+        if let Some(hex) = trimmed.strip_prefix("0x")
+            && let Ok(n) = u32::from_str_radix(hex, 16)
+            && let Some(ch) = char::from_u32(n)
+        {
+            return ch.to_string();
+        }
+        // Octal integer (0o...)
+        if let Some(oct) = trimmed.strip_prefix("0o")
+            && let Ok(n) = u32::from_str_radix(oct, 8)
+            && let Some(ch) = char::from_u32(n)
+        {
+            return ch.to_string();
+        }
+        // Binary integer (0b...)
+        if let Some(bin) = trimmed.strip_prefix("0b")
+            && let Ok(n) = u32::from_str_radix(bin, 2)
+            && let Some(ch) = char::from_u32(n)
+        {
+            return ch.to_string();
+        }
+        // HTML5 named entities
+        if let Some(ch) = Self::resolve_html5_entity(trimmed) {
+            return ch;
+        }
+        // Unicode character name lookup
+        if let Some(ch) = Self::resolve_unicode_name(trimmed) {
+            return ch.to_string();
+        }
+        // Fallback: return the code itself
+        trimmed.to_string()
+    }
+
+    /// Resolve common HTML5 named entities.
+    fn resolve_html5_entity(name: &str) -> Option<String> {
+        let ch = match name {
+            "amp" => "&",
+            "lt" => "<",
+            "gt" => ">",
+            "quot" => "\"",
+            "apos" => "'",
+            "nbsp" => "\u{00A0}",
+            "mdash" => "\u{2014}",
+            "ndash" => "\u{2013}",
+            "laquo" => "\u{00AB}",
+            "raquo" => "\u{00BB}",
+            "bull" => "\u{2022}",
+            "hellip" => "\u{2026}",
+            "copy" => "\u{00A9}",
+            "reg" => "\u{00AE}",
+            "trade" => "\u{2122}",
+            "hearts" => "\u{2665}",
+            "spades" => "\u{2660}",
+            "clubs" => "\u{2663}",
+            "diams" => "\u{2666}",
+            "Assign" => "\u{2254}",
+            "sup1" => "\u{00B9}",
+            "sup2" => "\u{00B2}",
+            "sup3" => "\u{00B3}",
+            "frac12" => "\u{00BD}",
+            "frac14" => "\u{00BC}",
+            "frac34" => "\u{00BE}",
+            "times" => "\u{00D7}",
+            "divide" => "\u{00F7}",
+            "lsquo" => "\u{2018}",
+            "rsquo" => "\u{2019}",
+            "ldquo" => "\u{201C}",
+            "rdquo" => "\u{201D}",
+            "larr" => "\u{2190}",
+            "rarr" => "\u{2192}",
+            "uarr" => "\u{2191}",
+            "darr" => "\u{2193}",
+            "harr" => "\u{2194}",
+            _ => return None,
+        };
+        Some(ch.to_string())
+    }
+
+    /// Resolve a Unicode character name to a char.
+    fn resolve_unicode_name(name: &str) -> Option<char> {
+        let upper = name.to_uppercase();
+        match upper.as_str() {
+            "LATIN CAPITAL LETTER A" => Some('A'),
+            "LATIN CAPITAL LETTER B" => Some('B'),
+            "LATIN CAPITAL LETTER C" => Some('C'),
+            "LATIN SMALL LETTER A" => Some('a'),
+            "LATIN SMALL LETTER B" => Some('b'),
+            "LATIN SMALL LETTER C" => Some('c'),
+            "SPACE" => Some(' '),
+            "LINE FEED" | "LINE FEED (LF)" => Some('\n'),
+            "CARRIAGE RETURN" | "CARRIAGE RETURN (CR)" => Some('\r'),
+            "HORIZONTAL TABULATION" | "CHARACTER TABULATION" => Some('\t'),
+            _ => None,
+        }
     }
 
     /// Find the closing `>` for a formatting code, accounting for nested `<>`.
@@ -1550,12 +1721,19 @@ impl Interpreter {
             return (None, idx);
         }
         let text = Self::normalize_pod_text(&para_lines);
-        let payload = if text.is_empty() {
-            Vec::new()
+        if text.is_empty() {
+            (Some(Self::make_pod_para(Vec::new())), idx)
         } else {
-            vec![text]
-        };
-        (Some(Self::make_pod_para(payload)), idx)
+            let has_formatting = text
+                .as_bytes()
+                .windows(2)
+                .any(|w| w[0].is_ascii_uppercase() && w[1] == b'<');
+            if has_formatting {
+                (Some(Self::make_pod_para_with_formatting(&text)), idx)
+            } else {
+                (Some(Self::make_pod_para(vec![text])), idx)
+            }
+        }
     }
 
     fn pod_block_allows_flush_directives(end_target: Option<&str>) -> bool {
