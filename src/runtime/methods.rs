@@ -70,6 +70,82 @@ pub(super) fn multidim_exists_pos(target: &Value, indices: &[Value]) -> bool {
     true
 }
 
+/// EXISTS-POS for shaped arrays: checks that the leaf element has actually
+/// been assigned (is not Nil or the type object Any).
+fn shaped_multidim_exists_pos(target: &Value, indices: &[Value], shape: &[usize]) -> bool {
+    let mut cur = target.clone();
+    for (dim_idx, idx) in indices.iter().enumerate() {
+        while let Value::Scalar(inner) = &cur {
+            cur = (**inner).clone();
+        }
+        let Some(i) = pos_index(idx) else {
+            return false;
+        };
+        if dim_idx < shape.len() && i >= shape[dim_idx] {
+            return false;
+        }
+        let Some(items) = cur.as_list_items() else {
+            return false;
+        };
+        if i >= items.len() {
+            return false;
+        }
+        cur = items[i].clone();
+    }
+    if indices.len() < shape.len() {
+        return true;
+    }
+    is_assigned_value(&cur)
+}
+
+/// Check whether a value represents an assigned (non-default) cell.
+fn is_assigned_value(v: &Value) -> bool {
+    match v {
+        Value::Nil => false,
+        Value::Package(s) if s == "Any" => false,
+        _ => true,
+    }
+}
+
+/// Check that multi-dimensional indices are within bounds for a shaped array.
+fn check_shaped_bounds(shape: &[usize], indices: &[Value]) -> Result<(), RuntimeError> {
+    for (dim_idx, idx) in indices.iter().enumerate() {
+        let Some(i) = pos_index(idx) else {
+            continue;
+        };
+        if dim_idx < shape.len() && i >= shape[dim_idx] {
+            return Err(RuntimeError::new(format!(
+                "Index {} for dimension {} out of range 0..{}",
+                i,
+                dim_idx + 1,
+                shape[dim_idx]
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Create a X::NotEnoughDimensions error.
+fn make_not_enough_dimensions_error(operation: &str, got: usize, needed: usize) -> RuntimeError {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("operation".to_string(), Value::str(operation.to_string()));
+    attrs.insert("got-dimensions".to_string(), Value::Int(got as i64));
+    attrs.insert("needed-dimensions".to_string(), Value::Int(needed as i64));
+    attrs.insert(
+        "message".to_string(),
+        Value::str(format!(
+            "Not enough dimensions: got {}, needed {}",
+            got, needed
+        )),
+    );
+    let mut err = RuntimeError::new("X::NotEnoughDimensions");
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern("X::NotEnoughDimensions"),
+        attrs,
+    )));
+    err
+}
+
 /// Recursively assign value at indices, rebuilding the array chain.
 /// If the innermost slot is currently a Scalar (BIND-POS marker), returns an error.
 pub(super) fn multidim_assign_pos(
@@ -1727,8 +1803,48 @@ impl Interpreter {
         }
         // Array-specific methods: EXISTS-POS, ASSIGN-POS, BIND-POS, DELETE-POS, clone
         if let Value::Array(items, arr_kind) = &target {
-            // Multi-arg *-POS methods on undimensioned arrays: dig into nested arrays.
-            // See S09-multidim/XX-POS-on-undimensioned.t for semantics.
+            // Detect shaped array and native typed array properties
+            let shape = crate::runtime::utils::shaped_array_shape(&target);
+            let is_native = self.env.iter().any(|(name, bound)| {
+                if let Value::Array(existing, ..) = bound
+                    && std::sync::Arc::ptr_eq(existing, items)
+                    && let Some(constraint) = self.var_type_constraint(&name.resolve())
+                {
+                    crate::runtime::native_types::is_native_array_element_type(&constraint)
+                } else {
+                    false
+                }
+            });
+
+            // For shaped arrays, validate dimension counts for ASSIGN-POS and DELETE-POS
+            if let Some(ref shape) = shape {
+                let needed_dims = shape.len();
+                match method {
+                    "ASSIGN-POS" if args.len() >= 2 => {
+                        let got_dims = args.len() - 1;
+                        if got_dims < needed_dims {
+                            return Err(make_not_enough_dimensions_error(
+                                "assign to",
+                                got_dims,
+                                needed_dims,
+                            ));
+                        }
+                    }
+                    "DELETE-POS" => {
+                        let got_dims = args.len();
+                        if got_dims < needed_dims {
+                            return Err(make_not_enough_dimensions_error(
+                                "delete from",
+                                got_dims,
+                                needed_dims,
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Multi-arg *-POS methods on arrays: dig into nested arrays.
             if args.len() >= 2
                 && matches!(
                     method,
@@ -1737,27 +1853,62 @@ impl Interpreter {
             {
                 match method {
                     "AT-POS" => {
+                        if let Some(ref shape) = shape {
+                            check_shaped_bounds(shape, &args)?;
+                        }
                         return Ok(multidim_at_pos(&target, &args));
                     }
                     "EXISTS-POS" => {
+                        if let Some(ref shape) = shape {
+                            if is_native {
+                                return Ok(Value::Bool(multidim_exists_pos(&target, &args)));
+                            }
+                            return Ok(Value::Bool(shaped_multidim_exists_pos(
+                                &target, &args, shape,
+                            )));
+                        }
                         return Ok(Value::Bool(multidim_exists_pos(&target, &args)));
                     }
                     "ASSIGN-POS" if args.len() >= 3 => {
+                        if let Some(ref shape) = shape {
+                            let (indices, _) = args.split_at(args.len() - 1);
+                            check_shaped_bounds(shape, indices)?;
+                        }
                         let (indices, value) = args.split_at(args.len() - 1);
                         let value = value[0].clone();
                         let updated = multidim_assign_pos(&target, indices, value.clone())?;
+                        if let Some(ref shape) = shape {
+                            crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
+                        }
                         self.overwrite_array_bindings_by_identity(items, updated);
                         return Ok(value);
                     }
                     "BIND-POS" if args.len() >= 3 => {
+                        if is_native {
+                            return Err(RuntimeError::new("Cannot bind to a natively typed array"));
+                        }
                         let (indices, value) = args.split_at(args.len() - 1);
                         let value = value[0].clone();
                         let updated = multidim_bind_pos(&target, indices, value.clone())?;
+                        if let Some(ref shape) = shape {
+                            crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
+                        }
                         self.overwrite_array_bindings_by_identity(items, updated);
                         return Ok(value);
                     }
                     "DELETE-POS" => {
+                        if is_native {
+                            return Err(RuntimeError::new(
+                                "Cannot delete from a natively typed array",
+                            ));
+                        }
+                        if let Some(ref shape) = shape {
+                            check_shaped_bounds(shape, &args)?;
+                        }
                         let (deleted, updated) = multidim_delete_pos(&target, &args)?;
+                        if let Some(ref shape) = shape {
+                            crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
+                        }
                         self.overwrite_array_bindings_by_identity(items, updated);
                         return Ok(deleted);
                     }
@@ -1804,6 +1955,16 @@ impl Interpreter {
                         ));
                     }
 
+                    // For shaped arrays, check bounds
+                    if let Some(ref shape) = shape
+                        && !shape.is_empty()
+                        && index >= shape[0]
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "Index {} for dimension 1 out of range 0..{}",
+                            index, shape[0]
+                        )));
+                    }
                     let mut updated = items.to_vec();
                     if index < updated.len() && matches!(updated[index], Value::Scalar(_)) {
                         return Err(RuntimeError::new("Cannot modify an immutable value"));
@@ -1812,24 +1973,14 @@ impl Interpreter {
                         updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
                     }
                     updated[index] = value.clone();
-                    self.overwrite_array_bindings_by_identity(
-                        items,
-                        Value::Array(std::sync::Arc::new(updated), *arr_kind),
-                    );
+                    let replacement = Value::Array(std::sync::Arc::new(updated), *arr_kind);
+                    if let Some(ref shape) = shape {
+                        crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
+                    }
+                    self.overwrite_array_bindings_by_identity(items, replacement);
                     return Ok(value.clone());
                 }
                 ("BIND-POS", [idx, value]) => {
-                    // Native typed arrays (e.g. array[int]) cannot be bound
-                    let is_native = self.env.iter().any(|(name, bound)| {
-                        if let Value::Array(existing, ..) = bound
-                            && std::sync::Arc::ptr_eq(existing, items)
-                            && let Some(constraint) = self.var_type_constraint(&name.resolve())
-                        {
-                            crate::runtime::native_types::is_native_array_element_type(&constraint)
-                        } else {
-                            false
-                        }
-                    });
                     if is_native {
                         return Err(RuntimeError::new("Cannot bind to a natively typed array"));
                     }
@@ -1846,24 +1997,14 @@ impl Interpreter {
                         updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
                     }
                     updated[index] = Value::Scalar(Box::new(value.clone()));
-                    self.overwrite_array_bindings_by_identity(
-                        items,
-                        Value::Array(std::sync::Arc::new(updated), *arr_kind),
-                    );
+                    let replacement = Value::Array(std::sync::Arc::new(updated), *arr_kind);
+                    if let Some(ref shape) = shape {
+                        crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
+                    }
+                    self.overwrite_array_bindings_by_identity(items, replacement);
                     return Ok(value.clone());
                 }
                 ("DELETE-POS", [idx]) => {
-                    // Native typed arrays (e.g. array[int]) cannot be deleted from
-                    let is_native = self.env.iter().any(|(name, bound)| {
-                        if let Value::Array(existing, ..) = bound
-                            && std::sync::Arc::ptr_eq(existing, items)
-                            && let Some(constraint) = self.var_type_constraint(&name.resolve())
-                        {
-                            crate::runtime::native_types::is_native_array_element_type(&constraint)
-                        } else {
-                            false
-                        }
-                    });
                     if is_native {
                         return Err(RuntimeError::new(
                             "Cannot delete from a natively typed array",
@@ -1887,10 +2028,11 @@ impl Interpreter {
                     } else {
                         Value::Nil
                     };
-                    self.overwrite_array_bindings_by_identity(
-                        items,
-                        Value::Array(std::sync::Arc::new(updated), *arr_kind),
-                    );
+                    let replacement = Value::Array(std::sync::Arc::new(updated), *arr_kind);
+                    if let Some(ref shape) = shape {
+                        crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
+                    }
+                    self.overwrite_array_bindings_by_identity(items, replacement);
                     return Ok(deleted);
                 }
                 ("clone", _) => {
