@@ -3001,6 +3001,16 @@ impl VM {
                 return Ok(());
             }
         }
+        // Attribute locals (!attr) modified by CAS: env holds the authoritative
+        // value since sync_locals_from_env skips !-prefixed names for performance.
+        if name.starts_with('!')
+            && self.interpreter.is_shared_var_dirty(&name)
+            && let Some(val) = self.interpreter.env().get(&name).cloned()
+        {
+            self.locals[idx] = val.clone();
+            self.stack.push(val);
+            return Ok(());
+        }
         let atomic_name = name.strip_prefix('$').unwrap_or(&name);
         let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
         // Only use the scalar atomic fast path for scalar ($) variables.
