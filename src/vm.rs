@@ -1245,14 +1245,6 @@ impl VM {
                         };
                         resolved_source = next.to_string();
                     }
-                    // Save old alias target before overwriting (for ContainerRef propagation)
-                    let old_alias_target = self.interpreter.env().get(&alias_key).and_then(|v| {
-                        if let Value::Str(s) = v {
-                            Some(s.to_string())
-                        } else {
-                            None
-                        }
-                    });
                     self.interpreter
                         .env_mut()
                         .insert(alias_key.clone(), Value::str(resolved_source.clone()));
@@ -1282,19 +1274,10 @@ impl VM {
                         self.interpreter
                             .env_mut()
                             .insert(resolved_source.clone(), container.clone());
-                        // Also update the aliased attribute local if present (e.g., !x for sigilless x)
-                        if let Some(alias_target) = &old_alias_target {
-                            self.interpreter
-                                .env_mut()
-                                .insert(alias_target.to_string(), container.clone());
-                            // Update the matching local slot
-                            if let Some(alias_idx) =
-                                code.locals.iter().rposition(|n| n == alias_target.as_str())
-                            {
-                                self.locals[alias_idx] = container.clone();
-                                self.mark_local_dirty(alias_idx);
-                            }
-                        }
+                        // When rebinding to a new source, the old alias target
+                        // keeps its existing value/ContainerRef — we only break
+                        // the alias, we do NOT propagate the new ContainerRef to
+                        // the old target.
                         // Update source local if present
                         if let Some(source_idx) =
                             code.locals.iter().rposition(|n| n == &resolved_source)
