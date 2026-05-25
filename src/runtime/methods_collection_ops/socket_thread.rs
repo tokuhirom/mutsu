@@ -446,6 +446,8 @@ impl Interpreter {
                 .join()
                 .map_err(|_| RuntimeError::new("Thread panicked"))?;
         }
+        // Sync shared variables back to env after thread completes
+        self.sync_shared_vars_to_env();
         Ok(Value::Bool(true))
     }
 }

@@ -5141,6 +5141,13 @@ impl Interpreter {
                     continue;
                 }
 
+                // Check for atomic hash CAS storage
+                let atomic_hash_key = format!("__mutsu_atomic_hash::{key}");
+                if let Some(val) = sv.get(&atomic_hash_key) {
+                    updates.push((key.clone(), val.clone()));
+                    continue;
+                }
+
                 if let Some(val) = sv.get(key) {
                     updates.push((key.clone(), val.clone()));
                 }

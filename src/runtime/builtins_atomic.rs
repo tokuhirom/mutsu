@@ -392,6 +392,50 @@ impl Interpreter {
                     return self.builtin_atomic_add_var(&[Value::str(name.clone()), delta]);
                 }
             }
+            // Optimization: {.succ} or {.pred} on $_ -> atomic add +/-1
+            if let Value::Sub(sub) = &code
+                && sub.params.is_empty()
+                && effective_body.len() == 1
+                && let Stmt::Expr(Expr::MethodCall {
+                    target,
+                    name: method_name,
+                    args: method_args,
+                    ..
+                }) = effective_body[0]
+                && method_args.is_empty()
+                && matches!(target.as_ref(), Expr::Var(v) if v == "_" || v == "$_")
+            {
+                let method_str = method_name.resolve();
+                if method_str == "succ" {
+                    return self.builtin_atomic_add_var(&[Value::str(name.clone()), Value::Int(1)]);
+                } else if method_str == "pred" {
+                    return self
+                        .builtin_atomic_add_var(&[Value::str(name.clone()), Value::Int(-1)]);
+                }
+            }
+            // Optimization: { $_ + N } with zero params -> atomic add N
+            if let Value::Sub(sub) = &code
+                && sub.params.is_empty()
+                && effective_body.len() == 1
+                && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
+                && *op == TokenKind::Plus
+            {
+                let delta_expr = match (left.as_ref(), right.as_ref()) {
+                    (Expr::Var(lhs), rhs) if lhs == "_" || lhs == "$_" => Some(rhs.clone()),
+                    (lhs, Expr::Var(rhs)) if rhs == "_" || rhs == "$_" => Some(lhs.clone()),
+                    _ => None,
+                };
+                if let Some(delta_expr) = delta_expr {
+                    let delta = match delta_expr {
+                        Expr::Var(var_name) => {
+                            self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                        }
+                        Expr::Literal(v) => v,
+                        other => self.eval_block_value(&[Stmt::Expr(other)])?,
+                    };
+                    return self.builtin_atomic_add_var(&[Value::str(name.clone()), delta]);
+                }
+            }
             loop {
                 let current = {
                     let shared = self.shared_vars.read().unwrap();
@@ -699,6 +743,147 @@ impl Interpreter {
             if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                 dirty.insert(instance_key);
             }
+        }
+    }
+
+    /// CAS on a hash element: cas(%hash{key}, &code)
+    /// Args: [hash_name_str, key, code]
+    /// Uses shared_vars with an atomic key for cross-thread safety.
+    pub(super) fn builtin_cas_hash_elem(
+        &mut self,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if args.len() != 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_cas_hash_elem requires 3 arguments (hash_name, key, code)",
+            ));
+        }
+        let hash_name = args[0].to_string_value();
+        let key = args[1].to_string_value();
+        let code = args[2].clone();
+        let atomic_key = format!("__mutsu_atomic_hash::{hash_name}");
+
+        // Initialize shared_vars with the hash if not yet set
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if !shared.contains_key(&atomic_key) {
+                drop(shared);
+                let hash = self
+                    .env
+                    .get(&hash_name)
+                    .cloned()
+                    .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+                let mut shared = self.shared_vars.write().unwrap();
+                if !shared.contains_key(&atomic_key) {
+                    shared.insert(atomic_key.clone(), hash);
+                }
+            }
+        }
+
+        // Check if code is {.succ} or {.pred} for fast path
+        if let Value::Sub(ref sub) = code {
+            let effective_body: Vec<&Stmt> = sub
+                .body
+                .iter()
+                .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                .collect();
+            if sub.params.is_empty()
+                && effective_body.len() == 1
+                && let Stmt::Expr(Expr::MethodCall {
+                    target,
+                    name: method_name,
+                    args: method_args,
+                    ..
+                }) = effective_body[0]
+                && method_args.is_empty()
+                && matches!(target.as_ref(), Expr::Var(v) if v == "_" || v == "$_")
+            {
+                let method_str = method_name.resolve();
+                let delta = if method_str == "succ" {
+                    Some(1i64)
+                } else if method_str == "pred" {
+                    Some(-1i64)
+                } else {
+                    None
+                };
+                if let Some(d) = delta {
+                    let mut shared = self.shared_vars.write().unwrap();
+                    let hash = shared
+                        .get(&atomic_key)
+                        .cloned()
+                        .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+                    if let Value::Hash(ref map) = hash {
+                        let current = map.get(&key).cloned().unwrap_or(Value::Int(0));
+                        let new_val = crate::builtins::arith_add(current, Value::Int(d))?;
+                        let mut new_map = (**map).clone();
+                        new_map.insert(key, new_val);
+                        let updated = Value::Hash(std::sync::Arc::new(new_map));
+                        shared.insert(atomic_key.clone(), updated.clone());
+                        shared.insert(hash_name.clone(), updated.clone());
+                        drop(shared);
+                        self.env.insert(hash_name.clone(), updated);
+                        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                            dirty.insert(atomic_key);
+                            dirty.insert(hash_name);
+                        }
+                        return Ok(Value::Nil);
+                    }
+                }
+            }
+        }
+
+        // General CAS loop for hash elements
+        loop {
+            let current = {
+                let shared = self.shared_vars.read().unwrap();
+                let hash = shared
+                    .get(&atomic_key)
+                    .cloned()
+                    .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+                if let Value::Hash(ref map) = hash {
+                    map.get(&key).cloned().unwrap_or(Value::Int(0))
+                } else {
+                    Value::Int(0)
+                }
+            };
+            let new_val = {
+                let call_args = if let Value::Sub(ref sub) = code {
+                    if sub.params.is_empty() {
+                        self.env.insert("_".to_string(), current.clone());
+                        self.env.insert("$_".to_string(), current.clone());
+                        Vec::new()
+                    } else {
+                        vec![current.clone()]
+                    }
+                } else {
+                    vec![current.clone()]
+                };
+                self.call_sub_value(code.clone(), call_args, true)?
+            };
+            // CAS: check if value is still `current`, if so store `new_val`
+            let mut shared = self.shared_vars.write().unwrap();
+            let hash = shared
+                .get(&atomic_key)
+                .cloned()
+                .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+            if let Value::Hash(ref map) = hash {
+                let seen = map.get(&key).cloned().unwrap_or(Value::Int(0));
+                if Self::cas_retry_matches(&current, &seen) {
+                    let mut new_map = (**map).clone();
+                    new_map.insert(key, new_val);
+                    let updated = Value::Hash(std::sync::Arc::new(new_map));
+                    shared.insert(atomic_key.clone(), updated.clone());
+                    shared.insert(hash_name.clone(), updated.clone());
+                    drop(shared);
+                    self.env.insert(hash_name.clone(), updated);
+                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(atomic_key);
+                        dirty.insert(hash_name);
+                    }
+                    return Ok(Value::Nil);
+                }
+            }
+            drop(shared);
         }
     }
 }
