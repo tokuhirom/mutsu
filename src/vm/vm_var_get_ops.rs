@@ -80,6 +80,10 @@ impl VM {
             Value::Num(f64::INFINITY)
         } else if name == "Empty" {
             Value::Slip(std::sync::Arc::new(vec![]))
+        } else if Self::is_pseudo_package_bare(name) {
+            // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
+            // Package values so that .WHO/.WHAT etc. work correctly.
+            Value::Package(Symbol::intern(name))
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil)
                 || matches!(v, Value::Package(pkg) if pkg.resolve() != name)

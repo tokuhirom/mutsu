@@ -266,6 +266,11 @@ impl VM {
         err
     }
 
+    /// Check if a bare word is a pseudo-package name (MY, OUTER, CORE, etc.)
+    pub(crate) fn is_pseudo_package_bare(name: &str) -> bool {
+        crate::runtime::Interpreter::is_pseudo_package_name(name)
+    }
+
     pub(crate) fn is_builtin_type(name: &str) -> bool {
         matches!(
             name,

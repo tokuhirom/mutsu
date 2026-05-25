@@ -4378,6 +4378,7 @@ impl VM {
         }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
+            && !package.is_empty()
         {
             self.stack
                 .push(self.interpreter.package_stash_value(package));
@@ -4401,6 +4402,51 @@ impl VM {
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
         self.stack.push(Value::Hash(Arc::new(entries)));
+    }
+
+    /// Build a pseudo-stash hash for a given pseudo-package name.
+    /// Used by .WHO dispatch on pseudo-package Package values.
+    pub(super) fn build_pseudo_stash(&mut self, code: &CompiledCode, name: &str) -> Value {
+        if name == "OUTER" {
+            let mut entries: HashMap<String, Value> = HashMap::new();
+            for (key, val) in self.interpreter.env().iter() {
+                let key_str = key.resolve();
+                if self.interpreter.should_hide_from_my_global_stash(&key_str) {
+                    continue;
+                }
+                let display_key = Self::add_sigil_prefix(&key_str);
+                entries.insert(display_key, val.clone());
+            }
+            return Value::Hash(Arc::new(entries));
+        }
+        if name == "OUR" {
+            let mut entries: HashMap<String, Value> = HashMap::new();
+            for (key, val) in self.interpreter.our_vars_iter() {
+                let display_key = Self::add_sigil_prefix(key);
+                entries.insert(display_key, val.clone());
+            }
+            return Value::Hash(Arc::new(entries));
+        }
+        if name != "MY" && name != "LEXICAL" {
+            return self.interpreter.package_stash_value(name);
+        }
+        // MY / LEXICAL: collect locals + env
+        self.ensure_locals_synced(code);
+        let mut entries: HashMap<String, Value> = HashMap::new();
+        for (i, var_name) in code.locals.iter().enumerate() {
+            let val = self.locals[i].clone();
+            let key = Self::add_sigil_prefix(var_name);
+            entries.insert(key, val);
+        }
+        for (key, val) in self.interpreter.env().iter() {
+            let key_str = key.resolve();
+            if self.interpreter.should_hide_from_my_global_stash(&key_str) {
+                continue;
+            }
+            let display_key = Self::add_sigil_prefix(&key_str);
+            entries.entry(display_key).or_insert_with(|| val.clone());
+        }
+        Value::Hash(Arc::new(entries))
     }
 
     /// Add a sigil prefix to a variable name for display in pseudo-stash.

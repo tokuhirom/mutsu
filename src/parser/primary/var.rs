@@ -797,7 +797,19 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
 pub(crate) fn is_pseudo_package(name: &str) -> bool {
     matches!(
         name,
-        "SETTING" | "CALLER" | "OUTER" | "CORE" | "GLOBAL" | "MY" | "OUR" | "DYNAMIC" | "UNIT"
+        "SETTING"
+            | "CALLER"
+            | "CALLERS"
+            | "OUTER"
+            | "OUTERS"
+            | "CORE"
+            | "GLOBAL"
+            | "MY"
+            | "OUR"
+            | "DYNAMIC"
+            | "UNIT"
+            | "LEXICAL"
+            | "CLIENT"
     )
 }
 
