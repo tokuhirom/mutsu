@@ -1350,7 +1350,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             let r2 = &r[2..];
             let (r2, _) = ws(r2)?;
-            let (r2, value) = crate::parser::expr::parse_fat_arrow_value(r2)?;
+            let (r2, mut value) = crate::parser::expr::parse_fat_arrow_value(r2)?;
+            // Wrap WhateverCode in the pair value (e.g. `foo => |*` should have
+            // a WhateverCode as the value, not slip(Whatever)).
+            if crate::parser::expr::should_wrap_whatevercode(&value) {
+                value = crate::parser::expr::wrap_whatevercode(&value);
+            }
             return Ok((
                 r2,
                 Expr::Binary {

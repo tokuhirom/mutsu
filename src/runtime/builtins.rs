@@ -555,6 +555,24 @@ impl Interpreter {
                 let list = Value::array(values);
                 self.call_method_with_values(list, "head", vec![head_spec])
             }
+            "skip" => {
+                // Only dispatch as list-skip if NOT in test mode, or if args
+                // clearly indicate list-skip (first arg numeric).
+                // Test::skip signature: (Str $reason, Int $count = 1)
+                // List skip signature: (Int $n, @list)
+                // Key distinction: Test::skip's first arg is always a Str.
+                if self.test_mode_active() {
+                    let is_list_skip =
+                        args.len() >= 2 && matches!(args[0], Value::Int(..) | Value::Num(..));
+                    if is_list_skip {
+                        self.builtin_skip(&args)
+                    } else {
+                        self.test_fn_skip(&args)
+                    }
+                } else {
+                    self.builtin_skip(&args)
+                }
+            }
             "classify" | "categorize" => self.builtin_classify(name, &args),
             // String functions
             "index" => {
@@ -905,6 +923,47 @@ impl Interpreter {
                 | "get"
                 | "prompt"
         )
+    }
+
+    /// Builtin `skip(N, list)` function — skips N elements from the list.
+    /// This is only called when the args look like a list-skip (not Test::skip).
+    pub(crate) fn builtin_skip(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("Too few positionals passed to 'skip'"));
+        }
+        let skip_spec = args[0].clone();
+        let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
+        let mut values = Vec::new();
+        for (offset, value) in args[1..].iter().enumerate() {
+            let source_name = arg_sources
+                .get(offset + 1)
+                .and_then(|entry| entry.as_ref())
+                .map(String::as_str);
+            if source_name.is_some_and(|name| {
+                !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+            }) {
+                values.push(value.clone());
+                continue;
+            }
+            match value {
+                Value::Array(items, ..) => {
+                    values.extend(items.iter().cloned());
+                }
+                Value::Seq(items) | Value::Slip(items) => {
+                    values.extend(items.iter().cloned());
+                }
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. } => {
+                    values.extend(crate::runtime::value_to_list(value));
+                }
+                other => values.push(other.clone()),
+            }
+        }
+        let list = Value::array(values);
+        self.call_method_with_values(list, "skip", vec![skip_spec])
     }
 
     // Reduce/produce/zip operations are in builtins_reduce.rs

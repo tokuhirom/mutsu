@@ -462,12 +462,17 @@ impl Interpreter {
         {
             return self.dispatch_supply_skip(attributes, &args);
         }
+        let items = crate::runtime::utils::value_to_list(&target);
         let n = if args.is_empty() {
             1usize
+        } else if matches!(args[0], Value::Sub(..)) {
+            // Callable arg: call with list length to get actual skip count
+            let len = Value::Int(items.len() as i64);
+            let result = self.call_sub_value(args[0].clone(), vec![len], false)?;
+            result.to_f64().max(0.0) as usize
         } else {
             args[0].to_f64().max(0.0) as usize
         };
-        let items = crate::runtime::utils::value_to_list(&target);
         let result: Vec<Value> = items.into_iter().skip(n).collect();
         Ok(Value::Seq(Arc::new(result)))
     }
