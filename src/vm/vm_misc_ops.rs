@@ -2336,8 +2336,9 @@ impl VM {
             }
             if saved_env.contains_key_sym(k) {
                 // Lexical topic is block-scoped; don't write inner `$_` back
-                // to the outer scope on block exit.
-                if k == "_" {
+                // to the outer scope on block exit. Also preserve the alias
+                // metadata for `$_` so that `:=` bindings survive block exit.
+                if k == "_" || k == "__mutsu_sigilless_alias::_" {
                     continue;
                 }
                 // Dynamic variables (e.g. $*VAR) are scoped to the block:
