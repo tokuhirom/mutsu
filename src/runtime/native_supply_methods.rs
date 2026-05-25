@@ -1335,54 +1335,206 @@ impl Interpreter {
             }
             "zip" | "zip-latest" => {
                 // Supply.zip(...) / Supply.zip-latest(...)
+                let is_latest = method == "zip-latest";
 
-                // Extract :with named arg
+                // Extract :with and :initial named args
                 let mut with_fn: Option<Value> = None;
+                let mut initial: Option<Vec<Value>> = None;
                 let mut other_supplies: Vec<Value> = Vec::new();
                 for arg in &args {
-                    if let Value::Pair(key, value) = arg
-                        && key == "with"
-                    {
-                        with_fn = Some(*value.clone());
+                    if let Value::Pair(key, value) = arg {
+                        if key == "with" {
+                            with_fn = Some(*value.clone());
+                        } else if key == "initial" {
+                            if let Value::Array(items, ..) = &**value {
+                                initial = Some(items.to_vec());
+                            }
+                        } else {
+                            other_supplies.push(arg.clone());
+                        }
                     } else {
                         other_supplies.push(arg.clone());
                     }
                 }
 
-                // Check if any input supplies are live (supplier-backed)
-                let self_is_live = supplier_id_from_attrs(attributes).is_some();
+                // Check if any input supplies are live (supplier-backed or channel-based)
+                let self_is_live = supplier_id_from_attrs(attributes).is_some()
+                    || attributes.contains_key("supply_id");
                 let any_live = self_is_live
                     || other_supplies.iter().any(|s| {
                         if let Value::Instance { attributes, .. } = s {
                             supplier_id_from_attrs(attributes).is_some()
+                                || attributes.contains_key("supply_id")
                         } else {
                             false
                         }
                     });
 
                 if any_live {
-                    // Live supply zip: create output supplier and register
-                    // zip taps on all input supplies
                     let output_supplier_id = next_supplier_id();
                     let source_count = 1 + other_supplies.len();
-                    let zip_state_id =
-                        register_zip_state(source_count, output_supplier_id, with_fn);
 
-                    // Register zip tap on self
-                    if let Some(sid) = supplier_id_from_attrs(attributes) {
-                        register_supplier_zip_tap(sid, zip_state_id, 0);
-                    }
+                    // Check if any source is channel-based (has supply_id)
+                    let has_channel = attributes.contains_key("supply_id")
+                        || other_supplies.iter().any(|s| {
+                            matches!(s, Value::Instance { attributes: a, .. } if a.contains_key("supply_id"))
+                        });
 
-                    // Register zip taps on other supplies
-                    for (i, supply) in other_supplies.iter().enumerate() {
-                        if let Value::Instance {
-                            attributes: other_attrs,
-                            ..
-                        } = supply
-                        {
-                            let source_index = i + 1;
-                            if let Some(sid) = supplier_id_from_attrs(other_attrs) {
-                                register_supplier_zip_tap(sid, zip_state_id, source_index);
+                    if is_latest && has_channel {
+                        // Channel-based zip-latest: spawn coordination thread
+                        use crate::runtime::native_methods::{
+                            SupplyEvent, next_supply_id, supply_channel_map_pub,
+                            take_supply_channel,
+                        };
+                        use std::sync::mpsc;
+
+                        let zip_supply_id = next_supply_id();
+                        let (zip_tx, zip_rx) = mpsc::channel();
+
+                        enum SourceKind {
+                            Channel(mpsc::Receiver<SupplyEvent>),
+                            Static(Vec<Value>),
+                        }
+
+                        // Collect all sources (self + others)
+                        let mut all_supplies: Vec<&HashMap<String, Value>> = vec![attributes];
+                        for supply in &other_supplies {
+                            if let Value::Instance { attributes: a, .. } = supply {
+                                all_supplies.push(a);
+                            }
+                        }
+
+                        let mut sources: Vec<SourceKind> = Vec::with_capacity(all_supplies.len());
+                        for a in &all_supplies {
+                            if let Some(Value::Int(sid)) = a.get("supply_id")
+                                && let Some(rx) = take_supply_channel(*sid as u64)
+                            {
+                                sources.push(SourceKind::Channel(rx));
+                                continue;
+                            }
+                            let items = match a.get("values") {
+                                Some(Value::Array(items, ..)) => items.to_vec(),
+                                _ => Vec::new(),
+                            };
+                            sources.push(SourceKind::Static(items));
+                        }
+
+                        std::thread::spawn(move || {
+                            let n = sources.len();
+                            let mut latest: Vec<Option<Value>> = vec![None; n];
+                            let mut done: Vec<bool> = vec![false; n];
+                            let timeout_dur = std::time::Duration::from_millis(10);
+
+                            // Pre-fill from static sources
+                            for (i, source) in sources.iter().enumerate() {
+                                if let SourceKind::Static(vals) = source {
+                                    if let Some(last) = vals.last() {
+                                        latest[i] = Some(last.clone());
+                                    }
+                                    done[i] = true;
+                                }
+                            }
+
+                            loop {
+                                // Poll channel sources
+                                for (i, source) in sources.iter().enumerate() {
+                                    if done[i] {
+                                        continue;
+                                    }
+                                    if let SourceKind::Channel(rx) = source {
+                                        match rx.recv_timeout(timeout_dur) {
+                                            Ok(SupplyEvent::Emit(v)) => {
+                                                latest[i] = Some(v);
+                                                // Emit if all sources have a value
+                                                if latest.iter().all(|v| v.is_some()) {
+                                                    let tuple: Vec<Value> = latest
+                                                        .iter()
+                                                        .map(|v| v.clone().unwrap())
+                                                        .collect();
+                                                    if zip_tx
+                                                        .send(SupplyEvent::Emit(Value::array(
+                                                            tuple,
+                                                        )))
+                                                        .is_err()
+                                                    {
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                            Ok(SupplyEvent::Done) => {
+                                                done[i] = true;
+                                            }
+                                            Ok(SupplyEvent::Quit(_)) => {
+                                                done[i] = true;
+                                            }
+                                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                                            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                                done[i] = true;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // If all done, finish
+                                if done.iter().all(|d| *d) {
+                                    let _ = zip_tx.send(SupplyEvent::Done);
+                                    return;
+                                }
+                            }
+                        });
+
+                        if let Ok(mut map) = supply_channel_map_pub().lock() {
+                            map.insert(zip_supply_id, zip_rx);
+                        }
+
+                        let mut new_attrs = HashMap::new();
+                        new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                        new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                        new_attrs.insert("supply_id".to_string(), Value::Int(zip_supply_id as i64));
+                        new_attrs.insert("live".to_string(), Value::Bool(false));
+                        return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                    } else if is_latest {
+                        let zip_latest_state_id = register_zip_latest_state(
+                            source_count,
+                            output_supplier_id,
+                            with_fn,
+                            initial,
+                        );
+                        if let Some(sid) = supplier_id_from_attrs(attributes) {
+                            register_supplier_zip_latest_tap(sid, zip_latest_state_id, 0);
+                        }
+                        for (i, supply) in other_supplies.iter().enumerate() {
+                            if let Value::Instance {
+                                attributes: other_attrs,
+                                ..
+                            } = supply
+                            {
+                                let source_index = i + 1;
+                                if let Some(sid) = supplier_id_from_attrs(other_attrs) {
+                                    register_supplier_zip_latest_tap(
+                                        sid,
+                                        zip_latest_state_id,
+                                        source_index,
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        let zip_state_id =
+                            register_zip_state(source_count, output_supplier_id, with_fn);
+                        if let Some(sid) = supplier_id_from_attrs(attributes) {
+                            register_supplier_zip_tap(sid, zip_state_id, 0);
+                        }
+                        for (i, supply) in other_supplies.iter().enumerate() {
+                            if let Value::Instance {
+                                attributes: other_attrs,
+                                ..
+                            } = supply
+                            {
+                                let source_index = i + 1;
+                                if let Some(sid) = supplier_id_from_attrs(other_attrs) {
+                                    register_supplier_zip_tap(sid, zip_state_id, source_index);
+                                }
                             }
                         }
                     }
@@ -1397,7 +1549,7 @@ impl Interpreter {
                     new_attrs.insert("live".to_string(), Value::Bool(false));
                     Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
                 } else {
-                    // Non-live: eager zip
+                    // Non-live path
                     let source_values = self.supply_get_values(attributes)?;
                     let mut other_values: Vec<Vec<Value>> = Vec::new();
                     for arg in &other_supplies {
@@ -1743,6 +1895,39 @@ impl Interpreter {
                                     }
                                 }
                             }
+                            SupplierEmitAction::ZipLatestBuffer {
+                                zip_latest_state_id: zid,
+                                source_index: si,
+                                value: val,
+                            } => {
+                                let result = zip_latest_buffer_value(zid, si, val);
+                                if let ZipAction::Emit(tuple_val) = result {
+                                    let (output_sid, wf) = zip_latest_state_info(zid);
+                                    let emit_val = if let Some(wfn) = wf {
+                                        if let Value::Array(items, ..) = &tuple_val {
+                                            self.call_sub_value(wfn, items.to_vec(), false)
+                                                .unwrap_or(tuple_val)
+                                        } else {
+                                            tuple_val
+                                        }
+                                    } else {
+                                        tuple_val
+                                    };
+                                    supplier_emit(output_sid, emit_val.clone());
+                                    let ds_actions = supplier_emit_callbacks(output_sid, &emit_val);
+                                    for da in ds_actions {
+                                        if let SupplierEmitAction::Call(
+                                            tap,
+                                            emitted,
+                                            delay_seconds,
+                                        ) = da
+                                        {
+                                            Self::sleep_for_supply_delay(delay_seconds);
+                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1788,6 +1973,16 @@ impl Interpreter {
                     // Propagate done to zip output suppliers
                     for zid in get_supplier_zip_state_ids(supplier_id) {
                         let (action, output_sid) = zip_source_done(zid);
+                        if matches!(action, ZipAction::AllDone) {
+                            supplier_done(output_sid);
+                            for done_cb in take_supplier_done_callbacks(output_sid) {
+                                let _ = self.invoke_done_callback(done_cb);
+                            }
+                        }
+                    }
+                    // Propagate done to zip-latest output suppliers
+                    for zid in get_supplier_zip_latest_state_ids(supplier_id) {
+                        let (action, output_sid) = zip_latest_source_done(zid);
                         if matches!(action, ZipAction::AllDone) {
                             supplier_done(output_sid);
                             for done_cb in take_supplier_done_callbacks(output_sid) {
@@ -2023,6 +2218,39 @@ impl Interpreter {
                                     }
                                 }
                             }
+                            SupplierEmitAction::ZipLatestBuffer {
+                                zip_latest_state_id: zid,
+                                source_index: si,
+                                value: val,
+                            } => {
+                                let result = zip_latest_buffer_value(zid, si, val);
+                                if let ZipAction::Emit(tuple_val) = result {
+                                    let (output_sid, wf) = zip_latest_state_info(zid);
+                                    let emit_val = if let Some(wfn) = wf {
+                                        if let Value::Array(items, ..) = &tuple_val {
+                                            self.call_sub_value(wfn, items.to_vec(), false)
+                                                .unwrap_or(tuple_val)
+                                        } else {
+                                            tuple_val
+                                        }
+                                    } else {
+                                        tuple_val
+                                    };
+                                    supplier_emit(output_sid, emit_val.clone());
+                                    let ds_actions = supplier_emit_callbacks(output_sid, &emit_val);
+                                    for da in ds_actions {
+                                        if let SupplierEmitAction::Call(
+                                            tap,
+                                            emitted,
+                                            delay_seconds,
+                                        ) = da
+                                        {
+                                            Self::sleep_for_supply_delay(delay_seconds);
+                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2081,6 +2309,16 @@ impl Interpreter {
                     // Propagate done to zip output suppliers
                     for zid in get_supplier_zip_state_ids(sid) {
                         let (action, output_sid) = zip_source_done(zid);
+                        if matches!(action, ZipAction::AllDone) {
+                            supplier_done(output_sid);
+                            for done_cb in take_supplier_done_callbacks(output_sid) {
+                                let _ = self.invoke_done_callback(done_cb);
+                            }
+                        }
+                    }
+                    // Propagate done to zip-latest output suppliers
+                    for zid in get_supplier_zip_latest_state_ids(sid) {
+                        let (action, output_sid) = zip_latest_source_done(zid);
                         if matches!(action, ZipAction::AllDone) {
                             supplier_done(output_sid);
                             for done_cb in take_supplier_done_callbacks(output_sid) {

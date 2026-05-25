@@ -141,6 +141,34 @@ impl Interpreter {
                         }
                     }
                 }
+                SupplierEmitAction::ZipLatestBuffer {
+                    zip_latest_state_id: zid,
+                    source_index: si,
+                    value: val,
+                } => {
+                    let result = zip_latest_buffer_value(zid, si, val);
+                    if let ZipAction::Emit(tuple_val) = result {
+                        let (output_sid, wf) = zip_latest_state_info(zid);
+                        let emit_val = if let Some(wfn) = wf {
+                            if let Value::Array(items, ..) = &tuple_val {
+                                self.call_sub_value(wfn, items.to_vec(), false)
+                                    .unwrap_or(tuple_val)
+                            } else {
+                                tuple_val
+                            }
+                        } else {
+                            tuple_val
+                        };
+                        supplier_emit(output_sid, emit_val.clone());
+                        let ds_actions = supplier_emit_callbacks(output_sid, &emit_val);
+                        for da in ds_actions {
+                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = da {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())
