@@ -420,7 +420,17 @@ impl VM {
                 self.interpreter
                     .set_var_default(&format!("!{}", attr_name), def.clone());
                 self.interpreter
-                    .set_var_default(&format!(".{}", attr_name), def);
+                    .set_var_default(&format!(".{}", attr_name), def.clone());
+                // Also register for @!attr/@.attr and %!attr/%.attr so
+                // .VAR.default works on array/hash attributes.
+                self.interpreter
+                    .set_var_default(&format!("@!{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!("@.{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!("%!{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!("%.{}", attr_name), def);
             }
         }
 
@@ -938,7 +948,15 @@ impl VM {
                 self.interpreter
                     .set_var_default(&format!("!{}", attr_name), def.clone());
                 self.interpreter
-                    .set_var_default(&format!(".{}", attr_name), def);
+                    .set_var_default(&format!(".{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!("@!{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!("@.{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!("%!{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!("%.{}", attr_name), def);
             }
         }
 
