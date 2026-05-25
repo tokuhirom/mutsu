@@ -1918,16 +1918,17 @@ mod tests {
 
     #[test]
     fn parse_listop_block_then_colon_args() {
+        // In Raku, `map { block }: @list` is invocant-colon syntax:
+        // it means `{ block }.map(@list)`, i.e., a method call on the block.
         let (rest, expr) = expression("map { $_ * 2 }: @list").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Call { name, args } => {
+            Expr::MethodCall { name, args, .. } => {
                 assert_eq!(name, "map");
-                assert_eq!(args.len(), 2);
-                assert!(matches!(args[0], Expr::AnonSub { .. }));
-                assert!(matches!(args[1], Expr::ArrayVar(ref n) if n.as_str() == "list"));
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::ArrayVar(ref n) if n.as_str() == "list"));
             }
-            _ => panic!("expected call expression"),
+            _ => panic!("expected method call expression"),
         }
     }
 
