@@ -92,6 +92,7 @@ Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin 
 - `roast/`: Official Raku spec test suite (vendored, read-only)
 - `roast-whitelist.txt`: Tests that pass completely; `make roast` runs only these
 - `TODO_roast/`: Per-file pass/fail tracking (split by synopsis number, e.g. `TODO_roast/S02.md`)
+- `TODO_roast/BLOCKERS.md`: Feature-level blocker analysis — groups all failing tests by the missing feature that blocks them, ordered by impact. Use this to decide which feature to implement next for maximum roast progress.
 - TAP protocol implemented in `runtime/test_functions.rs`
 
 ### Parser error metadata
