@@ -631,6 +631,33 @@ impl Compiler {
                     } else {
                         expr
                     };
+                    // For native types with no explicit initializer, use the
+                    // native zero/empty default so TypeCheck passes.
+                    let native_default: Option<Expr>;
+                    let rhs_expr = if matches!(rhs_expr, Expr::Literal(Value::Nil))
+                        && !name.starts_with('@')
+                        && !name.starts_with('%')
+                    {
+                        if let Some(tc) = type_constraint {
+                            if crate::runtime::native_types::is_native_int_type(tc) {
+                                native_default = Some(Expr::Literal(Value::Int(0)));
+                                native_default.as_ref().unwrap()
+                            } else if matches!(tc.as_str(), "num" | "num32" | "num64") {
+                                native_default = Some(Expr::Literal(Value::Num(0.0)));
+                                native_default.as_ref().unwrap()
+                            } else if tc == "str" {
+                                native_default =
+                                    Some(Expr::Literal(Value::Str(String::new().into())));
+                                native_default.as_ref().unwrap()
+                            } else {
+                                rhs_expr
+                            }
+                        } else {
+                            rhs_expr
+                        }
+                    } else {
+                        rhs_expr
+                    };
                     self.compile_assignment_rhs_for_target(name, rhs_expr);
                 }
                 // `constant @x = ...` should store a List, not an Array.

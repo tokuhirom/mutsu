@@ -1452,14 +1452,24 @@ impl VM {
                     let is_nil =
                         matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
                     if is_nil {
-                        let type_obj = Value::Package(Symbol::intern(
-                            &self
-                                .interpreter
-                                .var_type_constraint(&name)
-                                .unwrap_or(constraint.clone()),
-                        ));
-                        self.set_env_with_main_alias(&name, type_obj.clone());
-                        self.update_local_if_exists(code, &name, &type_obj);
+                        // Native types get zero/empty defaults instead of type objects.
+                        let init_val =
+                            if crate::runtime::native_types::is_native_int_type(&constraint) {
+                                Value::Int(0)
+                            } else if matches!(constraint.as_str(), "num" | "num32" | "num64") {
+                                Value::Num(0.0)
+                            } else if constraint == "str" {
+                                Value::Str(String::new().into())
+                            } else {
+                                Value::Package(Symbol::intern(
+                                    &self
+                                        .interpreter
+                                        .var_type_constraint(&name)
+                                        .unwrap_or(constraint.clone()),
+                                ))
+                            };
+                        self.set_env_with_main_alias(&name, init_val.clone());
+                        self.update_local_if_exists(code, &name, &init_val);
                     }
                 } else if let Some(value) = self.get_env_with_main_alias(&name) {
                     let info = crate::runtime::ContainerTypeInfo {
