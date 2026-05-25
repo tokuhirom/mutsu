@@ -324,8 +324,47 @@ impl Compiler {
             });
             return;
         }
-        // Rewrite undefine($var) -> $var = Nil (assign Nil to the variable)
+        // Rewrite undefine($var) -> $var = Any (assign type object to the variable)
         if name == "undefine" && args.len() == 1 {
+            // Handle `undefine temp $var` — parsed as undefine(temp($var))
+            // Emit: LetSave (temp), then $var = Any
+            if let Expr::Call {
+                name: inner_name,
+                args: inner_args,
+            } = &args[0]
+                && inner_name.resolve() == "temp"
+                && inner_args.len() == 1
+            {
+                let inner_var = match &inner_args[0] {
+                    Expr::Var(n) => Some(n.clone()),
+                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                    Expr::HashVar(n) => Some(format!("%{}", n)),
+                    _ => None,
+                };
+                if let Some(vname) = inner_var {
+                    // Compile: temp $var (LetSave)
+                    let let_stmt = Stmt::Let {
+                        name: vname.clone(),
+                        index: None,
+                        value: None,
+                        is_temp: true,
+                    };
+                    self.compile_stmt(&let_stmt);
+                    // Then undefine the variable (assign Any type object)
+                    if vname.starts_with('@') || vname.starts_with('%') {
+                        let name_idx = self.code.add_constant(Value::str(vname));
+                        self.code.emit(OpCode::UndefineAggregate(name_idx));
+                    } else {
+                        let any_idx = self
+                            .code
+                            .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                        self.code.emit(OpCode::LoadConst(any_idx));
+                        let name_idx = self.code.add_constant(Value::str(vname));
+                        self.code.emit(OpCode::AssignExpr(name_idx));
+                    }
+                    return;
+                }
+            }
             let var_name = match &args[0] {
                 Expr::Var(n) => Some(n.clone()),
                 Expr::ArrayVar(n) => Some(format!("@{}", n)),
@@ -345,12 +384,15 @@ impl Compiler {
                 });
             } else if let Some(vname) = var_name {
                 // For @/% variables, clear in-place so references see the change.
-                // For scalars, assign Nil.
+                // For scalars, assign the type object Any (undefined but not Nil).
                 if vname.starts_with('@') || vname.starts_with('%') {
                     let name_idx = self.code.add_constant(Value::str(vname));
                     self.code.emit(OpCode::UndefineAggregate(name_idx));
                 } else {
-                    self.code.emit(OpCode::LoadNil);
+                    let any_idx = self
+                        .code
+                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                    self.code.emit(OpCode::LoadConst(any_idx));
                     let name_idx = self.code.add_constant(Value::str(vname));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                 }

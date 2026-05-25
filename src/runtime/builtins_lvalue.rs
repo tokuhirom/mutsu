@@ -222,6 +222,27 @@ impl Interpreter {
             return Ok(value);
         }
 
+        // undefine($var) = value: undefine the variable, then assign value to it.
+        // `undefine` is rw — it returns the container after clearing it.
+        if name == "undefine" && call_args.len() == 1 {
+            let target = &call_args[0];
+            let var_name = {
+                let mut found = None;
+                for (k, v) in self.env.iter() {
+                    if crate::runtime::values_identical(v, target) && !k.starts_with("__") {
+                        found = Some(k.resolve());
+                        break;
+                    }
+                }
+                found
+            };
+            if let Some(vname) = var_name {
+                self.env.insert(vname.clone(), value.clone());
+                return Ok(value);
+            }
+            return Ok(value);
+        }
+
         // substr-rw as a function: substr-rw($str, from, len) = $value
         if name == "substr-rw" && !call_args.is_empty() {
             let target = call_args[0].clone();
