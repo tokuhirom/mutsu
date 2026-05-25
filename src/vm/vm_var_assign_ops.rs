@@ -2691,6 +2691,13 @@ impl VM {
         // value (here "42"). `outer_key` is the outermost subscript value
         // (here "23" or "key"). We autovivify the missing entry at
         // `inner_i` based on `outer_positional`.
+        // Drop the locals copy first so the Arc refcount is 1 (avoids
+        // unnecessary cloning in Arc::make_mut).
+        if let Some(slot) = self.find_local_slot(code, &var_name)
+            && matches!(self.locals[slot], Value::Array(..))
+        {
+            self.locals[slot] = Value::Nil;
+        }
         if let Some(Value::Array(outer_arr, _kind)) = self.interpreter.env_mut().get_mut(&var_name)
             && let Ok(inner_i) = inner_key.parse::<usize>()
         {
@@ -2710,16 +2717,37 @@ impl VM {
             match &mut arr[inner_i] {
                 Value::Array(inner_arr, _) => {
                     if let Ok(j) = outer_key.parse::<usize>() {
-                        let inner = Arc::make_mut(inner_arr);
-                        if j >= inner.len() {
-                            inner.resize(j + 1, Value::Package(Symbol::intern("Any")));
+                        // Use interior mutation when the inner array is shared
+                        // (e.g., by an ArraySlotRef from := binding).
+                        if Arc::strong_count(inner_arr) > 1 {
+                            let ptr = Arc::as_ptr(inner_arr) as *mut Vec<Value>;
+                            unsafe {
+                                let v = &mut *ptr;
+                                while v.len() <= j {
+                                    v.push(Value::Nil);
+                                }
+                                v[j] = val.clone();
+                            }
+                        } else {
+                            let inner = Arc::make_mut(inner_arr);
+                            if j >= inner.len() {
+                                inner.resize(j + 1, Value::Package(Symbol::intern("Any")));
+                            }
+                            inner[j] = val.clone();
                         }
-                        inner[j] = val.clone();
                     }
                 }
                 Value::Hash(inner_hash) => {
-                    let h = Arc::make_mut(inner_hash);
-                    h.insert(outer_key.clone(), val.clone());
+                    if Arc::strong_count(inner_hash) > 1 {
+                        let ptr = Arc::as_ptr(inner_hash)
+                            as *mut std::collections::HashMap<String, Value>;
+                        unsafe {
+                            (&mut *ptr).insert(outer_key.clone(), val.clone());
+                        }
+                    } else {
+                        let h = Arc::make_mut(inner_hash);
+                        h.insert(outer_key.clone(), val.clone());
+                    }
                 }
                 _ => {}
             }
