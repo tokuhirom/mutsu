@@ -209,14 +209,60 @@ impl Compiler {
         dwim_left: bool,
         dwim_right: bool,
     ) {
-        self.compile_expr(left);
-        self.compile_expr(right);
-        let op_idx = self.code.add_constant(Value::str(op.to_string()));
-        self.code.emit(OpCode::HyperOp {
-            op_idx,
-            dwim_left,
-            dwim_right,
-        });
+        // Detect assignment hyper-ops (e.g. >>+=>>, >>~=>>)
+        // These need to compute with the base op and then assign back.
+        let is_assign_op = op.ends_with('=')
+            && op.len() > 1
+            && !matches!(op, "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>");
+        if is_assign_op {
+            let base_op = &op[..op.len() - 1];
+            self.compile_expr(left);
+            self.compile_expr(right);
+            let op_idx = self.code.add_constant(Value::str(base_op.to_string()));
+            self.code.emit(OpCode::HyperOp {
+                op_idx,
+                dwim_left,
+                dwim_right,
+            });
+            // Assign the result back to the left-hand side variable
+            match left {
+                Expr::ArrayVar(name) => {
+                    self.emit_set_named_var(&format!("@{}", name));
+                }
+                Expr::Var(name) => {
+                    self.emit_set_named_var(name);
+                }
+                Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                } => {
+                    // For slice hyper-assign like @a[0..2] >>~=>> "x",
+                    // compile an IndexAssign to write the hyper result back.
+                    if let Some(name) = Self::index_assign_target_name(target) {
+                        self.compile_expr(index);
+                        let name_idx = self.code.add_constant(Value::str(name));
+                        self.code.emit(OpCode::IndexAssignExprNamed {
+                            name_idx,
+                            is_positional: *is_positional,
+                        });
+                    }
+                    // For complex targets without a simple name, leave result on stack.
+                }
+                _ => {
+                    // For other complex lvalues, leave the result on the stack.
+                }
+            }
+        } else {
+            self.compile_expr(left);
+            self.compile_expr(right);
+            let op_idx = self.code.add_constant(Value::str(op.to_string()));
+            self.code.emit(OpCode::HyperOp {
+                op_idx,
+                dwim_left,
+                dwim_right,
+            });
+        }
     }
 
     /// Compile HyperFuncOp (>>[&func]<<).
