@@ -116,6 +116,8 @@ fn typed_default_expr(type_name: &str) -> Expr {
         || base == "uint16"
         || base == "uint32"
         || base == "uint64"
+        || base == "atomicint"
+        || base == "byte"
     {
         Expr::Literal(Value::Int(0))
     } else if base == "num" || base == "num32" || base == "num64" {
