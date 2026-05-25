@@ -523,6 +523,7 @@ roast/S10-packages/joined-namespaces.t
 roast/S10-packages/nested-use.t
 roast/S10-packages/precompilation.t
 roast/S10-packages/require-and-use.t
+roast/S10-packages/scope.t
 roast/S10-packages/use-with-class.t
 roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/compunit-repository.t
