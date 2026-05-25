@@ -8,10 +8,11 @@
 
 過去の実装状況は [news/](news/) を参照。
 パフォーマンス詳細は [PERFORMANCE.md](PERFORMANCE.md) を参照。
+roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) を参照。
 
 ---
 
-## Q2 (5〜6月): パフォーマンスと JSON
+## Q2 (5〜6月): パフォーマンスと Container semantics
 
 目標: **「簡単なスクリプトなら raku の代わりに使える」レベルに到達**
 
@@ -24,8 +25,13 @@
 ### Container semantics
 
 - [ ] `our $x` クラス属性のバインド (attributes.t tests 11-12)
-- [ ] 多次元構造のエレメントレベルバインド (nested.t 16 failures)
-- [ ] `undefine` の aggregate 参照セマンティクス (undef.t 3 failures)
+- [x] 多次元構造のエレメントレベルバインド (nested.t — PR #2413 で 42/43 に改善)
+- [x] `undefine` の aggregate 参照セマンティクス (undef.t — PR #2414 で 90/91 に改善)
+
+### Exception types (高インパクト — 22 roast テストをブロック)
+
+- [ ] `throws-like` で期待される型付き例外を実装 (X::TypeCheck::Binding, X::Adverb, X::Assignment::RO 等)
+- [ ] 詳細は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) の "throws-like / Exception Types" セクション参照
 
 ---
 
@@ -82,6 +88,7 @@
 - [ ] bench-fib (型制約付き) を 2x 以下にする
 - [ ] NaN-boxing: Value を 72 bytes → 8 bytes に（Int/Num/Bool/Nil）
 - [ ] JIT compilation (Cranelift) の検討
+- [ ] Cycle collector (circular object references)
 
 ### ドキュメントとコミュニティ
 
@@ -95,11 +102,73 @@
 
 ---
 
+## Backlog: 未実装の言語機能
+
+BLOCKERS.md の分析に基づき、インパクト順に並べたもの。
+
+### Phasers
+
+- [ ] Phaser rvalue caching (INIT/CHECK/BEGIN as rvalues in closures)
+- [ ] PRE/POST phasers (contract programming)
+
+### Type constraints / Signatures
+
+- [ ] Signature type-checking enforcement (reject wrong-type args with X::TypeCheck)
+- [ ] Native int/uint overflow and bounds checking
+- [ ] Multiple signatures on a single sub
+
+### OOP
+
+- [ ] Namespaced class construction (`A::B.new`)
+- [ ] `augment class` improvements (augmenting with new attributes)
+- [ ] Parameterized role mixin
+
+### Supply/Concurrency
+
+- [ ] Supply backpressure
+- [ ] `supply`/`react` block scoping issues
+- [ ] Tap management (close, drain)
+
+### IO / Process
+
+- [ ] IO::Handle read modes (binary, encodings)
+- [ ] Proc and Proc::Async completeness
+- [ ] File test operators (`-e`, `-f`, `-d` etc.)
+
+### Regex / Grammar
+
+- [ ] Match object `.caps` / `.chunks`
+- [ ] Lookbehind assertions (`<!after>`)
+- [ ] `:Perl5` modifier edge cases
+
+### Parser: 未実装演算子
+
+- [ ] `ff` / `fff` — flipflop operators (8 variants)
+- [ ] `==>` / `<==` — feed operators
+- [ ] `minmax` — range from min to max
+- [ ] `unicmp` / `coll` — Unicode/collation comparison
+- [ ] `~&` / `~|` / `~^` / `~<` / `~>` — string buffer bitwise ops
+
+### Parser: メタ演算子
+
+- [ ] Generalized negation meta (`!op`) — beyond `!~~` and `!%%`
+- [ ] Hyper assignment (`@a >>+=>> 1`)
+- [ ] Triangular reduction (`[\+]`, `[\*]`, etc.)
+
+### Practicality (将来)
+
+- [ ] REPL
+- [ ] Debugger
+- [ ] `zef` package manager compatibility
+- [ ] Native binary output
+
+---
+
 ## メトリクス
 
 | 指標 | 現在 (5月) | Q2 目標 | Q3 目標 | Q4 目標 |
 |------|-----------|---------|---------|---------|
-| Whitelist | 1182 | 1185+ | 1190+ | 1200+ |
+| Whitelist | 1186 | 1190+ | 1200+ | 1220+ |
 | fib(25) vs raku | **1.0x** ✅ | <10x ✅ | <10x | <10x |
 | method-call vs raku | **2.7x** | <2.5x | <2x | <1.5x |
 | bench-class vs raku | **2.3x** | <2x | <1.5x | <1.5x |
