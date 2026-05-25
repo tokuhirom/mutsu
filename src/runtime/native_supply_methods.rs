@@ -540,7 +540,7 @@ impl Interpreter {
 
                 // For on-demand supplies, execute the callback to produce values
                 let mut on_demand_quit: Option<Value> = None;
-                let mut has_whenever_subscriptions = false;
+                let mut done_group_marker: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
                     // Give the emitter a supplier_id so that when a `whenever`
                     // body calls `$emitter.emit(val)`, the value can be dispatched
@@ -577,24 +577,42 @@ impl Interpreter {
                     // [Supply, body_cb, last_cbs, quit_cbs] produced by
                     // `whenever` inside a supply block.
 
-                    // Pre-count whenever subscriptions so we can create a
-                    // done group with the correct count.
-                    let whenever_count = emitted.iter().filter(|item| {
-                        matches!(item, Value::Array(arr, ..) if arr.len() == 4
-                            && matches!(&arr[0], Value::Instance { class_name, .. } if class_name == "Supply"))
-                    }).count();
-
-                    // Create a done group if there are whenever subscriptions
-                    // and a done callback. The group tracks how many inner
-                    // suppliers must complete before done fires.
-                    let done_group_marker = if whenever_count > 0 {
-                        done_cb.as_ref().map(|df| {
-                            let group_id = create_whenever_done_group(whenever_count, df.clone());
-                            Self::make_whenever_done_group_marker(group_id)
+                    // Pre-count supplier-backed whenever subscriptions so we
+                    // can create a done group with the correct count. Only
+                    // count whenevers whose inner supply has a supplier_id,
+                    // since cold (on-demand) supplies complete synchronously
+                    // and don't participate in the done counting.
+                    let whenever_supplier_count = emitted
+                        .iter()
+                        .filter(|item| {
+                            if let Value::Array(arr, ..) = item
+                                && arr.len() == 4
+                                && let Value::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                } = &arr[0]
+                                && *class_name == "Supply"
+                                && attributes.contains_key("supplier_id")
+                            {
+                                true
+                            } else {
+                                false
+                            }
                         })
-                    } else {
-                        None
-                    };
+                        .count();
+
+                    // Create a done group if there are supplier-backed
+                    // whenever subscriptions and a done callback. The group
+                    // tracks how many inner suppliers must complete before
+                    // done fires.
+                    if whenever_supplier_count > 0 {
+                        done_group_marker = done_cb.as_ref().map(|df| {
+                            let group_id =
+                                create_whenever_done_group(whenever_supplier_count, df.clone());
+                            Self::make_whenever_done_group_marker(group_id)
+                        });
+                    }
 
                     let mut plain_values = Vec::new();
                     let mut outer_tap_registered = false;
@@ -607,7 +625,6 @@ impl Interpreter {
                             // Set up a forwarding tap on the inner supply.
                             let inner_supply = &arr[0];
                             let body_cb = arr[1].clone();
-                            has_whenever_subscriptions = true;
 
                             if let Value::Instance {
                                 attributes: inner_attrs,
@@ -747,12 +764,12 @@ impl Interpreter {
                         } else {
                             register_supplier_done_callback(sid, done_fn);
                         }
-                    } else if !has_whenever_subscriptions {
-                        // Only call done immediately for on-demand supplies
-                        // without whenever subscriptions. When there are
-                        // whenever subscriptions, done is already registered
-                        // on each inner supplier and will fire when all of
-                        // them complete.
+                    } else if done_group_marker.is_none() {
+                        // Only call done immediately when there are no
+                        // supplier-backed whenever subscriptions tracking
+                        // done via the group mechanism. Cold (on-demand)
+                        // whenevers complete synchronously, so done can
+                        // fire immediately in that case.
                         let _ = self.call_sub_value(done_fn, vec![], true);
                     }
                 }
@@ -2271,7 +2288,7 @@ impl Interpreter {
                 // For on-demand supplies, execute the callback to produce values
                 let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                 let mut on_demand_quit: Option<Value> = None;
-                let mut has_whenever_subscriptions = false;
+                let mut done_group_marker: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     // Give the emitter a supplier_id so that when a `whenever`
                     // body calls `$emitter.emit(val)`, the value can be dispatched
@@ -2304,20 +2321,34 @@ impl Interpreter {
                     // Separate whenever subscription registrations from plain
                     // emitted values (same logic as immutable tap path).
 
-                    // Pre-count whenever subscriptions for done group
-                    let whenever_count = emitted.iter().filter(|item| {
-                        matches!(item, Value::Array(arr, ..) if arr.len() == 4
-                            && matches!(&arr[0], Value::Instance { class_name, .. } if class_name == "Supply"))
-                    }).count();
-
-                    let done_group_marker = if whenever_count > 0 {
-                        done_cb.as_ref().map(|df| {
-                            let group_id = create_whenever_done_group(whenever_count, df.clone());
-                            Self::make_whenever_done_group_marker(group_id)
+                    // Pre-count supplier-backed whenever subscriptions
+                    let whenever_supplier_count = emitted
+                        .iter()
+                        .filter(|item| {
+                            if let Value::Array(arr, ..) = item
+                                && arr.len() == 4
+                                && let Value::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                } = &arr[0]
+                                && *class_name == "Supply"
+                                && attributes.contains_key("supplier_id")
+                            {
+                                true
+                            } else {
+                                false
+                            }
                         })
-                    } else {
-                        None
-                    };
+                        .count();
+
+                    if whenever_supplier_count > 0 {
+                        done_group_marker = done_cb.as_ref().map(|df| {
+                            let group_id =
+                                create_whenever_done_group(whenever_supplier_count, df.clone());
+                            Self::make_whenever_done_group_marker(group_id)
+                        });
+                    }
 
                     let mut plain_values = Vec::new();
                     let mut outer_tap_registered = false;
@@ -2328,7 +2359,6 @@ impl Interpreter {
                         {
                             let inner_supply = &arr[0];
                             let body_cb = arr[1].clone();
-                            has_whenever_subscriptions = true;
 
                             if let Value::Instance {
                                 attributes: inner_attrs,
@@ -2542,12 +2572,12 @@ impl Interpreter {
                         } else {
                             register_supplier_done_callback(*supplier_id as u64, done_fn);
                         }
-                    } else if !has_whenever_subscriptions {
-                        // Only call done immediately for on-demand supplies
-                        // without whenever subscriptions. When there are
-                        // whenever subscriptions, done is already registered
-                        // on each inner supplier and will fire when all of
-                        // them complete.
+                    } else if done_group_marker.is_none() {
+                        // Only call done immediately when there are no
+                        // supplier-backed whenever subscriptions tracking
+                        // done via the group mechanism. Cold (on-demand)
+                        // whenevers complete synchronously, so done can
+                        // fire immediately in that case.
                         let _ = self.call_sub_value(done_fn, vec![], true);
                     }
                 }
