@@ -1769,11 +1769,19 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     continue;
                 }
                 // Check for colon-arg syntax: .method: arg, arg2
+                // OR adverb syntax: .method :key (space before colon means colon-pair)
+                let has_space_before_colon =
+                    r.starts_with(' ') || r.starts_with('\t') || r.starts_with('\n');
                 let (r2, _) = ws(r)?;
                 if r2.starts_with(':') && !r2.starts_with("::") {
-                    let r3 = &r2[1..];
-                    let (r3, _) = ws(r3)?;
-                    let (r3, first_arg) = expression(r3)?;
+                    // If there was space before ':', treat as adverb (colon-pair)
+                    let (r3, first_arg) = if has_space_before_colon {
+                        colonpair_expr(r2)?
+                    } else {
+                        let r3 = &r2[1..];
+                        let (r3, _) = ws(r3)?;
+                        expression(r3)?
+                    };
                     let mut args = vec![first_arg];
                     let mut r_inner = r3;
                     loop {

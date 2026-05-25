@@ -68,6 +68,10 @@ struct ProcOptions {
     in_pipe_content: Option<String>,
     bin: bool,
     win_verbatim_args: bool,
+    /// When :out is given an IO::Handle, store the handle ID to dup the fd
+    out_handle_id: Option<usize>,
+    /// When :merge is True, redirect stderr to stdout
+    merge: bool,
 }
 
 impl Interpreter {
@@ -708,6 +712,8 @@ impl Interpreter {
             in_pipe_content: None,
             bin: false,
             win_verbatim_args: false,
+            out_handle_id: None,
+            merge: false,
         };
         for value in args.iter().skip(skip) {
             if let Value::Hash(map) = value {
@@ -727,13 +733,16 @@ impl Interpreter {
                             opts.capture_err = inner.truthy();
                         }
                         "out" => {
-                            opts.capture_out = inner.truthy();
+                            Self::extract_out_option(inner, &mut opts);
                         }
                         "in" => {
                             Self::extract_in_option(inner, &mut opts);
                         }
                         "bin" => {
                             opts.bin = inner.truthy();
+                        }
+                        "merge" => {
+                            opts.merge = inner.truthy();
                         }
                         "win-verbatim-args" => {
                             opts.win_verbatim_args = inner.truthy();
@@ -746,9 +755,10 @@ impl Interpreter {
                 match key.as_str() {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "err" => opts.capture_err = inner.truthy(),
-                    "out" => opts.capture_out = inner.truthy(),
+                    "out" => Self::extract_out_option(inner, &mut opts),
                     "in" => Self::extract_in_option(inner, &mut opts),
                     "bin" => opts.bin = inner.truthy(),
+                    "merge" => opts.merge = inner.truthy(),
                     "win-verbatim-args" => opts.win_verbatim_args = inner.truthy(),
                     _ => {}
                 }
@@ -791,6 +801,22 @@ impl Interpreter {
             return;
         }
         opts.capture_in = value.truthy();
+    }
+
+    fn extract_out_option(value: &Value, opts: &mut ProcOptions) {
+        // :out can be an IO::Handle (redirect stdout to that file handle)
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value
+            && class_name.resolve() == "IO::Handle"
+            && let Some(Value::Int(id)) = attributes.get("handle")
+        {
+            opts.out_handle_id = Some(*id as usize);
+            return;
+        }
+        opts.capture_out = value.truthy();
     }
 
     #[cfg(windows)]
@@ -886,12 +912,40 @@ impl Interpreter {
         let mut cmd = Command::new(program);
         Self::apply_run_args(&mut cmd, rest_args, opts.win_verbatim_args);
 
-        if opts.capture_out {
+        // Handle :out with IO::Handle — redirect stdout to that file
+        let mut stdout_file_for_merge: Option<std::fs::File> = None;
+        if let Some(handle_id) = opts.out_handle_id {
+            let state = self
+                .handles
+                .get(&handle_id)
+                .ok_or_else(|| RuntimeError::new("Invalid IO::Handle for :out"))?;
+            let file = state
+                .file
+                .as_ref()
+                .ok_or_else(|| RuntimeError::new(":out IO::Handle has no file"))?;
+            let cloned = file
+                .try_clone()
+                .map_err(|e| RuntimeError::new(format!("Cannot dup file for :out: {e}")))?;
+            if opts.merge {
+                stdout_file_for_merge =
+                    Some(cloned.try_clone().map_err(|e| {
+                        RuntimeError::new(format!("Cannot dup file for :merge: {e}"))
+                    })?);
+            }
+            cmd.stdout(std::process::Stdio::from(cloned));
+        } else if opts.capture_out {
             cmd.stdout(std::process::Stdio::piped());
         } else {
             cmd.stdout(std::process::Stdio::null());
         }
-        if opts.capture_err {
+        if opts.merge {
+            if let Some(file) = stdout_file_for_merge {
+                cmd.stderr(std::process::Stdio::from(file));
+            } else {
+                // :merge without :out(file) — stderr goes to same pipe as stdout
+                cmd.stderr(std::process::Stdio::piped());
+            }
+        } else if opts.capture_err {
             cmd.stderr(std::process::Stdio::piped());
         } else {
             cmd.stderr(std::process::Stdio::null());
