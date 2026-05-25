@@ -196,13 +196,13 @@ impl Interpreter {
         nested.current_package = self.current_package.clone();
         nested.var_dynamic_flags = self.var_dynamic_flags.clone();
         for (k, v) in &self.env {
-            if k.contains("::") {
+            if k.contains_str("::") {
                 continue;
             }
             if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
                 continue;
             }
-            nested.env.insert(k.clone(), v.clone());
+            nested.env.insert_sym(*k, v.clone());
         }
         let eval_result = nested.eval_eval_string(&code);
         let ok = eval_result.is_ok();
@@ -286,13 +286,13 @@ impl Interpreter {
         nested.current_package = self.current_package.clone();
         nested.var_dynamic_flags = self.var_dynamic_flags.clone();
         for (k, v) in &self.env {
-            if k.contains("::") {
+            if k.contains_str("::") {
                 continue;
             }
             if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
                 continue;
             }
-            nested.env.insert(k.clone(), v.clone());
+            nested.env.insert_sym(*k, v.clone());
         }
         let ok = nested.eval_eval_string(&code).is_err();
         self.test_ok(ok, &desc, false)?;

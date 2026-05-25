@@ -1587,20 +1587,21 @@ impl Interpreter {
         if package_name == "PROCESS" {
             let mut symbols: HashMap<String, Value> = HashMap::new();
             for (key, val) in self.env.iter() {
+                let key_s = key.resolve();
                 // Dynamic variables stored as "*NAME" map to "$NAME" in the stash
-                if let Some(name) = key.strip_prefix('*')
+                if let Some(name) = key_s.strip_prefix('*')
                     && !name.contains("::")
                 {
                     symbols.insert(format!("${name}"), val.clone());
                 }
                 // Hash dynamic variables stored as "%*NAME" map to "%NAME" in the stash
-                if let Some(name) = key.strip_prefix("%*")
+                if let Some(name) = key_s.strip_prefix("%*")
                     && !name.contains("::")
                 {
                     symbols.insert(format!("%{name}"), val.clone());
                 }
                 // Array dynamic variables stored as "@*NAME" map to "@NAME" in the stash
-                if let Some(name) = key.strip_prefix("@*")
+                if let Some(name) = key_s.strip_prefix("@*")
                     && !name.contains("::")
                 {
                     symbols.insert(format!("@{name}"), val.clone());
@@ -1666,26 +1667,27 @@ impl Interpreter {
         let mut symbols: HashMap<String, Value> = HashMap::new();
 
         for (key, val) in self.env.iter() {
-            if key.starts_with("__mutsu_callable_id::") {
+            let key_s = key.resolve();
+            if key_s.starts_with("__mutsu_callable_id::") {
                 continue;
             }
             if (package_name == "MY" || package_name == "GLOBAL")
-                && self.should_hide_from_my_global_stash(key)
+                && self.should_hide_from_my_global_stash(&key_s)
             {
                 continue;
             }
             // Skip env entries hidden from package stash lookups (transitive deps)
             if package_name != "MY"
                 && package_name != "GLOBAL"
-                && self.package_stash_hidden.contains(key)
+                && self.package_stash_hidden.contains(&key_s)
             {
                 continue;
             }
             // Skip my-scoped items (they should not appear in the package stash)
-            if self.is_my_scoped_package_item(key) {
+            if self.is_my_scoped_package_item(&key_s) {
                 continue;
             }
-            if let Some(rest) = Self::stash_member_tail(key, &package_name) {
+            if let Some(rest) = Self::stash_member_tail(&key_s, &package_name) {
                 let stash_key = Self::stash_symbol_key_from_env_tail(rest);
                 symbols.insert(stash_key, val.clone());
             }
@@ -1821,8 +1823,8 @@ impl Interpreter {
         for phaser in self.end_phasers[start_idx..].iter_mut() {
             let captured = &mut phaser.1;
             for (k, v) in current_env {
-                if captured.contains_key(k) {
-                    captured.insert(k.clone(), v.clone());
+                if captured.contains_key_sym(*k) {
+                    captured.insert_sym(*k, v.clone());
                 }
             }
         }

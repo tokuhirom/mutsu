@@ -266,7 +266,7 @@ impl Interpreter {
         let saved_package = self.current_package.clone();
         let before_function_keys: std::collections::HashSet<Symbol> =
             self.functions.keys().copied().collect();
-        let before_env_keys: std::collections::HashSet<String> = self.env.keys().cloned().collect();
+        let before_env_keys: std::collections::HashSet<Symbol> = self.env.keys().copied().collect();
         let before_class_keys: std::collections::HashSet<String> =
             self.classes.keys().cloned().collect();
         if let Some(pkg) = package_hint
@@ -306,10 +306,11 @@ impl Interpreter {
                 if before_env_keys.contains(name) {
                     continue;
                 }
-                if name.starts_with('$') || name.starts_with('@') || name.starts_with('%') {
+                if name.starts_with("$") || name.starts_with("@") || name.starts_with("%") {
                     continue;
                 }
-                let tail = name.rsplit_once("::").map(|(_, t)| t).unwrap_or(name);
+                let name_s = name.resolve();
+                let tail = name_s.rsplit_once("::").map(|(_, t)| t).unwrap_or(&name_s);
                 let alias = format!("{pkg}::{tail}");
                 if !self.env.contains_key(&alias) {
                     env_aliases.push((alias, value.clone()));

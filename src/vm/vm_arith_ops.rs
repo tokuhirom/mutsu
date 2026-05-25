@@ -109,20 +109,20 @@ impl VM {
         n: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
         // Save env keys that the thunk captures
-        let touched_keys: Vec<String> = data.env.keys().cloned().collect();
+        let touched_keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
         let saved: Vec<(String, Option<Value>)> = touched_keys
             .iter()
             .map(|k| (k.clone(), self.interpreter.env().get(k).cloned()))
             .collect();
 
         // Install captured env
-        for (k, v) in &data.env {
-            if matches!(self.interpreter.env().get(k), Some(Value::Array(..)))
+        for (k, v) in data.env.iter() {
+            if matches!(self.interpreter.env().get_sym(*k), Some(Value::Array(..)))
                 && matches!(v, Value::Array(..))
             {
                 continue;
             }
-            self.interpreter.env_mut().insert(k.clone(), v.clone());
+            self.interpreter.env_mut().insert_sym(*k, v.clone());
         }
 
         // Compile the thunk body

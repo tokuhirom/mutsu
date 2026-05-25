@@ -388,14 +388,14 @@ impl Interpreter {
         self.env.remove("made");
         self.action_made = None;
         // Save old named capture env vars so parent captures don't leak into child actions
-        let saved_named_captures: Vec<(String, Value)> = self
+        let saved_named_captures: Vec<(Symbol, Value)> = self
             .env
             .iter()
-            .filter(|(k, _)| k.starts_with('<') && k.ends_with('>'))
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .filter(|(k, _)| k.starts_with("<") && k.ends_with(">"))
+            .map(|(k, v)| (*k, v.clone()))
             .collect();
         for (k, _) in &saved_named_captures {
-            self.env.remove(k.as_str());
+            self.env.remove_sym(*k);
         }
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
         if let Some(Value::Hash(named_hash)) = updated_attrs.get("named") {
@@ -488,17 +488,17 @@ impl Interpreter {
         }
         // Restore named capture env vars from parent scope
         {
-            let current_angle_keys: Vec<String> = self
+            let current_angle_keys: Vec<Symbol> = self
                 .env
                 .keys()
-                .filter(|k| k.starts_with('<') && k.ends_with('>'))
-                .cloned()
+                .filter(|k| k.starts_with("<") && k.ends_with(">"))
+                .copied()
                 .collect();
             for k in current_angle_keys {
-                self.env.remove(&k);
+                self.env.remove_sym(k);
             }
             for (k, v) in saved_named_captures {
-                self.env.insert(k, v);
+                self.env.insert_sym(k, v);
             }
         }
 

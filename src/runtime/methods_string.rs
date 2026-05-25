@@ -848,7 +848,7 @@ impl Interpreter {
         let saved = self.env.clone();
         // Set up closure environment
         for (k, v) in &sub_data.env {
-            self.env.insert(k.clone(), v.clone());
+            self.env.insert_sym(*k, v.clone());
         }
         if let Some(captures) = captures {
             let match_obj = Value::make_match_object_full(

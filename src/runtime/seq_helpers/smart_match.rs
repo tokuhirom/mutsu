@@ -643,14 +643,16 @@ impl Interpreter {
                 }
                 if let Some(captures) = match_result {
                     // Reset stale numeric capture vars from any previous match.
-                    let stale_numeric: Vec<String> = self
+                    let stale_numeric: Vec<Symbol> = self
                         .env
                         .keys()
-                        .filter(|k| !k.is_empty() && k.chars().all(|c| c.is_ascii_digit()))
-                        .cloned()
+                        .filter(|k| {
+                            k.with_str(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+                        })
+                        .copied()
                         .collect();
                     for key in stale_numeric {
-                        self.env.insert(key, Value::Nil);
+                        self.env.insert_sym(key, Value::Nil);
                     }
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {

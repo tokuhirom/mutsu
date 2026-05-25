@@ -1221,13 +1221,13 @@ impl Interpreter {
             if k == "_" {
                 continue;
             }
-            if saved_env.contains_key(k) {
-                merged_env.insert(k.clone(), v.clone());
+            if saved_env.contains_key_sym(*k) {
+                merged_env.insert_sym(*k, v.clone());
             }
-            if (k.starts_with('&') && !k.starts_with("&?"))
+            if (k.starts_with("&") && !k.starts_with("&?"))
                 || k.starts_with("__mutsu_method_value::")
             {
-                merged_env.insert(k.clone(), v.clone());
+                merged_env.insert_sym(*k, v.clone());
             }
         }
         // Apply `is rw` parameter writebacks so that changes to `is rw`

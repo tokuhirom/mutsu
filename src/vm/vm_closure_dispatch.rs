@@ -145,24 +145,24 @@ impl VM {
         for (k, v) in data.env.iter() {
             self.interpreter
                 .env_mut()
-                .entry_or_insert(k.clone(), v.clone());
+                .entry_or_insert(k.resolve(), v.clone());
         }
         // Override with persisted per-closure-instance captured variable state.
         // This ensures that each closure instance maintains independent mutable
         // state across calls (e.g. two closures from the same factory each get
         // their own copy of captured variables).
-        let cap_overrides: Vec<(String, Value)> = data
+        let cap_overrides: Vec<(Symbol, Value)> = data
             .env
             .keys()
             .filter_map(|k| {
                 let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
                 self.interpreter
                     .get_state_var(&persist_key)
-                    .map(|val| (k.clone(), val.clone()))
+                    .map(|val| (*k, val.clone()))
             })
             .collect();
         for (k, val) in cap_overrides {
-            self.interpreter.env_mut().insert(k, val);
+            self.interpreter.env_mut().insert_sym(k, val);
         }
 
         self.interpreter.push_caller_env();
@@ -265,7 +265,7 @@ impl VM {
                     .env_mut()
                     .insert("_".to_string(), first.clone());
             }
-        } else if data.params.is_empty() && args.is_empty() && data.name == "" {
+        } else if data.params.is_empty() && args.is_empty() && data.name.is_empty() {
             let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
             if let Some(topic) = caller_topic {
                 self.interpreter.env_mut().insert("_".to_string(), topic);
@@ -453,7 +453,7 @@ impl VM {
         // Persist captured variable state so this closure instance retains
         // its own mutable state across calls (independent from other closures).
         for k in data.env.keys() {
-            if let Some(val) = self.interpreter.env().get(k).cloned() {
+            if let Some(val) = self.interpreter.env().get_sym(*k).cloned() {
                 let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
                 self.interpreter.set_state_var(persist_key, val);
             }
@@ -470,8 +470,7 @@ impl VM {
             .iter()
             .map(|(_, source)| source.clone())
             .collect();
-        let captured_names: std::collections::HashSet<&str> =
-            data.env.keys().map(|s| s.as_str()).collect();
+        let captured_names: std::collections::HashSet<Symbol> = data.env.keys().copied().collect();
         // Write back captured-variable changes, but NOT the closure's own
         // parameters/locals (which live in cc.locals).  Without this filter,
         // recursive &?BLOCK calls clobber the outer frame's $n, etc.
@@ -490,29 +489,30 @@ impl VM {
             }
         }
         for (k, v) in self.interpreter.env().iter() {
-            if k != "_"
-                && k != "@_"
-                && !rw_sources.contains(k)
-                && !param_names.contains(k.as_str())
-                && (restored_env.contains_key(k)
-                    || captured_names.contains(k.as_str())
+            if *k != "_"
+                && *k != "@_"
+                && !k.with_str(|s| rw_sources.contains(s))
+                && !k.with_str(|s| param_names.contains(s))
+                && (restored_env.contains_key_sym(*k)
+                    || captured_names.contains(k)
                     || k.starts_with("__mutsu_predictive_seq_iter::")
                     || k.starts_with("__mutsu_sigilless_alias::!"))
-                && (!local_names.contains(k.as_str()) || captured_names.contains(k.as_str()))
+                && (!k.with_str(|s| local_names.contains(s)) || captured_names.contains(k))
             {
                 // Don't leak captured-only variables to callers that don't have
                 // them. This prevents independent closures from sharing state
                 // via the calling env (e.g. two closures from the same factory
                 // should have their own captured variable copies).
-                if captured_names.contains(k.as_str()) && !restored_env.contains_key(k) {
+                if captured_names.contains(k) && !restored_env.contains_key_sym(*k) {
                     continue;
                 }
-                restored_env.insert(k.clone(), v.clone());
+                restored_env.insert_sym(*k, v.clone());
             }
         }
         // Write back readonly/alias metadata for captured variables that were
         // modified inside the closure (e.g. `$a := $arg` where `$a` is captured).
-        for captured_name in &captured_names {
+        for captured_sym in &captured_names {
+            let captured_name = captured_sym.resolve();
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", captured_name);
             if let Some(v) = self.interpreter.env().get(&readonly_key).cloned() {
                 restored_env.insert(readonly_key, v);
@@ -536,7 +536,7 @@ impl VM {
             for k in captured_names.iter() {
                 let meta_key = format!("__mutsu_state_key::{}", k);
                 if let Some(Value::Str(state_key)) = self.interpreter.env().get(&meta_key).cloned()
-                    && let Some(val) = self.interpreter.env().get(k).cloned()
+                    && let Some(val) = self.interpreter.env().get_sym(*k).cloned()
                 {
                     self.interpreter.set_state_var(state_key.to_string(), val);
                 }
@@ -547,7 +547,7 @@ impl VM {
         // not captured from an outer scope.
         for local_name in cc.locals.iter() {
             if !local_name.is_empty()
-                && !captured_names.contains(local_name.as_str())
+                && !captured_names.contains(&Symbol::intern(local_name))
                 && !param_names.contains(local_name.as_str())
                 && !local_name.starts_with("__mutsu_")
             {
@@ -563,8 +563,9 @@ impl VM {
         // Only update keys matching the closure's captured variable names to
         // avoid overwriting unrelated captured lexicals in other END phasers.
         if self.interpreter.end_phaser_count() > 0 && !data.env.is_empty() {
+            let captured_strs: Vec<String> = data.env.keys().map(|s| s.resolve()).collect();
             let captured_names: std::collections::HashSet<&str> =
-                data.env.keys().map(|s| s.as_str()).collect();
+                captured_strs.iter().map(|s| s.as_str()).collect();
             let current = self.interpreter.env().clone();
             self.interpreter
                 .update_end_phaser_envs_for_keys(&captured_names, &current);

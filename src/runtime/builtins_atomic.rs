@@ -27,11 +27,12 @@ impl Interpreter {
             .or_else(|| self.env.get(raw_name).cloned());
         if let Some(current) = current {
             for (key, value) in &self.env {
-                if !is_user_visible(key) {
+                let key_s = key.resolve();
+                if !is_user_visible(&key_s) {
                     continue;
                 }
                 if crate::runtime::values_identical(value, &current) {
-                    return key.clone();
+                    return key_s;
                 }
             }
         }

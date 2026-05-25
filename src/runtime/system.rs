@@ -704,7 +704,7 @@ impl Interpreter {
         }
         for key in self.env.keys() {
             if key.starts_with("circumfix:") || key.starts_with("postcircumfix:") {
-                seen.insert(key.clone());
+                seen.insert(key.resolve());
             }
         }
         // Also include operators imported via `use Module` at runtime. This
@@ -968,8 +968,8 @@ impl Interpreter {
         let callable_keys: std::collections::HashSet<String> = current_env
             .keys()
             .chain(env_snapshot.keys())
-            .filter(|key| key.starts_with('&'))
-            .cloned()
+            .filter(|key| key.starts_with("&"))
+            .map(|key| key.resolve())
             .collect();
         for key in callable_keys {
             if let Some(value) = env_snapshot.get(&key).cloned() {
@@ -1078,23 +1078,25 @@ impl Interpreter {
         let mut hash = HashMap::new();
         for (k, v) in env.iter() {
             // Skip internal keys and special variables
-            if k.starts_with("__") || k.starts_with('?') || k.starts_with('*') || k.starts_with('=')
+            if k.starts_with("__") || k.starts_with("?") || k.starts_with("*") || k.starts_with("=")
             {
                 continue;
             }
             // Skip type names, enum values, and signal names
-            if k.chars().next().is_some_and(|c| c.is_uppercase()) {
-                continue;
-            }
-            // Add sigil prefix based on the env key convention:
-            // - Keys starting with '@' or '%' already have sigils (array/hash vars)
-            // - Other keys are scalar variables that need '$' prefix
-            let sigiled = if k.starts_with('@') || k.starts_with('%') || k.starts_with('&') {
-                k.clone()
-            } else {
-                format!("${}", k)
-            };
-            hash.insert(sigiled, v.clone());
+            k.with_str(|s| {
+                if s.chars().next().is_some_and(|c| c.is_uppercase()) {
+                    return;
+                }
+                // Add sigil prefix based on the env key convention:
+                // - Keys starting with '@' or '%' already have sigils (array/hash vars)
+                // - Other keys are scalar variables that need '$' prefix
+                let sigiled = if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
+                    s.to_string()
+                } else {
+                    format!("${}", s)
+                };
+                hash.insert(sigiled, v.clone());
+            });
         }
         // Store callframe depth so assignments can write back to the caller env
         if let Some(depth) = callframe_depth {

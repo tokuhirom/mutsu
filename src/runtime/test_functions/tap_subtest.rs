@@ -90,8 +90,8 @@ impl Interpreter {
                 // Do not propagate topic changes from subtest to caller
                 continue;
             }
-            if saved_env.contains_key(k) || k.starts_with("__mutsu_var_meta::") {
-                merged_env.insert(k.clone(), v.clone());
+            if saved_env.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::") {
+                merged_env.insert_sym(*k, v.clone());
             }
         }
         self.env = merged_env;

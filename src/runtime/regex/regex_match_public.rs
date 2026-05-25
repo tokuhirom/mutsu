@@ -424,13 +424,13 @@ impl Interpreter {
 
             let mut changed = HashSet::new();
             for key in before_env.keys() {
-                if before_env.get(key) != self.env.get(key) {
-                    changed.insert(key.clone());
+                if before_env.get_sym(*key) != self.env.get_sym(*key) {
+                    changed.insert(key.resolve());
                 }
             }
             for key in self.env.keys() {
-                if !before_env.contains_key(key) {
-                    changed.insert(key.clone());
+                if !before_env.contains_key_sym(*key) {
+                    changed.insert(key.resolve());
                 }
             }
             if matches!(decl_name.as_str(), "my" | "constant" | "temp") {

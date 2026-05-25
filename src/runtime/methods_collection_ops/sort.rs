@@ -314,7 +314,7 @@ impl Interpreter {
                     let data = data.clone();
                     // Pre-collect keys we'll modify to avoid full env clone
                     let touched_keys: Vec<String> = {
-                        let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                        let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
                         if data.params.len() >= 2 {
                             keys.push(data.params[0].clone());
                             keys.push(data.params[1].clone());
@@ -331,7 +331,7 @@ impl Interpreter {
                             .map(|k| (k.clone(), interp.env.get(k).cloned()))
                             .collect();
                         for (k, v) in &data.env {
-                            interp.env.insert(k.clone(), v.clone());
+                            interp.env.insert_sym(*k, v.clone());
                         }
                         if data.params.len() >= 2 {
                             interp.env.insert(data.params[0].clone(), a.clone());
@@ -373,7 +373,7 @@ impl Interpreter {
                     }
                     // Sub mapper: save/restore only touched keys
                     let touched_keys: Vec<String> = {
-                        let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                        let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
                         if let Some(p) = data.params.first() {
                             keys.push(p.clone());
                         }
@@ -389,7 +389,7 @@ impl Interpreter {
                             .map(|k| (k.clone(), interp.env.get(k).cloned()))
                             .collect();
                         for (k, v) in &data.env {
-                            interp.env.insert(k.clone(), v.clone());
+                            interp.env.insert_sym(*k, v.clone());
                         }
                         if let Some(p) = data.params.first() {
                             interp.env.insert(p.clone(), a.clone());
@@ -397,7 +397,7 @@ impl Interpreter {
                         interp.env.insert("_".to_string(), a.clone());
                         let key_a = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
                         for (k, v) in &data.env {
-                            interp.env.insert(k.clone(), v.clone());
+                            interp.env.insert_sym(*k, v.clone());
                         }
                         if let Some(p) = data.params.first() {
                             interp.env.insert(p.clone(), b.clone());
@@ -547,7 +547,7 @@ fn sort_indices(
     match callable {
         Some(Value::Sub(data)) if arity >= 2 => {
             let touched_keys: Vec<String> = {
-                let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
                 if data.params.len() >= 2 {
                     keys.push(data.params[0].clone());
                     keys.push(data.params[1].clone());
@@ -563,7 +563,7 @@ fn sort_indices(
                     .map(|k| (k.clone(), interp.env.get(k).cloned()))
                     .collect();
                 for (k, v) in &data.env {
-                    interp.env.insert(k.clone(), v.clone());
+                    interp.env.insert_sym(*k, v.clone());
                 }
                 if data.params.len() >= 2 {
                     interp.env.insert(data.params[0].clone(), (*a).clone());
@@ -583,7 +583,7 @@ fn sort_indices(
         }
         Some(Value::Sub(data)) if arity <= 1 => {
             let touched_keys: Vec<String> = {
-                let mut keys: Vec<String> = data.env.keys().cloned().collect();
+                let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
                 if let Some(p) = data.params.first() {
                     keys.push(p.clone());
                 }
@@ -598,7 +598,7 @@ fn sort_indices(
                     .map(|k| (k.clone(), interp.env.get(k).cloned()))
                     .collect();
                 for (k, v) in &data.env {
-                    interp.env.insert(k.clone(), v.clone());
+                    interp.env.insert_sym(*k, v.clone());
                 }
                 if let Some(p) = data.params.first() {
                     interp.env.insert(p.clone(), (*a).clone());
@@ -606,7 +606,7 @@ fn sort_indices(
                 interp.env.insert("_".to_string(), (*a).clone());
                 let key_a = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
                 for (k, v) in &data.env {
-                    interp.env.insert(k.clone(), v.clone());
+                    interp.env.insert_sym(*k, v.clone());
                 }
                 if let Some(p) = data.params.first() {
                     interp.env.insert(p.clone(), (*b).clone());

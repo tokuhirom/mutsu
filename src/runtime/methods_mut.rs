@@ -301,18 +301,18 @@ impl Interpreter {
         needle: &std::sync::Arc<Vec<Value>>,
         replacement: Value,
     ) {
-        let keys: Vec<String> = self
+        let keys: Vec<Symbol> = self
             .env
             .iter()
             .filter_map(|(name, value)| match value {
                 Value::Array(existing, ..) if std::sync::Arc::ptr_eq(existing, needle) => {
-                    Some(name.clone())
+                    Some(*name)
                 }
                 _ => None,
             })
             .collect();
         for key in keys {
-            self.env.insert(key, replacement.clone());
+            self.env.insert_sym(key, replacement.clone());
         }
     }
 
@@ -321,18 +321,16 @@ impl Interpreter {
         needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
         replacement: Value,
     ) {
-        let keys: Vec<String> = self
+        let keys: Vec<Symbol> = self
             .env
             .iter()
             .filter_map(|(name, value)| match value {
-                Value::Hash(existing) if std::sync::Arc::ptr_eq(existing, needle) => {
-                    Some(name.clone())
-                }
+                Value::Hash(existing) if std::sync::Arc::ptr_eq(existing, needle) => Some(*name),
                 _ => None,
             })
             .collect();
         for key in keys {
-            self.env.insert(key, replacement.clone());
+            self.env.insert_sym(key, replacement.clone());
         }
     }
 
@@ -345,7 +343,7 @@ impl Interpreter {
         needle: &std::sync::Arc<Vec<Value>>,
         replacement: &Value,
     ) {
-        let mut updates: Vec<(String, Symbol, u64, String)> = Vec::new();
+        let mut updates: Vec<(Symbol, Symbol, u64, String)> = Vec::new();
         for (var_name, value) in self.env.iter() {
             if let Value::Instance {
                 class_name,
@@ -357,16 +355,16 @@ impl Interpreter {
                     if let Value::Array(arc, ..) = attr_val
                         && std::sync::Arc::ptr_eq(arc, needle)
                     {
-                        updates.push((var_name.clone(), *class_name, *id, attr_key.clone()));
+                        updates.push((*var_name, *class_name, *id, attr_key.clone()));
                     }
                 }
             }
         }
         for (var_name, class_name, id, attr_key) in updates {
-            if let Some(Value::Instance { attributes, .. }) = self.env.get(&var_name) {
+            if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
                 let mut updated = (**attributes).clone();
                 updated.insert(attr_key, replacement.clone());
-                self.env.insert(
+                self.env.insert_sym(
                     var_name,
                     Value::make_instance_with_id(class_name, updated, id),
                 );
@@ -380,7 +378,7 @@ impl Interpreter {
         needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
         replacement: &Value,
     ) {
-        let mut updates: Vec<(String, Symbol, u64, String)> = Vec::new();
+        let mut updates: Vec<(Symbol, Symbol, u64, String)> = Vec::new();
         for (var_name, value) in self.env.iter() {
             if let Value::Instance {
                 class_name,
@@ -392,16 +390,16 @@ impl Interpreter {
                     if let Value::Hash(arc) = attr_val
                         && std::sync::Arc::ptr_eq(arc, needle)
                     {
-                        updates.push((var_name.clone(), *class_name, *id, attr_key.clone()));
+                        updates.push((*var_name, *class_name, *id, attr_key.clone()));
                     }
                 }
             }
         }
         for (var_name, class_name, id, attr_key) in updates {
-            if let Some(Value::Instance { attributes, .. }) = self.env.get(&var_name) {
+            if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
                 let mut updated = (**attributes).clone();
                 updated.insert(attr_key, replacement.clone());
-                self.env.insert(
+                self.env.insert_sym(
                     var_name,
                     Value::make_instance_with_id(class_name, updated, id),
                 );
@@ -484,17 +482,17 @@ impl Interpreter {
             // Internal/special variables always use the captured value so that
             // the callback's lexical context is properly restored.
             for (k, v) in &data.env {
-                let is_user_var = !k.starts_with('!')
-                    && !k.starts_with('.')
-                    && !k.starts_with('*')
-                    && !k.starts_with('?')
+                let is_user_var = !k.starts_with("!")
+                    && !k.starts_with(".")
+                    && !k.starts_with("*")
+                    && !k.starts_with("?")
                     && !k.starts_with("__")
-                    && k != "self"
-                    && k != "_";
-                if is_user_var && new_env.contains_key(k) {
+                    && *k != "self"
+                    && *k != "_";
+                if is_user_var && new_env.contains_key_sym(*k) {
                     // Keep current env value (live binding)
                 } else {
-                    new_env.insert(k.clone(), v.clone());
+                    new_env.insert_sym(*k, v.clone());
                 }
             }
             // Override !attr bindings with current instance attributes
@@ -523,20 +521,20 @@ impl Interpreter {
             // current env values.
             let mut restored = saved_env;
             for (k, v) in &self.env {
-                if restored.contains_key(k)
-                    && !k.starts_with('!')
-                    && !k.starts_with('.')
-                    && k != "self"
-                    && k != "_"
+                if restored.contains_key_sym(*k)
+                    && !k.starts_with("!")
+                    && !k.starts_with(".")
+                    && *k != "self"
+                    && *k != "_"
                 {
                     // Skip if the value is unchanged from the captured env —
                     // it was merely loaded, not modified by the callback.
-                    if let Some(captured_v) = data.env.get(k)
+                    if let Some(captured_v) = data.env.get_sym(*k)
                         && v == captured_v
                     {
                         continue;
                     }
-                    restored.insert(k.clone(), v.clone());
+                    restored.insert_sym(*k, v.clone());
                 }
             }
             self.env = restored;
@@ -914,7 +912,7 @@ impl Interpreter {
                     let old_value = current_value.as_ref().clone();
                     // Collect all variable names in the environment that hold an
                     // equivalent pair (same key and same old value).
-                    let vars_to_update: Vec<String> = self
+                    let vars_to_update: Vec<Symbol> = self
                         .env
                         .iter()
                         .filter_map(|(name, val)| {
@@ -925,13 +923,13 @@ impl Interpreter {
                                 }
                                 _ => false,
                             };
-                            if matches { Some(name.clone()) } else { None }
+                            if matches { Some(*name) } else { None }
                         })
                         .collect();
 
                     if !vars_to_update.is_empty() {
                         for var_name in &vars_to_update {
-                            let current = self.env.get(var_name).cloned();
+                            let current = self.env.get_sym(*var_name).cloned();
                             let new_pair = match current {
                                 Some(Value::Pair(k, _)) => Value::Pair(k, Box::new(value.clone())),
                                 Some(Value::ValuePair(k, _)) => {
@@ -939,7 +937,7 @@ impl Interpreter {
                                 }
                                 _ => continue,
                             };
-                            self.env.insert(var_name.clone(), new_pair);
+                            self.env.insert_sym(*var_name, new_pair);
                         }
                         return Ok(value);
                     } else if let Some(var_name) = target_var {

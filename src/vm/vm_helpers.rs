@@ -444,20 +444,20 @@ impl VM {
         let gather_result_env = self.interpreter.env().clone();
         let mut merged_env = saved_env.clone();
         for (k, v) in gather_result_env.iter() {
-            if !saved_env.contains_key(k) {
+            if !saved_env.contains_key_sym(*k) {
                 continue;
             }
-            if let Some(initial) = list.env.get(k) {
+            if let Some(initial) = list.env.get_sym(*k) {
                 // Variable existed in both outer and gather env.
                 // Only propagate if the value actually changed during execution.
                 // Compare string representations as a proxy for value equality.
                 if v.to_string_value() != initial.to_string_value() {
-                    merged_env.insert(k.clone(), v.clone());
+                    merged_env.insert_sym(*k, v.clone());
                 }
             } else {
                 // Variable existed in outer scope but not in gather's initial env;
                 // always propagate changes.
-                merged_env.insert(k.clone(), v.clone());
+                merged_env.insert_sym(*k, v.clone());
             }
         }
         *self.interpreter.env_mut() = merged_env;
@@ -467,7 +467,7 @@ impl VM {
             let merged = self.interpreter.env();
             saved_env.iter().any(|(k, old_val)| {
                 merged
-                    .get(k)
+                    .get_sym(*k)
                     .is_some_and(|new_val| new_val.to_string_value() != old_val.to_string_value())
             })
         };

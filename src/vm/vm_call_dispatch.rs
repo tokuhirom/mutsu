@@ -546,12 +546,12 @@ impl VM {
             if saved_env.ptr_eq(self.interpreter.env()) {
                 // No env changes, nothing to merge
             } else {
-                let local_names: std::collections::HashSet<&String> =
-                    cf.code.locals.iter().collect();
+                let local_names: std::collections::HashSet<&str> =
+                    cf.code.locals.iter().map(|s| s.as_str()).collect();
                 let mut restored_env = saved_env;
                 for (k, v) in self.interpreter.env().iter() {
-                    if !local_names.contains(k) {
-                        restored_env.insert(k.clone(), v.clone());
+                    if !k.with_str(|s| local_names.contains(s)) {
+                        restored_env.insert_sym(*k, v.clone());
                     }
                 }
                 *self.interpreter.env_mut() = restored_env;
@@ -1417,7 +1417,7 @@ impl VM {
                         && k != "@_"
                         && k != "%_"
                     {
-                        self.interpreter.env_mut().insert(k.clone(), v.clone());
+                        self.interpreter.env_mut().insert_sym(*k, v.clone());
                     }
                 }
             }
@@ -1639,22 +1639,23 @@ impl VM {
                 .iter()
                 .map(|(_, source)| source.clone())
                 .collect();
-            let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
+            let local_names: std::collections::HashSet<&str> =
+                cf.code.locals.iter().map(|s| s.as_str()).collect();
             for (k, v) in self.interpreter.env().iter() {
-                if k == "_" || k == "@_" || k == "%_" {
+                if *k == "_" || *k == "@_" || *k == "%_" {
                     continue;
                 }
                 // __mutsu_callable_id must not leak from callee back to
                 // caller; it identifies the current routine scope for
                 // non-local return targeting.
-                if k == "__mutsu_callable_id" {
+                if *k == "__mutsu_callable_id" {
                     continue;
                 }
-                if restored_env.contains_key(k)
-                    && !local_names.contains(k)
-                    && !rw_sources.contains(k)
+                if restored_env.contains_key_sym(*k)
+                    && !k.with_str(|s| local_names.contains(s))
+                    && !k.with_str(|s| rw_sources.contains(s))
                 {
-                    restored_env.insert(k.clone(), v.clone());
+                    restored_env.insert_sym(*k, v.clone());
                 }
             }
             *self.interpreter.env_mut() = restored_env;

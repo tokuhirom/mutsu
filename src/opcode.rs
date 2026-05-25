@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::ast::{ParamDef, Stmt};
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 /// Bytecode operations for the VM.
@@ -929,6 +930,9 @@ pub(crate) struct CompiledCode {
     pub(crate) constants: Vec<Value>,
     pub(crate) stmt_pool: Vec<Stmt>,
     pub(crate) locals: Vec<String>,
+    /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
+    /// on every env sync in hot paths.
+    pub(crate) locals_sym: Vec<Symbol>,
     /// Bitmap: true if local[i] is eligible for SetLocal fast path
     /// (simple $-prefixed scalar, no twigils, no ::, no _ topic, no ./! attrs).
     pub(crate) simple_locals: Vec<bool>,
@@ -988,6 +992,7 @@ impl CompiledCode {
             constants: Vec::new(),
             stmt_pool: Vec::new(),
             locals: Vec::new(),
+            locals_sym: Vec::new(),
             simple_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
@@ -1075,11 +1080,17 @@ impl CompiledCode {
         }
     }
 
+    /// Pre-intern all local names as Symbols.
+    pub(crate) fn compute_locals_sym(&mut self) {
+        self.locals_sym = self.locals.iter().map(|s| Symbol::intern(s)).collect();
+    }
+
     /// Compute which locals need to be synced to env.
     /// A local needs env sync if it's referenced by GetGlobal/SetGlobal/etc.
     /// in this code. Locals only accessed via GetLocal don't need env sync,
     /// which reduces env size and makes method call env clones cheaper.
     pub(crate) fn compute_needs_env_sync(&mut self) {
+        self.compute_locals_sym();
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
         if n == 0 {

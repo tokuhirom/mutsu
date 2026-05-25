@@ -874,7 +874,7 @@ impl Interpreter {
         }
         let mut merged_env = saved_env;
         for (k, v) in self.env.iter() {
-            merged_env.insert(k.clone(), v.clone());
+            merged_env.insert_sym(*k, v.clone());
         }
         self.env = merged_env;
         run_res?;
@@ -910,7 +910,7 @@ impl Interpreter {
         }
         let mut merged_env = saved_env;
         for (k, v) in self.env.iter() {
-            merged_env.insert(k.clone(), v.clone());
+            merged_env.insert_sym(*k, v.clone());
         }
         self.env = merged_env;
 
@@ -1036,7 +1036,7 @@ impl Interpreter {
             other => other,
         };
         if let Value::Routine { package, name, .. } = &func {
-            if package != "" && package != "GLOBAL" {
+            if !package.is_empty() && package != "GLOBAL" {
                 let fq = format!("{package}::{name}");
                 if self.resolve_function(&fq).is_some() {
                     return self.call_function(&fq, args);
@@ -1160,7 +1160,8 @@ impl Interpreter {
                 self.env.insert("?LINE".to_string(), Value::Int(line));
             }
             self.push_caller_env();
-            let persist_closure_env = data.name == "" || !self.has_function(&data.name.resolve());
+            let persist_closure_env =
+                data.name.is_empty() || !self.has_function(&data.name.resolve());
             let closure_base_env = if persist_closure_env {
                 self.closure_env_overrides
                     .get(&data.id)
@@ -1172,14 +1173,15 @@ impl Interpreter {
             let mut new_env = saved_env.clone();
             for (k, v) in &closure_base_env {
                 if merge_all {
-                    new_env.entry_or_insert(k.clone(), v.clone());
+                    new_env.entry_or_insert(k.resolve(), v.clone());
                     continue;
                 }
-                if matches!(new_env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..))
+                if matches!(new_env.get_sym(*k), Some(Value::Array(..)))
+                    && matches!(v, Value::Array(..))
                 {
                     continue;
                 }
-                new_env.insert(k.clone(), v.clone());
+                new_env.insert_sym(*k, v.clone());
             }
             self.env = new_env.clone();
             let rw_bindings =
@@ -1213,7 +1215,7 @@ impl Interpreter {
                 new_env.insert("$_".to_string(), first_positional.clone());
             } else if data.params.is_empty()
                 && sanitized_args.is_empty()
-                && data.name == ""
+                && data.name.is_empty()
                 && let Some(caller_topic) = saved_env.get("_")
             {
                 new_env.insert("_".to_string(), caller_topic.clone());
@@ -1319,8 +1321,8 @@ impl Interpreter {
             if persist_closure_env {
                 let mut persisted_closure_env = closure_base_env.clone();
                 for key in closure_base_env.keys() {
-                    if let Some(value) = self.env.get(key).cloned() {
-                        persisted_closure_env.insert(key.clone(), value);
+                    if let Some(value) = self.env.get_sym(*key).cloned() {
+                        persisted_closure_env.insert_sym(*key, value);
                     }
                 }
                 self.closure_env_overrides
@@ -1334,15 +1336,15 @@ impl Interpreter {
                 for (k, v) in self.env.iter() {
                     if k != "_"
                         && k != "@_"
-                        && (merged.contains_key(k) || k.starts_with("__mutsu_var_meta::"))
+                        && (merged.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::"))
                     {
-                        merged.insert(k.clone(), v.clone());
+                        merged.insert_sym(*k, v.clone());
                     }
                 }
             } else {
                 for (k, v) in self.env.iter() {
                     if k != "_" && k != "@_" && matches!(v, Value::Array(..)) {
-                        merged.insert(k.clone(), v.clone());
+                        merged.insert_sym(*k, v.clone());
                     }
                 }
             }
@@ -1501,11 +1503,11 @@ impl Interpreter {
         let saved_proto_subs = self.proto_subs.clone();
         let saved_proto_functions = self.proto_functions.clone();
         let saved_operator_assoc = self.operator_assoc.clone();
-        let saved_code_env: std::collections::HashMap<String, Value> = self
+        let saved_code_env: std::collections::HashMap<Symbol, Value> = self
             .env
             .iter()
-            .filter(|(k, _)| k.starts_with('&') || k.starts_with("__mutsu_callable_id::"))
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
+            .map(|(k, v)| (*k, v.clone()))
             .collect();
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
@@ -1555,9 +1557,9 @@ impl Interpreter {
         self.proto_functions = saved_proto_functions;
         self.operator_assoc = saved_operator_assoc;
         self.env
-            .retain(|k, _| !(k.starts_with('&') || k.starts_with("__mutsu_callable_id::")));
+            .retain(|k, _| !(k.starts_with("&") || k.starts_with("__mutsu_callable_id::")));
         for (k, v) in saved_code_env {
-            self.env.insert(k, v);
+            self.env.insert_sym(k, v);
         }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
@@ -1842,8 +1844,8 @@ impl Interpreter {
             // the mapper block (e.g. `{ $a++ }`).
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
             for k in data.env.keys() {
-                if !self.env.contains_key(k) {
-                    touched_keys.push(k.clone());
+                if !self.env.contains_key_sym(*k) {
+                    touched_keys.push(k.resolve());
                 }
             }
             for p in &data.params {
@@ -1864,8 +1866,8 @@ impl Interpreter {
 
             // Pre-insert closure env
             for (k, v) in &data.env {
-                if !self.env.contains_key(k) {
-                    self.env.insert(k.clone(), v.clone());
+                if !self.env.contains_key_sym(*k) {
+                    self.env.insert_sym(*k, v.clone());
                 }
             }
 
@@ -2072,8 +2074,8 @@ impl Interpreter {
 
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
             for k in data.env.keys() {
-                if !self.env.contains_key(k) {
-                    touched_keys.push(k.clone());
+                if !self.env.contains_key_sym(*k) {
+                    touched_keys.push(k.resolve());
                 }
             }
             for p in &data.params {
@@ -2093,8 +2095,8 @@ impl Interpreter {
                 .collect();
 
             for (k, v) in &data.env {
-                if !self.env.contains_key(k) {
-                    self.env.insert(k.clone(), v.clone());
+                if !self.env.contains_key_sym(*k) {
+                    self.env.insert_sym(*k, v.clone());
                 }
             }
 
@@ -2259,8 +2261,8 @@ impl Interpreter {
 
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
             for k in data.env.keys() {
-                if !self.env.contains_key(k) {
-                    touched_keys.push(k.clone());
+                if !self.env.contains_key_sym(*k) {
+                    touched_keys.push(k.resolve());
                 }
             }
             for p in &data.params {
@@ -2285,7 +2287,7 @@ impl Interpreter {
 
             // Pre-insert closure env
             for (k, v) in &data.env {
-                self.env.insert(k.clone(), v.clone());
+                self.env.insert_sym(*k, v.clone());
             }
 
             // Create VM once, reuse across iterations
