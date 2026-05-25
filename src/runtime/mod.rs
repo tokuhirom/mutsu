@@ -5041,6 +5041,15 @@ impl Interpreter {
         sv.get(key).cloned()
     }
 
+    /// Returns true if the given key is in the shared_vars_dirty set
+    /// (i.e., was modified by an atomic/CAS operation).
+    pub(crate) fn is_shared_var_dirty(&self, key: &str) -> bool {
+        self.shared_vars_dirty
+            .read()
+            .map(|d| d.contains(key))
+            .unwrap_or(false)
+    }
+
     fn mark_shared_var_dirty(&self, key: &str) {
         if self
             .shared_vars_dirty

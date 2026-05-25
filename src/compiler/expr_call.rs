@@ -310,6 +310,16 @@ impl Compiler {
                     return;
                 }
             }
+            // For attribute variables (!attr), sync the local to env before
+            // the CAS call so the builtin can read the current value from env.
+            if var_name.starts_with('!')
+                && let Some(&slot) = self.local_map.get(var_name.as_str())
+            {
+                self.code.emit(OpCode::GetLocal(slot));
+                let sync_name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                self.code.emit(OpCode::SetGlobal(sync_name_idx));
+                self.code.emit(OpCode::Pop);
+            }
             let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(name_idx));
