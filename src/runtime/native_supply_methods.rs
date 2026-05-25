@@ -8,6 +8,35 @@ impl Interpreter {
         !matches!(callback, Value::Nil)
     }
 
+    /// Invoke a done callback. If the callback is a WheneverDoneGroup marker,
+    /// decrement the group counter and only call the real done callback when
+    /// all whenevers are done. Otherwise, call the callback directly.
+    pub(super) fn invoke_done_callback(&mut self, done_cb: Value) -> Result<(), RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &done_cb
+            && *class_name == "__WheneverDoneGroup"
+            && let Some(Value::Int(group_id)) = attributes.get("group_id")
+        {
+            if let Some(real_done_cb) = whenever_done_group_decrement(*group_id as u64) {
+                let _ = self.call_sub_value(real_done_cb, vec![], true);
+            }
+            return Ok(());
+        }
+        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+        Ok(())
+    }
+
+    /// Create a WheneverDoneGroup marker Value for registering as a done
+    /// callback on inner suppliers.
+    fn make_whenever_done_group_marker(group_id: u64) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("group_id".to_string(), Value::Int(group_id as i64));
+        Value::make_instance(Symbol::intern("__WheneverDoneGroup"), attrs)
+    }
+
     pub(super) fn runtime_error_from_supply_reason(reason: Value) -> RuntimeError {
         let message = reason.to_string_value();
         let mut err = RuntimeError::new(message);
@@ -511,6 +540,7 @@ impl Interpreter {
 
                 // For on-demand supplies, execute the callback to produce values
                 let mut on_demand_quit: Option<Value> = None;
+                let mut done_group_marker: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
                     // Give the emitter a supplier_id so that when a `whenever`
                     // body calls `$emitter.emit(val)`, the value can be dispatched
@@ -546,7 +576,46 @@ impl Interpreter {
                     // emitted values. A subscription registration is an Array
                     // [Supply, body_cb, last_cbs, quit_cbs] produced by
                     // `whenever` inside a supply block.
+
+                    // Pre-count supplier-backed whenever subscriptions so we
+                    // can create a done group with the correct count. Only
+                    // count whenevers whose inner supply has a supplier_id,
+                    // since cold (on-demand) supplies complete synchronously
+                    // and don't participate in the done counting.
+                    let whenever_supplier_count = emitted
+                        .iter()
+                        .filter(|item| {
+                            if let Value::Array(arr, ..) = item
+                                && arr.len() == 4
+                                && let Value::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                } = &arr[0]
+                                && *class_name == "Supply"
+                                && attributes.contains_key("supplier_id")
+                            {
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                        .count();
+
+                    // Create a done group if there are supplier-backed
+                    // whenever subscriptions and a done callback. The group
+                    // tracks how many inner suppliers must complete before
+                    // done fires.
+                    if whenever_supplier_count > 0 {
+                        done_group_marker = done_cb.as_ref().map(|df| {
+                            let group_id =
+                                create_whenever_done_group(whenever_supplier_count, df.clone());
+                            Self::make_whenever_done_group_marker(group_id)
+                        });
+                    }
+
                     let mut plain_values = Vec::new();
+                    let mut outer_tap_registered = false;
                     for item in emitted {
                         if let Value::Array(ref arr, ..) = item
                             && arr.len() == 4
@@ -572,20 +641,26 @@ impl Interpreter {
                                 // Register the outer tap callback on the emitter
                                 // so that `$emitter.emit(val)` inside the body
                                 // forwards values to the outer tap subscriber.
-                                if Self::supply_has_active_callback(&tap_cb) {
+                                // Only register once even with multiple whenevers.
+                                if !outer_tap_registered
+                                    && Self::supply_has_active_callback(&tap_cb)
+                                {
                                     register_supplier_tap(
                                         emitter_supplier_id,
                                         tap_cb.clone(),
                                         delay_seconds,
                                     );
+                                    outer_tap_registered = true;
                                 }
                                 // Register the outer quit handler on the inner
                                 // supplier so that errors propagate correctly.
                                 if let Some(ref qf) = quit_cb {
                                     register_supplier_quit_callback(supplier_id, qf.clone());
                                 }
-                                if let Some(ref df) = done_cb {
-                                    register_supplier_done_callback(supplier_id, df.clone());
+                                // Register done callback: use the group marker
+                                // so done only fires when ALL whenevers complete.
+                                if let Some(ref marker) = done_group_marker {
+                                    register_supplier_done_callback(supplier_id, marker.clone());
                                 }
                             } else {
                                 // Non-supplier supply: run body_cb for each
@@ -689,7 +764,12 @@ impl Interpreter {
                         } else {
                             register_supplier_done_callback(sid, done_fn);
                         }
-                    } else {
+                    } else if done_group_marker.is_none() {
+                        // Only call done immediately when there are no
+                        // supplier-backed whenever subscriptions tracking
+                        // done via the group mechanism. Cold (on-demand)
+                        // whenevers complete synchronously, so done can
+                        // fire immediately in that case.
                         let _ = self.call_sub_value(done_fn, vec![], true);
                     }
                 }
@@ -1557,7 +1637,7 @@ impl Interpreter {
                             SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
                                 let deferred_promises = supplier_done_deferred(sid2);
                                 for done_cb in take_supplier_done_callbacks(sid2) {
-                                    let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                                    let _ = self.invoke_done_callback(done_cb);
                                 }
                                 for (promise, result) in deferred_promises {
                                     promise.keep(result, String::new(), String::new());
@@ -1686,7 +1766,7 @@ impl Interpreter {
                         }
                         supplier_done(dsid);
                         for done_cb in take_supplier_done_callbacks(dsid) {
-                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                            let _ = self.invoke_done_callback(done_cb);
                         }
                     }
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
@@ -1696,13 +1776,13 @@ impl Interpreter {
                         let _ = self.call_sub_value(tap, vec![emitted], true);
                     }
                     for done_cb in take_supplier_done_callbacks(supplier_id) {
-                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        self.invoke_done_callback(done_cb)?;
                     }
                     // Propagate done to start-transform output suppliers
                     for out_sid in get_start_output_supplier_ids(supplier_id) {
                         supplier_done(out_sid);
                         for done_cb in take_supplier_done_callbacks(out_sid) {
-                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                            let _ = self.invoke_done_callback(done_cb);
                         }
                     }
                     // Propagate done to zip output suppliers
@@ -1711,7 +1791,7 @@ impl Interpreter {
                         if matches!(action, ZipAction::AllDone) {
                             supplier_done(output_sid);
                             for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                                let _ = self.invoke_done_callback(done_cb);
                             }
                         }
                     }
@@ -1841,7 +1921,7 @@ impl Interpreter {
                             SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
                                 let deferred_promises = supplier_done_deferred(sid2);
                                 for done_cb in take_supplier_done_callbacks(sid2) {
-                                    let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                                    let _ = self.invoke_done_callback(done_cb);
                                 }
                                 for (promise, result) in deferred_promises {
                                     promise.keep(result, String::new(), String::new());
@@ -1971,7 +2051,7 @@ impl Interpreter {
                         // Propagate done to downstream batch suppliers
                         supplier_done(dsid);
                         for done_cb in take_supplier_done_callbacks(dsid) {
-                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                            let _ = self.invoke_done_callback(done_cb);
                         }
                     }
                     // Propagate done to classify sub-suppliers
@@ -1979,7 +2059,7 @@ impl Interpreter {
                     for sub_sid in classify_subs {
                         supplier_done(sub_sid);
                         for done_cb in take_supplier_done_callbacks(sub_sid) {
-                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                            let _ = self.invoke_done_callback(done_cb);
                         }
                     }
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
@@ -1989,13 +2069,13 @@ impl Interpreter {
                         self.call_sub_value(tap, vec![emitted], true)?;
                     }
                     for done_cb in take_supplier_done_callbacks(sid) {
-                        self.call_sub_value(done_cb, Vec::new(), true)?;
+                        self.invoke_done_callback(done_cb)?;
                     }
                     // Propagate done to start-transform output suppliers
                     for out_sid in get_start_output_supplier_ids(sid) {
                         supplier_done(out_sid);
                         for done_cb in take_supplier_done_callbacks(out_sid) {
-                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                            let _ = self.invoke_done_callback(done_cb);
                         }
                     }
                     // Propagate done to zip output suppliers
@@ -2004,7 +2084,7 @@ impl Interpreter {
                         if matches!(action, ZipAction::AllDone) {
                             supplier_done(output_sid);
                             for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                                let _ = self.invoke_done_callback(done_cb);
                             }
                         }
                     }
@@ -2208,6 +2288,7 @@ impl Interpreter {
                 // For on-demand supplies, execute the callback to produce values
                 let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                 let mut on_demand_quit: Option<Value> = None;
+                let mut done_group_marker: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     // Give the emitter a supplier_id so that when a `whenever`
                     // body calls `$emitter.emit(val)`, the value can be dispatched
@@ -2239,7 +2320,38 @@ impl Interpreter {
 
                     // Separate whenever subscription registrations from plain
                     // emitted values (same logic as immutable tap path).
+
+                    // Pre-count supplier-backed whenever subscriptions
+                    let whenever_supplier_count = emitted
+                        .iter()
+                        .filter(|item| {
+                            if let Value::Array(arr, ..) = item
+                                && arr.len() == 4
+                                && let Value::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                } = &arr[0]
+                                && *class_name == "Supply"
+                                && attributes.contains_key("supplier_id")
+                            {
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                        .count();
+
+                    if whenever_supplier_count > 0 {
+                        done_group_marker = done_cb.as_ref().map(|df| {
+                            let group_id =
+                                create_whenever_done_group(whenever_supplier_count, df.clone());
+                            Self::make_whenever_done_group_marker(group_id)
+                        });
+                    }
+
                     let mut plain_values = Vec::new();
+                    let mut outer_tap_registered = false;
                     for item in emitted {
                         if let Value::Array(ref arr, ..) = item
                             && arr.len() == 4
@@ -2259,18 +2371,24 @@ impl Interpreter {
                                 // Register the outer tap callback on the emitter
                                 // so that `$emitter.emit(val)` inside the body
                                 // forwards values to the outer tap subscriber.
-                                if Self::supply_has_active_callback(&tap_cb) {
+                                // Only register once even with multiple whenevers.
+                                if !outer_tap_registered
+                                    && Self::supply_has_active_callback(&tap_cb)
+                                {
                                     register_supplier_tap(
                                         emitter_supplier_id,
                                         tap_cb.clone(),
                                         delay_seconds,
                                     );
+                                    outer_tap_registered = true;
                                 }
                                 if let Some(ref qf) = quit_cb {
                                     register_supplier_quit_callback(supplier_id, qf.clone());
                                 }
-                                if let Some(ref df) = done_cb {
-                                    register_supplier_done_callback(supplier_id, df.clone());
+                                // Register done callback: use the group marker
+                                // so done only fires when ALL whenevers complete.
+                                if let Some(ref marker) = done_group_marker {
+                                    register_supplier_done_callback(supplier_id, marker.clone());
                                 }
                             } else {
                                 let empty_attrs = HashMap::new();
@@ -2454,7 +2572,12 @@ impl Interpreter {
                         } else {
                             register_supplier_done_callback(*supplier_id as u64, done_fn);
                         }
-                    } else {
+                    } else if done_group_marker.is_none() {
+                        // Only call done immediately when there are no
+                        // supplier-backed whenever subscriptions tracking
+                        // done via the group mechanism. Cold (on-demand)
+                        // whenevers complete synchronously, so done can
+                        // fire immediately in that case.
                         let _ = self.call_sub_value(done_fn, vec![], true);
                     }
                 }
@@ -2771,7 +2894,7 @@ impl Interpreter {
                     SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
                         let deferred_promises = supplier_done_deferred(sid2);
                         for done_cb in take_supplier_done_callbacks(sid2) {
-                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                            let _ = self.invoke_done_callback(done_cb);
                         }
                         for (promise, result) in deferred_promises {
                             promise.keep(result, String::new(), String::new());
@@ -2796,7 +2919,7 @@ impl Interpreter {
                 SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
                     let deferred_promises = supplier_done_deferred(sid2);
                     for done_cb in take_supplier_done_callbacks(sid2) {
-                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        let _ = self.invoke_done_callback(done_cb);
                     }
                     for (promise, result) in deferred_promises {
                         promise.keep(result, String::new(), String::new());
@@ -2944,7 +3067,7 @@ impl Interpreter {
             // Mark the inner supply as done
             supplier_done(inner_supplier_id);
             for done_cb in take_supplier_done_callbacks(inner_supplier_id) {
-                let _ = thread_interp.call_sub_value(done_cb, Vec::new(), true);
+                let _ = thread_interp.invoke_done_callback(done_cb);
             }
         });
     }

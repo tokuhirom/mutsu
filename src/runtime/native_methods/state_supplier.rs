@@ -1006,6 +1006,60 @@ pub(in crate::runtime) fn register_supplier_quit_callback(supplier_id: u64, quit
     }
 }
 
+// --- Whenever done group ---
+// Tracks a group of inner suppliers that must all complete before the
+// supply block's done callback fires.
+
+struct WheneverDoneGroup {
+    remaining: std::sync::atomic::AtomicUsize,
+    done_cb: Value,
+}
+
+type WheneverDoneGroupMap = std::sync::Mutex<HashMap<u64, std::sync::Arc<WheneverDoneGroup>>>;
+
+fn whenever_done_group_map() -> &'static WheneverDoneGroupMap {
+    static MAP: OnceLock<WheneverDoneGroupMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn next_whenever_done_group_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Create a new whenever-done group with the given number of active
+/// whenevers and a done callback. Returns the group ID.
+pub(in crate::runtime) fn create_whenever_done_group(count: usize, done_cb: Value) -> u64 {
+    let id = next_whenever_done_group_id();
+    let group = std::sync::Arc::new(WheneverDoneGroup {
+        remaining: std::sync::atomic::AtomicUsize::new(count),
+        done_cb,
+    });
+    if let Ok(mut map) = whenever_done_group_map().lock() {
+        map.insert(id, group);
+    }
+    id
+}
+
+/// Decrement the active count for a whenever-done group.
+/// Returns Some(done_cb) if the count reached zero (all whenevers done).
+pub(in crate::runtime) fn whenever_done_group_decrement(group_id: u64) -> Option<Value> {
+    if let Ok(mut map) = whenever_done_group_map().lock()
+        && let Some(group) = map.get(&group_id)
+    {
+        let prev = group
+            .remaining
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        if prev <= 1 {
+            // All whenevers done — remove the group and return the callback
+            let group = map.remove(&group_id).unwrap();
+            return Some(group.done_cb.clone());
+        }
+    }
+    None
+}
+
 /// Register a batch tap on a supplier. Values are buffered and emitted as
 /// batched lists to the downstream supplier when `:elems` count is reached.
 pub(in crate::runtime) fn register_supplier_batch_tap(
