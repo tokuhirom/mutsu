@@ -467,6 +467,41 @@ impl Interpreter {
             .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
     }
 
+    /// Check if an attribute is buildable (can be set via .new).
+    pub(crate) fn is_attribute_buildable(&self, class_name: &str, attr_name: &str) -> bool {
+        if let Some(class_def) = self.classes.get(class_name) {
+            if let Some(&built) = class_def.attribute_built.get(attr_name) {
+                return built;
+            }
+            for (name, is_public, ..) in &class_def.attributes {
+                if name == attr_name {
+                    return *is_public;
+                }
+            }
+        }
+        let mro = if let Some(cd) = self.classes.get(class_name) {
+            cd.mro.clone()
+        } else {
+            Vec::new()
+        };
+        for parent in &mro {
+            if parent == class_name {
+                continue;
+            }
+            if let Some(parent_def) = self.classes.get(parent) {
+                if let Some(&built) = parent_def.attribute_built.get(attr_name) {
+                    return built;
+                }
+                for (name, is_public, ..) in &parent_def.attributes {
+                    if name == attr_name {
+                        return *is_public;
+                    }
+                }
+            }
+        }
+        true
+    }
+
     /// Look up a class-level attribute (declared with `our $.x` or `my $.x`).
     /// Searches the class and its MRO.
     pub(crate) fn get_class_level_attr(

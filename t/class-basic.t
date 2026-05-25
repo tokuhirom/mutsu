@@ -27,7 +27,7 @@ is $g.greet(), 'Hello, World!', 'method call works';
 
 # Private attribute (no accessor)
 class Secret {
-    has $!hidden;
+    has $!hidden is built;
     has $.visible;
     method reveal() {
         return $!hidden;
