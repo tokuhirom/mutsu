@@ -177,7 +177,22 @@ impl Interpreter {
                     .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
                 {
                     let text = left.to_string_value();
+                    // Push routine frame so &?ROUTINE resolves inside code blocks
+                    self.routine_stack.push(super::super::RoutineFrame {
+                        package: package.resolve(),
+                        name: name.resolve(),
+                        line: None,
+                        file: None,
+                        is_method: false,
+                        is_block: false,
+                    });
                     if let Some(captures) = self.regex_match_with_captures(&pat, &text) {
+                        // Set positional captures before executing code blocks
+                        for (i, v) in captures.positional.iter().enumerate() {
+                            self.env.insert(i.to_string(), Value::str(v.clone()));
+                        }
+                        // Execute code blocks from regex for side effects
+                        self.execute_regex_code_blocks(&captures.code_blocks);
                         let match_obj = Value::make_match_object_with_captures(
                             captures.matched.clone(),
                             captures.from as i64,
@@ -186,9 +201,6 @@ impl Interpreter {
                             &captures.named,
                         );
                         self.env.insert("/".to_string(), match_obj);
-                        for (i, v) in captures.positional.iter().enumerate() {
-                            self.env.insert(i.to_string(), Value::str(v.clone()));
-                        }
                         for (k, v) in &captures.named {
                             let value = if v.len() == 1 {
                                 Value::str(v[0].clone())
@@ -197,8 +209,10 @@ impl Interpreter {
                             };
                             self.env.insert(format!("<{}>", k), value);
                         }
+                        self.routine_stack.pop();
                         return true;
                     }
+                    self.routine_stack.pop();
                     self.clear_match_state();
                     return false;
                 }

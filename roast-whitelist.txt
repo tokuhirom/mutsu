@@ -81,6 +81,7 @@ roast/S02-magicals/env.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-magicals/progname.t
+roast/S02-magicals/sub.t
 roast/S02-magicals/subname.t
 roast/S02-names-vars/contextual.t
 roast/S02-names-vars/fmt.t

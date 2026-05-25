@@ -199,7 +199,10 @@ impl VM {
         // &?ROUTINE can skip it and see the enclosing routine.
         let call_line = self.current_source_line();
         let call_file = self.current_source_file();
-        if cc.is_pointy_block {
+        if cc.is_pointy_block || data.is_bare_block {
+            // Bare blocks and pointy blocks are NOT routine boundaries.
+            // Push a marker name so &?ROUTINE skips them and finds the
+            // enclosing sub/method.
             self.interpreter.push_block_routine_with_location(
                 data.package.resolve(),
                 "<pointy-block>".to_string(),
