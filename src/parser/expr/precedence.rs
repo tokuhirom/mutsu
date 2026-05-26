@@ -886,19 +886,25 @@ fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             if let Some(prev) = last_list_assoc_op
                 && prev != op
             {
-                return Err(PError::fatal(format!(
-                    "Only identical operators may be list associative; since '{}' and '{}' differ, they are non-associative and you need to clarify with parentheses",
-                    match prev {
+                {
+                    let lhs = match prev {
                         LogicalOp::Min => "min",
                         LogicalOp::Max => "max",
                         _ => unreachable!(),
-                    },
-                    match op {
+                    };
+                    let rhs = match op {
                         LogicalOp::Min => "min",
                         LogicalOp::Max => "max",
                         _ => unreachable!(),
-                    }
-                )));
+                    };
+                    return Err(syntax_exception(
+                        "X::Syntax::NonAssociative",
+                        format!(
+                            "Only identical operators may be list associative; since '{}' and '{}' differ, they are non-associative and you need to clarify with parentheses",
+                            lhs, rhs
+                        ),
+                    ));
+                }
             }
             last_list_assoc_op = Some(op);
         }
