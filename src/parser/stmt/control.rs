@@ -938,8 +938,21 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
 
 /// Reject `foreach` with X::Obsolete error (Perl 5 remnant).
 pub(super) fn foreach_stmt(input: &str) -> PResult<'_, Stmt> {
-    let _rest =
+    let rest =
         keyword("foreach", input).ok_or_else(|| PError::expected("foreach (obsolete) check"))?;
+    // If followed by ' or - and then a letter, it's actually an identifier
+    // like `foreach'rest` or `foreach-bar`, not the obsolete keyword.
+    if let Some(rest2) = rest.strip_prefix('\'').or_else(|| rest.strip_prefix('-'))
+        && rest2.starts_with(|c: char| c.is_alphabetic() || c == '_')
+    {
+        return Err(PError::expected("foreach (obsolete) check"));
+    }
+    // If followed by '(' it could be a function call (e.g. `sub foreach {}; foreach();`).
+    // Don't emit a fatal error — allow fallback to expression parsing.
+    let rest_trimmed = rest.trim_start();
+    if rest_trimmed.starts_with('(') || rest_trimmed.starts_with(';') || rest_trimmed.is_empty() {
+        return Err(PError::expected("foreach (obsolete) check"));
+    }
     Err(PError::fatal(
         "X::Obsolete: Unsupported use of 'foreach'. In Raku please use: 'for'.".to_string(),
     ))

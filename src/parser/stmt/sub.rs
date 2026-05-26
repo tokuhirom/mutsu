@@ -732,13 +732,26 @@ pub(super) fn anon_multi_check(input: &str) -> PResult<'_, Stmt> {
             } else {
                 after_kw_ws
             };
-            // If what follows is `{` or `(`, this is an anonymous routine
-            if after_type.starts_with('{') || after_type.starts_with('(') {
+            // If what follows is `{`, this is an anonymous routine — fatal error.
+            if after_type.starts_with('{') {
                 return Err(PError::fatal(format!(
                     "FATAL:X::Anon::Multi: An anonymous routine may not take a {} declarator",
                     declarator
                 )));
             }
+            // If followed by `(`, it could be a function call like `multi()` after
+            // `sub multi {}` was defined. Only emit fatal if the `after_type` is
+            // the same as `after_kw_ws` (i.e., there was no routine type keyword
+            // like `sub`/`method` between the declarator and `(`). When a routine
+            // type IS present (e.g. `multi sub (...)`), it's definitely a declaration.
+            if after_type.starts_with('(') && after_type != after_kw_ws {
+                return Err(PError::fatal(format!(
+                    "FATAL:X::Anon::Multi: An anonymous routine may not take a {} declarator",
+                    declarator
+                )));
+            }
+            // `(` directly after the declarator keyword could be a function call;
+            // don't emit fatal — allow fallback to expression parsing.
         }
     }
     Err(PError::expected("anonymous multi check"))

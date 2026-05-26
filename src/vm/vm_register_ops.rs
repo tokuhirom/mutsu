@@ -1053,6 +1053,11 @@ impl VM {
             // earlier block), clear the suppression before running the class body
             // so that references to the class name inside the body can resolve.
             self.interpreter.unsuppress_name(&resolved_name);
+            // TODO: Detect redeclaration of package-scoped classes across
+            // EVAL boundaries (X::Redeclaration). Currently deferred because
+            // distinguishing EVAL re-definitions from normal re-execution
+            // (e.g., anonymous classes in loops, augment) requires tracking
+            // compilation unit boundaries.
             let deferred_traits = self.interpreter.register_class_decl(
                 &qualified_name,
                 parents,

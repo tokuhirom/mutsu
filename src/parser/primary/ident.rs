@@ -1862,29 +1862,27 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     ));
                 }
             }
-            // multi { } or multi ( )
-            if r.starts_with('{') || r.starts_with('(') {
+            // multi { } — anonymous multi with block, always invalid
+            if r.starts_with('{') {
                 return Err(PError::fatal(
                     "FATAL:X::Anon::Multi: An anonymous routine may not take a multi declarator"
                         .to_string(),
                 ));
             }
+            // multi(...) could be a function call if `sub multi` was defined;
+            // don't emit fatal — fall through to normal call parsing.
         }
         "method" => {
             // Anonymous method in expression context: method () { ... } or method { ... }
             let (r, _) = ws(rest)?;
             if r.starts_with('(') {
-                let (r, params_body) = parse_anon_method_with_params(r).map_err(|err| PError {
-                    messages: merge_expected_messages(
-                        "expected anonymous method parameter list/body",
-                        &err.messages,
-                    ),
-                    remaining_len: err.remaining_len.or(Some(r.len())),
-                    exception: None,
-                })?;
-                return Ok((r, params_body));
-            }
-            if r.starts_with('{') {
+                // Try parsing as anonymous method. If it fails (e.g. no block
+                // after params), fall through to treat `method` as a regular
+                // function call (for cases like `sub method {}; method();`).
+                if let Ok((r, params_body)) = parse_anon_method_with_params(r) {
+                    return Ok((r, params_body));
+                }
+            } else if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, make_anon_method(body)));
             }
