@@ -2843,6 +2843,189 @@ impl VM {
         Ok(())
     }
 
+    /// Deep nested index assignment (3+ levels): @a[i][j][k]... = val
+    /// Stack order: [value, idx_outermost, ..., idx_innermost] (innermost on top).
+    /// positional_flags_idx is a constant index holding an array of booleans
+    /// (innermost to outermost) indicating whether each subscript is positional.
+    pub(super) fn exec_index_assign_deep_nested_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        depth: u32,
+        positional_flags_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let var_name = Self::const_str(code, name_idx).to_string();
+        let depth = depth as usize;
+
+        // Pop indices from stack: innermost first (top of stack)
+        let mut indices: Vec<String> = Vec::with_capacity(depth);
+        for _ in 0..depth {
+            let idx = self.stack.pop().unwrap_or(Value::Nil);
+            indices.push(idx.to_string_value());
+        }
+        // indices[0] = innermost, indices[depth-1] = outermost
+
+        let val = self.stack.pop().unwrap_or(Value::Nil);
+
+        // Extract positional flags from constant
+        let flags_val = code.constants[positional_flags_idx as usize].clone();
+        let positional_flags: Vec<bool> = if let Value::Array(arr, _) = &flags_val {
+            arr.iter().map(|v| matches!(v, Value::Bool(true))).collect()
+        } else {
+            vec![true; depth]
+        };
+
+        // Invalidate local cache for the variable
+        if let Some(slot) = self.find_local_slot(code, &var_name)
+            && matches!(self.locals[slot], Value::Array(..) | Value::Hash(..))
+        {
+            self.locals[slot] = Value::Nil;
+        }
+
+        // Ensure the root variable exists
+        if !self.interpreter.env().contains_key(&var_name) {
+            let init = if var_name.starts_with('@') {
+                Value::real_array(Vec::new())
+            } else if var_name.starts_with('%') {
+                Value::hash(std::collections::HashMap::new())
+            } else if positional_flags[0] {
+                Value::real_array(Vec::new())
+            } else {
+                Value::hash(std::collections::HashMap::new())
+            };
+            self.interpreter.env_mut().insert(var_name.clone(), init);
+        }
+
+        // Walk down the chain of indices, autovivifying containers as needed.
+        // We need a mutable reference to the current container at each level.
+        // Use raw pointer traversal to avoid borrow checker issues with nested mutation.
+        let root: *mut Value = self.interpreter.env_mut().get_mut(&var_name).unwrap() as *mut Value;
+
+        let mut current: *mut Value = root;
+
+        // Walk through indices[0..depth-1], autovivifying intermediate containers
+        for level in 0..depth {
+            let key = &indices[level];
+            let is_positional = positional_flags[level];
+
+            if level < depth - 1 {
+                // Intermediate level: autovivify and descend
+                let next_positional = positional_flags[level + 1];
+                unsafe {
+                    match &mut *current {
+                        Value::Array(arr_arc, _) => {
+                            if let Ok(i) = key.parse::<usize>() {
+                                let arr = Arc::make_mut(arr_arc);
+                                if i >= arr.len() {
+                                    arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                                }
+                                // Autovivify if needed
+                                let needs_viv =
+                                    !matches!(&arr[i], Value::Array(..) | Value::Hash(..));
+                                if needs_viv {
+                                    arr[i] = if next_positional {
+                                        Value::real_array(Vec::new())
+                                    } else {
+                                        Value::hash(std::collections::HashMap::new())
+                                    };
+                                }
+                                current = &mut arr[i] as *mut Value;
+                            }
+                        }
+                        Value::Hash(hash_arc) => {
+                            let hash = Arc::make_mut(hash_arc);
+                            if !hash.contains_key(key.as_str()) {
+                                let new_val = if next_positional {
+                                    Value::real_array(Vec::new())
+                                } else {
+                                    Value::hash(std::collections::HashMap::new())
+                                };
+                                hash.insert(key.clone(), new_val);
+                            }
+                            current = hash.get_mut(key.as_str()).unwrap() as *mut Value;
+                        }
+                        _ => {
+                            // Autovivify the root itself if needed
+                            if is_positional {
+                                *current = Value::real_array(Vec::new());
+                            } else {
+                                *current = Value::hash(std::collections::HashMap::new());
+                            }
+                            // Retry this level
+                            match &mut *current {
+                                Value::Array(arr_arc, _) => {
+                                    if let Ok(i) = key.parse::<usize>() {
+                                        let arr = Arc::make_mut(arr_arc);
+                                        if i >= arr.len() {
+                                            arr.resize(
+                                                i + 1,
+                                                Value::Package(Symbol::intern("Any")),
+                                            );
+                                        }
+                                        arr[i] = if next_positional {
+                                            Value::real_array(Vec::new())
+                                        } else {
+                                            Value::hash(std::collections::HashMap::new())
+                                        };
+                                        current = &mut arr[i] as *mut Value;
+                                    }
+                                }
+                                Value::Hash(hash_arc) => {
+                                    let hash = Arc::make_mut(hash_arc);
+                                    let new_val = if next_positional {
+                                        Value::real_array(Vec::new())
+                                    } else {
+                                        Value::hash(std::collections::HashMap::new())
+                                    };
+                                    hash.insert(key.clone(), new_val);
+                                    current = hash.get_mut(key.as_str()).unwrap() as *mut Value;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Final level: assign the value
+                unsafe {
+                    match &mut *current {
+                        Value::Array(arr_arc, _) => {
+                            if let Ok(i) = key.parse::<usize>() {
+                                let arr = Arc::make_mut(arr_arc);
+                                if i >= arr.len() {
+                                    arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                                }
+                                arr[i] = val.clone();
+                            }
+                        }
+                        Value::Hash(hash_arc) => {
+                            let hash = Arc::make_mut(hash_arc);
+                            hash.insert(key.clone(), val.clone());
+                        }
+                        _ => {
+                            // Autovivify at final level
+                            if is_positional {
+                                let mut arr = Vec::new();
+                                if let Ok(i) = key.parse::<usize>() {
+                                    arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                                    arr[i] = val.clone();
+                                }
+                                *current = Value::real_array(arr);
+                            } else {
+                                let mut h = std::collections::HashMap::new();
+                                h.insert(key.clone(), val.clone());
+                                *current = Value::hash(h);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.stack.push(val);
+        Ok(())
+    }
+
     /// Generic index assignment on a stack-computed target.
     /// Stack order: target (bottom), index, value (top).
     /// If the target hash has `__callframe_depth`, routes through set_caller_var.

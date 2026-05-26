@@ -170,6 +170,35 @@ impl Compiler {
         None
     }
 
+    /// Extract a chain of indices from arbitrarily deep nested Index nodes.
+    /// For `@a[0][1][2]` the target of IndexAssign is `Index{target: Index{target: ArrayVar("a"), [0]}, [1]}`.
+    /// This returns `(var_name, vec![(index_expr, is_positional), ...])` from innermost to outermost.
+    /// The outermost index (from IndexAssign itself) is NOT included -- caller adds it.
+    pub(super) fn index_assign_deep_nested_target(
+        target: &Expr,
+    ) -> Option<(String, Vec<(&Expr, bool)>)> {
+        let mut chain: Vec<(&Expr, bool)> = Vec::new();
+        let mut current = target;
+        while let Expr::Index {
+            target: inner_target,
+            index: inner_index,
+            is_positional: inner_is_positional,
+            ..
+        } = current
+        {
+            chain.push((inner_index, *inner_is_positional));
+            current = inner_target;
+        }
+        if chain.len() < 2 {
+            // Single level is handled by index_assign_nested_target
+            return None;
+        }
+        let name = Self::index_assign_target_name(current)?;
+        // Reverse so chain[0] is the innermost (closest to variable)
+        chain.reverse();
+        Some((name, chain))
+    }
+
     /// Hoist sub declarations: emit RegisterSub for all SubDecl statements
     /// before executing the rest of the block, so that `&name` references
     /// are available before the sub declaration appears in source order.

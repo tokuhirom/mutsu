@@ -478,6 +478,7 @@ fn lift_phasers_from_expr(
         | Expr::PositionalPair(inner)
         | Expr::ZenSlice(inner)
         | Expr::Eager(inner)
+        | Expr::Itemize(inner)
         | Expr::Reduction { expr: inner, .. }
         | Expr::IndirectCodeLookup { package: inner, .. }
         | Expr::SymbolicDeref { expr: inner, .. } => {

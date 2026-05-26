@@ -264,6 +264,30 @@ impl Compiler {
                 name_idx,
                 is_positional: outer_positional,
             });
+        } else if let Some((name, chain)) = Self::index_assign_deep_nested_target(target) {
+            // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
+            // chain contains (index_expr, is_positional) from innermost to outermost
+            // We also have the IndexAssign's own (index, outer_positional) as the final level.
+            let depth = (chain.len() + 1) as u32; // +1 for the outermost from IndexAssign
+            // Build positional flags array: innermost to outermost
+            let mut flags: Vec<Value> = chain.iter().map(|(_, p)| Value::Bool(*p)).collect();
+            flags.push(Value::Bool(outer_positional));
+            let positional_flags_idx = self.code.add_constant(Value::Array(
+                Arc::new(flags),
+                crate::value::ArrayKind::Array,
+            ));
+            // Stack order: [value, idx_outermost, ..., idx_innermost]
+            self.compile_expr(value);
+            self.compile_expr(index); // outermost
+            for (idx_expr, _) in chain.iter().rev() {
+                self.compile_expr(idx_expr);
+            }
+            let name_idx = self.code.add_constant(Value::str(name));
+            self.code.emit(OpCode::IndexAssignDeepNested {
+                name_idx,
+                depth,
+                positional_flags_idx,
+            });
         } else if let Some((name, inner_index, inner_positional)) =
             Self::index_assign_nested_target(target)
         {

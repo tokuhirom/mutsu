@@ -1567,13 +1567,13 @@ impl VM {
             OpCode::Itemize => {
                 // Wrap Array/List values in their itemized (Scalar-container)
                 // variant so they are treated as single items in list context.
-                // Hash is already an item (not flattened in list context), so
-                // it is left unchanged.
+                // Hash is wrapped in Scalar so it won't be flattened.
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let itemized = match val {
                     Value::Array(items, kind) if !kind.is_itemized() => {
                         Value::Array(items, kind.itemize())
                     }
+                    Value::Hash(h) => Value::Scalar(Box::new(Value::Hash(h))),
                     other => other,
                 };
                 self.stack.push(itemized);
@@ -2719,6 +2719,19 @@ impl VM {
                     *name_idx,
                     *outer_positional,
                     *inner_positional,
+                )?;
+                *ip += 1;
+            }
+            OpCode::IndexAssignDeepNested {
+                name_idx,
+                depth,
+                positional_flags_idx,
+            } => {
+                self.exec_index_assign_deep_nested_op(
+                    code,
+                    *name_idx,
+                    *depth,
+                    *positional_flags_idx,
                 )?;
                 *ip += 1;
             }

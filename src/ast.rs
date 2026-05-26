@@ -323,6 +323,9 @@ pub(crate) enum Expr {
     },
     Gather(Vec<Stmt>),
     Eager(Box<Expr>),
+    /// Item context coercion: `$%hash` or `$@array` — wraps value in Scalar container
+    /// so it won't be flattened in list context.
+    Itemize(Box<Expr>),
     Reduction {
         op: String,
         expr: Box<Expr>,
@@ -1112,7 +1115,9 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(expr, out);
             collect_ph_expr(value, out);
         }
-        Expr::Reduction { expr, .. } | Expr::Eager(expr) => collect_ph_expr(expr, out),
+        Expr::Reduction { expr, .. } | Expr::Eager(expr) | Expr::Itemize(expr) => {
+            collect_ph_expr(expr, out)
+        }
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
         | Expr::MetaOp { left, right, .. } => {
@@ -1391,7 +1396,9 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Expr::Reduction { expr, .. } | Expr::Eager(expr) => collect_ph_expr_shallow(expr, out),
+        Expr::Reduction { expr, .. } | Expr::Eager(expr) | Expr::Itemize(expr) => {
+            collect_ph_expr_shallow(expr, out)
+        }
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
         | Expr::MetaOp { left, right, .. } => {
