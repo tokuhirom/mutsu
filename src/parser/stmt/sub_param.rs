@@ -1682,6 +1682,17 @@ fn method_decl_body_with_my(
                 }
             }),
             handles: traits.handles.clone(),
+            custom_traits: traits
+                .custom_traits
+                .iter()
+                .filter(|(t, _)| {
+                    t != "default"
+                        && t != "DEPRECATED"
+                        && !t.starts_with("DEPRECATED:")
+                        && !t.starts_with("__")
+                })
+                .cloned()
+                .collect(),
         },
     ))
 }

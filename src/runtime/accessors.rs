@@ -580,6 +580,11 @@ impl Interpreter {
         &mut self.env
     }
 
+    /// Get a cloned copy of the persisted closure env for a given closure id.
+    pub(crate) fn get_closure_env_override(&self, id: u64) -> Option<crate::env::Env> {
+        self.closure_env_overrides.get(&id).cloned()
+    }
+
     /// Check whether a sub has an active (non-empty) wrap chain.
     pub(crate) fn has_wrap_chain(&self, sub_id: u64) -> bool {
         self.wrap_chains.get(&sub_id).is_some_and(|c| !c.is_empty())
@@ -1071,7 +1076,7 @@ impl Interpreter {
                 None
             }
         });
-        let is_multi = if def.is_none() {
+        let is_multi = if def.is_none() && !self.has_proto(lookup_name) {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
             let prefix_local = format!("{}::{}/", self.current_package, lookup_name);
             let prefix_global = format!("GLOBAL::{}/", lookup_name);
@@ -1083,12 +1088,44 @@ impl Interpreter {
             false
         };
         if is_multi {
-            // Multi subs should resolve via the dispatcher at call time
-            Value::Routine {
-                package: Symbol::intern(&self.current_package),
-                name: Symbol::intern(lookup_name),
-                is_regex: false,
+            // Multi subs: create a Sub that captures all candidates so the
+            // callable works even after the defining scope exits.
+            let candidates = self.resolve_all_multi_candidates(lookup_name);
+            let mut candidate_subs = Vec::new();
+            for cand in &candidates {
+                let captured_env = self.env.clone();
+                let sub_val = Value::make_sub(
+                    cand.package,
+                    cand.name,
+                    cand.params.clone(),
+                    cand.param_defs.clone(),
+                    cand.body.clone(),
+                    cand.is_rw,
+                    captured_env,
+                );
+                candidate_subs.push(sub_val);
             }
+            let mut dispatcher_env = self.env.clone();
+            dispatcher_env.insert(
+                "__mutsu_multi_dispatch_candidates".to_string(),
+                Value::Array(
+                    std::sync::Arc::new(candidate_subs),
+                    crate::value::ArrayKind::List,
+                ),
+            );
+            dispatcher_env.insert(
+                "__mutsu_multi_dispatch_name".to_string(),
+                Value::str(lookup_name.to_string()),
+            );
+            Value::make_sub(
+                Symbol::intern(&self.current_package),
+                Symbol::intern(lookup_name),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                false,
+                dispatcher_env,
+            )
         } else if self.has_proto(lookup_name)
             || self.resolve_token_defs(lookup_name).is_some()
             || self.has_proto_token(lookup_name)

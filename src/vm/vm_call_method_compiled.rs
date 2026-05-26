@@ -906,9 +906,26 @@ impl VM {
             remaining,
             args: call_args.clone(),
         };
+        let wrapper_id = if let Value::Sub(ref wd) = outermost {
+            Some(wd.id)
+        } else {
+            None
+        };
         self.interpreter.push_wrap_dispatch_frame(frame);
         let result = self.interpreter.call_sub_value(outermost, call_args, false);
         self.interpreter.pop_wrap_dispatch_frame();
+        // Propagate closure variable mutations from the wrapper back to the
+        // current env so captured variables are visible to the caller.
+        if let Some(wid) = wrapper_id
+            && let Some(persisted) = self.interpreter.get_closure_env_override(wid)
+        {
+            for (k, v) in persisted.iter() {
+                if self.interpreter.env().contains_key_sym(*k) {
+                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                }
+            }
+            self.env_dirty = true;
+        }
         if pushed_dispatch {
             self.interpreter.pop_method_dispatch();
         }
