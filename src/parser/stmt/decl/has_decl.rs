@@ -178,6 +178,17 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (mut rest, _) = ws(rest)?;
 
+    // `of` type constraint can appear before `is` traits: `has $.a of Int is rw`
+    if type_constraint.is_none()
+        && let Some(r) = keyword("of", rest)
+        && let Ok((r, _)) = ws1(r)
+        && let Some((r, tc)) = parse_type_constraint_expr(r)
+    {
+        let (r, _) = ws(r)?;
+        type_constraint = Some(tc);
+        rest = r;
+    }
+
     // `is` traits (may have multiple: `is rw is required`)
     // Traits come before default value: `has $.x is rw = 42`
     let mut is_rw = false;
@@ -379,9 +390,8 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    // Postfix container typing: has @.a of Int; has %.h of Str;
-    if (sigil == b'@' || sigil == b'%')
-        && type_constraint.is_none()
+    // Postfix container typing: has $.a of Int; has @.a of Int; has %.h of Str;
+    if type_constraint.is_none()
         && let Some(r) = keyword("of", rest)
     {
         let (r, _) = ws1(r)?;

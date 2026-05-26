@@ -1427,6 +1427,53 @@ impl Interpreter {
                         if let Ok(val) =
                             self.eval_block_value(&[Stmt::Expr(is_default_expr.clone())])
                         {
+                            // Type-check the default value against the attribute's type constraint
+                            if let Some(tc) = type_constraint {
+                                let type_ok = if matches!(val, Value::Nil) {
+                                    // Nil is only valid for untyped or Nil-accepting attributes
+                                    tc == "Any" || tc == "Mu" || tc.contains("Nil")
+                                } else {
+                                    self.type_matches_value(tc, &val)
+                                };
+                                if !type_ok {
+                                    let mut attrs = std::collections::HashMap::new();
+                                    attrs.insert(
+                                        "message".to_string(),
+                                        Value::str(format!(
+                                            "Type check failed in assignment to attribute; expected {} but got {}",
+                                            tc, super::utils::value_type_name(&val)
+                                        )),
+                                    );
+                                    attrs.insert(
+                                        "expected".to_string(),
+                                        Value::Package(crate::symbol::Symbol::intern(tc)),
+                                    );
+                                    attrs.insert(
+                                        "got".to_string(),
+                                        if matches!(val, Value::Nil) {
+                                            Value::Nil
+                                        } else {
+                                            val.clone()
+                                        },
+                                    );
+                                    let err = Value::make_instance(
+                                        crate::symbol::Symbol::intern(
+                                            "X::TypeCheck::Attribute::Default",
+                                        ),
+                                        attrs,
+                                    );
+                                    let mut runtime_err = RuntimeError::new(format!(
+                                        "X::TypeCheck::Attribute::Default: Type check failed for default value of attribute '{}'; expected {}, got {}",
+                                        attr_name_str,
+                                        tc,
+                                        super::utils::value_type_name(&val)
+                                    ));
+                                    runtime_err.exception = Some(Box::new(err));
+                                    self.current_package = saved_package;
+                                    self.env = saved_env;
+                                    return Err(runtime_err);
+                                }
+                            }
                             self.class_attribute_defaults
                                 .insert((name.to_string(), attr_name_str.clone()), val);
                         }

@@ -1275,8 +1275,11 @@ impl Interpreter {
                     && self
                         .class_attribute_default(&class_name.resolve(), method)
                         .is_some();
+                // Nil assigned to a typed attribute restores the type object default
+                let nil_restores_type = matches!(value, Value::Nil) && !nil_has_default;
                 if attr_sigil == '$'
                     && !nil_has_default
+                    && !nil_restores_type
                     && let Some(type_constraint) =
                         self.get_attr_type_constraint(&class_name.resolve(), method)
                     && !self.type_matches_value(&type_constraint, &value)
@@ -1334,6 +1337,14 @@ impl Interpreter {
                         .cloned()
                 {
                     assigned_value = def;
+                }
+                // When Nil is assigned to a typed attribute without `is default`,
+                // restore the type object (e.g., Nil -> Int for `has Int $.a`).
+                if matches!(assigned_value, Value::Nil)
+                    && attr_sigil == '$'
+                    && let Some(tc) = self.get_attr_type_constraint(&class_name.resolve(), method)
+                {
+                    assigned_value = Value::Package(crate::symbol::Symbol::intern(&tc));
                 }
                 updated.insert(attr_key.clone(), assigned_value.clone());
                 // Always propagate the change to all env bindings referencing
