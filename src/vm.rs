@@ -1307,20 +1307,18 @@ impl VM {
                         // find the binding.
                         self.interpreter
                             .set_our_var(name.clone(), container.clone());
-                        // Find existing qualified our_var keys that end with
-                        // "::<name>" and update them to share the ContainerRef.
-                        {
-                            let suffix = format!("::{}", name);
-                            let qualified_keys: Vec<String> = self
-                                .interpreter
-                                .our_vars_iter()
-                                .filter(|(k, _)| k.ends_with(&suffix))
-                                .map(|(k, _)| k.clone())
-                                .collect();
-                            for qk in qualified_keys {
-                                self.interpreter.set_our_var(qk.clone(), container.clone());
-                                // Also store in env so methods see the ContainerRef
-                                self.interpreter.env_mut().insert(qk, container.clone());
+                        // Update the package-qualified our_var key (e.g., "K::x"
+                        // for bare "x" in class K) so GetGlobal fallback can find
+                        // the binding. Only match the exact class from the method
+                        // class stack to avoid clobbering unrelated package vars.
+                        if let Some(method_class) = self.interpreter.method_class_stack_top() {
+                            let qualified = format!("{}::{}", method_class, name);
+                            if self.interpreter.get_our_var(&qualified).is_some() {
+                                self.interpreter
+                                    .set_our_var(qualified.clone(), container.clone());
+                                self.interpreter
+                                    .env_mut()
+                                    .insert(qualified, container.clone());
                             }
                         }
                         *ip += 1;
