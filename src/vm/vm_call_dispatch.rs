@@ -747,6 +747,19 @@ impl VM {
             }
         }
 
+        // Save env values for function locals BEFORE binding params, so we
+        // capture the caller's original values. This ensures correct restore
+        // when a function parameter has the same name as a caller's variable.
+        let saved_env_locals: Vec<(String, Option<Value>)> = cf
+            .code
+            .locals
+            .iter()
+            .map(|name| {
+                let old = self.interpreter.env().get(name).cloned();
+                (name.clone(), old)
+            })
+            .collect();
+
         // Bind params to locals only (skip env writes for performance).
         // The env will be synced lazily via ensure_env_synced if needed.
         // Save old env values for param names so we can restore them after
@@ -800,20 +813,6 @@ impl VM {
                 self.mark_local_dirty(*slot);
             }
         }
-
-        // Save env values for function locals so we can restore them after
-        // the function returns. This prevents function-local variables from
-        // leaking into the caller's env (the positional light path does not
-        // save/restore env unlike call_compiled_function_named).
-        let saved_env_locals: Vec<(String, Option<Value>)> = cf
-            .code
-            .locals
-            .iter()
-            .map(|name| {
-                let old = self.interpreter.env().get(name).cloned();
-                (name.clone(), old)
-            })
-            .collect();
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.interpreter.let_saves_len();

@@ -1536,10 +1536,8 @@ impl CompiledFunction {
     /// from captured outer vars in the positional light call path.
     pub(crate) fn compute_declared_locals(&mut self) {
         let mut declared = std::collections::HashSet::new();
-        // Parameters are always function-local
-        for pd in &self.param_defs {
-            declared.insert(pd.name.clone());
-        }
+        // Parameters are always function-local (including sub-signature params)
+        Self::collect_param_names(&self.param_defs, &mut declared);
         for p in &self.params {
             declared.insert(p.clone());
         }
@@ -1553,5 +1551,19 @@ impl CompiledFunction {
             }
         }
         self.declared_locals = Some(declared);
+    }
+
+    /// Recursively collect parameter names from param_defs, including
+    /// sub-signature parameters (e.g. `[$p, *@r]` in array unpacking).
+    fn collect_param_names(
+        param_defs: &[crate::ast::ParamDef],
+        declared: &mut std::collections::HashSet<String>,
+    ) {
+        for pd in param_defs {
+            declared.insert(pd.name.clone());
+            if let Some(ref sub_sig) = pd.sub_signature {
+                Self::collect_param_names(sub_sig, declared);
+            }
+        }
     }
 }

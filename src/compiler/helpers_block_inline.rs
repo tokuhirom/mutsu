@@ -44,11 +44,10 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    Stmt::Block(_) | Stmt::SyntheticBlock(_) => {
-                        // Nested bare blocks need BlockScope for proper lexical
-                        // scoping (e.g. $OUTER:: access). Use compile_stmt to
-                        // ensure BlockScope is emitted.
-                        self.compile_stmt(stmt);
+                    Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                        // Nested bare blocks in final position should keep flowing
+                        // their final value outward.
+                        self.compile_block_inline(inner);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
