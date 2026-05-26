@@ -1,6 +1,21 @@
 use super::*;
 
 impl Compiler {
+    /// Compile a CHECK phaser body wrapped in error-catching logic.
+    /// If the body throws, the error is wrapped in X::Comp::BeginTime.
+    pub(super) fn compile_check_phaser(&mut self, body: &[Stmt]) {
+        let start_idx = self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 });
+        for s in body {
+            self.compile_stmt(s);
+        }
+        self.code.emit(OpCode::CheckPhaserEnd);
+        // Patch the end_ip to point to after the CheckPhaserEnd
+        let end_ip = self.code.ops.len() as u32;
+        if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx] {
+            *e = end_ip;
+        }
+    }
+
     pub(super) fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
             matches!(

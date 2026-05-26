@@ -182,9 +182,30 @@ pub(crate) struct VM {
     otf_call_cache: HashMap<Symbol, CompiledFunction>,
     /// The generation at which otf_call_cache was last valid.
     otf_call_cache_gen: u64,
+    /// Depth counter for CHECK phaser scope. When > 0, runtime errors should
+    /// be wrapped in X::Comp::BeginTime before propagating.
+    check_phaser_depth: u32,
 }
 
 impl VM {
+    /// Wrap a runtime error in X::Comp::BeginTime (used for errors inside CHECK phasers).
+    fn wrap_in_begin_time(inner: RuntimeError) -> RuntimeError {
+        use std::collections::HashMap;
+        let inner_exception = inner
+            .exception
+            .as_ref()
+            .map(|e| e.as_ref().clone())
+            .unwrap_or_else(|| Value::str(inner.message.clone()));
+        let msg = format!(
+            "An exception occurred while evaluating a CHECK\nException details:\n  {}",
+            inner.message
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("exception".to_string(), inner_exception);
+        RuntimeError::typed("X::Comp::BeginTime", attrs)
+    }
+
     /// Mark a Failure on top of the stack as handled (used by boolean/defined checks).
     fn mark_failure_handled_on_stack(stack: &mut [Value]) {
         if let Some(Value::Instance {
@@ -345,6 +366,7 @@ impl VM {
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),
             otf_call_cache_gen: 0,
+            check_phaser_depth: 0,
         }
     }
 
@@ -400,10 +422,14 @@ impl VM {
                 // for an enclosing routine that will catch it via its own
                 // call-frame handling further up the stack.
                 if e.is_return && self.interpreter.routine_stack().is_empty() {
-                    return (
-                        self.interpreter,
-                        Err(RuntimeError::controlflow_return(true)),
-                    );
+                    let inner_err = RuntimeError::controlflow_return(true);
+                    if self.check_phaser_depth > 0 {
+                        return (self.interpreter, Err(Self::wrap_in_begin_time(inner_err)));
+                    }
+                    return (self.interpreter, Err(inner_err));
+                }
+                if self.check_phaser_depth > 0 {
+                    return (self.interpreter, Err(Self::wrap_in_begin_time(e)));
                 }
                 return (self.interpreter, Err(e));
             }
@@ -3191,6 +3217,16 @@ impl VM {
             // -- Phaser END --
             OpCode::PhaserEnd { idx, site_id } => {
                 self.exec_phaser_end_op(code, *idx, *site_id);
+                *ip += 1;
+            }
+
+            // -- CHECK Phaser scope --
+            OpCode::CheckPhaserStart { .. } => {
+                self.check_phaser_depth += 1;
+                *ip += 1;
+            }
+            OpCode::CheckPhaserEnd => {
+                self.check_phaser_depth = self.check_phaser_depth.saturating_sub(1);
                 *ip += 1;
             }
 

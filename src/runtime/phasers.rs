@@ -758,10 +758,15 @@ fn reorder_at_level(
     // Extra BEGIN from lifted phasers (e.g. inside string interpolation blocks).
     stmts.extend(extra_begin);
     for body in check.iter().rev() {
-        stmts.extend(body.iter().cloned());
+        stmts.push(Stmt::Phaser {
+            kind: PhaserKind::Check,
+            body: body.clone(),
+        });
     }
     // Extra CHECK from lifted phasers.
-    // Each phaser is a VarDecl+Assign pair. Reverse by pairs for CHECK order.
+    // Each phaser is a VarDecl+Assign pair. They must remain as raw statements
+    // (not wrapped in Stmt::Phaser) so that the EVAL second-pass insert_pos
+    // logic correctly places BEGIN before CHECK via VarDecl matching.
     // TODO: For multiple CHECK PhaserExprs, pairs should be reversed.
     // For now, just extend in forward order (correct for single CHECK).
     stmts.extend(extra_check);
