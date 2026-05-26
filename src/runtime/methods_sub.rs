@@ -496,6 +496,19 @@ impl Interpreter {
             return Some(Ok(Value::Sub(std::sync::Arc::new(next))));
         }
         if method == "candidates" && args.is_empty() {
+            // Multi-dispatch dispatcher: try name-based lookup first (preserves doc comments)
+            if let Some(Value::Str(disp_name)) = data.env.get("__mutsu_multi_dispatch_name") {
+                let name_based =
+                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
+                if !name_based.is_empty() {
+                    return Some(Ok(Value::array(name_based)));
+                }
+            }
+            // Fall back to captured candidates (for out-of-scope multi subs)
+            if let Some(Value::Array(cands, _)) = data.env.get("__mutsu_multi_dispatch_candidates")
+            {
+                return Some(Ok(Value::array(cands.to_vec())));
+            }
             if let Some(Value::Str(cls)) = data.env.get("__mutsu_lookup_class")
                 && let Some(Value::Str(meth)) = data.env.get("__mutsu_lookup_method")
             {
@@ -505,6 +518,30 @@ impl Interpreter {
             return Some(Ok(Value::array(vec![target.clone()])));
         }
         if method == "cando" && args.len() == 1 {
+            // Multi-dispatch dispatcher: try name-based lookup first
+            if let Some(Value::Str(disp_name)) = data.env.get("__mutsu_multi_dispatch_name") {
+                let name_based =
+                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
+                if !name_based.is_empty() {
+                    let call_args = Self::capture_to_call_args(&args[0]);
+                    let matches: Vec<Value> = name_based
+                        .into_iter()
+                        .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                        .collect();
+                    return Some(Ok(Value::array(matches)));
+                }
+            }
+            // Fall back to captured candidates
+            if let Some(Value::Array(cands, _)) = data.env.get("__mutsu_multi_dispatch_candidates")
+            {
+                let call_args = Self::capture_to_call_args(&args[0]);
+                let matches: Vec<Value> = cands
+                    .iter()
+                    .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                    .cloned()
+                    .collect();
+                return Some(Ok(Value::array(matches)));
+            }
             let call_args = Self::capture_to_call_args(&args[0]);
             let matches = if self.candidate_matches_call_args(target, &call_args) {
                 vec![target.clone()]
@@ -514,6 +551,45 @@ impl Interpreter {
             return Some(Ok(Value::array(matches)));
         }
         if method == "signature" && args.is_empty() {
+            // Multi-dispatch dispatcher: try name-based lookup first
+            if let Some(Value::Str(disp_name)) = data.env.get("__mutsu_multi_dispatch_name") {
+                let name_based =
+                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
+                if !name_based.is_empty() {
+                    let sigs: Vec<Value> = name_based
+                        .iter()
+                        .filter_map(|c| {
+                            if let Value::Sub(cd) = c {
+                                Some(self.sub_signature_value(cd))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if sigs.len() == 1 {
+                        return Some(Ok(sigs.into_iter().next().unwrap()));
+                    }
+                    return Some(Ok(Value::junction(crate::value::JunctionKind::Any, sigs)));
+                }
+            }
+            // Fall back to captured candidates
+            if let Some(Value::Array(cands, _)) = data.env.get("__mutsu_multi_dispatch_candidates")
+            {
+                let sigs: Vec<Value> = cands
+                    .iter()
+                    .filter_map(|c| {
+                        if let Value::Sub(cd) = c {
+                            Some(self.sub_signature_value(cd))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if sigs.len() == 1 {
+                    return Some(Ok(sigs.into_iter().next().unwrap()));
+                }
+                return Some(Ok(Value::junction(crate::value::JunctionKind::Any, sigs)));
+            }
             return Some(Ok(self.sub_signature_value(data)));
         }
         if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
