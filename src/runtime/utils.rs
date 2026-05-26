@@ -452,13 +452,7 @@ pub(crate) fn version_cmp_parts(
 }
 
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
-    let mix_weight_value = |weight: f64| {
-        if weight.is_finite() && weight.fract() == 0.0 {
-            Value::Int(weight as i64)
-        } else {
-            Value::Num(weight)
-        }
-    };
+    let mix_weight_value = crate::value::mix_weight_to_value;
     match value {
         Value::Hash(_) => value,
         Value::Scalar(inner) => coerce_to_hash(*inner),

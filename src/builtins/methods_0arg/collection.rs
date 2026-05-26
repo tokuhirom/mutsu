@@ -159,7 +159,7 @@ fn invert_value(target: &Value) -> Option<Value> {
         Value::Mix(items, _) => {
             for (k, weight) in items.iter() {
                 result.push(make_inverted_pair(
-                    Value::Num(*weight),
+                    crate::value::mix_weight_to_value(*weight),
                     Value::str(k.clone()),
                 ));
             }
@@ -326,7 +326,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
                 for (k, v) in m.iter() {
-                    map.insert(k.clone(), Value::Num(*v));
+                    map.insert(k.clone(), crate::value::mix_weight_to_value(*v));
                     let typed = m.typed_key(k);
                     if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
                         original_keys.insert(k.clone(), typed);
@@ -376,10 +376,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    // Check if this is a Set/Bag-derived object hash where keys
+                    // Check if this is a Set/Bag/Mix-derived object hash where keys
                     // should be returned as their original typed values.
                     // Set-derived: all values are Bool(true) + original keys exist.
-                    // Bag-derived: flagged with __baggy_hash marker in original keys.
+                    // Bag/Mix-derived: flagged with __mutsu_typed_key_hash__ marker.
                     let original_keys = crate::runtime::utils::hash_original_keys_snapshot(target);
                     let is_typed_key_hash = if let Some(ref orig) = original_keys {
                         orig.contains_key("__mutsu_typed_key_hash__")
@@ -441,7 +441,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     b.values().map(|v| Value::Int(*v)).collect(),
                 ))),
                 Value::Mix(m, _) => Some(Ok(Value::array(
-                    m.values().map(|v| Value::Num(*v)).collect(),
+                    m.values()
+                        .map(|v| crate::value::mix_weight_to_value(*v))
+                        .collect(),
                 ))),
                 Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => {
@@ -504,7 +506,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     let mut kv = Vec::new();
                     for (k, v) in m.iter() {
                         kv.push(Value::str(k.clone()));
-                        kv.push(Value::Num(*v));
+                        kv.push(crate::value::mix_weight_to_value(*v));
                     }
                     Some(Ok(Value::array(kv)))
                 }
@@ -564,7 +566,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ))),
                 Value::Mix(m, _) => Some(Ok(Value::array(
                     m.iter()
-                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
+                        .map(|(k, v)| {
+                            Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v)))
+                        })
                         .collect(),
                 ))),
                 Value::Pair(_, _) | Value::ValuePair(_, _) => {

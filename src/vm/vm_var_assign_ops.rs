@@ -524,23 +524,28 @@ impl VM {
         }
     }
 
-    fn mix_assignment_weight(value: &Value) -> f64 {
+    fn mix_assignment_weight(value: &Value) -> Result<f64, RuntimeError> {
         match value {
-            Value::Int(i) => *i as f64,
-            Value::Num(n) => *n,
-            Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-            Value::Bool(flag) => {
-                if *flag {
-                    1.0
+            Value::Int(i) => Ok(*i as f64),
+            Value::Num(n) => Ok(*n),
+            Value::Rat(n, d) if *d != 0 => Ok(*n as f64 / *d as f64),
+            Value::Bool(flag) => Ok(if *flag { 1.0 } else { 0.0 }),
+            Value::Str(s) => {
+                // Try to parse as numeric; throw X::Str::Numeric on failure
+                if let Ok(n) = s.parse::<f64>() {
+                    Ok(n)
                 } else {
-                    0.0
+                    Err(RuntimeError::str_numeric(
+                        s,
+                        "base-10 number must begin with valid digits or '.'",
+                    ))
                 }
             }
             _ => {
                 if value.truthy() {
-                    1.0
+                    Ok(1.0)
                 } else {
-                    0.0
+                    Ok(0.0)
                 }
             }
         }
@@ -1301,13 +1306,9 @@ impl VM {
                         Value::Nil
                     }
                 }
-                Value::Mix(mix, _) => mix.get(&key).map_or(Value::Int(0), |w| {
-                    if (*w - (*w as i64 as f64)).abs() < f64::EPSILON {
-                        Value::Int(*w as i64)
-                    } else {
-                        Value::Num(*w)
-                    }
-                }),
+                Value::Mix(mix, _) => mix
+                    .get(&key)
+                    .map_or(Value::Int(0), |w| Self::mix_weight_as_value(*w)),
                 Value::Set(set, _) => {
                     if set.contains(&key) {
                         Value::Bool(true)
@@ -1378,9 +1379,10 @@ impl VM {
                         if !*is_mutable {
                             return Err(RuntimeError::assignment_ro(Some("Mix")));
                         }
+                        let weight = Self::mix_assignment_weight(&new_val)?;
                         let m = Arc::make_mut(mix);
                         if new_val.truthy() {
-                            m.insert(key.clone(), Self::mix_assignment_weight(&new_val));
+                            m.insert(key.clone(), weight);
                         } else {
                             m.remove(&key);
                         }
@@ -1414,6 +1416,41 @@ impl VM {
                         }
                         true
                     }
+                    // Autovivify typed variables: `my MixHash $mh; $mh<key>++`
+                    Value::Package(sym) => {
+                        let type_name = sym.resolve();
+                        match type_name.as_str() {
+                            "MixHash" => {
+                                let mut weights = HashMap::new();
+                                let weight = Self::mix_assignment_weight(&new_val)?;
+                                if new_val.truthy() {
+                                    weights.insert(key.clone(), weight);
+                                }
+                                *container_value = Value::mix_hash(weights);
+                                true
+                            }
+                            "BagHash" => {
+                                let mut counts = HashMap::new();
+                                if let Value::Int(n) = &new_val
+                                    && *n > 0
+                                {
+                                    counts.insert(key.clone(), *n);
+                                }
+                                *container_value = Value::bag_hash(counts);
+                                true
+                            }
+                            "SetHash" => {
+                                let mut items = std::collections::HashSet::new();
+                                if new_val.truthy() {
+                                    items.insert(key.clone());
+                                }
+                                *container_value =
+                                    Value::Set(Arc::new(crate::value::SetData::new(items)), true);
+                                true
+                            }
+                            _ => false,
+                        }
+                    }
                     _ => false,
                 }
             } else {
@@ -1423,6 +1460,47 @@ impl VM {
             // Update local slot to match the modified env value
             if let Some(val) = self.interpreter.env().get(&name).cloned() {
                 self.update_local_if_exists(code, &name, &val);
+            }
+        } else {
+            // Autovivify typed containers for inc/dec on undefined variables
+            let constraint = self.interpreter.var_type_constraint(&name);
+            let effective_type = declared_type_incdec.as_deref().or(constraint.as_deref());
+            if let Some(type_name) = effective_type
+                && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
+            {
+                let new_container = match type_name {
+                    "MixHash" => {
+                        let mut weights = HashMap::new();
+                        let weight = Self::mix_assignment_weight(&new_val)?;
+                        if new_val.truthy() {
+                            weights.insert(key.clone(), weight);
+                        }
+                        Value::mix_hash(weights)
+                    }
+                    "BagHash" => {
+                        let mut counts = HashMap::new();
+                        if let Value::Int(n) = &new_val
+                            && *n > 0
+                        {
+                            counts.insert(key.clone(), *n);
+                        }
+                        Value::bag_hash(counts)
+                    }
+                    "SetHash" => {
+                        let mut items = std::collections::HashSet::new();
+                        if new_val.truthy() {
+                            items.insert(key.clone());
+                        }
+                        Value::Set(Arc::new(crate::value::SetData::new(items)), true)
+                    }
+                    _ => unreachable!(),
+                };
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), new_container);
+                if let Some(val) = self.interpreter.env().get(&name).cloned() {
+                    self.update_local_if_exists(code, &name, &val);
+                }
             }
         }
         if return_new {
@@ -2261,6 +2339,56 @@ impl VM {
                         .env_mut()
                         .insert(var_name.clone(), hash_val);
                 }
+                // Autovivify Nil-valued typed containers (MixHash, BagHash, SetHash)
+                // before the main container dispatch so they are handled correctly.
+                {
+                    let constraint = self.interpreter.var_type_constraint(&var_name);
+                    let effective_type = declared_type.as_deref().or(constraint.as_deref());
+                    if let Some(type_name) = effective_type
+                        && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
+                        && matches!(
+                            self.interpreter.env().get(&var_name),
+                            Some(Value::Nil) | Some(Value::Package(_)) | None
+                        )
+                    {
+                        let new_container = match type_name {
+                            "MixHash" => {
+                                let mut weights = HashMap::new();
+                                let weight = Self::mix_assignment_weight(&val)?;
+                                if weight != 0.0 {
+                                    weights.insert(key.clone(), weight);
+                                }
+                                Value::mix_hash(weights)
+                            }
+                            "BagHash" => {
+                                let mut counts = HashMap::new();
+                                if let Value::Int(n) = &val
+                                    && *n > 0
+                                {
+                                    counts.insert(key.clone(), *n);
+                                }
+                                Value::bag_hash(counts)
+                            }
+                            "SetHash" => {
+                                let mut items = std::collections::HashSet::new();
+                                if val.truthy() {
+                                    items.insert(key.clone());
+                                }
+                                Value::Set(Arc::new(crate::value::SetData::new(items)), true)
+                            }
+                            _ => unreachable!(),
+                        };
+                        self.interpreter
+                            .env_mut()
+                            .insert(var_name.clone(), new_container);
+                        self.stack.push(val);
+                        // Update local slot
+                        if let Some(new_val) = self.interpreter.env().get(&var_name).cloned() {
+                            self.update_local_if_exists(code, &var_name, &new_val);
+                        }
+                        return Ok(());
+                    }
+                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
@@ -2453,11 +2581,50 @@ impl VM {
                                 return Err(RuntimeError::assignment_ro(Some("Mix")));
                             }
                             let m = Arc::make_mut(mix);
-                            let weight = Self::mix_assignment_weight(&val);
+                            let weight = Self::mix_assignment_weight(&val)?;
                             if weight == 0.0 {
                                 m.remove(&key);
                             } else {
                                 m.insert(key.clone(), weight);
+                            }
+                        }
+                        // Autovivify typed containers: MixHash, BagHash, SetHash
+                        Value::Package(sym)
+                            if matches!(
+                                sym.resolve().as_str(),
+                                "MixHash" | "BagHash" | "SetHash"
+                            ) =>
+                        {
+                            let type_name = sym.resolve();
+                            match type_name.as_str() {
+                                "MixHash" => {
+                                    let mut weights = HashMap::new();
+                                    let weight = Self::mix_assignment_weight(&val)?;
+                                    if weight != 0.0 {
+                                        weights.insert(key.clone(), weight);
+                                    }
+                                    *container = Value::mix_hash(weights);
+                                }
+                                "BagHash" => {
+                                    let mut counts = HashMap::new();
+                                    if let Value::Int(n) = &val
+                                        && *n > 0
+                                    {
+                                        counts.insert(key.clone(), *n);
+                                    }
+                                    *container = Value::bag_hash(counts);
+                                }
+                                "SetHash" => {
+                                    let mut items = std::collections::HashSet::new();
+                                    if val.truthy() {
+                                        items.insert(key.clone());
+                                    }
+                                    *container = Value::Set(
+                                        Arc::new(crate::value::SetData::new(items)),
+                                        true,
+                                    );
+                                }
+                                _ => unreachable!(),
                             }
                         }
                         _ => {

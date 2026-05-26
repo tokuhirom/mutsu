@@ -128,9 +128,15 @@ impl Interpreter {
                         if replace {
                             best_weight = Some(*weight);
                             out.clear();
-                            out.push(Value::Pair(key.clone(), Box::new(Value::Num(*weight))));
+                            out.push(Value::Pair(
+                                key.clone(),
+                                Box::new(crate::value::mix_weight_to_value(*weight)),
+                            ));
                         } else if ord == std::cmp::Ordering::Equal {
-                            out.push(Value::Pair(key.clone(), Box::new(Value::Num(*weight))));
+                            out.push(Value::Pair(
+                                key.clone(),
+                                Box::new(crate::value::mix_weight_to_value(*weight)),
+                            ));
                         }
                     }
                     Value::Seq(Arc::new(out))

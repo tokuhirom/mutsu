@@ -347,11 +347,7 @@ impl Interpreter {
             let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
             let key = ks[idx].clone();
             let weight = remaining.remove(&key).unwrap_or(0.0);
-            let weight_val = if (weight - (weight as i64 as f64)).abs() < f64::EPSILON {
-                Value::Int(weight as i64)
-            } else {
-                Value::Num(weight)
-            };
+            let weight_val = crate::value::mix_weight_to_value(weight);
             grabbed.push(Value::Pair(key, Box::new(weight_val)));
         }
         // TODO: compile to bytecode - should mutate the original variable
