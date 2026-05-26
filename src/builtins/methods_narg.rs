@@ -650,6 +650,16 @@ pub(crate) fn native_method_1arg(
     if let Value::Scalar(inner) = target {
         return native_method_1arg(inner, method_sym, arg);
     }
+    // Instance with __baggy_data__: delegate to the inner Bag/Set for collection methods
+    if let Value::Instance { attributes, .. } = target
+        && let Some(inner) = attributes.get("__baggy_data__")
+        && !matches!(
+            method,
+            "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
+        )
+    {
+        return native_method_1arg(inner, method_sym, arg);
+    }
     // Cool numeric coercion: when a Str calls a numeric 1-arg method, coerce to numeric first.
     // Also coerce the arg if it's a Str for numeric methods.
     {

@@ -1093,11 +1093,6 @@ impl Compiler {
                     .map(|p| self.code.add_constant(Value::str(p.clone())));
                 let bind_stmts =
                     Self::build_for_bind_stmts(param, param_def.as_ref(), param_idx, params);
-                if !bind_stmts.is_empty() {
-                    let mut merged = bind_stmts;
-                    merged.extend(loop_body);
-                    loop_body = merged;
-                }
                 // Determine if this for-loop has rw params (via `<->` or `is rw` trait)
                 let has_rw = *rw_block
                     || (**param_def)
@@ -1107,6 +1102,18 @@ impl Compiler {
                 let has_copy = (**param_def)
                     .as_ref()
                     .is_some_and(|def| def.traits.iter().any(|t| t == "copy"));
+                if !bind_stmts.is_empty() {
+                    let mut merged = bind_stmts;
+                    // After binding multi-param variables, mark them readonly
+                    // (unless the block uses `<->` or `is rw`).
+                    if !has_rw && !has_copy && !params.is_empty() {
+                        for p in params {
+                            merged.push(Stmt::MarkReadonly(p.clone()));
+                        }
+                    }
+                    merged.extend(loop_body);
+                    loop_body = merged;
+                }
                 let arity = if !params.is_empty() {
                     params.len() as u32
                 } else {
