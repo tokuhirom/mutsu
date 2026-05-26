@@ -352,41 +352,29 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    // Infinite range → return a lazy array so .Capture etc. throw X::Cannot::Lazy
-                    Some(Ok(Value::Array(
-                        std::sync::Arc::new(vec![]),
-                        crate::value::ArrayKind::Lazy,
-                    )))
+                    // Infinite range → convert to lazy array (supports indexing + .Capture throws)
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((*a..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExcl(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(Value::Array(
-                        std::sync::Arc::new(vec![]),
-                        crate::value::ArrayKind::Lazy,
-                    )))
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclStart(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(Value::Array(
-                        std::sync::Arc::new(vec![]),
-                        crate::value::ArrayKind::Lazy,
-                    )))
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((a + 1..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclBoth(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(Value::Array(
-                        std::sync::Arc::new(vec![]),
-                        crate::value::ArrayKind::Lazy,
-                    )))
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((a + 1..*b).map(Value::Int).collect())))
                 }
