@@ -2468,14 +2468,14 @@ impl Value {
                 if vals.len() == 1 && !caps.named_quantified.contains(key) {
                     sub_named.insert(key.clone(), vals[0].clone());
                 } else {
-                    sub_named.insert(key.clone(), Value::array(vals));
+                    sub_named.insert(key.clone(), Value::real_array(vals));
                 }
             }
             // For quantified named captures that matched zero times, insert empty arrays
             for qname in &caps.named_quantified {
                 sub_named
                     .entry(qname.clone())
-                    .or_insert_with(|| Value::array(Vec::new()));
+                    .or_insert_with(|| Value::real_array(Vec::new()));
             }
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::str(caps.matched.clone()));
@@ -2565,14 +2565,14 @@ impl Value {
             if vals.len() == 1 && !named_quantified.contains(key) {
                 named_caps_map.insert(key.clone(), vals[0].clone());
             } else {
-                named_caps_map.insert(key.clone(), Value::array(vals));
+                named_caps_map.insert(key.clone(), Value::real_array(vals));
             }
         }
         // For quantified named captures that matched zero times, insert empty arrays
         for qname in named_quantified {
             named_caps_map
                 .entry(qname.clone())
-                .or_insert_with(|| Value::array(Vec::new()));
+                .or_insert_with(|| Value::real_array(Vec::new()));
         }
         attrs.insert("named".to_string(), Value::hash(named_caps_map));
         Value::make_instance(Symbol::intern("Match"), attrs)
