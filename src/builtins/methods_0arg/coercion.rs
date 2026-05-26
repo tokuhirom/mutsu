@@ -352,28 +352,29 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    // Infinite range → convert to lazy array (supports indexing + .Capture throws)
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((*a..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExcl(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclStart(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((a + 1..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclBoth(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
                 } else {
                     Some(Ok(Value::array((a + 1..*b).map(Value::Int).collect())))
                 }

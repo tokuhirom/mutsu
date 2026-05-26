@@ -784,6 +784,7 @@ impl Interpreter {
             "Mixy",
             "Date",
             "DateTime",
+            "Capture",
             "Grammar",
             "Parameter",
             "Proxy",
@@ -2195,6 +2196,7 @@ impl Interpreter {
                 "Order",
                 "Endian",
                 "Proc",
+                "Capture",
             ];
             if !BUILTIN_TYPES.contains(&name) {
                 return Err(RuntimeError::new(format!(
