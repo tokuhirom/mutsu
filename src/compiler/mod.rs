@@ -380,23 +380,37 @@ impl Compiler {
         // binding it first would clobber the source array before other params
         // can read from it.  Defer the `$_` binding to the end.
         let mut deferred_topic = None;
+        let mut sigilless_names = Vec::new();
         for (i, p) in params.iter().enumerate() {
+            // Sigilless params are prefixed with \\ by the parser.
+            let (actual_name, is_sigilless) = if let Some(name) = p.strip_prefix('\\') {
+                (name.to_string(), true)
+            } else {
+                (p.clone(), false)
+            };
             let stmt = bind_stmt(
-                p.clone(),
+                actual_name.clone(),
                 Expr::Index {
                     target: Box::new(Expr::Var("_".to_string())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
                     is_positional: false,
                 },
             );
-            if p == "_" {
+            if actual_name == "_" {
                 deferred_topic = Some(stmt);
             } else {
                 bind_stmts.push(stmt);
             }
+            if is_sigilless {
+                sigilless_names.push(actual_name);
+            }
         }
         if let Some(stmt) = deferred_topic {
             bind_stmts.push(stmt);
+        }
+        // Mark sigilless params as readonly (e.g. `-> \k, \v`).
+        for name in sigilless_names {
+            bind_stmts.push(Stmt::MarkSigillessReadonly(name));
         }
         bind_stmts
     }

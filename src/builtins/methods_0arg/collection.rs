@@ -291,32 +291,60 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Set(s, _) => {
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
+                let mut has_typed = false;
                 for k in s.iter() {
                     map.insert(k.clone(), Value::Bool(true));
                     let typed = s.typed_key(k);
                     if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
                 }
                 let result = Value::hash(map);
-                if !original_keys.is_empty() {
+                if has_typed {
+                    // Tag so .keys can distinguish setty-origin hashes
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
                     crate::runtime::utils::register_hash_original_keys(&result, original_keys);
                 }
                 Some(Ok(result))
             }
             Value::Bag(b, _) => {
                 let mut map = std::collections::HashMap::new();
+                let mut original_keys = std::collections::HashMap::new();
+                let mut has_typed = false;
                 for (k, v) in b.iter() {
                     map.insert(k.clone(), Value::Int(*v));
+                    let typed = b.typed_key(k);
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Some(Ok(Value::hash(map)))
+                let result = Value::hash(map);
+                if has_typed {
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Some(Ok(result))
             }
             Value::Mix(m, _) => {
                 let mut map = std::collections::HashMap::new();
+                let mut original_keys = std::collections::HashMap::new();
+                let mut has_typed = false;
                 for (k, v) in m.iter() {
                     map.insert(k.clone(), Value::Num(*v));
+                    let typed = m.typed_key(k);
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Some(Ok(Value::hash(map)))
+                let result = Value::hash(map);
+                if has_typed {
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Some(Ok(result))
             }
             Value::Instance { .. } => {
                 // Instance types should fall through to accessor dispatch,
@@ -354,12 +382,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    // Check if this is a Set-derived object hash (all values are Bool(true)
-                    // and original typed keys are registered).
-                    let is_set_derived_obj_hash = !map.is_empty()
-                        && map.values().all(|v| matches!(v, Value::Bool(true)))
-                        && crate::runtime::utils::hash_original_keys_snapshot(target).is_some();
-                    let keys: Vec<Value> = if is_set_derived_obj_hash {
+                    // Use original typed keys for object hashes that were
+                    // created from Set/Bag/Mix .hash coercion and tagged
+                    // with a __setty_origin marker in original_keys.
+                    let has_setty_origin = if let Some(orig) =
+                        crate::runtime::utils::hash_original_keys_snapshot(target)
+                    {
+                        orig.contains_key("__mutsu_setty_origin")
+                    } else {
+                        false
+                    };
+                    let keys: Vec<Value> = if has_setty_origin {
                         map.keys()
                             .map(|k| crate::runtime::utils::hash_typed_key(target, k))
                             .collect()

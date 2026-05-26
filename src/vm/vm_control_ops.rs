@@ -419,6 +419,38 @@ impl VM {
                 (name.clone(), val, was_readonly, sigilless_ro)
             })
             .collect();
+        // Determine if the implicit topic ($_) should be read-only.
+        // In Raku, for-loop iteration variables are read-only by default unless
+        // `is rw` is specified. The exception is when iterating over a mutable
+        // container (e.g. @array), where $_ aliases the container cell.
+        // We mark $_ readonly when:
+        // - Not in rw mode
+        // - No explicit param name (implicit $_)
+        // - Either no container binding, or the container is an immutable type
+        //   (Mix, Set, Bag, Str, Int, etc.)
+        let topic_readonly = !spec.is_rw && param_name.is_none() && {
+            match &container_binding {
+                None => true, // literal list, expression result, etc.
+                Some(name) => {
+                    // Check if the source container is an immutable type
+                    if let Some(val) = self.get_env_with_main_alias(name) {
+                        matches!(
+                            val,
+                            Value::Mix(_, _)
+                                | Value::Set(_, _)
+                                | Value::Bag(_, _)
+                                | Value::Str(_)
+                                | Value::Int(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::Bool(_)
+                        )
+                    } else {
+                        false
+                    }
+                }
+            }
+        };
         let total_items = chunked_items.len();
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = if writes_back_topic {
@@ -450,6 +482,15 @@ impl VM {
             }
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
+            }
+            // Mark implicit $_ readonly when source is immutable.
+            // Also set a deep-readonly flag so that method-lvalue
+            // assignments like .value = ... are blocked too.
+            if topic_readonly {
+                self.interpreter.mark_readonly("_");
+                self.interpreter
+                    .env_mut()
+                    .insert("__mutsu_deep_readonly::_".to_string(), Value::Bool(true));
             }
             // Mark named params readonly when not in rw mode
             if !spec.is_rw
@@ -676,6 +717,12 @@ impl VM {
                     }
                     Err(e) => {
                         // Unmark readonly before propagating error
+                        if topic_readonly {
+                            self.interpreter.unmark_readonly("_");
+                            self.interpreter
+                                .env_mut()
+                                .remove("__mutsu_deep_readonly::_");
+                        }
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
@@ -698,6 +745,13 @@ impl VM {
             if self.interpreter.is_halted() {
                 break;
             }
+        }
+        // Unmark readonly topic after loop completion
+        if topic_readonly {
+            self.interpreter.unmark_readonly("_");
+            self.interpreter
+                .env_mut()
+                .remove("__mutsu_deep_readonly::_");
         }
         // Unmark readonly params after loop completion
         if !spec.is_rw
