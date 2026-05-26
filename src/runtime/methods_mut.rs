@@ -914,18 +914,19 @@ impl Interpreter {
                     }
                 }
 
-                // If the pair value is an immutable type (Bool, Int, Num, Str, Rat)
-                // and the pair is not backed by a mutable container, throw RO error.
-                // This handles e.g. Set.pairs[0].value = 0 which should die.
-                if matches!(
-                    current_value.as_ref(),
-                    Value::Bool(_) | Value::Int(_) | Value::Num(_) | Value::Str(_) | Value::Rat(..)
-                ) {
-                    let type_name = crate::value::what_type_name(current_value.as_ref());
-                    return Err(RuntimeError::assignment_ro_typename(
-                        &type_name,
-                        &current_value.to_string_value(),
-                    ));
+                // If the pair value is Bool and the pair is NOT directly backed
+                // by a user-visible hash variable, the Bool is immutable.
+                // This handles Set.pairs[0].value = 0 which should die.
+                if matches!(current_value.as_ref(), Value::Bool(_)) {
+                    let has_backing_hash = target_var
+                        .is_some_and(|vn| matches!(self.env.get(vn), Some(Value::Hash(_))));
+                    if !has_backing_hash {
+                        let type_name = crate::value::what_type_name(current_value.as_ref());
+                        return Err(RuntimeError::assignment_ro_typename(
+                            &type_name,
+                            &current_value.to_string_value(),
+                        ));
+                    }
                 }
 
                 // Standalone pair (not derived from a hash or array): update the
