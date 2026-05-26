@@ -1090,7 +1090,7 @@ impl Interpreter {
                 out.push_str(&format!("{sws}{sep}{sws}{atom}"));
             }
             if trailing && allow_trailing_sep {
-                out.push_str(&format!("({sws}{sep})?"));
+                out.push_str(&format!("[{sws}{sep}]?"));
             }
             out
         };
@@ -1107,13 +1107,13 @@ impl Interpreter {
                         format!("({})", alts.join("|"))
                     }
                 }
-                None => format!("{}({sp}{atom})*", repeat_atom(min)),
+                None => format!("{}[{sp}{atom}]*", repeat_atom(min)),
             };
         }
 
         if max.is_none() && min == 1 && atom.ends_with('?') && !sep.is_empty() {
             if allow_trailing_sep {
-                return format!("{atom}({sws}{sep})?");
+                return format!("{atom}[{sws}{sep}]?");
             }
             return atom.to_string();
         }
@@ -1130,19 +1130,19 @@ impl Interpreter {
             }
             None => {
                 if min == 0 {
-                    // 0..* with separator: [atom(sep atom)*]?
-                    let mut inner = format!("{atom}({sws}{sep}{sws}{atom})*");
+                    // 0..* with separator: [atom[sep atom]*]?
+                    let mut inner = format!("{atom}[{sws}{sep}{sws}{atom}]*");
                     if allow_trailing_sep {
-                        inner.push_str(&format!("({sws}{sep})?"));
+                        inner.push_str(&format!("[{sws}{sep}]?"));
                     }
                     format!("[{inner}]?")
                 } else {
                     // Use inner without trailing sep — the trailing sep is
                     // added after the unbounded repetition group below.
                     let mut out = build_exact_list_inner(min, false);
-                    out.push_str(&format!("({sws}{sep}{sws}{atom})*"));
+                    out.push_str(&format!("[{sws}{sep}{sws}{atom}]*"));
                     if allow_trailing_sep {
-                        out.push_str(&format!("({sws}{sep})?"));
+                        out.push_str(&format!("[{sws}{sep}]?"));
                     }
                     out
                 }

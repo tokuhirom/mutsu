@@ -24,6 +24,9 @@ impl Interpreter {
                     for (k, v) in inner_caps.named_subcaps.drain() {
                         new_caps.named_subcaps.entry(k).or_default().extend(v);
                     }
+                    new_caps
+                        .named_quantified
+                        .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps
                         .positional_subcaps
@@ -54,6 +57,9 @@ impl Interpreter {
                     for (k, v) in inner_caps.named_subcaps.drain() {
                         new_caps.named_subcaps.entry(k).or_default().extend(v);
                     }
+                    new_caps
+                        .named_quantified
+                        .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps
                         .positional_subcaps
@@ -91,6 +97,9 @@ impl Interpreter {
             for (k, v) in longest_caps.named_subcaps {
                 new_caps.named_subcaps.entry(k).or_default().extend(v);
             }
+            new_caps
+                .named_quantified
+                .extend(longest_caps.named_quantified);
             new_caps.positional.append(&mut longest_caps.positional);
             new_caps
                 .positional_subcaps
