@@ -945,6 +945,23 @@ impl Interpreter {
                         weight.is_finite() && *weight == 1.0 && set.contains(key)
                     })
             }
+            // X ~~ Set: coerce LHS to a Set (using its elements) and compare
+            (_, Value::Set(rhs_set, _))
+                if matches!(
+                    left,
+                    Value::Array(..) | Value::Seq(_) | Value::Slip(_) | Value::Bag(..)
+                ) =>
+            {
+                // Collect LHS elements as string keys (same representation as Set uses)
+                let lhs_keys: std::collections::HashSet<String> = match left {
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        items.iter().map(|v| v.to_string_value()).collect()
+                    }
+                    Value::Bag(b, _) => b.keys().cloned().collect(),
+                    _ => std::collections::HashSet::new(),
+                };
+                lhs_keys.len() == rhs_set.len() && lhs_keys.iter().all(|k| rhs_set.contains(k))
+            }
             // Array ~~ Hash: check if any element exists as a key in the hash
             (Value::Array(items, ..), Value::Hash(map)) => items.iter().any(|item| {
                 let key = item.to_string_value();

@@ -4646,6 +4646,31 @@ impl Interpreter {
         false
     }
 
+    /// Check if a class inherits from an immutable Setty type (Set, Bag, Mix).
+    pub(crate) fn class_inherits_from_immutable_setty(&self, name: &str) -> bool {
+        const IMMUTABLE_SETTY: &[&str] = &["Set", "Bag", "Mix"];
+        if IMMUTABLE_SETTY.contains(&name) {
+            return true;
+        }
+        let class_def = self.classes.get(name).or_else(|| {
+            self.classes
+                .iter()
+                .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+                .map(|(_, v)| v)
+        });
+        if let Some(class_def) = class_def {
+            for parent in &class_def.parents {
+                if IMMUTABLE_SETTY.contains(&parent.as_str()) {
+                    return true;
+                }
+                if self.class_inherits_from_immutable_setty(parent) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a class has scoped subs declared in its body.
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
         self.class_subs

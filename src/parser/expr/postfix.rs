@@ -2269,10 +2269,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // Object constructor shorthand: Type{ :named(...) } / Type{ key => value, ... }.
         // Treat this as Type.new(...) for package/type barewords.
         // But NOT for sigilless variables (term symbols like \h), which should use
-        // hash subscript semantics instead.
+        // hash subscript semantics instead. Also NOT for `self` which uses hash subscript.
         if rest.starts_with('{')
             && matches!(&expr, Expr::BareWord(name) if {
-                crate::parser::stmt::simple::match_user_declared_term_symbol(name).is_none()
+                name != "self"
+                && crate::parser::stmt::simple::match_user_declared_term_symbol(name).is_none()
             })
         {
             let r = &rest[1..];

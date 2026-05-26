@@ -2369,6 +2369,25 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((r2, supply_method_call(block_body)));
     }
 
+    // set/bag/mix followed immediately by < (no whitespace) is a parse error
+    if matches!(name.as_str(), "set" | "bag" | "mix")
+        && rest.starts_with('<')
+        && std::ptr::eq(rest, r)
+    {
+        let msg = format!(
+            "Use of non-subscript brackets after \"{}\" where postfix is expected; \
+             please use whitespace before any arguments",
+            name
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+        let exception = crate::value::Value::make_instance(
+            crate::symbol::Symbol::intern("X::Syntax::Confused"),
+            attrs,
+        );
+        return Err(PError::fatal_with_exception(msg, Box::new(exception)));
+    }
+
     // Check for listop: bareword followed by space and argument (but not statement modifier)
     // e.g., shift @a, push @a, 42, etc.
     // Skip when directly followed by '.' — `func.method` is `(func()).method`,
@@ -2587,11 +2606,24 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
 
     // Functions that can be called with no arguments as bare words
-    if matches!(
-        name.as_str(),
-        "await" | "slip" | "set" | "bag" | "mix" | "slurp"
-    ) && is_terminator_or_dot
-    {
+    if matches!(name.as_str(), "await" | "slip" | "slurp") && is_terminator_or_dot {
+        return Ok((rest, make_call_expr(name, input, vec![])));
+    }
+
+    // set/bag/mix without arguments or parens is a parse error in Raku
+    if matches!(name.as_str(), "set" | "bag" | "mix") && is_terminator {
+        let msg = format!(
+            "Function \"{}\" may not be called without arguments \
+             (please use () or whitespace to denote arguments, \
+             or &{} to refer to the function as a noun, \
+             or use .{} if you meant to call it as a method on $_)",
+            name, name, name
+        );
+        return Err(PError::fatal(msg));
+    }
+
+    // set/bag/mix followed by '.' is a zero-arg call (method chain on result)
+    if matches!(name.as_str(), "set" | "bag" | "mix") && rest_trimmed.starts_with('.') {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

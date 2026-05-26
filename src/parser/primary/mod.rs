@@ -232,6 +232,9 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
             Err(err) => {
+                if err.is_fatal() {
+                    return Err(err);
+                }
                 update_best_error(&mut best_error, err, input_len);
                 Err(best_error
                     .map(|(_, err)| err)

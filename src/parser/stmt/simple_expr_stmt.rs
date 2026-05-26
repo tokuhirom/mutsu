@@ -405,13 +405,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
             if let Ok(parsed_assign) = super::assign::parse_assign_expr_or_comma(input) {
                 parsed_assign
-            } else if err.is_fatal()
-                && (err.exception.is_some()
-                    || err
-                        .messages
-                        .first()
-                        .is_some_and(|m| m.contains("X::Comp::Trait::Unknown")))
-            {
+            } else if err.is_fatal() {
                 return Err(err);
             } else {
                 return Err(PError {

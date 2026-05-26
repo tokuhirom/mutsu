@@ -118,7 +118,7 @@ is $m.WHAT, "(Mix)", ".WHAT returns (Mix)";
 # Truthiness
 ok ?$m, "non-empty mix is truthy";
 nok ?mix(), "empty mix is falsy";
-my $m3 = mix;
+my $m3 = mix();
 nok ?$m3, "bare mix call is falsy";
 
 ok "isn't" (elem) set <I'm afraid it isn't your day>, "set listop handles apostrophes in angle words";
