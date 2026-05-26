@@ -1900,6 +1900,25 @@ impl VM {
         if var_name.is_some_and(|name| name.starts_with('%')) {
             return Ok(());
         }
+        // Lazy values cannot be stored in native typed arrays
+        if var_name.is_some_and(|name| name.starts_with('@'))
+            && crate::runtime::native_types::is_native_array_element_type(base_constraint)
+            && crate::builtins::methods_0arg::is_value_lazy(&value)
+        {
+            let declared = format!("array[{}]", base_constraint);
+            return Err(RuntimeError::typed(
+                "X::Cannot::Lazy",
+                [
+                    (
+                        "message".to_string(),
+                        Value::str(format!("Cannot store a lazy list onto a {}", declared)),
+                    ),
+                    ("action".to_string(), Value::str_from("store")),
+                ]
+                .into_iter()
+                .collect(),
+            ));
+        }
         if var_name.is_some_and(|name| name.starts_with('@'))
             && matches!(&value, Value::Array(..) | Value::Seq(_))
         {

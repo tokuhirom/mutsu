@@ -2223,6 +2223,38 @@ impl Interpreter {
                             _ => 0,
                         },
                     };
+                    // Check for lazy values in splice replacement args
+                    // when the target is a native typed array
+                    if let Some(constraint) = self.var_type_constraint(&key)
+                        && crate::runtime::native_types::is_native_array_element_type(&constraint)
+                    {
+                        for arg in args.iter().skip(2) {
+                            let has_lazy = match arg {
+                                Value::Array(items, _) => items
+                                    .iter()
+                                    .any(crate::builtins::methods_0arg::is_value_lazy),
+                                other => crate::builtins::methods_0arg::is_value_lazy(other),
+                            };
+                            if has_lazy {
+                                let declared = format!("array[{}]", constraint);
+                                return Err(RuntimeError::typed(
+                                    "X::Cannot::Lazy",
+                                    [
+                                        (
+                                            "message".to_string(),
+                                            Value::str(format!(
+                                                "Cannot splice a lazy list into a {}",
+                                                declared
+                                            )),
+                                        ),
+                                        ("action".to_string(), Value::str_from("splice")),
+                                    ]
+                                    .into_iter()
+                                    .collect(),
+                                ));
+                            }
+                        }
+                    }
                     let mut resolved_args = args.clone();
                     // Resolve callable for offset (arg 0) with array length
                     if let Some(arg @ (Value::Sub(..) | Value::WeakSub(..))) = args.first()
