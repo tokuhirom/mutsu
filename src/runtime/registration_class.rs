@@ -1137,6 +1137,15 @@ impl Interpreter {
                     .entry(name.to_string())
                     .or_default()
                     .push(base_role_name.to_string());
+            } else if does_parents.contains(parent)
+                && BUILTIN_TYPES.contains(&base_role_name)
+                && !self.roles.contains_key(base_role_name)
+                && !composed_roles_list.contains(&resolved_parent_name)
+            {
+                // Built-in type used as a role via `does` (e.g., `does Numeric`,
+                // `does Real`): record in composed_roles_list so that role-based
+                // method dispatch (e.g., .Numeric on type objects) works correctly.
+                composed_roles_list.push(resolved_parent_name.clone());
             }
         }
         if class_role_param_bindings.is_empty() {

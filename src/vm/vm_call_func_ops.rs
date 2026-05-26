@@ -248,11 +248,18 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        // val() uses capture semantics (Mu |) — preserve Slip as a single arg.
+        let preserve_slip_entirely = name == "val";
         let preserve_empty_slip = Self::preserve_empty_slip_arg(&name);
-        let mut args = Vec::new();
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
-        }
+        let args = if preserve_slip_entirely {
+            raw_args
+        } else {
+            let mut args = Vec::new();
+            for arg in raw_args {
+                Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
+            }
+            args
+        };
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|sources| {
             sources.len() != args.len()

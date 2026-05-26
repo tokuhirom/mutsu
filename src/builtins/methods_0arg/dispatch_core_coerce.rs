@@ -627,7 +627,8 @@ pub(super) fn dispatch(
                 let type_name = name.resolve();
                 let zero = match type_name.as_str() {
                     "Int" | "IntStr" => Value::Int(0),
-                    "Rat" | "FatRat" | "RatStr" => Value::Rat(0, 1),
+                    "Rat" | "RatStr" => Value::Rat(0, 1),
+                    "FatRat" => Value::FatRat(0, 1),
                     "Num" | "NumStr" => Value::Num(0.0),
                     "Complex" | "ComplexStr" => Value::Complex(0.0, 0.0),
                     _ => return Some(None),
