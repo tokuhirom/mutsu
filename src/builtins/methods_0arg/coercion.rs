@@ -352,28 +352,41 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    // Infinite range → return a lazy array so .Capture etc. throw X::Cannot::Lazy
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(vec![]),
+                        crate::value::ArrayKind::Lazy,
+                    )))
                 } else {
                     Some(Ok(Value::array((*a..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExcl(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(vec![]),
+                        crate::value::ArrayKind::Lazy,
+                    )))
                 } else {
                     Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclStart(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(vec![]),
+                        crate::value::ArrayKind::Lazy,
+                    )))
                 } else {
                     Some(Ok(Value::array((a + 1..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclBoth(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(target.clone()))
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(vec![]),
+                        crate::value::ArrayKind::Lazy,
+                    )))
                 } else {
                     Some(Ok(Value::array((a + 1..*b).map(Value::Int).collect())))
                 }
