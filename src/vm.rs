@@ -1300,9 +1300,29 @@ impl VM {
                                 }
                             }
                         }
-                        // Persist ContainerRef in our_vars for `our` variables
+                        // Persist ContainerRef in our_vars for `our` variables.
+                        // Store under both the bare name and any existing
+                        // package-qualified variants (e.g., "K::x" for bare "x")
+                        // so GetGlobal fallback (which uses qualified keys) can
+                        // find the binding.
                         self.interpreter
                             .set_our_var(name.clone(), container.clone());
+                        // Find existing qualified our_var keys that end with
+                        // "::<name>" and update them to share the ContainerRef.
+                        {
+                            let suffix = format!("::{}", name);
+                            let qualified_keys: Vec<String> = self
+                                .interpreter
+                                .our_vars_iter()
+                                .filter(|(k, _)| k.ends_with(&suffix))
+                                .map(|(k, _)| k.clone())
+                                .collect();
+                            for qk in qualified_keys {
+                                self.interpreter.set_our_var(qk.clone(), container.clone());
+                                // Also store in env so methods see the ContainerRef
+                                self.interpreter.env_mut().insert(qk, container.clone());
+                            }
+                        }
                         *ip += 1;
                         return Ok(());
                     }

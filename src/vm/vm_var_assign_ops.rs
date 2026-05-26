@@ -3058,6 +3058,14 @@ impl VM {
             self.stack.push(shared_val);
             return Ok(());
         }
+        // Lazy sync: if the local is not a ContainerRef but env has one
+        // (e.g., a cross-scope `:=` binding was established during a function/method
+        // call and propagated back to env but not to locals), adopt the ContainerRef.
+        if !self.locals[idx].is_container_ref()
+            && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(&name).cloned()
+        {
+            self.locals[idx] = Value::ContainerRef(arc);
+        }
         let val = self.locals[idx].clone();
         // Resolve DeferredHashAccess to its current value (Any if path doesn't exist)
         if let Value::DeferredHashAccess { .. } = &val {
@@ -3791,14 +3799,16 @@ impl VM {
             {
                 self.local_bind_pairs.push((source_idx, idx));
             }
-            // Create a shared ContainerRef only when the source variable exists in
-            // an outer call frame (cross-scope binding, e.g., method attribute binding).
-            // Same-scope bindings use the existing alias mechanism.
+            // Create a shared ContainerRef for cross-scope binding (source in
+            // outer call frame) OR same-scope rebinding (`:=` on existing vars).
+            // ContainerRef ensures bidirectional container sharing: writing to
+            // either variable updates both, matching Raku's binding semantics.
             let source_in_outer_frame = self
                 .call_frames
                 .iter()
                 .any(|f| f.saved_env.contains_key(&resolved_source));
-            if source_in_outer_frame
+            let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
+            if (source_in_outer_frame || (is_rebind && source_in_same_scope))
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && !name.starts_with('&')
@@ -3858,6 +3868,16 @@ impl VM {
                 self.mark_local_dirty(idx);
                 return Ok(());
             }
+        }
+        // Lazy sync: if the local is not a ContainerRef but env has one
+        // (from a cross-scope `:=` binding), adopt the ContainerRef so the
+        // write-through below preserves shared container identity.
+        if !is_bind
+            && !is_rebind
+            && !self.locals[idx].is_container_ref()
+            && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
+        {
+            self.locals[idx] = Value::ContainerRef(arc);
         }
         // Write through ContainerRef in slow path: update inner value
         if !is_bind
@@ -4136,7 +4156,6 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
-
         // If the current local is a Proxy, invoke STORE instead of overwriting
         if let Value::Proxy { storer, .. } = &self.locals[idx]
             && !matches!(storer.as_ref(), Value::Nil)
@@ -4151,6 +4170,24 @@ impl VM {
         if code.simple_locals[idx] {
             let mut val = self.stack.pop().unwrap_or(Value::Nil);
             let name = &code.locals[idx];
+            // Lazy sync: if the local is not a ContainerRef but env has one
+            // (from a cross-scope `:=` binding), adopt the ContainerRef and
+            // write through it to preserve shared container identity.
+            if !self.locals[idx].is_container_ref()
+                && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
+            {
+                self.locals[idx] = Value::ContainerRef(arc);
+            }
+            if let Value::ContainerRef(arc) = &self.locals[idx] {
+                let arc = arc.clone();
+                if !name.starts_with('@') && !name.starts_with('%') {
+                    val = Self::normalize_scalar_assignment_value(val);
+                }
+                arc.lock().unwrap().clone_from(&val);
+                self.stack.push(val);
+                self.mark_local_dirty(idx);
+                return Ok(());
+            }
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);
             }
