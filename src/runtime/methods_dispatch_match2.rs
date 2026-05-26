@@ -40,7 +40,7 @@ impl Interpreter {
                 Some(Ok(result))
             }
             "Bag" | "BagHash" if args.is_empty() => {
-                let result = match self.dispatch_to_bag(target) {
+                let result = match self.dispatch_to_bag_with_what(target, method) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
@@ -76,7 +76,7 @@ impl Interpreter {
                         }
                         // Convert items to a temporary array and use dispatch_to_bag
                         let arr = Value::array(all_items);
-                        let result = match self.dispatch_to_bag(arr) {
+                        let result = match self.dispatch_to_bag_with_what(arr, &cn) {
                             Ok(r) => r,
                             Err(e) => return Some(Err(e)),
                         };
