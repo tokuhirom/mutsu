@@ -379,7 +379,18 @@ impl Compiler {
             }
             self.compile_expr(left);
             self.compile_expr(right);
-            self.code.emit(opcode);
+            // For `!=` between native int typed variables, emit a native-aware
+            // opcode that replicates Rakudo's MoarVM behaviour: cross-signed
+            // comparisons where the signed operand is negative return False.
+            if matches!(opcode, OpCode::NumNe) {
+                if let Some(native_flags) = self.native_ne_flags(left, right) {
+                    self.code.emit(OpCode::NumNeNative(native_flags));
+                } else {
+                    self.code.emit(opcode);
+                }
+            } else {
+                self.code.emit(opcode);
+            }
         } else if let TokenKind::Ident(name) = op
             && matches!(name.as_str(), "~&" | "~|" | "~^")
         {
@@ -401,6 +412,48 @@ impl Compiler {
                 right_arity: 1,
                 modifier_idx: None,
             });
+        }
+    }
+
+    /// Check if both operands of `!=` are native-int-typed variables with
+    /// different signedness.  Returns `Some(flags)` when at least one is
+    /// unsigned and one is signed (bit 0 = left unsigned, bit 1 = right
+    /// unsigned).  Returns `None` when native-aware comparison is not needed.
+    fn native_ne_flags(&self, left: &Expr, right: &Expr) -> Option<u8> {
+        let left_type = self.expr_native_int_type(left)?;
+        let right_type = self.expr_native_int_type(right)?;
+        let left_unsigned = left_type.starts_with('u') || left_type == "byte";
+        let right_unsigned = right_type.starts_with('u') || right_type == "byte";
+        // Only emit native-aware opcode when signedness differs
+        if left_unsigned == right_unsigned {
+            return None;
+        }
+        let mut flags = 0u8;
+        if left_unsigned {
+            flags |= 1;
+        }
+        if right_unsigned {
+            flags |= 2;
+        }
+        Some(flags)
+    }
+
+    /// If `expr` is a variable reference with a native integer type
+    /// constraint, return the type name.
+    fn expr_native_int_type(&self, expr: &Expr) -> Option<String> {
+        let var_name = match expr {
+            Expr::Var(name) => name,
+            _ => return None,
+        };
+        let constraint = self.local_types.get(var_name)?;
+        let base = constraint
+            .strip_suffix(":D")
+            .or_else(|| constraint.strip_suffix(":U"))
+            .unwrap_or(constraint);
+        if crate::runtime::native_types::is_native_int_type(base) {
+            Some(base.to_string())
+        } else {
+            None
         }
     }
 }

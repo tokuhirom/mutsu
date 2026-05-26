@@ -323,6 +323,52 @@ impl VM {
         Ok(())
     }
 
+    /// Native-int-aware `!=` for cross-signed native integer comparisons.
+    /// Replicates Rakudo/MoarVM behaviour: when comparing a native unsigned
+    /// variable with a native signed variable and the signed operand holds a
+    /// negative value, the result is `False` (the values are considered
+    /// incomparable rather than unequal).
+    pub(super) fn exec_num_ne_native_op(&mut self, flags: u8) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let left_unsigned = flags & 1 != 0;
+        let right_unsigned = flags & 2 != 0;
+        // Cross-signed check: if the signed operand is negative, return False.
+        if left_unsigned != right_unsigned {
+            let signed_val = if left_unsigned { &right } else { &left };
+            let is_negative = match signed_val {
+                Value::Int(n) => *n < 0,
+                Value::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
+                _ => false,
+            };
+            if is_negative {
+                self.stack.push(Value::Bool(false));
+                return Ok(());
+            }
+        }
+        // Fall through to standard != logic
+        let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            if is_nan_value(&l) || is_nan_value(&r) {
+                return Ok(Value::Bool(false));
+            }
+            if let (Some(a), Some(b)) =
+                (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
+                && (is_rationalish(&l) || is_rationalish(&r))
+            {
+                Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
+            } else if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
+                Ok(Value::Bool(
+                    runtime::to_float_value(&l) == runtime::to_float_value(&r),
+                ))
+            } else {
+                Ok(Value::Bool(l == r))
+            }
+        })?;
+        self.stack.push(Value::Bool(!eq_result.truthy()));
+        Ok(())
+    }
+
     pub(super) fn exec_num_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
