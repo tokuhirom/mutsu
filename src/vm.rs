@@ -1300,9 +1300,27 @@ impl VM {
                                 }
                             }
                         }
-                        // Persist ContainerRef in our_vars for `our` variables
+                        // Persist ContainerRef in our_vars for `our` variables.
+                        // Store under both the bare name and any existing
+                        // package-qualified variants (e.g., "K::x" for bare "x")
+                        // so GetGlobal fallback (which uses qualified keys) can
+                        // find the binding.
                         self.interpreter
                             .set_our_var(name.clone(), container.clone());
+                        // Update the package-qualified our_var key (e.g., "K::x"
+                        // for bare "x" in class K) so GetGlobal fallback can find
+                        // the binding. Only match the exact class from the method
+                        // class stack to avoid clobbering unrelated package vars.
+                        if let Some(method_class) = self.interpreter.method_class_stack_top() {
+                            let qualified = format!("{}::{}", method_class, name);
+                            if self.interpreter.get_our_var(&qualified).is_some() {
+                                self.interpreter
+                                    .set_our_var(qualified.clone(), container.clone());
+                                self.interpreter
+                                    .env_mut()
+                                    .insert(qualified, container.clone());
+                            }
+                        }
                         *ip += 1;
                         return Ok(());
                     }
