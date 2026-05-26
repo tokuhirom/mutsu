@@ -335,10 +335,12 @@ impl Compiler {
             has_inner_subs: false,
             named_param_slots: None,
             deprecated_info,
+            declared_locals: None,
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_param_slots();
         cf.detect_inner_subs();
+        cf.compute_declared_locals();
         self.compiled_functions.insert(key, cf);
     }
 

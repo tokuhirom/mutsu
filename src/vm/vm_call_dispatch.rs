@@ -138,10 +138,12 @@ impl VM {
                 has_inner_subs: false,
                 named_param_slots: None,
                 deprecated_info,
+                declared_locals: None,
             };
             cf.precompute_param_local_slots();
             cf.precompute_named_param_slots();
             cf.detect_inner_subs();
+            cf.compute_declared_locals();
             self.otf_compile_cache.insert(cache_key, cf.clone());
             cf
         };
@@ -532,6 +534,11 @@ impl VM {
             self.interpreter.set_state_var(key.clone(), val);
         }
 
+        // Flush any dirty locals to env before restoring, so that captured
+        // outer variable modifications (e.g. $a++ where $a is from outer scope)
+        // are visible in env for the merge step below.
+        self.ensure_env_synced(&cf.code);
+
         // Restore state
         self.locals = saved_locals;
         self.locals_dirty_slots = saved_locals_dirty_slots;
@@ -546,8 +553,14 @@ impl VM {
             if saved_env.ptr_eq(self.interpreter.env()) {
                 // No env changes, nothing to merge
             } else {
+                // Use declared_locals to only filter out function-local vars.
+                // Captured outer variables should propagate their modifications.
                 let local_names: std::collections::HashSet<&str> =
-                    cf.code.locals.iter().map(|s| s.as_str()).collect();
+                    if let Some(ref declared) = cf.declared_locals {
+                        declared.iter().map(|s| s.as_str()).collect()
+                    } else {
+                        cf.code.locals.iter().map(|s| s.as_str()).collect()
+                    };
                 let mut restored_env = saved_env;
                 for (k, v) in self.interpreter.env().iter() {
                     if !k.with_str(|s| local_names.contains(s)) {
@@ -555,6 +568,10 @@ impl VM {
                     }
                 }
                 *self.interpreter.env_mut() = restored_env;
+                // Mark env as dirty so caller re-syncs its locals from env.
+                // This is needed when captured outer variables were modified
+                // by the function (e.g. $a++ where $a is from the caller's scope).
+                self.env_dirty = true;
             }
         }
 
@@ -897,16 +914,30 @@ impl VM {
             }
         }
 
-        // Clean up function-local variables that were INTRODUCED by the function
-        // body (not present in env before the call). Variables that existed before
-        // the call must keep their current value since the function body may have
-        // modified them through side effects (e.g., pushing to a closure-captured
-        // array). Only newly introduced locals are removed to prevent them from
-        // leaking into the caller's scope.
+        // Restore function-local variables in env to their pre-call values.
+        // Variables declared locally (via `my`) or as parameters are restored
+        // to prevent recursive calls from stomping on the caller's lexical vars.
+        // Captured outer variables (not declared in this function) keep their
+        // modified values so side effects (e.g. $a++) persist across calls.
+        let declared = cf.declared_locals.as_ref();
         for (local_name, saved_val) in &saved_env_locals {
-            if saved_val.is_none() {
-                // This local was not in env before the call — remove it
-                self.interpreter.env_mut().remove(local_name);
+            let is_declared = declared.is_some_and(|d| d.contains(local_name));
+            match saved_val {
+                None => {
+                    if is_declared {
+                        // This local was not in env before the call and is function-local
+                        self.interpreter.env_mut().remove(local_name);
+                    }
+                }
+                Some(v) => {
+                    if is_declared {
+                        // Restore function-local var to pre-call value
+                        self.interpreter
+                            .env_mut()
+                            .insert(local_name.clone(), v.clone());
+                    }
+                    // Captured vars: keep their modified value (side effects persist)
+                }
             }
         }
 
@@ -1646,8 +1677,15 @@ impl VM {
                 .iter()
                 .map(|(_, source)| source.clone())
                 .collect();
+            // Use declared_locals (vars declared via `my` or as params) instead
+            // of all locals. Captured outer variables should propagate their
+            // modifications back to the caller.
             let local_names: std::collections::HashSet<&str> =
-                cf.code.locals.iter().map(|s| s.as_str()).collect();
+                if let Some(ref declared) = cf.declared_locals {
+                    declared.iter().map(|s| s.as_str()).collect()
+                } else {
+                    cf.code.locals.iter().map(|s| s.as_str()).collect()
+                };
             for (k, v) in self.interpreter.env().iter() {
                 if *k == "_" || *k == "@_" || *k == "%_" {
                     continue;

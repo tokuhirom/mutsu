@@ -109,4 +109,20 @@ impl Compiler {
             None
         }
     }
+
+    /// Parse `OUTER::` / `OUTER::OUTER::` prefix from a variable name.
+    /// Returns (bare_name, depth) where depth is the number of OUTER:: prefixes.
+    pub(crate) fn parse_outer_prefix(name: &str) -> Option<(String, usize)> {
+        let mut remaining = name;
+        let mut depth = 0;
+        while let Some(rest) = remaining.strip_prefix("OUTER::") {
+            depth += 1;
+            remaining = rest;
+        }
+        if depth > 0 {
+            Some((remaining.to_string(), depth))
+        } else {
+            None
+        }
+    }
 }

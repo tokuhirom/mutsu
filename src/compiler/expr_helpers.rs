@@ -440,6 +440,15 @@ impl Compiler {
             });
             return;
         }
+        // $OUTER:: / $OUTER::OUTER:: variable access
+        if let Some((bare_name, depth)) = Self::parse_outer_prefix(name) {
+            let name_idx = self.code.add_constant(Value::str(bare_name));
+            self.code.emit(OpCode::GetOuterVar {
+                name_idx,
+                depth: depth as u32,
+            });
+            return;
+        }
         // $DYNAMIC:: variable access
         if let Some(bare_name) = name.strip_prefix("DYNAMIC::") {
             let name_idx = self.code.add_constant(Value::str(bare_name.to_string()));

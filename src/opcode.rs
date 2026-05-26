@@ -884,6 +884,13 @@ pub(crate) enum OpCode {
         depth: u32,
     },
 
+    /// Get a variable from an outer lexical scope ($OUTER::varname).
+    /// `depth` indicates how many OUTER:: prefixes (1 = $OUTER::x, 2 = $OUTER::OUTER::x).
+    GetOuterVar {
+        name_idx: u32,
+        depth: u32,
+    },
+
     /// Get a variable by searching the dynamic call stack ($DYNAMIC::varname).
     GetDynamicVar(u32),
 
@@ -1420,6 +1427,11 @@ pub(crate) struct CompiledFunction {
     /// Deprecation info: (kind, name, package, message).
     /// When set, every call records a deprecation event.
     pub(crate) deprecated_info: Option<(String, String, String, String)>,
+    /// Set of variable names declared locally in this function (via `my`).
+    /// Used by the positional light call path to distinguish function-local vars
+    /// (which should be restored after recursive calls) from captured outer vars
+    /// (which should keep their modified values).
+    pub(crate) declared_locals: Option<std::collections::HashSet<String>>,
 }
 
 impl CompiledFunction {
@@ -1516,5 +1528,30 @@ impl CompiledFunction {
                         | OpCode::ForLoop { .. }
                 )
             });
+    }
+
+    /// Compute the set of variable names declared locally in this function
+    /// (via SetVarDynamic opcode, which is emitted for `my` declarations).
+    /// Also includes parameter names. Used to distinguish function-local vars
+    /// from captured outer vars in the positional light call path.
+    pub(crate) fn compute_declared_locals(&mut self) {
+        let mut declared = std::collections::HashSet::new();
+        // Parameters are always function-local
+        for pd in &self.param_defs {
+            declared.insert(pd.name.clone());
+        }
+        for p in &self.params {
+            declared.insert(p.clone());
+        }
+        // Scan opcodes for SetVarDynamic which marks `my` declarations
+        for op in &self.code.ops {
+            if let OpCode::SetVarDynamic { name_idx, .. } = op
+                && let Some(crate::value::Value::Str(name)) =
+                    self.code.constants.get(*name_idx as usize)
+            {
+                declared.insert(name.to_string());
+            }
+        }
+        self.declared_locals = Some(declared);
     }
 }
