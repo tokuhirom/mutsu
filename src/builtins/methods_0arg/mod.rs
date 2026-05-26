@@ -320,7 +320,7 @@ pub(crate) fn native_method_0arg(
         && let Some(inner) = attributes.get("__baggy_data__")
         && !matches!(
             method,
-            "WHAT" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
+            "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
         )
     {
         return native_method_0arg(inner, method_sym);
