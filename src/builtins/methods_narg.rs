@@ -2387,11 +2387,7 @@ pub(crate) fn native_method_1arg(
             Value::Mix(data, _) => {
                 let key = arg.to_string_value();
                 let weight = data.weights.get(&key).copied().unwrap_or(0.0);
-                if weight == weight.floor() && weight.abs() < i64::MAX as f64 {
-                    Some(Ok(Value::Int(weight as i64)))
-                } else {
-                    Some(Ok(Value::Num(weight)))
-                }
+                Some(Ok(crate::value::mix_weight_to_value(weight)))
             }
             Value::Nil => Some(Ok(Value::Package(Symbol::intern("Any")))),
             Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {

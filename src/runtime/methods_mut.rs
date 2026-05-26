@@ -2742,11 +2742,7 @@ impl Interpreter {
                 let key = ks[idx].clone();
                 let weight = remaining.remove(&key).unwrap_or(0.0);
                 if method == "grabpairs" {
-                    let weight_val = if (weight - (weight as i64 as f64)).abs() < f64::EPSILON {
-                        Value::Int(weight as i64)
-                    } else {
-                        Value::Num(weight)
-                    };
+                    let weight_val = crate::value::mix_weight_to_value(weight);
                     grabbed.push(Value::Pair(key, Box::new(weight_val)));
                 } else {
                     // grab: return the key

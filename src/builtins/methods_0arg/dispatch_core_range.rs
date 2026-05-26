@@ -278,7 +278,10 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, weight) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::Pair(key.clone(), Box::new(Value::Num(*weight)))))
+                    Some(Ok(Value::Pair(
+                        key.clone(),
+                        Box::new(crate::value::mix_weight_to_value(*weight)),
+                    )))
                 }
             }
             _ => None,

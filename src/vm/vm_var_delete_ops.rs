@@ -497,10 +497,6 @@ impl VM {
     }
 
     pub(super) fn mix_weight_as_value(weight: f64) -> Value {
-        if weight.is_finite() && weight.fract() == 0.0 {
-            Value::Int(weight as i64)
-        } else {
-            Value::Num(weight)
-        }
+        crate::value::mix_weight_to_value(weight)
     }
 }

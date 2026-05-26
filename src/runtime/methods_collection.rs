@@ -453,7 +453,11 @@ impl Interpreter {
         }
     }
 
-    fn mix_add_item(weights: &mut HashMap<String, f64>, item: &Value) -> Result<(), RuntimeError> {
+    fn mix_add_item_with_keys(
+        weights: &mut HashMap<String, f64>,
+        mut original_keys: Option<&mut HashMap<String, Value>>,
+        item: &Value,
+    ) -> Result<(), RuntimeError> {
         match item {
             Value::Pair(k, v) => {
                 let w = Self::mix_pair_weight(v)?;
@@ -461,7 +465,13 @@ impl Interpreter {
             }
             Value::ValuePair(k, v) => {
                 let w = Self::mix_pair_weight(v)?;
-                *weights.entry(k.to_string_value()).or_insert(0.0) += w;
+                let str_key = k.to_string_value();
+                if let Some(ref mut orig) = original_keys
+                    && !matches!(&**k, Value::Str(_))
+                {
+                    orig.entry(str_key.clone()).or_insert_with(|| (**k).clone());
+                }
+                *weights.entry(str_key).or_insert(0.0) += w;
             }
             Value::Hash(h) => {
                 for (k, v) in h.iter() {
@@ -471,9 +481,14 @@ impl Interpreter {
                     }
                 }
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Array(items, kind) if !kind.is_itemized() => {
                 for sub_item in items.iter() {
-                    Self::mix_add_item(weights, sub_item)?;
+                    Self::mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item)?;
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                for sub_item in items.iter() {
+                    Self::mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item)?;
                 }
             }
             Value::Set(s, _) => {
@@ -492,7 +507,13 @@ impl Interpreter {
                 }
             }
             _ => {
-                *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                let str_key = item.to_string_value();
+                if let Some(ref mut orig) = original_keys
+                    && !matches!(item, Value::Str(_))
+                {
+                    orig.entry(str_key.clone()).or_insert_with(|| item.clone());
+                }
+                *weights.entry(str_key).or_insert(0.0) += 1.0;
             }
         }
         Ok(())
@@ -528,11 +549,12 @@ impl Interpreter {
             return Err(err);
         }
         let mut weights: HashMap<String, f64> = HashMap::new();
+        let mut original_keys: HashMap<String, Value> = HashMap::new();
         match target {
             Value::Mix(_, _) => return Ok(target),
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 for item in items.iter() {
-                    Self::mix_add_item(&mut weights, item)?;
+                    Self::mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item)?;
                 }
             }
             ref other @ (Value::Set(_, _)
@@ -540,7 +562,7 @@ impl Interpreter {
             | Value::Pair(..)
             | Value::ValuePair(..)
             | Value::Hash(_)) => {
-                Self::mix_add_item(&mut weights, other)?;
+                Self::mix_add_item_with_keys(&mut weights, Some(&mut original_keys), other)?;
             }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {
@@ -548,10 +570,20 @@ impl Interpreter {
                 }
             }
             other => {
-                weights.insert(other.to_string_value(), 1.0);
+                let str_key = other.to_string_value();
+                if !matches!(&other, Value::Str(_)) {
+                    original_keys
+                        .entry(str_key.clone())
+                        .or_insert_with(|| other.clone());
+                }
+                weights.insert(str_key, 1.0);
             }
         }
-        Ok(Value::mix(weights))
+        if original_keys.is_empty() {
+            Ok(Value::mix(weights))
+        } else {
+            Ok(Value::mix_with_original_keys(weights, original_keys))
+        }
     }
 
     pub(super) fn dispatch_to_map(&self, target: Value) -> Result<Value, RuntimeError> {
@@ -622,7 +654,7 @@ impl Interpreter {
             Value::Mix(m, _) => {
                 let mut map = HashMap::new();
                 for (k, v) in m.iter() {
-                    map.insert(k.clone(), Value::Num(*v));
+                    map.insert(k.clone(), crate::value::mix_weight_to_value(*v));
                 }
                 Ok(Value::hash(map))
             }

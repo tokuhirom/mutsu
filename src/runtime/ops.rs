@@ -1708,7 +1708,9 @@ impl Interpreter {
                 .collect(),
             Value::Mix(items, _) => items
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
+                .map(|(k, v)| {
+                    Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v)))
+                })
                 .collect(),
             Value::Slip(items) => items.to_vec(),
             Value::Nil => vec![],

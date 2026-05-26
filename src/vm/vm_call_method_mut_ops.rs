@@ -970,13 +970,7 @@ impl VM {
                         self.interpreter
                             .env_mut()
                             .insert(target_name.to_string(), new_val);
-                        let result = if old_weight == old_weight.floor()
-                            && old_weight.abs() < i64::MAX as f64
-                        {
-                            Value::Int(old_weight as i64)
-                        } else {
-                            Value::Num(old_weight)
-                        };
+                        let result = crate::value::mix_weight_to_value(old_weight);
                         self.stack.push(result);
                         self.env_dirty = true;
                         return Ok(());
