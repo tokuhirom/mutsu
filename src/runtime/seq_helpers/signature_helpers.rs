@@ -92,7 +92,7 @@ impl Interpreter {
                 Vec::new(),
                 items
                     .iter()
-                    .map(|(k, v)| (k.clone(), Value::Num(*v)))
+                    .map(|(k, v)| (k.clone(), crate::value::mix_weight_to_value(*v)))
                     .collect(),
             )),
             Value::Rat(n, d) | Value::FatRat(n, d) => {

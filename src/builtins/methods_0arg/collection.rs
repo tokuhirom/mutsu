@@ -671,7 +671,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         .iter()
                         .map(|(k, v)| {
                             Value::ValuePair(
-                                Box::new(Value::Num(*v)),
+                                Box::new(crate::value::mix_weight_to_value(*v)),
                                 Box::new(Value::str(k.clone())),
                             )
                         })

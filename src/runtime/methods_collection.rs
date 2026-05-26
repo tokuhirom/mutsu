@@ -654,7 +654,7 @@ impl Interpreter {
             Value::Mix(m, _) => {
                 let mut map = HashMap::new();
                 for (k, v) in m.iter() {
-                    map.insert(k.clone(), Value::Num(*v));
+                    map.insert(k.clone(), crate::value::mix_weight_to_value(*v));
                 }
                 Ok(Value::hash(map))
             }
