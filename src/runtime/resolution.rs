@@ -1092,9 +1092,26 @@ impl Interpreter {
                     remaining,
                     args: sanitized_args.clone(),
                 };
+                let wrapper_id = if let Value::Sub(ref wd) = outermost {
+                    Some(wd.id)
+                } else {
+                    None
+                };
                 self.wrap_dispatch_stack.push(frame);
                 let result = self.call_sub_value(outermost, sanitized_args, false);
                 self.wrap_dispatch_stack.pop();
+                // Propagate closure variable mutations from the wrapper back to
+                // the current env so captured variables (e.g. $seen = True) are
+                // visible to the caller.
+                if let Some(wid) = wrapper_id
+                    && let Some(persisted) = self.closure_env_overrides.get(&wid).cloned()
+                {
+                    for (k, v) in persisted.iter() {
+                        if self.env.contains_key_sym(*k) {
+                            self.env.insert_sym(*k, v.clone());
+                        }
+                    }
+                }
                 return result;
             }
             let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
@@ -1136,6 +1153,46 @@ impl Interpreter {
             // Routine wrapper from .assuming() on a multi-dispatch sub
             if let Some(Value::Str(routine_name)) = data.env.get("__mutsu_routine_name").cloned() {
                 return self.call_function(&routine_name, call_args);
+            }
+            // Multi-dispatch dispatcher: captured multi candidates from resolve_code_var
+            if let Some(Value::Array(candidates_arc, _)) =
+                data.env.get("__mutsu_multi_dispatch_candidates").cloned()
+            {
+                let candidates = (*candidates_arc).clone();
+                // First try to dispatch via the function table (if still in scope)
+                if let Some(Value::Str(name)) =
+                    data.env.get("__mutsu_multi_dispatch_name").cloned()
+                    && (self.resolve_function(&name).is_some()
+                        || self.has_proto(&name)
+                        || self.has_multi_candidates(&name))
+                {
+                    return self.call_function(&name, call_args);
+                }
+                // Candidates are out of scope -- dispatch through captured Subs
+                for candidate in &candidates {
+                    if let Value::Sub(cand_data) = candidate
+                        && self
+                            .bind_function_args_values(
+                                &cand_data.param_defs,
+                                &cand_data.params,
+                                &call_args,
+                            )
+                            .is_ok()
+                    {
+                        return self.call_sub_value(candidate.clone(), call_args, false);
+                    }
+                }
+                // Slurpy catch-all
+                for candidate in &candidates {
+                    if let Value::Sub(cand_data) = candidate
+                        && cand_data.param_defs.iter().any(|pd| pd.slurpy)
+                    {
+                        return self.call_sub_value(candidate.clone(), call_args, false);
+                    }
+                }
+                if let Some(candidate) = candidates.first() {
+                    return self.call_sub_value(candidate.clone(), call_args, false);
+                }
             }
             if let (Some(left), Some(right)) = (
                 data.env.get("__mutsu_compose_left").cloned(),

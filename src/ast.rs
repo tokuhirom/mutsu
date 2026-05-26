@@ -719,6 +719,8 @@ pub(crate) enum Stmt {
         /// synthesized at class-registration time that calls
         /// `self.<this-method>.<exposed>(|args)`.
         handles: Vec<HandleSpec>,
+        /// Custom `is` traits (non-builtin trait names) with optional argument expression
+        custom_traits: Vec<(String, Option<Expr>)>,
     },
     RoleDecl {
         name: Symbol,

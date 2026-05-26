@@ -1544,6 +1544,7 @@ impl Interpreter {
                     is_default_candidate,
                     deprecated_message,
                     handles: method_handles,
+                    custom_traits: method_custom_traits,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
@@ -1697,6 +1698,63 @@ impl Interpreter {
                             class_def
                                 .methods
                                 .insert(resolved_method_name.clone(), vec![def]);
+                        }
+                    }
+                    // Apply custom trait_mod:<is> for each non-builtin trait on methods
+                    if !method_custom_traits.is_empty() {
+                        let has_trait_mod = self.has_proto("trait_mod:<is>")
+                            || self.has_multi_candidates("trait_mod:<is>");
+                        if has_trait_mod {
+                            for (trait_name, trait_arg) in method_custom_traits {
+                                let mut trait_env = self.env.clone();
+                                // Add method lookup markers so .wrap stores in
+                                // method_wrap_chains (keyed by class+method).
+                                trait_env.insert(
+                                    "__mutsu_lookup_class".to_string(),
+                                    Value::str(name.to_string()),
+                                );
+                                trait_env.insert(
+                                    "__mutsu_lookup_method".to_string(),
+                                    Value::str(resolved_method_name.clone()),
+                                );
+                                trait_env.insert(
+                                    "__mutsu_lookup_candidate_idx".to_string(),
+                                    Value::Int(0),
+                                );
+                                let sub_val = Value::make_sub(
+                                    Symbol::intern(name),
+                                    Symbol::intern(&resolved_method_name),
+                                    effective_params.clone(),
+                                    effective_param_defs.clone(),
+                                    method_body.to_vec(),
+                                    *is_rw,
+                                    trait_env,
+                                );
+                                let trait_arg_val = if let Some(arg_expr) = trait_arg {
+                                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(
+                                        arg_expr.clone(),
+                                    )])?)
+                                } else {
+                                    None
+                                };
+                                let type_obj = self.resolve_type_object(trait_name);
+                                let mut args = vec![sub_val];
+                                if let Some(type_val) = type_obj {
+                                    args.push(type_val);
+                                    if let Some(arg_val) = trait_arg_val {
+                                        args.push(arg_val);
+                                    }
+                                    let _ = self.call_function("trait_mod:<is>", args);
+                                } else {
+                                    let named_val = if let Some(arg_val) = trait_arg_val {
+                                        Value::Pair(trait_name.clone(), Box::new(arg_val))
+                                    } else {
+                                        Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)))
+                                    };
+                                    args.push(named_val);
+                                    let _ = self.call_function("trait_mod:<is>", args);
+                                }
+                            }
                         }
                     }
                     // `handles` on a method: synthesize forwarder methods that
@@ -2739,6 +2797,7 @@ impl Interpreter {
                     is_default_candidate,
                     deprecated_message: _,
                     handles: method_handles,
+                    custom_traits: _,
                 } => {
                     // Validate that $!attr references in the method body are declared
                     // in this role (same check as for class methods).
