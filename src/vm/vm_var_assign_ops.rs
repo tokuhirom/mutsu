@@ -3061,7 +3061,16 @@ impl VM {
         // Lazy sync: if the local is not a ContainerRef but env has one
         // (e.g., a cross-scope `:=` binding was established during a function/method
         // call and propagated back to env but not to locals), adopt the ContainerRef.
+        // Skip for type objects and complex values that should not be replaced.
         if !self.locals[idx].is_container_ref()
+            && !matches!(
+                self.locals[idx],
+                Value::Package(_)
+                    | Value::Array(..)
+                    | Value::Hash(..)
+                    | Value::Sub(..)
+                    | Value::Instance { .. }
+            )
             && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(&name).cloned()
         {
             self.locals[idx] = Value::ContainerRef(arc);
@@ -3808,7 +3817,18 @@ impl VM {
                 .iter()
                 .any(|f| f.saved_env.contains_key(&resolved_source));
             let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
-            if (source_in_outer_frame || (is_rebind && source_in_same_scope))
+            // Only use ContainerRef for same-scope rebind when the value is a
+            // simple scalar (not a type object, array, hash, etc.)
+            let val_is_simple_scalar = !matches!(
+                val,
+                Value::Package(_)
+                    | Value::Array(..)
+                    | Value::Hash(..)
+                    | Value::Sub(..)
+                    | Value::Instance { .. }
+            );
+            if (source_in_outer_frame
+                || (is_rebind && source_in_same_scope && val_is_simple_scalar))
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && !name.starts_with('&')
@@ -3872,9 +3892,18 @@ impl VM {
         // Lazy sync: if the local is not a ContainerRef but env has one
         // (from a cross-scope `:=` binding), adopt the ContainerRef so the
         // write-through below preserves shared container identity.
+        // Skip for type objects and complex values.
         if !is_bind
             && !is_rebind
             && !self.locals[idx].is_container_ref()
+            && !matches!(
+                self.locals[idx],
+                Value::Package(_)
+                    | Value::Array(..)
+                    | Value::Hash(..)
+                    | Value::Sub(..)
+                    | Value::Instance { .. }
+            )
             && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
         {
             self.locals[idx] = Value::ContainerRef(arc);
@@ -4173,7 +4202,16 @@ impl VM {
             // Lazy sync: if the local is not a ContainerRef but env has one
             // (from a cross-scope `:=` binding), adopt the ContainerRef and
             // write through it to preserve shared container identity.
+            // Skip for type objects and complex values.
             if !self.locals[idx].is_container_ref()
+                && !matches!(
+                    self.locals[idx],
+                    Value::Package(_)
+                        | Value::Array(..)
+                        | Value::Hash(..)
+                        | Value::Sub(..)
+                        | Value::Instance { .. }
+                )
                 && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
             {
                 self.locals[idx] = Value::ContainerRef(arc);
