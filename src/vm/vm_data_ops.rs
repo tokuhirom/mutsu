@@ -72,7 +72,8 @@ impl VM {
     }
 
     /// Like `exec_make_array_op` with `is_real_array=true` but never flattens
-    /// single elements. Used for bracket arrays with trailing comma (`[x,]`).
+    /// single elements. Used for bracket arrays with trailing comma (`[x,]`)
+    /// and for `[$scalar]` / `[$%h]` to prevent hash/array flattening.
     pub(super) fn exec_make_array_no_flatten_op(&mut self, n: u32) {
         let n = n as usize;
         let start = self.stack.len() - n;
@@ -81,6 +82,8 @@ impl VM {
         for val in raw {
             match val {
                 Value::Slip(items) => elems.extend(items.iter().cloned()),
+                // Nil in list context contributes nothing (same as value_to_list).
+                Value::Nil => {}
                 other => elems.push(other),
             }
         }

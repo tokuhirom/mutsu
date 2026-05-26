@@ -299,9 +299,12 @@ impl Compiler {
                 self.code.emit(OpCode::MakeRealArray(items.len() as u32));
             } else {
                 self.compile_expr(&elems[0]);
-                // For scalar variables and itemized expressions ($%h, $@a),
-                // use MakeRealArrayNoFlatten to prevent value_to_list flattening.
-                if Self::expr_is_scalar_var(&elems[0]) || matches!(&elems[0], Expr::Itemize(_)) {
+                // When the single element is a scalar variable ($x) or explicit
+                // item context ($%h, $@a), use MakeRealArrayNoFlatten so that
+                // hash/array values held in scalars are not flattened.
+                // HashVar and ArrayVar (% and @ sigiled) SHOULD flatten.
+                let should_not_flatten = matches!(&elems[0], Expr::Var(_) | Expr::Itemize(_));
+                if should_not_flatten {
                     self.code.emit(OpCode::MakeRealArrayNoFlatten(1));
                 } else {
                     self.code.emit(OpCode::MakeRealArray(1));
