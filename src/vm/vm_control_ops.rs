@@ -420,37 +420,23 @@ impl VM {
             })
             .collect();
         // Determine if the implicit topic ($_) should be read-only.
-        // In Raku, for-loop iteration variables are read-only by default unless
-        // `is rw` is specified. The exception is when iterating over a mutable
-        // container (e.g. @array), where $_ aliases the container cell.
-        // We mark $_ readonly when:
-        // - Not in rw mode
-        // - No explicit param name (implicit $_)
-        // - Either no container binding, or the container is an immutable type
-        //   (Mix, Set, Bag, Str, Int, etc.)
-        let topic_readonly = !spec.is_rw && param_name.is_none() && {
-            match &container_binding {
-                None => true, // literal list, expression result, etc.
-                Some(name) => {
-                    // Check if the source container is an immutable type
-                    if let Some(val) = self.get_env_with_main_alias(name) {
-                        matches!(
-                            val,
-                            Value::Mix(_, _)
-                                | Value::Set(_, _)
-                                | Value::Bag(_, _)
-                                | Value::Str(_)
-                                | Value::Int(_)
-                                | Value::Num(_)
-                                | Value::Rat(_, _)
-                                | Value::Bool(_)
-                        )
-                    } else {
-                        false
+        // Only mark $_ readonly when iterating over a known immutable collection
+        // (Mix, Set, Bag). This blocks `.value = ...` mutations on pairs from
+        // immutable collections while keeping $_ writable for expression results,
+        // multi-param for loops, and Scalar containers holding plain values.
+        let topic_readonly =
+            !spec.is_rw && param_name.is_none() && spec.multi_param_names.is_empty() && {
+                match &container_binding {
+                    None => false,
+                    Some(name) => {
+                        if let Some(val) = self.get_env_with_main_alias(name) {
+                            matches!(val, Value::Mix(_, _) | Value::Set(_, _) | Value::Bag(_, _))
+                        } else {
+                            false
+                        }
                     }
                 }
-            }
-        };
+            };
         let total_items = chunked_items.len();
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = if writes_back_topic {
