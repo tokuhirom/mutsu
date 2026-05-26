@@ -2066,6 +2066,50 @@ impl Interpreter {
                             add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                         }
                     }
+                    // Type check for parameterized Bag/BagHash (e.g. Bag[Int].new(<a b c>))
+                    if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                        && constraint.starts_with(char::is_uppercase)
+                        && constraint != "Any"
+                        && constraint != "Mu"
+                    {
+                        let items_to_check: Vec<Value> = if args.len() == 1 {
+                            let arg = &args[0];
+                            if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _))
+                            {
+                                vec![arg.clone()]
+                            } else {
+                                Self::value_to_list(arg)
+                            }
+                        } else {
+                            args.clone()
+                        };
+                        for item in &items_to_check {
+                            if !self.type_matches_value(constraint, item) {
+                                let got_type = crate::value::what_type_name(item);
+                                let got_repr = item.to_string_value();
+                                let msg = format!(
+                                    "Type check failed in binding; expected {} but got {} (\"{}\")",
+                                    constraint, got_type, got_repr,
+                                );
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                                attrs.insert("operation".to_string(), Value::str_from("bind"));
+                                attrs.insert("got".to_string(), item.clone());
+                                attrs.insert(
+                                    "expected".to_string(),
+                                    Value::Package(Symbol::intern(constraint)),
+                                );
+                                let ex = Value::make_instance(
+                                    Symbol::intern("X::TypeCheck::Binding"),
+                                    attrs,
+                                );
+                                let mut err = RuntimeError::new(msg);
+                                err.exception = Some(Box::new(ex));
+                                return Err(err);
+                            }
+                        }
+                    }
                     return Ok(if has_non_str_keys {
                         if base_class_name == "BagHash" {
                             Value::bag_hash_typed(counts, original_keys)
@@ -3787,26 +3831,15 @@ impl Interpreter {
             // TODO: properly track the subclass type on the resulting value
             self.dispatch_new(Value::Package(Symbol::intern("Set")), args.to_vec())
         } else {
-            // Bag-like construction: flatten arrays, count occurrences
-            let mut items = Vec::new();
-            for arg in args {
-                match arg {
-                    Value::Array(elems, _) => {
-                        items.extend(elems.iter().cloned());
-                    }
-                    other => items.push(other.clone()),
-                }
-            }
-            let mut counts: HashMap<String, i64> = HashMap::new();
-            for item in &items {
-                let key = item.to_string_value();
-                *counts.entry(key).or_insert(0) += 1;
-            }
+            // Bag-like construction: delegate to dispatch_to_bag_with_what for
+            // proper handling (pairs, hashes, etc.), then wrap as an Instance
+            // so that isa-ok checks for the subclass still work.
+            let items_array = Value::array(args.to_vec());
+            let bag_value = self.dispatch_to_bag_with_what(items_array, "Bag")?;
+
+            // Store the real Bag as __baggy_data__ on an Instance of the subclass
             let mut attrs = HashMap::new();
-            attrs.insert(
-                "__baggy_data__".to_string(),
-                Value::bag_typed(counts.clone(), HashMap::new()),
-            );
+            attrs.insert("__baggy_data__".to_string(), bag_value);
             Ok(Value::make_instance(Symbol::intern(class_name), attrs))
         }
     }

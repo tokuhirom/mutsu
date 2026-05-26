@@ -306,17 +306,39 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             Value::Bag(b, _) => {
                 let mut map = std::collections::HashMap::new();
+                let mut original_keys = std::collections::HashMap::new();
                 for (k, v) in b.iter() {
                     map.insert(k.clone(), Value::Int(*v));
+                    let typed = b.typed_key(k);
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Some(Ok(Value::hash(map)))
+                let result = Value::hash(map);
+                if !original_keys.is_empty() {
+                    // Mark this hash as having typed keys from a Bag
+                    original_keys.insert("__mutsu_typed_key_hash__".to_string(), Value::Bool(true));
+                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Some(Ok(result))
             }
             Value::Mix(m, _) => {
                 let mut map = std::collections::HashMap::new();
+                let mut original_keys = std::collections::HashMap::new();
                 for (k, v) in m.iter() {
                     map.insert(k.clone(), Value::Num(*v));
+                    let typed = m.typed_key(k);
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Some(Ok(Value::hash(map)))
+                let result = Value::hash(map);
+                if !original_keys.is_empty() {
+                    // Mark this hash as having typed keys from a Mix
+                    original_keys.insert("__mutsu_typed_key_hash__".to_string(), Value::Bool(true));
+                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Some(Ok(result))
             }
             Value::Instance { .. } => {
                 // Instance types should fall through to accessor dispatch,
@@ -354,12 +376,19 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    // Check if this is a Set-derived object hash (all values are Bool(true)
-                    // and original typed keys are registered).
-                    let is_set_derived_obj_hash = !map.is_empty()
-                        && map.values().all(|v| matches!(v, Value::Bool(true)))
-                        && crate::runtime::utils::hash_original_keys_snapshot(target).is_some();
-                    let keys: Vec<Value> = if is_set_derived_obj_hash {
+                    // Check if this is a Set/Bag-derived object hash where keys
+                    // should be returned as their original typed values.
+                    // Set-derived: all values are Bool(true) + original keys exist.
+                    // Bag-derived: flagged with __baggy_hash marker in original keys.
+                    let original_keys = crate::runtime::utils::hash_original_keys_snapshot(target);
+                    let is_typed_key_hash = if let Some(ref orig) = original_keys {
+                        orig.contains_key("__mutsu_typed_key_hash__")
+                            || (!map.is_empty()
+                                && map.values().all(|v| matches!(v, Value::Bool(true))))
+                    } else {
+                        false
+                    };
+                    let keys: Vec<Value> = if is_typed_key_hash {
                         map.keys()
                             .map(|k| crate::runtime::utils::hash_typed_key(target, k))
                             .collect()

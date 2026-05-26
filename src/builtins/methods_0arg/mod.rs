@@ -314,6 +314,18 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
+    // Instance with __baggy_data__: delegate Bag-like methods to the inner Bag/Set
+    // so that subclasses of Bag/Set (e.g. `my class MyBag is Bag {}`) work correctly.
+    if let Value::Instance { attributes, .. } = target
+        && let Some(inner) = attributes.get("__baggy_data__")
+        && !matches!(
+            method,
+            "WHAT" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
+        )
+    {
+        return native_method_0arg(inner, method_sym);
+    }
+
     // $!.pending returns a list of all tracked Failure values (S04 spec).
     if method == "pending" {
         let failures = crate::value::get_pending_failures();

@@ -721,6 +721,17 @@ impl VM {
                     Value::Nil
                 }
             }
+            // Instance with __baggy_data__: delegate subscript to the inner Bag/Set
+            (Value::Instance { ref attributes, .. }, ref idx)
+                if attributes.contains_key("__baggy_data__") =>
+            {
+                let inner = attributes.get("__baggy_data__").unwrap().clone();
+                let idx_clone = idx.clone();
+                // Re-enter the index logic with the inner bag/set value
+                self.stack.push(inner);
+                self.stack.push(idx_clone);
+                return self.exec_index_op_with_positional(is_positional);
+            }
             (instance @ Value::Instance { .. }, Value::Str(key)) => {
                 let default = self.typed_container_default(&instance);
                 let result = self
