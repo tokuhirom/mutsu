@@ -346,6 +346,7 @@ fn expr_contains_whatever(expr: &Expr) -> bool {
         Expr::ZenSlice(inner)
         | Expr::PositionalPair(inner)
         | Expr::Eager(inner)
+        | Expr::Itemize(inner)
         | Expr::Reduction { expr: inner, .. }
         | Expr::IndirectTypeLookup(inner)
         | Expr::SymbolicDeref { expr: inner, .. } => expr_contains_whatever(inner),

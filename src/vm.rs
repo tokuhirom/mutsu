@@ -2722,6 +2722,19 @@ impl VM {
                 )?;
                 *ip += 1;
             }
+            OpCode::IndexAssignDeepNested {
+                name_idx,
+                depth,
+                positional_flags_idx,
+            } => {
+                self.exec_index_assign_deep_nested_op(
+                    code,
+                    *name_idx,
+                    *depth,
+                    *positional_flags_idx,
+                )?;
+                *ip += 1;
+            }
 
             // -- Unary coercion --
             OpCode::NumCoerce => {

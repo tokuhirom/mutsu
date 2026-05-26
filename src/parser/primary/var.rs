@@ -151,11 +151,12 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             } else {
                 format!("{}{}", twigil, name)
             };
-            return if sigil == "@" {
-                Ok((rest, Expr::ArrayVar(full_name)))
+            let inner = if sigil == "@" {
+                Expr::ArrayVar(full_name)
             } else {
-                Ok((rest, Expr::HashVar(full_name)))
+                Expr::HashVar(full_name)
             };
+            return Ok((rest, Expr::Itemize(Box::new(inner))));
         }
     }
     // Handle nested scalar dereference syntax ($$x / $&f) by parsing the

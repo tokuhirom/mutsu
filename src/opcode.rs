@@ -525,6 +525,16 @@ pub(crate) enum OpCode {
         outer_positional: bool,
         inner_positional: bool,
     },
+    /// Deep nested index assignment (3+ levels): @a[i][j][k]... = val
+    /// Stack: [value, idx_n (outermost), idx_n-1, ..., idx_1 (innermost)]
+    /// `depth` is the total number of subscript levels.
+    /// `positional_flags_idx` is a constant index holding a Value::Array of booleans
+    /// encoding is_positional for each level from innermost to outermost.
+    IndexAssignDeepNested {
+        name_idx: u32,
+        depth: u32,
+        positional_flags_idx: u32,
+    },
     /// Generic index assignment on a stack-computed target.
     /// Stack: [target, index, value] → assigns value to target[index].
     /// Supports callframe .my hash writeback for dynamic variables.
@@ -1148,6 +1158,7 @@ impl CompiledCode {
                     | OpCode::AssignExprLocal(_)
                     | OpCode::IndexAssignExprNamed { .. }
                     | OpCode::IndexAssignExprNested { .. }
+                    | OpCode::IndexAssignDeepNested { .. }
                     | OpCode::IndexAssignGeneric
                     | OpCode::IndexAssignPseudoStashNamed { .. }
                     | OpCode::PostIncrement(_)

@@ -375,6 +375,10 @@ impl Compiler {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::Eager);
             }
+            Expr::Itemize(inner) => {
+                self.compile_expr(inner);
+                self.code.emit(OpCode::Itemize);
+            }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::ContainerizePair);
