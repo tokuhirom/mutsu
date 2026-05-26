@@ -270,16 +270,35 @@ impl Interpreter {
             Vec::new()
         };
 
+        // When assigning Nil to a container element with `is default(...)`,
+        // restore the default value instead of Nil.
+        let effective_value = if matches!(value, Value::Nil) {
+            if let Some(def) = self.container_default(&current).cloned() {
+                def
+            } else {
+                // Check class_attribute_default for instance attributes
+                let class_default = if let Value::Instance { class_name, .. } = &target {
+                    self.class_attribute_default(&class_name.resolve(), &method)
+                        .cloned()
+                } else {
+                    None
+                };
+                class_default.unwrap_or_else(|| value.clone())
+            }
+        } else {
+            value.clone()
+        };
+
         // Modify the container
         let updated = if dims.len() >= 2 {
             // Multi-dimensional index assignment (e.g., $c.a[2;1] = value)
-            Self::multidim_assign_nested(current, &dims, value.clone())?
+            Self::multidim_assign_nested(current, &dims, effective_value.clone())?
         } else {
             let key = index.to_string_value();
             match current {
                 Value::Hash(ref h) => {
                     let mut new_hash = (**h).clone();
-                    new_hash.insert(key, value.clone());
+                    new_hash.insert(key, effective_value.clone());
                     Value::hash(new_hash)
                 }
                 Value::Array(ref items, kind) => {
@@ -294,10 +313,10 @@ impl Interpreter {
                             Value::Package(crate::symbol::Symbol::intern("Any")),
                         );
                     }
-                    new_items[idx] = value.clone();
+                    new_items[idx] = effective_value.clone();
                     Value::Array(std::sync::Arc::new(new_items), kind)
                 }
-                _ => return Ok(value),
+                _ => return Ok(effective_value),
             }
         };
 
@@ -323,7 +342,7 @@ impl Interpreter {
             Vec::new(),
             updated,
         )?;
-        Ok(value)
+        Ok(effective_value)
     }
 
     /// Assign a value into a nested multi-dimensional array structure.

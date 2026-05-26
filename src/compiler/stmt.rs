@@ -150,8 +150,18 @@ impl Compiler {
             Expr::Literal(Value::Int(_)) => "Int",
             Expr::Literal(Value::Num(_)) => "Num",
             Expr::Literal(Value::Bool(_)) => "Bool",
-            Expr::Literal(Value::Nil) => return None, // Nil is always valid
-            _ => return None,                         // non-literal, can't check statically
+            Expr::Literal(Value::Nil) => {
+                // Nil is invalid for typed variables (Int, Str, etc.)
+                // but valid for untyped (Any, Mu) or explicitly Nil-accepting types
+                if effective_constraint != "Any"
+                    && effective_constraint != "Mu"
+                    && !effective_constraint.contains("Nil")
+                {
+                    return Some("Nil".to_string());
+                }
+                return None;
+            }
+            _ => return None, // non-literal, can't check statically
         };
         // Check type hierarchy: Int matches Numeric, Cool, Any, etc.
         let mro: &[&str] = match value_type {
@@ -758,6 +768,43 @@ impl Compiler {
                     if trait_name.starts_with("__") {
                         continue;
                     }
+                    // `is default` on native types is not allowed
+                    if trait_name == "default"
+                        && let Some(tc) = type_constraint
+                        && matches!(
+                            tc.as_str(),
+                            "int"
+                                | "num"
+                                | "str"
+                                | "uint"
+                                | "int8"
+                                | "int16"
+                                | "int32"
+                                | "int64"
+                                | "uint8"
+                                | "uint16"
+                                | "uint32"
+                                | "uint64"
+                                | "num32"
+                                | "num64"
+                        )
+                    {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(format!(
+                            "X::Comp::Trait::NotOnNative: is default is not supported on native type {}",
+                            tc
+                        )));
+                        attrs.insert("type".to_string(), Value::str("is".to_string()));
+                        attrs.insert("subtype".to_string(), Value::str("default".to_string()));
+                        let err = Value::make_instance(
+                            Symbol::intern("X::Comp::Trait::NotOnNative"),
+                            attrs,
+                        );
+                        let idx = self.code.add_constant(err);
+                        self.code.emit(OpCode::LoadConst(idx));
+                        self.code.emit(OpCode::Die);
+                        return;
+                    }
                     // `is default(expr)` with a type constraint: check that the
                     // default value is compatible with the type at compile time.
                     if trait_name == "default"
@@ -765,13 +812,33 @@ impl Compiler {
                         && let Some(arg_expr) = trait_arg
                         && let Some(type_mismatch) = Self::check_default_type_mismatch(tc, arg_expr)
                     {
+                        // Construct the expected type name based on sigil:
+                        // @-sigil → Array[Type], %-sigil → Hash[Type], $-sigil → Type
+                        let expected_type_name = if name.starts_with('@') {
+                            format!("Array[{}]", tc)
+                        } else if name.starts_with('%') {
+                            format!("Hash[{}]", tc)
+                        } else {
+                            tc.to_string()
+                        };
                         let err_msg = format!(
                             "X::Parameter::Default::TypeCheck: Default value '{}' will never bind to a parameter of type {}",
-                            type_mismatch, tc
+                            type_mismatch, expected_type_name
                         );
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("message".to_string(), Value::str(err_msg));
-                        attrs.insert("expected".to_string(), Value::Package(Symbol::intern(tc)));
+                        attrs.insert(
+                            "expected".to_string(),
+                            Value::Package(Symbol::intern(&expected_type_name)),
+                        );
+                        attrs.insert(
+                            "got".to_string(),
+                            if type_mismatch == "Nil" {
+                                Value::Nil
+                            } else {
+                                Value::str(type_mismatch.clone())
+                            },
+                        );
                         let err = Value::make_instance(
                             Symbol::intern("X::Parameter::Default::TypeCheck"),
                             attrs,

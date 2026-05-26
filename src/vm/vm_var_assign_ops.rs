@@ -2873,6 +2873,17 @@ impl VM {
             other => (other, None),
         };
 
+        // When assigning Nil to a container element, check for `is default(...)` on the container.
+        let val = if matches!(val, Value::Nil) {
+            if let Some(def) = self.interpreter.container_default(&target).cloned() {
+                def
+            } else {
+                val
+            }
+        } else {
+            val
+        };
+
         match &target {
             Value::Hash(arc) => {
                 // Check for callframe .my hash with depth marker

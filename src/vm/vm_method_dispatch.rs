@@ -430,7 +430,14 @@ impl VM {
                 self.interpreter
                     .set_var_default(&format!("%!{}", attr_name), def.clone());
                 self.interpreter
-                    .set_var_default(&format!("%.{}", attr_name), def);
+                    .set_var_default(&format!("%.{}", attr_name), def.clone());
+                // Also register container_default on the actual array/hash value
+                // so that IndexAssignGeneric can restore defaults on Nil assignment.
+                if let Some(attr_val) = attributes.get(attr_name)
+                    && matches!(attr_val, Value::Array(..) | Value::Hash(..))
+                {
+                    self.interpreter.set_container_default(attr_val, def);
+                }
             }
         }
 
@@ -956,7 +963,14 @@ impl VM {
                 self.interpreter
                     .set_var_default(&format!("%!{}", attr_name), def.clone());
                 self.interpreter
-                    .set_var_default(&format!("%.{}", attr_name), def);
+                    .set_var_default(&format!("%.{}", attr_name), def.clone());
+                // Also register container_default on the actual array/hash value
+                // so that IndexAssignGeneric can restore defaults on Nil assignment.
+                if let Some(attr_val) = attributes.get(attr_name)
+                    && matches!(attr_val, Value::Array(..) | Value::Hash(..))
+                {
+                    self.interpreter.set_container_default(attr_val, def);
+                }
             }
         }
 
