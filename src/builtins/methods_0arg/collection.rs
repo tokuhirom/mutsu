@@ -291,15 +291,19 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Set(s, _) => {
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
+                let mut has_typed = false;
                 for k in s.iter() {
                     map.insert(k.clone(), Value::Bool(true));
                     let typed = s.typed_key(k);
                     if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
                 }
                 let result = Value::hash(map);
-                if !original_keys.is_empty() {
+                if has_typed {
+                    // Tag so .keys can distinguish setty-origin hashes
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
                     crate::runtime::utils::register_hash_original_keys(&result, original_keys);
                 }
                 Some(Ok(result))
@@ -307,17 +311,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Bag(b, _) => {
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
+                let mut has_typed = false;
                 for (k, v) in b.iter() {
                     map.insert(k.clone(), Value::Int(*v));
                     let typed = b.typed_key(k);
                     if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
                 }
                 let result = Value::hash(map);
-                if !original_keys.is_empty() {
-                    // Mark this hash as having typed keys from a Bag
-                    original_keys.insert("__mutsu_typed_key_hash__".to_string(), Value::Bool(true));
+                if has_typed {
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
                     crate::runtime::utils::register_hash_original_keys(&result, original_keys);
                 }
                 Some(Ok(result))
@@ -325,17 +330,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Mix(m, _) => {
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
+                let mut has_typed = false;
                 for (k, v) in m.iter() {
                     map.insert(k.clone(), crate::value::mix_weight_to_value(*v));
                     let typed = m.typed_key(k);
                     if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
                 }
                 let result = Value::hash(map);
-                if !original_keys.is_empty() {
-                    // Mark this hash as having typed keys from a Mix
-                    original_keys.insert("__mutsu_typed_key_hash__".to_string(), Value::Bool(true));
+                if has_typed {
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
                     crate::runtime::utils::register_hash_original_keys(&result, original_keys);
                 }
                 Some(Ok(result))
@@ -376,19 +382,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    // Check if this is a Set/Bag/Mix-derived object hash where keys
-                    // should be returned as their original typed values.
-                    // Set-derived: all values are Bool(true) + original keys exist.
-                    // Bag/Mix-derived: flagged with __mutsu_typed_key_hash__ marker.
-                    let original_keys = crate::runtime::utils::hash_original_keys_snapshot(target);
-                    let is_typed_key_hash = if let Some(ref orig) = original_keys {
-                        orig.contains_key("__mutsu_typed_key_hash__")
-                            || (!map.is_empty()
-                                && map.values().all(|v| matches!(v, Value::Bool(true))))
+                    // Use original typed keys for object hashes that were
+                    // created from Set/Bag/Mix .hash coercion and tagged
+                    // with a __setty_origin marker in original_keys.
+                    let has_setty_origin = if let Some(orig) =
+                        crate::runtime::utils::hash_original_keys_snapshot(target)
+                    {
+                        orig.contains_key("__mutsu_setty_origin")
                     } else {
                         false
                     };
-                    let keys: Vec<Value> = if is_typed_key_hash {
+                    let keys: Vec<Value> = if has_setty_origin {
                         map.keys()
                             .map(|k| crate::runtime::utils::hash_typed_key(target, k))
                             .collect()
@@ -784,7 +788,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Set(s, _) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b, _) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
             Value::Mix(m, _) => {
-                let (n, d) = f64_to_rat(m.values().sum::<f64>());
+                // Sort values before summing to ensure deterministic results
+                // regardless of HashMap iteration order, avoiding f64
+                // non-associativity issues (e.g. 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
+                let mut vals: Vec<f64> = m.values().copied().collect();
+                vals.sort_by(|a, b| a.total_cmp(b));
+                let (n, d) = f64_to_rat(vals.iter().sum::<f64>());
                 Some(Ok(crate::value::make_rat(n, d)))
             }
             _ => None,

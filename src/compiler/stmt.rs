@@ -1137,7 +1137,10 @@ impl Compiler {
                     .as_ref()
                     .and_then(|p| self.local_map.get(p.as_str()).copied());
                 let rw_param_names = if has_rw && !params.is_empty() {
-                    params.clone()
+                    params
+                        .iter()
+                        .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+                        .collect()
                 } else {
                     Vec::new()
                 };
@@ -1172,7 +1175,10 @@ impl Compiler {
                     source_var_names,
                     autothread_junctions,
                     explicit_zero_params: *explicit_zero_params,
-                    multi_param_names: params.clone(),
+                    multi_param_names: params
+                        .iter()
+                        .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+                        .collect(),
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);

@@ -3596,6 +3596,11 @@ impl VM {
             // same-named variable in an outer scope.
             let deleted_key = format!("__mutsu_deleted_index::{}", name);
             self.interpreter.env_mut().remove(&deleted_key);
+            // Clear any sigilless-readonly flag inherited from an outer
+            // scope (e.g. a for-loop `\result` shouldn't block `my $result`
+            // in a called sub).
+            let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+            self.interpreter.env_mut().remove(&readonly_key);
             // Replace stale ContainerRef in env with Nil so a new `my $var`
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it.
@@ -4220,10 +4225,15 @@ impl VM {
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        if matches!(
-            self.interpreter.env().get(&readonly_key),
-            Some(Value::Bool(true))
-        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        // Only enforce sigilless-readonly when this is NOT a new variable
+        // declaration (my $x = ...).  A `my` decl creates a fresh variable
+        // that shadows the sigilless one, so it must not be blocked.
+        if !is_vardecl
+            && matches!(
+                self.interpreter.env().get(&readonly_key),
+                Some(Value::Bool(true))
+            )
+            && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
         {
             return Err(RuntimeError::assignment_ro(None));
         }
