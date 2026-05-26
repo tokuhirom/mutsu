@@ -296,4 +296,29 @@ impl VM {
         self.stack.push(val);
         Ok(())
     }
+
+    /// Get a variable from an outer lexical scope.
+    /// `depth` is the number of OUTER:: prefixes (1 = immediate outer, 2 = two levels up).
+    /// Uses the `outer_scope_locals` stack which is populated by BlockScope operations.
+    pub(super) fn get_outer_var(&self, code: &CompiledCode, name: &str, depth: usize) -> Value {
+        let stack_len = self.outer_scope_locals.len();
+        if depth == 0 || stack_len == 0 {
+            return Value::Nil;
+        }
+        // The outer_scope_locals stack has the most recent (innermost) scope at the end.
+        // depth=1 means the immediately enclosing scope (last element).
+        let idx = if depth <= stack_len {
+            stack_len - depth
+        } else {
+            return Value::Nil;
+        };
+        let saved = &self.outer_scope_locals[idx];
+        // Find the local slot for this variable name
+        for (slot, local_name) in code.locals.iter().enumerate() {
+            if local_name == name && slot < saved.len() {
+                return saved[slot].clone();
+            }
+        }
+        Value::Nil
+    }
 }

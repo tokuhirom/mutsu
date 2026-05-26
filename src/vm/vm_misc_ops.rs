@@ -2179,6 +2179,8 @@ impl VM {
         // Track variables declared within this block scope.
         self.block_declared_vars
             .push(std::collections::HashSet::new());
+        // Push saved locals for $OUTER:: variable access.
+        self.outer_scope_locals.push(saved_locals.clone());
 
         // Run PRE phasers first (before ENTER)
         self.run_range(code, pre_start, enter_start, compiled_fns)?;
@@ -2294,6 +2296,8 @@ impl VM {
 
         // Pop the block-declared variables set.
         let block_declared = self.block_declared_vars.pop().unwrap_or_default();
+        // Pop the outer scope locals snapshot.
+        self.outer_scope_locals.pop();
 
         self.ensure_env_synced(code);
         // Update captured envs of END phasers registered during this block

@@ -235,7 +235,12 @@ impl VM {
                 self.ensure_env_synced(code);
                 let result = self.call_compiled_function_fast(cf, compiled_fns)?;
                 self.stack.push(result);
+                // Mark env as dirty so locals get re-synced from env on next
+                // GetLocal. Clear locals_dirty so stale caller locals don't
+                // overwrite the function's env modifications during the sync.
                 self.env_dirty = true;
+                self.locals_dirty = false;
+                self.locals_dirty_slots.fill(false);
                 return Ok(());
             }
         }

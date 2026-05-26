@@ -171,6 +171,9 @@ pub(crate) struct VM {
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
     block_declared_vars: Vec<std::collections::HashSet<String>>,
+    /// Stack of saved locals snapshots for each active BlockScope.
+    /// Used by GetOuterVar to access variables from enclosing lexical scopes.
+    outer_scope_locals: Vec<Vec<Value>>,
     /// Pending alias-based bind pairs created by `:=` binding inside closures
     /// (e.g. `$a := $arg` where `$arg is rw`).  Each entry is
     /// (target_name, source_name): after the closure returns, the caller
@@ -363,6 +366,7 @@ impl VM {
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
             block_declared_vars: Vec::new(),
+            outer_scope_locals: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),
             otf_call_cache_gen: 0,
@@ -3596,6 +3600,12 @@ impl VM {
                 let source = Self::const_str(code, *source_idx);
                 self.interpreter
                     .bind_caller_var(target, source, *depth as usize)?;
+                *ip += 1;
+            }
+            OpCode::GetOuterVar { name_idx, depth } => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.get_outer_var(code, name, *depth as usize);
+                self.stack.push(val);
                 *ip += 1;
             }
             OpCode::GetDynamicVar(name_idx) => {
