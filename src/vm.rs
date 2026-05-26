@@ -1674,6 +1674,11 @@ impl VM {
                 self.exec_num_ne_op()?;
                 *ip += 1;
             }
+            OpCode::NumNeNative(flags) => {
+                let flags = *flags;
+                self.exec_num_ne_native_op(flags)?;
+                *ip += 1;
+            }
             OpCode::NumLt => {
                 self.exec_num_lt_op()?;
                 *ip += 1;

@@ -90,6 +90,11 @@ pub(crate) enum OpCode {
     // -- Numeric comparison --
     NumEq,
     NumNe,
+    /// Native-int-aware `!=`.  Flags encode signedness of each operand:
+    /// bit 0 = left is unsigned, bit 1 = right is unsigned.
+    /// When cross-signed and the signed operand is negative, returns False
+    /// (matching Rakudo's MoarVM behaviour for native int registers).
+    NumNeNative(u8),
     NumLt,
     NumLe,
     NumGt,
