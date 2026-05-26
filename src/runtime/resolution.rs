@@ -1160,8 +1160,7 @@ impl Interpreter {
             {
                 let candidates = (*candidates_arc).clone();
                 // First try to dispatch via the function table (if still in scope)
-                if let Some(Value::Str(name)) =
-                    data.env.get("__mutsu_multi_dispatch_name").cloned()
+                if let Some(Value::Str(name)) = data.env.get("__mutsu_multi_dispatch_name").cloned()
                     && (self.resolve_function(&name).is_some()
                         || self.has_proto(&name)
                         || self.has_multi_candidates(&name))
