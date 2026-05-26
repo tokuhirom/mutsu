@@ -12,9 +12,91 @@ impl VM {
         dims.reverse();
         let target = self.stack.pop().unwrap_or(Value::Nil);
 
+        // For shaped arrays, check bounds before reading
+        let is_shaped = crate::runtime::utils::is_shaped_array(&target);
+        if is_shaped {
+            self.check_shaped_array_bounds(&target, &dims, 0)?;
+        }
+
         let result = self.multi_dim_index_read(&target, &dims)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Check that all scalar indices are within bounds for a shaped array.
+    /// `dim_offset` tracks the 1-based dimension number for error messages.
+    fn check_shaped_array_bounds(
+        &self,
+        target: &Value,
+        dims: &[Value],
+        dim_offset: usize,
+    ) -> Result<(), RuntimeError> {
+        if dims.is_empty() {
+            return Ok(());
+        }
+        let dim = &dims[0];
+        let rest = &dims[1..];
+
+        match dim {
+            Value::Whatever => {
+                // * iterates all elements — no bounds check needed at this level,
+                // but recurse into each element for remaining dimensions
+                if let Value::Array(items, ..) = target {
+                    for item in items.iter() {
+                        self.check_shaped_array_bounds(item, rest, dim_offset + 1)?;
+                    }
+                }
+                Ok(())
+            }
+            Value::Array(indices, ..) => {
+                // Multiple indices — check each one
+                let items = match target {
+                    Value::Array(items, ..) => items,
+                    _ => return Ok(()),
+                };
+                for idx in indices.iter() {
+                    if let Some(i) = Self::index_to_usize(idx) {
+                        if i >= items.len() {
+                            return Err(RuntimeError::new(format!(
+                                "Index {} for dimension {} out of range (must be 0..{})",
+                                i,
+                                dim_offset + 1,
+                                items.len() - 1
+                            )));
+                        }
+                        self.check_shaped_array_bounds(&items[i], rest, dim_offset + 1)?;
+                    }
+                }
+                Ok(())
+            }
+            _ => {
+                // Scalar index
+                let resolved = if let Value::Rat(n, d) = dim {
+                    Some(Value::Int(*n / *d))
+                } else if let Value::Num(f) = dim {
+                    Some(Value::Int(*f as i64))
+                } else {
+                    None
+                };
+                let idx = resolved.as_ref().unwrap_or(dim);
+                if let Some(i) = Self::index_to_usize(idx) {
+                    let items = match target {
+                        Value::Array(items, ..) => items,
+                        _ => return Ok(()),
+                    };
+                    if i >= items.len() {
+                        return Err(RuntimeError::new(format!(
+                            "Index {} for dimension {} out of range (must be 0..{})",
+                            i,
+                            dim_offset + 1,
+                            items.len() - 1
+                        )));
+                    }
+                    self.check_shaped_array_bounds(&items[i], rest, dim_offset + 1)?;
+                }
+                Ok(())
+            }
+        }
     }
 
     /// Read a value from a nested array using multi-dimensional indices.
