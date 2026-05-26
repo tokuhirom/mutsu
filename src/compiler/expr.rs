@@ -244,10 +244,11 @@ impl Compiler {
             // Multi-dimensional indexing: @a[$x;$y;$z]
             Expr::MultiDimIndex { target, dimensions } => {
                 self.compile_expr(target);
-                self.compile_expr(&Expr::ArrayLiteral(dimensions.clone()));
-                self.code.emit(OpCode::Index {
-                    is_positional: false,
-                });
+                for dim in dimensions {
+                    self.compile_expr(dim);
+                }
+                self.code
+                    .emit(OpCode::MultiDimIndex(dimensions.len() as u32));
             }
             // Hash hyperslice: %hash{**}:adverb
             Expr::HyperSlice { target, adverb } => {

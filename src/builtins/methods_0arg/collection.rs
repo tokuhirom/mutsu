@@ -1013,6 +1013,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                 }
             }
+            // Scalar .sum returns the numeric value of the invocant
+            Value::Int(_) | Value::Num(_) | Value::Rat(..) | Value::BigInt(_) => {
+                Some(Ok(target.clone()))
+            }
             _ => None,
         },
         "squish" => match target {

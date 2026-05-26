@@ -1738,11 +1738,11 @@ impl VM {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let index_target = self.interpreter.env().get(&var_name).cloned();
         let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
-        // Normalize Seq index to Array for uniform handling in assignment
-        let idx = if let Value::Seq(items) = idx {
-            Value::Array(items, crate::value::ArrayKind::List)
-        } else {
-            idx
+        // Normalize Seq/Slip index to Array for uniform handling in assignment
+        let idx = match idx {
+            Value::Seq(items) => Value::Array(items, crate::value::ArrayKind::List),
+            Value::Slip(items) => Value::Array(items, crate::value::ArrayKind::List),
+            other => other,
         };
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let (val, bind_mode, bind_sources) = match raw_val {
@@ -3845,9 +3845,14 @@ impl VM {
                     }
                 }
             };
-            // Preserve shaped array property on re-assignment
+            // Preserve shaped array property on re-assignment, but only if the
+            // new value is NOT already a shaped array (e.g. from Array.new(:shape(...)))
+            let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
+                .is_some()
+                || matches!(&assigned, Value::Array(_, crate::value::ArrayKind::Shaped));
             if let Some(shape) = crate::runtime::utils::shaped_array_shape(&self.locals[idx])
                 && shape.len() == 1
+                && !assigned_has_own_shape
             {
                 let items = runtime::value_to_list(&assigned);
                 let item_count = items.len();
