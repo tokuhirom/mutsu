@@ -784,7 +784,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Set(s, _) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b, _) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
             Value::Mix(m, _) => {
-                let (n, d) = f64_to_rat(m.values().sum::<f64>());
+                // Sort values before summing to ensure deterministic results
+                // regardless of HashMap iteration order, avoiding f64
+                // non-associativity issues (e.g. 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
+                let mut vals: Vec<f64> = m.values().copied().collect();
+                vals.sort_by(|a, b| a.total_cmp(b));
+                let (n, d) = f64_to_rat(vals.iter().sum::<f64>());
                 Some(Ok(crate::value::make_rat(n, d)))
             }
             _ => None,
