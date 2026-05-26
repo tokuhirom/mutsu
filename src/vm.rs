@@ -1567,13 +1567,13 @@ impl VM {
             OpCode::Itemize => {
                 // Wrap Array/List values in their itemized (Scalar-container)
                 // variant so they are treated as single items in list context.
-                // Hash is wrapped in Scalar so it won't be flattened.
+                // Hash is already an item (not flattened in list context), so
+                // it is left unchanged.
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let itemized = match val {
                     Value::Array(items, kind) if !kind.is_itemized() => {
                         Value::Array(items, kind.itemize())
                     }
-                    Value::Hash(h) => Value::Scalar(Box::new(Value::Hash(h))),
                     other => other,
                 };
                 self.stack.push(itemized);

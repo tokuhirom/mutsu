@@ -299,12 +299,13 @@ impl Compiler {
                 self.code.emit(OpCode::MakeRealArray(items.len() as u32));
             } else {
                 self.compile_expr(&elems[0]);
-                // For scalar variables and itemized expressions, emit Itemize
-                // so MakeRealArray(1) won't flatten them via value_to_list.
+                // For scalar variables and itemized expressions ($%h, $@a),
+                // use MakeRealArrayNoFlatten to prevent value_to_list flattening.
                 if Self::expr_is_scalar_var(&elems[0]) || matches!(&elems[0], Expr::Itemize(_)) {
-                    self.code.emit(OpCode::Itemize);
+                    self.code.emit(OpCode::MakeRealArrayNoFlatten(1));
+                } else {
+                    self.code.emit(OpCode::MakeRealArray(1));
                 }
-                self.code.emit(OpCode::MakeRealArray(1));
             }
         } else {
             for elem in elems {
