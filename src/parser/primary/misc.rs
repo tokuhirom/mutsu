@@ -1600,6 +1600,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             } else if let Some(r2) = keyword("does", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
                 let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
+                parents.push(role.clone());
                 does_roles.push(role);
                 let (r2, _) = ws(r2)?;
                 r = r2;
@@ -1630,6 +1631,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             } else if let Some(r2) = keyword("does", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
                 let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
+                parents.push(role.clone());
                 does_roles.push(role);
                 let (r2, _) = ws(r2)?;
                 r = r2;
@@ -1648,11 +1650,11 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
 
     let (rest, mut body) = parse_block_body(rest)?;
     // Insert DoesDecl statements at the beginning of the body for `does` clauses
-    for role_name in does_roles.into_iter().rev() {
+    for role_name in does_roles.iter().rev() {
         body.insert(
             0,
             Stmt::DoesDecl {
-                name: Symbol::intern(&role_name),
+                name: Symbol::intern(role_name),
             },
         );
     }
@@ -1666,7 +1668,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             is_hidden: false,
             is_lexical: false,
             hidden_parents: Vec::new(),
-            does_parents: Vec::new(),
+            does_parents: does_roles,
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),

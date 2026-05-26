@@ -302,6 +302,32 @@ impl Interpreter {
                 return Ok(result);
             }
         }
+        // .Numeric / .Real on type objects for user classes that compose those roles.
+        // In Raku, `does Numeric` / `does Real` provides a default `.Numeric` / `.Real`
+        // method on type objects: it warns about uninitialized use and calls `self.new`.
+        if matches!(method, "Numeric" | "Real")
+            && args.is_empty()
+            && let Value::Package(name) = &target
+        {
+            let type_name = name.resolve();
+            // Only handle user-defined classes (not built-in types, which are handled
+            // by the builtins fast path in dispatch_core_coerce.rs).
+            let role_name = method; // "Numeric" or "Real"
+            let composes_role = self
+                .class_composed_roles
+                .get(&type_name)
+                .is_some_and(|roles| roles.iter().any(|r| r == role_name));
+            if composes_role {
+                let msg = format!(
+                    "Use of uninitialized value of type {} in numeric context",
+                    type_name
+                );
+                // Call self.new to get the default value
+                let new_val = self.call_method_with_values(target.clone(), "new", vec![])?;
+                return Err(RuntimeError::warn_signal_with_resume(msg, new_val));
+            }
+        }
+
         // .return method: triggers a return from the enclosing sub with the invocant
         if method == "return" && args.is_empty() {
             let mut err = RuntimeError::new("return");
