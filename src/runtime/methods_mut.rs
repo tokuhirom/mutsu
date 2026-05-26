@@ -914,6 +914,21 @@ impl Interpreter {
                     }
                 }
 
+                // If the pair value is Bool and the pair is NOT directly backed
+                // by a user-visible hash variable, the Bool is immutable.
+                // This handles Set.pairs[0].value = 0 which should die.
+                if matches!(current_value.as_ref(), Value::Bool(_)) {
+                    let has_backing_hash = target_var
+                        .is_some_and(|vn| matches!(self.env.get(vn), Some(Value::Hash(_))));
+                    if !has_backing_hash {
+                        let type_name = crate::value::what_type_name(current_value.as_ref());
+                        return Err(RuntimeError::assignment_ro_typename(
+                            &type_name,
+                            &current_value.to_string_value(),
+                        ));
+                    }
+                }
+
                 // Standalone pair (not derived from a hash or array): update the
                 // pair value directly by replacing the variable binding, and also
                 // propagate to any other environment bindings that hold a pair

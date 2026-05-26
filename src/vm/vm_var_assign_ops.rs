@@ -2239,6 +2239,8 @@ impl VM {
                 // When the container is an Instance of a Hash subclass (e.g.
                 // `class MyHash is Hash {}`), convert it to a plain Hash
                 // before element assignment so hash operations work correctly.
+                // But if it inherits from an immutable type (Set, Bag, Mix),
+                // throw X::Assignment::RO instead.
                 if let Some(Value::Instance {
                     class_name,
                     attributes,
@@ -2248,6 +2250,11 @@ impl VM {
                         .interpreter
                         .is_container_subclass(&class_name.resolve())
                 {
+                    let cn = class_name.resolve();
+                    if self.interpreter.class_inherits_from_immutable_setty(&cn) {
+                        let display = format!("{}()", cn);
+                        return Err(RuntimeError::assignment_ro_typename(&cn, &display));
+                    }
                     let hash_map: HashMap<String, Value> = HashMap::clone(&**attributes);
                     let hash_val = Value::hash(hash_map);
                     self.interpreter

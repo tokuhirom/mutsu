@@ -618,8 +618,8 @@ pub(super) fn enrich_expected_error(
     context: &str,
     remaining_len_fallback: usize,
 ) -> PError {
-    // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
-    if err.is_fatal() && err.exception.is_some() {
+    // Preserve fatal errors (non-recoverable parse errors)
+    if err.is_fatal() {
         return err;
     }
     PError {

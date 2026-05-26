@@ -290,10 +290,19 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "hash" => match target {
             Value::Set(s, _) => {
                 let mut map = std::collections::HashMap::new();
+                let mut original_keys = std::collections::HashMap::new();
                 for k in s.iter() {
                     map.insert(k.clone(), Value::Bool(true));
+                    let typed = s.typed_key(k);
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Some(Ok(Value::hash(map)))
+                let result = Value::hash(map);
+                if !original_keys.is_empty() {
+                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Some(Ok(result))
             }
             Value::Bag(b, _) => {
                 let mut map = std::collections::HashMap::new();
@@ -345,7 +354,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    let keys: Vec<Value> = map.keys().map(|k| Value::hash_key_decode(k)).collect();
+                    // Check if this is a Set-derived object hash (all values are Bool(true)
+                    // and original typed keys are registered).
+                    let is_set_derived_obj_hash = !map.is_empty()
+                        && map.values().all(|v| matches!(v, Value::Bool(true)))
+                        && crate::runtime::utils::hash_original_keys_snapshot(target).is_some();
+                    let keys: Vec<Value> = if is_set_derived_obj_hash {
+                        map.keys()
+                            .map(|k| crate::runtime::utils::hash_typed_key(target, k))
+                            .collect()
+                    } else {
+                        map.keys().map(|k| Value::hash_key_decode(k)).collect()
+                    };
                     Some(Ok(Value::array(keys)))
                 }
                 Value::Pair(key, _) => {

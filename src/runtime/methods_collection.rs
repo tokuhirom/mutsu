@@ -7,45 +7,67 @@ impl Interpreter {
             return Err(RuntimeError::cannot_lazy_what("Set"));
         }
         let mut elems = HashSet::new();
-        match target {
-            Value::Set(_, _) => return Ok(target),
-            Value::Array(items, ..) => {
-                fn add_item(elems: &mut HashSet<String>, item: &Value) {
-                    match item {
-                        Value::Pair(k, v) => {
-                            if v.truthy() {
-                                elems.insert(k.clone());
-                            }
+        let mut original_keys: HashMap<String, Value> = HashMap::new();
+        let mut has_non_str = false;
+        fn add_item(
+            elems: &mut HashSet<String>,
+            original_keys: &mut HashMap<String, Value>,
+            has_non_str: &mut bool,
+            item: &Value,
+        ) {
+            match item {
+                Value::Pair(k, v) => {
+                    if v.truthy() {
+                        elems.insert(k.clone());
+                    }
+                }
+                Value::ValuePair(k, v) => {
+                    if v.truthy() {
+                        let str_key = k.to_string_value();
+                        if !matches!(k.as_ref(), Value::Str(_)) {
+                            *has_non_str = true;
+                            original_keys
+                                .entry(str_key.clone())
+                                .or_insert_with(|| k.as_ref().clone());
                         }
-                        Value::ValuePair(k, v) => {
-                            if v.truthy() {
-                                elems.insert(k.to_string_value());
-                            }
-                        }
-                        Value::Hash(h) => {
-                            for (k, v) in h.iter() {
-                                if v.truthy() {
-                                    elems.insert(k.clone());
-                                }
-                            }
-                        }
-                        Value::Array(inner, kind) if !kind.is_itemized() => {
-                            for inner_item in inner.iter() {
-                                add_item(elems, inner_item);
-                            }
-                        }
-                        Value::Seq(inner) | Value::Slip(inner) => {
-                            for inner_item in inner.iter() {
-                                add_item(elems, inner_item);
-                            }
-                        }
-                        _ => {
-                            elems.insert(item.to_string_value());
+                        elems.insert(str_key);
+                    }
+                }
+                Value::Hash(h) => {
+                    for (k, v) in h.iter() {
+                        if v.truthy() {
+                            elems.insert(k.clone());
                         }
                     }
                 }
+                Value::Array(inner, kind) if !kind.is_itemized() => {
+                    for inner_item in inner.iter() {
+                        add_item(elems, original_keys, has_non_str, inner_item);
+                    }
+                }
+                Value::Seq(inner) | Value::Slip(inner) => {
+                    for inner_item in inner.iter() {
+                        add_item(elems, original_keys, has_non_str, inner_item);
+                    }
+                }
+                Value::Str(_) => {
+                    elems.insert(item.to_string_value());
+                }
+                _ => {
+                    let str_key = item.to_string_value();
+                    *has_non_str = true;
+                    original_keys
+                        .entry(str_key.clone())
+                        .or_insert_with(|| item.clone());
+                    elems.insert(str_key);
+                }
+            }
+        }
+        match target {
+            Value::Set(_, _) => return Ok(target),
+            Value::Array(items, ..) => {
                 for item in items.iter() {
-                    add_item(&mut elems, item);
+                    add_item(&mut elems, &mut original_keys, &mut has_non_str, item);
                 }
             }
             Value::Hash(items) => {
@@ -72,7 +94,14 @@ impl Interpreter {
             }
             Value::ValuePair(k, v) => {
                 if v.truthy() {
-                    elems.insert(k.to_string_value());
+                    let str_key = k.to_string_value();
+                    if !matches!(k.as_ref(), Value::Str(_)) {
+                        has_non_str = true;
+                        original_keys
+                            .entry(str_key.clone())
+                            .or_insert_with(|| k.as_ref().clone());
+                    }
+                    elems.insert(str_key);
                 }
             }
             // Instance types composing Baggy: delegate to internal bag data
@@ -82,14 +111,25 @@ impl Interpreter {
             }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {
-                    elems.insert(item.to_string_value());
+                    add_item(&mut elems, &mut original_keys, &mut has_non_str, &item);
                 }
             }
             other => {
-                elems.insert(other.to_string_value());
+                let str_key = other.to_string_value();
+                if !matches!(&other, Value::Str(_)) {
+                    has_non_str = true;
+                    original_keys
+                        .entry(str_key.clone())
+                        .or_insert_with(|| other.clone());
+                }
+                elems.insert(str_key);
             }
         }
-        Ok(Value::set(elems))
+        if has_non_str {
+            Ok(Value::set_typed(elems, original_keys))
+        } else {
+            Ok(Value::set(elems))
+        }
     }
 
     /// Check if a value is lazy/infinite and cannot be coerced to a QuantHash.
@@ -558,10 +598,19 @@ impl Interpreter {
             }
             Value::Set(s, _) => {
                 let mut map = HashMap::new();
+                let mut original_keys = HashMap::new();
                 for k in s.iter() {
                     map.insert(k.clone(), Value::Bool(true));
+                    let typed = s.typed_key(k);
+                    if !matches!(&typed, Value::Str(s) if s.as_ref() == k) {
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Ok(Value::hash(map))
+                let result = Value::hash(map);
+                if !original_keys.is_empty() {
+                    super::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Ok(result)
             }
             Value::Bag(b, _) => {
                 let mut map = HashMap::new();
