@@ -689,8 +689,8 @@ impl Interpreter {
     /// infix, term) work through runtime dispatch without parser pre-registration.
     pub(crate) fn collect_operator_sub_names(&self) -> Vec<String> {
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        // Include circumfix/postcircumfix operators defined in any loaded
-        // module so EVAL parser can still recognize their delimiter syntax.
+        // Include all user-defined operators (infix, prefix, postfix,
+        // circumfix, postcircumfix) so the EVAL parser can recognize them.
         for key in self.functions.keys() {
             let key_s = key.resolve();
             let name = if let Some(pos) = key_s.rfind("::") {
@@ -698,12 +698,22 @@ impl Interpreter {
             } else {
                 key_s.as_str()
             };
-            if name.starts_with("circumfix:") || name.starts_with("postcircumfix:") {
+            if name.starts_with("circumfix:")
+                || name.starts_with("postcircumfix:")
+                || name.starts_with("infix:")
+                || name.starts_with("prefix:")
+                || name.starts_with("postfix:")
+            {
                 seen.insert(name.to_string());
             }
         }
         for key in self.env.keys() {
-            if key.starts_with("circumfix:") || key.starts_with("postcircumfix:") {
+            if key.starts_with("circumfix:")
+                || key.starts_with("postcircumfix:")
+                || key.starts_with("infix:")
+                || key.starts_with("prefix:")
+                || key.starts_with("postfix:")
+            {
                 seen.insert(key.resolve());
             }
         }
