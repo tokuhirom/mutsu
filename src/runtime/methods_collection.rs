@@ -493,16 +493,34 @@ impl Interpreter {
             }
             Value::Set(s, _) => {
                 for k in s.iter() {
+                    let typed = s.typed_key(k);
+                    if let Some(ref mut orig) = original_keys
+                        && !matches!(&typed, Value::Str(sv) if sv.as_ref() == k)
+                    {
+                        orig.entry(k.clone()).or_insert(typed);
+                    }
                     *weights.entry(k.clone()).or_insert(0.0) += 1.0;
                 }
             }
             Value::Bag(b, _) => {
                 for (k, v) in b.iter() {
+                    let typed = b.typed_key(k);
+                    if let Some(ref mut orig) = original_keys
+                        && !matches!(&typed, Value::Str(sv) if sv.as_ref() == k)
+                    {
+                        orig.entry(k.clone()).or_insert(typed);
+                    }
                     *weights.entry(k.clone()).or_insert(0.0) += *v as f64;
                 }
             }
             Value::Mix(m, _) => {
                 for (k, v) in m.iter() {
+                    let typed = m.typed_key(k);
+                    if let Some(ref mut orig) = original_keys
+                        && !matches!(&typed, Value::Str(sv) if sv.as_ref() == k)
+                    {
+                        orig.entry(k.clone()).or_insert(typed);
+                    }
                     *weights.entry(k.clone()).or_insert(0.0) += v;
                 }
             }

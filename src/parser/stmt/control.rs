@@ -775,7 +775,12 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
         };
         let (r, _) = ws(r)?;
         if r.starts_with(',') {
-            let mut params = vec![first];
+            let first_param = if first_def.sigilless {
+                format!("\\{}", first)
+            } else {
+                first
+            };
+            let mut params = vec![first_param];
             let mut any_rw = rw_block || first_def.traits.iter().any(|t| t == "rw");
             let mut r = r;
             loop {
@@ -785,7 +790,13 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 if next.traits.iter().any(|t| t == "rw") {
                     any_rw = true;
                 }
-                params.push(next.name);
+                // Prefix sigilless params with \\ so the compiler can
+                // emit MarkSigillessReadonly for them.
+                if next.sigilless {
+                    params.push(format!("\\{}", next.name));
+                } else {
+                    params.push(next.name);
+                }
                 let (r2, _) = ws(r2)?;
                 if !r2.starts_with(',') {
                     r = r2;

@@ -641,6 +641,19 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // If the target variable is deep-readonly (e.g. $_ in a for-loop
+        // over an immutable type like Mix/Set/Bag), disallow method-based
+        // mutation such as .value = ... on pairs.
+        if let Some(var_name) = target_var {
+            let deep_key = format!("__mutsu_deep_readonly::{}", var_name);
+            if matches!(self.env.get(&deep_key), Some(Value::Bool(true))) {
+                let repr = value.to_string_value();
+                return Err(RuntimeError::assignment_ro_typename(
+                    &crate::value::what_type_name(&value),
+                    &repr,
+                ));
+            }
+        }
         // Handle AT-POS lvalue assignment: @arr.AT-POS(idx...) = v  =>  ASSIGN-POS(idx..., v)
         if method == "AT-POS" && !method_args.is_empty() && matches!(&target, Value::Array(..)) {
             let mut assign_args = method_args.clone();

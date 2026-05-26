@@ -2065,7 +2065,11 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         Value::Set(items, _) => Value::Int(items.len() as i64),
         Value::Bag(items, _) => Value::Int(items.values().sum()),
         Value::Mix(items, _) => {
-            let total: f64 = items.values().copied().fold(0.0, std::ops::Add::add);
+            // Sort values before summing for deterministic results
+            // regardless of HashMap iteration order.
+            let mut vals: Vec<f64> = items.values().copied().collect();
+            vals.sort_by(|a, b| a.total_cmp(b));
+            let total: f64 = vals.iter().copied().fold(0.0, std::ops::Add::add);
             if total == 0.0 && items.is_empty() {
                 Value::Int(0)
             } else if (total - (total as i64 as f64)).abs() < f64::EPSILON {

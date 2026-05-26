@@ -419,6 +419,24 @@ impl VM {
                 (name.clone(), val, was_readonly, sigilless_ro)
             })
             .collect();
+        // Determine if the implicit topic ($_) should be read-only.
+        // Only mark $_ readonly when iterating over a known immutable collection
+        // (Mix, Set, Bag). This blocks `.value = ...` mutations on pairs from
+        // immutable collections while keeping $_ writable for expression results,
+        // multi-param for loops, and Scalar containers holding plain values.
+        let topic_readonly =
+            !spec.is_rw && param_name.is_none() && spec.multi_param_names.is_empty() && {
+                match &container_binding {
+                    None => false,
+                    Some(name) => {
+                        if let Some(val) = self.get_env_with_main_alias(name) {
+                            matches!(val, Value::Mix(_, _) | Value::Set(_, _) | Value::Bag(_, _))
+                        } else {
+                            false
+                        }
+                    }
+                }
+            };
         let total_items = chunked_items.len();
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = if writes_back_topic {
@@ -450,6 +468,15 @@ impl VM {
             }
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
+            }
+            // Mark implicit $_ readonly when source is immutable.
+            // Also set a deep-readonly flag so that method-lvalue
+            // assignments like .value = ... are blocked too.
+            if topic_readonly {
+                self.interpreter.mark_readonly("_");
+                self.interpreter
+                    .env_mut()
+                    .insert("__mutsu_deep_readonly::_".to_string(), Value::Bool(true));
             }
             // Mark named params readonly when not in rw mode
             if !spec.is_rw
@@ -676,6 +703,12 @@ impl VM {
                     }
                     Err(e) => {
                         // Unmark readonly before propagating error
+                        if topic_readonly {
+                            self.interpreter.unmark_readonly("_");
+                            self.interpreter
+                                .env_mut()
+                                .remove("__mutsu_deep_readonly::_");
+                        }
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
@@ -698,6 +731,13 @@ impl VM {
             if self.interpreter.is_halted() {
                 break;
             }
+        }
+        // Unmark readonly topic after loop completion
+        if topic_readonly {
+            self.interpreter.unmark_readonly("_");
+            self.interpreter
+                .env_mut()
+                .remove("__mutsu_deep_readonly::_");
         }
         // Unmark readonly params after loop completion
         if !spec.is_rw
