@@ -709,6 +709,14 @@ pub(crate) enum OpCode {
         idx: u32,
         site_id: u64,
     },
+    /// Marks the start of a CHECK phaser body. If an error occurs before
+    /// the matching `CheckPhaserEnd`, it is wrapped in X::Comp::BeginTime.
+    CheckPhaserStart {
+        /// IP of the CheckPhaserEnd instruction (jump target on error).
+        end_ip: u32,
+    },
+    /// Marks the end of a CHECK phaser body.
+    CheckPhaserEnd,
 
     // -- HyperMethodCall (».method) --
     HyperMethodCall {

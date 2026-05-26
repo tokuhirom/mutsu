@@ -1932,6 +1932,23 @@ impl Interpreter {
                     }
                     Err(e) if e.is_next => {}
                     Err(e) if e.is_last => break,
+                    Err(e) if e.is_return => {
+                        // `return` inside a block passed to .map is out of
+                        // dynamic scope -- the routine's call frame is not
+                        // directly on the stack when the block callback runs.
+                        *self = vm.into_interpreter();
+                        for (k, orig) in &saved {
+                            match orig {
+                                Some(v) => {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+                                None => {
+                                    self.env.remove(k);
+                                }
+                            }
+                        }
+                        return Err(RuntimeError::controlflow_return(true));
+                    }
                     Err(e) => {
                         *self = vm.into_interpreter();
                         for (k, orig) in &saved {

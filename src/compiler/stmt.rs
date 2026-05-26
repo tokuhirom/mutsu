@@ -1679,10 +1679,18 @@ impl Compiler {
             // and run in the correct order. If one remains (e.g. inside a sub body),
             // compile it inline as a fallback.
             Stmt::Phaser {
-                kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init | PhaserKind::Enter,
+                kind: PhaserKind::Check,
                 body,
             } => {
-                // BEGIN/CHECK/INIT are extracted and run at compile time.
+                // CHECK phasers run at compile time. If an error occurs inside
+                // a CHECK phaser, Raku wraps it in X::Comp::BeginTime.
+                self.compile_check_phaser(body);
+            }
+            Stmt::Phaser {
+                kind: PhaserKind::Begin | PhaserKind::Init | PhaserKind::Enter,
+                body,
+            } => {
+                // BEGIN/INIT are extracted and run at compile time.
                 // ENTER at top-level scope compiles inline (in sub/method/closure
                 // bodies it is handled by BlockScope and filtered out before
                 // reaching this match arm).
