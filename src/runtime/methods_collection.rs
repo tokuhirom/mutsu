@@ -117,10 +117,14 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn dispatch_to_bag(&self, target: Value) -> Result<Value, RuntimeError> {
+    pub(super) fn dispatch_to_bag_with_what(
+        &self,
+        target: Value,
+        what: &str,
+    ) -> Result<Value, RuntimeError> {
         // Check for lazy/infinite inputs
         if Self::is_lazy_for_coerce(&target) {
-            return Err(RuntimeError::cannot_lazy_what("Bag"));
+            return Err(RuntimeError::cannot_lazy_what(what));
         }
         let mut counts: HashMap<String, i64> = HashMap::new();
         let mut original_keys: HashMap<String, Value> = HashMap::new();

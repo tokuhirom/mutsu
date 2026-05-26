@@ -864,7 +864,7 @@ impl Interpreter {
                 if matches!(arg0, Value::Mix(_, _)) {
                     return self.dispatch_to_mix(arg0);
                 }
-                return self.dispatch_to_bag(arg0);
+                return self.dispatch_to_bag_with_what(arg0, "Bag");
             }
             if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
                 return Ok(coerce_value_to_quanthash(&args[0]));

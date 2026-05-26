@@ -222,6 +222,8 @@ impl VM {
         match base {
             "Mix" => Some("Mix"),
             "MixHash" => Some("MixHash"),
+            "Bag" => Some("Bag"),
+            "BagHash" => Some("BagHash"),
             _ => None,
         }
     }
@@ -322,7 +324,17 @@ impl VM {
         if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned()
             && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
         {
-            return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
+            // Only coerce if the variable IS a QuantHash container (declared via `is`),
+            // not when the constraint is a value type (declared via `of`).
+            // Check: if the current value is already a QuantHash, it's an `is` trait.
+            let current = self.interpreter.env().get(name).cloned();
+            let is_quanthash_container = matches!(
+                current,
+                Some(Value::Bag(_, _) | Value::Mix(_, _) | Value::Set(_, _))
+            );
+            if is_quanthash_container {
+                return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
+            }
         }
         if self.interpreter.check_readonly_for_modify(name).is_err()
             && matches!(
