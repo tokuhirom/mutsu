@@ -5,6 +5,23 @@ use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 impl VM {
+    /// Return the default fill value for a native type constraint.
+    /// For `int`/`uint` variants returns `Value::Int(0)`,
+    /// for `num` variants returns `Value::Num(0.0)`,
+    /// for `str` returns `Value::str("")`,
+    /// otherwise returns `Value::Package("Any")`.
+    fn native_fill_for_constraint(constraint: Option<&str>) -> Value {
+        match constraint {
+            Some(
+                "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                | "uint32" | "uint64" | "byte" | "atomicint",
+            ) => Value::Int(0),
+            Some("num" | "num32" | "num64") => Value::Num(0.0),
+            Some("str") => Value::str(String::new()),
+            _ => Value::Package(Symbol::intern("Any")),
+        }
+    }
+
     pub(super) fn delegated_mixin_attr_key(
         &self,
         mixins: &std::collections::HashMap<String, Value>,
@@ -686,6 +703,24 @@ impl VM {
             && let Some(constraint) = self.interpreter.var_type_constraint(var_name)
             && let Value::Array(items, kind) = value
         {
+            // Native typed arrays cannot store lazy sequences
+            if kind.is_lazy()
+                && crate::runtime::native_types::is_native_array_element_type(&constraint)
+            {
+                let declared = format!("array[{}]", constraint);
+                return Err(RuntimeError::typed(
+                    "X::Cannot::Lazy",
+                    [
+                        (
+                            "message".to_string(),
+                            Value::str(format!("Cannot store a lazy list onto a {}", declared)),
+                        ),
+                        ("action".to_string(), Value::str_from("store")),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ));
+            }
             let coerced_items = self.coerce_typed_array_elements(
                 var_name,
                 &constraint,
@@ -851,6 +886,8 @@ impl VM {
                     var_name, constraint, item,
                 ));
             }
+            // Wrap/check native integer overflow for native typed arrays
+            let coerced = Self::wrap_native_int_by_constraint(&target_type, coerced)?;
             coerced_items.push(coerced);
         }
         Ok(coerced_items)
@@ -1712,6 +1749,12 @@ impl VM {
             .as_deref()
             .unwrap_or(&original_var_name)
             .to_string();
+        // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
+        // Must be done before mutable borrows to avoid borrow conflicts.
+        let native_fill = {
+            let tc = self.interpreter.var_type_constraint(&var_name);
+            Self::native_fill_for_constraint(tc.as_deref())
+        };
         // Capture the old Arc pointer before any mutation so the post-mutation
         // sync code can distinguish stale COW copies from unrelated containers.
         let old_container_arc_ptr: Option<usize> =
@@ -1957,7 +2000,8 @@ impl VM {
                     {
                         let arr = Arc::make_mut(items);
                         if idx_usize >= arr.len() {
-                            arr.resize(idx_usize + 1, Value::Package(Symbol::intern("Any")));
+                            let fill = native_fill.clone();
+                            arr.resize(idx_usize + 1, fill);
                         }
                         arr[idx_usize] = v;
                     }
@@ -2009,7 +2053,8 @@ impl VM {
                         if let Value::Array(items, ..) = container {
                             let arr = Arc::make_mut(items);
                             if max_idx >= arr.len() {
-                                arr.resize(max_idx + 1, Value::Package(Symbol::intern("Any")));
+                                let fill = native_fill.clone();
+                                arr.resize(max_idx + 1, fill);
                             }
                         }
                         // Assign each value to the corresponding index
@@ -2363,7 +2408,8 @@ impl VM {
                                         Arc::make_mut(items)
                                     };
                                     if i >= arr.len() {
-                                        arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                                        let fill = native_fill.clone();
+                                        arr.resize(i + 1, fill);
                                     }
                                     if bind_mode
                                         && let Some(Some(source_name)) = bind_sources.first()
@@ -2682,6 +2728,10 @@ impl VM {
         inner_positional: bool,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
+        let native_fill = {
+            let tc = self.interpreter.var_type_constraint(&var_name);
+            Self::native_fill_for_constraint(tc.as_deref())
+        };
         let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
         let outer_idx = self.stack.pop().unwrap_or(Value::Nil);
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
@@ -2751,7 +2801,8 @@ impl VM {
         {
             let arr = Arc::make_mut(outer_arr);
             if inner_i >= arr.len() {
-                arr.resize(inner_i + 1, Value::Package(Symbol::intern("Any")));
+                let fill = native_fill.clone();
+                arr.resize(inner_i + 1, fill);
             }
             // Autovivify the slot if it's not already a container.
             let needs_viv = !matches!(&arr[inner_i], Value::Array(..) | Value::Hash(..));
@@ -2779,7 +2830,8 @@ impl VM {
                         } else {
                             let inner = Arc::make_mut(inner_arr);
                             if j >= inner.len() {
-                                inner.resize(j + 1, Value::Package(Symbol::intern("Any")));
+                                let fill = native_fill.clone();
+                                inner.resize(j + 1, fill);
                             }
                             inner[j] = val.clone();
                         }
@@ -2874,6 +2926,10 @@ impl VM {
         positional_flags_idx: u32,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
+        let native_fill = {
+            let tc = self.interpreter.var_type_constraint(&var_name);
+            Self::native_fill_for_constraint(tc.as_deref())
+        };
         let depth = depth as usize;
 
         // Pop indices from stack: innermost first (top of stack)
@@ -2936,7 +2992,8 @@ impl VM {
                             if let Ok(i) = key.parse::<usize>() {
                                 let arr = Arc::make_mut(arr_arc);
                                 if i >= arr.len() {
-                                    arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                                    let fill = native_fill.clone();
+                                    arr.resize(i + 1, fill);
                                 }
                                 // Autovivify if needed
                                 let needs_viv =
@@ -3012,7 +3069,8 @@ impl VM {
                             if let Ok(i) = key.parse::<usize>() {
                                 let arr = Arc::make_mut(arr_arc);
                                 if i >= arr.len() {
-                                    arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                                    let fill = native_fill.clone();
+                                    arr.resize(i + 1, fill);
                                 }
                                 arr[i] = val.clone();
                             }
@@ -3026,7 +3084,8 @@ impl VM {
                             if is_positional {
                                 let mut arr = Vec::new();
                                 if let Ok(i) = key.parse::<usize>() {
-                                    arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                                    let fill = native_fill.clone();
+                                    arr.resize(i + 1, fill);
                                     arr[i] = val.clone();
                                 }
                                 *current = Value::real_array(arr);
@@ -3633,6 +3692,33 @@ impl VM {
                     &constraint,
                     &Value::Nil,
                 ));
+            }
+            // Native typed arrays cannot store lazy sequences — check before
+            // eager evaluation so the error is raised even if the sequence is
+            // infinite.
+            if let Some(constraint) = self.interpreter.var_type_constraint(name)
+                && crate::runtime::native_types::is_native_array_element_type(&constraint)
+            {
+                let is_lazy_value = match &raw_popped {
+                    Value::Array(_, kind) => kind.is_lazy(),
+                    Value::LazyList(_) | Value::LazyIoLines { .. } => true,
+                    _ => false,
+                };
+                if is_lazy_value {
+                    let declared = format!("array[{}]", constraint);
+                    return Err(RuntimeError::typed(
+                        "X::Cannot::Lazy",
+                        [
+                            (
+                                "message".to_string(),
+                                Value::str(format!("Cannot store a lazy list onto a {}", declared)),
+                            ),
+                            ("action".to_string(), Value::str_from("store")),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ));
+                }
             }
             let mut assigned = if is_constant {
                 // `constant @x` stores a List, not an Array.

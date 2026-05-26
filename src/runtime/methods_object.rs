@@ -606,6 +606,12 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Array" | "List" | "Positional" | "array" => {
+                    // native `array` requires a type parameter (e.g. array[int].new)
+                    if base_class_name == "array" && type_args.is_none() {
+                        return Err(RuntimeError::new(
+                            "Must use a native array with a type parameter (e.g. array[int].new)",
+                        ));
+                    }
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
                         // Check for :data argument to populate the shaped array
                         let data = args.iter().find_map(|arg| match arg {
