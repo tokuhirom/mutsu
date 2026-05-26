@@ -1119,9 +1119,13 @@ impl VM {
                         }
                     })
                 });
+            // Only preserve the old shape if the new value is NOT already shaped
+            let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
+                .is_some()
+                || matches!(&assigned, Value::Array(_, crate::value::ArrayKind::Shaped));
             if let Some(ref shape) = current_shape {
                 // For 1D shaped arrays, rebuild with the same shape
-                if shape.len() == 1 {
+                if shape.len() == 1 && !assigned_has_own_shape {
                     let items = runtime::value_to_list(&assigned);
                     let item_count = items.len();
                     let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();

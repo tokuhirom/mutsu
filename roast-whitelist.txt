@@ -132,6 +132,7 @@ roast/S02-types/lists.t
 roast/S02-types/mix-iterator.t
 roast/S02-types/mixed_multi_dimensional.t
 roast/S02-types/mu.t
+roast/S02-types/multi_dimensional_array.t
 roast/S02-types/nan.t
 roast/S02-types/native.t
 roast/S02-types/nested_arrays.t
