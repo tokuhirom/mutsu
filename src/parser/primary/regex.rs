@@ -825,10 +825,33 @@ fn scan_to_delim_inner(
         } else if is_paired && c == open_ch {
             depth += 1;
         } else if !p5_mode && c == '#' {
-            // # starts a comment until end of line in Raku regex
-            for (_, ch) in chars.by_ref() {
-                if ch == '\n' {
-                    break;
+            // # starts a comment in Raku regex.
+            // #`[...] is an embedded comment (bracket-delimited).
+            // Plain # is a line comment (until end of line).
+            if let Some((_, '`')) = chars.clone().next() {
+                chars.next(); // skip `
+                if let Some((_, bracket)) = chars.next() {
+                    let close = match bracket {
+                        '[' => ']', '(' => ')', '{' => '}', '<' => '>',
+                        _ => bracket,
+                    };
+                    let mut embed_depth = 1u32;
+                    for (_, ch) in chars.by_ref() {
+                        if ch == bracket && bracket != close {
+                            embed_depth += 1;
+                        } else if ch == close {
+                            embed_depth -= 1;
+                            if embed_depth == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                for (_, ch) in chars.by_ref() {
+                    if ch == '\n' {
+                        break;
+                    }
                 }
             }
         } else if !p5_mode && c == '<' && input[i + 1..].starts_with('<') {
