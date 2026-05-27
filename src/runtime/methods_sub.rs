@@ -457,6 +457,11 @@ impl Interpreter {
                     }
                 }
                 // Check too many positionals (skip if there's a slurpy or capture param)
+                // Also skip for multi-dispatch wrapper Subs where actual arity
+                // depends on which candidate is selected at call time.
+                let is_multi_dispatch = next.env.contains_key("__mutsu_multi_dispatch_name")
+                    || next.env.contains_key("__mutsu_multi_dispatch_candidates")
+                    || next.env.contains_key("__mutsu_routine_name");
                 let has_slurpy = next.param_defs.iter().any(|pd| {
                     pd.slurpy
                         || pd.double_slurpy
@@ -474,7 +479,10 @@ impl Interpreter {
                     .iter()
                     .filter(|v| !is_placeholder(v))
                     .count();
-                if !has_slurpy && non_placeholder_count > positional_param_count {
+                if !is_multi_dispatch
+                    && !has_slurpy
+                    && non_placeholder_count > positional_param_count
+                {
                     let mut ex_attrs = std::collections::HashMap::new();
                     ex_attrs.insert(
                         "payload".to_string(),
