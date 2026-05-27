@@ -1300,9 +1300,23 @@ impl Interpreter {
 
         let mut result = Vec::new();
 
+        // Extract mixin role names from the invocant for runtime role method collection
+        let mixin_role_names: Vec<String> = if let Value::Mixin(_, mixins) = invocant {
+            mixins
+                .keys()
+                .filter_map(|key| key.strip_prefix("__mutsu_role__").map(String::from))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         if local {
             // Only methods defined directly on this class
             self.collect_class_methods(&class_name, private, &mut result);
+            // Also include methods from runtime-mixed-in roles
+            for role_name in &mixin_role_names {
+                self.collect_role_methods(role_name, private, &mut result);
+            }
         } else {
             // Walk MRO (already includes the class itself)
             let mro = self.class_mro(&class_name);
@@ -1710,6 +1724,37 @@ impl Interpreter {
             // Also include native (built-in) methods
             for native_name in &class_def.native_methods {
                 let method_obj = self.make_native_method_object(native_name);
+                result.push(method_obj);
+            }
+        }
+    }
+
+    /// Collect methods from a runtime-mixed-in role definition.
+    pub(super) fn collect_role_methods(
+        &self,
+        role_name: &str,
+        include_private: bool,
+        result: &mut Vec<Value>,
+    ) {
+        if let Some(role_def) = self.roles.get(role_name) {
+            // Add accessor methods for public attributes
+            for (attr_name, is_public, ..) in &role_def.attributes {
+                if *is_public && !role_def.methods.contains_key(attr_name) {
+                    result.push(self.make_native_method_object(attr_name));
+                }
+            }
+            // Add explicit methods
+            for (method_name, overloads) in &role_def.methods {
+                if overloads.is_empty() {
+                    continue;
+                }
+                let first = &overloads[0];
+                if first.is_private && !include_private {
+                    continue;
+                }
+                let is_multi = overloads.len() > 1;
+                let return_type = first.return_type.clone();
+                let method_obj = self.make_method_object(method_name, first, is_multi, return_type);
                 result.push(method_obj);
             }
         }

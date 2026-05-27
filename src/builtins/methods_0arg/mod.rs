@@ -395,6 +395,11 @@ pub(crate) fn native_method_0arg(
                 _ => {}
             }
         }
+        // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
+        // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
+        if let Some(mixin_val) = mixins.get(method) {
+            return Some(Ok(mixin_val.clone()));
+        }
         return native_method_0arg(inner, method_sym);
     }
     // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.

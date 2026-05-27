@@ -1869,6 +1869,10 @@ impl VM {
                 self.exec_but_mixin_op()?;
                 *ip += 1;
             }
+            OpCode::ButMixinTupleElem => {
+                self.exec_but_mixin_tuple_elem_op()?;
+                *ip += 1;
+            }
             OpCode::Isa => {
                 self.exec_isa_op();
                 *ip += 1;

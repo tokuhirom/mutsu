@@ -8,6 +8,22 @@ impl Compiler {
         op: &TokenKind,
         right: &Expr,
     ) {
+        // Special handling for `but` with a literal tuple RHS:
+        // `True but (1, "x")` compiles as multiple ButMixinTupleElem operations
+        // (one per element), generating per-element type methods with conflict
+        // checking.
+        if matches!(op, TokenKind::Ident(name) if name == "but")
+            && let Expr::ArrayLiteral(elems) = right
+            && elems.len() > 1
+        {
+            self.compile_expr(left);
+            for elem in elems {
+                self.compile_expr(elem);
+                self.code.emit(OpCode::ButMixinTupleElem);
+            }
+            return;
+        }
+
         // Iteratively flatten left-recursive Binary chains for simple opcodes
         // to avoid stack overflow on deeply nested expressions like
         // "a" ~ "b" ~ "c" ~ ... (300+ operands).

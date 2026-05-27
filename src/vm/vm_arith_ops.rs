@@ -992,26 +992,69 @@ impl VM {
             self.stack.push(composed?);
             return Ok(());
         }
-        let result = Self::apply_but_mixin(left, right);
+        let result = Self::apply_but_mixin(left, right)?;
         self.stack.push(result);
         Ok(())
     }
 
-    /// Apply a `but`-style mixin: wrap the left value with the right value
-    /// keyed by its type name.
-    fn apply_but_mixin(left: Value, right: Value) -> Value {
-        // Determine the mixin type from the right-hand value
-        let mixin_type = match &right {
+    /// Apply a `but` mixin for a single element from a tuple expansion,
+    /// with duplicate type conflict checking.
+    pub(super) fn exec_but_mixin_tuple_elem_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let mixin_type = Self::mixin_type_for_value(&right);
+        // Check for duplicate type conflict
+        if let Value::Mixin(_, ref existing) = left
+            && existing.contains_key(&mixin_type)
+        {
+            return Err(RuntimeError::new(format!(
+                "Method '{}' must be resolved by class {}+{{}} because it exists in multiple roles",
+                mixin_type,
+                crate::runtime::utils::value_type_name(&left)
+            )));
+        }
+        let result = Self::apply_single_mixin(left, mixin_type, right);
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Determine the mixin type name for a value (used by `but` operator).
+    fn mixin_type_for_value(val: &Value) -> String {
+        match val {
             Value::Bool(_) => "Bool".to_string(),
             Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
             Value::Num(_) => "Num".to_string(),
             Value::Str(_) => "Str".to_string(),
+            Value::Rat(..) | Value::FatRat(..) | Value::BigRat(..) => "Rat".to_string(),
+            Value::Complex(..) => "Complex".to_string(),
             Value::Package(name) => name.resolve(),
             Value::Enum { enum_type, .. } => enum_type.resolve(),
             Value::Instance { class_name, .. } => class_name.resolve(),
             _ => "Any".to_string(),
-        };
-        // If left is already a Mixin, add to existing mixins
+        }
+    }
+
+    /// Apply a `but`-style mixin: wrap the left value with the right value
+    /// keyed by its type name.
+    fn apply_but_mixin(left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // Handle Array RHS: `True but [1, 2]` generates a single "Array" mixin
+        if let Value::Array(_, kind) = &right {
+            if kind.is_real_array() {
+                return Ok(Self::apply_single_mixin(left, "Array".to_string(), right));
+            }
+            // List values from method calls like .list -> "List" mixin
+            return Ok(Self::apply_single_mixin(left, "List".to_string(), right));
+        }
+        if matches!(&right, Value::Seq(_)) {
+            return Ok(Self::apply_single_mixin(left, "List".to_string(), right));
+        }
+
+        let mixin_type = Self::mixin_type_for_value(&right);
+        Ok(Self::apply_single_mixin(left, mixin_type, right))
+    }
+
+    /// Apply a single mixin with the given type name.
+    fn apply_single_mixin(left: Value, mixin_type: String, right: Value) -> Value {
         match left {
             Value::Mixin(inner, existing_mixins) => {
                 let mut mixins = (*existing_mixins).clone();
@@ -1053,7 +1096,7 @@ impl VM {
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
         if matches!(&right, Value::Enum { .. }) {
-            return Ok(Self::apply_but_mixin(left, right));
+            return Self::apply_but_mixin(left, right);
         }
         // When the RHS is a concrete value (Str, Int, Bool, etc.), `does` acts
         // as a mutating mixin — it overrides the corresponding type method.
@@ -1067,12 +1110,12 @@ impl VM {
                 | Value::Bool(_)
                 | Value::Rat(..)
         ) {
-            return Ok(Self::apply_but_mixin(left, right));
+            return Self::apply_but_mixin(left, right);
         }
         // When the RHS is an Instance, mix it in so that calling .$ClassName
         // on the result returns that instance.
         if matches!(&right, Value::Instance { .. }) {
-            return Ok(Self::apply_but_mixin(left, right));
+            return Self::apply_but_mixin(left, right);
         }
         // Pure check: does the value conform to the named role/type?
         let role_name = right.to_string_value();

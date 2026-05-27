@@ -341,9 +341,9 @@ impl Interpreter {
         Ok(Value::mixin(inner, mixins))
     }
 
-    /// Call BUILD submethods from a role after mixin composition.
-    /// In Raku 6.e, when `$obj does Role`, the BUILD submethods of the role
-    /// are invoked on the resulting object.
+    /// Call BUILD and TWEAK submethods from a role after mixin composition.
+    /// In Raku 6.e, when `$obj does Role` or `$obj but Role`, the BUILD and
+    /// TWEAK submethods of the role are invoked on the resulting object.
     fn call_role_build_submethods(
         &mut self,
         target: Value,
@@ -353,37 +353,85 @@ impl Interpreter {
             Some(r) => r,
             None => return Ok(target),
         };
-        let build_methods = role.methods.get("BUILD").cloned();
-        if let Some(overloads) = build_methods {
-            for def in overloads {
-                // is_my is set to true for submethods in role method registration
-                if def.is_my {
-                    // Temporarily merge the role's captured environment so that
-                    // closure variables from the role definition scope are accessible
-                    // and modifications propagate back to the original scope.
-                    if let Some(captured) = &role.captured_env {
-                        for (k, v) in captured {
-                            if !self.env.contains_key(k) {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                        }
+        let mut current_target = target;
+        // Run BUILD first, then TWEAK (same order as class construction)
+        for submethod_name in &["BUILD", "TWEAK"] {
+            let methods = role.methods.get(*submethod_name).cloned();
+            if let Some(overloads) = methods {
+                for def in overloads {
+                    // is_my is set to true for submethods in role method registration
+                    if def.is_my {
+                        current_target = self.run_role_submethod(current_target, &role, &def)?;
+                        break;
                     }
-                    // Set self for the BUILD body
-                    let saved_self = self.env.get("self").cloned();
-                    self.env.insert("self".to_string(), target.clone());
-                    // Execute BUILD body directly in current scope so closure
-                    // variable mutations propagate to the outer scope.
-                    let _result = self.eval_block_value(&def.body)?;
-                    // Restore self
-                    if let Some(prev) = saved_self {
-                        self.env.insert("self".to_string(), prev);
-                    } else {
-                        self.env.remove("self");
-                    }
-                    break;
                 }
             }
         }
-        Ok(target)
+        Ok(current_target)
+    }
+
+    /// Run a single BUILD or TWEAK submethod from a role on a mixin value,
+    /// properly propagating attribute modifications back to the mixin map.
+    fn run_role_submethod(
+        &mut self,
+        target: Value,
+        role: &RoleDef,
+        def: &crate::runtime::MethodDef,
+    ) -> Result<Value, RuntimeError> {
+        // Temporarily merge the role's captured environment so that
+        // closure variables from the role definition scope are accessible
+        // and modifications propagate back to the original scope.
+        if let Some(captured) = &role.captured_env {
+            for (k, v) in captured {
+                if !self.env.contains_key(k) {
+                    self.env.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        // Set up private attribute env vars from mixin attributes
+        // so that `$!foo = 42` works inside BUILD/TWEAK
+        let attr_names: Vec<String> = role
+            .attributes
+            .iter()
+            .map(|(name, ..)| name.clone())
+            .collect();
+        if let Value::Mixin(_, ref mixins) = target {
+            for attr_name in &attr_names {
+                let key = format!("__mutsu_attr__{}", attr_name);
+                if let Some(val) = mixins.get(&key) {
+                    self.env.insert(format!("!{}", attr_name), val.clone());
+                }
+            }
+        }
+        // Set self for the body
+        let saved_self = self.env.get("self").cloned();
+        self.env.insert("self".to_string(), target.clone());
+        // Execute body directly in current scope so closure
+        // variable mutations propagate to the outer scope.
+        let _result = self.eval_block_value(&def.body)?;
+        // Read back modified attribute values from env into the mixin map
+        let updated_target = if let Value::Mixin(inner, existing_mixins) = target {
+            let mut mixins = (*existing_mixins).clone();
+            for attr_name in &attr_names {
+                let env_key = format!("!{}", attr_name);
+                if let Some(val) = self.env.get(&env_key) {
+                    mixins.insert(format!("__mutsu_attr__{}", attr_name), val.clone());
+                }
+            }
+            // Clean up env vars
+            for attr_name in &attr_names {
+                self.env.remove(&format!("!{}", attr_name));
+            }
+            Value::mixin((*inner).clone(), mixins)
+        } else {
+            target
+        };
+        // Restore self
+        if let Some(prev) = saved_self {
+            self.env.insert("self".to_string(), prev);
+        } else {
+            self.env.remove("self");
+        }
+        Ok(updated_target)
     }
 }
