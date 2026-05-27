@@ -694,6 +694,27 @@ impl VM {
             (
                 Value::Instance {
                     class_name,
+                    ref attributes,
+                    ..
+                },
+                Value::Array(keys, ..),
+            ) if class_name == "Match" => {
+                if let Some(Value::Hash(named)) = attributes.get("named") {
+                    Value::array(
+                        keys.iter()
+                            .map(|k| {
+                                let key_str = k.to_string_value();
+                                named.get(key_str.as_str()).cloned().unwrap_or(Value::Nil)
+                            })
+                            .collect(),
+                    )
+                } else {
+                    Value::array(vec![Value::Nil; keys.len()])
+                }
+            }
+            (
+                Value::Instance {
+                    class_name,
                     attributes,
                     ..
                 },
