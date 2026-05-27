@@ -593,6 +593,10 @@ impl VM {
         &mut self.interpreter
     }
 
+    pub(crate) fn last_stack_value(&self) -> Option<&Value> {
+        self.stack.last()
+    }
+
     /// Override the source variable used when mutating `$_` in VM execution.
     pub(crate) fn set_topic_source_var(&mut self, name: Option<String>) {
         self.topic_source_var = name;
