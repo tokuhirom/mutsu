@@ -3358,7 +3358,10 @@ impl Interpreter {
                     if i < chars.len() {
                         let bracket = chars[i];
                         let close = match bracket {
-                            '[' => ']', '(' => ')', '{' => '}', '<' => '>',
+                            '[' => ']',
+                            '(' => ')',
+                            '{' => '}',
+                            '<' => '>',
                             _ => bracket,
                         };
                         out.push(bracket);

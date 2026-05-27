@@ -832,7 +832,10 @@ fn scan_to_delim_inner(
                 chars.next(); // skip `
                 if let Some((_, bracket)) = chars.next() {
                     let close = match bracket {
-                        '[' => ']', '(' => ')', '{' => '}', '<' => '>',
+                        '[' => ']',
+                        '(' => ')',
+                        '{' => '}',
+                        '<' => '>',
                         _ => bracket,
                     };
                     let mut embed_depth = 1u32;
