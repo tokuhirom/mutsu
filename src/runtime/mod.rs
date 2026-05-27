@@ -909,6 +909,11 @@ pub struct Interpreter {
     /// throwing X::Coerce::Impossible. Set during the RHS evaluation of `does`
     /// so that `$x does Role("arg")` works as a role application.
     pub(crate) in_does_rhs: bool,
+    /// When set, `does` on a routine parameter inside trait_mod:<is> will
+    /// store the resulting Mixin value for writeback to the outer scope.
+    pub(crate) trait_mod_writeback_key: Option<String>,
+    /// The captured Mixin value from a trait_mod `does` writeback.
+    pub(crate) trait_mod_writeback_value: Option<Value>,
     /// When true, hash indexing with a missing key autovivifies (creates an
     /// empty Hash entry and returns it).  Set during reduce with `is raw`
     /// callbacks so that container semantics are preserved.
@@ -2971,6 +2976,8 @@ impl Interpreter {
             suppress_exports: false,
             in_lvalue_assignment: false,
             in_does_rhs: false,
+            trait_mod_writeback_key: None,
+            trait_mod_writeback_value: None,
             hash_autovivify: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
@@ -4860,6 +4867,8 @@ impl Interpreter {
             suppress_exports: false,
             in_lvalue_assignment: false,
             in_does_rhs: false,
+            trait_mod_writeback_key: None,
+            trait_mod_writeback_value: None,
             hash_autovivify: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),

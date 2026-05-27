@@ -440,6 +440,9 @@ impl Interpreter {
                 // pass the type object as a positional argument.
                 let type_obj = self.resolve_type_object(trait_name);
                 let mut args = vec![sub_val];
+                // Set up writeback so `$r does Role` inside trait_mod propagates
+                // the Mixin back to `&name` in the outer scope.
+                self.trait_mod_writeback_key = Some(format!("&{}", name));
                 let call_result = if let Some(type_val) = type_obj {
                     args.push(type_val);
                     if let Some(arg_val) = trait_arg_val {
@@ -455,10 +458,18 @@ impl Interpreter {
                     args.push(named_val);
                     self.call_function("trait_mod:<is>", args)
                 };
-                if let Ok(result) = call_result
+                self.trait_mod_writeback_key = None;
+                // Check if the trait_mod returned a Mixin or if the
+                // trait_mod modified the routine parameter via `$r does Role`.
+                // The writeback mechanism captures the Mixin from DoesVar
+                // inside the trait_mod and propagates it back to &name.
+                let code_var_key = format!("&{}", name);
+                if let Ok(ref result) = call_result
                     && matches!(result, Value::Mixin(..))
                 {
-                    self.env.insert(format!("&{}", name), result);
+                    self.env.insert(code_var_key, result.clone());
+                } else if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
+                    self.env.insert(code_var_key, mixin_val);
                 }
             }
         }
