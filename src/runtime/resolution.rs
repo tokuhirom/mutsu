@@ -1949,12 +1949,6 @@ impl Interpreter {
                 }
                 {
                     let interp = vm.interpreter_mut();
-                    // Re-insert closure's captured env before each iteration.
-                    // Recursive calls inside the closure body may modify the env,
-                    // so we need to restore captured variables each time.
-                    for (k, v) in data.env.iter() {
-                        interp.env.insert_sym(*k, v.clone());
-                    }
                     let assumed_count = data.assumed_positional.len();
                     // Bind assumed positional args first
                     for (idx, val) in data.assumed_positional.iter().enumerate() {
