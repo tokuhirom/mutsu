@@ -156,7 +156,7 @@ pub(super) fn multidim_assign_pos(
     assert!(!indices.is_empty());
     // Unwrap any outer Scalar wrapper.
     if let Value::Scalar(_) = target {
-        return Err(RuntimeError::new("Cannot modify an immutable value"));
+        return Err(RuntimeError::assignment_ro(None));
     }
     let Value::Array(items, arr_kind) = target else {
         return Err(RuntimeError::new(
@@ -170,7 +170,7 @@ pub(super) fn multidim_assign_pos(
     if indices.len() == 1 {
         // Check for bound slot (Scalar wrapper)
         if let Some(Value::Scalar(_)) = updated.get(i) {
-            return Err(RuntimeError::new("Cannot modify an immutable value"));
+            return Err(RuntimeError::assignment_ro(None));
         }
         if i >= updated.len() {
             updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
@@ -1996,7 +1996,7 @@ impl Interpreter {
                     }
                     let mut updated = items.to_vec();
                     if index < updated.len() && matches!(updated[index], Value::Scalar(_)) {
-                        return Err(RuntimeError::new("Cannot modify an immutable value"));
+                        return Err(RuntimeError::assignment_ro(None));
                     }
                     if index >= updated.len() {
                         updated.resize(index + 1, Value::Package(Symbol::intern("Any")));

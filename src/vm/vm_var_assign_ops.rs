@@ -1912,9 +1912,7 @@ impl VM {
                         .collect(),
                 ));
             } else {
-                return Err(RuntimeError::new(
-                    "Cannot modify an immutable Map (Map)".to_string(),
-                ));
+                return Err(RuntimeError::assignment_ro_typename("Map", "Map"));
             }
         }
         // Mix/Set/Bag: prevent auto-vivification of undefined typed variables.
@@ -3840,11 +3838,10 @@ impl VM {
                     Value::Bag(..) => "Bag",
                     _ => unreachable!(),
                 };
-                return Err(RuntimeError::new(format!(
-                    "Cannot modify an immutable {} ({})",
+                return Err(RuntimeError::assignment_ro_typename(
                     type_name,
-                    self.locals[idx].to_string_value()
-                )));
+                    &self.locals[idx].to_string_value(),
+                ));
             }
             if is_bind {
                 // `:=` binding preserves containers — skip coercion.

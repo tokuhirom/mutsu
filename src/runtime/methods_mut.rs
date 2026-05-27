@@ -3330,11 +3330,10 @@ impl Interpreter {
                     };
                     if is_public_accessor {
                         let current = attributes.get(method).cloned().unwrap_or(Value::Nil);
-                        return Err(RuntimeError::new(format!(
-                            "Cannot modify an immutable {} ({})",
+                        return Err(RuntimeError::assignment_ro_typename(
                             super::utils::value_type_name(&current),
-                            current.to_string_value()
-                        )));
+                            &current.to_string_value(),
+                        ));
                     }
                 }
             }
