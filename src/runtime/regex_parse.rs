@@ -634,6 +634,46 @@ impl Interpreter {
                 i += 1;
                 continue;
             }
+            // Skip <...> angle brackets — % inside assertions/character classes
+            // is not a separator
+            if !in_single && !in_double && ch == '<' {
+                i += 1;
+                let mut angle_depth = 1u32;
+                while i < chars_vec.len() && angle_depth > 0 {
+                    let c = chars_vec[i];
+                    if c == '\\' {
+                        i += 2; // skip escaped char
+                        continue;
+                    }
+                    if c == '<' {
+                        angle_depth += 1;
+                    } else if c == '>' {
+                        angle_depth -= 1;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            // Skip [...] bracket groups — % inside bracket character classes
+            // is not a separator
+            if !in_single && !in_double && ch == '[' {
+                i += 1;
+                let mut bracket_depth = 1u32;
+                while i < chars_vec.len() && bracket_depth > 0 {
+                    let c = chars_vec[i];
+                    if c == '\\' {
+                        i += 2; // skip escaped char
+                        continue;
+                    }
+                    if c == '[' {
+                        bracket_depth += 1;
+                    } else if c == ']' {
+                        bracket_depth -= 1;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
             if !in_single && !in_double && ch == '%' {
                 // Check if this is hash aliasing: %<name>= or %ident=
                 let mut j = i + 1;
