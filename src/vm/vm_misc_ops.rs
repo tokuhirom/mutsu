@@ -2382,6 +2382,20 @@ impl VM {
                 restored_env.insert_sym(k, v);
             }
         }
+        // Before restoring locals, clear pointer-keyed container defaults
+        // for block-declared @/% variables. When these containers are freed,
+        // their Arc pointer may be reused by a new allocation in a subsequent
+        // scope, causing stale `is default(...)` values to leak (ABA problem).
+        for var_name in &block_declared {
+            if var_name.starts_with('@') || var_name.starts_with('%') {
+                for (idx, name) in code.locals.iter().enumerate() {
+                    if name == var_name {
+                        self.interpreter.clear_container_default(&self.locals[idx]);
+                        break;
+                    }
+                }
+            }
+        }
         self.locals = saved_locals;
         for (idx, name) in code.locals.iter().enumerate() {
             if let Some(val) = restored_env.get(name).cloned() {

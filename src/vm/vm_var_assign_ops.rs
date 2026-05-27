@@ -3592,6 +3592,11 @@ impl VM {
         if is_vardecl {
             let name = &code.locals[idx];
             self.interpreter.clear_var_default(name);
+            // Clear pointer-keyed container default for the OLD value being
+            // shadowed. This prevents a stale `is default(...)` entry from
+            // being found when a newly-allocated container reuses the freed
+            // Arc pointer address (ABA problem with pointer-based identity).
+            self.interpreter.clear_container_default(&self.locals[idx]);
             // Clear the deleted-index tracker left over from a previous
             // same-named variable in an outer scope.
             let deleted_key = format!("__mutsu_deleted_index::{}", name);
@@ -4188,6 +4193,13 @@ impl VM {
         // Skip typed container coercion for `:=` binding — it would create
         // a new Arc and lose container identity (e.g. Map metadata).
         if !is_bind && (name.starts_with('@') || name.starts_with('%')) {
+            // Clear stale pointer-keyed container defaults for the intermediate
+            // Array/Hash before coercion replaces it with a new Arc. Without this,
+            // the freed intermediate pointer can be reused by a later allocation
+            // and inherit a stale `is default(...)` from a previous scope.
+            if is_vardecl {
+                self.interpreter.clear_container_default(&val);
+            }
             val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
