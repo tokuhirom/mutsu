@@ -901,6 +901,7 @@ roast/S26-documentation/04-code.t
 roast/S26-documentation/04a-input-output.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
+roast/S26-documentation/07-tables.t
 roast/S26-documentation/07a-tables.t
 roast/S26-documentation/07b-tables.t
 roast/S26-documentation/07c-tables.t
