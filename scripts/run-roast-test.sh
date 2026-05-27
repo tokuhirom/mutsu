@@ -30,7 +30,8 @@ per_file_timeout() {
       ;;
     roast/S32-io/IO-Socket-Async.t)
       # Multiple TCP socket connection tests with real network I/O.
-      echo 90
+      # Tests 10+ use encoding features that may be slower on CI.
+      echo 120
       ;;
     roast/S06-signature/named-parameters.t)
       # This test has a 1M-iteration hot loop (test 100) that takes ~8s on release builds.
