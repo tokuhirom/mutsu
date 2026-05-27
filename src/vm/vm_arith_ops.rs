@@ -1088,6 +1088,11 @@ impl VM {
         let result = self.vm_does_values(left, right)?;
         // Sync back: BUILD submethods may have modified closure variables.
         self.sync_locals_from_env(code);
+        // Capture Mixin value for trait_mod writeback (same as DoesVar path)
+        if matches!(&result, Value::Mixin(..)) && self.interpreter.trait_mod_writeback_key.is_some()
+        {
+            self.interpreter.trait_mod_writeback_value = Some(result.clone());
+        }
         self.stack.push(result);
         Ok(())
     }
@@ -1110,6 +1115,14 @@ impl VM {
             .env_mut()
             .insert(name.clone(), updated.clone());
         self.update_local_if_exists(code, &name, &updated);
+        // Capture Mixin value for trait_mod writeback: when `$r does Role`
+        // runs inside a trait_mod:<is>, the Mixin needs to propagate back
+        // to the outer scope's `&name` variable.
+        if matches!(&updated, Value::Mixin(..))
+            && self.interpreter.trait_mod_writeback_key.is_some()
+        {
+            self.interpreter.trait_mod_writeback_value = Some(updated.clone());
+        }
         self.stack.push(updated);
         Ok(())
     }

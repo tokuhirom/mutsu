@@ -316,7 +316,7 @@ impl Interpreter {
             } else {
                 None
             };
-            for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
+            for (idx, (attr_name, _is_public, default_expr, _, _, sigil, _)) in
                 role.attributes.iter().enumerate()
             {
                 let value = if let Some(arg) = role_args.get(idx) {
@@ -324,7 +324,12 @@ impl Interpreter {
                 } else if let Some(default_expr) = default_expr {
                     self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?
                 } else {
-                    Value::Nil
+                    // Default value based on sigil: @ -> [], % -> {}, $ -> Nil
+                    match sigil {
+                        '@' => Value::real_array(Vec::new()),
+                        '%' => Value::Hash(std::sync::Arc::new(HashMap::new())),
+                        _ => Value::Nil,
+                    }
                 };
                 mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
             }
