@@ -26,10 +26,56 @@ impl Compiler {
         let pkg = self.current_package.clone();
         let qualify_parent = |p: &String| -> String {
             if p.contains("::") || p.is_empty() {
-                p.clone()
-            } else {
-                format!("{}::{}", pkg, p)
+                return p.clone();
             }
+            // Well-known builtin types should not be package-qualified.
+            // "Grammar" inside a module should stay "Grammar", not become
+            // "MyModule::Grammar".
+            if matches!(
+                p.as_str(),
+                "Any"
+                    | "Cool"
+                    | "Mu"
+                    | "Grammar"
+                    | "Match"
+                    | "Int"
+                    | "Str"
+                    | "Num"
+                    | "Rat"
+                    | "Bool"
+                    | "IO"
+                    | "Exception"
+                    | "Stash"
+                    | "Array"
+                    | "Hash"
+                    | "List"
+                    | "Map"
+                    | "Set"
+                    | "Bag"
+                    | "Mix"
+                    | "Range"
+                    | "Pair"
+                    | "Regex"
+                    | "FatRat"
+                    | "Complex"
+                    | "Callable"
+                    | "Numeric"
+                    | "Real"
+                    | "Stringy"
+                    | "Positional"
+                    | "Associative"
+                    | "Proc"
+                    | "Supply"
+                    | "Supplier"
+                    | "Date"
+                    | "DateTime"
+                    | "Capture"
+                    | "Parameter"
+                    | "Signature"
+            ) {
+                return p.clone();
+            }
+            format!("{}::{}", pkg, p)
         };
         match stmt {
             Stmt::ClassDecl {

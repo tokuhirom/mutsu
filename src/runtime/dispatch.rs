@@ -1174,9 +1174,11 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
+        self.push_caller_env();
         let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, args) {
             Ok(bindings) => bindings,
             Err(e) => {
+                self.pop_caller_env();
                 self.env = saved_env;
                 self.restore_readonly_vars(saved_readonly);
                 // Convert binding type-check errors to X::TypeCheck::Argument for proto calls
@@ -1241,9 +1243,9 @@ impl Interpreter {
         };
         self.proto_dispatch_stack.pop();
         self.routine_stack.pop();
-        let mut restored_env = saved_env.clone();
+        let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
-        self.restore_env_preserving_existing(&restored_env, &def.params);
+        self.pop_caller_env_with_writeback(&mut restored_env);
         self.restore_readonly_vars(saved_readonly);
         match result {
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
@@ -1307,10 +1309,12 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
+        self.push_caller_env();
         let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
         {
             Ok(bindings) => bindings,
             Err(e) => {
+                self.pop_caller_env();
                 self.env = saved_env;
                 self.restore_readonly_vars(saved_readonly);
                 return Err(e);
@@ -1342,9 +1346,9 @@ impl Interpreter {
             self.multi_dispatch_stack.pop();
         }
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
-        let mut restored_env = saved_env.clone();
+        let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
-        self.restore_env_preserving_existing(&restored_env, &def.params);
+        self.pop_caller_env_with_writeback(&mut restored_env);
         self.restore_readonly_vars(saved_readonly);
         match result {
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
@@ -1825,20 +1829,5 @@ impl Interpreter {
             },
             other => other.clone(),
         }
-    }
-
-    fn restore_env_preserving_existing(&mut self, saved_env: &Env, params: &[String]) {
-        let current = self.env.clone();
-        let mut restored = saved_env.clone();
-        for key in saved_env.keys() {
-            if params.iter().any(|p| *key == p.as_str()) || key == "_" || key == "@_" || key == "%_"
-            {
-                continue;
-            }
-            if let Some(v) = current.get_sym(*key) {
-                restored.insert_sym(*key, v.clone());
-            }
-        }
-        self.env = restored;
     }
 }
