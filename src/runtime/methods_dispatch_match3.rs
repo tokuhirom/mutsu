@@ -220,7 +220,16 @@ impl Interpreter {
             "toggle" => Some(self.dispatch_toggle(target, &args)),
             "eager" if args.is_empty() => Some(self.dispatch_eager_method(target)),
             "is-lazy" if args.is_empty() => Some(Ok(self.dispatch_is_lazy_method(&target))),
-            "first" if !args.is_empty() => Some(self.dispatch_first(target, &args)),
+            "first" if !args.is_empty() => {
+                // User-defined methods take priority over builtin .first
+                if let Value::Instance { class_name, .. } = &target
+                    && self.has_user_method(&class_name.resolve(), "first")
+                {
+                    None
+                } else {
+                    Some(self.dispatch_first(target, &args))
+                }
+            }
             "first" if args.is_empty() => {
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"

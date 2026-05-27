@@ -4682,6 +4682,38 @@ impl Interpreter {
             })
     }
 
+    /// Create a clone for grammar action method dispatch.
+    /// Copies definitions needed for method resolution but starts with fresh output.
+    pub(crate) fn clone_for_grammar_actions(&self) -> Self {
+        Self {
+            env: self.env.clone(),
+            functions: self.functions.clone(),
+            proto_functions: self.proto_functions.clone(),
+            token_defs: self.token_defs.clone(),
+            current_package: self.current_package.clone(),
+            var_dynamic_flags: self.var_dynamic_flags.clone(),
+            var_type_constraints: self.var_type_constraints.clone(),
+            state_vars: self.state_vars.clone(),
+            classes: self.classes.clone(),
+            cunion_classes: self.cunion_classes.clone(),
+            hidden_classes: self.hidden_classes.clone(),
+            class_stubs: self.class_stubs.clone(),
+            class_composed_roles: self.class_composed_roles.clone(),
+            class_enum_roles: self.class_enum_roles.clone(),
+            roles: self.roles.clone(),
+            role_candidates: self.role_candidates.clone(),
+            role_parents: self.role_parents.clone(),
+            role_type_params: self.role_type_params.clone(),
+            class_role_param_bindings: self.class_role_param_bindings.clone(),
+            class_subs: self.class_subs.clone(),
+            subsets: self.subsets.clone(),
+            enum_types: self.enum_types.clone(),
+            closure_env_overrides: self.closure_env_overrides.clone(),
+            loaded_modules: self.loaded_modules.clone(),
+            ..Default::default()
+        }
+    }
+
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`

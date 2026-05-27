@@ -269,6 +269,14 @@ impl Interpreter {
                                 .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                             if let Some(capture_name) = capture_name {
                                 let captured: String = chars[pos..end].iter().collect();
+                                // Fire inline grammar action for this subrule
+                                super::regex_helpers::fire_inline_grammar_action(
+                                    &spec.lookup_name,
+                                    &captured,
+                                    pos,
+                                    end,
+                                    &inner_caps,
+                                );
                                 // Store inner captures as subcaptures (nested)
                                 let mut subcap = inner_caps;
                                 subcap.matched = captured.clone();

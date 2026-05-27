@@ -345,12 +345,21 @@ impl Interpreter {
                     None
                 };
                 if let Some((name, end)) = parsed {
-                    if let Some(value) = self
-                        .env
-                        .get(&name)
-                        .cloned()
-                        .or_else(|| self.env.get(&format!("${name}")).cloned())
-                    {
+                    // For dynamic variables, check grammar actions env first
+                    let resolved = if name.starts_with('*') {
+                        super::regex_helpers::lookup_grammar_actions_dynvar(&name).or_else(|| {
+                            self.env
+                                .get(&name)
+                                .cloned()
+                                .or_else(|| self.env.get(&format!("${name}")).cloned())
+                        })
+                    } else {
+                        self.env
+                            .get(&name)
+                            .cloned()
+                            .or_else(|| self.env.get(&format!("${name}")).cloned())
+                    };
+                    if let Some(value) = resolved {
                         match value {
                             Value::Regex(pat) => out.push_str(&pat),
                             other => {

@@ -172,11 +172,37 @@ impl Interpreter {
                 let _ = self.bind_function_args_values(&def.param_defs, &def.params, &rule_args);
             }
 
+            // Set up inline grammar actions context so that action methods fire
+            // during regex matching (not just after). This allows side effects
+            // like dynamic variable changes to propagate to subsequent tokens.
+            if let Some(ref actions_val) = actions_obj {
+                let ctx = super::regex::regex_helpers::GrammarInlineActionsCtx {
+                    actions: actions_val.clone(),
+                    interp: self.clone_for_grammar_actions(),
+                };
+                super::regex::regex_helpers::GRAMMAR_INLINE_ACTIONS.with(|slot| {
+                    *slot.borrow_mut() = Some(Box::new(ctx));
+                });
+            }
             let captures = if method == "parse" || method == "parsefile" {
                 self.regex_match_with_captures_full_from_start(&pattern, &text)
             } else {
                 self.regex_match_with_captures(&pattern, &text)
             };
+            // Sync env changes from inline actions back to main interpreter
+            if actions_obj.is_some() {
+                super::regex::regex_helpers::GRAMMAR_INLINE_ACTIONS.with(|slot| {
+                    if let Some(ctx) = slot.borrow().as_ref() {
+                        // Copy dynamic variable changes back to our env
+                        for (key, val) in ctx.interp.env.iter() {
+                            if key.starts_with("*") {
+                                self.env.insert_sym(*key, val.clone());
+                            }
+                        }
+                    }
+                    *slot.borrow_mut() = None;
+                });
+            }
             // Check for pending regex error (e.g., <sym> used outside proto regex)
             if let Some(err) = Self::take_pending_regex_error() {
                 return Err(err);

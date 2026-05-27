@@ -1003,6 +1003,20 @@ impl Interpreter {
             Some(defs) => defs,
             None => return Ok(None),
         };
+        // For a single non-proto definition, skip LTM testing and return
+        // the pattern directly. LTM testing would prematurely reject
+        // patterns whose subrules depend on dynamic variables modified by
+        // grammar action methods (e.g. $*X changed between <first> and
+        // <second> tokens).
+        let is_proto = self.has_proto_token(name);
+        if defs.len() == 1 && !is_proto {
+            if let Some(pattern) =
+                self.eval_token_def(&defs.into_iter().next().unwrap(), arg_values)?
+            {
+                return Ok(Some(pattern));
+            }
+            return Ok(None);
+        }
         let subject = match self.env.get("_") {
             Some(Value::Str(s)) => Some(s.to_string()),
             _ => None,

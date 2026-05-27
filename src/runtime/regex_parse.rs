@@ -3397,6 +3397,21 @@ impl Interpreter {
         None
     }
 
+    /// Look up a variable, checking the grammar inline actions env first for
+    /// dynamic variables (twigil `*`). This allows action method side effects
+    /// (e.g. `$*X = 'bb'`) to propagate to subsequent regex interpolations.
+    fn lookup_regex_scalar(&self, name: &str) -> Option<Value> {
+        if name.starts_with('*')
+            && let Some(val) = super::regex::regex_helpers::lookup_grammar_actions_dynvar(name)
+        {
+            return Some(val);
+        }
+        self.env
+            .get(name)
+            .cloned()
+            .or_else(|| self.env.get(&format!("${name}")).cloned())
+    }
+
     pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
@@ -3570,12 +3585,7 @@ impl Interpreter {
                             continue;
                         }
                         let name: String = chars[name_start..j].iter().collect();
-                        let value = self
-                            .env
-                            .get(&name)
-                            .cloned()
-                            .or_else(|| self.env.get(&format!("${name}")).cloned())
-                            .unwrap_or(Value::Nil);
+                        let value = self.lookup_regex_scalar(&name).unwrap_or(Value::Nil);
                         Self::check_hash_in_regex(&value)?;
                         Self::push_value_as_regex_pattern(&value, &mut out);
                         i = j + 1;
@@ -3603,12 +3613,7 @@ impl Interpreter {
                         continue;
                     }
                     let name: String = chars[name_start..j].iter().collect();
-                    let value = self
-                        .env
-                        .get(&name)
-                        .cloned()
-                        .or_else(|| self.env.get(&format!("${name}")).cloned())
-                        .unwrap_or(Value::Nil);
+                    let value = self.lookup_regex_scalar(&name).unwrap_or(Value::Nil);
                     Self::check_hash_in_regex(&value)?;
                     Self::push_value_as_regex_pattern(&value, &mut out);
                     i = j;

@@ -4,11 +4,79 @@ use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Context for firing grammar action methods inline during regex matching.
+/// Stored in a thread-local so that the immutable regex engine (`&self`) can
+/// trigger mutable action method calls when a named subrule match completes.
+pub(crate) struct GrammarInlineActionsCtx {
+    /// The actions object (e.g. `A.new` passed via `:actions`).
+    pub(crate) actions: Value,
+    /// A mutable interpreter used to call action methods and track env changes.
+    /// Dynamic variable changes propagate to subsequent regex interpolations.
+    pub(crate) interp: Interpreter,
+}
+
 thread_local! {
     pub(super) static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
     /// Collects plain (non-assertion) code blocks that should be executed eagerly
     /// during regex matching, even if the overall match fails. Used by `comb` etc.
     pub(crate) static EAGER_CODE_BLOCKS: RefCell<Option<Vec<CodeBlockContext>>> = const { RefCell::new(None) };
+    /// Grammar inline actions context. When set, named subrule matches
+    /// fire their action methods immediately during regex matching, allowing
+    /// side effects (e.g. dynamic variable changes) to affect subsequent tokens.
+    pub(crate) static GRAMMAR_INLINE_ACTIONS: RefCell<Option<Box<GrammarInlineActionsCtx>>> = const { RefCell::new(None) };
+}
+
+/// Fire an inline grammar action method for a named subrule match.
+/// Returns true if an action was fired.
+pub(crate) fn fire_inline_grammar_action(
+    rule_name: &str,
+    matched: &str,
+    from: usize,
+    to: usize,
+    inner_caps: &RegexCaptures,
+) -> bool {
+    GRAMMAR_INLINE_ACTIONS.with(|slot| {
+        let mut borrow = slot.borrow_mut();
+        let Some(ctx) = borrow.as_mut() else {
+            return false;
+        };
+        let match_obj = Value::make_match_object_full_q(
+            matched.to_string(),
+            from as i64,
+            to as i64,
+            &inner_caps.positional,
+            &inner_caps.named,
+            &inner_caps.named_subcaps,
+            &inner_caps.positional_subcaps,
+            &inner_caps.positional_quantified,
+            None,
+            &inner_caps.named_quantified,
+        );
+        ctx.interp.env.insert("/".to_string(), match_obj.clone());
+        ctx.interp.env.remove("made");
+        ctx.interp.action_made = None;
+        let result =
+            ctx.interp
+                .call_method_with_values(ctx.actions.clone(), rule_name, vec![match_obj]);
+        match result {
+            Ok(_) => true,
+            Err(e) if e.is_method_not_found() => false,
+            Err(_) => false,
+        }
+    })
+}
+
+/// Look up a dynamic variable in the grammar inline actions context.
+pub(crate) fn lookup_grammar_actions_dynvar(name: &str) -> Option<Value> {
+    GRAMMAR_INLINE_ACTIONS.with(|slot| {
+        let borrow = slot.borrow();
+        let ctx = borrow.as_ref()?;
+        ctx.interp
+            .env
+            .get(name)
+            .cloned()
+            .or_else(|| ctx.interp.env.get(&format!("${name}")).cloned())
+    })
 }
 
 /// Strip combining marks from a character, returning just the base character(s).
