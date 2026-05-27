@@ -1976,10 +1976,11 @@ impl Interpreter {
                 match vm.run_reuse(&code, &compiled_fns) {
                     Ok(()) => {
                         let val = vm
-                            .interpreter()
-                            .env()
-                            .get("_")
+                            .last_stack_value()
                             .cloned()
+                            .or_else(|| {
+                                vm.interpreter().env().get("_").cloned()
+                            })
                             .unwrap_or(Value::Nil);
                         match val {
                             Value::Slip(elems) => result.extend(elems.iter().cloned()),
@@ -2201,10 +2202,11 @@ impl Interpreter {
                 match vm.run_reuse(&code, &compiled_fns) {
                     Ok(()) => {
                         let val = vm
-                            .interpreter()
-                            .env()
-                            .get("_")
+                            .last_stack_value()
                             .cloned()
+                            .or_else(|| {
+                                vm.interpreter().env().get("_").cloned()
+                            })
                             .unwrap_or(Value::Nil);
                         // Write back topic mutation if it happened
                         if arity == 1
@@ -2391,10 +2393,11 @@ impl Interpreter {
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let pred = vm
-                                .interpreter()
-                                .env()
-                                .get("_")
+                                .last_stack_value()
                                 .cloned()
+                                .or_else(|| {
+                                    vm.interpreter().env().get("_").cloned()
+                                })
                                 .unwrap_or(Value::Nil);
                             let updated_item = if arity == 1 {
                                 vm.interpreter()

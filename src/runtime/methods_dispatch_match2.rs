@@ -418,7 +418,10 @@ impl Interpreter {
         let items = if crate::runtime::utils::is_shaped_array(&target) {
             crate::runtime::utils::shaped_array_leaves(&target)
         } else {
-            Self::value_to_list(&target)
+            match &target {
+                Value::Array(items, kind) if kind.is_itemized() => items.to_vec(),
+                _ => Self::value_to_list(&target),
+            }
         };
         let result = self.eval_map_over_items(args.first().cloned(), items)?;
         // .map() returns a Seq per Raku spec
