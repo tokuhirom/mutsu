@@ -269,32 +269,36 @@ impl Interpreter {
                 // Immutable types (Bool, Int, Str, etc.) must die.
                 let val = args.first().cloned().unwrap_or(Value::Nil);
                 match &val {
-                    Value::Bool(b) => Err(RuntimeError::new(format!(
-                        "Cannot modify an immutable Bool ({b})"
-                    ))),
-                    Value::Int(i) => Err(RuntimeError::new(format!(
-                        "Cannot modify an immutable Int ({i})"
-                    ))),
-                    Value::Num(n) => Err(RuntimeError::new(format!(
-                        "Cannot modify an immutable Num ({n})"
-                    ))),
-                    Value::Str(s) => Err(RuntimeError::new(format!(
-                        "Cannot modify an immutable Str ({s})"
-                    ))),
-                    Value::Rat(n, d) => Err(RuntimeError::new(format!(
-                        "Cannot modify an immutable Rat ({n}/{d})"
-                    ))),
+                    Value::Bool(b) => Err(RuntimeError::assignment_ro_typename(
+                        "Bool",
+                        &format!("{b}"),
+                    )),
+                    Value::Int(i) => {
+                        Err(RuntimeError::assignment_ro_typename("Int", &format!("{i}")))
+                    }
+                    Value::Num(n) => {
+                        Err(RuntimeError::assignment_ro_typename("Num", &format!("{n}")))
+                    }
+                    Value::Str(s) => {
+                        Err(RuntimeError::assignment_ro_typename("Str", &format!("{s}")))
+                    }
+                    Value::Rat(n, d) => Err(RuntimeError::assignment_ro_typename(
+                        "Rat",
+                        &format!("{n}/{d}"),
+                    )),
                     Value::Sub(sub_def) => {
                         let sub_name = sub_def.name.resolve();
-                        Err(RuntimeError::new(format!(
-                            "Cannot modify an immutable Sub (&{sub_name})"
-                        )))
+                        Err(RuntimeError::assignment_ro_typename(
+                            "Sub",
+                            &format!("&{sub_name}"),
+                        ))
                     }
                     Value::Routine { name, .. } => {
                         let sub_name = name.resolve();
-                        Err(RuntimeError::new(format!(
-                            "Cannot modify an immutable Sub (&{sub_name})"
-                        )))
+                        Err(RuntimeError::assignment_ro_typename(
+                            "Sub",
+                            &format!("&{sub_name}"),
+                        ))
                     }
                     Value::Nil | Value::Array(..) | Value::Hash(..) => Ok(Value::Nil),
                     _ => Ok(Value::Nil),

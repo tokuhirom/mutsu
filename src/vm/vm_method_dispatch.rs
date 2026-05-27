@@ -312,12 +312,12 @@ impl VM {
                                     pd.is_invocant,
                                 ));
                             }
-                            return Err(RuntimeError::new(format!(
-                                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                            return Err(RuntimeError::typecheck_binding_parameter(
                                 param_name,
                                 constraint,
-                                crate::runtime::value_type_name(&base)
-                            )));
+                                crate::runtime::value_type_name(&base),
+                                None,
+                            ));
                         }
                     }
                 }
@@ -777,7 +777,7 @@ impl VM {
             }
             if arg_idx < args.len() {
                 let val = args[arg_idx].clone();
-                if let Some(ref constraint) = pd.and_then(|pd| pd.type_constraint.as_ref())
+                if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref())
                     && !self.interpreter.type_matches_value(constraint, &val)
                 {
                     // Type mismatch — fall back to slow path for proper error
@@ -787,12 +787,12 @@ impl VM {
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     self.interpreter.set_env(frame.saved_env);
-                    return Err(RuntimeError::new(format!(
-                        "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                    return Err(RuntimeError::typecheck_binding_parameter(
                         param_name,
                         constraint,
-                        crate::runtime::value_type_name(&val)
-                    )));
+                        crate::runtime::value_type_name(&val),
+                        None,
+                    ));
                 }
                 param_values.push((param_name, val));
                 arg_idx += 1;
