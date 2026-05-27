@@ -63,7 +63,9 @@ jobs:
           git checkout -- roast/
 
       - name: Roast tests (make roast)
-        run: prove -e 'MUTSU_BIN=target/release/mutsu scripts/run-roast-test.sh' $(cat roast-whitelist.txt)
+        run: prove -e 'scripts/run-roast-test.sh' $(cat roast-whitelist.txt)
+        env:
+          MUTSU_BIN: target/release/mutsu
 
   wasm-e2e:
     runs-on: ubuntu-latest

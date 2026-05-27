@@ -9,7 +9,7 @@ test:
 
 roast:
 	@mkdir -p tmp
-	(cargo build --release && prove -e 'MUTSU_BIN=$(MUTSU_BIN) scripts/run-roast-test.sh' $(shell cat roast-whitelist.txt)) 2>&1 | tee tmp/make-roast.log
+	(cargo build --release && MUTSU_BIN=$(MUTSU_BIN) prove -e 'scripts/run-roast-test.sh' $(shell cat roast-whitelist.txt)) 2>&1 | tee tmp/make-roast.log
 
 check-roast-whitelist:
 	LC_ALL=C sort -c roast-whitelist.txt
