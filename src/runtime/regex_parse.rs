@@ -3347,6 +3347,45 @@ impl Interpreter {
         let mut i = 0usize;
         while i < chars.len() {
             let ch = chars[i];
+            // # starts a comment — skip without interpolation.
+            // #`[...] is an embedded comment; plain # is a line comment.
+            if ch == '#' {
+                if i + 1 < chars.len() && chars[i + 1] == '`' {
+                    out.push(chars[i]);
+                    i += 1;
+                    out.push(chars[i]); // `
+                    i += 1;
+                    if i < chars.len() {
+                        let bracket = chars[i];
+                        let close = match bracket {
+                            '[' => ']',
+                            '(' => ')',
+                            '{' => '}',
+                            '<' => '>',
+                            _ => bracket,
+                        };
+                        out.push(bracket);
+                        i += 1;
+                        let mut embed_depth = 1u32;
+                        while i < chars.len() && embed_depth > 0 {
+                            let c = chars[i];
+                            if c == bracket && bracket != close {
+                                embed_depth += 1;
+                            } else if c == close {
+                                embed_depth -= 1;
+                            }
+                            out.push(c);
+                            i += 1;
+                        }
+                    }
+                } else {
+                    while i < chars.len() && chars[i] != '\n' {
+                        out.push(chars[i]);
+                        i += 1;
+                    }
+                }
+                continue;
+            }
             // Skip code blocks { ... } — don't interpolate variables inside them
             if ch == '{' {
                 let mut depth = 1usize;

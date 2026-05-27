@@ -824,6 +824,39 @@ fn scan_to_delim_inner(
             }
         } else if is_paired && c == open_ch {
             depth += 1;
+        } else if !p5_mode && c == '#' {
+            // # starts a comment in Raku regex.
+            // #`[...] is an embedded comment (bracket-delimited).
+            // Plain # is a line comment (until end of line).
+            if let Some((_, '`')) = chars.clone().next() {
+                chars.next(); // skip `
+                if let Some((_, bracket)) = chars.next() {
+                    let close = match bracket {
+                        '[' => ']',
+                        '(' => ')',
+                        '{' => '}',
+                        '<' => '>',
+                        _ => bracket,
+                    };
+                    let mut embed_depth = 1u32;
+                    for (_, ch) in chars.by_ref() {
+                        if ch == bracket && bracket != close {
+                            embed_depth += 1;
+                        } else if ch == close {
+                            embed_depth -= 1;
+                            if embed_depth == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                for (_, ch) in chars.by_ref() {
+                    if ch == '\n' {
+                        break;
+                    }
+                }
+            }
         } else if !p5_mode && c == '<' && input[i + 1..].starts_with('<') {
             // << is a left word boundary assertion — skip both chars
             chars.next(); // consume second <
@@ -895,11 +928,12 @@ fn scan_to_delim_inner(
             }
         } else if !p5_mode
             && c == '<'
-            && !is_paired
             && !input[i + 1..].starts_with('[')
             && !input[i + 1..].starts_with('(')
         {
-            // Track angle bracket nesting for non-paired delimiters (like /).
+            // Track angle bracket nesting for regex constructs.
+            // Prevents # inside <...> from being treated as a comment,
+            // and { } inside <?{...}> from affecting brace depth.
             // This prevents / inside <:name(/:s .../)> from closing the regex.
             let remaining = &input[i + 1..];
             if remaining.starts_with("?{")
@@ -935,11 +969,16 @@ fn scan_to_delim_inner(
                 }
             } else {
                 // Named assertions, Unicode props, etc.: track <> depth
+                // Also track (...) so that > inside parens (e.g. => in args)
+                // doesn't prematurely close the angle brackets.
                 let mut angle_depth = 1u32;
+                let mut paren_depth = 0u32;
                 loop {
                     match chars.next() {
-                        Some((_, '<')) => angle_depth += 1,
-                        Some((_, '>')) => {
+                        Some((_, '(')) => paren_depth += 1,
+                        Some((_, ')')) => paren_depth = paren_depth.saturating_sub(1),
+                        Some((_, '<')) if paren_depth == 0 => angle_depth += 1,
+                        Some((_, '>')) if paren_depth == 0 => {
                             angle_depth -= 1;
                             if angle_depth == 0 {
                                 break;
