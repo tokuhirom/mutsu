@@ -249,9 +249,18 @@ impl Interpreter {
                 let mut out = Vec::new();
                 for (sub_pat, sub_pkg, sym_key) in candidates {
                     if let Some(parsed) = self.parse_regex(&sub_pat) {
-                        for (inner_end, inner_caps) in
-                            self.regex_match_ends_from_caps_in_pkg(&parsed, &tail, 0, &sub_pkg)
-                        {
+                        let all_matches =
+                            self.regex_match_ends_from_caps_in_pkg(&parsed, &tail, 0, &sub_pkg);
+                        // For proto regex candidates, take only the first (preferred) match.
+                        // Frugal quantifiers produce the shortest match first; greedy produce
+                        // the longest first. Taking only the first prevents LTM from
+                        // stretching a frugal candidate's match to the maximum.
+                        let matches_to_use: Vec<_> = if sym_key.is_some() {
+                            all_matches.into_iter().take(1).collect()
+                        } else {
+                            all_matches
+                        };
+                        for (inner_end, inner_caps) in matches_to_use {
                             let end = pos + inner_end;
                             let mut new_caps = current_caps.clone();
                             let capture_name = spec
