@@ -211,8 +211,9 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
 
     let (rest, name) = if sigil == b'$' || is_array || is_hash || is_code {
         let (r, n) = var_name(rest)?;
-        // Reject `!` twigil in `my` scope: `my $!foo` is invalid
-        if n.starts_with('!') {
+        // Reject `!` twigil in `my` scope: `my $!foo` is invalid.
+        // But `my $!` (bare special variable) is allowed.
+        if n.starts_with('!') && n.len() > 1 {
             let scope_name = if is_state {
                 "state"
             } else if is_our {
