@@ -594,7 +594,11 @@ impl VM {
     }
 
     pub(crate) fn last_stack_value(&self) -> Option<&Value> {
-        self.stack.last()
+        if self.stack.len() == 1 {
+            self.stack.last()
+        } else {
+            None
+        }
     }
 
     /// Override the source variable used when mutating `$_` in VM execution.

@@ -592,6 +592,28 @@ impl Interpreter {
             (name, "")
         };
         let lookup = base.strip_prefix("::").unwrap_or(base);
+        // Well-known builtin parent types should not be resolved to a
+        // package-scoped variant (e.g. "Grammar" → "HTTP::Parser::Grammar").
+        if !lookup.contains("::")
+            && matches!(
+                lookup,
+                "Any"
+                    | "Cool"
+                    | "Mu"
+                    | "Grammar"
+                    | "Match"
+                    | "Int"
+                    | "Str"
+                    | "Num"
+                    | "Rat"
+                    | "Bool"
+                    | "IO"
+                    | "Exception"
+                    | "Stash"
+            )
+        {
+            return format!("{}{}", lookup, suffix);
+        }
         if let Value::Package(pkg) = self.resolve_indirect_type_name(lookup) {
             return format!("{}{}", pkg.resolve(), suffix);
         }
