@@ -2712,73 +2712,102 @@ impl Interpreter {
                                         } else {
                                             (trimmed, false)
                                         };
-                                    // Check for named character classes
-                                    match class_name {
-                                        "alpha" | "upper" | "lower" | "digit" | "xdigit"
-                                        | "space" | "alnum" | "blank" | "cntrl" | "punct"
-                                        | "graph" | "print" => {
-                                            // Set builtin named capture so $<alpha>, $<digit>, etc. work
-                                            // (only for non-dot calls)
-                                            if !is_dot_call {
-                                                pending_builtin_named_capture =
-                                                    Some(class_name.to_string());
+                                    // If this name matches a builtin char class but
+                                    // the current grammar defines a token with the
+                                    // same name, the grammar token takes precedence.
+                                    let is_builtin_name = matches!(
+                                        class_name,
+                                        "alpha"
+                                            | "upper"
+                                            | "lower"
+                                            | "digit"
+                                            | "xdigit"
+                                            | "space"
+                                            | "alnum"
+                                            | "blank"
+                                            | "cntrl"
+                                            | "punct"
+                                            | "graph"
+                                            | "print"
+                                            | "ident"
+                                    );
+                                    let grammar_overrides_builtin = is_builtin_name
+                                        && !self.current_package.is_empty()
+                                        && self.resolve_token_defs(class_name).is_some();
+                                    if grammar_overrides_builtin {
+                                        RegexAtom::Named(name)
+                                    } else {
+                                        // Check for named character classes
+                                        match class_name {
+                                            "alpha" | "upper" | "lower" | "digit" | "xdigit"
+                                            | "space" | "alnum" | "blank" | "cntrl" | "punct"
+                                            | "graph" | "print" => {
+                                                // Set builtin named capture so $<alpha>, $<digit>, etc. work
+                                                // (only for non-dot calls)
+                                                if !is_dot_call {
+                                                    pending_builtin_named_capture =
+                                                        Some(class_name.to_string());
+                                                }
+                                                RegexAtom::CharClass(CharClass {
+                                                    items: vec![ClassItem::NamedBuiltin(
+                                                        class_name.to_string(),
+                                                    )],
+                                                    negated: false,
+                                                })
                                             }
-                                            RegexAtom::CharClass(CharClass {
-                                                items: vec![ClassItem::NamedBuiltin(
-                                                    class_name.to_string(),
-                                                )],
-                                                negated: false,
-                                            })
-                                        }
-                                        "ident" => {
-                                            // <ident> = <alpha> <alnum>*
-                                            if !is_dot_call {
-                                                pending_builtin_named_capture =
-                                                    Some("ident".to_string());
+                                            "ident" => {
+                                                // <ident> = <alpha> <alnum>*
+                                                if !is_dot_call {
+                                                    pending_builtin_named_capture =
+                                                        Some("ident".to_string());
+                                                }
+                                                RegexAtom::Group(RegexPattern {
+                                                    tokens: vec![
+                                                        RegexToken {
+                                                            atom: RegexAtom::CharClass(CharClass {
+                                                                items: vec![
+                                                                    ClassItem::NamedBuiltin(
+                                                                        "alpha".to_string(),
+                                                                    ),
+                                                                ],
+                                                                negated: false,
+                                                            }),
+                                                            quant: RegexQuant::One,
+                                                            named_capture: None,
+                                                            hash_capture: None,
+                                                            secondary_named_capture: None,
+                                                            ratchet: false,
+                                                            frugal: false,
+                                                        },
+                                                        RegexToken {
+                                                            atom: RegexAtom::CharClass(CharClass {
+                                                                items: vec![
+                                                                    ClassItem::NamedBuiltin(
+                                                                        "alnum".to_string(),
+                                                                    ),
+                                                                ],
+                                                                negated: false,
+                                                            }),
+                                                            quant: RegexQuant::ZeroOrMore,
+                                                            named_capture: None,
+                                                            hash_capture: None,
+                                                            secondary_named_capture: None,
+                                                            ratchet: false,
+                                                            frugal: false,
+                                                        },
+                                                    ],
+                                                    anchor_start: false,
+                                                    anchor_end: false,
+                                                    ignore_case,
+                                                    ignore_mark,
+                                                })
                                             }
-                                            RegexAtom::Group(RegexPattern {
-                                                tokens: vec![
-                                                    RegexToken {
-                                                        atom: RegexAtom::CharClass(CharClass {
-                                                            items: vec![ClassItem::NamedBuiltin(
-                                                                "alpha".to_string(),
-                                                            )],
-                                                            negated: false,
-                                                        }),
-                                                        quant: RegexQuant::One,
-                                                        named_capture: None,
-                                                        hash_capture: None,
-                                                        secondary_named_capture: None,
-                                                        ratchet: false,
-                                                        frugal: false,
-                                                    },
-                                                    RegexToken {
-                                                        atom: RegexAtom::CharClass(CharClass {
-                                                            items: vec![ClassItem::NamedBuiltin(
-                                                                "alnum".to_string(),
-                                                            )],
-                                                            negated: false,
-                                                        }),
-                                                        quant: RegexQuant::ZeroOrMore,
-                                                        named_capture: None,
-                                                        hash_capture: None,
-                                                        secondary_named_capture: None,
-                                                        ratchet: false,
-                                                        frugal: false,
-                                                    },
-                                                ],
-                                                anchor_start: false,
-                                                anchor_end: false,
-                                                ignore_case,
-                                                ignore_mark,
-                                            })
-                                        }
-                                        _ => {
-                                            // <sym> / <.sym> can only be used in a proto regex
-                                            // with :sym<> adverb — it should have been replaced
-                                            // by instantiate_token_pattern before reaching here
-                                            if class_name == "sym" {
-                                                PENDING_REGEX_ERROR.with(|e| {
+                                            _ => {
+                                                // <sym> / <.sym> can only be used in a proto regex
+                                                // with :sym<> adverb — it should have been replaced
+                                                // by instantiate_token_pattern before reaching here
+                                                if class_name == "sym" {
+                                                    PENDING_REGEX_ERROR.with(|e| {
                                                     let msg = "Can only use \"<sym>\" token in a proto regex";
                                                     let mut err = RuntimeError::new(msg);
                                                     let mut attrs = std::collections::HashMap::new();
@@ -2787,19 +2816,20 @@ impl Interpreter {
                                                     err.exception = Some(Box::new(ex));
                                                     *e.borrow_mut() = Some(err);
                                                 });
-                                                return None;
+                                                    return None;
+                                                }
+                                                // Check for longname aliases
+                                                if trimmed.contains("::") && trimmed.contains('=') {
+                                                    PENDING_REGEX_ERROR.with(|e| {
+                                                        *e.borrow_mut() =
+                                                            Some(Self::make_longname_alias_error());
+                                                    });
+                                                    return None;
+                                                }
+                                                RegexAtom::Named(name)
                                             }
-                                            // Check for longname aliases
-                                            if trimmed.contains("::") && trimmed.contains('=') {
-                                                PENDING_REGEX_ERROR.with(|e| {
-                                                    *e.borrow_mut() =
-                                                        Some(Self::make_longname_alias_error());
-                                                });
-                                                return None;
-                                            }
-                                            RegexAtom::Named(name)
                                         }
-                                    }
+                                    } // close else of grammar_overrides_builtin
                                 }
                             } // close word-alternation else
                         } // close else for code assertion special case
