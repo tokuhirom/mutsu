@@ -1594,6 +1594,10 @@ impl VM {
             Value::Array(..)
                 | Value::Junction { .. }
                 | Value::GenericRange { .. }
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
                 | Value::Nil
                 | Value::Seq(..)
                 | Value::Slip(..)
@@ -1859,10 +1863,29 @@ impl VM {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let index_target = self.interpreter.env().get(&var_name).cloned();
         let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
-        // Normalize Seq/Slip index to Array for uniform handling in assignment
+        // Normalize Seq/Slip/Range index to Array for uniform handling in assignment.
+        // For hash variables, expand Range indices into individual keys so that
+        // `%h{^5} = (0 xx 5)` performs a hash slice assignment (5 separate keys)
+        // instead of treating the stringified range as a single key.
         let idx = match idx {
             Value::Seq(items) => Value::Array(items, crate::value::ArrayKind::List),
             Value::Slip(items) => Value::Array(items, crate::value::ArrayKind::List),
+            Value::Range(a, b) if var_name.starts_with('%') => {
+                let items: Vec<Value> = (a..=b).map(Value::Int).collect();
+                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+            }
+            Value::RangeExcl(a, b) if var_name.starts_with('%') => {
+                let items: Vec<Value> = (a..b).map(Value::Int).collect();
+                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+            }
+            Value::RangeExclStart(a, b) if var_name.starts_with('%') => {
+                let items: Vec<Value> = ((a + 1)..=b).map(Value::Int).collect();
+                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+            }
+            Value::RangeExclBoth(a, b) if var_name.starts_with('%') => {
+                let items: Vec<Value> = ((a + 1)..b).map(Value::Int).collect();
+                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+            }
             other => other,
         };
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
