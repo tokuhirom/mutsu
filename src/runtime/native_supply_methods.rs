@@ -850,6 +850,12 @@ impl Interpreter {
                     supplier_register_promise(supplier_id, promise.clone());
                 } else if let Some(reason) = attributes.get("quit_reason").cloned() {
                     promise.break_with(reason, String::new(), String::new());
+                } else if attributes.contains_key("on_demand_callback") {
+                    // For on-demand supplies (created by `supply { ... }` blocks),
+                    // run the supply body through the react event loop to handle
+                    // async `whenever` subscriptions (e.g. Supply.interval).
+                    // Collect emitted values and keep the promise with the last one.
+                    self.supply_promise_on_demand(attributes, &promise)?;
                 } else {
                     let live = attributes.get("live").map(Value::truthy).unwrap_or(false);
                     if !live {
@@ -3180,6 +3186,189 @@ impl Interpreter {
                 Some(Value::Array(items, ..)) => items.to_vec(),
                 _ => Vec::new(),
             })
+        }
+    }
+
+    /// Implement Supply.Promise for on-demand supplies (supply { ... } blocks).
+    /// Runs the supply body through a custom event loop so that async
+    /// `whenever` subscriptions (e.g. Supply.interval) are properly handled.
+    /// Keeps the promise with the last emitted value when done.
+    fn supply_promise_on_demand(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        promise: &crate::value::SharedPromise,
+    ) -> Result<(), RuntimeError> {
+        use crate::runtime::native_methods::{SupplyEvent, take_supply_channel};
+        use std::time::Duration;
+
+        let on_demand_cb = match attributes.get("on_demand_callback") {
+            Some(cb) => cb.clone(),
+            None => {
+                promise.keep(Value::Nil, String::new(), String::new());
+                return Ok(());
+            }
+        };
+
+        // Create an emitter supplier with a supplier_id so emits are tracked
+        let emitter_supplier_id = next_supplier_id();
+        let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+            let mut a = HashMap::new();
+            a.insert("emitted".to_string(), Value::array(Vec::new()));
+            a.insert("done".to_string(), Value::Bool(false));
+            a.insert(
+                "supplier_id".to_string(),
+                Value::Int(emitter_supplier_id as i64),
+            );
+            a
+        });
+
+        // Register the promise on the emitter supplier. When supplier_done()
+        // fires, it will keep all pending promises before supplier_reset()
+        // clears the state.
+        supplier_register_promise(emitter_supplier_id, promise.clone());
+
+        // Enter react-like context to collect whenever registrations
+        self.supply_emit_buffer.push(Vec::new());
+        let cb_result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+        let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+
+        if let Err(err) = cb_result
+            && !err.is_react_done
+        {
+            promise.break_with(
+                err.exception
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(err.message.clone())),
+                String::new(),
+                String::new(),
+            );
+            return Ok(());
+        }
+
+        // Check if promise was already resolved (synchronous supply that called done)
+        if promise.is_resolved() {
+            return Ok(());
+        }
+
+        // Separate subscription registrations from plain emitted values
+        let mut subscriptions = Vec::new();
+        let mut plain_values = Vec::new();
+        for item in emitted {
+            if let Value::Array(ref arr, ..) = item
+                && arr.len() == 4
+                && matches!(&arr[0], Value::Instance { class_name, .. } if class_name == "Supply")
+            {
+                subscriptions.push(item);
+            } else {
+                plain_values.push(item);
+            }
+        }
+
+        if subscriptions.is_empty() {
+            // No async subscriptions, just use plain emitted values
+            let result = plain_values.last().cloned().unwrap_or(Value::Nil);
+            promise.keep(result, String::new(), String::new());
+            return Ok(());
+        }
+
+        // Build channel receivers for async subscriptions
+        struct SupplyPromiseSub {
+            receiver: std::sync::mpsc::Receiver<SupplyEvent>,
+            callback: Value,
+        }
+        let mut subs: Vec<SupplyPromiseSub> = Vec::new();
+        for sub_val in &subscriptions {
+            if let Value::Array(items, ..) = sub_val
+                && items.len() >= 2
+            {
+                let source = &items[0];
+                let callback = items[1].clone();
+                if let Value::Instance {
+                    attributes: inner_attrs,
+                    ..
+                } = source
+                {
+                    // Try to get channel via supply_id (or parent_supply_id for lines)
+                    let supply_id = inner_attrs
+                        .get("parent_supply_id")
+                        .or_else(|| inner_attrs.get("supply_id"))
+                        .and_then(|v| {
+                            if let Value::Int(id) = v {
+                                Some(*id as u64)
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(sid) = supply_id
+                        && let Some(rx) = take_supply_channel(sid)
+                    {
+                        subs.push(SupplyPromiseSub {
+                            receiver: rx,
+                            callback,
+                        });
+                    }
+                }
+            }
+        }
+
+        if subs.is_empty() {
+            // No channels found, resolve with plain values
+            let result = plain_values.last().cloned().unwrap_or(Value::Nil);
+            promise.keep(result, String::new(), String::new());
+            return Ok(());
+        }
+
+        // Custom event loop: poll channels until the promise is resolved.
+        // When the supply block calls `done`, the Supplier.done handler
+        // calls supplier_done() which keeps pending promises (including ours)
+        // with the last emitted value.
+        let poll_timeout = Duration::from_millis(10);
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            // Check if promise was resolved (by supplier_done via Supplier.done handler)
+            if promise.is_resolved() {
+                return Ok(());
+            }
+
+            // Check timeout to prevent infinite hangs
+            if std::time::Instant::now() >= deadline {
+                promise.keep(Value::Nil, String::new(), String::new());
+                return Ok(());
+            }
+
+            // Poll all channel subscriptions
+            let mut any_active = false;
+            for sub in &subs {
+                match sub.receiver.recv_timeout(poll_timeout) {
+                    Ok(SupplyEvent::Emit(value)) => {
+                        any_active = true;
+                        let _ = self.call_sub_value(sub.callback.clone(), vec![value], true);
+                        // Check if promise was resolved during callback
+                        if promise.is_resolved() {
+                            return Ok(());
+                        }
+                    }
+                    Ok(SupplyEvent::Done) => {
+                        // Inner supply done
+                    }
+                    Ok(SupplyEvent::Quit(_)) => {
+                        // Inner supply quit
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        // Channel closed
+                    }
+                    Err(_) => {
+                        // Timeout, continue polling
+                        any_active = true;
+                    }
+                }
+            }
+            if !any_active {
+                // All channels disconnected
+                promise.keep(Value::Nil, String::new(), String::new());
+                return Ok(());
+            }
         }
     }
 
