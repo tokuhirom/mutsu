@@ -276,6 +276,21 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // .emit on any value: push to the supply emit buffer if inside a
+        // supply block, otherwise raise CX::Emit like the `emit` sub.
+        if method == "emit"
+            && args.is_empty()
+            && !matches!(
+                &target,
+                Value::Instance { class_name, .. } if class_name == "Supplier"
+            )
+        {
+            if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                buf.push(target);
+                return Ok(Value::Nil);
+            }
+            return Err(RuntimeError::emit_signal(target));
+        }
         // Scalar containers are transparent for method dispatch (except .item and .VAR)
         if let Value::Scalar(inner) = target {
             if method == "VAR" {

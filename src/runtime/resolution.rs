@@ -1211,6 +1211,11 @@ impl Interpreter {
                 let left_args = Self::composed_result_to_args(right_result, left_expects_single);
                 return self.call_sub_value(left, left_args, false);
             }
+            // Reject arguments for blocks with explicitly empty signatures
+            // (e.g. `-> { ... }` which takes 0 parameters).
+            if data.empty_sig && !call_args.is_empty() {
+                return Err(Self::reject_args_for_empty_sig(&call_args));
+            }
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
             if let Some(line) = self.test_pending_callsite_line {

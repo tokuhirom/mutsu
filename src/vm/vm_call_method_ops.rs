@@ -57,6 +57,24 @@ impl VM {
             err.return_value = Some(target);
             return Err(err);
         }
+        // .emit on any value: push to supply emit buffer if inside a supply
+        // block, otherwise raise CX::Emit. Skip for Supplier instances (they
+        // have their own emit method).
+        if method == "emit"
+            && args.is_empty()
+            && !matches!(
+                &target,
+                Value::Instance { class_name, .. } if class_name == "Supplier"
+            )
+        {
+            if let Some(buf) = self.interpreter.supply_emit_buffer.last_mut() {
+                buf.push(target);
+                self.stack.push(Value::Nil);
+                self.env_dirty = true;
+                return Ok(());
+            }
+            return Err(RuntimeError::emit_signal(target));
+        }
         // Fast path: 0-arg attribute accessor on Instance (e.g. $obj.x)
         if args.is_empty()
             && modifier_idx.is_none()
