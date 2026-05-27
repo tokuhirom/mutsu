@@ -943,11 +943,16 @@ fn scan_to_delim_inner(
                 }
             } else {
                 // Named assertions, Unicode props, etc.: track <> depth
+                // Also track (...) so that > inside parens (e.g. => in args)
+                // doesn't prematurely close the angle brackets.
                 let mut angle_depth = 1u32;
+                let mut paren_depth = 0u32;
                 loop {
                     match chars.next() {
-                        Some((_, '<')) => angle_depth += 1,
-                        Some((_, '>')) => {
+                        Some((_, '(')) => paren_depth += 1,
+                        Some((_, ')')) => paren_depth = paren_depth.saturating_sub(1),
+                        Some((_, '<')) if paren_depth == 0 => angle_depth += 1,
+                        Some((_, '>')) if paren_depth == 0 => {
                             angle_depth -= 1;
                             if angle_depth == 0 {
                                 break;
