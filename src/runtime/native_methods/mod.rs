@@ -4,6 +4,7 @@ mod encoding;
 mod proc;
 mod scheduler;
 mod socket_async;
+mod socket_async_conn;
 mod socket_helpers;
 mod socket_inet;
 pub(crate) mod state;
