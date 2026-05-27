@@ -1016,7 +1016,12 @@ impl Interpreter {
             Vec::new()
         };
         attrs.insert("headers".to_string(), Value::array(header_vals));
-        attrs.insert("caption".to_string(), Value::str(String::new()));
+        // Set caption from config if available, otherwise empty string
+        let caption = config
+            .get("caption")
+            .cloned()
+            .unwrap_or_else(|| Value::str(String::new()));
+        attrs.insert("caption".to_string(), caption);
         attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Block::Table"), attrs)
     }
@@ -1394,9 +1399,26 @@ impl Interpreter {
         let mut current_group: Vec<&str> = Vec::new();
         let mut past_header = header_sep_idx.is_none();
 
+        // Track blank line indices for grouping
+        let mut blank_indices = Vec::new();
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim().is_empty() {
+                blank_indices.push(i);
+            }
+        }
+
         for (i, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() {
+                // Blank lines act as group separators
+                if !current_group.is_empty() {
+                    if past_header {
+                        content_groups.push(current_group.clone());
+                    } else {
+                        header_raw = current_group.clone();
+                    }
+                    current_group.clear();
+                }
                 continue;
             }
             if all_sep_indices.contains(&i) {
@@ -1459,8 +1481,11 @@ impl Interpreter {
             .iter()
             .filter(|&&idx| Some(idx) != header_sep_idx)
             .count();
+        // Groups should be merged if there are separator or blank-line boundaries
+        let has_group_separators =
+            (content_sep_count > 0 || !blank_indices.is_empty()) && content_groups.len() > 1;
         let mut all_rows = Vec::new();
-        if content_sep_count > 0 && content_groups.len() > 1 {
+        if has_group_separators {
             for group in &content_groups {
                 let parsed = Self::extract_ws_cells(group, &col_positions, min_indent);
                 all_rows.push(Self::merge_table_group(&parsed));
@@ -2001,8 +2026,22 @@ impl Interpreter {
                     }
                     if target == "table" {
                         let after_target = rest.strip_prefix(target).unwrap_or("");
-                        let (tbl_config, _) = Self::parse_pod_config(after_target);
+                        let (mut tbl_config, _) = Self::parse_pod_config(after_target);
                         idx += 1;
+                        // Handle config continuation lines (= :key(value))
+                        while idx < lines.len() {
+                            let cont = lines[idx].trim_start();
+                            if (cont.starts_with("= ") || cont.starts_with("=\t"))
+                                && !Self::is_pod_table_separator(cont)
+                            {
+                                let cont_str = cont[1..].trim_start();
+                                let (more, _) = Self::parse_pod_config(cont_str);
+                                tbl_config.extend(more);
+                                idx += 1;
+                            } else {
+                                break;
+                            }
+                        }
                         let mut table_lines: Vec<&str> = Vec::new();
                         while idx < lines.len() {
                             if let Some((ed, er)) =
@@ -2203,6 +2242,18 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    if target == "table" {
+                        let (numbered, inline_after) = Self::extract_numbered_alias(inline);
+                        let (mut config, _) = Self::parse_pod_config(inline_after);
+                        if numbered {
+                            config.insert("numbered".to_string(), Value::Bool(true));
+                        }
+                        let (headers, rows, next_idx) =
+                            Self::collect_table_rows_with_headers(&lines, idx + 1);
+                        entries.push(Self::make_pod_table_full(headers, rows, config));
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     let (numbered, inline_after) = Self::extract_numbered_alias(inline);
                     let (mut config, leftover) = Self::parse_pod_config(inline_after);
                     if numbered {
@@ -2309,8 +2360,22 @@ impl Interpreter {
                     }
                     if target == "table" {
                         let after_target = rest.strip_prefix(target).unwrap_or("");
-                        let (tbl_config, _) = Self::parse_pod_config(after_target);
+                        let (mut tbl_config, _) = Self::parse_pod_config(after_target);
                         idx += 1;
+                        // Handle config continuation lines (= :key(value))
+                        while idx < lines.len() {
+                            let cont = lines[idx].trim_start();
+                            if (cont.starts_with("= ") || cont.starts_with("=\t"))
+                                && !Self::is_pod_table_separator(cont)
+                            {
+                                let cont_str = cont[1..].trim_start();
+                                let (more, _) = Self::parse_pod_config(cont_str);
+                                tbl_config.extend(more);
+                                idx += 1;
+                            } else {
+                                break;
+                            }
+                        }
                         let mut table_lines: Vec<&str> = Vec::new();
                         while idx < lines.len() {
                             if let Some((ed, er)) =
