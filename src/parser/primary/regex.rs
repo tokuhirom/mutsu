@@ -824,6 +824,13 @@ fn scan_to_delim_inner(
             }
         } else if is_paired && c == open_ch {
             depth += 1;
+        } else if !p5_mode && c == '#' {
+            // # starts a comment until end of line in Raku regex
+            for (_, ch) in chars.by_ref() {
+                if ch == '\n' {
+                    break;
+                }
+            }
         } else if !p5_mode && c == '<' && input[i + 1..].starts_with('<') {
             // << is a left word boundary assertion — skip both chars
             chars.next(); // consume second <
@@ -895,11 +902,12 @@ fn scan_to_delim_inner(
             }
         } else if !p5_mode
             && c == '<'
-            && !is_paired
             && !input[i + 1..].starts_with('[')
             && !input[i + 1..].starts_with('(')
         {
-            // Track angle bracket nesting for non-paired delimiters (like /).
+            // Track angle bracket nesting for regex constructs.
+            // Prevents # inside <...> from being treated as a comment,
+            // and { } inside <?{...}> from affecting brace depth.
             // This prevents / inside <:name(/:s .../)> from closing the regex.
             let remaining = &input[i + 1..];
             if remaining.starts_with("?{")

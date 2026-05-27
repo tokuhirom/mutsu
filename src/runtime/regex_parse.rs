@@ -3347,6 +3347,14 @@ impl Interpreter {
         let mut i = 0usize;
         while i < chars.len() {
             let ch = chars[i];
+            // # starts a comment until end of line — skip without interpolation
+            if ch == '#' {
+                while i < chars.len() && chars[i] != '\n' {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+                continue;
+            }
             // Skip code blocks { ... } — don't interpolate variables inside them
             if ch == '{' {
                 let mut depth = 1usize;
