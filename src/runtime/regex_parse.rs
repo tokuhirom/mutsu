@@ -2286,14 +2286,15 @@ impl Interpreter {
                                     }
                                     continue;
                                 }
-                                // Handle backslash escapes inside bracket classes:
-                                // \[ and \] should not affect bracket_depth, etc.
+                                // Handle backslash escapes: \< and \> should not
+                                // affect angle_depth, \[ and \] should not affect
+                                // bracket_depth, etc.
                                 if escaped {
                                     escaped = false;
                                     name.push(ch);
                                     continue;
                                 }
-                                if ch == '\\' && bracket_depth > 0 {
+                                if ch == '\\' {
                                     escaped = true;
                                     name.push(ch);
                                     continue;
@@ -2355,9 +2356,24 @@ impl Interpreter {
                                     let alternatives: Vec<RegexPattern> = words
                                         .iter()
                                         .map(|w| {
-                                            let toks: Vec<RegexToken> = w
-                                                .chars()
-                                                .map(|ch| RegexToken {
+                                            // Unescape backslash sequences: \< → <, \> → >, etc.
+                                            let mut word_chars: Vec<char> = Vec::new();
+                                            let mut wchars = w.chars().peekable();
+                                            while let Some(wch) = wchars.next() {
+                                                if wch == '\\' {
+                                                    if let Some(&next) = wchars.peek() {
+                                                        word_chars.push(next);
+                                                        wchars.next();
+                                                    } else {
+                                                        word_chars.push(wch);
+                                                    }
+                                                } else {
+                                                    word_chars.push(wch);
+                                                }
+                                            }
+                                            let toks: Vec<RegexToken> = word_chars
+                                                .iter()
+                                                .map(|&ch| RegexToken {
                                                     atom: RegexAtom::Literal(ch),
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
@@ -3478,6 +3494,15 @@ impl Interpreter {
                 i += 1;
                 while i < chars.len() && depth > 0 {
                     let c = chars[i];
+                    if c == '\\' {
+                        out.push(c);
+                        i += 1;
+                        if i < chars.len() {
+                            out.push(chars[i]);
+                            i += 1;
+                        }
+                        continue;
+                    }
                     if c == '<' {
                         depth += 1;
                     } else if c == '>' {
