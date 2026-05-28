@@ -492,6 +492,29 @@ pub(super) fn dispatch(
                     Some(Ok(Value::Nil))
                 }
             }
+            Value::Seq(items) => {
+                // If there's a deferred iterator and the Seq is not cached, fall through
+                // to the runtime which will pull from the iterator.
+                if crate::value::seq_has_deferred_iter(items) && !crate::value::seq_is_cached(items)
+                {
+                    return Some(None); // fall through to runtime
+                }
+                // Sinking a Seq marks it as consumed (unless already cached).
+                // Re-sinking a consumed Seq is ok (lives-ok).
+                crate::value::seq_sink(items);
+                Some(Ok(Value::Nil))
+            }
+            Value::LazyList(ll) => {
+                // Sinking a gather-based LazyList marks it as consumed.
+                // Needed for `$s-lazy.sink; $s-lazy.is-lazy` to throw X::Seq::Consumed.
+                let is_gather = ll.env.get("__mutsu_lazylist_from_gather").is_some();
+                if is_gather {
+                    crate::value::lazylist_consume(ll);
+                    Some(Ok(Value::Nil))
+                } else {
+                    None // fall through to runtime for non-gather lazy lists
+                }
+            }
             _ => Some(Ok(Value::Nil)),
         }),
         "item" => Some(match target {

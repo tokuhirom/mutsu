@@ -947,38 +947,19 @@ impl Interpreter {
                         {
                             return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
                         }
-                        let mut items = Vec::new();
-                        let iter_slot = "$mutsu_seq_new_iterator";
-                        let saved_iter = self.env.get(iter_slot).cloned();
-                        self.env.insert(iter_slot.to_string(), iterator.clone());
-                        let mut iterations = 0usize;
-                        loop {
-                            iterations += 1;
-                            let current_iter =
-                                self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
-                            let val =
-                                self.call_method_with_values(current_iter, "pull-one", vec![])?;
-                            if iterations > 1_000 {
-                                return Err(RuntimeError::new(format!(
-                                    "Seq.new iterator did not terminate (last value: {})",
-                                    val.to_string_value()
-                                )));
-                            }
-                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
-                                || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
-                            {
-                                break;
-                            }
-                            items.push(val);
-                        }
-                        if let Some(prev) = saved_iter {
-                            self.env.insert(iter_slot.to_string(), prev);
-                        } else {
-                            self.env.remove(iter_slot);
-                        }
-                        return Ok(Value::Seq(std::sync::Arc::new(items)));
+                        // Defer pulling: store the iterator and pull lazily when the Seq is
+                        // actually consumed. This matches Raku's Seq.new(iterator) semantics
+                        // where .new does not eagerly pull values.
+                        let arc = std::sync::Arc::new(Vec::<Value>::new());
+                        crate::value::seq_register_deferred_iter(&arc, iterator.clone());
+                        return Ok(Value::Seq(arc));
                     }
-                    return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+                    // Seq.new() with no args creates a pre-consumed Seq.
+                    // In Raku, Seq.new() has no iterator, so any consuming
+                    // operation immediately throws X::Seq::Consumed.
+                    let arc = std::sync::Arc::new(Vec::<Value>::new());
+                    crate::value::seq_consume(&arc).ok();
+                    return Ok(Value::Seq(arc));
                 }
                 "Version" => {
                     let arg = args.first().cloned().unwrap_or(Value::Nil);

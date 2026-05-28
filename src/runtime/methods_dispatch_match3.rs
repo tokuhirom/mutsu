@@ -12,6 +12,19 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
+            "Numeric" if args.is_empty() => {
+                // Seq.Numeric: if backed by a PredictiveIterator, call count-only.
+                // Otherwise return the element count.
+                if let Value::Seq(items) = &target {
+                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    let iter_key = format!("__mutsu_predictive_seq_iter::{seq_id}");
+                    if let Some(iter) = self.env.get(&iter_key).cloned() {
+                        return Some(self.call_method_with_values(iter, "count-only", vec![]));
+                    }
+                    return Some(Ok(Value::Int(items.len() as i64)));
+                }
+                None
+            }
             "from-list" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"

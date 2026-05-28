@@ -314,6 +314,22 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
+    // Seq consumed/cached state checks.
+    // Only handle operations that are fully dispatched here in native_method_0arg.
+    // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
+    // because native_method_0arg is called from both the VM and the interpreter,
+    // and consuming twice would throw.
+    if let Value::Seq(items) = target {
+        if method == "cache" {
+            // .cache marks as cached; handled fully here (the actual cache impl is
+            // in the per-method handler below, this just marks state).
+            crate::value::seq_mark_cached(items);
+        } else if method == "is-lazy" && crate::value::seq_is_consumed(items) {
+            // Read-only check: throws on consumed Seq but does NOT consume.
+            return Some(Err(crate::value::seq_consumed_error()));
+        }
+    }
+
     // Instance with __baggy_data__: delegate Bag-like methods to the inner Bag/Set
     // so that subclasses of Bag/Set (e.g. `my class MyBag is Bag {}`) work correctly.
     if let Value::Instance { attributes, .. } = target
@@ -653,6 +669,7 @@ pub(crate) fn is_value_lazy(value: &Value) -> bool {
     matches!(value, Value::LazyList(_))
         || matches!(value, Value::Array(_, kind) if kind.is_lazy())
         || is_infinite_range(value)
+        || matches!(value, Value::Seq(items) if crate::value::seq_is_lazy(items))
 }
 
 fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {

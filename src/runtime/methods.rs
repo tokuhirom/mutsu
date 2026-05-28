@@ -284,6 +284,42 @@ impl Interpreter {
             }
             return self.call_method_with_values(*inner, method, args);
         }
+        // When Seq.new(iterator) created a deferred-iterator Seq, and .sink is called
+        // without .cache, pull from the iterator now (marks Seq as consumed).
+        if method == "sink"
+            && args.is_empty()
+            && let Value::Seq(items) = &target
+            && crate::value::seq_has_deferred_iter(items)
+            && !crate::value::seq_is_cached(items)
+        {
+            let items_arc = items.clone();
+            let iterator = crate::value::seq_take_deferred_iter(&items_arc).unwrap();
+            crate::value::seq_consume(&items_arc).ok();
+            // Pull from iterator until IterationEnd
+            let iter_val = iterator;
+            loop {
+                let val = self.call_method_with_values(iter_val.clone(), "pull-one", vec![])?;
+                if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                    || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                {
+                    break;
+                }
+            }
+            return Ok(Value::Nil);
+        }
+        // Consumed Seq guard: throw X::Seq::Consumed for iteration/coercion methods
+        // when the Seq has been consumed and is not cached.
+        if let Value::Seq(items) = &target {
+            let consumed_methods = [
+                "iterator", "list", "List", "eager", "Array", "flat", "Slip", "join", "is-lazy",
+            ];
+            if consumed_methods.contains(&method)
+                && crate::value::seq_is_consumed(items)
+                && !crate::value::seq_is_cached(items)
+            {
+                return Err(crate::value::seq_consumed_error());
+            }
+        }
         // User-defined ^method (metamethod) dispatch.
         // `method ^foo(Mu) { ... }` in a class body defines a metamethod.
         // The caller (VM) already prepends the type object to args.
