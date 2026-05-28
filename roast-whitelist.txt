@@ -550,6 +550,7 @@ roast/S11-modules/rakulib.t
 roast/S11-modules/re-export.t
 roast/S11-modules/require.t
 roast/S11-modules/runtime.t
+roast/S11-repository/cur-current-distribution.t
 roast/S12-attributes/augment-and-initialization.t
 roast/S12-attributes/clone.t
 roast/S12-attributes/defaults.t

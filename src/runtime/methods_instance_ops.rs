@@ -461,7 +461,7 @@ impl Interpreter {
                         }
                         // If not found in prefix, try the standard module resolution
                         if found_path.is_none() {
-                            found_path = self.resolve_module_path(&short_name_str);
+                            found_path = self.resolve_module_path(&short_name_str).map(|(p, _)| p);
                         }
                         let Some(source_path) = found_path else {
                             return Ok(Value::Nil);
