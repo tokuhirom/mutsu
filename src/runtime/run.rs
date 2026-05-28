@@ -167,10 +167,10 @@ impl Interpreter {
     /// If the first non-Use/non-Package statement is a `unit class Foo;` (ClassDecl with empty
     /// body), merge all subsequent method/sub declarations into the class body.
     pub(super) fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
-        // Find the index of a ClassDecl with empty body
-        let class_idx = stmts
-            .iter()
-            .position(|s| matches!(s, Stmt::ClassDecl { body, .. } if body.is_empty()));
+        // Find the index of a unit ClassDecl with empty body (from `unit class Foo;`)
+        let class_idx = stmts.iter().position(
+            |s| matches!(s, Stmt::ClassDecl { body, is_unit: true, .. } if body.is_empty()),
+        );
         if let Some(idx) = class_idx {
             let mut result: Vec<Stmt> = stmts[..idx].to_vec();
             if let Stmt::ClassDecl {
@@ -186,6 +186,7 @@ impl Interpreter {
                 body: _,
                 language_version,
                 custom_traits,
+                ..
             } = &stmts[idx]
             {
                 let body: Vec<Stmt> = stmts[idx + 1..].to_vec();
@@ -202,6 +203,7 @@ impl Interpreter {
                     body,
                     language_version: language_version.clone(),
                     custom_traits: custom_traits.clone(),
+                    is_unit: true,
                 });
             }
             result

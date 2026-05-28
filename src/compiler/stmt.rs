@@ -90,6 +90,7 @@ impl Compiler {
                 body,
                 language_version,
                 custom_traits,
+                is_unit,
                 ..
             } => {
                 let new_parents: Vec<String> = parents.iter().map(&qualify_parent).collect();
@@ -108,6 +109,7 @@ impl Compiler {
                     body: body.clone(),
                     language_version: language_version.clone(),
                     custom_traits: custom_traits.clone(),
+                    is_unit: *is_unit,
                 }
             }
             Stmt::RoleDecl {
