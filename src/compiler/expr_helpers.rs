@@ -379,6 +379,7 @@ impl Compiler {
             self.code.emit(OpCode::Dup);
             self.code.emit(OpCode::SetLocal(acc_slot));
             self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::Pop); // consume the remaining term_value from Dup above
             let next_after_seen_false = self.code.emit(OpCode::Jump(0));
 
             self.code.patch_jump(became_truthy);

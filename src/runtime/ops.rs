@@ -1190,10 +1190,11 @@ impl Interpreter {
                 }
             }
             "andthen" => {
-                if crate::runtime::types::value_is_defined(left) && left.truthy() {
+                if crate::runtime::types::value_is_defined(left) {
                     Ok(right.clone())
                 } else {
-                    Ok(Value::Nil)
+                    // Return Empty (empty Slip) when left is undefined
+                    Ok(Value::Slip(std::sync::Arc::new(vec![])))
                 }
             }
             "xor" => {
