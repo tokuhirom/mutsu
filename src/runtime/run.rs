@@ -86,7 +86,10 @@ impl Interpreter {
 
     /// Register top-level, non-empty sub bodies before execution so calls that appear
     /// earlier in source can resolve to later definitions.
-    fn preregister_top_level_subs(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    pub(crate) fn preregister_top_level_subs(
+        &mut self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
         let mut forward_sigs = std::collections::HashSet::new();
         for stmt in stmts {
             if let Stmt::SubDecl {
@@ -1041,13 +1044,52 @@ impl Interpreter {
         }
 
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-        for ext in &extensions {
-            let filename = format!("{}{}", base_name, ext);
-            for base in &self.lib_paths {
-                if base.starts_with("inst#") {
-                    continue;
+        for base in &self.lib_paths {
+            if let Some(prefix) = base.strip_prefix("inst#") {
+                // Installation repo: sources are stored as {prefix}/sources/{hash_id}
+                // Look in dist JSON files for provides[module][file] entry
+                let prefix_path = Path::new(prefix);
+                let dist_dir = prefix_path.join("dist");
+                let sources_dir = prefix_path.join("sources");
+                if dist_dir.is_dir()
+                    && let Ok(entries) = std::fs::read_dir(&dist_dir)
+                {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                            continue;
+                        }
+                        let Ok(json_str) = std::fs::read_to_string(&path) else {
+                            continue;
+                        };
+                        let Ok(meta) = self.parse_json_to_value(&json_str) else {
+                            continue;
+                        };
+                        if let Some(provides) = meta.hash_get_str("provides")
+                            && let Some(entry_val) = provides.hash_get_str(module)
+                        {
+                            // entry_val is either {"file": "hash_id"} or just a string
+                            let hash_id = match &entry_val {
+                                Value::Hash(map) => map
+                                    .get("file")
+                                    .map(|v| v.to_string_value())
+                                    .unwrap_or_default(),
+                                other => other.to_string_value(),
+                            };
+                            if !hash_id.is_empty() {
+                                let source_path = sources_dir.join(&hash_id);
+                                if source_path.exists() {
+                                    return Some((source_path, None));
+                                }
+                            }
+                        }
+                    }
                 }
-                let base_path = Path::new(base);
+                continue; // Don't try inst# path as a filesystem path
+            }
+            for ext in &extensions {
+                let filename = format!("{}{}", base_name, ext);
+                let base_path = Path::new(base.as_str());
                 candidates.push(base_path.join(&filename));
                 candidates.push(base_path.join("lib").join(&filename));
             }
@@ -1218,8 +1260,74 @@ impl Interpreter {
         None
     }
 
+    /// For a module loaded from an inst# installation repo, find the distribution JSON
+    /// and build a distribution Value. Returns None if the module is not from an inst# repo.
+    fn detect_inst_distribution(&self, module: &str) -> Option<Value> {
+        for base in &self.lib_paths {
+            let prefix = base.strip_prefix("inst#")?;
+            let prefix_path = Path::new(prefix);
+            let dist_dir = prefix_path.join("dist");
+            let resources_dir = prefix_path.join("resources");
+            if !dist_dir.is_dir() {
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(&dist_dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Ok(json_str) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let Ok(meta_val) = self.parse_json_to_value(&json_str) else {
+                    continue;
+                };
+                if let Some(provides) = meta_val.hash_get_str("provides")
+                    && provides.hash_get_str(module).is_some()
+                {
+                    // Build a distribution instance with files resolved to absolute paths
+                    // Remap the "files" entries to full paths
+                    use std::collections::HashMap;
+                    use std::sync::Arc;
+                    let mut resolved_files: HashMap<String, Value> = HashMap::new();
+                    if let Some(files_val) = meta_val.hash_get_str("files")
+                        && let Value::Hash(fmap) = files_val
+                    {
+                        for (k, v) in fmap.iter() {
+                            let hash_id = v.to_string_value();
+                            // Determine full path based on key prefix
+                            let full_path = if k.starts_with("resources/") {
+                                resources_dir.join(&hash_id).to_string_lossy().to_string()
+                            } else {
+                                prefix_path.join(&hash_id).to_string_lossy().to_string()
+                            };
+                            resolved_files.insert(k.clone(), Value::str(full_path));
+                        }
+                    }
+                    let mut meta_map = match &meta_val {
+                        Value::Hash(m) => (**m).clone(),
+                        _ => HashMap::new(),
+                    };
+                    meta_map.insert("files".to_string(), Value::Hash(Arc::new(resolved_files)));
+                    meta_map.insert("prefix".to_string(), Value::str(prefix.to_string()));
+                    let mut attrs = HashMap::new();
+                    attrs.insert("meta".to_string(), Value::Hash(Arc::new(meta_map)));
+                    attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
+                    return Some(Value::make_instance_without_destroy(
+                        crate::symbol::Symbol::intern("Distribution::Installation"),
+                        attrs,
+                    ));
+                }
+            }
+        }
+        None
+    }
+
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
-        let (source_path, inst_dist_json) = self
+        let (source_path, _inst_dist_json) = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         // Track operator subs exported by this module so EVAL can see them.
@@ -1232,12 +1340,9 @@ impl Interpreter {
         // For installed modules (inst# paths), use the dist JSON directly.
         // Otherwise fall back to META6.json detection.
         let saved_distribution = self.current_distribution.clone();
-        let dist_opt = if let Some(ref json_str) = inst_dist_json {
-            Self::build_distribution_from_inst_json(json_str)
-        } else {
-            Self::detect_distribution(&source_path)
-        };
-        if let Some(dist) = dist_opt {
+        // First try inst# installation repos (source files have no META6.json nearby)
+        let inst_dist = self.detect_inst_distribution(module);
+        if let Some(dist) = inst_dist.or_else(|| Self::detect_distribution(&source_path)) {
             self.current_distribution = Some(dist.clone());
             // Record the distribution for the module's package name
             // so OTF compilation can resolve $?DISTRIBUTION later.
@@ -1284,6 +1389,108 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Build the %?RESOURCES hash for the current package/distribution context.
+    /// Looks up the distribution for the current package (or falls back to current_distribution)
+    /// and returns a Hash mapping resource names to their absolute paths on disk.
+    pub(crate) fn build_resources_for_package(&self) -> Value {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        // Priority 1: current_distribution (set during module loading)
+        if let Some(dist) = &self.current_distribution {
+            return Self::build_resources_from_dist(dist);
+        }
+        // Priority 2: Look up by current routine stack frames (innermost first)
+        for frame in self.routine_stack.iter().rev() {
+            if let Some(dist) = self.package_distributions.get(&frame.package) {
+                return Self::build_resources_from_dist(dist);
+            }
+        }
+        // Priority 3: Look up by current package
+        if let Some(dist) = self.package_distributions.get(&self.current_package) {
+            return Self::build_resources_from_dist(dist);
+        }
+        Value::Hash(Arc::new(HashMap::new()))
+    }
+
+    fn build_resources_from_dist(dist: &Value) -> Value {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        let meta = match dist {
+            Value::Instance { attributes, .. } => {
+                // Try "meta" first (Distribution::Installation from detect_inst_distribution),
+                // then fall back to "$!meta" (plain Distribution from detect_distribution).
+                attributes
+                    .get("meta")
+                    .or_else(|| attributes.get("$!meta"))
+                    .cloned()
+                    .unwrap_or(Value::Nil)
+            }
+            _ => Value::Nil,
+        };
+        let prefix = match &meta {
+            Value::Hash(map) => map
+                .get("prefix")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        // If the dist has a "files" hash (installation repo), use it to resolve resource paths.
+        // The files hash maps "resources/config.txt" -> "/inst-prefix/resources/HASH.txt"
+        let files_val = match &meta {
+            Value::Hash(map) => map.get("files").cloned(),
+            _ => None,
+        };
+        let resources_val = match &meta {
+            Value::Hash(map) => map.get("resources").cloned().unwrap_or(Value::Nil),
+            _ => Value::Nil,
+        };
+        let mut result: HashMap<String, Value> = HashMap::new();
+        match &resources_val {
+            Value::Array(arr, _) => {
+                for item in arr.iter() {
+                    let key = item.to_string_value();
+                    // Check files hash first (installation repo)
+                    let files_key = format!("resources/{key}");
+                    if let Some(ref fv) = files_val
+                        && let Some(path_val) = fv.hash_get_str(&files_key)
+                    {
+                        result.insert(key, path_val);
+                        continue;
+                    }
+                    let actual_path = if key.starts_with("libraries/") {
+                        let lib_name = key.strip_prefix("libraries/").unwrap_or(&key);
+                        let platform_name = if cfg!(target_os = "macos") {
+                            format!("lib{lib_name}.dylib")
+                        } else if cfg!(target_os = "windows") {
+                            format!("{lib_name}.dll")
+                        } else {
+                            format!("lib{lib_name}.so")
+                        };
+                        if prefix.is_empty() {
+                            format!("resources/libraries/{platform_name}")
+                        } else {
+                            format!("{prefix}/resources/libraries/{platform_name}")
+                        }
+                    } else if prefix.is_empty() {
+                        format!("resources/{key}")
+                    } else {
+                        format!("{prefix}/resources/{key}")
+                    };
+                    result.insert(key, Value::str(actual_path));
+                }
+            }
+            Value::Hash(map) => {
+                for (k, v) in map.iter() {
+                    result.insert(k.clone(), v.clone());
+                }
+            }
+            _ => {}
+        }
+        Value::Hash(Arc::new(result))
+    }
+
     /// Detect a distribution (META6.json) for the given module source path.
     fn detect_distribution(source_path: &Path) -> Option<Value> {
         let mut dir = source_path.parent()?;
@@ -1292,7 +1499,10 @@ impl Interpreter {
             if meta_path.exists()
                 && let Ok(content) = fs::read_to_string(&meta_path)
             {
-                return Self::build_distribution_from_meta(&content);
+                // Pass the distribution prefix (dir containing META6.json) so
+                // %?RESOURCES can resolve absolute paths.
+                let dist_prefix = dir.to_string_lossy().to_string();
+                return Self::build_distribution_from_meta(&content, &dist_prefix);
             }
             dir = dir.parent()?;
         }
@@ -1301,8 +1511,10 @@ impl Interpreter {
         Some(Self::build_distribution_from_lib_dir(lib_dir))
     }
 
-    fn build_distribution_from_meta(json_content: &str) -> Option<Value> {
-        let meta_hash = Self::parse_meta6_json(json_content)?;
+    fn build_distribution_from_meta(json_content: &str, dist_prefix: &str) -> Option<Value> {
+        let mut meta_hash = Self::parse_meta6_json(json_content)?;
+        // Store the distribution prefix in meta so %?RESOURCES can build absolute paths.
+        meta_hash.insert("prefix".to_string(), Value::str(dist_prefix.to_string()));
         let mut attrs = HashMap::new();
         attrs.insert(
             "$!meta".to_string(),
@@ -1335,20 +1547,6 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("$!meta".to_string(), Value::Hash(std::sync::Arc::new(meta)));
         Value::make_instance_without_destroy(crate::symbol::Symbol::intern("Distribution"), attrs)
-    }
-
-    /// Build a distribution from an installed dist JSON (CompUnit::Repository::Installation).
-    fn build_distribution_from_inst_json(json_str: &str) -> Option<Value> {
-        let meta_hash = Self::parse_meta6_json(json_str)?;
-        let mut attrs = HashMap::new();
-        attrs.insert(
-            "$!meta".to_string(),
-            Value::Hash(std::sync::Arc::new(meta_hash)),
-        );
-        Some(Value::make_instance_without_destroy(
-            crate::symbol::Symbol::intern("Distribution"),
-            attrs,
-        ))
     }
 
     fn scan_lib_provides(lib_dir: &Path) -> Value {

@@ -1017,6 +1017,13 @@ impl VM {
                         name
                     )));
                 }
+                // %?RESOURCES — build from the current package's distribution context
+                if name == "%?RESOURCES" {
+                    let resources = self.interpreter.build_resources_for_package();
+                    self.stack.push(resources);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| self.get_local_by_bare_name(code, name))
