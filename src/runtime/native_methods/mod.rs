@@ -413,7 +413,7 @@ impl Interpreter {
             "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method, &args)),
             "Encoding::Encoder" => Self::native_encoding_encoder(attributes, method, &args),
             "Encoding::Decoder" => Ok(Self::native_encoding_decoder(attributes, method, &args)),
-            "VM" => self.native_vm(attributes, method),
+            "VM" => self.native_vm(attributes, method, &args),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name

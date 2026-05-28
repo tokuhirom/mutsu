@@ -162,6 +162,7 @@ impl Interpreter {
         &mut self,
         attributes: &HashMap<String, Value>,
         method: &str,
+        args: &[Value],
     ) -> Result<Value, RuntimeError> {
         match method {
             "name" | "auth" | "version" | "precomp-ext" | "precomp-target" | "prefix" | "desc"
@@ -185,6 +186,22 @@ impl Interpreter {
                 // dropped to 0 (possibly including items freed by the clear above).
                 self.run_pending_instance_destroys()?;
                 Ok(Value::Nil)
+            }
+            "platform-library-name" => {
+                // Convert a library short-name to the OS-specific shared library filename.
+                // e.g. "foo" -> "libfoo.so" on Linux, "libfoo.dylib" on macOS, "foo.dll" on Windows.
+                let name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let platform_name = if cfg!(target_os = "macos") {
+                    format!("lib{name}.dylib")
+                } else if cfg!(target_os = "windows") {
+                    format!("{name}.dll")
+                } else {
+                    format!("lib{name}.so")
+                };
+                Ok(self.make_io_path_instance(&platform_name))
             }
             "gist" | "Str" => {
                 let name = attributes

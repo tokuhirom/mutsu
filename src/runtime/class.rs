@@ -441,6 +441,29 @@ impl Interpreter {
         {
             return true;
         }
+        // VM native methods
+        if class_name == "VM"
+            && matches!(
+                method_name,
+                "name"
+                    | "auth"
+                    | "version"
+                    | "precomp-ext"
+                    | "precomp-target"
+                    | "prefix"
+                    | "desc"
+                    | "signature"
+                    | "config"
+                    | "properties"
+                    | "raku"
+                    | "platform-library-name"
+                    | "request-garbage-collection"
+                    | "gist"
+                    | "Str"
+            )
+        {
+            return true;
+        }
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
