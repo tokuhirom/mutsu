@@ -30,7 +30,8 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ### Exception types (高インパクト — 22 roast テストをブロック)
 
-- [ ] `throws-like` で期待される型付き例外を実装 (X::TypeCheck::Binding, X::Adverb, X::Assignment::RO 等)
+- [x] X::TypeCheck::Binding::Parameter, X::Assignment::RO 実装 (#2477)
+- [ ] 残りの型付き例外 (X::Adverb, X::Str::Numeric, X::Method::NotFound, X::Undeclared 等)
 - [ ] 詳細は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) の "throws-like / Exception Types" セクション参照
 
 ---
@@ -68,7 +69,7 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ### Roast 90% 突破
 
-- [ ] Whitelist → 1190+ (roast 90%)
+- [x] Whitelist → 1190+ (roast 90%) — 達成: 1207
 
 ---
 
@@ -98,7 +99,7 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ### Roast
 
-- [ ] Whitelist 1200+ 目標
+- [x] Whitelist 1200+ 目標 — 達成: 1207
 
 ---
 
@@ -168,7 +169,7 @@ BLOCKERS.md の分析に基づき、インパクト順に並べたもの。
 
 | 指標 | 現在 (5月) | Q2 目標 | Q3 目標 | Q4 目標 |
 |------|-----------|---------|---------|---------|
-| Whitelist | 1186 | 1190+ | 1200+ | 1220+ |
+| Whitelist | **1207** ✅ | 1190+ ✅ | 1200+ ✅ | 1220+ |
 | fib(25) vs raku | **1.0x** ✅ | <10x ✅ | <10x | <10x |
 | method-call vs raku | **2.7x** | <2.5x | <2x | <1.5x |
 | bench-class vs raku | **2.3x** | <2x | <1.5x | <1.5x |
