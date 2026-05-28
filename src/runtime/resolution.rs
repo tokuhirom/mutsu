@@ -1240,6 +1240,18 @@ impl Interpreter {
                 new_env.insert_sym(*k, v.clone());
             }
             self.env = new_env.clone();
+            // Check for empty signature: a pointy block `-> { }` or sub with no
+            // params that doesn't use @_/%_ must reject positional arguments.
+            let positional_call_args: Vec<&Value> = call_args
+                .iter()
+                .filter(|v| !matches!(v, Value::Pair(_, _)))
+                .collect();
+            if data.empty_sig && !positional_call_args.is_empty() {
+                self.pop_caller_env();
+                self.env = saved_env;
+                self.restore_readonly_vars(saved_readonly);
+                return Err(Self::reject_args_for_empty_sig(&call_args));
+            }
             let rw_bindings =
                 match self.bind_function_args_values(&data.param_defs, &data.params, &call_args) {
                     Ok(bindings) => bindings,
