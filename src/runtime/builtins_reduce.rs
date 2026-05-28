@@ -139,6 +139,30 @@ impl Interpreter {
             return Ok(Value::Nil);
         }
         if items.len() == 1 {
+            // For numeric operators, apply op(identity, element) so that
+            // coercions happen (e.g. `reduce &infix:<+>, "2"` returns Int 2).
+            let op_name: Option<String> = match &callable {
+                Value::Sub(data) => {
+                    let n = data.name.resolve();
+                    n.strip_prefix("infix:<")
+                        .and_then(|s| s.strip_suffix('>'))
+                        .map(|inner| inner.to_string())
+                }
+                Value::Routine { name, .. } => {
+                    let n = name.resolve();
+                    n.strip_prefix("infix:<")
+                        .and_then(|s| s.strip_suffix('>'))
+                        .map(|inner| inner.to_string())
+                }
+                _ => None,
+            };
+            if let Some(ref op) = op_name
+                && matches!(op.as_str(), "+" | "-" | "*" | "/" | "%" | "**")
+            {
+                let identity = crate::runtime::reduction_identity(op);
+                let item = items.into_iter().next().unwrap();
+                return self.call_sub_value(callable, vec![identity, item], true);
+            }
             return Ok(items.into_iter().next().unwrap());
         }
 

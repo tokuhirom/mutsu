@@ -257,6 +257,8 @@ impl Interpreter {
             return Ok(target);
         }
         if let Value::Seq(items) = &target {
+            // Check consumed state: if consumed, throw X::Seq::Consumed
+            crate::value::seq_try_consume(items)?;
             let seq_id = std::sync::Arc::as_ptr(items) as usize;
             if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
                 for key in meta.revert_remove {
@@ -364,6 +366,10 @@ impl Interpreter {
             && class_name == "Supply"
         {
             return Some(self.dispatch_supply_elems(attributes, &args));
+        }
+        // Calling .elems on a Seq caches it (materializes, marks cached)
+        if let Value::Seq(items) = &target {
+            crate::value::seq_mark_cached(items);
         }
         Some(self.call_function("elems", vec![target]))
     }

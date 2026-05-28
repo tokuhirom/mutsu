@@ -87,6 +87,13 @@ pub(super) fn dispatch(
                 let lazy = matches!(attributes.get("is_lazy"), Some(Value::Bool(true)));
                 return Some(Some(Ok(Value::Bool(lazy))));
             }
+            // A consumed gather-based LazyList throws X::Seq::Consumed on .is-lazy
+            if let Value::LazyList(ll) = target {
+                let is_gather = ll.env.get("__mutsu_lazylist_from_gather").is_some();
+                if is_gather && crate::value::lazylist_is_consumed(ll) {
+                    return Some(Some(Err(crate::value::seq_consumed_error())));
+                }
+            }
             Some(Some(Ok(Value::Bool(is_value_lazy(target)))))
         }
         "lazy" => {

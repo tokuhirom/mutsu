@@ -109,7 +109,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         custom_traits: s.custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
-    let stmt = wrap_with_will_leave(stmt, &s.name, s.will_leave_body);
+    let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
     Ok((rest, stmt))
 }
 
@@ -255,7 +255,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 }))),
                 right,
             });
-            let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body);
+            let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers);
             let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
             let (rest, stmt) = if s.apply_modifier {
                 consume_scalar_decl_trailing_comma(rest, stmt)?
@@ -294,7 +294,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
-        let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body.clone());
+        let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers.clone());
         let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
         // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
         // Only in statement context (apply_modifier=true). In expression context (e.g.,
@@ -339,7 +339,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
-    let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body.clone());
+    let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers.clone());
     let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
     // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
     // Only in statement context (apply_modifier=true). In expression context (e.g.,

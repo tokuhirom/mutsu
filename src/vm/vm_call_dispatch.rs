@@ -716,6 +716,22 @@ impl VM {
         let positional_count = param_slots.len();
         let actual_count = args.len();
 
+        // If a single Seq is passed but more positional args are needed, expand it.
+        // This mirrors Raku's behavior where a Seq passed as the sole argument
+        // is treated as a list of arguments (e.g., `-> ($k, $v) { }((1,2).Seq)`).
+        let expanded_args: Vec<Value>;
+        let args = if actual_count == 1 && positional_count > 1 {
+            if let Value::Seq(items) = &args[0] {
+                expanded_args = items.as_ref().clone();
+                &expanded_args[..]
+            } else {
+                args
+            }
+        } else {
+            args
+        };
+        let actual_count = args.len();
+
         if actual_count < positional_count {
             let required = cf
                 .param_defs
@@ -1004,10 +1020,22 @@ impl VM {
     pub(super) fn call_compiled_function_light(
         &mut self,
         cf: &CompiledFunction,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         self.record_cf_deprecation(cf);
+
+        // If a single Seq is passed but multiple positional params are needed, expand it.
+        // This mirrors Raku's behavior where a Seq passed as the sole argument
+        // is treated as a list of arguments (e.g., `-> ($k, $v) { }((1,2).Seq)`).
+        let positional_param_count = cf.param_defs.iter().filter(|p| !p.named).count();
+        if args.len() == 1
+            && positional_param_count > 1
+            && let Value::Seq(items) = &args[0].clone()
+        {
+            args = items.as_ref().clone();
+        }
+
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_locals_dirty = self.locals_dirty;

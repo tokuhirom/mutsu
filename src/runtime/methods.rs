@@ -284,6 +284,35 @@ impl Interpreter {
             }
             return self.call_method_with_values(*inner, method, args);
         }
+        // When Seq.new(iterator) created a deferred-iterator Seq, and .sink is called
+        // without .cache, pull from the iterator now (consumes it).
+        if method == "sink"
+            && args.is_empty()
+            && let Value::Seq(items) = &target
+            && crate::value::seq_has_deferred_iter(items)
+            && !crate::value::seq_is_cached(items)
+        {
+            let items_arc = items.clone();
+            let iterator = crate::value::seq_take_deferred_iter(&items_arc).unwrap();
+            crate::value::seq_consume(&items_arc).ok();
+            // Pull from iterator until IterationEnd
+            let iter_val = iterator;
+            let mut iterations = 0usize;
+            loop {
+                iterations += 1;
+                if iterations > 100_000 {
+                    break; // safety guard
+                }
+                let val = self.call_method_with_values(iter_val.clone(), "pull-one", vec![])?;
+                if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                    || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                {
+                    break;
+                }
+                // Iterator stays the same across iterations.
+            }
+            return Ok(Value::Nil);
+        }
         // User-defined ^method (metamethod) dispatch.
         // `method ^foo(Mu) { ... }` in a class body defines a metamethod.
         // The caller (VM) already prepends the type object to args.

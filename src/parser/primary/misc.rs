@@ -234,6 +234,18 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     if !is_valid_reduction_op(&op) {
         return Err(PError::expected("known reduction operator"));
     }
+    // Non-associative "structural" infix operators cannot be used in reduction form.
+    // They return Order, not Bool, and are diffy (not chaining).
+    let base_for_check = op.strip_prefix('\\').unwrap_or(op.as_str());
+    let base_for_check = base_for_check
+        .strip_prefix('R')
+        .filter(|s| !s.is_empty())
+        .unwrap_or(base_for_check);
+    if matches!(base_for_check, "leg" | "<=>" | "cmp") {
+        return Err(PError::fatal(format!(
+            "X::Syntax::CannotMeta: Cannot reduce with {base_for_check} because structural infix operators are diffy and not chaining"
+        )));
+    }
     let r = &input[end + 1..];
     let call_style_operand = r.starts_with('(');
     // Zero-argument reduction: [op] with no operands → identity element

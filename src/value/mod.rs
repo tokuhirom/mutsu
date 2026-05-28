@@ -20,6 +20,58 @@ fn consumed_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
     CONSUMED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+/// Global set tracking "cached" Seq instances (have called .cache, so operations
+/// don't mark them consumed and they can be iterated multiple times).
+static CACHED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
+
+fn cached_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
+    CACHED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Mark a Seq as cached (called .cache on it). Cached Seqs do not get consumed.
+pub(crate) fn seq_mark_cached(arc_ptr: &Arc<Vec<Value>>) {
+    let mut list = cached_seqs().lock().unwrap();
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    list.retain(|w| w.strong_count() > 0);
+    // Only add if not already tracked
+    for w in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return;
+        }
+    }
+    list.push(Arc::downgrade(arc_ptr));
+}
+
+/// Check if a Seq has been marked as cached.
+pub(crate) fn seq_is_cached(arc_ptr: &Arc<Vec<Value>>) -> bool {
+    let list = cached_seqs().lock().unwrap();
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    for w in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Build a structured X::Seq::Consumed error.
+#[allow(clippy::result_large_err)]
+pub(crate) fn seq_consumed_error() -> RuntimeError {
+    let msg = "The iterator of this Seq is already in use/consumed by another Seq \
+               (you might solve this by adding .cache on usages of the Seq, or by \
+               assigning the Seq into an array)";
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Seq::Consumed"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Mark a Seq (identified by its Arc) as consumed.
 /// Returns Err if the Seq was already consumed.
 #[allow(clippy::result_large_err)]
@@ -32,15 +84,127 @@ pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError>
         if let Some(existing) = w.upgrade()
             && Arc::as_ptr(&existing) == target_ptr
         {
-            return Err(RuntimeError::new(
-                "The iterator of this Seq is already in use/consumed by another Seq \
-                 (you might solve this by adding .cache on usages of the Seq, or by \
-                 assigning the Seq into an array)",
-            ));
+            return Err(seq_consumed_error());
         }
     }
     list.push(Arc::downgrade(arc_ptr));
     Ok(())
+}
+
+/// Check if a Seq (identified by its Arc) has been consumed.
+pub(crate) fn seq_is_consumed(arc_ptr: &Arc<Vec<Value>>) -> bool {
+    let list = consumed_seqs().lock().unwrap();
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    for w in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Global map from Seq Arc ptr (as usize) to a deferred iterator Value.
+/// Used for `Seq.new(iterator)` to defer pulling until the Seq is consumed.
+static DEFERRED_SEQ_ITERS: OnceLock<Mutex<HashMap<usize, Value>>> = OnceLock::new();
+
+fn deferred_seq_iters() -> &'static Mutex<HashMap<usize, Value>> {
+    DEFERRED_SEQ_ITERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Register a deferred iterator for a Seq. Called by Seq.new(iterator).
+pub(crate) fn seq_register_deferred_iter(arc_ptr: &Arc<Vec<Value>>, iterator: Value) {
+    let key = Arc::as_ptr(arc_ptr) as usize;
+    let mut map = deferred_seq_iters().lock().unwrap();
+    map.insert(key, iterator);
+}
+
+/// Take the deferred iterator for a Seq (if any). Returns Some(iterator) and removes it.
+pub(crate) fn seq_take_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> Option<Value> {
+    let key = Arc::as_ptr(arc_ptr) as usize;
+    let mut map = deferred_seq_iters().lock().unwrap();
+    map.remove(&key)
+}
+
+/// Check if a Seq has a deferred iterator.
+pub(crate) fn seq_has_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> bool {
+    let key = Arc::as_ptr(arc_ptr) as usize;
+    let map = deferred_seq_iters().lock().unwrap();
+    map.contains_key(&key)
+}
+
+/// Global set tracking consumed LazyList instances (gather-based Seqs).
+static CONSUMED_LAZYLISTS: OnceLock<Mutex<Vec<Weak<LazyList>>>> = OnceLock::new();
+
+fn consumed_lazylists() -> &'static Mutex<Vec<Weak<LazyList>>> {
+    CONSUMED_LAZYLISTS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Mark a LazyList (from gather) as consumed.
+pub(crate) fn lazylist_consume(arc_ptr: &Arc<LazyList>) -> bool {
+    let mut list = consumed_lazylists().lock().unwrap();
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    list.retain(|w| w.strong_count() > 0);
+    for w in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return false; // already consumed
+        }
+    }
+    list.push(Arc::downgrade(arc_ptr));
+    true
+}
+
+/// Check if a LazyList has been consumed.
+pub(crate) fn lazylist_is_consumed(arc_ptr: &Arc<LazyList>) -> bool {
+    let list = consumed_lazylists().lock().unwrap();
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    for w in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Attempt to perform a consuming operation on a Seq.
+/// - If the Seq is cached: return Ok(false) (proceed, not consumed)
+/// - If the Seq is already consumed: return Err(X::Seq::Consumed)
+/// - Otherwise: mark as consumed and return Ok(true)
+///
+/// For .sink on cached Seqs, use `seq_sink_if_needed` instead.
+#[allow(clippy::result_large_err)]
+pub(crate) fn seq_try_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<bool, RuntimeError> {
+    if seq_is_cached(arc_ptr) {
+        return Ok(false);
+    }
+    if seq_is_consumed(arc_ptr) {
+        return Err(seq_consumed_error());
+    }
+    seq_consume(arc_ptr)?;
+    Ok(true)
+}
+
+/// For sink: if cached, do nothing; if consumed, do nothing (re-sink is ok);
+/// if not cached and not consumed, mark as consumed.
+/// Returns the deferred iterator (if any) so the caller can pull from it.
+pub(crate) fn seq_sink(arc_ptr: &Arc<Vec<Value>>) -> Option<Value> {
+    if seq_is_cached(arc_ptr) {
+        // Cached: don't consume deferred iter (it was already "cached")
+        seq_take_deferred_iter(arc_ptr); // discard if any
+        return None;
+    }
+    // If already consumed, re-sinking is ok (test: lives-ok { $s-sink.sink })
+    if seq_is_consumed(arc_ptr) {
+        return None;
+    }
+    // Mark as consumed; return deferred iter so caller can pull
+    let _ = seq_consume(arc_ptr);
+    seq_take_deferred_iter(arc_ptr)
 }
 
 /// Shared mutable attribute storage for Proxy subclasses.

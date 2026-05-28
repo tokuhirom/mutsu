@@ -83,7 +83,20 @@ impl Interpreter {
                 ">=" => super::super::to_float_value(&left) >= super::super::to_float_value(&right),
                 "===" => crate::runtime::utils::values_identical(&left, &right),
                 "!===" => !crate::runtime::utils::values_identical(&left, &right),
-                "eqv" => Self::cmp_eqv_bool(&left, &right),
+                "eqv" => {
+                    // Check if either Seq operand is consumed
+                    if let Value::Seq(items) = &left
+                        && crate::value::seq_is_consumed(items)
+                    {
+                        return Err(crate::value::seq_consumed_error());
+                    }
+                    if let Value::Seq(items) = &right
+                        && crate::value::seq_is_consumed(items)
+                    {
+                        return Err(crate::value::seq_consumed_error());
+                    }
+                    Self::cmp_eqv_bool(&left, &right)
+                }
                 "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal

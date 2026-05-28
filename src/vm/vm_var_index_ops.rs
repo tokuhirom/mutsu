@@ -326,6 +326,12 @@ impl VM {
         }
         // Normalize Seq/Slip target to List for uniform handling
         if let Value::Seq(items) = target {
+            // Subscript access on a Seq: if already consumed, throw X::Seq::Consumed.
+            // Otherwise, accessing an index acts like an implicit .cache (marks as cached).
+            if crate::value::seq_is_consumed(&items) {
+                return Err(crate::value::seq_consumed_error());
+            }
+            crate::value::seq_mark_cached(&items);
             target = Value::Array(items, crate::value::ArrayKind::List);
         } else if let Value::Slip(items) = target {
             target = Value::Array(items, crate::value::ArrayKind::List);

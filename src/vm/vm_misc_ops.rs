@@ -95,6 +95,39 @@ fn is_parameterized_core_type(name: &str) -> bool {
     false
 }
 
+/// Compute the (lo, hi) bounds of a value for use in `minmax` reduction.
+/// For scalars: returns (v, v).
+/// For arrays/lists: returns (min_element, max_element).
+/// For ranges: returns (start, end).
+fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
+    match v {
+        Value::Range(a, b)
+        | Value::RangeExcl(a, b)
+        | Value::RangeExclStart(a, b)
+        | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
+        Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
+        Value::Array(items, _) | Value::Seq(items) => {
+            if items.is_empty() {
+                (Value::Nil, Value::Nil)
+            } else {
+                let mut lo = items[0].clone();
+                let mut hi = items[0].clone();
+                for item in items.iter().skip(1) {
+                    let (item_lo, item_hi) = minmax_bounds_of_value(item);
+                    if crate::runtime::compare_values(&item_lo, &lo) < 0 {
+                        lo = item_lo;
+                    }
+                    if crate::runtime::compare_values(&item_hi, &hi) > 0 {
+                        hi = item_hi;
+                    }
+                }
+                (lo, hi)
+            }
+        }
+        _ => (v.clone(), v.clone()),
+    }
+}
+
 impl VM {
     fn is_builtin_reduction_op(op: &str) -> bool {
         if let Some(inner) = op
@@ -1682,21 +1715,99 @@ impl VM {
                             out.push(result);
                         }
                     } else {
-                        let mut acc = list[0].clone();
-                        out.push(acc.clone());
-                        let mut idx = 1usize;
-                        while idx + step <= list.len() {
-                            let mut call_args = vec![acc];
-                            call_args.extend(list[idx..idx + step].iter().cloned());
-                            let v = self.reduction_step_with_args(
-                                &base_op,
-                                callable.as_ref(),
-                                call_args,
-                            )?;
-                            acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                        // Special case for Z/X meta-operators (e.g. [\Z~], [\X~])
+                        // when scan elements are themselves lists. In this case a
+                        // simple left-fold loses structure, so we re-apply the
+                        // operator to the entire prefix at each step.
+                        // E.g. [\Z~](<a b c>, <1 2 3>):
+                        //   step 1 = [Z~](<a b c>)       = ("abc",)
+                        //   step 2 = [Z~](<a b c>,<1 2 3>) = ("a1","b2","c3")
+                        let is_multi_list_zx = callable.is_none()
+                            && list
+                                .iter()
+                                .any(|v| matches!(v, Value::Array(_, _) | Value::Seq(_)))
+                            && ((base_op.starts_with('Z') && base_op.len() > 1)
+                                || (base_op.starts_with('X') && base_op.len() > 1));
+                        if is_multi_list_zx {
+                            // Compute prefix reductions from scratch at each step
+                            for i in 0..list.len() {
+                                let v = if i == 0 {
+                                    // Single-element: [Z~](a) = (a,) wrapped
+                                    // Actually, [Z~] applied to a single list reduces it
+                                    // left-fold with inner_op, wrapped in Seq.
+                                    let inner_op =
+                                        if base_op.starts_with('Z') || base_op.starts_with('X') {
+                                            &base_op[1..]
+                                        } else {
+                                            &base_op
+                                        };
+                                    let items = runtime::value_to_list(&list[0]);
+                                    if items.is_empty() {
+                                        Value::Seq(std::sync::Arc::new(vec![]))
+                                    } else {
+                                        let mut acc0 = items[0].clone();
+                                        for item in items.iter().skip(1) {
+                                            acc0 = self.eval_reduction_operator_values(
+                                                inner_op, &acc0, item,
+                                            )?;
+                                        }
+                                        Value::Seq(std::sync::Arc::new(vec![acc0]))
+                                    }
+                                } else {
+                                    // Apply the Z/X op to all prefix elements
+                                    let mut acc0 = list[0].clone();
+                                    for item in list.iter().take(i + 1).skip(1) {
+                                        acc0 = self.eval_reduction_operator_values(
+                                            &base_op, &acc0, item,
+                                        )?;
+                                    }
+                                    acc0
+                                };
+                                let result = if negate { Value::Bool(!v.truthy()) } else { v };
+                                out.push(result);
+                            }
+                        } else {
+                            let mut acc = list[0].clone();
+                            // For certain operators, the first scan element should be
+                            // the result of applying [op] to a single element, not the
+                            // element itself:
+                            //   Z~/X~ meta-operators: [Z~]("a") = ("a",) not "a"
+                            //   minmax: [minmax](x) = x..x not x
+                            if callable.is_none() {
+                                let zx_prefix = (base_op.starts_with('Z') && base_op.len() > 1)
+                                    || (base_op.starts_with('X') && base_op.len() > 1);
+                                if zx_prefix {
+                                    acc = Value::Seq(std::sync::Arc::new(vec![acc]));
+                                } else if base_op == "minmax" {
+                                    // [minmax](x) = x..x for scalars,
+                                    // or min(x)..max(x) for array/list x.
+                                    let (lo, hi) = minmax_bounds_of_value(&acc);
+                                    acc = match (&lo, &hi) {
+                                        (Value::Int(l), Value::Int(h)) => Value::Range(*l, *h),
+                                        _ => Value::GenericRange {
+                                            start: std::sync::Arc::new(lo),
+                                            end: std::sync::Arc::new(hi),
+                                            excl_start: false,
+                                            excl_end: false,
+                                        },
+                                    };
+                                }
+                            }
                             out.push(acc.clone());
-                            idx += step;
-                        }
+                            let mut idx = 1usize;
+                            while idx + step <= list.len() {
+                                let mut call_args = vec![acc];
+                                call_args.extend(list[idx..idx + step].iter().cloned());
+                                let v = self.reduction_step_with_args(
+                                    &base_op,
+                                    callable.as_ref(),
+                                    call_args,
+                                )?;
+                                acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                                out.push(acc.clone());
+                                idx += step;
+                            }
+                        } // end else not is_multi_list_zx
                     }
                     out
                 }
@@ -1799,6 +1910,36 @@ impl VM {
                         acc = self.interpreter.compose_callables(acc, item.clone());
                     }
                     self.stack.push(acc);
+                    return Ok(());
+                }
+                // Single-element reduction with a numeric/coercing operator:
+                // apply op(identity, element) so that coercions (e.g. numification
+                // for `+`) happen and type errors (e.g. X::Str::Numeric for
+                // `[+] "hello"`) are raised.  This matches Raku semantics where
+                // `[+] "2"` returns Int 2 (not Str "2").
+                if list.len() == 1
+                    && callable.is_none()
+                    && matches!(
+                        base_op.as_str(),
+                        "+" | "-" | "*" | "/" | "%" | "**" | "+|" | "+&" | "+^"
+                    )
+                {
+                    // Validate: non-numeric strings must throw X::Str::Numeric
+                    if let Value::Str(ref s) = list[0]
+                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_none()
+                    {
+                        return Err(RuntimeError::str_numeric(
+                            s,
+                            "base-10 number must begin with valid digits or '.'",
+                        ));
+                    }
+                    let identity = runtime::reduction_identity(&base_op);
+                    // Coerce Instance values via Numeric()/Bridge() so that
+                    // user-defined numeric types work (e.g. `[*] CustomNumify.new`).
+                    let elem = self.coerce_numeric_bridge_value(list[0].clone())?;
+                    let v = self.reduction_step_with_args(&base_op, None, vec![identity, elem])?;
+                    let result = if negate { Value::Bool(!v.truthy()) } else { v };
+                    self.stack.push(result);
                     return Ok(());
                 }
                 let acc = match assoc {
@@ -1952,7 +2093,13 @@ impl VM {
             };
             if should_short_circuit {
                 if scan {
-                    results.push(acc.clone());
+                    // For `andthen`: short-circuit means acc is undefined, so the
+                    // result of `acc andthen thunk` is Empty (slips to nothing in the Seq).
+                    // For other operators: push acc as the "frozen" value.
+                    if op != "andthen" {
+                        results.push(acc.clone());
+                    }
+                    // for andthen: push nothing (Empty slips out of the Seq)
                 }
                 // don't evaluate thunk
             } else {
@@ -2872,7 +3019,17 @@ impl VM {
                 self.interpreter.env_mut().insert_sym(name, value);
             }
             self.locals = saved_locals;
+            // Re-read locals from env for variables that use env as the primary
+            // store (non-simple locals). Simple locals use dirty-tracked SetLocal
+            // and their saved_locals state is authoritative; re-reading from env
+            // would overwrite them with stale env values (e.g. loop control flags
+            // like `__mutsu_loop_first_N` that were updated inside the loop body
+            // but not yet flushed to env before this DoBlock snapshot).
             for (idx, name) in code.locals.iter().enumerate() {
+                if code.simple_locals[idx] {
+                    // Simple locals: env may be stale; saved_locals is correct.
+                    continue;
+                }
                 if let Some(val) = self.interpreter.env().get(name).cloned() {
                     self.locals[idx] = val;
                 }

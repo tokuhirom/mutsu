@@ -44,6 +44,26 @@ impl Interpreter {
         let cond_callable = positional.get(1).cloned();
         let step_callable = positional.get(2).cloned();
 
+        // When there is no condition (and no repeat flag), the loop is infinite.
+        // Return a lazy list marker so is-lazy returns True and the type is Seq.
+        // We cannot eagerly materialize an infinite sequence.
+        // TODO: implement a proper lazy iterator for infinite from-loop sequences.
+        if cond_callable.is_none() && !repeat {
+            let mut env = crate::env::Env::new();
+            env.insert("__mutsu_from_loop_body".to_string(), body_callable);
+            return Ok(Value::LazyList(std::sync::Arc::new(
+                crate::value::LazyList {
+                    body: Vec::new(),
+                    env,
+                    cache: std::sync::Mutex::new(None),
+                    compiled_code: None,
+                    compiled_fns: None,
+                    elems_count: None,
+                    scan_spec: None,
+                },
+            )));
+        }
+
         let label_matches = |error_label: &Option<String>| {
             error_label.as_deref() == label.as_deref() || error_label.is_none()
         };

@@ -1233,6 +1233,21 @@ impl CompiledCode {
         }
     }
 
+    /// Patch a jump instruction at `idx` to point to the given `target` position.
+    pub(crate) fn patch_jump_to(&mut self, idx: usize, target: usize) {
+        let target = target as i32;
+        match &mut self.ops[idx] {
+            OpCode::Jump(offset)
+            | OpCode::JumpIfFalse(offset)
+            | OpCode::JumpIfTrue(offset)
+            | OpCode::JumpIfNil(offset)
+            | OpCode::JumpIfNotNil(offset) => {
+                *offset = target;
+            }
+            _ => panic!("patch_jump_to on non-jump opcode"),
+        }
+    }
+
     #[allow(dead_code)]
     pub(crate) fn current_pos(&self) -> usize {
         self.ops.len()
