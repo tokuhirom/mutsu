@@ -3036,7 +3036,21 @@ impl Interpreter {
                 // Under v6.e.PREVIEW+, role submethods are also called
                 // (roles' BUILD/TWEAK before the class's own).
                 let mro = self.class_mro(class_key);
-                let is_6e = crate::parser::current_language_version().starts_with("6.e");
+                // Determine the class's language revision for submethod dispatch rules.
+                let class_lang_rev = self
+                    .type_metadata
+                    .get(&class_name.resolve())
+                    .and_then(|m| m.get("language-revision"))
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| {
+                        let version = crate::parser::current_language_version();
+                        if let Some(rest) = version.strip_prefix("6.") {
+                            rest.chars().next().unwrap_or('c').to_string()
+                        } else {
+                            "c".to_string()
+                        }
+                    });
+                let class_is_6e = class_lang_rev != "c";
                 for mro_class in mro.iter().rev() {
                     if mro_class == "Any" || mro_class == "Mu" {
                         continue;
@@ -3045,27 +3059,54 @@ impl Interpreter {
                     if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
                         continue;
                     }
-                    // Under v6.e+, call BUILD submethods from composed roles first
-                    if is_6e {
-                        let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
-                        for (role_name, method_def) in role_order {
-                            let (_v, updated) = self.run_instance_method_resolved(
-                                &class_name.resolve(),
-                                &role_name,
-                                method_def,
-                                attrs.clone(),
-                                args.clone(),
-                                Some(Value::make_instance(*class_name, attrs.clone())),
-                            )?;
-                            attrs = updated;
-                        }
-                    }
-                    let has_build = self
+                    // Check if the class has its own BUILD (not from a role)
+                    let class_has_own_build = self
                         .classes
                         .get(mro_class)
                         .and_then(|def| def.methods.get("BUILD"))
-                        .is_some();
-                    if has_build {
+                        .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
+                        .unwrap_or(false);
+                    // Call BUILD submethods from composed roles
+                    let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
+                    for (role_name, method_def) in role_order {
+                        let role_base = role_name
+                            .split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(&role_name);
+                        let role_lang_rev = self
+                            .type_metadata
+                            .get(role_base)
+                            .and_then(|m| m.get("language-revision"))
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "c".to_string());
+                        // In 6.c class with own BUILD: skip 6.c role submethods
+                        if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
+                            continue;
+                        }
+                        let (_v, updated) = self.run_instance_method_resolved(
+                            &class_name.resolve(),
+                            &role_name,
+                            method_def,
+                            attrs.clone(),
+                            args.clone(),
+                            Some(Value::make_instance(*class_name, attrs.clone())),
+                        )?;
+                        attrs = updated;
+                    }
+                    // Call the class's BUILD if it has one that wasn't already handled
+                    // by ordered_role_submethods_for_class. Role submethods (is_my=true,
+                    // role_origin=Some) were already called above.
+                    let has_non_submethod_build = self
+                        .classes
+                        .get(mro_class)
+                        .and_then(|def| def.methods.get("BUILD"))
+                        .map(|overloads| {
+                            overloads
+                                .iter()
+                                .any(|md| md.role_origin.is_none() || !md.is_my)
+                        })
+                        .unwrap_or(false);
+                    if has_non_submethod_build {
                         match self.run_instance_method(
                             mro_class,
                             attrs.clone(),
@@ -3107,14 +3148,13 @@ impl Interpreter {
                             .is_some()
                 });
                 // Also check role BUILD submethods for required attribute enforcement
-                let any_role_build = is_6e
-                    && mro.iter().any(|cn| {
-                        cn != "Any"
-                            && cn != "Mu"
-                            && !self
-                                .ordered_role_submethods_for_class(cn, "BUILD")
-                                .is_empty()
-                    });
+                let any_role_build = mro.iter().any(|cn| {
+                    cn != "Any"
+                        && cn != "Mu"
+                        && !self
+                            .ordered_role_submethods_for_class(cn, "BUILD")
+                            .is_empty()
+                });
                 if any_build || any_role_build {
                     for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info
@@ -3143,32 +3183,57 @@ impl Interpreter {
                     if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
                         continue;
                     }
-                    // Under v6.e+, call TWEAK submethods from composed roles first
-                    if is_6e {
-                        let role_order = self.ordered_role_submethods_for_class(mro_class, "TWEAK");
-                        for (role_name, method_def) in role_order {
-                            let (_v, updated) = self.run_instance_method_resolved(
-                                &class_name.resolve(),
-                                &role_name,
-                                method_def,
-                                attrs.clone(),
-                                args.clone(),
-                                Some(Value::make_instance(*class_name, attrs.clone())),
-                            )?;
-                            attrs = updated;
-                            self.enforce_attribute_where_constraints(
-                                class_key,
-                                &class_attrs_info,
-                                &attrs,
-                            )?;
-                        }
-                    }
-                    let has_tweak = self
+                    // Check if the class has its own TWEAK (not from a role)
+                    let class_has_own_tweak = self
                         .classes
                         .get(mro_class)
                         .and_then(|def| def.methods.get("TWEAK"))
-                        .is_some();
-                    if has_tweak {
+                        .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
+                        .unwrap_or(false);
+                    // Call TWEAK submethods from composed roles (same rules as BUILD)
+                    let role_order = self.ordered_role_submethods_for_class(mro_class, "TWEAK");
+                    for (role_name, method_def) in role_order {
+                        let role_base = role_name
+                            .split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(&role_name);
+                        let role_lang_rev = self
+                            .type_metadata
+                            .get(role_base)
+                            .and_then(|m| m.get("language-revision"))
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "c".to_string());
+                        // In 6.c class with own TWEAK: skip 6.c role submethods
+                        if !class_is_6e && class_has_own_tweak && role_lang_rev == "c" {
+                            continue;
+                        }
+                        let (_v, updated) = self.run_instance_method_resolved(
+                            &class_name.resolve(),
+                            &role_name,
+                            method_def,
+                            attrs.clone(),
+                            args.clone(),
+                            Some(Value::make_instance(*class_name, attrs.clone())),
+                        )?;
+                        attrs = updated;
+                        self.enforce_attribute_where_constraints(
+                            class_key,
+                            &class_attrs_info,
+                            &attrs,
+                        )?;
+                    }
+                    // Only call the class's own TWEAK (not role-composed ones).
+                    let has_own_tweak = self
+                        .classes
+                        .get(mro_class)
+                        .and_then(|def| def.methods.get("TWEAK"))
+                        .map(|overloads| {
+                            overloads
+                                .iter()
+                                .any(|md| md.role_origin.is_none() || !md.is_my)
+                        })
+                        .unwrap_or(false);
+                    if has_own_tweak {
                         let (_v, updated) = self.run_instance_method(
                             mro_class,
                             attrs.clone(),

@@ -657,6 +657,8 @@ pub(crate) enum Stmt {
         language_version: String,
         /// Custom `is` traits with optional arguments, dispatched via `trait_mod:<is>`
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// Whether this class was declared with `unit class` (file-scoped body)
+        is_unit: bool,
     },
     HasDecl {
         name: Symbol,

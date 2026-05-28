@@ -1028,6 +1028,7 @@ impl VM {
             body,
             language_version,
             custom_traits,
+            ..
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
@@ -1067,6 +1068,7 @@ impl VM {
                     is_lexical: *is_lexical,
                     hidden_parents,
                     does_parents,
+                    language_version,
                 },
                 body,
             )?;

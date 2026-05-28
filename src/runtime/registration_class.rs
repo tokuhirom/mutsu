@@ -165,6 +165,9 @@ pub(crate) struct ClassDeclModifiers<'a> {
     pub(crate) is_lexical: bool,
     pub(crate) hidden_parents: &'a [String],
     pub(crate) does_parents: &'a [String],
+    /// Language version of the class being declared (e.g. "6.c", "6.d", "6.e").
+    /// Used to determine whether submethods from composed roles should be included.
+    pub(crate) language_version: &'a str,
 }
 
 fn parse_role_type_args(input: &str) -> Vec<String> {
@@ -661,7 +664,9 @@ impl Interpreter {
             is_lexical,
             hidden_parents,
             does_parents,
+            language_version: class_language_version,
         } = modifiers;
+        let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
         // `is ::Foo` means the same as `is Foo` in Raku.
         let strip_colons = |s: &str| s.strip_prefix("::").unwrap_or(s).to_string();
@@ -965,6 +970,17 @@ impl Interpreter {
                     }
                 }
                 composed_roles_list.push(resolved_parent_name.clone());
+                // Look up the role's language revision for submethod composition rules.
+                let role_lang_rev = self
+                    .type_metadata
+                    .get(base_role_name)
+                    .and_then(|m| m.get("language-revision"))
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "c".to_string());
+                // Submethods from roles are only composed when the class is 6.c
+                // AND the role is also 6.c. In 6.d+, submethods are never composed
+                // from roles.
+                let compose_submethods = class_lang_rev == "c" && role_lang_rev == "c";
                 // Collect type parameter substitutions for method type constraints.
                 let type_subs: Vec<(String, String)> = role_param_names
                     .iter()
@@ -982,8 +998,12 @@ impl Interpreter {
                 for (mname, overloads) in &role.methods {
                     // Skip methods declared with `my` scope -- they are role-private
                     // and should not be composed into consuming classes.
-                    let non_my_overloads: Vec<&MethodDef> =
-                        overloads.iter().filter(|md| !md.is_my).collect();
+                    // Submethods (is_submethod=true) ARE composed only when both
+                    // the class and role share 6.c language revision.
+                    let non_my_overloads: Vec<&MethodDef> = overloads
+                        .iter()
+                        .filter(|md| !md.is_my || (md.is_submethod && compose_submethods))
+                        .collect();
                     if non_my_overloads.is_empty() {
                         continue;
                     }
@@ -2006,6 +2026,15 @@ impl Interpreter {
                             "No matching candidate found for the parametric role",
                         ));
                     }
+                    // Look up the role's language revision for submethod composition rules.
+                    let role_lang_rev_does = self
+                        .type_metadata
+                        .get(&role_name_str)
+                        .and_then(|m| m.get("language-revision"))
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "c".to_string());
+                    let compose_submethods_does =
+                        class_lang_rev == "c" && role_lang_rev_does == "c";
                     for attr in &role.attributes {
                         if !class_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
                             class_def.attributes.push(attr.clone());
@@ -2014,7 +2043,7 @@ impl Interpreter {
                     for (mname, overloads) in role.methods {
                         let composed: Vec<MethodDef> = overloads
                             .into_iter()
-                            .filter(|md| !md.is_my)
+                            .filter(|md| !md.is_my || (md.is_submethod && compose_submethods_does))
                             .map(|mut md| {
                                 if md.original_role.is_none() {
                                     md.original_role = md.role_origin.clone();
@@ -2771,8 +2800,12 @@ impl Interpreter {
                     }
                     for (mname, overloads) in role.methods {
                         // Skip methods declared with `my` scope -- role-private
-                        let non_my_overloads: Vec<MethodDef> =
-                            overloads.into_iter().filter(|md| !md.is_my).collect();
+                        // Submethods (is_submethod=true) ARE composed even though
+                        // they have is_my=true.
+                        let non_my_overloads: Vec<MethodDef> = overloads
+                            .into_iter()
+                            .filter(|md| !md.is_my || md.is_submethod)
+                            .collect();
                         if non_my_overloads.is_empty() {
                             continue;
                         }

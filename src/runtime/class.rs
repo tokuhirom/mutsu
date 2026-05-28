@@ -94,6 +94,11 @@ impl Interpreter {
         class_def: &ClassDef,
     ) -> Result<(), RuntimeError> {
         for (method_name, defs) in &class_def.methods {
+            // Submethods (like BUILD, TWEAK) from multiple roles do not conflict —
+            // they are accumulated and all called during construction. Skip them.
+            if defs.iter().all(|d| d.is_submethod) {
+                continue;
+            }
             // Check non-multi methods
             let non_multi: Vec<&MethodDef> = defs
                 .iter()

@@ -1673,6 +1673,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             body,
             language_version: crate::parser::current_language_version(),
             custom_traits: Vec::new(),
+            is_unit: false,
         })),
     ))
 }
