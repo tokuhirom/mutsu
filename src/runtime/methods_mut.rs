@@ -411,6 +411,102 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn propagate_mixin_update_by_arc(
+        &mut self,
+        old_mixins: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        new_mixin: &Value,
+    ) {
+        // Update top-level env bindings
+        let top_keys: Vec<Symbol> = self
+            .env
+            .iter()
+            .filter_map(|(sym, val)| match val {
+                Value::Mixin(_, existing_mixins)
+                    if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
+                {
+                    Some(*sym)
+                }
+                _ => None,
+            })
+            .collect();
+        for key in top_keys {
+            self.env.insert_sym(key, new_mixin.clone());
+        }
+        // Update captured envs inside Sub/Block values stored in the env
+        let sub_keys: Vec<Symbol> = self
+            .env
+            .iter()
+            .filter_map(|(sym, val)| {
+                if let Value::Sub(_) = val {
+                    Some(*sym)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for key in sub_keys {
+            if let Some(Value::Sub(data)) = self.env.get_sym(key) {
+                let sub_data = data.clone();
+                let closure_keys: Vec<Symbol> = sub_data
+                    .env
+                    .iter()
+                    .filter_map(|(sym, val)| match val {
+                        Value::Mixin(_, existing_mixins)
+                            if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
+                        {
+                            Some(*sym)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if !closure_keys.is_empty()
+                    && let Some(Value::Sub(data_arc)) = self.env.get_mut_sym(key)
+                {
+                    let data_mut = std::sync::Arc::make_mut(data_arc);
+                    for closure_key in closure_keys {
+                        data_mut.env.insert_sym(closure_key, new_mixin.clone());
+                    }
+                }
+            }
+        }
+        // Also update wrappers in wrap_chains that captured the old mixin
+        for chain in self.wrap_chains.values_mut() {
+            for (_handle_id, wrapper) in chain.iter_mut() {
+                Self::update_mixin_in_sub(old_mixins, new_mixin, wrapper);
+            }
+        }
+        for wrapper in self.wrap_name_to_sub.values_mut() {
+            Self::update_mixin_in_sub(old_mixins, new_mixin, wrapper);
+        }
+    }
+
+    fn update_mixin_in_sub(
+        old_mixins: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        new_mixin: &Value,
+        sub_val: &mut Value,
+    ) {
+        if let Value::Sub(data_arc) = sub_val {
+            let closure_keys: Vec<Symbol> = data_arc
+                .env
+                .iter()
+                .filter_map(|(sym, val)| match val {
+                    Value::Mixin(_, existing_mixins)
+                        if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
+                    {
+                        Some(*sym)
+                    }
+                    _ => None,
+                })
+                .collect();
+            if !closure_keys.is_empty() {
+                let data_mut = std::sync::Arc::make_mut(data_arc);
+                for key in closure_keys {
+                    data_mut.env.insert_sym(key, new_mixin.clone());
+                }
+            }
+        }
+    }
+
     pub(crate) fn overwrite_instance_bindings_by_identity(
         &mut self,
         class_name: &str,

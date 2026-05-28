@@ -10,7 +10,7 @@ use crate::value::Value;
 
 use super::decl::parse_array_shape_suffix;
 use super::sub;
-use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
+use super::{block, block_inner, ident, keyword, parse_comma_or_expr, statement, var_name};
 
 static IF_BIND_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -1066,7 +1066,35 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
         parse_for_params(rest)?;
     let rw_block = rw_block || rw_detected;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    // Collect &-sigil parameter names so they can be registered as user subs
+    // inside the block scope — this prevents `m()` from being misread as `m//`
+    // (a regex match) when `m` is bound via `-> &m { m() }`.
+    let code_param_names: Vec<String> = {
+        let mut names = Vec::new();
+        if let Some(ref p) = param
+            && let Some(bare) = p.strip_prefix('&')
+        {
+            names.push(bare.to_string());
+        }
+        for p in &params {
+            if let Some(bare) = p.strip_prefix('&') {
+                names.push(bare.to_string());
+            }
+        }
+        names
+    };
+    let (rest, body) = if !code_param_names.is_empty() {
+        let (r, _) = parse_char(rest, '{')?;
+        super::simple::push_scope();
+        for name in &code_param_names {
+            super::simple::register_user_sub(name);
+        }
+        let result = block_inner(r);
+        super::simple::pop_scope();
+        result?
+    } else {
+        block(rest)?
+    };
     // When no explicit params, collect placeholder variables from the body
     let (param, params) = if param.is_none() && params.is_empty() {
         let placeholders = collect_placeholders_shallow(&body);

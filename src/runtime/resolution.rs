@@ -1411,7 +1411,19 @@ impl Interpreter {
                 }
             } else {
                 for (k, v) in self.env.iter() {
-                    if k != "_" && k != "@_" && matches!(v, Value::Array(..)) {
+                    if k != "_"
+                        && k != "@_"
+                        && (matches!(v, Value::Array(..))
+                            || (merged.contains_key_sym(*k)
+                                && matches!(
+                                    v,
+                                    Value::Bool(_)
+                                        | Value::Int(_)
+                                        | Value::Num(_)
+                                        | Value::Str(_)
+                                        | Value::Rat(_, _)
+                                )))
+                    {
                         merged.insert_sym(*k, v.clone());
                     }
                 }
