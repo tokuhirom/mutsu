@@ -499,6 +499,8 @@ impl Compiler {
         }
     }
 
+    /// Build the %?RESOURCES value for the current distribution context.
+    /// Returns a Hash mapping resource keys to absolute paths on disk.
     /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_
     /// and sets $/ with the match result.
     pub(super) fn compile_match_regex(&mut self, v: &Value) {

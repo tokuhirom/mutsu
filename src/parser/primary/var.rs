@@ -611,6 +611,7 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
         || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
@@ -715,6 +716,7 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
         || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())

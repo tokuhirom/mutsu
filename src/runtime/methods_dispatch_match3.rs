@@ -71,6 +71,15 @@ impl Interpreter {
                 }
                 None
             }
+            "run-script" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "CompUnit::RepositoryRegistry"
+                {
+                    let script_name = args.first().map(Value::to_string_value).unwrap_or_default();
+                    return Some(self.run_script_from_repos(&script_name));
+                }
+                None
+            }
             "signal" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
