@@ -91,6 +91,23 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
                     quoted: false,
                 });
             }
+            // `.emit` (topic method call) inside a supply block is
+            // `$emitter.emit($_)` — emit the current topic value.
+            if let Expr::MethodCall {
+                target, name, args, ..
+            } = &expr
+                && matches!(target.as_ref(), Expr::Var(n) if n == "_")
+                && name.resolve().as_str() == "emit"
+                && args.is_empty()
+            {
+                return Stmt::Expr(Expr::MethodCall {
+                    target: Box::new(Expr::Var(emitter_name.to_string())),
+                    name: Symbol::intern("emit"),
+                    args: vec![Expr::Var("_".to_string())],
+                    modifier: None,
+                    quoted: false,
+                });
+            }
             Stmt::Expr(expr)
         }
         Stmt::Call { name, args } if name.resolve().as_str() == "emit" => {
