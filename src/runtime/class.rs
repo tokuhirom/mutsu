@@ -1126,6 +1126,34 @@ impl Interpreter {
             if attr_name.contains('\0') {
                 continue;
             }
+            // Handle attribute alias metadata (from `$!attr := outer_var` bindings).
+            // e.g. "__mutsu_attr_alias::pulled" -> "pulled" means $!pulled was bound
+            // to sigilless var `pulled`. Re-establish the sigilless alias in env so
+            // that increment/decrement ops can propagate changes to the aliased var.
+            const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
+            if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
+                if let Value::Str(source_name) = attr_val {
+                    // Set up: !attr → source_name alias (for write propagation)
+                    self.env.insert(
+                        format!("__mutsu_sigilless_alias::!{}", actual_attr),
+                        Value::str(source_name.to_string()),
+                    );
+                    self.env.insert(
+                        format!("__mutsu_sigilless_readonly::!{}", actual_attr),
+                        Value::Bool(false),
+                    );
+                    // Reverse: source_name → !attr alias
+                    self.env.insert(
+                        format!("__mutsu_sigilless_alias::{}", source_name),
+                        Value::str(format!("!{}", actual_attr)),
+                    );
+                    // Also populate source_name with current attribute value
+                    if let Some(attr_value) = attributes.get(actual_attr) {
+                        self.env.insert(source_name.to_string(), attr_value.clone());
+                    }
+                }
+                continue;
+            }
             // For private attributes, prefer the class-qualified value from
             // the method's owner class (so Parent's $!priv != Child's $!priv).
             let qualified_key = format!("{}\0{}", owner_class, attr_name);
@@ -1309,6 +1337,10 @@ impl Interpreter {
                 merged_env.insert_sym(*k, v.clone());
             }
         }
+        // Propagate sigilless attribute alias writes back to the caller's env.
+        // This handles `$!attr := outer_var` bindings: if the method modified
+        // $!attr, the change flows back to the aliased outer variable.
+        self.merge_sigilless_alias_writes(&mut merged_env, &self.env);
         // Apply `is rw` parameter writebacks so that changes to `is rw`
         // params inside the method body propagate back to the caller's
         // variables.

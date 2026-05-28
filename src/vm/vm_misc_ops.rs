@@ -764,11 +764,45 @@ impl VM {
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot], Value::Proxy { .. })
         {
+            // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
+            if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+                let inner = arc.lock().unwrap().clone();
+                let val = self.normalize_incdec_source_with_type(name, inner);
+                let new_val = self.increment_value_smart(&val)?;
+                arc.lock().unwrap().clone_from(&new_val);
+                self.stack.push(new_val);
+                return Ok(());
+            }
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.increment_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
             self.mark_local_dirty(slot);
+            // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
+            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+            let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+                if let Value::Str(n) = v {
+                    Some(n.to_string())
+                } else {
+                    None
+                }
+            });
+            let mut seen_aliases = std::collections::HashSet::new();
+            while let Some(current_alias) = alias_name {
+                if !seen_aliases.insert(current_alias.clone()) {
+                    break;
+                }
+                self.set_env_with_main_alias(&current_alias, new_val.clone());
+                self.update_local_if_exists(code, &current_alias, &new_val);
+                let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+                alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                    if let Value::Str(n) = v {
+                        Some(n.to_string())
+                    } else {
+                        None
+                    }
+                });
+            }
             self.stack.push(new_val);
             return Ok(());
         }
@@ -795,11 +829,45 @@ impl VM {
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot], Value::Proxy { .. })
         {
+            // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
+            if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+                let inner = arc.lock().unwrap().clone();
+                let val = self.normalize_incdec_source_with_type(name, inner);
+                let new_val = self.decrement_value_smart(&val)?;
+                arc.lock().unwrap().clone_from(&new_val);
+                self.stack.push(new_val);
+                return Ok(());
+            }
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.decrement_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
             self.mark_local_dirty(slot);
+            // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
+            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+            let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+                if let Value::Str(n) = v {
+                    Some(n.to_string())
+                } else {
+                    None
+                }
+            });
+            let mut seen_aliases = std::collections::HashSet::new();
+            while let Some(current_alias) = alias_name {
+                if !seen_aliases.insert(current_alias.clone()) {
+                    break;
+                }
+                self.set_env_with_main_alias(&current_alias, new_val.clone());
+                self.update_local_if_exists(code, &current_alias, &new_val);
+                let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+                alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                    if let Value::Str(n) = v {
+                        Some(n.to_string())
+                    } else {
+                        None
+                    }
+                });
+            }
             self.stack.push(new_val);
             return Ok(());
         }
