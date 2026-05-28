@@ -35,7 +35,7 @@ impl Interpreter {
 
     fn dependency_disables_precomp(&self, source: &str) -> bool {
         for dep in Self::direct_need_dependencies(source) {
-            let Some(dep_path) = self.resolve_module_path(&dep) else {
+            let Some((dep_path, _)) = self.resolve_module_path(&dep) else {
                 continue;
             };
             let Ok(dep_code) = std::fs::read_to_string(dep_path) else {
@@ -1001,17 +1001,54 @@ impl Interpreter {
     }
 
     /// Resolve a module name to a file path by searching lib paths and standard locations.
-    pub(super) fn resolve_module_path(&self, module: &str) -> Option<std::path::PathBuf> {
+    /// Returns (source_path, optional_dist_json) where optional_dist_json is Some for
+    /// modules found in a CompUnit::Repository::Installation (inst# paths).
+    pub(super) fn resolve_module_path(
+        &self,
+        module: &str,
+    ) -> Option<(std::path::PathBuf, Option<String>)> {
         let base_name = module.replace("::", "/");
-        // Try .rakumod first, then .pm6, then .pm (Raku module resolution order)
         let extensions = [".rakumod", ".pm6", ".pm"];
+
+        // Check inst# paths (CompUnit::Repository::Installation) first.
+        for base in &self.lib_paths {
+            if let Some(prefix) = base.strip_prefix("inst#") {
+                let prefix_path = Path::new(prefix);
+                let dist_dir = prefix_path.join("dist");
+                if !dist_dir.is_dir() {
+                    continue;
+                }
+                let Ok(entries) = std::fs::read_dir(&dist_dir) else {
+                    continue;
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                        continue;
+                    }
+                    let Ok(json_str) = std::fs::read_to_string(&path) else {
+                        continue;
+                    };
+                    if let Some(file_id) = Self::find_module_file_id_in_dist_json(&json_str, module)
+                    {
+                        let source_path = prefix_path.join("sources").join(&file_id);
+                        if source_path.exists() {
+                            return Some((source_path, Some(json_str)));
+                        }
+                    }
+                }
+            }
+        }
+
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         for ext in &extensions {
             let filename = format!("{}{}", base_name, ext);
             for base in &self.lib_paths {
+                if base.starts_with("inst#") {
+                    continue;
+                }
                 let base_path = Path::new(base);
                 candidates.push(base_path.join(&filename));
-                // Also check lib/ subdirectory (Raku distribution layout)
                 candidates.push(base_path.join("lib").join(&filename));
             }
         }
@@ -1052,7 +1089,39 @@ impl Interpreter {
                 }
             }
         }
-        candidates.into_iter().find(|path| path.exists())
+        candidates
+            .into_iter()
+            .find(|path| path.exists())
+            .map(|p| (p, None))
+    }
+
+    /// Parse a dist JSON string and return the file ID for the given module name.
+    /// Installed distributions store provides as {"ModuleName": {"file": "hexid"}}.
+    fn find_module_file_id_in_dist_json(json_str: &str, module: &str) -> Option<String> {
+        let provides_pos = json_str.find("\"provides\"")?;
+        let after_provides = &json_str[provides_pos + 10..];
+        let colon_pos = after_provides.find(':')?;
+        let after_colon = after_provides[colon_pos + 1..].trim_start();
+        if !after_colon.starts_with('{') {
+            return None;
+        }
+        let module_key = format!("\"{}\"", module);
+        let module_pos = after_colon.find(&module_key)?;
+        let after_module = &after_colon[module_pos + module_key.len()..];
+        let colon2 = after_module.find(':')?;
+        let after_colon2 = after_module[colon2 + 1..].trim_start();
+        if after_colon2.starts_with('{') {
+            let file_key = "\"file\"";
+            let file_pos = after_colon2.find(file_key)?;
+            let after_file = &after_colon2[file_pos + file_key.len()..];
+            let colon3 = after_file.find(':')?;
+            let after_colon3 = after_file[colon3 + 1..].trim_start();
+            if let Some(stripped) = after_colon3.strip_prefix('"') {
+                let end = stripped.find('"')?;
+                return Some(stripped[..end].to_string());
+            }
+        }
+        None
     }
 
     /// Parse a module source file, using the precompilation cache when available.
@@ -1150,7 +1219,7 @@ impl Interpreter {
     }
 
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
-        let source_path = self
+        let (source_path, inst_dist_json) = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         // Track operator subs exported by this module so EVAL can see them.
@@ -1159,9 +1228,16 @@ impl Interpreter {
                 self.imported_operator_names.insert(name);
             }
         }
-        // Detect distribution context (META6.json) for $?DISTRIBUTION.
+        // Detect distribution context for $?DISTRIBUTION.
+        // For installed modules (inst# paths), use the dist JSON directly.
+        // Otherwise fall back to META6.json detection.
         let saved_distribution = self.current_distribution.clone();
-        if let Some(dist) = Self::detect_distribution(&source_path) {
+        let dist_opt = if let Some(ref json_str) = inst_dist_json {
+            Self::build_distribution_from_inst_json(json_str)
+        } else {
+            Self::detect_distribution(&source_path)
+        };
+        if let Some(dist) = dist_opt {
             self.current_distribution = Some(dist.clone());
             // Record the distribution for the module's package name
             // so OTF compilation can resolve $?DISTRIBUTION later.
@@ -1259,6 +1335,20 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("$!meta".to_string(), Value::Hash(std::sync::Arc::new(meta)));
         Value::make_instance_without_destroy(crate::symbol::Symbol::intern("Distribution"), attrs)
+    }
+
+    /// Build a distribution from an installed dist JSON (CompUnit::Repository::Installation).
+    fn build_distribution_from_inst_json(json_str: &str) -> Option<Value> {
+        let meta_hash = Self::parse_meta6_json(json_str)?;
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "$!meta".to_string(),
+            Value::Hash(std::sync::Arc::new(meta_hash)),
+        );
+        Some(Value::make_instance_without_destroy(
+            crate::symbol::Symbol::intern("Distribution"),
+            attrs,
+        ))
     }
 
     fn scan_lib_provides(lib_dir: &Path) -> Value {
