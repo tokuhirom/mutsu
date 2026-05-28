@@ -167,14 +167,20 @@ impl Interpreter {
                 "@_".to_string(),
                 Value::array(positional_args[positional_idx..].to_vec()),
             );
-            let mut leftover_named = std::collections::HashMap::new();
-            for (key, val) in named_args {
-                if !consumed_named.contains(&key) {
-                    leftover_named.insert(key, val);
+            // Insert %_ if explicitly listed in params, or if named placeholders ($:Name)
+            // are present (leftover named args should be captured in %_).
+            // WhateverCode closures use this legacy path with params like ["_"], and should
+            // NOT overwrite the caller's %_ hash in the environment.
+            if params.iter().any(|p| p == "%_" || p.starts_with(':')) {
+                let mut leftover_named = std::collections::HashMap::new();
+                for (key, val) in named_args {
+                    if !consumed_named.contains(&key) {
+                        leftover_named.insert(key, val);
+                    }
                 }
+                self.env
+                    .insert("%_".to_string(), Value::hash(leftover_named));
             }
-            self.env
-                .insert("%_".to_string(), Value::hash(leftover_named));
             return Ok(rw_bindings);
         }
         // Pre-compute the set of explicit named parameter keys so that
