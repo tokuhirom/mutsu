@@ -1640,6 +1640,26 @@ impl Interpreter {
             return result;
         }
 
+        // DateTime.local — convert to $*TZ timezone
+        if method == "local"
+            && args.is_empty()
+            && matches!(&target, Value::Instance { attributes, .. }
+                if attributes.contains_key("hour") && attributes.contains_key("timezone"))
+        {
+            let tz = self
+                .env
+                .get("*TZ")
+                .and_then(|v| {
+                    if let Value::Int(n) = v {
+                        Some(*n)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0i64);
+            return self.call_method_with_values(target, "in-timezone", vec![Value::Int(tz)]);
+        }
+
         // Dispatch temporal n-arg methods
         if let Some(result) =
             super::methods_temporal::dispatch_temporal_method(&target, method, &args)

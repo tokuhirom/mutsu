@@ -190,15 +190,12 @@ pub fn datetime_method_0arg(
         }
         "utc" => {
             // Keep the same instant, convert representation to UTC timezone.
-            let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
-            let total_i = posix.floor() as i64;
-            let frac = posix - total_i as f64;
-            let day_secs = total_i.rem_euclid(86400);
-            let epoch_days = (total_i - day_secs) / 86400;
-            let (uy, um, ud) = epoch_days_to_civil(epoch_days);
-            let uh = day_secs / 3600;
-            let umi = (day_secs % 3600) / 60;
-            let us = (day_secs % 60) as f64 + frac;
+            // Use leap-second-aware conversion so that e.g. 19:59:60-04:00
+            // correctly round-trips to 23:59:60Z.
+            let (instant_int, instant_frac) =
+                datetime_to_instant_parts(year, month, day, hour, minute, second, timezone);
+            let (uy, um, ud, uh, umi, us) =
+                instant_to_datetime_leap_aware_parts(instant_int, instant_frac, 0);
             Some(Ok(make_datetime(uy, um, ud, uh, umi, us, 0)))
         }
         "week-year" => {

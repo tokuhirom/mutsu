@@ -1447,6 +1447,13 @@ impl VM {
         } else {
             base_op
         };
+        // Handle lazy-scan short-circuit reduction compiled from ArrayLiteral.
+        // The operator has prefix "_sc_" and the operand is an array of thunks.
+        if let Some(sc_op) = base_op.strip_prefix("_sc_") {
+            let list_value = self.stack.pop().unwrap_or(Value::Nil);
+            let thunks: Vec<Value> = runtime::value_to_list(&list_value);
+            return self.exec_scan_shortcircuit_reduction(sc_op, negate, scan, thunks);
+        }
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
         let input_is_lazy = crate::builtins::methods_0arg::is_value_lazy(&list_value);
         // For scan (triangle reduce) on infinite/lazy inputs, handle lazily
@@ -1750,6 +1757,165 @@ impl VM {
                 };
                 self.stack.push(acc);
             }
+        }
+        Ok(())
+    }
+
+    /// Execute a thunk-based short-circuit reduction where the operand is
+    /// an array of thunks (anonymous blocks).  Each thunk is called lazily:
+    /// for `&&`/`and`:    evaluation stops on the first false result;
+    /// for `||`/`or`:     evaluation stops on the first truthy result;
+    /// for `//`/`orelse`: evaluation stops on the first defined result;
+    /// for `andthen`:     evaluation stops on the first undefined result;
+    /// for `^^`/`xor`:    evaluation stops after two truthy values are found.
+    ///
+    /// `scan` controls whether intermediate results are collected (triangle
+    /// reduction `[\op]`) or only the final value is returned (`[op]`).
+    fn exec_scan_shortcircuit_reduction(
+        &mut self,
+        op: &str,
+        _negate: bool,
+        scan: bool,
+        thunks: Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        if thunks.is_empty() {
+            if scan {
+                self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
+            } else {
+                // Identity values
+                let identity = match op {
+                    "&&" | "and" => Value::Bool(true),
+                    _ => Value::Bool(false),
+                };
+                self.stack.push(identity);
+            }
+            return Ok(());
+        }
+
+        let is_xor = matches!(op, "^^" | "xor");
+
+        if is_xor {
+            // xor/^^ is list-associative: exactly one element must be truthy.
+            // Short-circuit once two truthy values are found.
+            let mut found: Option<Value> = None;
+            let mut multiple = false;
+            let mut last_val = Value::Nil; // track last evaluated value for all-false case
+            let mut results: Vec<Value> = Vec::new();
+            let mut done = false; // whether we have short-circuited
+            for thunk in thunks {
+                if done {
+                    // Already short-circuited: result is Nil for all remaining
+                    if scan {
+                        results.push(Value::Nil);
+                    }
+                    // don't evaluate thunk
+                } else {
+                    let val = self.vm_call_on_value(thunk, vec![], None)?;
+                    last_val = val.clone();
+                    if val.truthy() {
+                        if found.is_some() {
+                            // Second truthy: result is Nil, short-circuit
+                            multiple = true;
+                            found = None;
+                            done = true;
+                            if scan {
+                                results.push(Value::Nil);
+                            }
+                        } else {
+                            found = Some(val.clone());
+                            if scan {
+                                results.push(val);
+                            }
+                        }
+                    } else {
+                        // Falsy: current xor result is the truthy one found so far,
+                        // or val itself if none found yet
+                        let cur = if let Some(ref f) = found {
+                            f.clone()
+                        } else {
+                            val
+                        };
+                        if scan {
+                            results.push(cur);
+                        }
+                    }
+                }
+            }
+            let final_result = if multiple {
+                Value::Nil
+            } else if let Some(v) = found {
+                v
+            } else {
+                // All false: return last element
+                last_val
+            };
+            if scan {
+                self.stack.push(Value::Seq(std::sync::Arc::new(results)));
+            } else {
+                self.stack.push(final_result);
+            }
+            return Ok(());
+        }
+
+        // Evaluate the first thunk unconditionally.
+        let mut acc = self.vm_call_on_value(thunks[0].clone(), vec![], None)?;
+        let mut results: Vec<Value> = if scan { vec![acc.clone()] } else { Vec::new() };
+        // For the remaining thunks, check acc before evaluating.
+        for thunk in thunks.into_iter().skip(1) {
+            let should_short_circuit = match op {
+                "&&" | "and" => !acc.truthy(),
+                "||" | "or" => acc.truthy(),
+                "//" | "orelse" => runtime::types::value_is_defined(&acc),
+                "andthen" => !runtime::types::value_is_defined(&acc),
+                _ => false,
+            };
+            if should_short_circuit {
+                if scan {
+                    results.push(acc.clone());
+                }
+                // don't evaluate thunk
+            } else {
+                let val = self.vm_call_on_value(thunk, vec![], None)?;
+                acc = match op {
+                    "&&" | "and" => {
+                        if acc.truthy() {
+                            val
+                        } else {
+                            acc
+                        }
+                    }
+                    "||" | "or" => {
+                        if acc.truthy() {
+                            acc
+                        } else {
+                            val
+                        }
+                    }
+                    "//" | "orelse" => {
+                        if runtime::types::value_is_defined(&acc) {
+                            acc
+                        } else {
+                            val
+                        }
+                    }
+                    "andthen" => {
+                        if runtime::types::value_is_defined(&acc) {
+                            val
+                        } else {
+                            Value::Slip(std::sync::Arc::new(vec![]))
+                        }
+                    }
+                    _ => val,
+                };
+                if scan {
+                    results.push(acc.clone());
+                }
+            }
+        }
+        if scan {
+            self.stack.push(Value::Seq(std::sync::Arc::new(results)));
+        } else {
+            self.stack.push(acc);
         }
         Ok(())
     }

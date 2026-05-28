@@ -577,18 +577,12 @@ fn datetime_in_timezone(
     old_tz: i64,
     new_tz: i64,
 ) -> Result<Value, RuntimeError> {
-    // Convert to UTC epoch, then to new timezone
-    let posix = temporal::datetime_to_posix(year, month, day, hour, minute, second, old_tz);
-    // Now convert from UTC to new timezone
-    let local_secs = posix + new_tz as f64;
-    let total_i = local_secs.floor() as i64;
-    let frac = local_secs - total_i as f64;
-    let day_secs = total_i.rem_euclid(86400);
-    let epoch_days = (total_i - day_secs) / 86400;
-    let (ny, nm, nd) = temporal::epoch_days_to_civil(epoch_days);
-    let nh = day_secs / 3600;
-    let nmi = (day_secs % 3600) / 60;
-    let ns = (day_secs % 60) as f64 + frac;
+    // Use leap-second-aware instant conversion to correctly handle leap seconds
+    // (e.g. 23:59:60 must survive a timezone round-trip unchanged).
+    let (instant_int, instant_frac) =
+        temporal::datetime_to_instant_parts(year, month, day, hour, minute, second, old_tz);
+    let (ny, nm, nd, nh, nmi, ns) =
+        temporal::instant_to_datetime_leap_aware_parts(instant_int, instant_frac, new_tz);
     Ok(temporal::make_datetime(ny, nm, nd, nh, nmi, ns, new_tz))
 }
 

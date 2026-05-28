@@ -94,6 +94,26 @@ fn current_process_id() -> i64 {
     }
 }
 
+/// Get the local timezone offset in seconds (west-negative, east-positive).
+/// Returns 0 (UTC) on WASM or if the offset cannot be determined.
+pub(crate) fn local_timezone_offset_secs() -> i64 {
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
+    {
+        // Use libc::localtime_r to retrieve the tm_gmtoff field which gives
+        // the UTC offset in seconds for the current local timezone.
+        unsafe {
+            let now = libc::time(std::ptr::null_mut());
+            let mut tm: libc::tm = std::mem::zeroed();
+            libc::localtime_r(&now, &mut tm);
+            tm.tm_gmtoff
+        }
+    }
+    #[cfg(not(all(not(target_arch = "wasm32"), feature = "native")))]
+    {
+        0
+    }
+}
+
 type ProtectBlockCacheEntry = (
     Arc<CompiledCode>,
     Arc<HashMap<String, CompiledFunction>>,
@@ -1138,6 +1158,7 @@ impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(current_process_id()));
+        env.insert("*TZ".to_string(), Value::Int(local_timezone_offset_secs()));
         env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         // Populate %*ENV with all OS environment variables so that

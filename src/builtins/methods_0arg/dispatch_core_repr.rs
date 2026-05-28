@@ -504,8 +504,13 @@ pub(super) fn dispatch(
             Some(Ok(Value::str(format!("({})", inner))))
         }
         Value::Slip(items) if method == "raku" || method == "perl" => {
-            let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-            Some(Ok(Value::str(format!("slip({})", inner))))
+            if items.is_empty() {
+                // Empty slip is represented as "Empty" in Raku
+                Some(Ok(Value::str_from("Empty")))
+            } else {
+                let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+                Some(Ok(Value::str(format!("slip({})", inner))))
+            }
         }
         Value::Junction { .. } if method == "raku" || method == "perl" => None,
         // Sub/Routine/WeakSub: delegate to interpreter for proper raku/gist/Str

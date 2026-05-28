@@ -544,7 +544,19 @@ impl Interpreter {
             return None;
         }
         use crate::builtins::methods_0arg::temporal;
-        let mut timezone = 0i64;
+        // Default timezone comes from $*TZ (the dynamic local timezone variable).
+        let default_tz = self
+            .env
+            .get("*TZ")
+            .and_then(|v| {
+                if let Value::Int(n) = v {
+                    Some(*n)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0i64);
+        let mut timezone = default_tz;
         let mut formatter: Option<Value> = None;
         for arg in args {
             if let Value::Pair(key, value) = arg {
