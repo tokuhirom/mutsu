@@ -454,6 +454,38 @@ impl Interpreter {
         let method = args[2].to_string_value();
         let push_args: Vec<Value> = args[3..].to_vec();
 
+        // Handle Mixin targets (e.g. `&b does R` followed by `push &b.s, val`).
+        if let Value::Mixin(ref inner, ref mixins) = target {
+            let attr_key = format!("__mutsu_attr__{}", attr_name);
+            if let Some(current) = mixins.get(&attr_key).cloned() {
+                let old_array_arc = match &current {
+                    Value::Array(arc, ..) => Some(arc.clone()),
+                    _ => None,
+                };
+                let temp_id: u64 = std::sync::Arc::as_ptr(mixins) as u64;
+                let temp_var = format!("__mutsu_push_mixin_tmp_{}", temp_id);
+                self.env.insert(temp_var.clone(), current.clone());
+                let result = self.call_method_mut_with_values(
+                    &temp_var,
+                    current.clone(),
+                    &method,
+                    push_args,
+                )?;
+                let new_value = self.env.get(&temp_var).cloned().unwrap_or(result.clone());
+                self.env.remove(&temp_var);
+                let mut updated_mixins = (**mixins).clone();
+                updated_mixins.insert(attr_key, new_value.clone());
+                let new_mixin = Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins));
+                self.propagate_mixin_update_by_arc(mixins, &new_mixin);
+                if let Some(old_arc) = &old_array_arc {
+                    self.propagate_shared_array_in_instances(old_arc, &new_value);
+                }
+                return Ok(result);
+            }
+            let accessor_val = self.call_method_with_values(target, &attr_name, vec![])?;
+            return self.call_method_with_values(accessor_val, &method, push_args);
+        }
+
         let Value::Instance {
             class_name,
             attributes,

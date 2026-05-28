@@ -793,20 +793,28 @@ impl VM {
             return Ok(Value::Bool(junction.truthy()));
         }
         if let Value::Junction { kind, values } = right {
-            let results: Result<Vec<Value>, RuntimeError> = values
-                .iter()
-                .cloned()
-                .map(|v| {
-                    self.eval_smartmatch_with_junctions_ex(
-                        left.clone(),
-                        v,
-                        false,
-                        rhs_is_match_regex,
-                    )
-                })
-                .collect();
+            // Evaluate junction elements with short-circuit semantics:
+            // All: if any element is False, stop early (don't evaluate remaining).
+            // Any: if any element is True, stop early.
+            // One: always evaluate all (no short-circuit possible).
+            let mut results = Vec::with_capacity(values.len());
+            for v in values.iter().cloned() {
+                let r = self.eval_smartmatch_with_junctions_ex(
+                    left.clone(),
+                    v,
+                    false,
+                    rhs_is_match_regex,
+                )?;
+                let is_truthy = r.truthy();
+                results.push(r);
+                match &kind {
+                    crate::value::JunctionKind::All if !is_truthy => break, // short-circuit: All fails fast
+                    crate::value::JunctionKind::Any if is_truthy => break, // short-circuit: Any succeeds fast
+                    _ => {}
+                }
+            }
             // Smartmatch collapses junctions to Bool
-            let junction = Value::junction(kind, results?);
+            let junction = Value::junction(kind, results);
             return Ok(Value::Bool(junction.truthy()));
         }
         self.smart_match_op(left, right, rhs_is_match_regex)
