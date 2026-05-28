@@ -663,7 +663,7 @@ fn reorder_at_level(
         matches!(
             s,
             Stmt::Phaser {
-                kind: PhaserKind::Check | PhaserKind::Init,
+                kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
                 ..
             }
         )
@@ -716,7 +716,14 @@ fn reorder_at_level(
             where_constraint,
         } = &stmt
         {
-            let has_init = !matches!(init_expr, Expr::Literal(crate::value::Value::Nil));
+            // A VarDecl has a real (user-supplied) initializer only when it
+            // carries the "__has_initializer" marker trait.  Without that
+            // marker the `expr` field holds only the default value for the
+            // variable's sigil (`Nil` for `$x`, empty-Array for `@arr`,
+            // empty-Hash for `%h`) and must NOT be treated as an assignment.
+            // Generating an assign from the default would silently overwrite
+            // whatever a BEGIN block stored in the same variable.
+            let has_init = custom_traits.iter().any(|(t, _)| t == "__has_initializer");
             var_decls.push(Stmt::VarDecl {
                 name: name.clone(),
                 expr: Expr::Literal(crate::value::Value::Nil),
