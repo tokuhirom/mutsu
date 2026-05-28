@@ -211,6 +211,39 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
 
     let (rest, name) = if sigil == b'$' || is_array || is_hash || is_code {
         let (r, n) = var_name(rest)?;
+        // Reject `!` twigil in `my` scope: `my $!foo` is invalid.
+        // But `my $!` (bare special variable) is allowed.
+        if n.starts_with('!') && n.len() > 1 {
+            let scope_name = if is_state {
+                "state"
+            } else if is_our {
+                "our"
+            } else {
+                "my"
+            };
+            let message = format!(
+                "X::Syntax::Variable::Twigil: Cannot use a '!' twigil on a '{} ' variable.",
+                scope_name
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                crate::value::Value::str(message.clone()),
+            );
+            attrs.insert(
+                "twigil".to_string(),
+                crate::value::Value::str("!".to_string()),
+            );
+            attrs.insert(
+                "scope".to_string(),
+                crate::value::Value::str(scope_name.to_string()),
+            );
+            let exception = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Syntax::Variable::Twigil"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(message, Box::new(exception)));
+        }
         (r, format!("{}{}", prefix, n))
     } else {
         return Err(PError::fatal(

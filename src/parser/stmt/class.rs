@@ -1461,6 +1461,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, mut body) = match block(rest) {
         Ok(ok) => ok,
+        Err(e) if e.is_fatal() => return Err(e),
         Err(_) => consume_raw_braced_body(rest)?,
     };
     // Handle `also is rw;` in the role body

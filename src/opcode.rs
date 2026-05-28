@@ -183,6 +183,9 @@ pub(crate) enum OpCode {
 
     // -- Mixin --
     ButMixin,
+    /// Like ButMixin but checks for duplicate type conflicts (used for
+    /// per-element tuple expansion: `True but (1, "x")`).
+    ButMixinTupleElem,
     // -- Type check --
     Isa,
     Does,
