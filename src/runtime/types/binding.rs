@@ -167,10 +167,11 @@ impl Interpreter {
                 "@_".to_string(),
                 Value::array(positional_args[positional_idx..].to_vec()),
             );
-            // Only insert %_ if it is explicitly listed in params (e.g. sub foo(%_) {...}).
+            // Insert %_ if explicitly listed in params, or if named placeholders ($:Name)
+            // are present (leftover named args should be captured in %_).
             // WhateverCode closures use this legacy path with params like ["_"], and should
             // NOT overwrite the caller's %_ hash in the environment.
-            if params.iter().any(|p| p == "%_") {
+            if params.iter().any(|p| p == "%_" || p.starts_with(':')) {
                 let mut leftover_named = std::collections::HashMap::new();
                 for (key, val) in named_args {
                     if !consumed_named.contains(&key) {
