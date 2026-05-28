@@ -44,6 +44,22 @@ impl Interpreter {
         let cond_callable = positional.get(1).cloned();
         let step_callable = positional.get(2).cloned();
 
+        // If there's no condition and no step, this is a lazy infinite Seq.
+        // Return a lazy list backed by a from-loop iterator.
+        if cond_callable.is_none() && step_callable.is_none() {
+            // Create a lazy from-loop Seq: store the body callable in an Iterator instance
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("from_loop_body".to_string(), body_callable);
+            attrs.insert("from_loop_done".to_string(), Value::Bool(false));
+            let iter =
+                Value::make_instance(crate::symbol::Symbol::intern("FromLoopIterator"), attrs);
+            // Wrap in a deferred-iterator Seq
+            let arc = std::sync::Arc::new(Vec::<Value>::new());
+            crate::value::seq_register_deferred_iter(&arc, iter.clone());
+            crate::value::seq_mark_lazy(&arc);
+            return Ok(Value::Seq(arc));
+        }
+
         let label_matches = |error_label: &Option<String>| {
             error_label.as_deref() == label.as_deref() || error_label.is_none()
         };
