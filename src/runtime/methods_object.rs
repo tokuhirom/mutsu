@@ -304,25 +304,47 @@ impl Interpreter {
                     let partial = Value::make_instance(*class_name, attrs.clone());
                     self.env.insert("self".to_string(), partial.clone());
                     self.env.insert("__ANON_STATE__".to_string(), partial);
+                    // Also set !attr and .attr in env so that default expressions
+                    // like `has $.c = $!a + $!b` can reference earlier attributes.
+                    for (k, v) in &attrs {
+                        self.env.insert(format!("!{}", k), v.clone());
+                        self.env.insert(format!(".{}", k), v.clone());
+                    }
+                }
+                // Switch package to class scope so class-scoped subs are accessible
+                // in default expressions (e.g. `has $.inner = inner()` where `inner`
+                // is a sub defined inside the class body).
+                let saved_package = self.current_package.clone();
+                if self.has_class_scoped_subs(&cn_resolved) {
+                    self.current_package = cn_resolved.clone();
                 }
                 for (attr_name, _is_public, default_expr, _, _, _, _) in &class_attrs {
                     if !attrs.contains_key(attr_name) {
                         if let Some(expr) = default_expr {
                             let val =
                                 self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
-                            attrs.insert(attr_name.clone(), val);
-                            // Update self so later defaults see this value
+                            attrs.insert(attr_name.clone(), val.clone());
+                            // Update self and !attr/.attr so later defaults see this value
                             let updated = Value::make_instance(*class_name, attrs.clone());
                             self.env.insert("self".to_string(), updated.clone());
                             self.env.insert("__ANON_STATE__".to_string(), updated);
+                            self.env.insert(format!("!{}", attr_name), val.clone());
+                            self.env.insert(format!(".{}", attr_name), val);
                         } else {
                             attrs.insert(attr_name.clone(), Value::Nil);
                         }
                     }
                 }
+                // Restore package after default evaluation
+                self.current_package = saved_package;
                 if has_defaults {
                     self.env.remove("self");
                     self.env.remove("__ANON_STATE__");
+                    // Clean up the !attr/.attr env entries we added
+                    for k in attrs.keys() {
+                        self.env.remove(&format!("!{}", k));
+                        self.env.remove(&format!(".{}", k));
+                    }
                 }
                 // Add alias metadata for `has $x` (no twigil) attributes
                 self.add_alias_attribute_metadata(&cn_resolved, &mut attrs);

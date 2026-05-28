@@ -519,7 +519,18 @@ impl VM {
             arg_sources
         };
         // resolve_code_var handles pseudo-package stripping internally
-        let target = self.interpreter.resolve_code_var(&name);
+        let mut target = self.interpreter.resolve_code_var(&name);
+        // Fallback for fast-path method dispatch (skip_env_setup=true):
+        // &!attr is not set in env, so read directly from self's instance
+        // attributes when available.
+        if matches!(target, Value::Nil)
+            && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
+            && let Some(Value::Instance { attributes, .. }) =
+                self.get_env_with_main_alias("self").as_ref()
+            && let Some(attr_val) = attributes.get(attr_name)
+        {
+            target = attr_val.clone();
+        }
         let result = if !matches!(target, Value::Nil) {
             let sub_is_rw = if let Value::Sub(ref data) = target {
                 data.is_rw

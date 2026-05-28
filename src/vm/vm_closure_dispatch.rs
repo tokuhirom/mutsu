@@ -134,6 +134,37 @@ impl VM {
             return Ok(Value::junction(kind, results));
         }
 
+        // Check for "backdoor" private attribute access:
+        // A free-standing method object (package != class) that has $!attr locals
+        // (local names starting with '!') being called on an instance should throw.
+        // In Raku, $!attr in a method is only valid inside the class that owns it.
+        {
+            let method_pkg = data.package.resolve();
+            let invocant = args.first();
+            if let Some(Value::Instance { class_name, .. }) = invocant {
+                let class = class_name.resolve();
+                // Only check free-standing methods (not defined in a class, or defined
+                // in a different class than the invocant).
+                let is_foreign = method_pkg != class
+                    && (method_pkg.is_empty()
+                        || method_pkg == "GLOBAL"
+                        || !self.interpreter.has_class(&method_pkg));
+                if is_foreign {
+                    // Check if the compiled code has any !attr locals
+                    let has_attr_locals = cc
+                        .locals
+                        .iter()
+                        .any(|name| name.starts_with('!') && name.len() > 1);
+                    if has_attr_locals {
+                        return Err(RuntimeError::new(format!(
+                            "Cannot access private attribute from outside class {}",
+                            class
+                        )));
+                    }
+                }
+            }
+        }
+
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         let saved_state_scope = self.state_scope_id;

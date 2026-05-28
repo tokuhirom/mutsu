@@ -103,6 +103,29 @@ impl Interpreter {
                 env,
             ));
         }
+        // Check auto-generated accessor methods for public attributes (has $.x, has $.x is rw).
+        // These are not stored in class_def.methods but are generated on-the-fly.
+        // ClassAttributeDef: (attr_name, is_public, default, is_rw, is_required, sigil, where)
+        if let Some(class_def) = self.classes.get(&class_name_str) {
+            for (attr_name, is_public, _, is_rw, _, _, _) in &class_def.attributes {
+                if *is_public && attr_name == method_name {
+                    let mut env = crate::env::Env::new();
+                    env.insert(
+                        "__mutsu_callable_type".to_string(),
+                        Value::str_from("Method"),
+                    );
+                    return Some(Value::make_sub(
+                        class_name,
+                        Symbol::intern(method_name),
+                        vec!["self".to_string()],
+                        vec![Self::make_invocant_param(&class_name_str)],
+                        vec![],
+                        *is_rw,
+                        env,
+                    ));
+                }
+            }
+        }
         // Check grammar token/rule/regex definitions
         let token_key = format!("{}::{}", class_name_str, method_name);
         if let Some(defs) = self.token_defs.get(&Symbol::intern(&token_key))

@@ -697,6 +697,10 @@ pub(crate) enum Stmt {
         /// Some(msg) = deprecated with custom message.
         deprecated_message: Option<String>,
         is_built: Option<bool>,
+        /// Unknown traits: list of `(kind, name)` tuples for unknown trait applications
+        /// (e.g., `is bar` -> `("is", "bar")`, `will bar` -> `("will", "bar")`).
+        /// These cause an `X::Comp::Trait::Unknown` error when the class is registered.
+        unknown_traits: Vec<(String, String)>,
     },
     MethodDecl {
         name: Symbol,

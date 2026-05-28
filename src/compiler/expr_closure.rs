@@ -303,6 +303,35 @@ impl Compiler {
                 outer_positional,
                 inner_positional,
             });
+        } else if let Expr::Index {
+            target: method_call_target,
+            index: inner_index,
+            ..
+        } = target
+            && let Expr::MethodCall {
+                target: method_target,
+                name: method_name,
+                args: method_args,
+                ..
+            } = method_call_target.as_ref()
+            && method_args.is_empty()
+            && let Some(var_name) = Self::method_call_target_var_name(method_target)
+        {
+            // Nested subscript on a method call (e.g., $o.a[42]<foo> = 3 or $o.h<key1><key2> = val).
+            // This would autovivify an intermediate value in the typed container, which Raku disallows.
+            // Emit a call to __mutsu_index_assign_method_lvalue_nested that checks type constraints.
+            let rewritten = Expr::Call {
+                name: Symbol::intern("__mutsu_index_assign_method_lvalue_nested"),
+                args: vec![
+                    (**method_target).clone(),
+                    Expr::Literal(Value::str(method_name.resolve().to_string())),
+                    (**inner_index).clone(),
+                    index.clone(),
+                    value.clone(),
+                    Expr::Literal(Value::str(var_name)),
+                ],
+            };
+            self.compile_expr(&rewritten);
         } else if let Expr::MethodCall {
             target: method_target,
             name: method_name,

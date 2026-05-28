@@ -159,6 +159,11 @@ impl Interpreter {
                 // @-sigiled attributes always produce Array (not List)
                 // Preserve Shaped kind for shaped array attributes
                 Value::Array(items, ArrayKind::Shaped) => Value::Array(items, ArrayKind::Shaped),
+                // Itemized arrays/lists ($[...] or $(...)) follow the one-arg rule:
+                // they are treated as a single item when assigned to an @-sigiled attribute.
+                Value::Array(items, kind) if kind.is_itemized() => {
+                    Value::real_array(vec![Value::Array(items, kind)])
+                }
                 Value::Array(items, kind) if kind.is_real_array() => {
                     Value::Array(items, ArrayKind::Array)
                 }

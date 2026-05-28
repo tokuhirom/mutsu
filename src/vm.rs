@@ -985,6 +985,23 @@ impl VM {
                         name.strip_prefix('@')
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
+                    .or_else(|| {
+                        // Fallback for fast-path method dispatch (skip_env_setup=true):
+                        // @.attr and @!attr are not set in env, so read directly from
+                        // self's instance attributes when available.
+                        let attr_name = name
+                            .strip_prefix("@.")
+                            .or_else(|| name.strip_prefix("@!"))?;
+                        if attr_name.is_empty() {
+                            return None;
+                        }
+                        let self_val = self.get_env_with_main_alias("self")?;
+                        if let Value::Instance { attributes, .. } = &self_val {
+                            attributes.get(attr_name).cloned()
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or_else(|| {
                         // Anonymous @-sigil variables default to empty Array
                         if name.contains("__ANON_ARRAY_") || name == "@__ANON_ARRAY__" {
@@ -1033,6 +1050,23 @@ impl VM {
                     .or_else(|| {
                         name.strip_prefix('%')
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
+                    })
+                    .or_else(|| {
+                        // Fallback for fast-path method dispatch (skip_env_setup=true):
+                        // %.attr and %!attr are not set in env, so read directly from
+                        // self's instance attributes when available.
+                        let attr_name = name
+                            .strip_prefix("%.")
+                            .or_else(|| name.strip_prefix("%!"))?;
+                        if attr_name.is_empty() {
+                            return None;
+                        }
+                        let self_val = self.get_env_with_main_alias("self")?;
+                        if let Value::Instance { attributes, .. } = &self_val {
+                            attributes.get(attr_name).cloned()
+                        } else {
+                            None
+                        }
                     });
                 match val {
                     Some(v) => self.stack.push(v),

@@ -913,7 +913,18 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
-        let val = self.interpreter.resolve_code_var(name);
+        let mut val = self.interpreter.resolve_code_var(name);
+        // Fallback for fast-path method dispatch (skip_env_setup=true):
+        // &!attr is not set in env, so read directly from self's instance
+        // attributes when available.
+        if matches!(val, Value::Nil)
+            && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
+            && let Some(Value::Instance { attributes, .. }) =
+                self.get_env_with_main_alias("self").as_ref()
+            && let Some(attr_val) = attributes.get(attr_name)
+        {
+            val = attr_val.clone();
+        }
         // In Raku, &foo for an undefined routine is a compile-time error.
         // We approximate this at runtime, but only inside EVAL context
         // to avoid breaking code that relies on &name returning Nil for

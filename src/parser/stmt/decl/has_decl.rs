@@ -65,6 +65,7 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             is_type: None,
             deprecated_message: None,
             is_built: None,
+            unknown_traits: Vec::new(),
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -75,33 +76,59 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
     }
     let (mut rest, _) = ws(rest)?;
 
-    // Parse optional `is default(expr)` trait on grouped has declaration
-    if let Some(r) = keyword("is", rest)
-        && let Ok((r, _)) = ws1(r)
-        && let Some(r) = keyword("default", r)
-    {
-        let (r, _) = ws(r)?;
-        if let Some(inner) = r.strip_prefix('(') {
-            let (inner, _) = ws(inner)?;
-            let (inner, default_expr) = expression(inner)?;
-            let (inner, _) = ws(inner)?;
-            let inner = inner
-                .strip_prefix(')')
-                .ok_or_else(|| PError::expected("closing paren in is default"))?;
-            // Apply the default to all attributes in the list
-            for stmt in &mut stmts {
-                if let Stmt::HasDecl {
-                    default,
-                    is_default,
-                    ..
-                } = stmt
-                {
-                    *default = Some(default_expr.clone());
-                    *is_default = Some(default_expr.clone());
+    // Parse optional traits on grouped has declaration: `is rw`, `is default(expr)`, etc.
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some(r) = keyword("is", r)
+            && let Ok((r, _)) = ws1(r)
+        {
+            if let Some(r) = keyword("rw", r) {
+                // Apply `is rw` to all attributes in the list
+                for stmt in &mut stmts {
+                    if let Stmt::HasDecl { is_rw, .. } = stmt {
+                        *is_rw = true;
+                    }
                 }
+                rest = r;
+            } else if let Some(r) = keyword("readonly", r) {
+                // Apply `is readonly` to all attributes in the list
+                for stmt in &mut stmts {
+                    if let Stmt::HasDecl { is_readonly, .. } = stmt {
+                        *is_readonly = true;
+                    }
+                }
+                rest = r;
+            } else if let Some(r) = keyword("default", r) {
+                let (r, _) = ws(r)?;
+                if let Some(inner) = r.strip_prefix('(') {
+                    let (inner, _) = ws(inner)?;
+                    let (inner, default_expr) = expression(inner)?;
+                    let (inner, _) = ws(inner)?;
+                    let inner = inner
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is default"))?;
+                    // Apply the default to all attributes in the list
+                    for stmt in &mut stmts {
+                        if let Stmt::HasDecl {
+                            default,
+                            is_default,
+                            ..
+                        } = stmt
+                        {
+                            *default = Some(default_expr.clone());
+                            *is_default = Some(default_expr.clone());
+                        }
+                    }
+                    let (r2, _) = ws(inner)?;
+                    rest = r2;
+                } else {
+                    break;
+                }
+            } else {
+                break;
             }
-            let (r2, _) = ws(inner)?;
-            rest = r2;
+        } else {
+            break;
         }
     }
 
@@ -198,6 +225,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_type: Option<String> = None;
     let mut deprecated_message: Option<String> = None;
     let mut is_built: Option<bool> = None;
+    let mut unknown_traits: Vec<(String, String)> = Vec::new();
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -376,9 +404,68 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             // Uppercase-starting trait name: `is Buf`, `is BagHash`, etc.
             // This is a container type trait for `@`/`%` attributes.
             is_type = Some(trait_name.to_string());
+        } else {
+            // Unknown lowercase trait — record for X::Comp::Trait::Unknown error
+            unknown_traits.push(("is".to_string(), trait_name.to_string()));
+            // Skip optional argument in parens: `is bar(42)` -> skip `(42)`
+            let (r_ws, _) = ws(r)?;
+            if let Some(stripped) = r_ws.strip_prefix('(') {
+                let mut depth = 1u32;
+                let mut idx = 0;
+                for (i, ch) in stripped.char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                idx = i + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                rest = &stripped[idx..];
+                let (r2, _) = ws(rest)?;
+                rest = r2;
+                continue;
+            }
         }
         let (r, _) = ws(r)?;
         rest = r;
+    }
+
+    // Parse `will` traits on has declarations
+    while let Some(r) = keyword("will", rest) {
+        let Ok((r, _)) = ws1(r) else { break };
+        let Ok((r, trait_name)) = ident(r) else { break };
+        // `will` traits are not supported on attributes, record for X::Comp::Trait::Unknown
+        unknown_traits.push(("will".to_string(), trait_name.to_string()));
+        // Skip optional block: `will bar { ... }` -> skip the block
+        let (r_ws, _) = ws(r)?;
+        if let Some(stripped_block) = r_ws.strip_prefix('{') {
+            let mut depth = 1u32;
+            let mut idx = 0;
+            for (i, ch) in stripped_block.char_indices() {
+                match ch {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            idx = i + 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            rest = &stripped_block[idx..];
+            let (r2, _) = ws(rest)?;
+            rest = r2;
+        } else {
+            let (r2, _) = ws(r)?;
+            rest = r2;
+        }
     }
 
     // `handles` trait, e.g. `has $.x handles <a b>`
@@ -621,6 +708,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_type,
             deprecated_message,
             is_built,
+            unknown_traits,
         },
     ))
 }

@@ -655,6 +655,12 @@ impl Interpreter {
                 .unwrap_or_else(|| "Mu".to_string());
             return Some(Ok(Value::Package(Symbol::intern(&type_name))));
         }
+        if method == "rw" && args.is_empty() {
+            return Some(Ok(Value::Bool(data.is_rw)));
+        }
+        if method == "readonly" && args.is_empty() {
+            return Some(Ok(Value::Bool(!data.is_rw)));
+        }
         if matches!(method, "arity" | "count") && args.is_empty() {
             let sig = self.sub_signature_value(data);
             if let Some(info) = extract_sig_info(&sig) {
