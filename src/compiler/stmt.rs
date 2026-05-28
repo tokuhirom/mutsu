@@ -1213,7 +1213,10 @@ impl Compiler {
                     arity,
                     collect: false,
                     restore_topic,
-                    threaded: *mode != crate::ast::ForMode::Normal,
+                    threaded: matches!(
+                        *mode,
+                        crate::ast::ForMode::Race | crate::ast::ForMode::Hyper
+                    ),
                     // is_rw: param is writable (don't mark readonly)
                     is_rw: has_rw || has_copy,
                     // do_writeback: actually write back modifications to source container

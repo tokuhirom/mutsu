@@ -365,6 +365,12 @@ pub(super) fn for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::for_stmt(input)
 }
 
+/// Public accessor for `lazy for` statement parser (used by primary.rs for `lazy for` expressions).
+/// Input should start at `for` (not `lazy`).
+pub(super) fn lazy_for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::lazy_for_body(input)
+}
+
 /// Public accessor for `if` statement parser (used by primary.rs for `if` expressions).
 pub(super) fn if_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::if_stmt(input)

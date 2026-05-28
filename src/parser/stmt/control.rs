@@ -987,6 +987,11 @@ pub(super) fn hyper_for_stmt(input: &str) -> PResult<'_, Stmt> {
     for_stmt_with_mode(rest, crate::ast::ForMode::Hyper)
 }
 
+/// Parse `for ...` with Lazy mode (input starts at `for`, not `lazy`).
+pub(super) fn lazy_for_body(input: &str) -> PResult<'_, Stmt> {
+    for_stmt_with_mode(input, crate::ast::ForMode::Lazy)
+}
+
 /// Scan for `<->` (rw pointy block) in the input, returning its byte offset.
 /// This must handle nesting to avoid matching inside strings, brackets, etc.
 fn find_rw_pointy_block(input: &str) -> Option<usize> {

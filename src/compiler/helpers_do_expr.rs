@@ -259,6 +259,54 @@ impl Compiler {
         self.code.patch_loop_end(loop_idx);
     }
 
+    /// Compile `lazy for` expression: lower to `gather { for @items -> $param { take do { body } } }`.
+    /// This defers execution of the body until the resulting Seq is consumed.
+    pub(super) fn compile_lazy_for_expr(
+        &mut self,
+        iterable: &Expr,
+        param: &Option<String>,
+        param_def: &Option<crate::ast::ParamDef>,
+        params: &[String],
+        body: &[Stmt],
+        label: &Option<String>,
+    ) {
+        use crate::ast::{Expr as AExpr, Stmt as AStmt};
+        // Build `take <last_expr>` body: replace the last expression with `take <expr>`
+        // and wrap the body in a for loop inside a gather block.
+        let take_body: Vec<AStmt> = {
+            let mut stmts = body.to_vec();
+            // Replace last expression statement with `take(expr)`
+            let last_idx = stmts.iter().rposition(|s| !matches!(s, AStmt::SetLine(_)));
+            if let Some(idx) = last_idx {
+                if let AStmt::Expr(expr) = stmts[idx].clone() {
+                    stmts[idx] = AStmt::Take(expr);
+                } else {
+                    // Wrap non-expr last stmt in Take(Nil) since we need a take
+                    stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil)));
+                }
+            } else {
+                stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil)));
+            }
+            stmts
+        };
+        // Build inner for loop with the take body
+        let inner_for = AStmt::For {
+            iterable: iterable.clone(),
+            param: param.clone(),
+            param_def: Box::new(param_def.clone()),
+            params: params.to_vec(),
+            body: take_body,
+            label: label.clone(),
+            mode: crate::ast::ForMode::Normal,
+            rw_block: false,
+            explicit_zero_params: false,
+        };
+        // Build gather block wrapping the for loop
+        let gather_body = vec![inner_for];
+        let gather_expr = AExpr::Gather(gather_body);
+        self.compile_expr(&gather_expr);
+    }
+
     /// Compile `do while` / `do until` expression: collect each iteration value.
     pub(super) fn compile_do_while_expr(
         &mut self,

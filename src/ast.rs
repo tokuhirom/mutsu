@@ -452,6 +452,8 @@ pub(crate) enum ForMode {
     Normal,
     Race,
     Hyper,
+    /// `lazy for` — loop body executes lazily (not until Seq is consumed)
+    Lazy,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

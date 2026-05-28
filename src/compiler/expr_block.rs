@@ -167,6 +167,25 @@ impl Compiler {
                 params,
                 body,
                 label,
+                mode,
+                ..
+            } if *mode == crate::ast::ForMode::Lazy => {
+                self.compile_lazy_for_expr(
+                    iterable,
+                    param,
+                    param_def.as_ref(),
+                    params,
+                    body,
+                    label,
+                );
+            }
+            Stmt::For {
+                iterable,
+                param,
+                param_def,
+                params,
+                body,
+                label,
                 ..
             } => {
                 self.compile_do_for_expr(iterable, param, param_def.as_ref(), params, body, label);
