@@ -104,7 +104,21 @@ impl Interpreter {
             .hash_get_str("name")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        if meta_name != short_name {
+        // A distribution matches if its name equals short_name, OR if short_name
+        // appears as a key in the distribution's "provides" map.
+        let name_matches = meta_name == short_name || {
+            meta.hash_get_str("provides")
+                .and_then(|p| {
+                    if let Value::Hash(map) = p {
+                        Some(map)
+                    } else {
+                        None
+                    }
+                })
+                .map(|map| map.contains_key(short_name))
+                .unwrap_or(false)
+        };
+        if !name_matches {
             return false;
         }
         if let Some(auth_m) = auth_matcher {
@@ -151,11 +165,50 @@ impl Interpreter {
         }
         let prefix_path = std::path::Path::new(prefix);
         let meta_path = prefix_path.join("META6.json");
-        let meta = if meta_path.exists() {
+        // When no META6.json is in prefix, also try the parent directory (handles -Ilib style).
+        let parent_meta_path = prefix_path
+            .parent()
+            .map(|p| p.join("META6.json"))
+            .filter(|p| p.exists());
+        let (meta, effective_prefix) = if meta_path.exists() {
             let json_str = std::fs::read_to_string(&meta_path).map_err(|e| {
                 RuntimeError::new(format!("Cannot read {}: {e}", meta_path.display()))
             })?;
-            self.parse_json_to_value(&json_str)?
+            (self.parse_json_to_value(&json_str)?, prefix.to_string())
+        } else if let Some(parent_meta) = parent_meta_path {
+            // Parent has META6.json (e.g. prefix is dist/lib, parent is dist/)
+            let parent_prefix = parent_meta.parent().unwrap().to_string_lossy().to_string();
+            let json_str = std::fs::read_to_string(&parent_meta).map_err(|e| {
+                RuntimeError::new(format!("Cannot read {}: {e}", parent_meta.display()))
+            })?;
+            let meta = self.parse_json_to_value(&json_str)?;
+            // Check depspec match using parent meta
+            if !Self::matches_depspec(
+                &meta,
+                &short_name,
+                &auth_matcher,
+                &version_matcher,
+                &api_matcher,
+            ) {
+                return Ok(Value::array(Vec::new()));
+            }
+            // Build files hash using parent prefix (where resources/ lives)
+            let files_hash = self.build_dist_files_hash(&parent_prefix, &meta);
+            let meta = if let Value::Hash(map) = &meta {
+                let mut m = (**map).clone();
+                m.insert("files".to_string(), files_hash.clone());
+                Value::Hash(Arc::new(m))
+            } else {
+                meta
+            };
+            let mut attrs = HashMap::new();
+            attrs.insert("prefix".to_string(), self.make_io_path_instance(prefix));
+            attrs.insert("meta".to_string(), meta);
+            attrs.insert("files".to_string(), files_hash);
+            return Ok(Value::array(vec![Value::make_instance(
+                crate::symbol::Symbol::intern("Distribution::Path"),
+                attrs,
+            )]));
         } else {
             let relative = short_name.replace("::", "/");
             for ext in [".rakumod", ".pm6", ".raku", ".pm"] {
@@ -168,6 +221,13 @@ impl Interpreter {
                     meta_map.insert("provides".to_string(), Value::Hash(Arc::new(provides_map)));
                     let meta = Value::Hash(Arc::new(meta_map));
                     let files_hash = self.build_dist_files_hash(prefix, &meta);
+                    let meta = if let Value::Hash(map) = &meta {
+                        let mut m = (**map).clone();
+                        m.insert("files".to_string(), files_hash.clone());
+                        Value::Hash(Arc::new(m))
+                    } else {
+                        meta
+                    };
                     let mut attrs = HashMap::new();
                     attrs.insert("prefix".to_string(), self.make_io_path_instance(prefix));
                     attrs.insert("meta".to_string(), meta);
@@ -180,6 +240,7 @@ impl Interpreter {
             }
             return Ok(Value::array(Vec::new()));
         };
+        let prefix = effective_prefix.as_str();
         if !Self::matches_depspec(
             &meta,
             &short_name,
@@ -190,6 +251,14 @@ impl Interpreter {
             return Ok(Value::array(Vec::new()));
         }
         let files_hash = self.build_dist_files_hash(prefix, &meta);
+        // Insert the files hash into the meta value so that $dist.meta<files> works.
+        let meta = if let Value::Hash(map) = &meta {
+            let mut m = (**map).clone();
+            m.insert("files".to_string(), files_hash.clone());
+            Value::Hash(Arc::new(m))
+        } else {
+            meta
+        };
         let mut attrs = HashMap::new();
         attrs.insert("prefix".to_string(), self.make_io_path_instance(prefix));
         attrs.insert("meta".to_string(), meta);
