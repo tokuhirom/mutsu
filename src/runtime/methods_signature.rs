@@ -856,11 +856,17 @@ impl Interpreter {
         Value::Int(max_count)
     }
 
-    pub(super) fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
-        let shape_val = args.iter().find_map(|arg| match arg {
+    pub(super) fn shaped_dims_from_new_args(
+        &self,
+        args: &[Value],
+    ) -> Result<Option<Vec<usize>>, RuntimeError> {
+        let shape_val = match args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
             _ => None,
-        })?;
+        }) {
+            Some(v) => v,
+            None => return Ok(None),
+        };
         let dims_vals = if let Some(items) = shape_val.as_list_items() {
             items.to_vec()
         } else {
@@ -874,31 +880,41 @@ impl Interpreter {
                         // Bool is a builtin enum with 2 values (False, True)
                         vec![Value::Int(2)]
                     } else {
-                        return None;
+                        return Ok(None);
                     }
                 }
-                _ => return None,
+                _ => return Ok(None),
             }
         };
         let mut dims = Vec::with_capacity(dims_vals.len());
         for dim in &dims_vals {
             let n = match dim {
-                Value::Int(i) if *i >= 0 => *i as usize,
-                Value::Num(f) if *f >= 0.0 => *f as usize,
+                Value::Int(i) if *i > 0 => *i as usize,
+                Value::Int(i) => {
+                    return Err(RuntimeError::illegal_dimension_in_shape(*i));
+                }
+                Value::Num(f) if *f > 0.0 => *f as usize,
+                Value::Num(f) => {
+                    return Err(RuntimeError::illegal_dimension_in_shape(*f as i64));
+                }
                 Value::Package(name) => {
                     if let Some(variants) = self.enum_types.get(&name.resolve()) {
                         variants.len()
                     } else if name == "Bool" {
                         2
                     } else {
-                        return None;
+                        return Ok(None);
                     }
                 }
-                _ => return None,
+                _ => return Ok(None),
             };
             dims.push(n);
         }
-        if dims.is_empty() { None } else { Some(dims) }
+        if dims.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(dims))
+        }
     }
 
     pub(super) fn make_shaped_array(dims: &[usize]) -> Value {
