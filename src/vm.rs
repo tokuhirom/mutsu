@@ -1319,6 +1319,23 @@ impl VM {
                         self.interpreter
                             .env_mut()
                             .insert(resolved_source.clone(), container.clone());
+                        // If the target is an attribute alias (`has $x` makes `x`
+                        // an alias for `!x`), also store the ContainerRef under
+                        // the private attribute key so writeback picks it up when
+                        // the method returns. Check via the reverse alias:
+                        // `__mutsu_sigilless_alias::!x` → `"x"`.
+                        {
+                            let reverse_key = format!("__mutsu_sigilless_alias::!{}", name);
+                            if let Some(Value::Str(ref target)) =
+                                self.interpreter.env().get(&reverse_key).cloned()
+                                && target.as_str() == name
+                            {
+                                let priv_key = format!("!{}", name);
+                                self.interpreter
+                                    .env_mut()
+                                    .insert(priv_key, container.clone());
+                            }
+                        }
                         // When rebinding to a new source, the old alias target
                         // keeps its existing value/ContainerRef — we only break
                         // the alias, we do NOT propagate the new ContainerRef to
