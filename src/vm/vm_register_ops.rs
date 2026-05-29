@@ -43,6 +43,14 @@ impl VM {
                 compiled_fns: Some(std::sync::Arc::new(compiled_fns)),
                 elems_count: None,
                 scan_spec: None,
+                coroutine: Some(std::sync::Mutex::new(crate::value::GatherCoroutineState {
+                    ip: 0,
+                    locals: Vec::new(),
+                    locals_dirty_slots: Vec::new(),
+                    stack: Vec::new(),
+                    env: crate::env::Env::new(),
+                    finished: false,
+                })),
             };
             let val = Value::LazyList(std::sync::Arc::new(list));
             self.stack.push(val);

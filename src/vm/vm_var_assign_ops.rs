@@ -4168,6 +4168,10 @@ impl VM {
                     return Err(err);
                 }
                 match raw_popped {
+                    Value::LazyList(ref list) if list.coroutine.is_some() => {
+                        // Gather-based lazy list with coroutine: preserve laziness
+                        raw_popped
+                    }
                     Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
                     Value::LazyIoLines { .. } => {
                         let forced = self.force_if_lazy_io_lines(raw_popped)?;

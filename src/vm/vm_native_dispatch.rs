@@ -156,6 +156,16 @@ impl VM {
             return None;
         };
 
+        // For gather-based LazyList, .List and .values preserve laziness
+        // by returning the LazyList itself (which can be forced on demand).
+        if result.is_none()
+            && let Value::LazyList(ll) = target
+            && ll.coroutine.is_some()
+            && matches!(method_name.as_str(), "List" | "values")
+        {
+            return Some(Ok(target.clone()));
+        }
+
         // Handle .Slip/.List/.Seq on scan-based LazyList by forcing elements via VM.
         if result.is_none()
             && let Value::LazyList(ll) = target

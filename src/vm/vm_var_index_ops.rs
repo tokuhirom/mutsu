@@ -292,20 +292,19 @@ impl VM {
                     Some(n) => self.force_scan_lazy_list(ll, n)?,
                     None => self.force_lazy_list_vm(ll)?,
                 }
-            } else if matches!(
-                ll.env.get("__mutsu_lazylist_from_gather"),
-                Some(Value::Bool(true))
-            ) {
+            } else if ll.coroutine.is_some() {
+                // Gather-based lazy list with coroutine support:
+                // force only as many elements as needed via VM coroutine.
                 match &index {
-                    Value::Int(i) if *i >= 0 => self
-                        .interpreter
-                        .force_lazy_list_prefix_bridge(ll, (*i as usize).saturating_add(1))?,
-                    Value::Range(_, end) if *end >= 0 => self
-                        .interpreter
-                        .force_lazy_list_prefix_bridge(ll, (*end as usize).saturating_add(1))?,
-                    Value::RangeExcl(_, end) if *end > 0 => self
-                        .interpreter
-                        .force_lazy_list_prefix_bridge(ll, *end as usize)?,
+                    Value::Int(i) if *i >= 0 => {
+                        self.force_lazy_list_vm_n(ll, (*i as usize).saturating_add(1))?
+                    }
+                    Value::Range(_, end) if *end >= 0 => {
+                        self.force_lazy_list_vm_n(ll, (*end as usize).saturating_add(1))?
+                    }
+                    Value::RangeExcl(_, end) if *end > 0 => {
+                        self.force_lazy_list_vm_n(ll, *end as usize)?
+                    }
                     _ => self.force_lazy_list_vm(ll)?,
                 }
             } else {

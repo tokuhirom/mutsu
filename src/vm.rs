@@ -8,7 +8,10 @@ use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, Value, make_rat};
+use crate::value::{
+    ArrayKind, EnumValue, GatherCoroutineState, JunctionKind, LazyList, RuntimeError, Value,
+    make_rat,
+};
 use num_traits::{Signed, Zero};
 
 type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
@@ -2300,14 +2303,21 @@ impl VM {
             OpCode::Pop => {
                 if let Some(Value::LazyList(list)) = self.stack.pop() {
                     // Sink context must realize lazy gathers for side effects.
-                    self.force_lazy_list_vm(&list)?;
-                    self.env_dirty = true;
+                    // But not for coroutine-equipped gathers (preserve laziness).
+                    if list.coroutine.is_none() {
+                        self.force_lazy_list_vm(&list)?;
+                        self.env_dirty = true;
+                    }
                 }
                 *ip += 1;
             }
             OpCode::SinkPop => {
                 if let Some(val) = self.stack.pop() {
                     match &val {
+                        Value::LazyList(list) if list.coroutine.is_some() => {
+                            // Gather-based lazy list with coroutine: don't force
+                            // on sink — preserve laziness.
+                        }
                         Value::LazyList(list) => {
                             self.force_lazy_list_vm(list)?;
                             self.env_dirty = true;

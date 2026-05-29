@@ -18,7 +18,8 @@ pub(super) type SplitPhasers = (
 );
 
 impl Interpreter {
-    const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
+    pub(crate) const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str =
+        "__mutsu_lazy_gather_take_limit_reached__";
 
     fn is_stub_method_body(body: &[Stmt]) -> bool {
         let filtered: Vec<_> = body
@@ -1491,6 +1492,10 @@ impl Interpreter {
                             .scan_spec
                             .as_ref()
                             .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
+                        coroutine: list
+                            .coroutine
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
                     }))
                 } else {
                     v

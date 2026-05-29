@@ -450,6 +450,13 @@ impl Interpreter {
         if !target_name.starts_with('@') {
             return Ok(Value::Nil);
         }
+        // For gather-based LazyLists with coroutine support, skip recording
+        // the length since it's unknown (the list is lazy / possibly infinite).
+        if let Some(Value::LazyList(ll)) = self.env.get(&target_name)
+            && ll.coroutine.is_some()
+        {
+            return Ok(Value::Nil);
+        }
         let bound_len = self
             .env
             .get(&target_name)

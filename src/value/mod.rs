@@ -951,7 +951,19 @@ pub(crate) struct ScanSpec {
     pub(crate) computed_count: usize,
 }
 
-#[derive(Debug)]
+/// Saved VM state for a suspended gather coroutine.
+/// When `take` is encountered during gather body execution, the VM state
+/// is captured here so execution can resume later for more elements.
+#[derive(Debug, Clone)]
+pub(crate) struct GatherCoroutineState {
+    pub(crate) ip: usize,
+    pub(crate) locals: Vec<Value>,
+    pub(crate) locals_dirty_slots: Vec<bool>,
+    pub(crate) stack: Vec<Value>,
+    pub(crate) env: Env,
+    pub(crate) finished: bool,
+}
+
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
@@ -965,6 +977,19 @@ pub(crate) struct LazyList {
     pub(crate) elems_count: Option<Value>,
     /// Scan (triangle reduce) specification for lazy on-demand computation.
     pub(crate) scan_spec: Option<Mutex<ScanSpec>>,
+    /// Suspended coroutine state for lazy gather/take.
+    /// When present, the gather body can be resumed from where `take` paused it.
+    pub(crate) coroutine: Option<Mutex<GatherCoroutineState>>,
+}
+
+impl std::fmt::Debug for LazyList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LazyList")
+            .field("body_len", &self.body.len())
+            .field("has_compiled_code", &self.compiled_code.is_some())
+            .field("has_coroutine", &self.coroutine.is_some())
+            .finish()
+    }
 }
 
 impl Clone for LazyList {
@@ -980,6 +1005,10 @@ impl Clone for LazyList {
                 .scan_spec
                 .as_ref()
                 .map(|s| Mutex::new(s.lock().unwrap().clone())),
+            coroutine: self
+                .coroutine
+                .as_ref()
+                .map(|c| Mutex::new(c.lock().unwrap().clone())),
         }
     }
 }
@@ -995,6 +1024,7 @@ impl LazyList {
             compiled_fns: None,
             elems_count: None,
             scan_spec: None,
+            coroutine: None,
         }
     }
 
@@ -1008,6 +1038,7 @@ impl LazyList {
             compiled_fns: None,
             elems_count: None,
             scan_spec: Some(Mutex::new(spec)),
+            coroutine: None,
         }
     }
 
