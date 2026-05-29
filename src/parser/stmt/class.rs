@@ -2,6 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 use super::super::primary::regex::scan_to_delim;
+use super::super::primary::var::is_pseudo_package;
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
@@ -887,6 +888,7 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         let (rest, name) = qualified_ident(input)?;
         (rest, name, None)
     };
+    check_pseudo_package_in_decl(&name)?;
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
 
@@ -1351,6 +1353,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("role declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    check_pseudo_package_in_decl(&name)?;
     let (mut rest, (type_params, type_param_defs)) = parse_optional_role_type_params(rest)?;
     // Parse optional type adverbs (:ver<...>, :auth<...>, :api<...>)
     let (rest2, traits) = parse_declarator_traits(rest)?;
@@ -1622,6 +1625,7 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("grammar", input).ok_or_else(|| PError::expected("grammar declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    check_pseudo_package_in_decl(&name)?;
     let (rest, _) = ws(rest)?;
     let mut r = rest;
     let mut parents = Vec::new();
@@ -1672,6 +1676,7 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("module", input).ok_or_else(|| PError::expected("module declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    check_pseudo_package_in_decl(&name)?;
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
@@ -1726,6 +1731,22 @@ fn extract_exported_subs(stmts: &[Stmt]) -> Vec<super::simple::InlineModuleExpor
     names
 }
 
+/// Check if a declaration name is a pseudo-package and return an error if so.
+/// In Raku, the action is always "package name" regardless of the specific declarator.
+fn check_pseudo_package_in_decl(name: &str) -> Result<(), PError> {
+    if is_pseudo_package(name) {
+        let action = "package name";
+        let msg = format!("Cannot use pseudo package {} in {}", name, action);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("pseudo-package".to_string(), Value::str(name.to_string()));
+        attrs.insert("action".to_string(), Value::str(action.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::PseudoPackage::InDeclaration"), attrs);
+        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+    }
+    Ok(())
+}
+
 /// Parse `unit module` or `unit class` statement.
 pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;
@@ -1735,6 +1756,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
+        check_pseudo_package_in_decl(&name)?;
         // Skip optional type adverbs (:ver<...>, :auth<...>, :api<...>)
         let (r, _traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
@@ -1809,6 +1831,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("role", rest) {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
+        check_pseudo_package_in_decl(&name)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -1831,6 +1854,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("grammar", rest) {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
+        check_pseudo_package_in_decl(&name)?;
         let (r, _) = ws(r)?;
         let mut r = r;
         let mut parents = Vec::new();
@@ -1891,6 +1915,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         .ok_or_else(|| PError::expected("'module' or 'package' after 'unit'"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    check_pseudo_package_in_decl(&name)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     Ok((
@@ -1918,6 +1943,7 @@ fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, Stmt> {
     let rest = keyword("package", input).ok_or_else(|| PError::expected("package declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    check_pseudo_package_in_decl(&name)?;
     let (rest, _traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
