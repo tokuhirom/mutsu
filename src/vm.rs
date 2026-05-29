@@ -1110,8 +1110,22 @@ impl VM {
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }
-                // Check readonly variables (e.g., $*USAGE)
-                self.interpreter.check_readonly_for_modify(&name)?;
+                // Check readonly variables (e.g., $*USAGE).
+                // Skip readonly check for SetGlobalRaw which is used for constant
+                // declarations — the constant will be re-marked readonly after this.
+                if !raw_mode {
+                    self.interpreter.check_readonly_for_modify(&name)?;
+                } else {
+                    // Clear any previous readonly marking so this constant
+                    // redeclaration can proceed (e.g., `constant sym` followed
+                    // by `constant $sym` which share the same env name).
+                    let bare = name
+                        .rsplit("::")
+                        .next()
+                        .unwrap_or(&name)
+                        .trim_start_matches(['$', '@', '%', '&']);
+                    self.interpreter.unmark_readonly(bare);
+                }
                 // Prevent re-assignment of immutable containers (Mix, Set, Bag)
                 // Only when the variable has an explicit immutable type constraint
                 // (e.g., `my %h is Mix`), not for regular scalar variables holding

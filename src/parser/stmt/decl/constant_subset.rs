@@ -17,6 +17,12 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     let rest =
         keyword("constant", input).ok_or_else(|| PError::expected("constant declaration"))?;
     let (rest, _) = ws1(rest)?;
+    // `constant ($a, $b) = ...` is a syntax error (X::Syntax::Missing)
+    if rest.starts_with('(') {
+        return Err(PError::fatal(
+            "X::Syntax::Missing: Missing initializer on constant declaration".to_string(),
+        ));
+    }
     // The name can be $var, @var, %var, &var, or bare identifier.
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
     let (rest, name) = if let Some(r) = rest.strip_prefix('\\') {
