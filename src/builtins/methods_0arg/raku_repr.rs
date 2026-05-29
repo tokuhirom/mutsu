@@ -577,6 +577,10 @@ pub fn raku_value(v: &Value) -> String {
             let end_sep = if *excl_end { "^" } else { "" };
             format!("{}{}{}{}", start_repr, start_sep, end_sep, end_repr)
         }
+        Value::Scalar(inner) => {
+            // $(expr) — itemized container. Render as $(<inner_raku>).
+            format!("$({})", raku_value(inner))
+        }
         Value::Capture { positional, named } => {
             let mut parts = Vec::new();
             for v in positional {

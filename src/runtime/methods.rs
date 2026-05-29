@@ -733,6 +733,23 @@ impl Interpreter {
                         return Ok(Value::array(vec![Value::str(method_name)]));
                     }
                 }
+                // pull-one on a temporary iterator (no variable): read from items at current index.
+                // Since the iterator is a temporary, index is always 0 or whatever is in attrs.
+                "pull-one" if args.is_empty() => {
+                    let items = match attributes.get("items") {
+                        Some(Value::Array(values, ..)) => values.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let index = match attributes.get("index") {
+                        Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                        _ => 0,
+                    };
+                    if index < items.len() {
+                        return Ok(items[index].clone());
+                    } else {
+                        return Ok(Value::str_from("IterationEnd"));
+                    }
+                }
                 _ => {}
             }
         }

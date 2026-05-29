@@ -50,6 +50,65 @@ impl Interpreter {
             self.env
                 .insert("@_".to_string(), Value::array(plain_args.clone()));
         }
+        // Single-argument rule: when exactly one positional arg is a Seq/List
+        // and the function expects multiple positional params, flatten the Seq/List
+        // into individual positional args.
+        let filtered_args: Vec<Value> = {
+            let positional_count = filtered_args
+                .iter()
+                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .count();
+            let required_positional_count = param_defs
+                .iter()
+                .filter(|pd| {
+                    !pd.named
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && !pd.onearg
+                        && !pd.optional_marker
+                        && !pd.name.is_empty()
+                        && !pd.name.starts_with(':')
+                        && !pd.is_invocant
+                        && pd.default.is_none()
+                })
+                .count();
+            if positional_count == 1 && required_positional_count >= 2 {
+                // Check if the single positional arg is a Seq or non-itemized Array/List
+                let single_pos = filtered_args
+                    .iter()
+                    .find(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)));
+                let named_args: Vec<Value> = filtered_args
+                    .iter()
+                    .filter(|a| matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                    .cloned()
+                    .collect();
+                if let Some(single) = single_pos {
+                    let unwrapped = unwrap_varref_value(single.clone());
+                    match unwrapped {
+                        Value::Seq(items) => {
+                            let mut expanded = items.to_vec();
+                            expanded.extend(named_args);
+                            expanded
+                        }
+                        Value::Array(items, kind) if !kind.is_itemized() => {
+                            let mut expanded = items.to_vec();
+                            expanded.extend(named_args);
+                            expanded
+                        }
+                        Value::Slip(items) => {
+                            let mut expanded = items.to_vec();
+                            expanded.extend(named_args);
+                            expanded
+                        }
+                        _ => filtered_args,
+                    }
+                } else {
+                    filtered_args
+                }
+            } else {
+                filtered_args
+            }
+        };
         let args = filtered_args.as_slice();
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();

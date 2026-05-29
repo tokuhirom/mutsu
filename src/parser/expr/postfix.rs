@@ -1237,9 +1237,15 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // lazy prefix: wrap inner expression with .lazy method call
     // `lazy` is a statement prefix — it wraps the full following expression
     // (including infix operators like `..`), not just the next prefix term.
+    // Special case: `lazy for ...` compiles the for loop with ForMode::Lazy
+    // so the body does not execute until the resulting Seq is consumed.
     if input.starts_with("lazy") && !is_ident_char(input.as_bytes().get(4).copied()) {
         let r = &input[4..];
         let (r, _) = ws(r)?;
+        // Try to parse as `lazy for ...` first
+        if let Ok((r2, stmt)) = super::super::stmt::lazy_for_stmt_pub(r) {
+            return Ok((r2, Expr::DoStmt(Box::new(stmt))));
+        }
         let (r, expr) = expression_no_sequence(r)?;
         return Ok((
             r,
