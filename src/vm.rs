@@ -8,7 +8,10 @@ use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, Value, make_rat};
+use crate::value::{
+    ArrayKind, EnumValue, GatherCoroutineState, JunctionKind, LazyList, RuntimeError, Value,
+    make_rat,
+};
 use num_traits::{Signed, Zero};
 
 type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;

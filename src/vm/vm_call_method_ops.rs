@@ -360,12 +360,14 @@ impl VM {
         // builtins don't have access to the interpreter for forcing.
         // Non-gather LazyLists (e.g. from infinite ranges) are NOT forced here — they
         // go through builtins which may return Failure for methods like .elems.
+        // Exception: .List and .values on coroutine-equipped gathers preserve laziness.
         let target = if let Value::LazyList(ref ll) = target
             && matches!(
                 ll.env.get("__mutsu_lazylist_from_gather"),
                 Some(crate::value::Value::Bool(true))
             )
             && Self::lazy_list_needs_forcing(method)
+            && !(ll.coroutine.is_some() && matches!(method, "List" | "values"))
         {
             let saved_env = self.interpreter.env().clone();
             let items = self.force_lazy_list_vm(ll)?;

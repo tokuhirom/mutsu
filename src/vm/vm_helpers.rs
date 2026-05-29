@@ -490,6 +490,246 @@ impl VM {
         Ok(items)
     }
 
+    /// Force a gather-based LazyList to produce at least `needed` elements.
+    /// Uses coroutine-style suspend/resume: the gather body pauses at each
+    /// `take` once enough elements are available, and can be resumed later.
+    /// Side effects (e.g. `$count++`) are correctly scoped because we pause
+    /// mid-execution rather than re-running from scratch.
+    pub(super) fn force_lazy_list_vm_n(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        // Check cache first
+        {
+            let cache = list.cache.lock().unwrap();
+            if let Some(cached) = cache.as_ref()
+                && cached.len() >= needed
+            {
+                return Ok(cached[..needed].to_vec());
+            }
+        }
+
+        // Check if coroutine is finished (body completed, all elements produced)
+        if let Some(ref coro_mutex) = list.coroutine {
+            let coro = coro_mutex.lock().unwrap();
+            if coro.finished {
+                // Body is done; return whatever we have cached
+                let cache = list.cache.lock().unwrap();
+                return Ok(cache.as_ref().cloned().unwrap_or_default());
+            }
+        }
+
+        // Need compiled code
+        let (cc, fns) = match (&list.compiled_code, &list.compiled_fns) {
+            (Some(cc), Some(fns)) => (cc.clone(), fns.clone()),
+            _ => {
+                // Fall back to interpreter prefix bridge
+                return self.interpreter.force_lazy_list_prefix_bridge(list, needed);
+            }
+        };
+
+        // Save current VM state
+        let saved_env = self.interpreter.clone_env();
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_stack = std::mem::take(&mut self.stack);
+        let saved_env_dirty = self.env_dirty;
+        let saved_locals_dirty = self.locals_dirty;
+        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
+
+        // Determine starting IP and locals from coroutine state or fresh start
+        let mut ip;
+        let has_prior_state;
+
+        if let Some(ref coro_mutex) = list.coroutine {
+            let coro = coro_mutex.lock().unwrap();
+            if !coro.finished && coro.ip > 0 {
+                // Resume from saved state
+                ip = coro.ip;
+                self.locals = coro.locals.clone();
+                self.locals_dirty_slots = coro.locals_dirty_slots.clone();
+                self.stack = coro.stack.clone();
+                *self.interpreter.env_mut() = coro.env.clone();
+                has_prior_state = true;
+            } else {
+                // Fresh start
+                ip = 0;
+                *self.interpreter.env_mut() = list.env.clone();
+                self.locals = vec![Value::Nil; cc.locals.len()];
+                self.locals_dirty_slots = vec![false; cc.locals.len()];
+                for (i, name) in cc.locals.iter().enumerate() {
+                    if let Some(val) = self.interpreter.env().get(name) {
+                        self.locals[i] = val.clone();
+                    }
+                }
+                self.stack = Vec::new();
+                has_prior_state = false;
+            }
+        } else {
+            // Fresh start (no coroutine slot yet)
+            ip = 0;
+            *self.interpreter.env_mut() = list.env.clone();
+            self.locals = vec![Value::Nil; cc.locals.len()];
+            self.locals_dirty_slots = vec![false; cc.locals.len()];
+            for (i, name) in cc.locals.iter().enumerate() {
+                if let Some(val) = self.interpreter.env().get(name) {
+                    self.locals[i] = val.clone();
+                }
+            }
+            self.stack = Vec::new();
+            has_prior_state = false;
+        }
+
+        self.env_dirty = false;
+        self.locals_dirty = false;
+
+        // Push gather items collector with the take limit
+        let saved_gather_len = self.interpreter.gather_items_len();
+
+        // If resuming, restore already-cached items into the gather collector
+        // so that the take_value limit check accounts for them.
+        let _already_cached = if has_prior_state {
+            let cache = list.cache.lock().unwrap();
+            let items = cache.as_ref().cloned().unwrap_or_default();
+            let len = items.len();
+            self.interpreter.push_gather_items(items);
+            len
+        } else {
+            self.interpreter.push_gather_items(Vec::new());
+            0
+        };
+        self.interpreter.push_gather_take_limit(Some(needed));
+
+        // Run the compiled code
+        let run_fns = fns.as_ref();
+        let mut run_result = Ok(());
+        let mut body_finished = false;
+
+        while ip < cc.ops.len() {
+            match self.exec_one(&cc, &mut ip, run_fns) {
+                Ok(()) => {}
+                Err(e) if e.is_warn => {
+                    if !self.interpreter.warning_suppressed() {
+                        self.interpreter.write_warn_to_stderr(&e.message);
+                    }
+                    if let Some(v) = e.return_value {
+                        self.stack.push(v);
+                    }
+                    ip += 1;
+                    continue;
+                }
+                Err(e)
+                    if e.message == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
+                {
+                    // Take limit reached — the gather body yielded.
+                    // Save coroutine state for later resumption.
+                    // ip currently points to the Take instruction; advance past it
+                    // so that resuming doesn't re-execute the take.
+                    ip += 1;
+                    break;
+                }
+                Err(e) => {
+                    run_result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        // If we exited the loop normally (ip >= cc.ops.len()), body is finished
+        if run_result.is_ok() && ip >= cc.ops.len() {
+            body_finished = true;
+        }
+
+        // Collect gather items
+        let items = self.interpreter.pop_gather_items().unwrap_or_default();
+        self.interpreter.pop_gather_take_limit();
+
+        while self.interpreter.gather_items_len() > saved_gather_len {
+            self.interpreter.pop_gather_items();
+            self.interpreter.pop_gather_take_limit();
+        }
+
+        // Sync locals back to env
+        for (i, name) in cc.locals.iter().enumerate() {
+            self.interpreter
+                .env_mut()
+                .insert(name.clone(), self.locals[i].clone());
+        }
+
+        // Save coroutine state before restoring outer env
+        if !body_finished && run_result.is_ok() {
+            let coro_state = GatherCoroutineState {
+                ip,
+                locals: self.locals.clone(),
+                locals_dirty_slots: self.locals_dirty_slots.clone(),
+                stack: self.stack.clone(),
+                env: self.interpreter.env().clone(),
+                finished: false,
+            };
+            if let Some(ref coro_mutex) = list.coroutine {
+                *coro_mutex.lock().unwrap() = coro_state;
+            }
+            // Note: if list.coroutine is None, we can't save state (shouldn't happen
+            // for gather-based lists since we set it up in MakeGather)
+        } else if let Some(ref coro_mutex) = list.coroutine {
+            let mut coro = coro_mutex.lock().unwrap();
+            coro.finished = true;
+        }
+
+        // Merge env changes back to outer scope
+        let gather_result_env = self.interpreter.env().clone();
+        let initial_env = &list.env;
+        let mut merged_env = saved_env.clone();
+        for (k, v) in gather_result_env.iter() {
+            if !saved_env.contains_key_sym(*k) {
+                continue;
+            }
+            if let Some(initial) = initial_env.get_sym(*k) {
+                if v.to_string_value() != initial.to_string_value() {
+                    merged_env.insert_sym(*k, v.clone());
+                }
+            } else {
+                merged_env.insert_sym(*k, v.clone());
+            }
+        }
+        *self.interpreter.env_mut() = merged_env;
+
+        let env_actually_changed = {
+            let merged = self.interpreter.env();
+            saved_env.iter().any(|(k, old_val)| {
+                merged
+                    .get_sym(*k)
+                    .is_some_and(|new_val| new_val.to_string_value() != old_val.to_string_value())
+            })
+        };
+
+        // Restore VM state
+        self.locals = saved_locals;
+        self.stack = saved_stack;
+        self.env_dirty = if env_actually_changed {
+            true
+        } else {
+            saved_env_dirty
+        };
+        self.locals_dirty = saved_locals_dirty;
+        self.locals_dirty_slots = saved_locals_dirty_slots;
+
+        run_result?;
+
+        // Update cache
+        *list.cache.lock().unwrap() = Some(items.clone());
+
+        let result = if items.len() > needed {
+            items[..needed].to_vec()
+        } else {
+            items
+        };
+        Ok(result)
+    }
+
     /// Force a LazyList into a Seq by evaluating the gather body.
     /// Force a scan-based LazyList, computing up to `needed` elements.
     /// Elements are computed incrementally and cached in the LazyList.

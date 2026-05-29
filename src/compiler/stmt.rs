@@ -504,12 +504,16 @@ impl Compiler {
                         }
                     })
                     .collect();
+                // Collect the bound array variable name for skipping the
+                // trailing Var statement that would force the LazyList via SinkPop.
+                let mut bound_array_var: Option<String> = None;
                 for s in stmts {
                     if has_bound_array_len
                         && let Stmt::VarDecl { name, .. } = s
                         && name.starts_with('@')
                     {
                         self.bind_vardecl = true;
+                        bound_array_var = Some(name.clone());
                     }
                     if has_mark_bind && matches!(s, Stmt::VarDecl { .. }) {
                         self.bind_vardecl = true;
@@ -525,6 +529,18 @@ impl Compiler {
                         let false_idx = self.code.add_constant(Value::Bool(false));
                         self.code.emit(OpCode::LoadConst(false_idx));
                         self.code.emit(OpCode::SetGlobal(key_idx));
+                    }
+                    // Skip the trailing Var(@name) expression for bound array
+                    // declarations. Without this, SinkPop would eagerly force a
+                    // lazy gather/take list bound via `:=`.
+                    if let Some(ref bav) = bound_array_var
+                        && let Stmt::Expr(Expr::Var(vname)) = s
+                        && vname == bav
+                    {
+                        // Emit a Nil instead of the Var to avoid forcing.
+                        self.code.emit(OpCode::LoadNil);
+                        self.code.emit(OpCode::SinkPop);
+                        continue;
                     }
                     self.compile_stmt(s);
                 }
