@@ -2286,12 +2286,15 @@ impl Interpreter {
                 "splice" => {
                     // Resolve a splice position argument to a usize.
                     // Whatever => array length, Callable => call with length, etc.
-                    fn resolve_splice_pos(v: &Value, len: usize) -> Option<usize> {
+                    /// Resolve a splice position to a signed integer for validation.
+                    fn resolve_splice_raw(v: &Value, len: usize) -> Option<i64> {
                         match v {
-                            Value::Int(i) => Some((*i).max(0) as usize),
-                            Value::Whatever => Some(len),
-                            Value::Str(s) => s.parse::<i64>().ok().map(|i| i.max(0) as usize),
-                            Value::Num(n) => Some((*n as i64).max(0) as usize),
+                            Value::Int(i) => Some(*i),
+                            Value::Whatever => Some(len as i64),
+                            Value::Str(s) => s.parse::<i64>().ok(),
+                            Value::Num(n) => Some(*n as i64),
+                            // Handle Mixin (allomorphic types like IntStr)
+                            Value::Mixin(inner, _) => resolve_splice_raw(inner, len),
                             _ => None,
                         }
                     }
@@ -2299,13 +2302,15 @@ impl Interpreter {
                         let len = items.len();
                         let start = args
                             .first()
-                            .and_then(|v| resolve_splice_pos(v, len))
+                            .and_then(|v| resolve_splice_raw(v, len))
                             .unwrap_or(0)
-                            .min(len);
+                            .max(0) as usize;
+                        let start = start.min(len);
                         let count = args
                             .get(1)
-                            .and_then(|v| resolve_splice_pos(v, len))
-                            .unwrap_or(len.saturating_sub(start));
+                            .and_then(|v| resolve_splice_raw(v, len))
+                            .unwrap_or(len.saturating_sub(start) as i64)
+                            .max(0) as usize;
                         let end = (start + count).min(len);
                         let removed: Vec<Value> = items.drain(start..end).collect();
                         // Collect all replacement values from args[2..]
@@ -2333,10 +2338,15 @@ impl Interpreter {
                         },
                     };
                     // Check for lazy values in splice replacement args
-                    // when the target is a native typed array
-                    if let Some(constraint) = self.var_type_constraint(&key)
-                        && crate::runtime::native_types::is_native_array_element_type(&constraint)
                     {
+                        let type_name = if let Some(constraint) = self.var_type_constraint(&key)
+                            && crate::runtime::native_types::is_native_array_element_type(
+                                &constraint,
+                            ) {
+                            format!("array[{}]", constraint)
+                        } else {
+                            "Array".to_string()
+                        };
                         for arg in args.iter().skip(2) {
                             let has_lazy = match arg {
                                 Value::Array(items, _) => items
@@ -2345,7 +2355,6 @@ impl Interpreter {
                                 other => crate::builtins::methods_0arg::is_value_lazy(other),
                             };
                             if has_lazy {
-                                let declared = format!("array[{}]", constraint);
                                 return Err(RuntimeError::typed(
                                     "X::Cannot::Lazy",
                                     [
@@ -2353,10 +2362,10 @@ impl Interpreter {
                                             "message".to_string(),
                                             Value::str(format!(
                                                 "Cannot splice a lazy list into a {}",
-                                                declared
+                                                type_name
                                             )),
                                         ),
-                                        ("action".to_string(), Value::str_from("splice")),
+                                        ("action".to_string(), Value::str_from("splice in")),
                                     ]
                                     .into_iter()
                                     .collect(),
@@ -2389,6 +2398,70 @@ impl Interpreter {
                         {
                             resolved_args[1] = result;
                         }
+                    }
+                    // Validate offset range
+                    if let Some(offset_val) = resolved_args.first()
+                        && let Some(raw_offset) = resolve_splice_raw(offset_val, arr_len)
+                        && (raw_offset < 0 || raw_offset as usize > arr_len)
+                    {
+                        return Err(RuntimeError::typed(
+                            "X::OutOfRange",
+                            [
+                                (
+                                    "message".to_string(),
+                                    Value::str(format!(
+                                        "Offset argument to splice out of range. Is: {}, should be in 0..{}",
+                                        raw_offset, arr_len
+                                    )),
+                                ),
+                                (
+                                    "what".to_string(),
+                                    Value::str_from("Offset argument to splice"),
+                                ),
+                                ("got".to_string(), Value::Int(raw_offset)),
+                                (
+                                    "range".to_string(),
+                                    Value::str(format!("0..{}", arr_len)),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ));
+                    }
+                    // Validate size range
+                    if let Some(size_val) = resolved_args.get(1)
+                        && let Some(raw_size) = resolve_splice_raw(size_val, arr_len)
+                        && raw_size < 0
+                    {
+                        let resolved_start = resolved_args
+                            .first()
+                            .and_then(|v| resolve_splice_raw(v, arr_len))
+                            .unwrap_or(0)
+                            .max(0) as usize;
+                        let remaining = arr_len.saturating_sub(resolved_start);
+                        return Err(RuntimeError::typed(
+                            "X::OutOfRange",
+                            [
+                                (
+                                    "message".to_string(),
+                                    Value::str(format!(
+                                        "Size argument to splice out of range. Is: {}, should be in 0..^{}",
+                                        raw_size, remaining
+                                    )),
+                                ),
+                                (
+                                    "what".to_string(),
+                                    Value::str_from("Size argument to splice"),
+                                ),
+                                ("got".to_string(), Value::Int(raw_size)),
+                                (
+                                    "range".to_string(),
+                                    Value::str(format!("0..^{}", remaining)),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ));
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);

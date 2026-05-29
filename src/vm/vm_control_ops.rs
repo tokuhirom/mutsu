@@ -478,9 +478,14 @@ impl VM {
                     .env_mut()
                     .insert("__mutsu_deep_readonly::_".to_string(), Value::Bool(true));
             }
-            // Mark named params readonly when not in rw mode
+            // Mark named params readonly when not in rw mode.
+            // Skip @-sigil and %-sigil params: they bind to a mutable
+            // Array/Hash container, so assignments like `@a = values` must
+            // be allowed (matching Raku semantics).
             if !spec.is_rw
                 && let Some(ref name) = param_name
+                && !name.starts_with('@')
+                && !name.starts_with('%')
             {
                 self.interpreter.mark_readonly(name);
             }
@@ -821,9 +826,12 @@ impl VM {
 
         // Pre-mark readonly before the loop to avoid per-iteration HashSet
         // insertions. The for loop parameter is readonly for the duration.
+        // Skip @-sigil and %-sigil params (mutable containers).
         if !spec.is_rw {
             if let Some(ref name) = param_name {
-                self.interpreter.mark_readonly(name);
+                if !name.starts_with('@') && !name.starts_with('%') {
+                    self.interpreter.mark_readonly(name);
+                }
             } else {
                 self.interpreter.mark_readonly("_");
             }

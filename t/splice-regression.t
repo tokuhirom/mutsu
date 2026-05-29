@@ -1,10 +1,9 @@
 use Test;
-plan 4;
+plan 2;
 
-my @a;
-is-deeply @a.splice(2, 3), [], "splice on empty array beyond end returns empty list";
-is-deeply @a, [], "splice beyond end does not mutate empty array";
+# splice with offset beyond end should throw X::OutOfRange (per Raku spec)
+throws-like { my @a; @a.splice(2, 3) }, X::OutOfRange,
+    "splice on empty array beyond end throws X::OutOfRange";
 
-my @b = <a b c>;
-is-deeply @b.splice(10, 1), [], "splice beyond end on populated array returns empty list";
-is @b.join(" "), "a b c", "splice beyond end does not mutate populated array";
+throws-like { my @b = <a b c>; @b.splice(10, 1) }, X::OutOfRange,
+    "splice beyond end on populated array throws X::OutOfRange";
