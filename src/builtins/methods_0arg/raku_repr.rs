@@ -531,11 +531,6 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         Value::Nil => "Nil".to_string(),
-        // Scalar containers holding Seq: render as $((2, 3).Seq)
-        Value::Scalar(inner) => {
-            let inner_raku = raku_value(inner);
-            format!("$({})", inner_raku)
-        }
         Value::Package(name) => name.resolve().to_string(),
         Value::Range(a, b) => {
             format!(
