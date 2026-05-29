@@ -30,6 +30,33 @@ fn syntax_exception(class_name: &str, message: impl Into<String>) -> PError {
     PError::fatal_with_exception(message, Box::new(exception))
 }
 
+fn worry_precedence_range(action: &str) -> PError {
+    let message = format!(
+        "To {} a range, parenthesize the whole range.\n(Or parenthesize the whole endpoint expression, if you meant that.)",
+        action
+    );
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("action".to_string(), Value::str(action.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Worry::Precedence::Range"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
+/// Check if the left expression of a range operator is a bare prefix `|` or `~`
+/// (not parenthesized), which creates a precedence ambiguity warning.
+/// We check the original input text rather than the AST because parentheses
+/// are transparent in the AST (`(|4)` and `|4` produce the same tree).
+fn check_range_precedence_worry(input: &str) -> Result<(), PError> {
+    let trimmed = input.trim_start();
+    if trimmed.starts_with('|') && !trimmed.starts_with("|(") {
+        return Err(worry_precedence_range("apply a Slip flattener to"));
+    }
+    if trimmed.starts_with('~') && !trimmed.starts_with("~(") {
+        return Err(worry_precedence_range("stringify"));
+    }
+    Ok(())
+}
+
 fn non_list_associative_error(lhs: &str, rhs: &str) -> PError {
     syntax_exception(
         "X::Syntax::NonListAssociative",
@@ -2607,6 +2634,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(rest)?;
 
     if let Some(stripped) = r.strip_prefix("^..^") {
+        check_range_precedence_worry(input)?;
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r).map_err(|err| {
             enrich_expected_error(err, "expected range RHS after '^..^'", r.len())
@@ -2621,6 +2649,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if let Some(stripped) = r.strip_prefix("^..") {
+        check_range_precedence_worry(input)?;
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '^..'", r.len()))?;
@@ -2634,6 +2663,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if let Some(stripped) = r.strip_prefix("..^") {
+        check_range_precedence_worry(input)?;
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '..^'", r.len()))?;
@@ -2647,6 +2677,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if r.starts_with("..") && !r.starts_with("...") {
+        check_range_precedence_worry(input)?;
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, right) = structural_expr(r)
