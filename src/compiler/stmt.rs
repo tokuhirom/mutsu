@@ -1175,9 +1175,13 @@ impl Compiler {
                     let mut merged = bind_stmts;
                     // After binding multi-param variables, mark them readonly
                     // (unless the block uses `<->` or `is rw`).
+                    // Skip @-sigil and %-sigil params: they bind to a mutable
+                    // Array/Hash container, so assignments must be allowed.
                     if !has_rw && !has_copy && !params.is_empty() {
                         for p in params {
-                            merged.push(Stmt::MarkReadonly(p.clone()));
+                            if !p.starts_with('@') && !p.starts_with('%') {
+                                merged.push(Stmt::MarkReadonly(p.clone()));
+                            }
                         }
                     }
                     merged.extend(loop_body);
