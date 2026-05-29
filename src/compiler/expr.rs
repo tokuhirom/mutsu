@@ -537,6 +537,13 @@ impl Compiler {
                 "&&" | "and" => {
                     self.code.emit(OpCode::LoadTrue);
                 }
+                "//" | "orelse" => {
+                    // [//] () and [orelse] () return Any (type object)
+                    let any_idx = self
+                        .code
+                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                    self.code.emit(OpCode::LoadConst(any_idx));
+                }
                 _ => {
                     self.code.emit(OpCode::LoadFalse);
                 }
@@ -716,7 +723,24 @@ impl Compiler {
     /// reduction `[\op]`) or just return the final result (`[op]`).
     fn compile_thunk_reduction(&mut self, op: &str, items: &[Expr], is_scan: bool) {
         if items.is_empty() {
-            self.code.emit(OpCode::MakeArray(0));
+            // Identity value for empty reduction
+            match op {
+                "^^" | "xor" => {
+                    self.code.emit(OpCode::LoadFalse);
+                }
+                "//" | "orelse" => {
+                    let any_idx = self
+                        .code
+                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                    self.code.emit(OpCode::LoadConst(any_idx));
+                }
+                "&&" | "and" => {
+                    self.code.emit(OpCode::LoadTrue);
+                }
+                _ => {
+                    self.code.emit(OpCode::LoadFalse);
+                }
+            }
             return;
         }
         // Wrap each expression as an anonymous block (thunk) so the VM can
