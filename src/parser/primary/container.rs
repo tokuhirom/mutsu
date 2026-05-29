@@ -35,13 +35,18 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         }
     }
     // Try temp/let statement in parens: (temp @a), (temp $x = 42), (let $x = 42)
-    if let Ok((r, stmt)) = super::super::stmt::temp_stmt_pub(input) {
+    // Guard: only try if input starts with the keyword followed by whitespace or sigil.
+    if (input.starts_with("temp ") || input.starts_with("temp\t") || input.starts_with("temp\n"))
+        && let Ok((r, stmt)) = super::super::stmt::temp_stmt_pub(input)
+    {
         let (r, _) = ws(r)?;
         if let Ok((r, _)) = parse_char(r, ')') {
             return Ok((r, Expr::DoStmt(Box::new(stmt))));
         }
     }
-    if let Ok((r, stmt)) = super::super::stmt::let_stmt_pub(input) {
+    if (input.starts_with("let ") || input.starts_with("let\t") || input.starts_with("let\n"))
+        && let Ok((r, stmt)) = super::super::stmt::let_stmt_pub(input)
+    {
         let (r, _) = ws(r)?;
         if let Ok((r, _)) = parse_char(r, ')') {
             return Ok((r, Expr::DoStmt(Box::new(stmt))));
