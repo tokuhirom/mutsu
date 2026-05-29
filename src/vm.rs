@@ -2303,21 +2303,14 @@ impl VM {
             OpCode::Pop => {
                 if let Some(Value::LazyList(list)) = self.stack.pop() {
                     // Sink context must realize lazy gathers for side effects.
-                    // But not for coroutine-equipped gathers (preserve laziness).
-                    if list.coroutine.is_none() {
-                        self.force_lazy_list_vm(&list)?;
-                        self.env_dirty = true;
-                    }
+                    self.force_lazy_list_vm(&list)?;
+                    self.env_dirty = true;
                 }
                 *ip += 1;
             }
             OpCode::SinkPop => {
                 if let Some(val) = self.stack.pop() {
                     match &val {
-                        Value::LazyList(list) if list.coroutine.is_some() => {
-                            // Gather-based lazy list with coroutine: don't force
-                            // on sink — preserve laziness.
-                        }
                         Value::LazyList(list) => {
                             self.force_lazy_list_vm(list)?;
                             self.env_dirty = true;
