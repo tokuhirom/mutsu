@@ -196,19 +196,12 @@ WhateverCode (*) in certain contexts: dummy assignment to *, &infix:<+>(*, 42) n
 - roast/S03-operators/eqv.t (eqv on references)
 - roast/S02-types/generics.t (nominalizable generic)
 
-## Sprintf / Format Edge Cases (7 tests)
+## Sprintf / Format Edge Cases (2 tests)
 
-sprintf %g/%G formatting, and the large sprintf-b/d/e/f/x test suites timeout due to sheer volume (2000+ subtests each). The format.t file seems to pass mostly.
+The 6.d/S32-str/sprintf*.t suites all pass now. The non-6.d sprintf.t (zprintf) has roast test bugs.
 
-**Timeout:**
-- roast/S32-str/sprintf-b.t (2282 tests, likely hangs mid-way)
-- roast/S32-str/sprintf-d.t (4565 tests)
-- roast/S32-str/sprintf-e.t (2282 tests)
-- roast/S32-str/sprintf-f.t (2282 tests)
-- roast/S32-str/sprintf-x.t (2282 tests)
-
-**Fail:**
-- roast/S32-str/sprintf.t (%g/%G formatting)
+**Fail (roast test bugs):**
+- roast/S32-str/sprintf.t (166/174 pass; 8 failures from buggy test expectations)
 - roast/S32-str/format.t
 
 ## Unicode / Collation (6 tests)
