@@ -740,6 +740,18 @@ impl RuntimeError {
         Self::typed("X::Bind", attrs)
     }
 
+    /// X::IllegalDimensionInShape - Illegal dimension in shaped array declaration
+    pub(crate) fn illegal_dimension_in_shape(dim: i64) -> Self {
+        let msg = format!(
+            "Illegal dimension in shape: {}. All dimensions must be integers bigger than 0",
+            dim
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("dim".to_string(), Value::Int(dim));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::IllegalDimensionInShape", attrs)
+    }
+
     /// X::TypeCheck::Binding::Parameter - Type check failed in binding to parameter
     pub(crate) fn typecheck_binding_parameter(
         param: &str,

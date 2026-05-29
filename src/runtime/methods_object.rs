@@ -612,7 +612,7 @@ impl Interpreter {
                             "Must use a native array with a type parameter (e.g. array[int].new)",
                         ));
                     }
-                    if let Some(dims) = self.shaped_dims_from_new_args(&args) {
+                    if let Some(dims) = self.shaped_dims_from_new_args(&args)? {
                         // Check for :data argument to populate the shaped array
                         let data = args.iter().find_map(|arg| match arg {
                             Value::Pair(name, value) if name == "data" => {
@@ -2394,7 +2394,7 @@ impl Interpreter {
             // Parametric package handling (e.g. Array[Int], Hash[Int,Str], A[Int]).
             if let Some(type_args) = type_args.as_ref() {
                 if matches!(base_class_name, "Array" | "List" | "Positional" | "array") {
-                    if let Some(dims) = self.shaped_dims_from_new_args(&args) {
+                    if let Some(dims) = self.shaped_dims_from_new_args(&args)? {
                         let data = args.iter().find_map(|arg| match arg {
                             Value::Pair(name, value) if name == "data" => {
                                 Some(value.as_ref().clone())
