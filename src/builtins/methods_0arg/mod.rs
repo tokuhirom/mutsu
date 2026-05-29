@@ -314,25 +314,18 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
-    // Consumed Seq check: consuming operations on consumed Seqs throw X::Seq::Consumed.
-    // "sink" is handled separately; "raku"/"gist"/"WHAT" are always safe.
+    // Consumed Seq check: only applies to Seqs that were explicitly pre-consumed
+    // (e.g. Seq.new() with no args) or that have deferred iterators.
+    // Regular Seqs from grep/map/etc. are NOT tracked to avoid false positives.
     if let Value::Seq(items) = target {
         if method == "cache" {
-            // Mark this Seq as cached so future consuming ops don't consume it.
             crate::value::seq_mark_cached(items);
-            // Fall through to return the List (builtin_cache behavior is fine)
-        } else if matches!(
-            method,
-            "Slip" | "join" | "List" | "list" | "eager" | "Array" | "flat"
-        ) {
-            // Truly consuming operations: mark as consumed (or throw if already consumed)
-            match crate::value::seq_try_consume(items) {
-                Ok(_) => {} // proceed (either consumed fresh or was cached)
-                Err(e) => return Some(Err(e)),
-            }
-        } else if method == "is-lazy" {
-            // Read-only check: throws on consumed Seq but does NOT itself consume
-            if crate::value::seq_is_consumed(items) {
+        } else if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+            // Already consumed and not cached: throw X::Seq::Consumed
+            if matches!(
+                method,
+                "Slip" | "join" | "List" | "list" | "eager" | "Array" | "flat" | "is-lazy"
+            ) {
                 return Some(Err(crate::value::seq_consumed_error()));
             }
         }

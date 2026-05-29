@@ -185,7 +185,12 @@ pub(crate) fn seq_try_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<bool, Runtime
     if seq_is_consumed(arc_ptr) {
         return Err(seq_consumed_error());
     }
-    seq_consume(arc_ptr)?;
+    // Only actively mark as consumed if this Seq has a deferred iterator
+    // (i.e., was created via Seq.new(iterator)). Regular Seqs from
+    // grep/map/etc. are not tracked to avoid global state pollution.
+    if seq_has_deferred_iter(arc_ptr) {
+        seq_consume(arc_ptr)?;
+    }
     Ok(true)
 }
 
