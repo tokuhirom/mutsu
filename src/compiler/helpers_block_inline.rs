@@ -104,9 +104,21 @@ impl Compiler {
                             name_idx,
                             dynamic: is_dynamic,
                         });
-                        self.compile_expr(expr);
-                        self.code.emit(OpCode::Dup);
-                        self.emit_set_named_var(name);
+                        if has_mark_bind && (name.starts_with('@') || name.starts_with('%')) {
+                            // Bind context for @/% variables (e.g. `my %h := :{ }`):
+                            // use SetLocal with MarkBindContext and MarkVarDeclContext
+                            // to avoid the readonly check that SetGlobal performs.
+                            self.compile_expr(expr);
+                            self.code.emit(OpCode::Dup);
+                            self.code.emit(OpCode::MarkBindContext);
+                            self.code.emit(OpCode::MarkVarDeclContext);
+                            let slot = self.alloc_local(name);
+                            self.code.emit(OpCode::SetLocal(slot));
+                        } else {
+                            self.compile_expr(expr);
+                            self.code.emit(OpCode::Dup);
+                            self.emit_set_named_var(name);
+                        }
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
