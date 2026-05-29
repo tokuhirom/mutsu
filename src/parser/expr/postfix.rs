@@ -280,6 +280,99 @@ fn try_parse_adverb_expr(input: &str) -> Option<(&str, Expr)> {
     Some((r, expr))
 }
 
+/// Try to parse an unknown `:identifier` adverb (not k/v/kv/p/exists/delete).
+fn try_parse_unknown_adverb(input: &str) -> Option<(&str, String)> {
+    if !input.starts_with(':') {
+        return None;
+    }
+    let rest = &input[1..];
+    let rest = rest.strip_prefix('!').unwrap_or(rest);
+    if rest.is_empty() || !rest.as_bytes()[0].is_ascii_alphabetic() {
+        return None;
+    }
+    let end = rest
+        .find(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
+        .unwrap_or(rest.len());
+    if end == 0 {
+        return None;
+    }
+    let name = &rest[..end];
+    if matches!(name, "k" | "v" | "kv" | "p" | "exists" | "delete") {
+        return None;
+    }
+    let after = &rest[end..];
+    let final_rest = if after.starts_with('(') {
+        after.find(')').map_or(after, |close| &after[close + 1..])
+    } else {
+        after
+    };
+    Some((final_rest, name.to_string()))
+}
+
+/// Determine "element access" vs "slice" from the target and index.
+/// Hash access is always "slice"; array single-element is "element access".
+fn determine_subscript_what(target: &Expr, index_expr: &Expr) -> String {
+    if matches!(target, Expr::HashVar(_)) {
+        return "slice".to_string();
+    }
+    match index_expr {
+        Expr::ArrayLiteral(items) if items.len() != 1 => "slice".to_string(),
+        Expr::ArrayVar(_) => "slice".to_string(),
+        _ => "element access".to_string(),
+    }
+}
+
+/// Normalize an adverb name (strip "not-" prefix and "0" suffix).
+fn normalize_adverb_name(s: &str) -> String {
+    let s = s.strip_prefix("not-").unwrap_or(s);
+    s.strip_suffix('0').unwrap_or(s).to_string()
+}
+
+/// Build a `__mutsu_subscript_adverb_error` call for X::Adverb.
+fn build_adverb_error_call(
+    what: &str,
+    source: &str,
+    nogo: &[String],
+    unexpected: &[String],
+) -> Expr {
+    let mut args = vec![
+        Expr::Literal(Value::str(what.to_string())),
+        Expr::Literal(Value::str(source.to_string())),
+    ];
+    for a in nogo {
+        args.push(Expr::Literal(Value::str(format!("__nogo__{}", a))));
+    }
+    for u in unexpected {
+        args.push(Expr::Literal(Value::str(format!("__unexpected__{}", u))));
+    }
+    Expr::Call {
+        name: Symbol::intern("__mutsu_subscript_adverb_error"),
+        args,
+    }
+}
+
+/// Consume all remaining adverbs (known and unknown) after a subscript.
+fn collect_remaining_adverbs<'a>(
+    start: &'a str,
+    known: &mut Vec<String>,
+    unknown: &mut Vec<String>,
+) -> &'a str {
+    let mut r = start;
+    loop {
+        let r2 = ws(r).map_or(r, |(r2, _)| r2);
+        if let Some((r3, next_adv, _)) = parse_subscript_adverb_with_expr(r2) {
+            known.push(normalize_adverb_name(next_adv));
+            r = r3;
+        } else if let Some((r3, unk_name)) = try_parse_unknown_adverb(r2) {
+            unknown.push(unk_name);
+            r = r3;
+        } else {
+            break;
+        }
+    }
+    r
+}
+
 /// Extract the variable name from a MultiDimIndex target expression.
 fn multidim_target_var_name(target: &Expr) -> String {
     match target {
@@ -409,14 +502,17 @@ fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str, Expr)> {
 }
 
 fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Call { .. }
-            | Expr::MethodCall { .. }
-            | Expr::CallOn { .. }
-            | Expr::HyperMethodCall { .. }
-            | Expr::HyperMethodCallDynamic { .. }
-    )
+    match expr {
+        Expr::Call { name, .. } => {
+            let n = name.resolve();
+            !n.starts_with("__mutsu_subscript_adverb") && !n.starts_with("__mutsu_multidim")
+        }
+        Expr::MethodCall { .. }
+        | Expr::CallOn { .. }
+        | Expr::HyperMethodCall { .. }
+        | Expr::HyperMethodCallDynamic { .. } => true,
+        _ => false,
+    }
 }
 
 fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
@@ -2517,7 +2613,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 | Expr::ZenSlice(_)
                 | Expr::MultiDimIndex { .. }
                 | Expr::Exists { .. }
-        ) || matches!(&expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb" || name == "__mutsu_multidim_adverb" || name == "__mutsu_multidim_subscript_adverb" || name == "__mutsu_multidim_delete" || name == "__mutsu_multidim_dynamic_adverb")
+        ) || matches!(&expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb" || name == "__mutsu_subscript_adverb_error" || name == "__mutsu_multidim_adverb" || name == "__mutsu_multidim_subscript_adverb" || name == "__mutsu_multidim_delete" || name == "__mutsu_multidim_dynamic_adverb")
         {
             let (r_adv2, _) = ws(rest)?;
             if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2)
@@ -2533,11 +2629,94 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
             if let Some((r_after_adv, adv_name, adv_cond)) =
                 parse_subscript_adverb_with_expr(r_adv2)
+                && !has_ternary_else_after(r_after_adv)
             {
-                // Avoid consuming ternary `:v` separator in `?? !!` expressions.
-                if !has_ternary_else_after(r_after_adv) {
-                    expr = subscript_adverb_expr_with_cond(expr, adv_name, adv_cond);
-                    rest = r_after_adv;
+                // If expr already has a subscript adverb, detect conflict
+                if let Expr::Call { ref name, ref args } = expr
+                    && *name == Symbol::intern("__mutsu_subscript_adverb")
+                    && args.len() >= 3
+                {
+                    let first_adv = if let Expr::Literal(Value::Str(s)) = &args[2] {
+                        s.to_string()
+                    } else {
+                        String::new()
+                    };
+                    let var_name = args
+                        .get(3)
+                        .and_then(|a| {
+                            if let Expr::Literal(Value::Str(s)) = a {
+                                Some(s.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
+                    let what = determine_subscript_what(&args[0], &args[1]);
+                    let mut known = vec![
+                        normalize_adverb_name(&first_adv),
+                        normalize_adverb_name(adv_name),
+                    ];
+                    let mut unknown: Vec<String> = Vec::new();
+                    let r = collect_remaining_adverbs(r_after_adv, &mut known, &mut unknown);
+                    expr = build_adverb_error_call(&what, &var_name, &known, &unknown);
+                    rest = r;
+                    continue;
+                }
+                expr = subscript_adverb_expr_with_cond(expr, adv_name, adv_cond);
+                rest = r_after_adv;
+                continue;
+            }
+            // Unknown adverb on subscript (e.g. @a[1]:zorp)
+            if let Some((r_after_unk, unk_name)) = try_parse_unknown_adverb(r_adv2) {
+                if let Expr::Call { ref name, ref args } = expr
+                    && *name == Symbol::intern("__mutsu_subscript_adverb")
+                    && args.len() >= 3
+                {
+                    let first_adv = if let Expr::Literal(Value::Str(s)) = &args[2] {
+                        s.to_string()
+                    } else {
+                        String::new()
+                    };
+                    let var_name = args
+                        .get(3)
+                        .and_then(|a| {
+                            if let Expr::Literal(Value::Str(s)) = a {
+                                Some(s.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
+                    let what = determine_subscript_what(&args[0], &args[1]);
+                    let known_vec = vec![normalize_adverb_name(&first_adv)];
+                    let mut unknown_vec = vec![unk_name];
+                    let mut extra_known: Vec<String> = Vec::new();
+                    let r =
+                        collect_remaining_adverbs(r_after_unk, &mut extra_known, &mut unknown_vec);
+                    let all_known = [known_vec, extra_known].concat();
+                    expr = build_adverb_error_call(&what, &var_name, &all_known, &unknown_vec);
+                    rest = r;
+                    continue;
+                }
+                // Single unknown adverb on a plain Index
+                if let Expr::Index {
+                    ref target,
+                    ref index,
+                    ..
+                } = expr
+                {
+                    let var_name = match target.as_ref() {
+                        Expr::ArrayVar(n) => format!("@{}", n),
+                        Expr::HashVar(n) => format!("%{}", n),
+                        _ => String::new(),
+                    };
+                    let what = determine_subscript_what(target, index);
+                    let mut known_vec: Vec<String> = Vec::new();
+                    let mut unknown_vec = vec![unk_name];
+                    let r =
+                        collect_remaining_adverbs(r_after_unk, &mut known_vec, &mut unknown_vec);
+                    expr = build_adverb_error_call(&what, &var_name, &known_vec, &unknown_vec);
+                    rest = r;
                     continue;
                 }
             }

@@ -752,6 +752,37 @@ impl RuntimeError {
         Self::typed("X::IllegalDimensionInShape", attrs)
     }
 
+    /// X::Adverb - Unsupported adverb combination on subscript access
+    pub(crate) fn x_adverb(
+        what: &str,
+        source: &str,
+        nogo: &[String],
+        unexpected: &[String],
+    ) -> Self {
+        let nogo_display = nogo
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let msg = format!(
+            "Unsupported combination of adverbs ({}) passed to {}\non '{}'.",
+            nogo_display, what, source
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("source".to_string(), Value::str(source.to_string()));
+        attrs.insert(
+            "nogo".to_string(),
+            Value::array(nogo.iter().map(|s| Value::str(s.to_string())).collect()),
+        );
+        if !unexpected.is_empty() {
+            let unexpected_str = unexpected.join(" ");
+            attrs.insert("unexpected".to_string(), Value::str(unexpected_str));
+        }
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Adverb", attrs)
+    }
+
     /// X::TypeCheck::Binding::Parameter - Type check failed in binding to parameter
     pub(crate) fn typecheck_binding_parameter(
         param: &str,
