@@ -813,6 +813,8 @@ pub(crate) fn is_pseudo_package(name: &str) -> bool {
             | "UNIT"
             | "LEXICAL"
             | "CLIENT"
+            | "PROCESS"
+            | "COMPILING"
     )
 }
 
