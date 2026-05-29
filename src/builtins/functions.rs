@@ -1236,21 +1236,13 @@ fn native_function_2arg(
             }
         }
         "min" => {
-            if matches!(arg1, Value::Pair(name, _) if name == "by")
-                || matches!(arg2, Value::Pair(name, _) if name == "by")
-                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
-                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
-            {
+            if is_extrema_named_pair(arg1) || is_extrema_named_pair(arg2) {
                 return None;
             }
             Some(minmax_two(arg1, arg2, false))
         }
         "max" => {
-            if matches!(arg1, Value::Pair(name, _) if name == "by")
-                || matches!(arg2, Value::Pair(name, _) if name == "by")
-                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
-                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
-            {
+            if is_extrema_named_pair(arg1) || is_extrema_named_pair(arg2) {
                 return None;
             }
             Some(minmax_two(arg1, arg2, true))
@@ -1448,16 +1440,25 @@ fn generic_range_as_bigint(v: &Value) -> Option<NumBigInt> {
     }
 }
 
+/// Check if a value is a named pair relevant to min/max/minmax dispatch
+/// (i.e. :by, :k, :v, :kv, :p) -- these need interpreter handling.
+fn is_extrema_named_pair(v: &Value) -> bool {
+    match v {
+        Value::Pair(name, _) => matches!(name.as_str(), "by" | "k" | "v" | "kv" | "p"),
+        Value::ValuePair(key, _) => {
+            matches!(key.as_ref(), Value::Str(name) if matches!(name.as_str(), "by" | "k" | "v" | "kv" | "p"))
+        }
+        _ => false,
+    }
+}
+
 fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match name {
         "min" => {
             if args.is_empty() {
                 return Some(Ok(Value::Nil));
             }
-            if args.iter().any(|arg| {
-                matches!(arg, Value::Pair(name, _) if name == "by")
-                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
-            }) {
+            if args.iter().any(is_extrema_named_pair) {
                 return None;
             }
             let mut acc = args[0].clone();
@@ -1474,10 +1475,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             if args.is_empty() {
                 return Some(Ok(Value::Nil));
             }
-            if args.iter().any(|arg| {
-                matches!(arg, Value::Pair(name, _) if name == "by")
-                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
-            }) {
+            if args.iter().any(is_extrema_named_pair) {
                 return None;
             }
             let mut acc = args[0].clone();
