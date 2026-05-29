@@ -202,7 +202,11 @@ Per-type method documentation — consult when implementing methods on specific 
 
 ## Roast (official Raku test suite)
 
-- The ultimate goal is to pass ALL roast tests. Use `pick-next-roast.sh` to select which test to work on (see "Roast test prioritization" below).
+- The ultimate goal is to pass ALL roast tests.
+- **Task selection: PLAN.md and BLOCKERS.md driven.** Do NOT randomly pick roast tests. Instead:
+  1. Check **PLAN.md** for the current quarter's priorities and work on those first.
+  2. Check **TODO_roast/BLOCKERS.md** for feature-level blocker analysis — implement the highest-impact missing feature to unblock the most tests at once.
+  3. `pick-next-roast.sh` is a fallback for AI fleet workers, not the primary way to choose work.
 - `roast/` is read-only; never modify files under `roast/`.
 - `TODO_roast/` tracks per-file pass/fail status (split by synopsis number). Mark a test `[x]` only when **all** subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
@@ -225,19 +229,24 @@ Per-type method documentation — consult when implementing methods on specific 
 
 ## Roast test prioritization
 
-- Run `./scripts/roast-history.sh` to generate per-file category lists under `tmp/`:
-  - `tmp/roast-panic.txt` — Rust panics (highest priority)
-  - `tmp/roast-timeout.txt` — timeouts
-  - `tmp/roast-error.txt` — no valid TAP plan
-  - `tmp/roast-fail.txt` — some subtests failing
-  - `tmp/roast-pass.txt` — fully passing
-- Priority order: panic → timeout → error/fail.
-- **Raku filter**: Run `./scripts/roast-raku-check.sh` to generate `tmp/roast-raku-pass.txt` (tests listed in `roast/spectest.data`). When this file exists, `pick-next-roast.sh` only shows tests that are expected to pass on Rakudo, skipping tests that raku itself cannot pass. The file is cached — re-run the script to refresh.
-- **ALWAYS use `./scripts/pick-next-roast.sh -n N` to select the next test(s).** Do NOT manually browse, scan, or read roast test files to choose which test to work on. The script's selection is final — work on whatever it returns, regardless of perceived difficulty.
-- Do NOT skip a test because it looks hard or requires implementing a complex feature. If `pick-next-roast.sh` returns it, work on it.
-- Do NOT run multiple roast tests to "assess" which one is closest to passing. This is cherry-picking and is forbidden.
-- The goal is broad language coverage, not gaming the pass count.
-- After making changes, always run `./scripts/roast-history.sh` to regenerate category lists and check for newly passing tests. Compare the new `tmp/roast-pass.txt` against the whitelist to find tests to add.
+**Primary: PLAN.md → BLOCKERS.md → then individual tests.**
+
+The project is in its final stretch. Work should be driven by strategic priorities, not random test selection:
+
+1. **PLAN.md priorities first.** Check the current quarter's section for high-impact tasks (e.g., exception types, performance, module compatibility). These are chosen because they unblock many tests or advance project goals.
+2. **BLOCKERS.md for roast work.** When working on roast, consult `TODO_roast/BLOCKERS.md` which groups failing tests by the missing feature. Implement features that unblock the most tests (e.g., "Exception Types" blocks 22 tests, "Threading" blocks 31).
+3. **Roast diagnostic tools** (for status tracking, not task selection):
+   - Run `./scripts/roast-history.sh` to generate per-file category lists under `tmp/`:
+     - `tmp/roast-panic.txt` — Rust panics (highest priority to fix)
+     - `tmp/roast-timeout.txt` — timeouts
+     - `tmp/roast-error.txt` — no valid TAP plan
+     - `tmp/roast-fail.txt` — some subtests failing
+     - `tmp/roast-pass.txt` — fully passing
+   - After making changes, run `roast-history.sh` to check for newly passing tests.
+4. **`pick-next-roast.sh`** is available as a fallback for AI fleet workers or when all PLAN.md/BLOCKERS.md tasks are in progress. It is NOT the primary way to choose work.
+
+- Do NOT skip a task because it looks hard. Tackle difficult features head-on.
+- Do NOT cherry-pick easy tests to game the pass count. The goal is implementing missing features that have broad impact.
 
 ## Trust the main branch
 
@@ -423,6 +432,10 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 ## Agent workflow
 
-- **Do not ask before launching agents.** When an agent completes, immediately launch the next task from PLAN.md or roast tests. Asking "should I continue?" wastes time.
-- Always maintain 3 concurrent agents when possible.
-- Pick tasks from PLAN.md priorities first, then roast fail tests.
+- **Do not ask before launching agents.** When an agent completes, immediately launch the next task from PLAN.md or BLOCKERS.md. Asking "should I continue?" wastes time.
+- Always maintain up to 4 concurrent agents (not more, to avoid quota exhaustion).
+- **Task selection order:**
+  1. PLAN.md current quarter priorities
+  2. BLOCKERS.md highest-impact missing features
+  3. Roast tests related to in-progress features
+  4. `pick-next-roast.sh` only as a last resort
