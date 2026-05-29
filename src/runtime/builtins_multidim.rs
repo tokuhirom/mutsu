@@ -537,6 +537,34 @@ impl Interpreter {
         Ok(result)
     }
 
+    /// Throw X::Adverb for conflicting/unknown subscript adverbs.
+    pub(super) fn builtin_subscript_adverb_error(args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_subscript_adverb_error: missing arguments",
+            ));
+        }
+        let what = args[0].to_string_value();
+        let source = args[1].to_string_value();
+        let mut nogo: Vec<String> = Vec::new();
+        let mut unexpected: Vec<String> = Vec::new();
+        for arg in &args[2..] {
+            let s = arg.to_string_value();
+            if let Some(name) = s.strip_prefix("__nogo__") {
+                nogo.push(name.to_string());
+            } else if let Some(name) = s.strip_prefix("__unexpected__") {
+                unexpected.push(name.to_string());
+            }
+        }
+        if nogo.is_empty() && !unexpected.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "Unexpected adverb(s) on subscript: {}",
+                unexpected.join(", ")
+            )));
+        }
+        Err(RuntimeError::x_adverb(&what, &source, &nogo, &unexpected))
+    }
+
     pub(super) fn builtin_subscript_adverb(
         &mut self,
         args: &[Value],
