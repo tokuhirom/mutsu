@@ -3695,9 +3695,6 @@ impl VM {
             // in a called sub).
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
             self.interpreter.env_mut().remove(&readonly_key);
-            // Clear any readonly marking from a previous constant declaration
-            // with the same name so the new declaration can proceed.
-            self.interpreter.unmark_readonly(name);
             // Replace stale ContainerRef in env with Nil so a new `my $var`
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it.
