@@ -60,6 +60,7 @@ impl Interpreter {
                     compiled_fns: None,
                     elems_count: None,
                     scan_spec: None,
+                    coroutine: None,
                 },
             )));
         }
