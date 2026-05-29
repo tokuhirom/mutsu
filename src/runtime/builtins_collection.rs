@@ -748,7 +748,7 @@ impl Interpreter {
         };
 
         if items.is_empty() {
-            return Ok(Value::array(vec![]));
+            return Ok(Value::Seq(std::sync::Arc::new(vec![])));
         }
 
         // Find all indices matching the extremum
@@ -766,11 +766,11 @@ impl Interpreter {
                     .iter()
                     .map(|&i| Value::Int(i as i64))
                     .collect();
-                Ok(Value::array(keys))
+                Ok(Value::Seq(std::sync::Arc::new(keys)))
             }
             "v" => {
                 let vals: Vec<Value> = matching_indices.iter().map(|&i| items[i].clone()).collect();
-                Ok(Value::array(vals))
+                Ok(Value::Seq(std::sync::Arc::new(vals)))
             }
             "kv" => {
                 let mut kvs = Vec::new();
@@ -778,14 +778,16 @@ impl Interpreter {
                     kvs.push(Value::Int(i as i64));
                     kvs.push(items[i].clone());
                 }
-                Ok(Value::array(kvs))
+                Ok(Value::Seq(std::sync::Arc::new(kvs)))
             }
             "p" => {
                 let pairs: Vec<Value> = matching_indices
                     .iter()
-                    .map(|&i| Value::Pair(i.to_string(), Box::new(items[i].clone())))
+                    .map(|&i| {
+                        Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(items[i].clone()))
+                    })
                     .collect();
-                Ok(Value::array(pairs))
+                Ok(Value::Seq(std::sync::Arc::new(pairs)))
             }
             _ => Ok(result),
         }
