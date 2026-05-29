@@ -927,6 +927,11 @@ impl Compiler {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }
+                // Mark constant variables as readonly so that subsequent
+                // assignments are rejected at runtime.
+                if is_constant_decl {
+                    self.code.emit(OpCode::MarkVarReadonly(name_idx));
+                }
             }
             Stmt::Assign {
                 name,
