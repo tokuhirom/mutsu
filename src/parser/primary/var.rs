@@ -1070,6 +1070,10 @@ fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(
 
 /// Parse `$(stmt; stmt; ... expr)` — statement block in scalar context.
 /// Returns DoBlock expression.
+pub(super) fn parse_dollar_paren_block_pub(input: &str) -> PResult<'_, Expr> {
+    parse_dollar_paren_block(input)
+}
+
 fn parse_dollar_paren_block(input: &str) -> PResult<'_, Expr> {
     use super::super::helpers::ws;
     // Parse first statement

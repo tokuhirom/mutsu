@@ -256,6 +256,27 @@ impl Compiler {
             Stmt::SyntheticBlock(inner) => {
                 self.compile_do_block_expr_scoped(inner, &None);
             }
+            Stmt::Let {
+                name,
+                index: _,
+                value: _,
+                is_temp: _,
+            } => {
+                // Compile the temp/let statement, then push the variable as result.
+                // This handles `(temp @a)` / `(temp $x = 42)` in expression position.
+                self.compile_stmt(stmt);
+                // Push the variable value as the expression result.
+                // Reuse the same logic as Expr::ArrayVar/HashVar/Var compilation.
+                if name.starts_with('@') {
+                    let stripped = name.strip_prefix('@').unwrap_or(name);
+                    self.compile_expr(&Expr::ArrayVar(stripped.to_string()));
+                } else if name.starts_with('%') {
+                    let stripped = name.strip_prefix('%').unwrap_or(name);
+                    self.compile_expr(&Expr::HashVar(stripped.to_string()));
+                } else {
+                    self.compile_expr(&Expr::Var(name.clone()));
+                }
+            }
             _ => {
                 self.compile_stmt(stmt);
                 self.code.emit(OpCode::LoadNil);

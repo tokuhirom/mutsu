@@ -484,7 +484,8 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    self.interpreter
+                        .resolve_let_saves_on_success(let_mark, true);
                     result = Ok(());
                     break;
                 }
@@ -829,7 +830,8 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    self.interpreter
+                        .resolve_let_saves_on_success(let_mark, true);
                     result = Ok(());
                     break;
                 }
@@ -1268,7 +1270,8 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    self.interpreter
+                        .resolve_let_saves_on_success(let_mark, true);
                     result = Ok(());
                     break;
                 }
@@ -1552,7 +1555,8 @@ impl VM {
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
-                        self.interpreter.discard_let_saves(let_mark);
+                        self.interpreter
+                            .resolve_let_saves_on_success(let_mark, true);
                         result = Ok(());
                         break;
                     }
@@ -1574,7 +1578,8 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    self.interpreter
+                        .resolve_let_saves_on_success(let_mark, true);
                     result = Ok(());
                     break;
                 }

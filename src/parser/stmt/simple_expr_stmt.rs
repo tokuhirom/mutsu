@@ -1585,6 +1585,39 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
         );
     }
 
+    // Check for hash key: let %hash<key> = expr
+    if let Some(key_rest) = rest.strip_prefix('<')
+        && let Some(end_pos) = key_rest.find('>')
+    {
+        let key_str = &key_rest[..end_pos];
+        let after_key = &key_rest[end_pos + 1..];
+        let (after_key, _) = ws(after_key)?;
+        let key_expr = Expr::Literal(Value::str(key_str.to_string()));
+        if after_key.starts_with('=') && !after_key.starts_with("==") {
+            let val_rest = &after_key[1..];
+            let (val_rest, _) = ws(val_rest)?;
+            let (val_rest, val_expr) = expression(val_rest)?;
+            return parse_statement_modifier(
+                val_rest,
+                Stmt::Let {
+                    name: full_name,
+                    index: Some(Box::new(key_expr)),
+                    value: Some(Box::new(val_expr)),
+                    is_temp: false,
+                },
+            );
+        }
+        return parse_statement_modifier(
+            after_key,
+            Stmt::Let {
+                name: full_name,
+                index: Some(Box::new(key_expr)),
+                value: None,
+                is_temp: false,
+            },
+        );
+    }
+
     // Check for assignment: let $var = expr
     if rest.starts_with('=') && !rest.starts_with("==") {
         let val_rest = &rest[1..];
@@ -1792,6 +1825,72 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         format!("{}{}{}", sigil, twigil, var_name)
     };
     let (rest, _) = ws(rest)?;
+
+    // Check for array index: temp @array[idx] = expr
+    if let Some(idx_rest) = rest.strip_prefix('[') {
+        let (idx_rest, _) = ws(idx_rest)?;
+        let (idx_rest, idx_expr) = expression(idx_rest)?;
+        let (idx_rest, _) = ws(idx_rest)?;
+        let (idx_rest, _) = parse_char(idx_rest, ']')?;
+        let (idx_rest, _) = ws(idx_rest)?;
+        if idx_rest.starts_with('=') && !idx_rest.starts_with("==") {
+            let val_rest = &idx_rest[1..];
+            let (val_rest, _) = ws(val_rest)?;
+            let (val_rest, val_expr) = expression(val_rest)?;
+            return parse_statement_modifier(
+                val_rest,
+                Stmt::Let {
+                    name: full_name,
+                    index: Some(Box::new(idx_expr)),
+                    value: Some(Box::new(val_expr)),
+                    is_temp: true,
+                },
+            );
+        }
+        return parse_statement_modifier(
+            idx_rest,
+            Stmt::Let {
+                name: full_name,
+                index: Some(Box::new(idx_expr)),
+                value: None,
+                is_temp: true,
+            },
+        );
+    }
+
+    // Check for hash key: temp %hash<key> = expr
+    if let Some(key_rest) = rest.strip_prefix('<')
+        && let Some(end_pos) = key_rest.find('>')
+    {
+        let key_str = &key_rest[..end_pos];
+        let after_key = &key_rest[end_pos + 1..];
+        let (after_key, _) = ws(after_key)?;
+        let key_expr = Expr::Literal(Value::str(key_str.to_string()));
+        if after_key.starts_with('=') && !after_key.starts_with("==") {
+            let val_rest = &after_key[1..];
+            let (val_rest, _) = ws(val_rest)?;
+            let (val_rest, val_expr) = expression(val_rest)?;
+            return parse_statement_modifier(
+                val_rest,
+                Stmt::Let {
+                    name: full_name,
+                    index: Some(Box::new(key_expr)),
+                    value: Some(Box::new(val_expr)),
+                    is_temp: true,
+                },
+            );
+        }
+        return parse_statement_modifier(
+            after_key,
+            Stmt::Let {
+                name: full_name,
+                index: Some(Box::new(key_expr)),
+                value: None,
+                is_temp: true,
+            },
+        );
+    }
+
     // Check for assignment: temp $*CWD = expr
     if rest.starts_with('=') && !rest.starts_with("==") {
         let val_rest = &rest[1..];

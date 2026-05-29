@@ -307,6 +307,16 @@ pub(super) fn ident_pub(input: &str) -> PResult<'_, String> {
     ident(input)
 }
 
+/// Public accessor for `temp_stmt` (used by `container.rs` for `(temp @a)` parsing).
+pub(super) fn temp_stmt_pub(input: &str) -> PResult<'_, crate::ast::Stmt> {
+    simple_expr_stmt::temp_stmt(input)
+}
+
+/// Public accessor for `let_stmt` (used by `container.rs` for `(let $x)` parsing).
+pub(super) fn let_stmt_pub(input: &str) -> PResult<'_, crate::ast::Stmt> {
+    simple_expr_stmt::let_stmt(input)
+}
+
 /// Public accessor for var_name (used by primary.rs for anon sub params).
 #[allow(dead_code)]
 pub(super) fn var_name_pub(input: &str) -> PResult<'_, String> {
