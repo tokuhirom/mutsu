@@ -34,6 +34,13 @@ impl Compiler {
                         }
                     }
                 }
+                Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+                    for expr in exprs {
+                        if Self::expr_has_let_deep(expr) {
+                            return true;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -108,7 +115,19 @@ impl Compiler {
     pub(super) fn expr_has_let_deep(expr: &Expr) -> bool {
         match expr {
             Expr::DoBlock { body, .. } => Self::has_let_deep(body),
+            Expr::DoStmt(stmt) => Self::has_let_deep(&[*stmt.clone()]),
             Expr::Try { body, .. } => Self::has_let_deep(body),
+            Expr::Grouped(inner) => Self::expr_has_let_deep(inner),
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+                ..
+            } => {
+                Self::expr_has_let_deep(target)
+                    || Self::expr_has_let_deep(index)
+                    || Self::expr_has_let_deep(value)
+            }
             // Detect `undefine temp $var`: Call("undefine", [Call("temp", ...)])
             // The compiler expands this to LetSave + assign, so the enclosing block
             // needs LetBlock wrapping for proper save/restore.

@@ -34,6 +34,24 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r, Expr::DoStmt(Box::new(class_stmt))));
         }
     }
+    // Try temp/let statement in parens: (temp @a), (temp $x = 42), (let $x = 42)
+    // Guard: only try if input starts with the keyword followed by whitespace or sigil.
+    if (input.starts_with("temp ") || input.starts_with("temp\t") || input.starts_with("temp\n"))
+        && let Ok((r, stmt)) = super::super::stmt::temp_stmt_pub(input)
+    {
+        let (r, _) = ws(r)?;
+        if let Ok((r, _)) = parse_char(r, ')') {
+            return Ok((r, Expr::DoStmt(Box::new(stmt))));
+        }
+    }
+    if (input.starts_with("let ") || input.starts_with("let\t") || input.starts_with("let\n"))
+        && let Ok((r, stmt)) = super::super::stmt::let_stmt_pub(input)
+    {
+        let (r, _) = ws(r)?;
+        if let Ok((r, _)) = parse_char(r, ')') {
+            return Ok((r, Expr::DoStmt(Box::new(stmt))));
+        }
+    }
     // Try assignment expression: ($var = expr), (@arr = expr), (%hash = expr), or compound forms.
     let (input, first) = if let Ok((r, var_expr)) = expression_no_sequence(input) {
         let (r2, _) = ws(r)?;
@@ -590,6 +608,20 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     };
     if !rest.starts_with('(') {
         return Err(PError::expected("itemized parenthesized expression"));
+    }
+    // Try multi-statement block first: $(temp $a = 23; $a)
+    let inner = &rest[1..]; // skip '('
+    if let Ok((block_rest, block_expr)) = super::var::parse_dollar_paren_block_pub(inner) {
+        return Ok((
+            block_rest,
+            Expr::MethodCall {
+                target: Box::new(block_expr),
+                name: Symbol::intern("item"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            },
+        ));
     }
     let (rest, inner) = paren_expr(rest)?;
     // Lower $(expr) to expr.item — wraps the value in a Scalar container

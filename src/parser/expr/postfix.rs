@@ -2490,6 +2490,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::MethodCall { .. }
                     | Expr::Call { .. }
                     | Expr::Literal(_)
+                    | Expr::DoStmt(_)
+                    | Expr::Grouped(_)
             )
         {
             let r = &rest[1..];

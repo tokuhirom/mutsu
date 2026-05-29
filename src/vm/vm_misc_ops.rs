@@ -2926,7 +2926,34 @@ impl VM {
                     .map(|i| self.locals[i].clone())
             })
             .unwrap_or(Value::Nil);
-        self.interpreter.let_saves_push(name, old_val, is_temp);
+        // For temp, deep-copy Array/Hash so the snapshot is independent of
+        // future mutations (Arc is shared, so a shallow clone wouldn't work).
+        let save_val = if is_temp {
+            Self::deep_copy_value(&old_val)
+        } else {
+            old_val
+        };
+        self.interpreter.let_saves_push(name, save_val, is_temp);
+    }
+
+    /// Recursively deep-copy a Value so that Array/Hash snapshots are
+    /// independent of future in-place mutations (the inner Arc would otherwise
+    /// be shared).
+    fn deep_copy_value(val: &Value) -> Value {
+        match val {
+            Value::Array(arc_vec, kind) => {
+                let copied: Vec<Value> = arc_vec.iter().map(Self::deep_copy_value).collect();
+                Value::Array(std::sync::Arc::new(copied), *kind)
+            }
+            Value::Hash(arc_map) => {
+                let copied: std::collections::HashMap<String, Value> = arc_map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Self::deep_copy_value(v)))
+                    .collect();
+                Value::Hash(std::sync::Arc::new(copied))
+            }
+            other => other.clone(),
+        }
     }
 
     pub(super) fn exec_let_block_op(

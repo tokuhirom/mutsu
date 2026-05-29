@@ -1375,12 +1375,12 @@ impl Interpreter {
             // Manage let saves based on sub result
             match &result {
                 Ok(_) => {
-                    // Explicit return or successful completion — discard saves
-                    self.discard_let_saves(let_mark);
+                    // Successful completion — restore temps, discard lets
+                    self.resolve_let_saves_on_success(let_mark, true);
                 }
                 Err(e) if e.return_value.is_some() => {
-                    // Explicit return — discard saves
-                    self.discard_let_saves(let_mark);
+                    // Explicit return — restore temps, discard lets
+                    self.resolve_let_saves_on_success(let_mark, true);
                 }
                 Err(_) => {
                     // Exception/fail — restore saves
