@@ -2,6 +2,18 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    /// Wrap a value in item (scalar) context if it's a List/Array,
+    /// following Raku's rule that hash slot access returns values in item context.
+    /// A List stored in a hash slot becomes an ItemList when accessed.
+    fn itemize_hash_value(v: Value) -> Value {
+        match v {
+            Value::Array(items, crate::value::ArrayKind::List) => {
+                Value::Array(items, crate::value::ArrayKind::ItemList)
+            }
+            other => other,
+        }
+    }
+
     /// Create a Failure for "Type X does not support associative indexing."
     fn make_assoc_indexing_failure(type_name: &str) -> Value {
         let mut attrs = std::collections::HashMap::new();
@@ -697,7 +709,7 @@ impl VM {
                         self.typed_container_default(&Value::Hash(items))
                     }
                 } else {
-                    v
+                    Self::itemize_hash_value(v)
                 }
             }
             (Value::Hash(items), Value::Int(key)) => {
@@ -712,7 +724,7 @@ impl VM {
                         self.typed_container_default(&Value::Hash(items))
                     }
                 } else {
-                    v
+                    Self::itemize_hash_value(v)
                 }
             }
             // WhateverCode positional index on Hash: {}[*-1]

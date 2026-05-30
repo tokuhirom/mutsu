@@ -843,6 +843,106 @@ impl Interpreter {
             }
             return self.array_mutate_copy(target, method, args);
         }
+        // push/append on Hash: merge Pairs into the hash.
+        // In Raku, %h.push: (k => v) inserts the pair; if the key exists,
+        // it creates an itemized array of both values.
+        if matches!(method, "push" | "append") && matches!(&target, Value::Hash(_)) {
+            // Type check values being pushed against container type metadata
+            if let Some(info) = self.container_type_metadata(&target) {
+                let constraint = &info.value_type.clone();
+                if constraint != "Mu" && constraint != "Any" {
+                    for arg in &args {
+                        let val = match arg {
+                            Value::Pair(_, v) => v.as_ref().clone(),
+                            Value::ValuePair(_, v) => v.as_ref().clone(),
+                            _ => continue,
+                        };
+                        if !self.type_matches_value(constraint, &val) {
+                            return Err(crate::runtime::RuntimeError::new(format!(
+                                "Type check failed for an element of %_; expected {} but got {}",
+                                constraint,
+                                crate::runtime::utils::value_type_name(&val),
+                            )));
+                        }
+                    }
+                }
+            }
+            // Build the updated hash by merging pairs
+            let Value::Hash(ref arc) = target else {
+                unreachable!()
+            };
+            // Check if we can mutate in-place (shared reference)
+            if Arc::strong_count(arc) > 1 {
+                let ptr = Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                unsafe {
+                    for arg in args {
+                        match arg {
+                            Value::Pair(k, v) => {
+                                let key = k.as_str().to_string();
+                                let map = &mut *ptr;
+                                if let Some(existing) = map.get(&key) {
+                                    // Key exists: create itemized array
+                                    let arr = Value::Array(
+                                        Arc::new(vec![existing.clone(), *v]),
+                                        crate::value::ArrayKind::ItemArray,
+                                    );
+                                    map.insert(key, arr);
+                                } else {
+                                    map.insert(key, *v);
+                                }
+                            }
+                            Value::ValuePair(k, v) => {
+                                let key = k.to_string_value();
+                                let map = &mut *ptr;
+                                if let Some(existing) = map.get(&key) {
+                                    let arr = Value::Array(
+                                        Arc::new(vec![existing.clone(), *v]),
+                                        crate::value::ArrayKind::ItemArray,
+                                    );
+                                    map.insert(key, arr);
+                                } else {
+                                    map.insert(key, *v);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                return Ok(target);
+            }
+            // Not shared: build new hash
+            let mut new_map = (**arc).clone();
+            for arg in args {
+                match arg {
+                    Value::Pair(k, v) => {
+                        let key = k.as_str().to_string();
+                        if let Some(existing) = new_map.get(&key) {
+                            let arr = Value::Array(
+                                Arc::new(vec![existing.clone(), *v]),
+                                crate::value::ArrayKind::ItemArray,
+                            );
+                            new_map.insert(key, arr);
+                        } else {
+                            new_map.insert(key, *v);
+                        }
+                    }
+                    Value::ValuePair(k, v) => {
+                        let key = k.to_string_value();
+                        if let Some(existing) = new_map.get(&key) {
+                            let arr = Value::Array(
+                                Arc::new(vec![existing.clone(), *v]),
+                                crate::value::ArrayKind::ItemArray,
+                            );
+                            new_map.insert(key, arr);
+                        } else {
+                            new_map.insert(key, *v);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return Ok(Value::Hash(Arc::new(new_map)));
+        }
         // IO::Special.new("<STDOUT>")
         if let Value::Package(name) = &target
             && name.resolve() == "IO::Special"

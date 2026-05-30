@@ -773,14 +773,30 @@ impl Interpreter {
                         return Ok(val.clone());
                     }
                 } else {
-                    for (attr_name, is_public, ..) in &class_attrs {
+                    for (attr_name, is_public, _, _, _, sigil, _) in &class_attrs {
                         if *is_public && attr_name == method {
                             // Check for deprecated attribute accessor
                             if let Some(msg) = self.class_attribute_deprecated(&cn, method).cloned()
                             {
                                 self.check_deprecation_for_method(method, &cn, &msg);
                             }
-                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                            let val = attributes.get(method).cloned().unwrap_or(Value::Nil);
+                            // For typed @/% attributes, register type metadata on the
+                            // returned value so push/insert type enforcement works.
+                            if (*sigil == '@' || *sigil == '%')
+                                && !matches!(val, Value::Nil)
+                                && self.container_type_metadata(&val).is_none()
+                                && let Some(tc) =
+                                    self.get_attr_type_constraint(&cn, method.as_ref())
+                            {
+                                let info = crate::runtime::ContainerTypeInfo {
+                                    value_type: tc.clone(),
+                                    key_type: None,
+                                    declared_type: Some(tc.clone()),
+                                };
+                                self.register_container_type_metadata(&val, info);
+                            }
+                            return Ok(val);
                         }
                     }
                 }

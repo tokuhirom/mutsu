@@ -408,6 +408,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Array(items, kind) => {
                 if method == "Array" && !kind.is_real_array() {
                     Some(Ok(Value::real_array(items.to_vec())))
+                } else if method == "list" && kind.is_itemized() {
+                    // .list on an itemized array/list strips the itemization,
+                    // returning the contents as a plain List (de-itemized).
+                    Some(Ok(Value::Array(items.clone(), kind.decontainerize())))
                 } else {
                     Some(Ok(target.clone()))
                 }

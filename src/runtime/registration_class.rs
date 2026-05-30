@@ -1429,8 +1429,30 @@ impl Interpreter {
                     is_type,
                     deprecated_message,
                     is_built,
+                    unknown_traits,
                 } => {
                     let attr_name_str = attr_name.resolve();
+
+                    // Check for unknown traits (X::Comp::Trait::Unknown)
+                    if let Some((kind, trait_name)) = unknown_traits.first() {
+                        let msg = format!(
+                            "Can't use unknown trait '{}' -> '{}' in an attribute declaration.",
+                            kind, trait_name
+                        );
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        attrs.insert("type".to_string(), Value::str(kind.clone()));
+                        attrs.insert("subtype".to_string(), Value::str(trait_name.clone()));
+                        attrs.insert("declaring".to_string(), Value::str("attribute".to_string()));
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Comp::Trait::Unknown"),
+                            attrs,
+                        )));
+                        self.current_package = saved_package;
+                        self.env = saved_env;
+                        return Err(err);
+                    }
 
                     // Handle class-level attributes (our $.x / my $.x)
                     if *is_our || *is_my {
@@ -2394,6 +2416,7 @@ impl Interpreter {
                     is_type: _,
                     deprecated_message: _,
                     is_built: _,
+                    unknown_traits: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     let attr_var_name = if *is_public {
@@ -2611,6 +2634,7 @@ impl Interpreter {
                     is_type: _,
                     deprecated_message: _,
                     is_built: _,
+                    unknown_traits: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.own_attribute_names.insert(attr_name_str.clone());

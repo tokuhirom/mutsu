@@ -3873,6 +3873,24 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
         let raw_popped = self.stack.pop().unwrap_or(Value::Nil);
+        // Check if we're trying to write to a private instance attribute (!attr)
+        // when self is a type object (not an instance). Raku says this should die.
+        let local_name = &code.locals[idx];
+        if local_name.starts_with('!')
+            && local_name.len() > 1
+            && let Some(self_val) = self.get_env_with_main_alias("self")
+            && !matches!(self_val, Value::Instance { .. } | Value::Mixin(..))
+        {
+            // self is a type object - determine class name for error message
+            let class_name = match &self_val {
+                Value::Package(sym) => sym.to_string(),
+                other => crate::value::what_type_name(other),
+            };
+            return Err(RuntimeError::new(format!(
+                "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
+                class_name
+            )));
+        }
         let (raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
         let is_bind = self.bind_context || bind_source.is_some();
         let is_rebind = self.rebind_context;

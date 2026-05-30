@@ -1437,6 +1437,27 @@ impl Interpreter {
                         }
                     }
                 }
+                // Value-level type check for % hash attributes (e.g. `has Int %.h is rw`)
+                if attr_sigil == '%'
+                    && let Some(type_constraint) =
+                        self.get_attr_type_constraint(&class_name.resolve(), method)
+                    && !matches!(type_constraint.as_str(), "Mu" | "Any")
+                {
+                    let hash_vals: Vec<Value> = match &value {
+                        Value::Hash(h) => h.values().cloned().collect(),
+                        _ => Vec::new(),
+                    };
+                    for v in &hash_vals {
+                        if !self.type_matches_value(&type_constraint, v) {
+                            return Err(RuntimeError::new(format!(
+                                "Type check failed for an element of %{}; expected {} but got {}",
+                                method,
+                                type_constraint,
+                                super::utils::value_type_name(v),
+                            )));
+                        }
+                    }
+                }
                 let attr_key = if attributes.contains_key(method) {
                     method.to_string()
                 } else if attributes.contains_key(&format!("@{}", method)) {

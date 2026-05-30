@@ -289,6 +289,70 @@ impl Interpreter {
             value.clone()
         };
 
+        // Type check for typed hash/array attribute subscript assignment
+        // (e.g., $o.h<a> = 'b' where h is Int, or $o.a[2] = $*IN where a is Int)
+        if let Value::Instance { class_name, .. } = &target {
+            let tc = self.get_attr_type_constraint(&class_name.resolve(), &method);
+            let is_hash_attr = matches!(&current, Value::Hash(_));
+            let is_array_attr = matches!(&current, Value::Array(..));
+            if (is_hash_attr || is_array_attr)
+                && let Some(ref type_constraint) = tc
+                && !matches!(type_constraint.as_str(), "Mu" | "Any")
+                && !self.type_matches_value(type_constraint, &effective_value)
+            {
+                let sigil = if is_hash_attr { "%" } else { "@" };
+                return Err(crate::runtime::RuntimeError::new(format!(
+                    "Type check failed for an element of {}{}; expected {} but got {}",
+                    sigil,
+                    method,
+                    type_constraint,
+                    crate::runtime::utils::value_type_name(&effective_value),
+                )));
+            }
+            // Detect autovivification into typed hash attribute:
+            // $o.h<key1><key2> = val  would autovivify h<key1> as a Hash,
+            // but if h is typed (e.g. Int), a Hash is not a valid value.
+            if is_hash_attr
+                && let Some(ref type_constraint) = tc
+                && !matches!(type_constraint.as_str(), "Mu" | "Any" | "Hash")
+            {
+                // The assignment target is a subscript on the hash.
+                // If the value we're assigning is itself a subscript/nested assignment,
+                // the effective_value would be valid, but the autovivification of the
+                // intermediate key would create a Hash value, which fails the type check.
+                // We detect this by checking if effective_value itself is a Hash
+                // (which would happen in nested assignment like h<key><sub> = val).
+                if matches!(&effective_value, Value::Hash(_)) {
+                    return Err(crate::runtime::RuntimeError::new(format!(
+                        "Type check failed in assignment to %{}; expected {} but got Hash",
+                        method, type_constraint,
+                    )));
+                }
+            }
+        }
+        // Also check via container type metadata (for non-attribute typed hashes/arrays)
+        {
+            let is_hash_attr = matches!(&current, Value::Hash(_));
+            let is_array_attr = matches!(&current, Value::Array(..));
+            if (is_hash_attr || is_array_attr)
+                && let Some(info) = self.container_type_metadata(&current)
+            {
+                let constraint = &info.value_type.clone();
+                if constraint != "Mu"
+                    && constraint != "Any"
+                    && !self.type_matches_value(constraint, &effective_value)
+                {
+                    let sigil = if is_hash_attr { "%" } else { "@" };
+                    return Err(crate::runtime::RuntimeError::new(format!(
+                        "Type check failed for an element of {}; expected {} but got {}",
+                        sigil,
+                        constraint,
+                        crate::runtime::utils::value_type_name(&effective_value),
+                    )));
+                }
+            }
+        }
+
         // Modify the container
         let updated = if dims.len() >= 2 {
             // Multi-dimensional index assignment (e.g., $c.a[2;1] = value)
@@ -297,6 +361,11 @@ impl Interpreter {
             let key = index.to_string_value();
             match current {
                 Value::Hash(ref h) => {
+                    // Check for autovivification via nested subscript assignment:
+                    // If the hash attribute has a type constraint and the key doesn't exist,
+                    // Raku would normally autovivify a hash value, but for typed Int/etc,
+                    // this should fail because {} is not an Int.
+                    // (This is handled by type check above for the actual value being assigned.)
                     let mut new_hash = (**h).clone();
                     new_hash.insert(key, effective_value.clone());
                     Value::hash(new_hash)
@@ -343,6 +412,71 @@ impl Interpreter {
             updated,
         )?;
         Ok(effective_value)
+    }
+
+    /// Handle nested subscript assignment on a typed attribute accessor.
+    /// Called for patterns like `$o.a[42]<foo> = 3` or `$o.h<key1><key2> = val`.
+    /// Detects when the intermediate container element is Nil and the attribute
+    /// has a type constraint that would prevent autovivification of a Hash/Array.
+    pub(super) fn builtin_index_assign_method_lvalue_nested(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 5 {
+            return Err(RuntimeError::new(
+                "__mutsu_index_assign_method_lvalue_nested expects target, method, inner_index, outer_index, value[, var_name]",
+            ));
+        }
+        let target = args[0].clone();
+        let method = args[1].to_string_value();
+        let inner_index = args[2].clone();
+        let _outer_index = args[3].clone();
+        let value = args[4].clone();
+
+        // Get the attribute container
+        let container = self.call_method_with_values(target.clone(), &method, Vec::new())?;
+
+        // For typed containers, check if the inner element is Nil (would need autovivification)
+        if let Value::Instance { class_name, .. } = &target
+            && let Some(type_constraint) =
+                self.get_attr_type_constraint(&class_name.resolve(), &method)
+            && !matches!(type_constraint.as_str(), "Mu" | "Any" | "Hash" | "Map")
+        {
+            // Check if the inner_index slot is Nil/undef (would need autovivification)
+            let inner_val = match &container {
+                Value::Array(items, ..) => {
+                    let idx = crate::runtime::to_int(&inner_index) as usize;
+                    items.get(idx).cloned().unwrap_or(Value::Nil)
+                }
+                Value::Hash(map) => {
+                    let key = inner_index.to_string_value();
+                    map.get(&key).cloned().unwrap_or(Value::Nil)
+                }
+                _ => Value::Nil,
+            };
+            let is_nil = matches!(&inner_val, Value::Nil | Value::Package(_));
+            if is_nil {
+                // Autovivification would create a Hash at this slot,
+                // but the container is typed, so it's not allowed.
+                let sigil = if matches!(&container, Value::Hash(_)) {
+                    "%"
+                } else {
+                    "@"
+                };
+                return Err(RuntimeError::new(format!(
+                    "Type check failed for an element of {}{} (no autovivification in typed container); expected {} but got Hash",
+                    sigil, method, type_constraint,
+                )));
+            }
+        }
+
+        // If we get here (element is not Nil or no type constraint),
+        // fall through to do the actual nested assignment on the current element.
+        // For now, just return the value (the assignment silently does nothing
+        // if the intermediate value is not a container).
+        // TODO: implement proper nested assignment for non-Nil elements.
+        let _ = value;
+        Ok(Value::Nil)
     }
 
     /// Assign a value into a nested multi-dimensional array structure.

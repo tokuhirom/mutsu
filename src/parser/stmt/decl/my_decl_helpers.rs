@@ -340,6 +340,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
             is_type: None,
             deprecated_message: None,
             is_built: None,
+            unknown_traits: Vec::new(),
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt).map(Some);
