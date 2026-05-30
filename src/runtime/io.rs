@@ -2900,6 +2900,43 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Perl"), attrs)
     }
 
+    /// Update `$*RAKU.version` to reflect `use v6.x` after parsing.
+    pub(super) fn update_raku_version_from_parser(&mut self) {
+        let lang_version = crate::parser::current_language_version();
+        if lang_version.is_empty() || lang_version == "6" {
+            return;
+        }
+        let parts: Vec<crate::value::VersionPart> = lang_version
+            .split('.')
+            .map(|s| {
+                if let Ok(n) = s.parse::<i64>() {
+                    crate::value::VersionPart::Num(n)
+                } else {
+                    crate::value::VersionPart::Str(s.to_string())
+                }
+            })
+            .collect();
+        let new_version = Value::Version {
+            parts,
+            plus: false,
+            minus: false,
+        };
+        for key in ["*RAKU", "?RAKU", "*PERL", "?PERL"] {
+            if let Some(Value::Instance {
+                class_name,
+                attributes,
+                id,
+            }) = self.env.get(key).cloned()
+            {
+                let mut new_attrs: HashMap<String, Value> =
+                    crate::value::InstanceAttrs::clone(&attributes);
+                new_attrs.insert("version".to_string(), new_version.clone());
+                let new_val = Value::make_instance_with_id(class_name, new_attrs, id);
+                self.env.insert(key.to_string(), new_val);
+            }
+        }
+    }
+
     pub(super) fn make_vm_instance() -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str_from("mutsu"));

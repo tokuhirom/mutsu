@@ -71,7 +71,7 @@ impl Interpreter {
     /// added to the enclosing class rather than lowered to subs. This method
     /// extracts MethodDecl statements and injects them into the current class,
     /// returning the remaining statements for normal evaluation.
-    fn inject_eval_methods_into_class(&mut self, stmts: Vec<Stmt>) -> Vec<Stmt> {
+    pub(super) fn inject_eval_methods_into_class(&mut self, stmts: Vec<Stmt>) -> Vec<Stmt> {
         // Only applies when current_package is a class being defined
         let class_name = self.current_package.clone();
         if !self.classes.contains_key(&class_name) {
@@ -137,7 +137,7 @@ impl Interpreter {
 
     /// Execute BEGIN phasers found in a list of statements (used for partial
     /// parse results where a later parse error prevents full evaluation).
-    fn execute_begin_phasers(&mut self, stmts: &[Stmt]) {
+    pub(super) fn execute_begin_phasers(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             if let Stmt::Phaser {
                 kind: PhaserKind::Begin,

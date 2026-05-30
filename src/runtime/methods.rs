@@ -434,6 +434,47 @@ impl Interpreter {
             });
         }
 
+        // CompUnit::Loader.load-source(buf) -- minimal implementation
+        // TODO: compile to bytecode -- this uses the interpreter's EVAL
+        if method == "load-source"
+            && matches!(&target, Value::Package(name) if name.resolve() == "CompUnit::Loader")
+        {
+            let code_str = match args.first() {
+                Some(Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                }) if crate::runtime::utils::is_buf_like_class(&class_name.resolve()) => {
+                    if let Some(Value::Array(items, _)) = attributes.get("bytes") {
+                        let bytes: Vec<u8> = items
+                            .iter()
+                            .map(|v| match v {
+                                Value::Int(n) => *n as u8,
+                                _ => v.to_string_value().parse::<u8>().unwrap_or(0),
+                            })
+                            .collect();
+                        String::from_utf8_lossy(&bytes).to_string()
+                    } else {
+                        String::new()
+                    }
+                }
+                Some(v) => v.to_string_value(),
+                None => String::new(),
+            };
+            let _ = self.eval_eval_string(&code_str);
+            let mut unit_hash = std::collections::HashMap::new();
+            unit_hash.insert(
+                "$?PACKAGE".to_string(),
+                Value::Package(crate::symbol::Symbol::intern("GLOBAL")),
+            );
+            let mut handle_attrs = std::collections::HashMap::new();
+            handle_attrs.insert("unit".to_string(), Value::Hash(unit_hash.into()));
+            return Ok(Value::make_instance(
+                crate::symbol::Symbol::intern("CompUnit::Handle"),
+                handle_attrs,
+            ));
+        }
+
         // Junction auto-threading
         if Self::should_autothread_method(method)
             && let Value::Junction { kind, values } = &target

@@ -741,6 +741,7 @@ impl Interpreter {
             body_main.splice(0..0, enter_stmts);
         }
         crate::runtime::phasers::reorder_phasers(&mut body_main);
+        self.update_raku_version_from_parser();
         self.preregister_top_level_subs(&body_main)?;
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package.clone());
