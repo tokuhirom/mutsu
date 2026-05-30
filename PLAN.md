@@ -28,10 +28,14 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 - [x] 多次元構造のエレメントレベルバインド (nested.t — PR #2413 で 42/43 に改善)
 - [x] `undefine` の aggregate 参照セマンティクス (undef.t — PR #2414 で 90/91 に改善)
 
-### Exception types (高インパクト — 22 roast テストをブロック)
+### Exception types (高インパクト — 残り ~16 roast テストをブロック)
 
 - [x] X::TypeCheck::Binding::Parameter, X::Assignment::RO 実装 (#2477)
-- [ ] 残りの型付き例外 (X::Adverb, X::Str::Numeric, X::Method::NotFound, X::Undeclared 等)
+- [x] X::Adverb 実装 (#2505)
+- [x] X::PseudoPackage::InDeclaration 実装 (#2507)
+- [x] X::Worry::Precedence::Range 実装 (#2502)
+- [x] X::IllegalDimensionInShape, X::Comp::BeginTime 実装 (#2503)
+- [ ] 残りの型付き例外 (X::Str::Numeric, X::Method::NotFound, X::Undeclared, X::Cannot::Lazy, X::EXPORTHOW::InvalidDirective 等)
 - [ ] 詳細は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) の "throws-like / Exception Types" セクション参照
 
 ---
@@ -69,7 +73,7 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ### Roast 90% 突破
 
-- [x] Whitelist → 1190+ (roast 90%) — 達成: 1207
+- [x] Whitelist → 1190+ (roast 90%) — 達成: 1218
 
 ---
 
@@ -99,7 +103,7 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ### Roast
 
-- [x] Whitelist 1200+ 目標 — 達成: 1207
+- [x] Whitelist 1200+ 目標 — 達成: 1218
 
 ---
 
@@ -167,9 +171,9 @@ BLOCKERS.md の分析に基づき、インパクト順に並べたもの。
 
 ## メトリクス
 
-| 指標 | 現在 (5月) | Q2 目標 | Q3 目標 | Q4 目標 |
+| 指標 | 現在 (5月末) | Q2 目標 | Q3 目標 | Q4 目標 |
 |------|-----------|---------|---------|---------|
-| Whitelist | **1207** ✅ | 1190+ ✅ | 1200+ ✅ | 1220+ |
+| Whitelist | **1218** ✅ | 1190+ ✅ | 1200+ ✅ | 1220+ |
 | fib(25) vs raku | **1.0x** ✅ | <10x ✅ | <10x | <10x |
 | method-call vs raku | **2.7x** | <2.5x | <2x | <1.5x |
 | bench-class vs raku | **2.3x** | <2x | <1.5x | <1.5x |
