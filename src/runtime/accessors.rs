@@ -2006,11 +2006,22 @@ impl Interpreter {
         self.let_saves.len()
     }
 
+    /// Resolve the value to restore, applying `is default(...)` when restoring Nil.
+    fn resolve_restore_value(&self, name: &str, val: &Value) -> Value {
+        if matches!(val, Value::Nil)
+            && let Some(default) = self.var_defaults.get(name)
+        {
+            return default.clone();
+        }
+        val.clone()
+    }
+
     /// Restore all variables from let_saves starting at `mark`, then truncate.
     pub(crate) fn restore_let_saves(&mut self, mark: usize) {
         for i in (mark..self.let_saves.len()).rev() {
             let (name, old_val, _is_temp) = self.let_saves[i].clone();
-            self.env.insert(name, old_val);
+            let restored = self.resolve_restore_value(&name, &old_val);
+            self.env.insert(name, restored);
         }
         self.let_saves.truncate(mark);
     }
@@ -2018,12 +2029,21 @@ impl Interpreter {
     /// On successful block exit: restore `temp` saves, discard `let` saves.
     /// For `let`, only restore if the block returned an unsuccessful value.
     pub(crate) fn resolve_let_saves_on_success(&mut self, mark: usize, success: bool) {
-        for i in (mark..self.let_saves.len()).rev() {
-            let (ref name, ref old_val, is_temp) = self.let_saves[i];
-            // temp: always restore; let: restore only if block was unsuccessful
-            if is_temp || !success {
-                self.env.insert(name.clone(), old_val.clone());
-            }
+        // Collect restore actions first to avoid borrow conflicts.
+        let restores: Vec<(String, Value)> = (mark..self.let_saves.len())
+            .rev()
+            .filter_map(|i| {
+                let (ref name, ref old_val, is_temp) = self.let_saves[i];
+                if is_temp || !success {
+                    Some((name.clone(), old_val.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (name, old_val) in restores {
+            let restored = self.resolve_restore_value(&name, &old_val);
+            self.env.insert(name, restored);
         }
         self.let_saves.truncate(mark);
     }

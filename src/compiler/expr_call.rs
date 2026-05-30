@@ -358,6 +358,7 @@ impl Compiler {
                         index: None,
                         value: None,
                         is_temp: true,
+                        undefine_first: false,
                     };
                     self.compile_stmt(&let_stmt);
                     // Then undefine the variable (assign Any type object)

@@ -2177,7 +2177,15 @@ impl Compiler {
                 index,
                 value,
                 is_temp,
+                undefine_first,
             } => {
+                // If undefine_first is set, assign Nil to the variable before saving.
+                // This makes LetSave capture the undefined state, so on scope exit
+                // the variable is restored to undefined (and its default value applies).
+                if *undefine_first {
+                    self.compile_expr(&Expr::Literal(Value::Nil));
+                    self.emit_set_named_var(name);
+                }
                 // Emit LetSave: saves current value of the variable
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let has_index = index.is_some();

@@ -1571,6 +1571,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Some(Box::new(idx_expr)),
                     value: Some(Box::new(val_expr)),
                     is_temp: false,
+                    undefine_first: false,
                 },
             );
         }
@@ -1581,6 +1582,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: Some(Box::new(idx_expr)),
                 value: None,
                 is_temp: false,
+                undefine_first: false,
             },
         );
     }
@@ -1604,6 +1606,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Some(Box::new(key_expr)),
                     value: Some(Box::new(val_expr)),
                     is_temp: false,
+                    undefine_first: false,
                 },
             );
         }
@@ -1614,6 +1617,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: Some(Box::new(key_expr)),
                 value: None,
                 is_temp: false,
+                undefine_first: false,
             },
         );
     }
@@ -1630,6 +1634,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: None,
                 value: Some(Box::new(val_expr)),
                 is_temp: false,
+                undefine_first: false,
             },
         );
     }
@@ -1642,6 +1647,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
             index: None,
             value: None,
             is_temp: false,
+            undefine_first: false,
         },
     )
 }
@@ -1727,13 +1733,12 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             }
         };
         // With assignment: temp undefine($d) = "baz"
-        // Semantics: save $d with temp, then assign "baz" to it.
-        // (undefine step is implicit — temp save + assign is sufficient)
+        // Semantics: undefine $d first, then temp saves the undefined state,
+        // then assign "baz". On scope exit, temp restores to undefined.
         if var_rest.starts_with('=') && !var_rest.starts_with("==") {
             let rhs_rest = &var_rest[1..];
             let (rhs_rest, _) = ws(rhs_rest)?;
             let (rhs_rest, rhs_expr) = expression(rhs_rest)?;
-            // Emit as `temp $var = rhs` — saves current value, assigns new one
             return parse_statement_modifier(
                 rhs_rest,
                 Stmt::Let {
@@ -1741,6 +1746,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: None,
                     value: Some(Box::new(rhs_expr)),
                     is_temp: true,
+                    undefine_first: true,
                 },
             );
         }
@@ -1780,6 +1786,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: None,
                     value: Some(Box::new(val_expr)),
                     is_temp: true,
+                    undefine_first: false,
                 },
             );
         }
@@ -1791,6 +1798,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: None,
                 value: None,
                 is_temp: true,
+                undefine_first: false,
             },
         );
     }
@@ -1844,6 +1852,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Some(Box::new(idx_expr)),
                     value: Some(Box::new(val_expr)),
                     is_temp: true,
+                    undefine_first: false,
                 },
             );
         }
@@ -1854,6 +1863,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: Some(Box::new(idx_expr)),
                 value: None,
                 is_temp: true,
+                undefine_first: false,
             },
         );
     }
@@ -1877,6 +1887,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Some(Box::new(key_expr)),
                     value: Some(Box::new(val_expr)),
                     is_temp: true,
+                    undefine_first: false,
                 },
             );
         }
@@ -1887,6 +1898,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: Some(Box::new(key_expr)),
                 value: None,
                 is_temp: true,
+                undefine_first: false,
             },
         );
     }
@@ -1903,6 +1915,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: None,
                 value: Some(Box::new(val_expr)),
                 is_temp: true,
+                undefine_first: false,
             },
         );
     }
@@ -1914,6 +1927,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             index: None,
             value: None,
             is_temp: true,
+            undefine_first: false,
         },
     )
 }
