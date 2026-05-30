@@ -904,6 +904,9 @@ impl VM {
                             .cloned()
                             .or_else(|| self.get_env_with_main_alias(&candidate))
                     })
+                    // Anonymous state variable (`$`): fall back to persisted
+                    // state so the value survives across closure calls.
+                    .or_else(|| self.anon_state_value(name))
                     .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {
@@ -1474,6 +1477,9 @@ impl VM {
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
                 }
+                // Persist anonymous state variable (`$`) so it survives
+                // across closure calls (e.g. `$ ~= $_` in classify block).
+                self.sync_anon_state_value(&name, &val);
                 // Persist `our`-scoped variables so they survive block-scope
                 // restoration (which only preserves env keys that existed
                 // before the block).  `::('name')` falls back to this store.
