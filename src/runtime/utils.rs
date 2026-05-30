@@ -124,6 +124,29 @@ pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
     Value::str(str_key.to_string())
 }
 
+/// Register original keys for a hash value by Arc pointer ID directly.
+pub(crate) fn register_hash_original_keys_by_id(id: usize, original_keys: HashMap<String, Value>) {
+    if let Ok(mut reg) = hash_original_keys_registry().lock() {
+        reg.insert(id, original_keys);
+    }
+}
+
+/// Snapshot original keys by Arc pointer ID.
+pub(crate) fn hash_original_keys_snapshot_by_id(id: usize) -> Option<HashMap<String, Value>> {
+    if let Ok(reg) = hash_original_keys_registry().lock() {
+        return reg.get(&id).cloned();
+    }
+    None
+}
+
+/// Take (remove and return) original keys by Arc pointer ID.
+pub(crate) fn take_hash_original_keys_by_id(id: usize) -> Option<HashMap<String, Value>> {
+    if let Ok(mut reg) = hash_original_keys_registry().lock() {
+        return reg.remove(&id);
+    }
+    None
+}
+
 fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
     static GREP_VIEW_BINDINGS: OnceLock<Mutex<GrepViewMap>> = OnceLock::new();
     GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -3210,4 +3233,36 @@ pub(crate) fn type_check_element_typed_error(
     attrs.insert("symbol".to_string(), Value::str(display_name));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     RuntimeError::typed("X::TypeCheck::Assignment", attrs)
+}
+
+/// Compute the `.WHICH` string for a value, used as the internal key
+/// in object hashes (`my %h{Any}`).
+pub(crate) fn value_which_key(value: &Value) -> String {
+    match value {
+        Value::Int(n) => format!("Int|{}", n),
+        Value::BigInt(n) => format!("Int|{}", n),
+        Value::Num(n) => format!("Num|{}", n),
+        Value::Str(s) => format!("Str|{}", s),
+        Value::Bool(b) => format!("Bool|{}", if *b { 1 } else { 0 }),
+        Value::Rat(n, d) => format!("Rat|{}/{}", n, d),
+        Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+        Value::BigRat(n, d) => format!("Rat|{}/{}", n, d),
+        Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+        Value::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
+        Value::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
+        Value::CustomType { name, id, .. } => format!("{}|U{}", name.resolve(), id),
+        Value::Instance { id, .. } => {
+            format!("{}|{}", value_type_name(value), id)
+        }
+        Value::Array(items, ..) => format!("Array|{:p}", Arc::as_ptr(items)),
+        Value::Hash(map) => format!("Hash|{:p}", Arc::as_ptr(map)),
+        Value::Pair(k, v) => format!("Pair|{}|{}", k, value_which_key(v)),
+        Value::ValuePair(k, v) => format!("Pair|{}|{}", value_which_key(k), value_which_key(v)),
+        Value::Enum { enum_type, key, .. } => {
+            format!("{}|{}", enum_type.resolve(), key.resolve())
+        }
+        _ => {
+            format!("{}|{}", value_type_name(value), value.to_string_value())
+        }
+    }
 }

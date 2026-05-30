@@ -346,6 +346,73 @@ impl VM {
         } else {
             index
         };
+        // Object hash shortcut: when the target hash has a key_type constraint,
+        // use .WHICH-based lookup and enforce key type checking on access.
+        if let Value::Hash(ref items) = target {
+            let hash_val = Value::Hash(items.clone());
+            if let Some(key_type) = self.interpreter.hash_key_type(&hash_val)
+                && !matches!(index, Value::Whatever | Value::Nil | Value::Sub(..))
+            {
+                if let Value::Array(ref keys, ..) = index {
+                    for k in keys.iter() {
+                        if !self.interpreter.type_matches_value(&key_type, k) {
+                            return Err(RuntimeError::new(format!(
+                                "Type check failed for object hash key; expected {} but got {} ({})",
+                                key_type,
+                                crate::runtime::utils::value_type_name(k),
+                                k.to_string_value()
+                            )));
+                        }
+                    }
+                    let default = self.typed_container_default(&hash_val);
+                    let result = Value::array(
+                        keys.iter()
+                            .map(|k| {
+                                let which = crate::runtime::utils::value_which_key(k);
+                                let v = self.resolve_hash_entry(items, &which);
+                                let v = if matches!(v, Value::Nil) {
+                                    let encoded = Value::hash_key_encode(k);
+                                    self.resolve_hash_entry(items, &encoded)
+                                } else {
+                                    v
+                                };
+                                if matches!(v, Value::Nil) {
+                                    default.clone()
+                                } else {
+                                    v
+                                }
+                            })
+                            .collect(),
+                    );
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                if !self.interpreter.type_matches_value(&key_type, &index) {
+                    return Err(RuntimeError::new(format!(
+                        "Type check failed for object hash key; expected {} but got {} ({})",
+                        key_type,
+                        crate::runtime::utils::value_type_name(&index),
+                        index.to_string_value()
+                    )));
+                }
+                let which = crate::runtime::utils::value_which_key(&index);
+                let v = self.resolve_hash_entry(items, &which);
+                // Fall back to hash_key_encode format (for hashes built from lists)
+                let v = if matches!(v, Value::Nil) {
+                    let encoded = Value::hash_key_encode(&index);
+                    self.resolve_hash_entry(items, &encoded)
+                } else {
+                    v
+                };
+                let result = if matches!(v, Value::Nil) {
+                    self.typed_container_default(&hash_val)
+                } else {
+                    v
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
         let result = match (target, index) {
             // Whatever (*) index on Array: @a[*] returns all elements as a List
             (Value::Array(items, _is_arr), Value::Whatever) => {

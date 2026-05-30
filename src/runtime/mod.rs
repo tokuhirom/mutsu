@@ -987,6 +987,8 @@ pub struct Interpreter {
     bag_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Hash values keyed by Arc pointer identity.
     hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Original key objects for object hashes, keyed by Hash Arc pointer identity.
+    hash_object_keys: HashMap<usize, HashMap<String, Value>>,
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value, bool)>,
@@ -3023,6 +3025,7 @@ impl Interpreter {
             set_type_metadata: HashMap::new(),
             bag_type_metadata: HashMap::new(),
             hash_type_metadata: HashMap::new(),
+            hash_object_keys: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
@@ -4367,6 +4370,55 @@ impl Interpreter {
         self.hash_type_metadata.contains_key(&id)
     }
 
+    /// Store an original key object for an object hash entry.
+    pub(crate) fn set_hash_object_key(
+        &mut self,
+        hash_ptr: usize,
+        which_key: &str,
+        original_key: Value,
+    ) {
+        self.hash_object_keys
+            .entry(hash_ptr)
+            .or_default()
+            .insert(which_key.to_string(), original_key);
+    }
+
+    /// Get the original key objects for a hash by Arc pointer id.
+    pub(crate) fn hash_object_keys_get(&self, hash_ptr: usize) -> Option<&HashMap<String, Value>> {
+        self.hash_object_keys.get(&hash_ptr)
+    }
+
+    /// Copy object keys from old Arc pointer to new Arc pointer (after COW).
+    pub(crate) fn migrate_hash_object_keys(&mut self, old_ptr: usize, new_ptr: usize) {
+        if old_ptr != new_ptr
+            && let Some(keys) = self.hash_object_keys.remove(&old_ptr)
+        {
+            self.hash_object_keys.insert(new_ptr, keys);
+        }
+    }
+
+    /// Check if a hash is an object hash (has a key_type constraint).
+    pub(crate) fn is_object_hash(&self, hash: &Value) -> bool {
+        if let Value::Hash(arc) = hash {
+            let id = Arc::as_ptr(arc) as usize;
+            if let Some(info) = self.hash_type_metadata.get(&id) {
+                return info.key_type.is_some();
+            }
+        }
+        false
+    }
+
+    /// Get the key type constraint for an object hash, if any.
+    pub(crate) fn hash_key_type(&self, hash: &Value) -> Option<String> {
+        if let Value::Hash(arc) = hash {
+            let id = Arc::as_ptr(arc) as usize;
+            if let Some(info) = self.hash_type_metadata.get(&id) {
+                return info.key_type.clone();
+            }
+        }
+        None
+    }
+
     fn register_var_container_type_metadata(&mut self, name: &str, info: &ContainerTypeInfo) {
         if let Some(value) = self.env.get(name).cloned() {
             self.register_container_type_metadata(&value, info.clone());
@@ -4914,6 +4966,7 @@ impl Interpreter {
             set_type_metadata: self.set_type_metadata.clone(),
             bag_type_metadata: self.bag_type_metadata.clone(),
             hash_type_metadata: self.hash_type_metadata.clone(),
+            hash_object_keys: self.hash_object_keys.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),

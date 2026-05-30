@@ -116,10 +116,20 @@ impl VM {
                                 return Ok(());
                             }
                         }
+                        let is_obj_hash = self.interpreter.is_object_hash(&target);
                         let pairs: Vec<(Value, bool)> = items
                             .iter()
                             .map(|k| {
-                                let key = k.to_string_value();
+                                let key = if is_obj_hash {
+                                    let which = crate::runtime::utils::value_which_key(k);
+                                    if map.contains_key(&which) {
+                                        which
+                                    } else {
+                                        Value::hash_key_encode(k)
+                                    }
+                                } else {
+                                    k.to_string_value()
+                                };
                                 (k.clone(), map.contains_key(&key))
                             })
                             .collect();
@@ -305,7 +315,18 @@ impl VM {
                         return Ok(());
                     }
                     _ => {
-                        let exists = map.contains_key(&idx.to_string_value());
+                        // For object hashes, use WHICH for lookup, fallback to hash_key_encode
+                        let lookup_key = if self.interpreter.is_object_hash(&target) {
+                            let which = crate::runtime::utils::value_which_key(&idx);
+                            if map.contains_key(&which) {
+                                which
+                            } else {
+                                Value::hash_key_encode(&idx)
+                            }
+                        } else {
+                            idx.to_string_value()
+                        };
+                        let exists = map.contains_key(&lookup_key);
                         let result_bool = exists ^ effective_negated;
                         let key = idx.clone();
                         let result = match adverb_bits {

@@ -253,6 +253,46 @@ impl VM {
             .interpreter
             .var_type_constraint(&var_name)
             .unwrap_or_else(|| "Any".to_string());
+        // For object hashes, convert index to WHICH-based key format
+        let is_obj_hash_del = self
+            .interpreter
+            .var_hash_key_constraint(&var_name)
+            .is_some();
+        let idx =
+            if is_obj_hash_del && !matches!(idx, Value::Whatever | Value::Nil | Value::Array(..)) {
+                // Convert index value to a Str containing the WHICH key
+                let which = crate::runtime::utils::value_which_key(&idx);
+                // Check if the hash uses WHICH keys or encoded keys
+                if let Some(Value::Hash(map)) = self.interpreter.env().get(&var_name) {
+                    if map.contains_key(&which) {
+                        Value::str(which)
+                    } else {
+                        let encoded = Value::hash_key_encode(&idx);
+                        Value::str(encoded)
+                    }
+                } else {
+                    Value::str(which)
+                }
+            } else if is_obj_hash_del && let Value::Array(ref keys, ..) = idx {
+                // Convert array of keys to WHICH format
+                let converted: Vec<Value> = keys
+                    .iter()
+                    .map(|k| {
+                        let which = crate::runtime::utils::value_which_key(k);
+                        if let Some(Value::Hash(map)) = self.interpreter.env().get(&var_name)
+                            && map.contains_key(&which)
+                        {
+                            Value::str(which)
+                        } else {
+                            let encoded = Value::hash_key_encode(k);
+                            Value::str(encoded)
+                        }
+                    })
+                    .collect();
+                Value::array(converted)
+            } else {
+                idx
+            };
         // Save idx for unmark step (idx is consumed by delete_from_container)
         let idx_for_unmark = idx.clone();
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {

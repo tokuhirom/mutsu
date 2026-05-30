@@ -475,9 +475,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(items) => {
+                    let has_orig = crate::runtime::utils::hash_original_keys_snapshot(target)
+                        .is_some_and(|m| !m.is_empty());
                     let mut kv = Vec::new();
                     for (k, v) in items.iter() {
-                        kv.push(Value::hash_key_decode(k));
+                        if has_orig {
+                            kv.push(crate::runtime::utils::hash_typed_key(target, k));
+                        } else {
+                            kv.push(Value::hash_key_decode(k));
+                        }
                         kv.push(v.clone());
                     }
                     Some(Ok(Value::array(kv)))
@@ -552,12 +558,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 return Some(Ok(Value::array(pairs)));
             }
             match target {
-                Value::Hash(items) => Some(Ok(Value::array(
-                    items
-                        .iter()
-                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                        .collect(),
-                ))),
+                Value::Hash(items) => {
+                    let has_orig = crate::runtime::utils::hash_original_keys_snapshot(target)
+                        .is_some_and(|m| !m.is_empty());
+                    let pairs: Vec<Value> = if has_orig {
+                        items
+                            .iter()
+                            .map(|(k, v)| {
+                                let typed_k = crate::runtime::utils::hash_typed_key(target, k);
+                                Value::ValuePair(Box::new(typed_k), Box::new(v.clone()))
+                            })
+                            .collect()
+                    } else {
+                        items
+                            .iter()
+                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .collect()
+                    };
+                    Some(Ok(Value::array(pairs)))
+                }
                 Value::Set(s, _) => Some(Ok(Value::array(
                     s.iter()
                         .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))

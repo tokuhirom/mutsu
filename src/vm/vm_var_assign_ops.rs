@@ -1952,6 +1952,13 @@ impl VM {
             .env()
             .get(&save_var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v));
+        // Save old hash pointer for object key migration after COW.
+        let saved_hash_obj_keys_ptr =
+            if let Some(Value::Hash(arc)) = self.interpreter.env().get(&save_var_name) {
+                Some(Arc::as_ptr(arc) as usize)
+            } else {
+                None
+            };
         // Guard against stale pointer-keyed defaults (Arc reuse across
         // allocations): only trust the saved default when a name-based
         // var_default is also registered.
@@ -1984,6 +1991,18 @@ impl VM {
             && self.interpreter.container_default(&container).is_none()
         {
             self.interpreter.set_container_default(&container, def);
+        }
+        // Migrate object hash keys if the hash Arc pointer changed (COW).
+        if let Some(old_ptr) = saved_hash_obj_keys_ptr
+            && let Some(Value::Hash(arc)) = self.interpreter.env().get(&save_var_name)
+        {
+            let new_ptr = Arc::as_ptr(arc) as usize;
+            self.interpreter.migrate_hash_object_keys(old_ptr, new_ptr);
+            if old_ptr != new_ptr
+                && let Some(keys) = runtime::utils::take_hash_original_keys_by_id(old_ptr)
+            {
+                runtime::utils::register_hash_original_keys_by_id(new_ptr, keys);
+            }
         }
         result
     }
@@ -2389,11 +2408,24 @@ impl VM {
                         Value::hash(std::collections::HashMap::new()),
                     );
                 }
+                let slice_is_object_hash = self
+                    .interpreter
+                    .var_hash_key_constraint(&var_name)
+                    .is_some();
                 let mut pending_source_updates: Vec<(String, Value)> = Vec::new();
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+                    let old_slice_ptr = if slice_is_object_hash {
+                        Some(Arc::as_ptr(hash) as usize)
+                    } else {
+                        None
+                    };
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
-                        let k = key.to_string_value();
+                        let k = if slice_is_object_hash {
+                            runtime::utils::value_which_key(key)
+                        } else {
+                            key.to_string_value()
+                        };
                         let v = if bind_mode {
                             vals.get(i).cloned().unwrap_or(Value::Nil)
                         } else {
@@ -2412,14 +2444,41 @@ impl VM {
                             h.insert(k, v);
                         }
                     }
+                    // Store original keys for object hashes after slice insert
+                    if slice_is_object_hash {
+                        let new_ptr = Arc::as_ptr(hash) as usize;
+                        if let Some(old_ptr) = old_slice_ptr
+                            && old_ptr != new_ptr
+                            && let Some(old_keys) =
+                                runtime::utils::take_hash_original_keys_by_id(old_ptr)
+                        {
+                            runtime::utils::register_hash_original_keys_by_id(new_ptr, old_keys);
+                        }
+                        let mut orig = runtime::utils::hash_original_keys_snapshot_by_id(new_ptr)
+                            .unwrap_or_default();
+                        for key in keys.iter() {
+                            let wk = runtime::utils::value_which_key(key);
+                            orig.insert(wk, key.clone());
+                        }
+                        runtime::utils::register_hash_original_keys_by_id(new_ptr, orig);
+                    }
                 }
                 for (source_name, source_value) in pending_source_updates {
                     self.interpreter.env_mut().insert(source_name, source_value);
                 }
             }
             _ => {
-                // Check if the target is an array variable — use numeric index assignment
-                let key = idx.to_string_value();
+                // For object hashes, use .WHICH as the internal key.
+                let is_object_hash = var_name.starts_with('%')
+                    && self
+                        .interpreter
+                        .var_hash_key_constraint(&var_name)
+                        .is_some();
+                let key = if is_object_hash {
+                    runtime::utils::value_which_key(&idx)
+                } else {
+                    idx.to_string_value()
+                };
                 let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
                 if let Some(constraint) = array_elem_constraint
                     && !matches!(val, Value::Nil)
@@ -2658,6 +2717,11 @@ impl VM {
                             // modifications propagate to the bound source.
                             // %-sigiled vars have names like "%h", scalar vars
                             // have names without a sigil prefix (e.g. "bar").
+                            let old_hash_ptr = if is_object_hash {
+                                Some(Arc::as_ptr(hash) as usize)
+                            } else {
+                                None
+                            };
                             let use_inplace = Arc::strong_count(hash) > 1
                                 && (!var_name.starts_with('%') || is_bound_hash_var);
                             let h: &mut std::collections::HashMap<String, Value> = if use_inplace {
@@ -2683,6 +2747,28 @@ impl VM {
                                 h.insert(key.clone(), Self::self_hash_ref_marker());
                             } else {
                                 h.insert(key.clone(), val.clone());
+                            }
+                            // For object hashes, store the original key object
+                            if is_object_hash {
+                                let new_ptr = Arc::as_ptr(hash) as usize;
+                                if let Some(old_ptr) = old_hash_ptr {
+                                    self.interpreter.migrate_hash_object_keys(old_ptr, new_ptr);
+                                    if old_ptr != new_ptr
+                                        && let Some(old_keys) =
+                                            runtime::utils::take_hash_original_keys_by_id(old_ptr)
+                                    {
+                                        runtime::utils::register_hash_original_keys_by_id(
+                                            new_ptr, old_keys,
+                                        );
+                                    }
+                                }
+                                self.interpreter
+                                    .set_hash_object_key(new_ptr, &key, idx.clone());
+                                let mut orig =
+                                    runtime::utils::hash_original_keys_snapshot_by_id(new_ptr)
+                                        .unwrap_or_default();
+                                orig.insert(key.clone(), idx.clone());
+                                runtime::utils::register_hash_original_keys_by_id(new_ptr, orig);
                             }
                         }
                         Value::Array(..) => {
@@ -2888,14 +2974,17 @@ impl VM {
                                 let mut hash = std::collections::HashMap::new();
                                 hash.insert(key.clone(), val.clone());
                                 *container = Value::hash(hash);
+                                if is_object_hash && let Value::Hash(arc) = &*container {
+                                    let ptr = Arc::as_ptr(arc) as usize;
+                                    let mut orig = HashMap::new();
+                                    orig.insert(key.clone(), idx.clone());
+                                    runtime::utils::register_hash_original_keys_by_id(ptr, orig);
+                                }
                             }
                         }
                     }
                 } else {
-                    // Autovivify the missing variable: Array if the subscript
-                    // was positional `[...]` (and the var is not %-sigiled),
-                    // otherwise Hash. Sigil-bearing variables (`@x`, `%h`)
-                    // always honour their sigil.
+                    // Autovivify the missing variable
                     if (var_name.starts_with('@') || (is_positional && !var_name.starts_with('%')))
                         && let Some(i) = Self::index_to_usize(&idx)
                     {
@@ -2907,9 +2996,19 @@ impl VM {
                     } else {
                         let mut hash = std::collections::HashMap::new();
                         hash.insert(key.clone(), val.clone());
+                        let hash_val = Value::hash(hash);
+                        if is_object_hash {
+                            if let Value::Hash(arc) = &hash_val {
+                                let ptr = Arc::as_ptr(arc) as usize;
+                                self.interpreter.set_hash_object_key(ptr, &key, idx.clone());
+                            }
+                            let mut orig = HashMap::new();
+                            orig.insert(key.clone(), idx.clone());
+                            runtime::utils::register_hash_original_keys(&hash_val, orig);
+                        }
                         self.interpreter
                             .env_mut()
-                            .insert(var_name.clone(), Value::hash(hash));
+                            .insert(var_name.clone(), hash_val);
                     }
                 }
                 if let Some((source_name, source_value)) = pending_source_update {
