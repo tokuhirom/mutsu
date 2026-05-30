@@ -131,6 +131,9 @@ pub(crate) struct VM {
     /// Each entry is (source_slot, target_slot): writing to source_slot should
     /// propagate the value to target_slot.
     local_bind_pairs: Vec<(usize, usize)>,
+    /// Set when GetLocal loads a Hash value from a scalar ($) variable.
+    /// Consumed by .raku/.perl to produce `${...}` for Hash-in-Scalar context.
+    scalar_hash_target: bool,
     /// Cache for on-the-fly compiled functions, keyed by fingerprint.
     /// Prevents re-compilation which would break state variables.
     otf_compile_cache: HashMap<u64, CompiledFunction>,
@@ -354,6 +357,7 @@ impl VM {
             explicit_initializer_context: false,
             vardecl_context: false,
             local_bind_pairs: Vec::new(),
+            scalar_hash_target: false,
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
             fn_resolve_cache: HashMap::new(),
@@ -3610,6 +3614,17 @@ impl VM {
             // -- Local variables --
             OpCode::GetLocal(idx) => {
                 self.exec_get_local_op(code, *idx)?;
+                // Track scalar-hash context for .raku/.perl rendering.
+                // If the loaded value is a Hash from a $ variable, set the flag.
+                let name = code.locals.get(*idx as usize).map(|s| s.as_str());
+                let is_scalar_var = name.is_some_and(|n| {
+                    !n.starts_with('@') && !n.starts_with('%') && !n.starts_with('&')
+                });
+                self.scalar_hash_target = is_scalar_var
+                    && self
+                        .stack
+                        .last()
+                        .is_some_and(|v| matches!(v, Value::Hash(_)));
                 *ip += 1;
             }
             OpCode::GetLocalRaw(idx) => {
