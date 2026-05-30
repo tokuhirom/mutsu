@@ -306,10 +306,16 @@ pub(crate) fn native_method_0arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    // Scalar containers are transparent for method dispatch (except .VAR).
+    // Scalar containers are transparent for method dispatch (except .VAR, .raku, .perl).
     if let Value::Scalar(inner) = target {
         if method == "VAR" {
             return Some(Ok(Value::Package(crate::symbol::Symbol::intern("Scalar"))));
+        }
+        // .raku/.perl must see the Scalar wrapper so Hash-in-Scalar produces
+        // `${:a(1)}` instead of `{:a(1)}`.
+        if matches!(method, "raku" | "perl") {
+            let repr = raku_repr::raku_value(target);
+            return Some(Ok(Value::str(repr)));
         }
         return native_method_0arg(inner, method_sym);
     }

@@ -4470,6 +4470,19 @@ impl VM {
         } else {
             Self::normalize_scalar_assignment_value(raw_popped)
         };
+        // Wrap Hash in Scalar container when assigning to a $ variable (not
+        // binding).  In Raku `$h = {a => 1}` itemizes the hash so `$h.raku`
+        // produces `${:a(1)}` instead of `{:a(1)}`.
+        if !is_bind
+            && !is_rebind
+            && (!is_vardecl || has_explicit_initializer)
+            && !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && matches!(val, Value::Hash(_))
+        {
+            val = Value::Scalar(Box::new(val));
+        }
         if matches!(val, Value::Nil)
             && !matches!(self.locals[idx], Value::Nil)
             && let Some(def) = self.interpreter.var_default(name)
@@ -5111,7 +5124,12 @@ impl VM {
             }
             assigned
         } else {
-            Self::normalize_scalar_assignment_value(raw_val)
+            let mut v = Self::normalize_scalar_assignment_value(raw_val);
+            // Wrap Hash in Scalar container on regular assignment to a $ variable.
+            if matches!(v, Value::Hash(_)) {
+                v = Value::Scalar(Box::new(v));
+            }
+            v
         };
         if matches!(val, Value::Nil)
             && let Some(def) = self.interpreter.var_default(name)

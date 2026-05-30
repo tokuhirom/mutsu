@@ -276,11 +276,17 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        // Scalar containers are transparent for method dispatch (except .item and .VAR)
+        // Scalar containers are transparent for method dispatch (except .item, .VAR, .raku, .perl)
         if let Value::Scalar(inner) = target {
             if method == "VAR" {
                 // Return an opaque Scalar type object so .^name returns "Scalar"
                 return Ok(Value::Package(Symbol::intern("Scalar")));
+            }
+            // .raku/.perl must see the Scalar wrapper so Hash-in-Scalar produces
+            // `${:a(1)}` instead of `{:a(1)}`.
+            if matches!(method, "raku" | "perl") {
+                let repr = crate::builtins::methods_0arg::raku_value(&Value::Scalar(inner));
+                return Ok(Value::str(repr));
             }
             return self.call_method_with_values(*inner, method, args);
         }

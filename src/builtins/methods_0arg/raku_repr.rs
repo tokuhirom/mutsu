@@ -578,8 +578,13 @@ pub fn raku_value(v: &Value) -> String {
             format!("{}{}{}{}", start_repr, start_sep, end_sep, end_repr)
         }
         Value::Scalar(inner) => {
-            // $(expr) — itemized container. Render as $(<inner_raku>).
-            format!("$({})", raku_value(inner))
+            // Itemized container rendering depends on inner type:
+            // - Hash:  ${:a(1), :b(2)}  (not $({...}))
+            // - Other: $(<inner_raku>)
+            match inner.as_ref() {
+                Value::Hash(_) => format!("${}", raku_value(inner)),
+                _ => format!("$({})", raku_value(inner)),
+            }
         }
         Value::Capture { positional, named } => {
             let mut parts = Vec::new();
