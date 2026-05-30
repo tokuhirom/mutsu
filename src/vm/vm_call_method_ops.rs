@@ -50,7 +50,6 @@ impl VM {
         } else {
             target
         };
-        let is_hash_target = matches!(&target, Value::Hash(_));
         // .return method: triggers a return from the enclosing sub with the invocant
         // as the return value. Does NOT auto-thread over junctions.
         if method == "return" && args.is_empty() {
@@ -872,25 +871,6 @@ impl VM {
                     }
                 } else {
                     self.try_compiled_method_or_interpret(target, method, args)
-                };
-                // When .raku/.perl is called on a Hash loaded from a $ variable,
-                // prepend '$' to the result so `$h.raku` produces `${...}`.
-                let call_result = if self.scalar_hash_target
-                    && matches!(method, "raku" | "perl")
-                    && is_hash_target
-                {
-                    self.scalar_hash_target = false;
-                    call_result.map(|v| {
-                        if let Value::Str(s) = &v
-                            && s.starts_with('{')
-                        {
-                            return Value::str(format!("${}", s));
-                        }
-                        v
-                    })
-                } else {
-                    self.scalar_hash_target = false;
-                    call_result
                 };
                 match modifier {
                     Some("?") => match call_result {
