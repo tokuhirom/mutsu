@@ -2296,11 +2296,24 @@ impl VM {
                         Value::hash(std::collections::HashMap::new()),
                     );
                 }
+                let slice_is_object_hash = self
+                    .interpreter
+                    .var_hash_key_constraint(&var_name)
+                    .is_some();
                 let mut pending_source_updates: Vec<(String, Value)> = Vec::new();
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+                    let old_slice_ptr = if slice_is_object_hash {
+                        Some(Arc::as_ptr(hash) as usize)
+                    } else {
+                        None
+                    };
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
-                        let k = key.to_string_value();
+                        let k = if slice_is_object_hash {
+                            runtime::utils::value_which_key(key)
+                        } else {
+                            key.to_string_value()
+                        };
                         let v = if bind_mode {
                             vals.get(i).cloned().unwrap_or(Value::Nil)
                         } else {
@@ -2318,6 +2331,24 @@ impl VM {
                         } else {
                             h.insert(k, v);
                         }
+                    }
+                    // Store original keys for object hashes after slice insert
+                    if slice_is_object_hash {
+                        let new_ptr = Arc::as_ptr(hash) as usize;
+                        if let Some(old_ptr) = old_slice_ptr
+                            && old_ptr != new_ptr
+                            && let Some(old_keys) =
+                                runtime::utils::take_hash_original_keys_by_id(old_ptr)
+                        {
+                            runtime::utils::register_hash_original_keys_by_id(new_ptr, old_keys);
+                        }
+                        let mut orig = runtime::utils::hash_original_keys_snapshot_by_id(new_ptr)
+                            .unwrap_or_default();
+                        for key in keys.iter() {
+                            let wk = runtime::utils::value_which_key(key);
+                            orig.insert(wk, key.clone());
+                        }
+                        runtime::utils::register_hash_original_keys_by_id(new_ptr, orig);
                     }
                 }
                 for (source_name, source_value) in pending_source_updates {
