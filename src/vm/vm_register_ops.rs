@@ -50,6 +50,7 @@ impl VM {
                     stack: Vec::new(),
                     env: crate::env::Env::new(),
                     finished: false,
+                    for_loop_resume: None,
                 })),
             };
             let val = Value::LazyList(std::sync::Arc::new(list));

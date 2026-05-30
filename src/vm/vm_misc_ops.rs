@@ -2078,8 +2078,8 @@ impl VM {
             self.interpreter.take_value(val)
         } else {
             // No enclosing gather — raise a CX::Take control exception so a
-            // CONTROL block can observe it. Unhandled, this propagates up
-            // and becomes a runtime error.
+            // CONTROL block can observe it. If unhandled, the runtime wraps
+            // it as X::ControlFlow with illegal=>"take", enclosing=>"gather".
             Err(RuntimeError::take_signal(val))
         }
     }

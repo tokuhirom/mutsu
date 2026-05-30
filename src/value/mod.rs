@@ -951,6 +951,27 @@ pub(crate) struct ScanSpec {
     pub(crate) computed_count: usize,
 }
 
+/// Saved for-loop state for resuming a gather coroutine mid-iteration.
+#[derive(Debug, Clone)]
+pub(crate) enum ForLoopResumeState {
+    /// Resume an integer-range for loop at the given current value.
+    IntRange {
+        current: i64,
+        end_val: i64,
+        inclusive: bool,
+    },
+    /// Resume a list-based for loop at the given index.
+    List {
+        items: Vec<Value>,
+        next_index: usize,
+    },
+    /// Resume a lazy-gather for loop at the given element index.
+    LazyGather {
+        lazy_list: Arc<LazyList>,
+        next_index: usize,
+    },
+}
+
 /// Saved VM state for a suspended gather coroutine.
 /// When `take` is encountered during gather body execution, the VM state
 /// is captured here so execution can resume later for more elements.
@@ -962,6 +983,8 @@ pub(crate) struct GatherCoroutineState {
     pub(crate) stack: Vec<Value>,
     pub(crate) env: Env,
     pub(crate) finished: bool,
+    /// Saved for-loop iteration state when suspended inside a for loop.
+    pub(crate) for_loop_resume: Option<ForLoopResumeState>,
 }
 
 pub(crate) struct LazyList {

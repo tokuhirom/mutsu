@@ -227,6 +227,61 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        // Check for gather coroutine resume state.
+        if let Some(resume) = self.gather_for_loop_resume.take() {
+            let body_start = *ip + 1;
+            let loop_end = spec.body_end as usize;
+            match resume {
+                crate::value::ForLoopResumeState::IntRange {
+                    current,
+                    end_val,
+                    inclusive,
+                } => {
+                    self.exec_for_loop_int_range(
+                        code,
+                        spec,
+                        current,
+                        end_val,
+                        inclusive,
+                        body_start,
+                        loop_end,
+                        compiled_fns,
+                    )?;
+                    *ip = loop_end;
+                    return Ok(());
+                }
+                crate::value::ForLoopResumeState::List { items, next_index } => {
+                    self.exec_for_loop_body(
+                        code,
+                        spec,
+                        &items,
+                        body_start,
+                        loop_end,
+                        compiled_fns,
+                        next_index,
+                    )?;
+                    *ip = loop_end;
+                    return Ok(());
+                }
+                crate::value::ForLoopResumeState::LazyGather {
+                    lazy_list,
+                    next_index,
+                } => {
+                    self.exec_for_loop_lazy_gather_from(
+                        code,
+                        spec,
+                        &lazy_list,
+                        next_index,
+                        body_start,
+                        loop_end,
+                        compiled_fns,
+                    )?;
+                    *ip = loop_end;
+                    return Ok(());
+                }
+            }
+        }
+
         let iterable = self.stack.pop().unwrap();
 
         // Handle lazy IO lines: iterate by pulling one line at a time
@@ -274,6 +329,18 @@ impl VM {
                 *ip = loop_end;
                 return Ok(());
             }
+        }
+
+        // For gather-based LazyList iterables, iterate lazily by pulling
+        // items one at a time. This avoids materializing infinite sequences.
+        if let Value::LazyList(ref ll) = iterable
+            && ll.coroutine.is_some()
+        {
+            let body_start = *ip + 1;
+            let loop_end = spec.body_end as usize;
+            self.exec_for_loop_lazy_gather(code, spec, ll, body_start, loop_end, compiled_fns)?;
+            *ip = loop_end;
+            return Ok(());
         }
 
         let raw_items = if let Value::LazyList(ref ll) = iterable {
@@ -333,7 +400,15 @@ impl VM {
             // so that $*THREAD.id returns a different value.
             let result = std::thread::scope(|s| {
                 s.spawn(|| {
-                    self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns)
+                    self.exec_for_loop_body(
+                        code,
+                        spec,
+                        &items,
+                        body_start,
+                        loop_end,
+                        compiled_fns,
+                        0,
+                    )
                 })
                 .join()
                 .unwrap_or_else(|_| Err(RuntimeError::new("thread panicked in race/hyper for")))
@@ -342,11 +417,12 @@ impl VM {
             return result;
         }
 
-        self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns)?;
+        self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns, 0)?;
         *ip = loop_end;
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn exec_for_loop_body(
         &mut self,
         code: &CompiledCode,
@@ -355,6 +431,7 @@ impl VM {
         body_start: usize,
         loop_end: usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
+        resume_index: usize,
     ) -> Result<(), RuntimeError> {
         let param_name = spec
             .param_idx
@@ -438,7 +515,7 @@ impl VM {
                 }
             };
         let total_items = chunked_items.len();
-        'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
+        'for_loop: for (idx, item) in chunked_items.into_iter().enumerate().skip(resume_index) {
             self.topic_source_var = if writes_back_topic {
                 container_binding.clone()
             } else {
@@ -706,6 +783,40 @@ impl VM {
                         );
                         break 'body_redo;
                     }
+                    Err(e)
+                        if e.message
+                            == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
+                    {
+                        // Save for-loop state for gather coroutine resumption.
+                        self.gather_for_loop_resume =
+                            Some(crate::value::ForLoopResumeState::List {
+                                items: items.to_vec(),
+                                next_index: idx + 1,
+                            });
+                        if topic_readonly {
+                            self.interpreter.unmark_readonly("_");
+                            self.interpreter
+                                .env_mut()
+                                .remove("__mutsu_deep_readonly::_");
+                        }
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.interpreter.readonly_vars_mut().remove(name);
+                        }
+                        self.topic_source_var = saved_topic_source;
+                        if spec.restore_topic {
+                            match saved_topic {
+                                Some(v) => {
+                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                }
+                                None => {
+                                    self.interpreter.env_mut().remove("_");
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
                     Err(e) => {
                         // Unmark readonly before propagating error
                         if topic_readonly {
@@ -822,7 +933,14 @@ impl VM {
         let was_topic_readonly = self.interpreter.readonly_vars().contains("_");
 
         self.env_dirty = true;
-        let mut i = start;
+        // When resuming a gather coroutine, start from the saved position.
+        let mut i = if let Some(crate::value::ForLoopResumeState::IntRange { current, .. }) =
+            self.gather_for_loop_resume.take()
+        {
+            current
+        } else {
+            start
+        };
 
         // Pre-mark readonly before the loop to avoid per-iteration HashSet
         // insertions. The for loop parameter is readonly for the duration.
@@ -924,6 +1042,38 @@ impl VM {
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
                     }
+                    Err(e)
+                        if e.message
+                            == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
+                    {
+                        // Save for-loop state for gather coroutine resumption.
+                        self.gather_for_loop_resume =
+                            Some(crate::value::ForLoopResumeState::IntRange {
+                                current: i.saturating_add(1),
+                                end_val,
+                                inclusive,
+                            });
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.interpreter.readonly_vars_mut().remove(name);
+                        }
+                        if !was_topic_readonly {
+                            self.interpreter.unmark_readonly("_");
+                        }
+                        self.topic_source_var = saved_topic_source;
+                        if spec.restore_topic {
+                            match saved_topic {
+                                Some(v) => {
+                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                }
+                                None => {
+                                    self.interpreter.env_mut().remove("_");
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
                     Err(e) => {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
@@ -957,6 +1107,222 @@ impl VM {
             }
         }
         // Unmark readonly params after loop completion
+        if !spec.is_rw
+            && let Some(ref name) = param_name
+        {
+            self.interpreter.readonly_vars_mut().remove(name);
+        }
+        if !was_topic_readonly {
+            self.interpreter.unmark_readonly("_");
+        }
+        self.topic_source_var = saved_topic_source;
+        if spec.restore_topic {
+            match saved_topic {
+                Some(v) => {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove("_");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Iterate lazily over a gather-based LazyList.
+    /// Pulls items one at a time via `force_lazy_list_vm_n`, avoiding
+    /// full materialization of potentially infinite sequences.
+    #[allow(clippy::too_many_arguments)]
+    fn exec_for_loop_lazy_gather(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        ll: &crate::value::LazyList,
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        self.exec_for_loop_lazy_gather_from(code, spec, ll, 0, body_start, loop_end, compiled_fns)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn exec_for_loop_lazy_gather_from(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        ll: &crate::value::LazyList,
+        start_idx: usize,
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let ll_arc = {
+            // Get the Arc from somewhere. We need to find the LazyList Arc.
+            // Since we have a &LazyList reference, we reconstruct the Arc
+            // by looking at the cache pointer identity. The caller should
+            // have the Arc available. For now, we create a cheap wrapper
+            // that shares the same cache/coroutine via raw pointer.
+            // Actually, we need to find a way to get the Arc.
+            // Let's use std::sync::Arc::from_raw/into_raw trick.
+            // Since ll comes from Value::LazyList(Arc<LazyList>), we can
+            // reconstruct the Arc from the pointer.
+            // SAFETY: The caller holds an Arc<LazyList> on the stack,
+            // keeping the refcount >= 1 for the duration of this call.
+            unsafe {
+                let ptr = ll as *const crate::value::LazyList;
+                std::sync::Arc::increment_strong_count(ptr);
+                std::sync::Arc::from_raw(ptr)
+            }
+        };
+        let param_name = spec
+            .param_idx
+            .map(|idx| match &code.constants[idx as usize] {
+                Value::Str(s) => s.to_string(),
+                _ => unreachable!("ForLoop param must be a string constant"),
+            });
+        let saved_topic = spec
+            .restore_topic
+            .then(|| self.interpreter.env().get("_").cloned())
+            .flatten();
+        let saved_topic_source = self.topic_source_var.take();
+        let was_topic_readonly = self.interpreter.readonly_vars().contains("_");
+
+        self.env_dirty = true;
+
+        if !spec.is_rw {
+            if let Some(ref name) = param_name {
+                if !name.starts_with('@') && !name.starts_with('%') {
+                    self.interpreter.mark_readonly(name);
+                }
+            } else {
+                self.interpreter.mark_readonly("_");
+            }
+        }
+
+        let mut idx: usize = start_idx;
+        'for_loop: loop {
+            // Force one more element from the lazy list
+            let items = self.force_lazy_list_vm_n(ll, idx + 1)?;
+            if idx >= items.len() {
+                break; // No more elements
+            }
+            let item = items[idx].clone();
+            idx += 1;
+
+            self.topic_source_var = None;
+            if param_name.is_none() {
+                self.interpreter
+                    .env_mut()
+                    .insert("_".to_string(), item.clone());
+            }
+            if let Some(ref name) = param_name {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), item.clone());
+            }
+            if let Some(slot) = spec.param_local {
+                self.locals[slot as usize] = item.clone();
+            }
+            'body_redo: loop {
+                match self.run_range(code, body_start, loop_end, compiled_fns) {
+                    Ok(()) => {
+                        if !code.state_locals.is_empty() {
+                            self.sync_state_locals_in_range(code, body_start, loop_end);
+                        }
+                        break 'body_redo;
+                    }
+                    Err(e) if e.is_succeed => {
+                        break 'body_redo;
+                    }
+                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                        if param_name.is_none() {
+                            self.interpreter
+                                .env_mut()
+                                .insert("_".to_string(), item.clone());
+                        }
+                        if let Some(ref name) = param_name {
+                            self.interpreter
+                                .env_mut()
+                                .insert(name.clone(), item.clone());
+                        }
+                        if let Some(slot) = spec.param_local {
+                            self.locals[slot as usize] = item.clone();
+                        }
+                        continue 'body_redo;
+                    }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        break 'for_loop;
+                    }
+                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                        break 'for_loop;
+                    }
+                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                        break 'body_redo;
+                    }
+                    Err(e)
+                        if e.message
+                            == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
+                    {
+                        // Save lazy-gather for-loop state for coroutine resumption.
+                        self.gather_for_loop_resume =
+                            Some(crate::value::ForLoopResumeState::LazyGather {
+                                lazy_list: ll_arc.clone(),
+                                next_index: idx,
+                            });
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.interpreter.readonly_vars_mut().remove(name);
+                        }
+                        if !was_topic_readonly {
+                            self.interpreter.unmark_readonly("_");
+                        }
+                        self.topic_source_var = saved_topic_source;
+                        if spec.restore_topic {
+                            match saved_topic {
+                                Some(v) => {
+                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                }
+                                None => {
+                                    self.interpreter.env_mut().remove("_");
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
+                    Err(e) => {
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.interpreter.readonly_vars_mut().remove(name);
+                        }
+                        if !was_topic_readonly {
+                            self.interpreter.unmark_readonly("_");
+                        }
+                        if spec.restore_topic {
+                            match saved_topic.clone() {
+                                Some(v) => {
+                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                }
+                                None => {
+                                    self.interpreter.env_mut().remove("_");
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
         if !spec.is_rw
             && let Some(ref name) = param_name
         {

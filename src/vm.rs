@@ -9,8 +9,8 @@ use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{
-    ArrayKind, EnumValue, GatherCoroutineState, JunctionKind, LazyList, RuntimeError, Value,
-    make_rat,
+    ArrayKind, EnumValue, ForLoopResumeState, GatherCoroutineState, JunctionKind, LazyList,
+    RuntimeError, Value, make_rat,
 };
 use num_traits::{Signed, Zero};
 
@@ -191,6 +191,9 @@ pub(crate) struct VM {
     /// Depth counter for CHECK phaser scope. When > 0, runtime errors should
     /// be wrapped in X::Comp::BeginTime before propagating.
     check_phaser_depth: u32,
+    /// Temporary storage for for-loop resume state when a gather take-limit
+    /// interrupts a for loop.
+    gather_for_loop_resume: Option<ForLoopResumeState>,
 }
 
 impl VM {
@@ -374,6 +377,7 @@ impl VM {
             otf_call_cache: HashMap::new(),
             otf_call_cache_gen: 0,
             check_phaser_depth: 0,
+            gather_for_loop_resume: None,
         }
     }
 
