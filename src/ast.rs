@@ -776,6 +776,7 @@ pub(crate) enum Stmt {
         index: Option<Box<Expr>>,
         value: Option<Box<Expr>>,
         is_temp: bool,
+        undefine_first: bool,
     },
     TempMethodAssign {
         var_name: String,

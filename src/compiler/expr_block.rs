@@ -43,6 +43,7 @@ impl Compiler {
                 is_our,
                 is_dynamic: ast_is_dynamic,
                 type_constraint,
+                custom_traits,
                 ..
             } => {
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
@@ -156,6 +157,24 @@ impl Compiler {
                 if name == "__ANON_STATE__" && type_constraint.is_none() {
                     self.code.emit(OpCode::WrapScalar);
                 }
+                // Apply custom traits (e.g. `is default(...)`) that were
+                // captured by `..` in the original pattern. Without this,
+                // chained declarations like `my $b = my $d is default(42) = "foo"`
+                // would lose the default trait on the inner variable.
+                for (trait_name, trait_arg) in custom_traits {
+                    if trait_name.starts_with("__") {
+                        continue;
+                    }
+                    if let Some(arg) = trait_arg {
+                        self.compile_expr(arg);
+                    }
+                    let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
+                    self.code.emit(OpCode::ApplyVarTrait {
+                        name_idx,
+                        trait_name_idx,
+                        has_arg: trait_arg.is_some(),
+                    });
+                }
             }
             Stmt::Expr(inner_expr) => {
                 self.compile_expr(inner_expr);
@@ -261,6 +280,7 @@ impl Compiler {
                 index: _,
                 value: _,
                 is_temp: _,
+                undefine_first: _,
             } => {
                 // Compile the temp/let statement, then push the variable as result.
                 // This handles `(temp @a)` / `(temp $x = 42)` in expression position.
