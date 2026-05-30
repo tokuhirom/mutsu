@@ -1,8 +1,8 @@
 # Roast Blockers by Feature
 
-Summary: 188 tests blocked across 20 features (151 fail, 6 error, 31 timeout).
+Summary: ~170 tests blocked across 19 features (fail, error, timeout).
 
-Generated: 2026-05-25
+Generated: 2026-05-30
 
 ## Threading / Concurrency / Async (31 tests)
 
@@ -40,32 +40,29 @@ Most S17 tests timeout or fail due to incomplete threading primitives (Semaphore
 - roast/S29-context/sleep.t (sleep tests with scheduling, hangs)
 - roast/S32-io/socket-recv-vs-read.t (async socket operations)
 
-## throws-like / Exception Types (22 tests)
+## throws-like / Exception Types (19 tests)
 
-Many tests fail because mutsu doesn't throw the specific exception type the test expects (e.g., X::TypeCheck::Binding, X::Adverb, X::Syntax::Variable::Twigil, X::Worry::Precedence::Range, X::IllegalDimensionInShape, X::Cannot::Lazy, X::Assignment::RO, X::PseudoPackage::InDeclaration, X::EXPORTHOW::InvalidDirective, X::ControlFlow::Return, X::Comp::BeginTime). The code often silently succeeds or throws a generic error instead of the specific typed exception.
+Many tests fail because mutsu doesn't throw the specific exception type the test expects. Several have been implemented recently: X::Adverb (#2505), X::PseudoPackage::InDeclaration (#2507), X::Worry::Precedence::Range (#2502), X::IllegalDimensionInShape (#2503), X::TypeCheck::Binding::Parameter (#2477), X::Assignment::RO (#2477). Remaining exceptions still need implementation.
 
-- roast/S02-types/array-shapes.t (X::IllegalDimensionInShape)
 - roast/S02-types/capture.t (X::Cannot::Lazy)
 - roast/S02-types/baghash.t (X::TypeCheck::Binding)
 - roast/S02-types/bag.t (X::TypeCheck::Binding)
 - roast/S02-types/set.t (X::Assignment::RO)
 - roast/S02-types/mixhash.t (X::Str::Numeric)
-- roast/S02-types/range.t (X::Worry::Precedence::Range)
-- roast/S02-names-vars/variables-and-packages.t (X::PseudoPackage::InDeclaration)
-- roast/S03-operators/range.t (X::Worry::Precedence::Range)
+- roast/S02-types/range.t (still 56 failing — other issues beyond X::Worry)
+- roast/S03-operators/range.t (still 18 failing — other issues beyond X::Worry)
 - roast/S04-statements/for.t (no exception on bad params)
-- roast/S04-statements/return.t (X::ControlFlow::Return, X::Comp::BeginTime)
+- roast/S04-statements/return.t (X::ControlFlow::Return — 2/26 failing)
 - roast/S05-substitution/subst.t (missing Exception throws)
 - roast/S06-advanced/lexical-subs.t (X::Undeclared::Symbols)
 - roast/S09-typed-arrays/arrays.t (type constraint violations don't throw)
 - roast/S12-attributes/class.t (X::Method::NotFound, EVAL-in-class)
 - roast/S12-meta/exporthow.t (X::EXPORTHOW::InvalidDirective)
-- roast/S14-roles/mixin-6e.t (X::Syntax::Variable::Twigil)
-- roast/S32-array/adverbs.t (X::Adverb)
-- roast/S32-hash/adverbs.t (X::Adverb)
+- roast/S32-array/adverbs.t (X::Adverb implemented, but 283/606 — parser stops mid-file)
+- roast/S32-hash/adverbs.t (X::Adverb implemented, but still failing on some edge cases)
 - roast/S32-exceptions/misc.t (X::Undeclared)
 - roast/S32-exceptions/misc2.t (exception attribute matching)
-- roast/S04-exceptions/exceptions-alternatives.t
+- roast/S04-exceptions/exceptions-alternatives.t (3/3 failing)
 
 ## Native Typed Arrays (11 tests)
 
@@ -113,15 +110,14 @@ Dynamic symbol lookup via pseudo-packages (MY::, OUR::, OUTER::, CALLER::, ::{})
 - roast/S10-packages/scope.t (package scope visibility)
 - roast/S10-packages/require-and-use--dead-file.t (%*INC tracking)
 
-## Traits / Metaprogramming (8 tests)
+## Traits / Metaprogramming (7 tests)
 
-Trait system issues: `is` trait on variables, `will` trait, parameterized traits, attribute traits, routine traits interacting with .wrap, and the `trusts` mechanism for cross-class private attribute access.
+Trait system issues: `is` trait on variables, `will` trait, parameterized traits, attribute traits, and the `trusts` mechanism for cross-class private attribute access. routines.t now passes (#2492).
 
 - roast/S04-declarations/will.t
 - roast/S12-traits/basic.t (is trait on variables)
 - roast/S12-traits/parameterized.t
 - roast/S14-traits/attributes.t (trait application to attributes)
-- roast/S14-traits/routines.t (trait/wrap interaction)
 - roast/S12-attributes/trusts.t (cross-class private access)
 - roast/S12-class/open_closed.t (augment/open classes)
 - roast/S12-introspection/walk.t (.walk with :canonical, :super, :breadth)
@@ -141,13 +137,12 @@ IO::CatHandle not implemented, IO::Path subclasses (::Unix, ::Cygwin) incomplete
 - roast/S32-io/indir.t (timeout - indir with path validation)
 - roast/S16-io/words.t (handle close detection)
 
-## gather/take Laziness (3 tests)
+## gather/take Laziness (2 tests)
 
-gather/take doesn't properly implement laziness - gather blocks execute eagerly instead of on-demand. Nested gathers and take-rw also have issues.
+Coroutine-based lazy gather/take implemented (#2511). range-iterator.t now passes (all 103 tests). Remaining issues: nested gathers, take-rw, and Seq laziness edge cases.
 
-- roast/S04-statements/gather.t (laziness, nested gathers, take-rw)
-- roast/S07-iterators/range-iterator.t (timeout - lazy iterator)
-- roast/S32-list/seq.t (planned 50, ran 22 - Seq laziness)
+- roast/S04-statements/gather.t (35/39 pass — nested gathers, take-rw still failing)
+- roast/S32-list/seq.t (planned 50, ran 22 — Seq laziness edge cases)
 
 ## Hyper/Meta Operators (5 tests)
 
@@ -251,17 +246,15 @@ Binding to attributes, nested binding, and container semantics (Scalar decontain
 - roast/S12-attributes/instance.t (ro array/hash accessors)
 - roast/S12-methods/accessors.t (contextualizing accessors)
 
-## Categorize / Classify with Complex Keys (3 tests)
+## Categorize / Classify with Complex Keys (1 test)
 
-categorize/classify work for basic cases but fail when using multi-level keys or more complex categorization patterns.
+categorize.t now fully passes (28/28, whitelisted). minmax.t fully passes (whitelisted, #2510). classify.t nearly passes (38/40 — 2 edge cases remaining).
 
-- roast/S32-list/categorize.t (2/28 passing)
-- roast/S32-list/classify.t (2/40 passing)
-- roast/S32-list/minmax.t (:k, :v, :kv adverbs on min/max)
+- roast/S32-list/classify.t (38/40 pass — 2 edge cases remaining)
 
-## Miscellaneous (15 tests)
+## Miscellaneous (25 tests)
 
-Various other issues with limited overlap:
+Various other issues with limited overlap. Recently resolved: temp.t (#2514), constant.t (#2512), array/perl.t (#2516), hash/perl.t (#2518 — partial), objecthash.t (#2517 — partial), splice.t (#2515 — partial), undef.t (90/91).
 
 - roast/S02-lexical-conventions/unspace.t (45/110 - parser stops mid-file)
 - roast/S02-literals/allomorphic.t (.ACCEPTS on allomorphs)
@@ -269,25 +262,24 @@ Various other issues with limited overlap:
 - roast/S02-types/nil.t (Nil in for loop, subset assignment)
 - roast/S02-types/pair.t (Pair.value mutation, enum Pair)
 - roast/S03-buf/write-int.t (error - Buf write-int callable)
-- roast/S04-blocks-and-statements/temp.t (temp restore semantics)
-- roast/S04-declarations/constant.t (constant reassignment errors)
+- roast/S04-blocks-and-statements/temp.t (30/37 — improved via #2514, 7 remaining)
+- roast/S04-declarations/constant.t (17/19 — improved via #2512, 2 remaining)
 - roast/S06-advanced/return_function.t (return via named arg binding)
 - roast/S06-advanced/return-prioritization.t (LEAVE overwriting return)
 - roast/S06-advanced/wrap.t (wrap lexical visibility)
 - roast/S06-signature/slurpy-params.t (slurpy + named interaction)
 - roast/S06-signature/slurpy-blocks.t
-- roast/S09-hashes/objecthash.t (typed object hash semantics)
+- roast/S09-hashes/objecthash.t (28/62 — improved via #2517, typed hash edge cases remaining)
 - roast/S09-subscript/slice.t (infinite sequence slices)
 - roast/S14-roles/versioning.t (role version interaction)
 - roast/S29-os/system.t (exit code -1 handling)
-- roast/S32-array/perl.t (circular structure .raku)
-- roast/S32-array/splice.t
+- roast/S32-array/splice.t (partial — improved via #2515, splice edge cases remaining)
 - roast/S32-array/multislice-6e.t (multi-dim slicing)
 - roast/S32-hash/multislice-6e.t (multi-dim hash slicing)
-- roast/S32-hash/perl.t (Hash in Scalar perlification)
+- roast/S32-hash/perl.t (43/55 — improved via #2518, remaining issues)
 - roast/S32-io/spurt.t (file existence check)
 - roast/S32-num/rat.t (Rational subclass, coercers)
-- roast/S32-scalar/undef.t (undefine semantics)
+- roast/S32-scalar/undef.t (90/91 — 1 remaining)
 - roast/S32-str/val.t (timeout - val() parsing)
 - roast/S32-list/skip.t (timeout)
 - roast/S12-methods/defer-next.t (timeout)
