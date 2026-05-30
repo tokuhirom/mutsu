@@ -370,6 +370,12 @@ impl VM {
                             .map(|k| {
                                 let which = crate::runtime::utils::value_which_key(k);
                                 let v = self.resolve_hash_entry(items, &which);
+                                let v = if matches!(v, Value::Nil) {
+                                    let encoded = Value::hash_key_encode(k);
+                                    self.resolve_hash_entry(items, &encoded)
+                                } else {
+                                    v
+                                };
                                 if matches!(v, Value::Nil) {
                                     default.clone()
                                 } else {
@@ -391,6 +397,13 @@ impl VM {
                 }
                 let which = crate::runtime::utils::value_which_key(&index);
                 let v = self.resolve_hash_entry(items, &which);
+                // Fall back to hash_key_encode format (for hashes built from lists)
+                let v = if matches!(v, Value::Nil) {
+                    let encoded = Value::hash_key_encode(&index);
+                    self.resolve_hash_entry(items, &encoded)
+                } else {
+                    v
+                };
                 let result = if matches!(v, Value::Nil) {
                     self.typed_container_default(&hash_val)
                 } else {

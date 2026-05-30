@@ -121,7 +121,12 @@ impl VM {
                             .iter()
                             .map(|k| {
                                 let key = if is_obj_hash {
-                                    crate::runtime::utils::value_which_key(k)
+                                    let which = crate::runtime::utils::value_which_key(k);
+                                    if map.contains_key(&which) {
+                                        which
+                                    } else {
+                                        Value::hash_key_encode(k)
+                                    }
                                 } else {
                                     k.to_string_value()
                                 };
@@ -310,9 +315,14 @@ impl VM {
                         return Ok(());
                     }
                     _ => {
-                        // For object hashes, use WHICH for lookup
+                        // For object hashes, use WHICH for lookup, fallback to hash_key_encode
                         let lookup_key = if self.interpreter.is_object_hash(&target) {
-                            crate::runtime::utils::value_which_key(&idx)
+                            let which = crate::runtime::utils::value_which_key(&idx);
+                            if map.contains_key(&which) {
+                                which
+                            } else {
+                                Value::hash_key_encode(&idx)
+                            }
                         } else {
                             idx.to_string_value()
                         };
