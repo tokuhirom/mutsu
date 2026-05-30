@@ -3878,11 +3878,11 @@ impl VM {
         let local_name = &code.locals[idx];
         if local_name.starts_with('!')
             && local_name.len() > 1
-            && let Some(self_val) = self.interpreter.env().get("self")
-            && !matches!(self_val, Value::Instance { .. })
+            && let Some(self_val) = self.get_env_with_main_alias("self")
+            && !matches!(self_val, Value::Instance { .. } | Value::Mixin(..))
         {
             // self is a type object - determine class name for error message
-            let class_name = match self_val {
+            let class_name = match &self_val {
                 Value::Package(sym) => sym.to_string(),
                 other => crate::value::what_type_name(other),
             };
