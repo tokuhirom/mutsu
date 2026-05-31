@@ -861,6 +861,52 @@ impl Interpreter {
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }
+        // Lazy map: evaluate the stored callback over the stored items.
+        // Since the map is forced outside the lexically enclosing routine,
+        // `return` inside the callback is out-of-dynamic-scope and must
+        // throw X::ControlFlow::Return. We call the callback via
+        // call_sub_value and convert any CX::Return signal accordingly.
+        if let (Some(map_items), Some(map_func)) = (
+            list.env.get("__mutsu_lazy_map_items"),
+            list.env.get("__mutsu_lazy_map_func"),
+        ) {
+            let items_list = crate::runtime::value_to_list(map_items);
+            // Save the current active callable ID so we can check whether
+            // the CX::Return target is still on the dynamic call stack.
+            let active_callable_id = self.env.get("__mutsu_callable_id").and_then(|v| match v {
+                Value::Int(id) => Some(*id as u64),
+                _ => None,
+            });
+            let mut result_items = Vec::new();
+            for item in items_list {
+                match self.call_sub_value(map_func.clone(), vec![item], true) {
+                    Ok(val) => match val {
+                        Value::Slip(elems) => result_items.extend(elems.iter().cloned()),
+                        v => result_items.push(v),
+                    },
+                    Err(e) if e.is_next => {}
+                    Err(e) if e.is_last => break,
+                    Err(e) if e.is_return => {
+                        // CX::Return inside a lazy map callback: check if
+                        // the target routine is still on the dynamic call
+                        // stack by comparing with the active callable ID.
+                        if let Some(target_id) = e.return_target_callable_id
+                            && active_callable_id == Some(target_id)
+                        {
+                            // Target routine is the current active one
+                            // — propagate the CX::Return normally.
+                            return Err(e);
+                        }
+                        // Target routine is not active or has no ID —
+                        // convert to X::ControlFlow::Return.
+                        return Err(RuntimeError::controlflow_return(true));
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            *list.cache.lock().unwrap() = Some(result_items.clone());
+            return Ok(result_items);
+        }
         let saved_env = self.env.clone();
         let saved_len = self.gather_items.len();
         self.env = list.env.clone();
