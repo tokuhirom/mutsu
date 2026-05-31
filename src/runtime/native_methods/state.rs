@@ -1,4 +1,5 @@
 use crate::runtime::*;
+use std::net::TcpStream;
 use std::process::ChildStdin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -408,6 +409,7 @@ pub(in crate::runtime) fn lookup_async_listener(
     None
 }
 
+#[allow(dead_code)]
 pub(in crate::runtime) fn async_port_in_use(host: &str, port: u16) -> bool {
     if let Ok(map) = async_socket_listener_map().lock() {
         return map.values().any(|listener| {
@@ -586,4 +588,54 @@ pub(in crate::runtime) fn lookup_udp_bound_socket(
         }
     }
     None
+}
+
+/// Global map of conn-id -> TcpStream for real async TCP connections
+type TcpStreamMap = std::sync::Mutex<HashMap<u64, Arc<std::sync::Mutex<TcpStream>>>>;
+
+fn tcp_stream_map() -> &'static TcpStreamMap {
+    static MAP: OnceLock<TcpStreamMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+pub(in crate::runtime) fn register_tcp_stream(conn_id: u64, stream: TcpStream) {
+    if let Ok(mut map) = tcp_stream_map().lock() {
+        map.insert(conn_id, Arc::new(std::sync::Mutex::new(stream)));
+    }
+}
+
+pub(in crate::runtime) fn get_tcp_stream(conn_id: u64) -> Option<Arc<std::sync::Mutex<TcpStream>>> {
+    tcp_stream_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&conn_id).cloned())
+}
+
+pub(in crate::runtime) fn remove_tcp_stream(conn_id: u64) {
+    if let Ok(mut map) = tcp_stream_map().lock() {
+        map.remove(&conn_id);
+    }
+}
+
+/// Map of listener_id -> Arc<AtomicBool> for signaling listener threads to stop
+type ListenerClosedMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
+
+fn listener_closed_map() -> &'static ListenerClosedMap {
+    static MAP: OnceLock<ListenerClosedMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+pub(in crate::runtime) fn register_listener_closed_flag(listener_id: u64, flag: Arc<AtomicBool>) {
+    if let Ok(mut map) = listener_closed_map().lock() {
+        map.insert(listener_id, flag);
+    }
+}
+
+#[allow(dead_code)]
+pub(in crate::runtime) fn set_listener_closed(listener_id: u64) {
+    if let Ok(map) = listener_closed_map().lock()
+        && let Some(flag) = map.get(&listener_id)
+    {
+        flag.store(true, Ordering::SeqCst);
+    }
 }
