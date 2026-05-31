@@ -223,6 +223,20 @@ impl Interpreter {
                 }
                 None
             }
+            "Numeric" if args.is_empty() => {
+                if let Value::Seq(items) = &target {
+                    // Check for PredictiveIterator-backed Seq (stored by Seq.new)
+                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    let iter_key = format!("__mutsu_predictive_seq_iter::{seq_id}");
+                    if let Some(iter) = self.env.get(&iter_key).cloned() {
+                        // Call count-only on the PredictiveIterator
+                        return Some(self.call_method_with_values(iter, "count-only", vec![]));
+                    }
+                    return Some(Ok(Value::Int(items.len() as i64)));
+                }
+                None
+            }
+            "slice" => Some(self.dispatch_slice_method(target, args)),
             "grab" => self.dispatch_grab_method(target, args),
             "grabpairs" => self.dispatch_grabpairs_method(target, args),
             "skip" => Some(self.dispatch_skip_method(target, args)),
@@ -732,5 +746,49 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
+    /// Dispatch the "slice" method on Seq/Array/List.
+    /// Returns a Seq of elements at the given indices.
+    /// With no args, returns an empty Seq.
+    pub(crate) fn dispatch_slice_method(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let items = crate::runtime::utils::value_to_list(&target);
+        if args.is_empty() {
+            return Ok(Value::Seq(Arc::new(Vec::new())));
+        }
+        // Collect all indices from args (flattening lists/arrays)
+        let mut indices: Vec<usize> = Vec::new();
+        for arg in &args {
+            match arg {
+                Value::Int(i) => {
+                    if *i >= 0 {
+                        indices.push(*i as usize);
+                    }
+                }
+                Value::Array(elems, _) | Value::Seq(elems) | Value::Slip(elems) => {
+                    for elem in elems.iter() {
+                        let i = elem.to_f64() as i64;
+                        if i >= 0 {
+                            indices.push(i as usize);
+                        }
+                    }
+                }
+                other => {
+                    let i = other.to_f64() as i64;
+                    if i >= 0 {
+                        indices.push(i as usize);
+                    }
+                }
+            }
+        }
+        let result: Vec<Value> = indices
+            .into_iter()
+            .map(|i| items.get(i).cloned().unwrap_or(Value::Nil))
+            .collect();
+        Ok(Value::Seq(Arc::new(result)))
     }
 }

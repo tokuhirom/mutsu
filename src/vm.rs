@@ -868,6 +868,34 @@ impl VM {
                         }
                     })
                     .or_else(|| {
+                        // Outer-lexical fallback: when a package-qualified name
+                        // (e.g. `A::x`) is not found in any package store, fall
+                        // back to looking up just the bare component (`x`) in env.
+                        // This handles class body statements that access outer
+                        // lexical variables which are stored in env under their
+                        // unqualified names (not as `A::x`).
+                        if !name.contains("::") {
+                            return None;
+                        }
+                        // Only apply when the qualifier matches the current package
+                        // (i.e. the name was auto-qualified by the compiler, not
+                        // explicitly written as a package-qualified access).
+                        let cur = self.interpreter.current_package().to_string();
+                        if cur.is_empty() || cur == "GLOBAL" {
+                            return None;
+                        }
+                        // Extract bare component after the last `::`
+                        let bare = if let Some(pos) = name.rfind("::") {
+                            &name[pos + 2..]
+                        } else {
+                            return None;
+                        };
+                        if bare.is_empty() {
+                            return None;
+                        }
+                        self.get_env_with_main_alias(bare)
+                    })
+                    .or_else(|| {
                         // Bare-name fallback: when looking up an unqualified
                         // name (e.g. `msg` or `$msg`) inside a routine whose
                         // current_package is a real package (e.g. `Gee`), try
@@ -1697,6 +1725,8 @@ impl VM {
                     Value::Array(items, kind) if !kind.is_itemized() => {
                         Value::Array(items, kind.itemize())
                     }
+                    // Itemize a Seq by wrapping it in a scalar container
+                    Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
                     other => other,
                 };
                 self.stack.push(itemized);
