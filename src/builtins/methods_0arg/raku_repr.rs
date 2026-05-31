@@ -301,11 +301,16 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         Value::Seq(items) => {
+            // A consumed Seq is represented as Seq.new() so that EVALing it
+            // produces a pre-consumed Seq (matching Raku's behavior).
+            if crate::value::seq_is_consumed(items) {
+                return "Seq.new()".to_string();
+            }
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
             if items.len() == 1 {
-                format!("({},)", inner)
+                format!("({},).Seq", inner)
             } else {
-                format!("({})", inner)
+                format!("({}).Seq", inner)
             }
         }
         Value::Slip(items) => {

@@ -139,6 +139,37 @@ impl Interpreter {
             return Ok(Value::Nil);
         }
         if items.len() == 1 {
+            // For numeric infix operators (e.g. `reduce &infix:<+>, "2"`), apply
+            // the identity element + the single element so that coercions happen.
+            let op_name = match &callable {
+                Value::Sub(data) => Some(data.name.resolve()),
+                Value::Routine { name, .. } => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(ref op) = op_name {
+                // Strip infix:<...> wrapper if present
+                let bare_op = op
+                    .strip_prefix("infix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                    .unwrap_or(op.as_str());
+                if matches!(
+                    bare_op,
+                    "+" | "-" | "*" | "/" | "%" | "**" | "+|" | "+&" | "+^"
+                ) {
+                    let elem = items.into_iter().next().unwrap();
+                    // Validate non-numeric strings
+                    if let Value::Str(ref s) = elem
+                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_none()
+                    {
+                        return Err(RuntimeError::str_numeric(
+                            s,
+                            "base-10 number must begin with valid digits or '.'",
+                        ));
+                    }
+                    let identity = crate::runtime::reduction_identity(bare_op);
+                    return self.call_sub_value(callable, vec![identity, elem], false);
+                }
+            }
             return Ok(items.into_iter().next().unwrap());
         }
 

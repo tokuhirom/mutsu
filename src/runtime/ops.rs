@@ -1063,7 +1063,7 @@ impl Interpreter {
                     out.push(Self::apply_reduction_op(inner_op, l, r)?);
                 }
             }
-            return Ok(Value::array(out));
+            return Ok(Value::Seq(std::sync::Arc::new(out)));
         }
         if let Some(inner_op) = op.strip_prefix('Z')
             && !inner_op.is_empty()
@@ -1079,7 +1079,7 @@ impl Interpreter {
                     &right_list[i],
                 )?);
             }
-            return Ok(Value::array(out));
+            return Ok(Value::Seq(std::sync::Arc::new(out)));
         }
         match op {
             "+" => {
@@ -1209,34 +1209,41 @@ impl Interpreter {
                 }
             }
             "minmax" => {
-                // Check if either operand is an array/list - if so, fall through to
-                // builtin_minmax which handles flattening. This path is only for
-                // scalar reduction like [minmax] 1, 2, 3.
-                if matches!(left, Value::Array(_, _) | Value::Seq(_))
-                    || matches!(right, Value::Array(_, _) | Value::Seq(_))
-                {
-                    return Err(RuntimeError::new(format!(
-                        "Unsupported reduction operator: {}",
-                        op
-                    )));
-                }
-                // Extract min/max from existing Ranges
-                let (left_lo, left_hi) = match left {
-                    Value::Range(a, b)
-                    | Value::RangeExcl(a, b)
-                    | Value::RangeExclStart(a, b)
-                    | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
-                    Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
-                    _ => (left.clone(), left.clone()),
+                // Helper to extract (lo, hi) from a value:
+                // - Range variants → (start, end)
+                // - Array/Seq → (min_element, max_element)
+                // - Scalar → (value, value)
+                let range_bounds = |v: &Value| -> (Value, Value) {
+                    match v {
+                        Value::Range(a, b)
+                        | Value::RangeExcl(a, b)
+                        | Value::RangeExclStart(a, b)
+                        | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
+                        Value::GenericRange { start, end, .. } => {
+                            ((**start).clone(), (**end).clone())
+                        }
+                        Value::Array(items, _) | Value::Seq(items) => {
+                            if items.is_empty() {
+                                (Value::Nil, Value::Nil)
+                            } else {
+                                let mut lo = items[0].clone();
+                                let mut hi = items[0].clone();
+                                for item in items.iter().skip(1) {
+                                    if crate::runtime::compare_values(item, &lo) < 0 {
+                                        lo = item.clone();
+                                    }
+                                    if crate::runtime::compare_values(item, &hi) > 0 {
+                                        hi = item.clone();
+                                    }
+                                }
+                                (lo, hi)
+                            }
+                        }
+                        _ => (v.clone(), v.clone()),
+                    }
                 };
-                let (right_lo, right_hi) = match right {
-                    Value::Range(a, b)
-                    | Value::RangeExcl(a, b)
-                    | Value::RangeExclStart(a, b)
-                    | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
-                    Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
-                    _ => (right.clone(), right.clone()),
-                };
+                let (left_lo, left_hi) = range_bounds(left);
+                let (right_lo, right_hi) = range_bounds(right);
                 let lo = if crate::runtime::compare_values(&left_lo, &right_lo) <= 0 {
                     left_lo
                 } else {
@@ -1247,22 +1254,42 @@ impl Interpreter {
                 } else {
                     right_hi
                 };
-                Ok(Value::GenericRange {
-                    start: std::sync::Arc::new(lo),
-                    end: std::sync::Arc::new(hi),
-                    excl_start: false,
-                    excl_end: false,
+                // Return Range(lo,hi) when both bounds are integers (matches
+                // Raku's behavior where `1..3 eqv 1..3` uses the integer Range
+                // type), otherwise use GenericRange for non-integer bounds.
+                Ok(match (&lo, &hi) {
+                    (Value::Int(l), Value::Int(h)) => Value::Range(*l, *h),
+                    _ => Value::GenericRange {
+                        start: std::sync::Arc::new(lo),
+                        end: std::sync::Arc::new(hi),
+                        excl_start: false,
+                        excl_end: false,
+                    },
                 })
             }
             "min" => {
-                if crate::runtime::compare_values(left, right) <= 0 {
+                // Undefined (Any/Nil/type-object) acts as Inf for min
+                let left_undef = !crate::runtime::types::value_is_defined(left);
+                let right_undef = !crate::runtime::types::value_is_defined(right);
+                if left_undef && right_undef {
+                    Ok(Value::Num(f64::INFINITY))
+                } else if left_undef {
+                    Ok(right.clone())
+                } else if right_undef || crate::runtime::compare_values(left, right) <= 0 {
                     Ok(left.clone())
                 } else {
                     Ok(right.clone())
                 }
             }
             "max" => {
-                if crate::runtime::compare_values(left, right) >= 0 {
+                // Undefined (Any/Nil/type-object) acts as -Inf for max
+                let left_undef = !crate::runtime::types::value_is_defined(left);
+                let right_undef = !crate::runtime::types::value_is_defined(right);
+                if left_undef && right_undef {
+                    Ok(Value::Num(f64::NEG_INFINITY))
+                } else if left_undef {
+                    Ok(right.clone())
+                } else if right_undef || crate::runtime::compare_values(left, right) >= 0 {
                     Ok(left.clone())
                 } else {
                     Ok(right.clone())

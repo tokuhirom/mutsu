@@ -185,7 +185,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "Capture" => Some(value_to_capture(target)),
         "Slip" => match target {
-            Value::Array(items, ..) | Value::Seq(items) => Some(Ok(Value::Slip(items.clone()))),
+            Value::Seq(items) => {
+                if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                    return Some(Err(crate::value::seq_consumed_error()));
+                }
+                // Mark as cached so the Seq remains reusable
+                crate::value::seq_mark_cached(items);
+                Some(Ok(Value::Slip(items.clone())))
+            }
+            Value::Array(items, ..) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
             Value::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
@@ -248,7 +256,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
                 }
             }
-            Value::Array(items, _) | Value::Seq(items) => Some(Ok(Value::array(items.to_vec()))),
+            Value::Seq(items) => {
+                if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                    return Some(Err(crate::value::seq_consumed_error()));
+                }
+                // Mark as cached so the Seq remains reusable
+                crate::value::seq_mark_cached(items);
+                Some(Ok(Value::array(items.to_vec())))
+            }
+            Value::Array(items, _) => Some(Ok(Value::array(items.to_vec()))),
             Value::GenericRange {
                 start,
                 end,
@@ -416,7 +432,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(target.clone()))
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            Value::Seq(items) if method == "list" || method == "Array" => {
+                // Consumed Seq check: throw X::Seq::Consumed if not cached
+                if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                    return Some(Err(crate::value::seq_consumed_error()));
+                }
+                // Mark as cached so the Seq remains reusable (e.g. when the Seq is
+                // bound to an @-sigil parameter, Raku implicitly caches it).
+                // TODO: implement proper @-sigil parameter caching separately, and
+                // change this back to seq_consume for strict Raku semantics where
+                // .List on an uncached Seq consumes it.
+                crate::value::seq_mark_cached(items);
+                if method == "Array" {
+                    Some(Ok(Value::real_array(items.to_vec())))
+                } else {
+                    Some(Ok(Value::array(items.to_vec())))
+                }
+            }
+            Value::Slip(items) if method == "list" || method == "Array" => {
                 if method == "Array" {
                     Some(Ok(Value::real_array(items.to_vec())))
                 } else {

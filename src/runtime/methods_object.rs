@@ -969,6 +969,11 @@ impl Interpreter {
                         {
                             return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
                         }
+                        // Eagerly pull values from the iterator to build the Seq.
+                        // TODO: implement lazy/deferred pulling for Seq.new(iterator)
+                        // to match Raku semantics. Currently eager-pulling is needed
+                        // because many code paths (rotor, value_to_list, etc.) read
+                        // Seq items directly without handling deferred iterators.
                         let mut items = Vec::new();
                         let iter_slot = "$mutsu_seq_new_iterator";
                         let saved_iter = self.env.get(iter_slot).cloned();

@@ -3543,7 +3543,11 @@ impl VM {
                         }
                         Value::array(items)
                     }
-                    Value::Seq(items) => Value::array(items.to_vec()),
+                    Value::Seq(items) => {
+                        // Consuming the Seq via eager marks it as consumed.
+                        crate::value::seq_sink(&items);
+                        Value::array(items.to_vec())
+                    }
                     ref other if other.is_range() => {
                         Value::array(crate::runtime::utils::value_to_list(&val))
                     }

@@ -151,6 +151,33 @@ impl Interpreter {
                 let values = Self::value_to_list(&target);
                 Some(Ok(Value::junction(kind, values)))
             }
+            "slice" => {
+                // Seq.slice(@indices) — return elements at the given indices as a Seq.
+                // Seq.slice() with no args returns an empty Seq.
+                let items = if let Value::Seq(ref arc) = target {
+                    arc.as_ref().clone()
+                } else {
+                    crate::runtime::utils::value_to_list(&target)
+                };
+                if args.is_empty() {
+                    Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))))
+                } else {
+                    let mut result = Vec::with_capacity(args.len());
+                    for arg in &args {
+                        let idx = match arg {
+                            Value::Int(i) => Some(*i as usize),
+                            Value::Num(n) => Some(*n as usize),
+                            _ => None,
+                        };
+                        if let Some(i) = idx
+                            && i < items.len()
+                        {
+                            result.push(items[i].clone());
+                        }
+                    }
+                    Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+                }
+            }
             "iterator" if args.is_empty() => Some(self.dispatch_iterator_method(target)),
             "produce" => self.dispatch_produce_method(target, args),
             "reduce" => Some(self.dispatch_reduce_method(target, args)),
@@ -255,6 +282,16 @@ impl Interpreter {
     fn dispatch_iterator_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "Iterator") {
             return Ok(target);
+        }
+        // Check consumed state for Seq: throw X::Seq::Consumed if not cached
+        if let Value::Seq(items) = &target {
+            if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                return Err(crate::value::seq_consumed_error());
+            }
+            // Mark as consumed only if not cached (cached Seqs allow multiple iterations)
+            if !crate::value::seq_is_cached(items) {
+                crate::value::seq_consume(items).ok();
+            }
         }
         if let Value::Seq(items) = &target {
             let seq_id = std::sync::Arc::as_ptr(items) as usize;
@@ -364,6 +401,10 @@ impl Interpreter {
             && class_name == "Supply"
         {
             return Some(self.dispatch_supply_elems(attributes, &args));
+        }
+        // .elems on a Seq caches it (makes it available for multiple calls)
+        if let Value::Seq(items) = &target {
+            crate::value::seq_mark_cached(items);
         }
         Some(self.call_function("elems", vec![target]))
     }
