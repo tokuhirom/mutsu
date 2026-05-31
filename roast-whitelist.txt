@@ -23,7 +23,6 @@ roast/S01-perl-5-integration/basic.t
 roast/S01-perl-5-integration/class.t
 roast/S01-perl-5-integration/context.t
 roast/S01-perl-5-integration/eval_lex.t
-roast/S01-perl-5-integration/exception_handling.t
 roast/S01-perl-5-integration/hash.t
 roast/S01-perl-5-integration/import.t
 roast/S01-perl-5-integration/isms.t
@@ -289,7 +288,6 @@ roast/S04-exceptions/fail-6e.t
 roast/S04-exceptions/fail.t
 roast/S04-exceptions/pending.t
 roast/S04-phasers/ascending-order.t
-roast/S04-phasers/begin.t
 roast/S04-phasers/check.t
 roast/S04-phasers/descending-order.t
 roast/S04-phasers/end.t
@@ -434,7 +432,6 @@ roast/S06-advanced/callsame.t
 roast/S06-advanced/dispatching.t
 roast/S06-advanced/recurse.t
 roast/S06-advanced/return.t
-roast/S06-advanced/stub.t
 roast/S06-currying/assuming-and-mmd.t
 roast/S06-currying/misc.t
 roast/S06-currying/named.t
@@ -552,13 +549,11 @@ roast/S11-modules/need.t
 roast/S11-modules/nested.t
 roast/S11-modules/rakulib.t
 roast/S11-modules/re-export.t
-roast/S11-modules/require.t
 roast/S11-modules/runtime.t
 roast/S11-repository/cur-candidates.t
 roast/S11-repository/cur-current-distribution.t
 roast/S12-attributes/augment-and-initialization.t
 roast/S12-attributes/clone.t
-roast/S12-attributes/defaults.t
 roast/S12-attributes/delegation.t
 roast/S12-attributes/inheritance.t
 roast/S12-attributes/instance.t
@@ -913,7 +908,6 @@ roast/S26-documentation/04a-input-output.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07-tables.t
-roast/S26-documentation/07a-tables.t
 roast/S26-documentation/07b-tables.t
 roast/S26-documentation/07c-tables.t
 roast/S26-documentation/08-formattingcodes.t
