@@ -34,16 +34,20 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
-        match self.call_function(name, args.clone()) {
-            Ok(_) => Ok(()),
-            Err(e)
-                if e.message
-                    .contains("Unknown function (call_function fallback disabled):") =>
-            {
-                self.exec_call(name, args)
-            }
-            Err(e) => Err(e),
+        // For EVAL, route through call_function to handle named args like :check.
+        if name == "EVAL" {
+            return match self.call_function(name, args.clone()) {
+                Ok(_) => Ok(()),
+                Err(e)
+                    if e.message
+                        .contains("Unknown function (call_function fallback disabled):") =>
+                {
+                    self.exec_call(name, args)
+                }
+                Err(e) => Err(e),
+            };
         }
+        self.exec_call(name, args)
     }
 
     pub(crate) fn test_ok(
