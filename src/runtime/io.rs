@@ -1082,13 +1082,46 @@ impl Interpreter {
             && trimmed.chars().all(|c| matches!(c, '+' | '-' | '=' | ' '))
     }
 
-    /// Normalize whitespace in a cell: collapse runs of spaces to single space.
+    /// Return true if a character is a breaking horizontal whitespace that
+    /// should be collapsed during cell normalization.  Non-breaking spaces
+    /// (U+00A0, U+202F, U+2060, U+FEFF) are intentionally excluded so that
+    /// they survive pod table processing unchanged (GH #1852).
+    fn is_breaking_hs(ch: char) -> bool {
+        matches!(
+            ch,
+            '\t'          // U+0009 CHARACTER TABULATION
+            | ' '         // U+0020 SPACE
+            | '\u{1680}'  // OGHAM SPACE MARK
+            | '\u{180E}'  // MONGOLIAN VOWEL SEPARATOR
+            | '\u{2000}'  // EN QUAD
+            | '\u{2001}'  // EM QUAD
+            | '\u{2002}'  // EN SPACE
+            | '\u{2003}'  // EM SPACE
+            | '\u{2004}'  // THREE-PER-EM SPACE
+            | '\u{2005}'  // FOUR-PER-EM SPACE
+            | '\u{2006}'  // SIX-PER-EM SPACE
+            | '\u{2007}'  // FIGURE SPACE
+            | '\u{2008}'  // PUNCTUATION SPACE
+            | '\u{2009}'  // THIN SPACE
+            | '\u{200A}'  // HAIR SPACE
+            | '\u{205F}'  // MEDIUM MATHEMATICAL SPACE
+            | '\u{3000}' // IDEOGRAPHIC SPACE
+        )
+    }
+
+    /// Normalize whitespace in a cell: collapse runs of breaking horizontal
+    /// whitespace to a single ASCII space.  Non-breaking spaces within the
+    /// cell content are preserved, but edge whitespace (including NBSP used
+    /// as padding) is trimmed using Rust's standard `trim()`.
     fn normalize_cell(s: &str) -> String {
+        // Trim all Unicode whitespace (including NBSP) from edges -- NBSP at
+        // edges acts as padding and should be stripped, just like regular
+        // spaces.  Interior NBSP is preserved by `is_breaking_hs` below.
         let trimmed = s.trim();
         let mut result = String::new();
         let mut prev_space = false;
         for ch in trimmed.chars() {
-            if ch == ' ' || ch == '\t' {
+            if Self::is_breaking_hs(ch) {
                 if !prev_space && !result.is_empty() {
                     result.push(' ');
                 }
