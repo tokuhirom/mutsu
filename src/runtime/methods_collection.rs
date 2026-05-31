@@ -649,32 +649,59 @@ impl Interpreter {
             Value::Set(s, _) => {
                 let mut map = HashMap::new();
                 let mut original_keys = HashMap::new();
+                let mut has_typed = false;
                 for k in s.iter() {
                     map.insert(k.clone(), Value::Bool(true));
                     let typed = s.typed_key(k);
-                    if !matches!(&typed, Value::Str(s) if s.as_ref() == k) {
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
                 }
                 let result = Value::hash(map);
-                if !original_keys.is_empty() {
+                if has_typed {
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
                     super::utils::register_hash_original_keys(&result, original_keys);
                 }
                 Ok(result)
             }
             Value::Bag(b, _) => {
                 let mut map = HashMap::new();
+                let mut original_keys = HashMap::new();
+                let mut has_typed = false;
                 for (k, v) in b.iter() {
                     map.insert(k.clone(), Value::Int(*v));
+                    let typed = b.typed_key(k);
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Ok(Value::hash(map))
+                let result = Value::hash(map);
+                if has_typed {
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                    super::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Ok(result)
             }
             Value::Mix(m, _) => {
                 let mut map = HashMap::new();
+                let mut original_keys = HashMap::new();
+                let mut has_typed = false;
                 for (k, v) in m.iter() {
                     map.insert(k.clone(), crate::value::mix_weight_to_value(*v));
+                    let typed = m.typed_key(k);
+                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                        has_typed = true;
+                        original_keys.insert(k.clone(), typed);
+                    }
                 }
-                Ok(Value::hash(map))
+                let result = Value::hash(map);
+                if has_typed {
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                    super::utils::register_hash_original_keys(&result, original_keys);
+                }
+                Ok(result)
             }
             Value::Instance {
                 ref class_name,
