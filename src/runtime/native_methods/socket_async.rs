@@ -257,21 +257,43 @@ impl Interpreter {
                     return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
 
-                // Bind a real TCP listener
+                // Bind a real TCP listener (retry briefly if port is still held
+                // by a recently-closed listener thread)
                 let bind_addr = format!("{}:{}", host, port);
-                let tcp_listener = match std::net::TcpListener::bind(&bind_addr) {
-                    Ok(l) => l,
-                    Err(e) => {
-                        if let Some(q) = quit_cb {
-                            let mut attrs = HashMap::new();
-                            attrs.insert(
-                                "message".to_string(),
-                                Value::str(format!("Failed to bind: {}", e)),
-                            );
-                            let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
-                            let _ = self.call_sub_value(q, vec![ex], true);
+                let tcp_listener = {
+                    let mut last_err = None;
+                    let mut bound = None;
+                    for attempt in 0..10 {
+                        match std::net::TcpListener::bind(&bind_addr) {
+                            Ok(l) => {
+                                bound = Some(l);
+                                break;
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && attempt < 9 => {
+                                std::thread::sleep(std::time::Duration::from_millis(20));
+                                last_err = Some(e);
+                            }
+                            Err(e) => {
+                                last_err = Some(e);
+                                break;
+                            }
                         }
-                        return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                    }
+                    match bound {
+                        Some(l) => l,
+                        None => {
+                            let e = last_err.unwrap();
+                            if let Some(q) = quit_cb {
+                                let mut attrs = HashMap::new();
+                                attrs.insert(
+                                    "message".to_string(),
+                                    Value::str(format!("Failed to bind: {}", e)),
+                                );
+                                let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
+                                let _ = self.call_sub_value(q, vec![ex], true);
+                            }
+                            return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                        }
                     }
                 };
                 // Get the actual bound port (in case port was 0)

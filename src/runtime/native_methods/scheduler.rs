@@ -126,7 +126,9 @@ impl Interpreter {
         match method {
             "cancel" | "close" => {
                 if let Some(Value::Int(listener_id)) = attributes.get("listener-id") {
-                    close_async_listener(*listener_id as u64);
+                    let lid = *listener_id as u64;
+                    close_async_listener(lid);
+                    set_listener_closed(lid);
                 }
                 if let (Some(Value::Int(supplier_id)), Some(Value::Int(tap_id))) =
                     (attributes.get("supplier_id"), attributes.get("tap_id"))

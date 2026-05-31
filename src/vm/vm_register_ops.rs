@@ -1436,8 +1436,16 @@ impl VM {
         let run_result = self.run_range(code, body_start, end, compiled_fns);
         self.stack.truncate(saved_depth);
 
-        // Run the react event loop (processes all registered subscriptions)
-        let event_result = self.interpreter.run_react_event_loop();
+        // If `done;` was called in the react body, skip the event loop —
+        // the body already signaled that no further events should be processed.
+        let body_done = matches!(&run_result, Err(e) if e.is_react_done);
+        let event_result = if body_done {
+            // Drain any queued subscriptions so they don't leak
+            self.interpreter.run_react_event_loop_drain();
+            Ok(())
+        } else {
+            self.interpreter.run_react_event_loop()
+        };
         self.sync_locals_from_env(code);
         self.env_dirty = true;
 

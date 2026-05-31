@@ -158,6 +158,13 @@ impl Interpreter {
 
     /// Run the react event loop: poll all registered subscriptions
     /// until all are done.
+    /// Drain any queued react subscriptions without running the event loop.
+    /// Used when `done;` was called in the react body and we just need to
+    /// clean up without processing events.
+    pub(crate) fn run_react_event_loop_drain(&mut self) {
+        let _ = self.supply_emit_buffer.pop();
+    }
+
     pub(crate) fn run_react_event_loop(&mut self) -> Result<(), RuntimeError> {
         // Take the subscriptions collected during the react body
         let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default();

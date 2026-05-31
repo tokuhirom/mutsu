@@ -487,9 +487,9 @@ fn run_main() {
             interpreter.flush_all_handles();
             interpreter.flush_stderr_buffer();
             let code = interpreter.exit_code();
-            if code != 0 {
-                std::process::exit(code as i32);
-            }
+            // Always call process::exit to terminate any lingering background
+            // threads (e.g. TCP accept loops for IO::Socket::Async listeners).
+            std::process::exit(code as i32);
         }
         Err(err) => {
             print_error("Runtime error", &err, Some(&input), Some(&program_name));
