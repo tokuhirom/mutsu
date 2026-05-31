@@ -25,13 +25,6 @@ impl VM {
         }
     }
 
-    pub(super) fn is_user_shadowable_builtin(name: &str) -> bool {
-        matches!(
-            name,
-            "first" | "grep" | "map" | "sort" | "reverse" | "unique" | "last" | "head" | "tail"
-        )
-    }
-
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -408,8 +401,14 @@ impl VM {
                 .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
             self.env_dirty = true;
-        } else if Self::is_user_shadowable_builtin(&name) && self.interpreter.has_function(&name) {
-            // A user-defined sub shadows a same-named builtin listop.
+        } else if (self.interpreter.has_function(&name)
+            || self.interpreter.has_multi_function(&name))
+            && self
+                .interpreter
+                .resolve_function_with_types(&name, &args)
+                .is_some()
+        {
+            // A user-defined sub shadows a same-named builtin.
             let result = self.interpreter.call_function_fallback(&name, &args)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
@@ -678,11 +677,14 @@ impl VM {
                 let result = self.interpreter.call_function_fallback(name, &args);
                 self.interpreter.set_pending_call_arg_sources(None);
                 self.interpreter.maybe_fetch_rw_proxy(result?, true)
-            } else if Self::is_user_shadowable_builtin(name) && self.interpreter.has_function(name)
+            } else if (self.interpreter.has_function(name)
+                || self.interpreter.has_multi_function(name))
+                && self
+                    .interpreter
+                    .resolve_function_with_types(name, &args)
+                    .is_some()
             {
-                // A user-defined sub shadows a same-named builtin listop.
-                // Route through the interpreter fallback so the user sub is
-                // invoked rather than the builtin.
+                // A user-defined sub shadows a same-named builtin.
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.interpreter.call_function_fallback(name, &args);
                 self.interpreter.set_pending_call_arg_sources(None);
