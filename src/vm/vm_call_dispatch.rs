@@ -244,15 +244,22 @@ impl VM {
             self.fn_resolve_cache.clear();
             self.fn_resolve_cache_gen = self.fn_resolve_gen;
         }
-        let expected_fingerprint = self
-            .interpreter
-            .resolve_function_with_types(name, args)
-            .map(|def| {
-                crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
-            });
+        let resolved_def = self.interpreter.resolve_function_with_types(name, args);
+        let expected_fingerprint = resolved_def.as_ref().map(|def| {
+            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
+        });
         // If runtime resolution fails, avoid reusing stale compiled cache entries.
         // This can happen across repeated EVAL calls that redefine the same routine name.
         let expected_fingerprint = expected_fingerprint?;
+        let def_arity = resolved_def
+            .as_ref()
+            .map(|def| {
+                def.param_defs
+                    .iter()
+                    .filter(|pd| !pd.named && !pd.slurpy)
+                    .count()
+            })
+            .unwrap_or(arity);
         let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
         let pkg = self.interpreter.current_package();
         let type_sig: Vec<String> = args
@@ -390,11 +397,26 @@ impl VM {
                 }
             }
         }
+        // Fallback: when call arity differs from definition arity (e.g. optional
+        // params), try the definition's param count to find the compiled function.
+        if found_key.is_none() && def_arity != arity {
+            let key_fp = format!("{}::{}/{}#{:x}", pkg, name, def_arity, expected_fingerprint);
+            if compiled_fns.get(&key_fp).is_some_and(&matches_resolved) {
+                found_key = Some(key_fp);
+            } else if pkg != "GLOBAL" {
+                let key_fp_global =
+                    format!("GLOBAL::{}/{}#{:x}", name, def_arity, expected_fingerprint);
+                if compiled_fns
+                    .get(&key_fp_global)
+                    .is_some_and(&matches_resolved)
+                {
+                    found_key = Some(key_fp_global);
+                }
+            }
+        }
         if let Some(key) = found_key {
             // Cache the resolution result for future lookups
-            let cached_pkg = self
-                .interpreter
-                .resolve_function_with_types(name, args)
+            let cached_pkg = resolved_def
                 .map(|def| def.package.resolve())
                 .unwrap_or_else(|| self.interpreter.current_package().to_string());
             if use_cache {
