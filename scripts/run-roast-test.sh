@@ -32,6 +32,11 @@ per_file_timeout() {
       # This test has a 1M-iteration hot loop (test 100) that takes ~8s on release builds.
       echo 60
       ;;
+    roast/S03-sequence/exhaustive.t)
+      # This test runs 124 subtests covering many sequence variants including
+      # infinite sequences with head() truncation. Release builds take ~15s.
+      echo 60
+      ;;
     *)
       echo "$DEFAULT_TIMEOUT"
       ;;

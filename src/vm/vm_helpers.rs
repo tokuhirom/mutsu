@@ -550,6 +550,7 @@ impl VM {
                 self.locals_dirty_slots = coro.locals_dirty_slots.clone();
                 self.stack = coro.stack.clone();
                 *self.interpreter.env_mut() = coro.env.clone();
+                self.gather_for_loop_resume = coro.for_loop_resume.clone();
                 has_prior_state = true;
             } else {
                 // Fresh start
@@ -622,10 +623,12 @@ impl VM {
                     if e.message == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
                 {
                     // Take limit reached — the gather body yielded.
-                    // Save coroutine state for later resumption.
-                    // ip currently points to the Take instruction; advance past it
-                    // so that resuming doesn't re-execute the take.
-                    ip += 1;
+                    if self.gather_for_loop_resume.is_some() {
+                        // From inside a compound ForLoop op — keep ip here.
+                    } else {
+                        // ip points to the Take instruction; advance past it.
+                        ip += 1;
+                    }
                     break;
                 }
                 Err(e) => {
@@ -661,6 +664,7 @@ impl VM {
 
         // Save coroutine state before restoring outer env
         if !body_finished && run_result.is_ok() {
+            let for_loop_resume = self.gather_for_loop_resume.take();
             let coro_state = GatherCoroutineState {
                 ip,
                 locals: self.locals.clone(),
@@ -668,6 +672,7 @@ impl VM {
                 stack: self.stack.clone(),
                 env: self.interpreter.env().clone(),
                 finished: false,
+                for_loop_resume,
             };
             if let Some(ref coro_mutex) = list.coroutine {
                 *coro_mutex.lock().unwrap() = coro_state;

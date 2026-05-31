@@ -252,10 +252,22 @@ impl RuntimeError {
     }
 
     pub(crate) fn take_signal(value: Value) -> Self {
+        // When CX::Take propagates unhandled (no CONTROL block catches it),
+        // it becomes X::ControlFlow with illegal=>"take", enclosing=>"gather".
+        // Pre-set the exception so throws-like can match the correct type.
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("illegal".to_string(), Value::str("take".to_string()));
+        attrs.insert("enclosing".to_string(), Value::str("gather".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("take without gather".to_string()),
+        );
+        let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
             message: "CX::Take".to_string(),
             is_take: true,
             return_value: Some(value),
+            exception: xcf.exception,
             ..Self::new("")
         }
     }
