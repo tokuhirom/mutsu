@@ -189,9 +189,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
                     return Some(Err(crate::value::seq_consumed_error()));
                 }
-                if !crate::value::seq_is_cached(items) {
-                    crate::value::seq_consume(items).ok();
-                }
+                // Mark as cached so the Seq remains reusable
+                crate::value::seq_mark_cached(items);
                 Some(Ok(Value::Slip(items.clone())))
             }
             Value::Array(items, ..) => Some(Ok(Value::Slip(items.clone()))),
@@ -261,9 +260,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
                     return Some(Err(crate::value::seq_consumed_error()));
                 }
-                if !crate::value::seq_is_cached(items) {
-                    crate::value::seq_consume(items).ok();
-                }
+                // Mark as cached so the Seq remains reusable
+                crate::value::seq_mark_cached(items);
                 Some(Ok(Value::array(items.to_vec())))
             }
             Value::Array(items, _) => Some(Ok(Value::array(items.to_vec()))),
@@ -439,10 +437,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
                     return Some(Err(crate::value::seq_consumed_error()));
                 }
-                // Mark as consumed (unless cached; cached Seqs allow multiple iterations)
-                if !crate::value::seq_is_cached(items) {
-                    crate::value::seq_consume(items).ok();
-                }
+                // Mark as cached so the Seq remains reusable (e.g. when the Seq is
+                // bound to an @-sigil parameter, Raku implicitly caches it).
+                // TODO: implement proper @-sigil parameter caching separately, and
+                // change this back to seq_consume for strict Raku semantics where
+                // .List on an uncached Seq consumes it.
+                crate::value::seq_mark_cached(items);
                 if method == "Array" {
                     Some(Ok(Value::real_array(items.to_vec())))
                 } else {
