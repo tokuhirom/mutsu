@@ -296,9 +296,16 @@ fn extract_phasers_from_stmts(
                     custom_traits: vec![],
                     where_constraint: None,
                 };
+                // For CHECK phasers, tag the DoBlock with a sentinel label so
+                // the compiler emits CheckPhaserStart/CheckPhaserEnd opcodes,
+                // ensuring errors are wrapped in X::Comp::BeginTime.
+                let label = match kind {
+                    PhaserKind::Check => Some("__mutsu_check_phaser__".to_string()),
+                    _ => None,
+                };
                 let assign = Stmt::Assign {
                     name: temp_name,
-                    expr: Expr::DoBlock { body, label: None },
+                    expr: Expr::DoBlock { body, label },
                     op: AssignOp::Assign,
                 };
                 match kind {
@@ -391,9 +398,14 @@ fn lift_phasers_from_expr(
                 custom_traits: vec![],
                 where_constraint: None,
             };
+            // Tag CHECK DoBlocks with a sentinel label for compiler wrapping
+            let label = match kind {
+                PhaserKind::Check => Some("__mutsu_check_phaser__".to_string()),
+                _ => None,
+            };
             let assign = Stmt::Assign {
                 name: temp_name,
-                expr: Expr::DoBlock { body, label: None },
+                expr: Expr::DoBlock { body, label },
                 op: AssignOp::Assign,
             };
             match kind {
@@ -767,6 +779,9 @@ fn reorder_at_level(
     // Each phaser is a VarDecl+Assign pair. They must remain as raw statements
     // (not wrapped in Stmt::Phaser) so that the EVAL second-pass insert_pos
     // logic correctly places BEGIN before CHECK via VarDecl matching.
+    // The DoBlock body carries a "__mutsu_check_phaser__" sentinel label so
+    // the compiler emits CheckPhaserStart/CheckPhaserEnd, ensuring errors
+    // are wrapped in X::Comp::BeginTime.
     // TODO: For multiple CHECK PhaserExprs, pairs should be reversed.
     // For now, just extend in forward order (correct for single CHECK).
     stmts.extend(extra_check);

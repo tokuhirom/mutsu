@@ -2,6 +2,20 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
+        // DoBlocks from lifted CHECK phasers carry a sentinel label so we can
+        // wrap them in CheckPhaserStart/CheckPhaserEnd, ensuring errors inside
+        // are wrapped in X::Comp::BeginTime.
+        if matches!(label, Some(l) if l == "__mutsu_check_phaser__") {
+            let start_idx = self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 });
+            // Compile the inner DoBlock normally (without the sentinel label)
+            self.compile_do_block_expr(body, &None);
+            self.code.emit(OpCode::CheckPhaserEnd);
+            let end_ip = self.code.ops.len() as u32;
+            if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx] {
+                *e = end_ip;
+            }
+            return;
+        }
         // If the do block contains CATCH/CONTROL, compile as try so exceptions are handled.
         if Self::has_catch_or_control(body) {
             self.compile_try(body, &None);
