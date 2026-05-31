@@ -562,24 +562,60 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         Value::Set(items, _) => {
             let mut map = HashMap::new();
+            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut has_typed = false;
             for key in items.iter() {
                 map.insert(key.clone(), Value::Bool(true));
+                let typed = items.typed_key(key);
+                if !matches!(&typed, Value::Str(sv) if sv.as_ref() == key) {
+                    has_typed = true;
+                    original_keys.insert(key.clone(), typed);
+                }
             }
-            Value::hash(map)
+            let result = Value::hash(map);
+            if has_typed {
+                original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                register_hash_original_keys(&result, original_keys);
+            }
+            result
         }
         Value::Bag(items, _) => {
             let mut map = HashMap::new();
+            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut has_typed = false;
             for (key, count) in items.iter() {
                 map.insert(key.clone(), Value::Int(*count));
+                let typed = items.typed_key(key);
+                if !matches!(&typed, Value::Str(sv) if sv.as_ref() == key) {
+                    has_typed = true;
+                    original_keys.insert(key.clone(), typed);
+                }
             }
-            Value::hash(map)
+            let result = Value::hash(map);
+            if has_typed {
+                original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                register_hash_original_keys(&result, original_keys);
+            }
+            result
         }
         Value::Mix(items, _) => {
             let mut map = HashMap::new();
+            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut has_typed = false;
             for (key, weight) in items.iter() {
                 map.insert(key.clone(), mix_weight_value(*weight));
+                let typed = items.typed_key(key);
+                if !matches!(&typed, Value::Str(sv) if sv.as_ref() == key) {
+                    has_typed = true;
+                    original_keys.insert(key.clone(), typed);
+                }
             }
-            Value::hash(map)
+            let result = Value::hash(map);
+            if has_typed {
+                original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                register_hash_original_keys(&result, original_keys);
+            }
+            result
         }
         Value::Range(a, b) => {
             let items: Vec<Value> = (a..=b).map(Value::Int).collect();
