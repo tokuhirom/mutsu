@@ -1023,6 +1023,9 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        // Flush locals to env so the class body can see up-to-date outer lexical
+        // variables (e.g. `my $x = 0` declared before `class A { ... }`).
+        self.sync_env_from_locals(code);
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::ClassDecl {
             name,
@@ -1190,6 +1193,9 @@ impl VM {
             }
 
             self.env_dirty = true;
+            // Sync locals from env in case the class body modified outer-scope
+            // variables (e.g. via a LEAVE phaser that runs after class exits).
+            self.sync_locals_from_env(code);
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterClass expects ClassDecl"))

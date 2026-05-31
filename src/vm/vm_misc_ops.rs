@@ -3009,7 +3009,17 @@ impl VM {
                 self.interpreter.env_mut().insert_sym(name, value);
             }
             self.locals = saved_locals;
+            // Re-read locals from env for variables that use env as the primary
+            // store (non-simple locals). Simple locals use dirty-tracked SetLocal
+            // and their saved_locals state is authoritative; re-reading from env
+            // would overwrite them with stale env values (e.g. loop control flags
+            // like `__mutsu_loop_first_N` that were updated inside the loop body
+            // but not yet flushed to env before this DoBlock snapshot).
             for (idx, name) in code.locals.iter().enumerate() {
+                if code.simple_locals[idx] {
+                    // Simple locals: env may be stale; saved_locals is correct.
+                    continue;
+                }
                 if let Some(val) = self.interpreter.env().get(name).cloned() {
                     self.locals[idx] = val;
                 }

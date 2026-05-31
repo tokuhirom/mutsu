@@ -37,7 +37,7 @@ pub(super) struct MyDeclState {
     pub has_export_trait: bool,
     pub export_tags: Vec<String>,
     pub custom_traits: Vec<(String, Option<Expr>)>,
-    pub will_leave_body: Option<Vec<Stmt>>,
+    pub will_phasers: Vec<(crate::ast::PhaserKind, Vec<Stmt>)>,
     pub where_constraint: Option<Box<Expr>>,
 }
 
@@ -472,22 +472,42 @@ fn parse_variable_traits<'a>(
         r
     };
 
-    // Parse `will leave { ... }` trait
-    let will_leave_body: Option<Vec<Stmt>> = if let Some(after_will) = keyword("will", rest) {
+    // Parse one or more `will <phaser> { ... }` traits
+    let mut will_phasers: Vec<(crate::ast::PhaserKind, Vec<Stmt>)> = Vec::new();
+    while let Some(after_will) = keyword("will", rest) {
         let (r, _) = ws1(after_will)?;
         let (r, phaser_name) = ident(r)?;
-        if phaser_name != "leave" {
-            return Err(PError::expected("'leave' after 'will'"));
-        }
+        let phaser_kind = match phaser_name.as_str() {
+            "begin" => crate::ast::PhaserKind::Begin,
+            "check" => crate::ast::PhaserKind::Check,
+            "init" => crate::ast::PhaserKind::Init,
+            "end" => crate::ast::PhaserKind::End,
+            "enter" => crate::ast::PhaserKind::Enter,
+            "leave" => crate::ast::PhaserKind::Leave,
+            "keep" => crate::ast::PhaserKind::Keep,
+            "undo" => crate::ast::PhaserKind::Undo,
+            "first" => crate::ast::PhaserKind::First,
+            "next" => crate::ast::PhaserKind::Next,
+            "last" => crate::ast::PhaserKind::Last,
+            "pre" => crate::ast::PhaserKind::Pre,
+            "post" => crate::ast::PhaserKind::Post,
+            "quit" => crate::ast::PhaserKind::Quit,
+            "close" => crate::ast::PhaserKind::Close,
+            _ => {
+                // Unknown will trait — emit a fatal compile error.
+                // EVAL catches this as a runtime die, which is the expected behavior.
+                return Err(PError::fatal(format!(
+                    "Unknown will trait '{}'; known traits are: begin check init end enter leave keep undo first next last pre post",
+                    phaser_name
+                )));
+            }
+        };
         let (r, _) = ws(r)?;
         let (r, body) = super::super::block(r)?;
-        rest = r;
-        let (rest2, _) = ws(rest)?;
-        rest = rest2;
-        Some(body)
-    } else {
-        None
-    };
+        will_phasers.push((phaser_kind, body));
+        let (r2, _) = ws(r)?;
+        rest = r2;
+    }
 
     // Postfix container typing: my @a of Int; my %h of Int;
     if let Some(after_of) = keyword("of", rest) {
@@ -561,7 +581,7 @@ fn parse_variable_traits<'a>(
             has_export_trait,
             export_tags,
             custom_traits,
-            will_leave_body,
+            will_phasers,
             where_constraint,
         },
     ))

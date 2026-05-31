@@ -477,8 +477,7 @@ impl Compiler {
                 body: post_body,
             });
         }
-        // next_ph was already reversed above for LIFO order
-        loop_body.extend(next_ph);
+        // LEAVE runs before KEEP/UNDO (in reverse declaration order)
         loop_body.extend(leave_ph);
         if let Some(result_var) = result_var.clone() {
             if !keep_ph.is_empty() || !undo_ph.is_empty() {
@@ -492,6 +491,9 @@ impl Compiler {
             // Preserve loop-body value for expression contexts that collect iteration results.
             loop_body.push(Stmt::Expr(Expr::Var(result_var)));
         }
+        // NEXT runs after KEEP/UNDO, before the next iteration begins.
+        // next_ph was already reversed above for LIFO order.
+        loop_body.extend(next_ph);
 
         let post = if last_ph.is_empty() {
             Vec::new()

@@ -195,6 +195,21 @@ impl Compiler {
             } if Self::is_nested_mutating_method_on_index(target, name) => {
                 self.compile_expr_nested_method_writeback(target, name, args, modifier, *quoted);
             }
+            // `lazy for ITERABLE { BODY }` => MakeGather wrapping the for loop
+            // so the body is not evaluated prematurely.
+            Expr::MethodCall {
+                target, name, args, ..
+            } if name.resolve().as_str() == "lazy"
+                && args.is_empty()
+                && Self::is_dostmt_for(target) =>
+            {
+                if let Some(gather_block) = Self::make_lazy_for_gather(target) {
+                    let idx = self.code.add_stmt(Stmt::Block(gather_block));
+                    self.code.emit(OpCode::MakeGather(idx));
+                } else {
+                    self.compile_expr_method_generic(target, name, args, &None, false);
+                }
+            }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {
                 target,
@@ -326,6 +341,29 @@ impl Compiler {
             }
             // Reduction ([+] @arr)
             Expr::Reduction { op, expr } => {
+                // For short-circuit operators with a literal argument list, compile
+                // inline with short-circuit bytecode to preserve lazy evaluation semantics.
+                let base_op = op.strip_prefix('\\').unwrap_or(op.as_str());
+                let is_scan = op.starts_with('\\');
+                if matches!(
+                    base_op,
+                    "&&" | "||" | "and" | "or" | "//" | "andthen" | "orelse" | "^^" | "xor"
+                ) && let Expr::ArrayLiteral(items) = expr.as_ref()
+                {
+                    // Only use the short-circuit path when no element might
+                    // produce a Slip (which needs flattening into more args).
+                    let has_slip = items.iter().any(Self::expr_may_produce_slip);
+                    if !has_slip {
+                        // xor/^^ always use thunk approach (both scan and non-scan)
+                        // for other operators, use inline for non-scan
+                        if is_scan || matches!(base_op, "^^" | "xor") {
+                            self.compile_thunk_reduction(base_op, items, is_scan);
+                        } else {
+                            self.compile_shortcircuit_reduction(base_op, items);
+                        }
+                        return;
+                    }
+                }
                 self.compile_expr(expr);
                 let op_idx = self.code.add_constant(Value::str(op.clone()));
                 self.code.emit(OpCode::Reduction(op_idx));
@@ -477,5 +515,308 @@ impl Compiler {
                 self.code.emit(OpCode::LoadNil);
             }
         }
+    }
+
+    /// Returns true if the expression might produce a Slip value when evaluated.
+    /// Used to detect cases where argument flattening is needed before reduction.
+    fn expr_may_produce_slip(expr: &Expr) -> bool {
+        // slip() call (which is how |expr is parsed)
+        matches!(expr, Expr::Call { name, .. } if name.resolve() == "slip")
+    }
+
+    /// Compile a non-scan short-circuit reduction `[op] items` inline.
+    /// This ensures that elements after a short-circuit point are not evaluated.
+    ///
+    /// For `&&` / `and`: short-circuit on first false (like chained `&&`)
+    /// For `||` / `or`: short-circuit on first truthy (like chained `||`)
+    /// For `//`:        short-circuit on first defined (like chained `//`)
+    fn compile_shortcircuit_reduction(&mut self, op: &str, items: &[Expr]) {
+        if items.is_empty() {
+            // Identity value
+            match op {
+                "&&" | "and" => {
+                    self.code.emit(OpCode::LoadTrue);
+                }
+                "//" | "orelse" => {
+                    // [//] () and [orelse] () return Any (type object)
+                    let any_idx = self
+                        .code
+                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                    self.code.emit(OpCode::LoadConst(any_idx));
+                }
+                _ => {
+                    self.code.emit(OpCode::LoadFalse);
+                }
+            }
+            return;
+        }
+        if items.len() == 1 {
+            self.compile_expr(&items[0]);
+            return;
+        }
+
+        match op {
+            "&&" | "and" => {
+                // [&&] a, b, c, d  =>  a && b && c && d
+                // If any element is false, return it and don't evaluate the rest.
+                // Pattern:
+                //   compile a; dup; JumpIfFalse end; pop
+                //   compile b; dup; JumpIfFalse end; pop
+                //   ...
+                //   compile last
+                //   end: (all jumps patch here)
+                let mut jump_ends = Vec::new();
+                let last_idx = items.len() - 1;
+                for (i, item) in items.iter().enumerate() {
+                    self.compile_expr(item);
+                    if i < last_idx {
+                        self.code.emit(OpCode::Dup);
+                        let je = self.code.emit(OpCode::JumpIfFalse(0));
+                        jump_ends.push(je);
+                        self.code.emit(OpCode::Pop);
+                    }
+                }
+                for je in jump_ends {
+                    self.code.patch_jump(je);
+                }
+            }
+            "||" | "or" => {
+                // [||] a, b, c, d  =>  a || b || c || d
+                // If any element is truthy, return it and don't evaluate the rest.
+                // Pattern (for n > 1):
+                //   compile a; dup; JumpIfTrue found; pop; pop
+                //   compile b; dup; JumpIfTrue found; pop; pop
+                //   ...
+                //   compile last; Jump done
+                //   found: pop
+                //   done:
+                let mut jump_founds = Vec::new();
+                let last_idx = items.len() - 1;
+                for (i, item) in items.iter().enumerate() {
+                    self.compile_expr(item);
+                    if i < last_idx {
+                        self.code.emit(OpCode::Dup);
+                        let jf = self.code.emit(OpCode::JumpIfTrue(0));
+                        jump_founds.push(jf);
+                        self.code.emit(OpCode::Pop);
+                        self.code.emit(OpCode::Pop);
+                    }
+                }
+                // Last element: jump over "found: pop"
+                let jump_done = self.code.emit(OpCode::Jump(0));
+                // found: pop (remove dup copy, original stays as result)
+                let found_pos = self.code.current_pos();
+                self.code.emit(OpCode::Pop);
+                // done:
+                let done_pos = self.code.current_pos();
+                // Patch all JumpIfTrue to "found"
+                for jf in jump_founds {
+                    self.code.patch_jump_to(jf, found_pos);
+                }
+                // Patch jump_done to "done"
+                self.code.patch_jump_to(jump_done, done_pos);
+            }
+            "//" => {
+                // [//] a, b, c, d  =>  a // b // c // d
+                // Return first defined value.
+                // Same pattern as || but using JumpIfNotNil (peek-based).
+                let mut jump_founds = Vec::new();
+                let last_idx = items.len() - 1;
+                for (i, item) in items.iter().enumerate() {
+                    self.compile_expr(item);
+                    if i < last_idx {
+                        self.code.emit(OpCode::Dup);
+                        let jf = self.code.emit(OpCode::JumpIfNotNil(0));
+                        jump_founds.push(jf);
+                        self.code.emit(OpCode::Pop);
+                        self.code.emit(OpCode::Pop);
+                    }
+                }
+                let jump_done = self.code.emit(OpCode::Jump(0));
+                let found_pos = self.code.current_pos();
+                self.code.emit(OpCode::Pop);
+                let done_pos = self.code.current_pos();
+                for jf in jump_founds {
+                    self.code.patch_jump_to(jf, found_pos);
+                }
+                self.code.patch_jump_to(jump_done, done_pos);
+            }
+            "andthen" => {
+                // [andthen] a, b, c  =>  a andthen b andthen c
+                // If any element is undefined, return Empty and don't evaluate the rest.
+                // Pattern:
+                //   compile a; dup; CallDefined; JumpIfFalse undef; pop
+                //   compile b; dup; CallDefined; JumpIfFalse undef; pop
+                //   compile last
+                //   Jump done
+                //   undef: pop; LoadEmpty
+                //   done:
+                let mut jump_undefs = Vec::new();
+                let last_idx = items.len() - 1;
+                for (i, item) in items.iter().enumerate() {
+                    self.compile_expr(item);
+                    if i < last_idx {
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::CallDefined);
+                        let ju = self.code.emit(OpCode::JumpIfFalse(0));
+                        jump_undefs.push(ju);
+                        self.code.emit(OpCode::Pop);
+                    }
+                }
+                let jump_done = self.code.emit(OpCode::Jump(0));
+                let undef_pos = self.code.current_pos();
+                // undef: pop acc and push Empty
+                self.code.emit(OpCode::Pop);
+                let empty_idx = self.code.add_constant(Value::slip(vec![]));
+                self.code.emit(OpCode::LoadConst(empty_idx));
+                let done_pos = self.code.current_pos();
+                for ju in jump_undefs {
+                    self.code.patch_jump_to(ju, undef_pos);
+                }
+                self.code.patch_jump_to(jump_done, done_pos);
+            }
+            "orelse" => {
+                // [orelse] a, b, c  =>  a orelse b orelse c
+                // If any element is defined, return it and don't evaluate the rest.
+                // Same pattern as // (defined-or).
+                let mut jump_founds = Vec::new();
+                let last_idx = items.len() - 1;
+                for (i, item) in items.iter().enumerate() {
+                    self.compile_expr(item);
+                    if i < last_idx {
+                        self.code.emit(OpCode::Dup);
+                        let jf = self.code.emit(OpCode::JumpIfNotNil(0));
+                        jump_founds.push(jf);
+                        self.code.emit(OpCode::Pop);
+                        self.code.emit(OpCode::Pop);
+                    }
+                }
+                let jump_done = self.code.emit(OpCode::Jump(0));
+                let found_pos = self.code.current_pos();
+                self.code.emit(OpCode::Pop);
+                let done_pos = self.code.current_pos();
+                for jf in jump_founds {
+                    self.code.patch_jump_to(jf, found_pos);
+                }
+                self.code.patch_jump_to(jump_done, done_pos);
+            }
+            _ => {
+                // Fallback: compile as normal array and use Reduction opcode
+                for item in items {
+                    self.compile_expr(item);
+                    if Self::expr_is_scalar_var(item) {
+                        self.code.emit(OpCode::Itemize);
+                    }
+                }
+                self.code.emit(OpCode::MakeArray(items.len() as u32));
+                let op_idx = self.code.add_constant(Value::str(op.to_string()));
+                self.code.emit(OpCode::Reduction(op_idx));
+            }
+        }
+    }
+
+    /// Compile a thunk-based short-circuit reduction.
+    /// Each item is wrapped as an anonymous block (thunk), then a special
+    /// lazy reduction opcode evaluates them with short-circuit semantics.
+    ///
+    /// `is_scan` controls whether to collect intermediate results (scan/triangle
+    /// reduction `[\op]`) or just return the final result (`[op]`).
+    fn compile_thunk_reduction(&mut self, op: &str, items: &[Expr], is_scan: bool) {
+        if items.is_empty() {
+            // Identity value for empty reduction
+            match op {
+                "^^" | "xor" => {
+                    self.code.emit(OpCode::LoadFalse);
+                }
+                "//" | "orelse" => {
+                    let any_idx = self
+                        .code
+                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                    self.code.emit(OpCode::LoadConst(any_idx));
+                }
+                "&&" | "and" => {
+                    self.code.emit(OpCode::LoadTrue);
+                }
+                _ => {
+                    self.code.emit(OpCode::LoadFalse);
+                }
+            }
+            return;
+        }
+        // Wrap each expression as an anonymous block (thunk) so the VM can
+        // evaluate them lazily.
+        for item in items {
+            let body = vec![crate::ast::Stmt::Expr(item.clone())];
+            self.compile_expr_anon_sub(&body, false, true);
+        }
+        self.code.emit(OpCode::MakeArray(items.len() as u32));
+        // Emit special lazy reduction operator marker.
+        // Use "\\_sc_" prefix for scan (triangle), "_sc_" for non-scan.
+        let lazy_op = if is_scan {
+            format!("\\_sc_{}", op)
+        } else {
+            format!("_sc_{}", op)
+        };
+        let op_idx = self.code.add_constant(Value::str(lazy_op));
+        self.code.emit(OpCode::Reduction(op_idx));
+    }
+
+    /// Returns true if `expr` is `DoStmt(For { .. })`.
+    fn is_dostmt_for(expr: &Expr) -> bool {
+        if let Expr::DoStmt(stmt) = expr {
+            matches!(stmt.as_ref(), Stmt::For { .. })
+        } else {
+            false
+        }
+    }
+
+    /// Build a gather body for `lazy for ITERABLE { BODY }`.
+    /// The result is a block wrapping a for loop that calls `take` on each value.
+    fn make_lazy_for_gather(target: &Expr) -> Option<Vec<Stmt>> {
+        if let Expr::DoStmt(stmt) = target
+            && let Stmt::For {
+                iterable,
+                param,
+                param_def,
+                params,
+                body,
+                label,
+                mode,
+                rw_block,
+                explicit_zero_params,
+            } = stmt.as_ref()
+        {
+            let mut new_body = body.clone();
+            // Wrap the last expression statement with `take(...)`.
+            // Otherwise append `take $_`.
+            let has_last_expr = matches!(new_body.last(), Some(Stmt::Expr(_)));
+            if has_last_expr {
+                let last = new_body.pop().unwrap();
+                if let Stmt::Expr(inner_expr) = last {
+                    new_body.push(Stmt::Expr(Expr::Call {
+                        name: crate::symbol::Symbol::intern("take"),
+                        args: vec![inner_expr],
+                    }));
+                }
+            } else {
+                new_body.push(Stmt::Expr(Expr::Call {
+                    name: crate::symbol::Symbol::intern("take"),
+                    args: vec![Expr::Var("_".to_string())],
+                }));
+            }
+            let gather_body = vec![Stmt::For {
+                iterable: iterable.clone(),
+                param: param.clone(),
+                param_def: param_def.clone(),
+                params: params.clone(),
+                body: new_body,
+                label: label.clone(),
+                mode: *mode,
+                rw_block: *rw_block,
+                explicit_zero_params: *explicit_zero_params,
+            }];
+            return Some(gather_body);
+        }
+        None
     }
 }
