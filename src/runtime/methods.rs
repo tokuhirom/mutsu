@@ -4,6 +4,7 @@ use super::methods_signature::{
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
+use num_traits::ToPrimitive;
 
 /// Parse a non-negative integer index, returning None for negative or non-numeric.
 fn pos_index(v: &Value) -> Option<usize> {
@@ -267,6 +268,42 @@ pub(super) fn multidim_delete_pos(
         deleted,
         Value::Array(std::sync::Arc::new(updated), *arr_kind),
     ))
+}
+
+/// Compare two values numerically (like Raku's == operator) for allomorph ACCEPTS.
+fn allomorph_numeric_equal(a: &Value, b: &Value) -> bool {
+    let a_f = allomorph_val_to_f64(a);
+    let b_f = allomorph_val_to_f64(b);
+    match (a_f, b_f) {
+        (Some(af), Some(bf)) => {
+            // Handle Complex: both real and imaginary must match
+            if let (Value::Complex(ar, ai), Value::Complex(br, bi)) = (a, b) {
+                return (ar - br).abs() < 1e-15 && (ai - bi).abs() < 1e-15;
+            }
+            if let Value::Complex(ar, ai) = a {
+                return (ar - bf).abs() < 1e-15 && ai.abs() < 1e-15;
+            }
+            if let Value::Complex(br, bi) = b {
+                return (af - br).abs() < 1e-15 && bi.abs() < 1e-15;
+            }
+            (af - bf).abs() < 1e-15
+        }
+        _ => false,
+    }
+}
+
+fn allomorph_val_to_f64(v: &Value) -> Option<f64> {
+    match v {
+        Value::Int(i) => Some(*i as f64),
+        Value::BigInt(n) => n.to_f64(),
+        Value::Num(f) => Some(*f),
+        Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+        Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+        Value::Complex(r, _) => Some(*r),
+        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        Value::Mixin(inner, _) => allomorph_val_to_f64(inner),
+        _ => None,
+    }
 }
 
 impl Interpreter {
@@ -2443,31 +2480,30 @@ impl Interpreter {
         // ACCEPTS for allomorphic types with Instance arguments
         // This handles custom classes with .Numeric/.Str methods that the
         // pure builtin cannot call.
+        // Allomorph ACCEPTS checks BOTH numeric and string parts match.
         if method == "ACCEPTS"
             && matches!(&target, Value::Mixin(_, m) if m.contains_key("Str"))
             && args.len() == 1
             && matches!(&args[0], Value::Instance { .. })
-            && let Value::Mixin(target_inner, _) = &target
+            && let Value::Mixin(target_inner, target_mixins) = &target
         {
             // Call .Numeric on the instance to get its numeric value
             let numeric_val = self.call_method_with_values(args[0].clone(), "Numeric", vec![])?;
-            // Compare numerically using == semantics
-            let tf = match target_inner.as_ref() {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::Complex(r, _) => *r,
-                _ => 0.0,
-            };
-            let af = match &numeric_val {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::Complex(r, _) => *r,
-                _ => 0.0,
-            };
-            let result = (tf - af).abs() < 1e-15;
-            return Ok(Value::Bool(result));
+            // Call .Str on the instance to get its string value
+            let str_val = self.call_method_with_values(args[0].clone(), "Str", vec![])?;
+
+            // Compare numeric parts
+            let numeric_match = allomorph_numeric_equal(target_inner, &numeric_val);
+
+            // Compare string parts
+            let target_str = target_mixins
+                .get("Str")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let arg_str = str_val.to_string_value();
+            let str_match = target_str == arg_str;
+
+            return Ok(Value::Bool(numeric_match && str_match));
         }
 
         // Pair.ACCEPTS for Package/Instance: call method named by key, compare result
