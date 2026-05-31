@@ -299,28 +299,54 @@ impl Interpreter {
             }
             return self.call_method_with_values(*inner, method, args);
         }
-        // When Seq.new(iterator) created a deferred-iterator Seq, and .sink is called
-        // without .cache, pull from the iterator now (marks Seq as consumed).
-        if method == "sink"
-            && args.is_empty()
-            && let Value::Seq(items) = &target
+        // Seq deferred iterator handling: Seq.new(iterator) stores the iterator
+        // without pulling. When a method is called on such a Seq, materialize the
+        // items first by pulling from the iterator.
+        if let Value::Seq(items) = &target
             && crate::value::seq_has_deferred_iter(items)
-            && !crate::value::seq_is_cached(items)
         {
-            let items_arc = items.clone();
-            let iterator = crate::value::seq_take_deferred_iter(&items_arc).unwrap();
-            crate::value::seq_consume(&items_arc).ok();
-            // Pull from iterator until IterationEnd
-            let iter_val = iterator;
-            loop {
-                let val = self.call_method_with_values(iter_val.clone(), "pull-one", vec![])?;
-                if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
-                    || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
-                {
-                    break;
+            if method == "sink" && args.is_empty() && !crate::value::seq_is_cached(items) {
+                // .sink on uncached deferred Seq: pull from iterator, mark consumed.
+                let items_arc = items.clone();
+                let iterator = crate::value::seq_take_deferred_iter(&items_arc).unwrap();
+                crate::value::seq_consume(&items_arc).ok();
+                let iter_val = iterator;
+                loop {
+                    let val = self.call_method_with_values(iter_val.clone(), "pull-one", vec![])?;
+                    if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                        || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                    {
+                        break;
+                    }
+                }
+                return Ok(Value::Nil);
+            }
+            // For methods other than .cache, .sink, .raku, .perl: materialize the
+            // deferred iterator by pulling all items, then re-dispatch on the new Seq.
+            if !matches!(method, "cache" | "sink" | "raku" | "perl") {
+                let items_arc = items.clone();
+                if let Some(iterator) = crate::value::seq_take_deferred_iter(&items_arc) {
+                    let mut pulled_items = Vec::new();
+                    loop {
+                        let val =
+                            self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
+                        if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                            || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                        {
+                            break;
+                        }
+                        pulled_items.push(val);
+                    }
+                    let new_seq = Value::Seq(std::sync::Arc::new(pulled_items));
+                    // Transfer cached state from old Seq to new Seq
+                    if crate::value::seq_is_cached(&items_arc)
+                        && let Value::Seq(new_items) = &new_seq
+                    {
+                        crate::value::seq_mark_cached(new_items);
+                    }
+                    return self.call_method_with_values(new_seq, method, args);
                 }
             }
-            return Ok(Value::Nil);
         }
         // Consumed Seq guard: throw X::Seq::Consumed for iteration/coercion methods
         // when the Seq has been consumed and is not cached.
