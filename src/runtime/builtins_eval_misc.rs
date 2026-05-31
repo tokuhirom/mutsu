@@ -290,6 +290,11 @@ impl Interpreter {
         if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
             return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }
+        if let Some(check_val) = Self::named_value(args, "check")
+            && check_val.truthy()
+        {
+            return self.eval_eval_string_check_only(&code);
+        }
         self.eval_eval_string(&code)
     }
 

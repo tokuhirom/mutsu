@@ -149,6 +149,7 @@ mod class;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;
+mod eval_check;
 mod handle;
 mod io;
 mod main_args;

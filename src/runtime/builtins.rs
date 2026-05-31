@@ -403,6 +403,32 @@ impl Interpreter {
             // EVAL
             "EVALFILE" => self.builtin_evalfile(&args),
             "EVAL" => self.builtin_eval(&args),
+            // NQP functions (minimal compatibility)
+            "nqp::atkey" => {
+                let hash = args.first().cloned().unwrap_or(Value::Nil);
+                let key = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                match &hash {
+                    Value::Hash(map) => Ok(map.get(&key).cloned().unwrap_or(Value::Nil)),
+                    _ => {
+                        let h = hash.clone();
+                        self.call_method_with_values(h, "AT-KEY", vec![Value::str(key)])
+                    }
+                }
+            }
+            "nqp::atpos" => {
+                let list = args.first().cloned().unwrap_or(Value::Nil);
+                let idx = args
+                    .get(1)
+                    .and_then(|v| match v {
+                        Value::Int(i) => Some(*i as usize),
+                        _ => v.to_string_value().parse::<usize>().ok(),
+                    })
+                    .unwrap_or(0);
+                match &list {
+                    Value::Array(items, _) => Ok(items.get(idx).cloned().unwrap_or(Value::Nil)),
+                    _ => Ok(Value::Nil),
+                }
+            }
             // Debug
             "dd" => self.builtin_dd(&args),
             // Collection constructors / queries
