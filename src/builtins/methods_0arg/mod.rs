@@ -1141,6 +1141,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         }
                         return Some(Ok(Value::str(append_bt("Unexplained error".to_string()))));
                     }
+                    // Construct message from typed exception attributes
+                    if let Some(formatted) =
+                        crate::builtins::exception_message::format_exception_message(
+                            &cn, attributes,
+                        )
+                    {
+                        return Some(Ok(Value::str(append_bt(formatted))));
+                    }
                     return Some(Ok(Value::str(append_bt(format!("{} with no message", cn)))));
                 }
                 "Str" => {
@@ -1153,6 +1161,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     if cn == "Exception" {
                         return Some(Ok(Value::str(format!("Something went wrong in ({})", cn))));
                     }
+                    // Construct message from typed exception attributes
+                    if let Some(formatted) =
+                        crate::builtins::exception_message::format_exception_message(
+                            &cn, attributes,
+                        )
+                    {
+                        return Some(Ok(Value::str(formatted)));
+                    }
                     return Some(Ok(Value::str(format!("{} with no message", cn))));
                 }
                 "message" => {
@@ -1163,6 +1179,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         && let Some(payload) = attributes.get("payload")
                     {
                         return Some(Ok(payload.clone()));
+                    }
+                    // Construct message from typed exception attributes
+                    if let Some(formatted) =
+                        crate::builtins::exception_message::format_exception_message(
+                            &cn, attributes,
+                        )
+                    {
+                        return Some(Ok(Value::str(formatted)));
                     }
                     return Some(Ok(Value::str(String::new())));
                 }
