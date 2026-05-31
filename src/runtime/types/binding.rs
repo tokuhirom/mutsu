@@ -28,30 +28,6 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        // If a single Seq is passed but multiple positional params are needed, expand it.
-        // This mirrors Raku's behavior where a Seq passed as the sole argument is treated
-        // as a list of arguments (e.g., `-> ($k, $v) { }((1, 2).Seq)`).
-        let positional_param_count = if param_defs.is_empty() {
-            params.iter().filter(|p| !p.starts_with(':')).count()
-        } else {
-            param_defs
-                .iter()
-                .filter(|pd| !pd.named && !pd.slurpy && !pd.double_slurpy)
-                .count()
-        };
-        let expanded_args_storage: Vec<Value>;
-        let args: &[Value] = if args.len() == 1 && positional_param_count > 1 {
-            let inner = unwrap_varref_value(args[0].clone());
-            if let Value::Seq(items) = inner {
-                expanded_args_storage = items.as_ref().clone();
-                &expanded_args_storage[..]
-            } else {
-                args
-            }
-        } else {
-            args
-        };
-
         let filtered_args: Vec<Value> = args
             .iter()
             .filter(|arg| !is_internal_named_arg(&unwrap_varref_value((*arg).clone())))

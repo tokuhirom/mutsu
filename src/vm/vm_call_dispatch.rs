@@ -251,6 +251,15 @@ impl VM {
         // If runtime resolution fails, avoid reusing stale compiled cache entries.
         // This can happen across repeated EVAL calls that redefine the same routine name.
         let expected_fingerprint = expected_fingerprint?;
+        let def_arity = resolved_def
+            .as_ref()
+            .map(|def| {
+                def.param_defs
+                    .iter()
+                    .filter(|pd| !pd.named && !pd.slurpy)
+                    .count()
+            })
+            .unwrap_or(arity);
         let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
         let pkg = self.interpreter.current_package();
         let type_sig: Vec<String> = args
@@ -385,6 +394,23 @@ impl VM {
                             found_key = None;
                         }
                     }
+                }
+            }
+        }
+        // Fallback: when call arity differs from definition arity (e.g. optional
+        // params), try the definition's param count to find the compiled function.
+        if found_key.is_none() && def_arity != arity {
+            let key_fp = format!("{}::{}/{}#{:x}", pkg, name, def_arity, expected_fingerprint);
+            if compiled_fns.get(&key_fp).is_some_and(&matches_resolved) {
+                found_key = Some(key_fp);
+            } else if pkg != "GLOBAL" {
+                let key_fp_global =
+                    format!("GLOBAL::{}/{}#{:x}", name, def_arity, expected_fingerprint);
+                if compiled_fns
+                    .get(&key_fp_global)
+                    .is_some_and(&matches_resolved)
+                {
+                    found_key = Some(key_fp_global);
                 }
             }
         }
@@ -712,22 +738,6 @@ impl VM {
         let positional_count = param_slots.len();
         let actual_count = args.len();
 
-        // If a single Seq is passed but more positional args are needed, expand it.
-        // This mirrors Raku's behavior where a Seq passed as the sole argument
-        // is treated as a list of arguments (e.g., `-> ($k, $v) { }((1,2).Seq)`).
-        let expanded_args: Vec<Value>;
-        let args = if actual_count == 1 && positional_count > 1 {
-            if let Value::Seq(items) = &args[0] {
-                expanded_args = items.as_ref().clone();
-                &expanded_args[..]
-            } else {
-                args
-            }
-        } else {
-            args
-        };
-        let actual_count = args.len();
-
         if actual_count < positional_count {
             let required = cf
                 .param_defs
@@ -1016,22 +1026,10 @@ impl VM {
     pub(super) fn call_compiled_function_light(
         &mut self,
         cf: &CompiledFunction,
-        mut args: Vec<Value>,
+        args: Vec<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         self.record_cf_deprecation(cf);
-
-        // If a single Seq is passed but multiple positional params are needed, expand it.
-        // This mirrors Raku's behavior where a Seq passed as the sole argument
-        // is treated as a list of arguments (e.g., `-> ($k, $v) { }((1,2).Seq)`).
-        let positional_param_count = cf.param_defs.iter().filter(|p| !p.named).count();
-        if args.len() == 1
-            && positional_param_count > 1
-            && let Value::Seq(items) = &args[0].clone()
-        {
-            args = items.as_ref().clone();
-        }
-
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_locals_dirty = self.locals_dirty;
