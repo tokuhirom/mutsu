@@ -1330,9 +1330,40 @@ impl Interpreter {
         result.extend(extra_rhs);
         // When the endpoint is infinite (None), return a LazyList to preserve laziness
         if endpoint.is_none() && endpoint_kind.is_none() {
-            Ok(Value::LazyList(std::sync::Arc::new(
-                crate::value::LazyList::new_cached(result),
-            )))
+            // Build a SequenceSpec so the lazy list can generate more elements on demand
+            let seq_spec = match &mode {
+                SeqMode::Arithmetic(step) => {
+                    let all_int = result.iter().all(|v| matches!(v, Value::Int(_)));
+                    if all_int && *step == (*step as i64) as f64 {
+                        Some(crate::value::SequenceSpec::Arithmetic {
+                            step: *step as i64,
+                            all_int: true,
+                        })
+                    } else {
+                        Some(crate::value::SequenceSpec::Arithmetic {
+                            step: *step as i64,
+                            all_int: false,
+                        })
+                    }
+                }
+                SeqMode::GeometricRat(num, den) => Some(crate::value::SequenceSpec::GeometricRat {
+                    num: *num,
+                    den: *den,
+                }),
+                SeqMode::Geometric(ratio) => {
+                    Some(crate::value::SequenceSpec::Geometric { ratio: *ratio })
+                }
+                SeqMode::Closure => None,
+            };
+            if let Some(spec) = seq_spec {
+                Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList::new_sequence(result, spec),
+                )))
+            } else {
+                Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList::new_cached(result),
+                )))
+            }
         } else {
             Ok(Value::array(result))
         }

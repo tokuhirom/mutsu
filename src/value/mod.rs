@@ -1111,6 +1111,23 @@ pub(crate) enum VersionPart {
     Whatever,
 }
 
+/// Specification for a lazy infinite sequence (e.g. `1...*`, `2, 4 ... *`).
+/// Stored in `LazyList` to allow on-demand element generation beyond the
+/// initially cached seed elements.
+#[derive(Debug, Clone)]
+pub(crate) enum SequenceSpec {
+    /// Arithmetic progression: next = last + step
+    Arithmetic {
+        step: i64,
+        /// Whether the seed values are all Int (enables Int-typed output)
+        all_int: bool,
+    },
+    /// Geometric progression: next = last * num / den
+    GeometricRat { num: i64, den: i64 },
+    /// Geometric progression with floating-point ratio
+    Geometric { ratio: f64 },
+}
+
 /// Specification for a lazy scan (triangle) reduction.
 /// Stored in `LazyList` to allow on-demand element computation.
 #[derive(Debug, Clone)]
@@ -1176,6 +1193,9 @@ pub(crate) struct LazyList {
     pub(crate) elems_count: Option<Value>,
     /// Scan (triangle reduce) specification for lazy on-demand computation.
     pub(crate) scan_spec: Option<Mutex<ScanSpec>>,
+    /// Sequence specification for infinite arithmetic/geometric sequences.
+    /// When present, more elements can be generated on demand beyond the cache.
+    pub(crate) sequence_spec: Option<SequenceSpec>,
     /// Suspended coroutine state for lazy gather/take.
     /// When present, the gather body can be resumed from where `take` paused it.
     pub(crate) coroutine: Option<Mutex<GatherCoroutineState>>,
@@ -1204,6 +1224,7 @@ impl Clone for LazyList {
                 .scan_spec
                 .as_ref()
                 .map(|s| Mutex::new(s.lock().unwrap().clone())),
+            sequence_spec: self.sequence_spec.clone(),
             coroutine: self
                 .coroutine
                 .as_ref()
@@ -1223,6 +1244,22 @@ impl LazyList {
             compiled_fns: None,
             elems_count: None,
             scan_spec: None,
+            sequence_spec: None,
+            coroutine: None,
+        }
+    }
+
+    /// Create an infinite sequence lazy list that can generate elements on demand.
+    pub(crate) fn new_sequence(seeds: Vec<Value>, spec: SequenceSpec) -> Self {
+        Self {
+            body: Vec::new(),
+            env: crate::env::Env::new(),
+            cache: Mutex::new(Some(seeds)),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: None,
+            sequence_spec: Some(spec),
             coroutine: None,
         }
     }
@@ -1237,6 +1274,7 @@ impl LazyList {
             compiled_fns: None,
             elems_count: None,
             scan_spec: Some(Mutex::new(spec)),
+            sequence_spec: None,
             coroutine: None,
         }
     }
