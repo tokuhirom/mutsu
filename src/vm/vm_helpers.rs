@@ -343,6 +343,13 @@ impl VM {
             return self.force_scan_lazy_list(list, 200_000);
         }
 
+        // For sequence-spec lazy lists, return current cache (infinite lists
+        // are never fully materialized)
+        if list.sequence_spec.is_some() {
+            let cache = list.cache.lock().unwrap();
+            return Ok(cache.as_ref().cloned().unwrap_or_default());
+        }
+
         // Check cache first
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
@@ -508,6 +515,11 @@ impl VM {
             {
                 return Ok(cached[..needed].to_vec());
             }
+        }
+
+        // For sequence-spec lazy lists, generate more elements on demand
+        if let Some(ref spec) = list.sequence_spec {
+            return Self::extend_sequence_cache(list, spec, needed);
         }
 
         // Check if coroutine is finished (body completed, all elements produced)
@@ -1178,5 +1190,58 @@ impl VM {
         } else {
             val
         }
+    }
+
+    /// Extend a sequence-spec lazy list's cache to at least `needed` elements.
+    /// This generates new elements using the sequence spec (arithmetic/geometric)
+    /// without needing any VM or interpreter context.
+    fn extend_sequence_cache(
+        list: &LazyList,
+        spec: &crate::value::SequenceSpec,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut cache = list.cache.lock().unwrap();
+        let items = cache.get_or_insert_with(Vec::new);
+        if items.len() >= needed {
+            return Ok(items[..needed].to_vec());
+        }
+        // Generate more elements
+        while items.len() < needed {
+            let last = items.last().cloned().unwrap_or(Value::Int(0));
+            let next = match spec {
+                crate::value::SequenceSpec::Arithmetic { step, all_int } => {
+                    if *all_int {
+                        if let Value::Int(n) = last {
+                            Value::Int(n + step)
+                        } else {
+                            let n = last.to_f64();
+                            Value::Num(n + *step as f64)
+                        }
+                    } else {
+                        let n = last.to_f64();
+                        Value::Num(n + *step as f64)
+                    }
+                }
+                crate::value::SequenceSpec::GeometricRat { num, den } => {
+                    if let Value::Int(n) = last {
+                        let result = n * num;
+                        if result % den == 0 {
+                            Value::Int(result / den)
+                        } else {
+                            Value::Rat(result * num, *den)
+                        }
+                    } else {
+                        let n = last.to_f64();
+                        Value::Num(n * (*num as f64) / (*den as f64))
+                    }
+                }
+                crate::value::SequenceSpec::Geometric { ratio } => {
+                    let n = last.to_f64();
+                    Value::Num(n * ratio)
+                }
+            };
+            items.push(next);
+        }
+        Ok(items[..needed].to_vec())
     }
 }

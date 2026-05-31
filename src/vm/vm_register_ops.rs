@@ -43,6 +43,7 @@ impl VM {
                 compiled_fns: Some(std::sync::Arc::new(compiled_fns)),
                 elems_count: None,
                 scan_spec: None,
+                sequence_spec: None,
                 coroutine: Some(std::sync::Mutex::new(crate::value::GatherCoroutineState {
                     ip: 0,
                     locals: Vec::new(),

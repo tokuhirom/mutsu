@@ -509,6 +509,12 @@ impl Interpreter {
                 } else {
                     non_overlapping
                 };
+                // Execute code blocks from each match for side effects
+                for cap in &selected {
+                    if !cap.code_blocks.is_empty() {
+                        self.execute_regex_code_blocks(&cap.code_blocks);
+                    }
+                }
                 self.apply_multi_regex_captures(&selected);
                 true
             }

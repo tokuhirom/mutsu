@@ -117,6 +117,7 @@ pub(super) fn dispatch(
                                 .scan_spec
                                 .as_ref()
                                 .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
+                            sequence_spec: list.sequence_spec.clone(),
                             coroutine: list
                                 .coroutine
                                 .as_ref()
@@ -162,6 +163,7 @@ pub(super) fn dispatch(
                     compiled_fns: None,
                     elems_count: None,
                     scan_spec: None,
+                    sequence_spec: None,
                     coroutine: None,
                 },
             )))))
