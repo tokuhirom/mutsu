@@ -990,9 +990,13 @@ impl Interpreter {
                 if !Self::is_iterable(left) {
                     return false;
                 }
-                // Lazy LHS or lazy RHS: return False (unless same object, handled by PartialEq)
+                // Same object identity check (short-circuit before expensive comparison)
+                if Self::same_object(left, right) {
+                    return true;
+                }
+                // Lazy LHS or lazy RHS: return False (unless same object, handled above)
                 if Self::is_lazy(left) || Self::is_lazy(right) {
-                    return Self::same_object(left, right);
+                    return false;
                 }
                 let lhs = Self::extract_list_items(left);
                 let rhs = Self::extract_list_items(right);

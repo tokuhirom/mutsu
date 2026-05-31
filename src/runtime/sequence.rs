@@ -1330,20 +1330,6 @@ impl Interpreter {
         result.extend(extra_rhs);
         // When the endpoint is infinite (None), return a LazyList to preserve laziness
         if endpoint.is_none() && endpoint_kind.is_none() {
-            // For simple arithmetic integer sequences with step 1 (e.g. 1...*),
-            // return a Range for efficient infinite iteration.
-            if let SeqMode::Arithmetic(step) = &mode
-                && (*step - (*step as i64) as f64).abs() < f64::EPSILON
-                && *step as i64 == 1
-                && seeds.len() == 1
-                && !exclusive
-                && let Some(start) = Self::seq_value_to_f64(seeds.first().unwrap())
-            {
-                let start_int = start as i64;
-                if (start - start_int as f64).abs() < f64::EPSILON {
-                    return Ok(Value::Range(start_int, i64::MAX));
-                }
-            }
             Ok(Value::LazyList(std::sync::Arc::new(
                 crate::value::LazyList::new_cached(result),
             )))
