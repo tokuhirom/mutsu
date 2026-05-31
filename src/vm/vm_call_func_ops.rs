@@ -401,13 +401,7 @@ impl VM {
                 .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
             self.env_dirty = true;
-        } else if (self.interpreter.has_function(&name)
-            || self.interpreter.has_multi_function(&name))
-            && self
-                .interpreter
-                .resolve_function_with_types(&name, &args)
-                .is_some()
-        {
+        } else if self.interpreter.user_function_matches_call(&name, &args) {
             // A user-defined sub shadows a same-named builtin.
             let result = self.interpreter.call_function_fallback(&name, &args)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
@@ -677,13 +671,7 @@ impl VM {
                 let result = self.interpreter.call_function_fallback(name, &args);
                 self.interpreter.set_pending_call_arg_sources(None);
                 self.interpreter.maybe_fetch_rw_proxy(result?, true)
-            } else if (self.interpreter.has_function(name)
-                || self.interpreter.has_multi_function(name))
-                && self
-                    .interpreter
-                    .resolve_function_with_types(name, &args)
-                    .is_some()
-            {
+            } else if self.interpreter.user_function_matches_call(name, &args) {
                 // A user-defined sub shadows a same-named builtin.
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.interpreter.call_function_fallback(name, &args);
