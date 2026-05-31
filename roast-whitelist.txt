@@ -429,7 +429,6 @@ roast/S05-transliteration/with-closure.t
 roast/S06-advanced/callframe.t
 roast/S06-advanced/callsame.t
 roast/S06-advanced/dispatching.t
-roast/S06-advanced/dispatching.t
 roast/S06-advanced/recurse.t
 roast/S06-advanced/return.t
 roast/S06-advanced/stub.t
@@ -570,7 +569,6 @@ roast/S12-class/attributes-required.t
 roast/S12-class/attributes.t
 roast/S12-class/augment-supersede.t
 roast/S12-class/basic.t
-roast/S12-class/basic.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
@@ -648,7 +646,6 @@ roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/metaoperators.t
 roast/S13-overloading/multiple-signatures.t
-roast/S13-overloading/operators.t
 roast/S13-overloading/operators.t
 roast/S13-overloading/typecasting-long.t
 roast/S13-syntax/aliasing.t
@@ -1181,6 +1178,7 @@ roast/integration/advent2009-day02.t
 roast/integration/advent2009-day03.t
 roast/integration/advent2009-day04.t
 roast/integration/advent2009-day07.t
+roast/integration/advent2009-day08.t
 roast/integration/advent2009-day13.t
 roast/integration/advent2009-day14.t
 roast/integration/advent2009-day15.t
