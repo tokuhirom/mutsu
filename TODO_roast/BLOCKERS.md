@@ -42,7 +42,7 @@ Most S17 tests timeout or fail due to incomplete threading primitives (Semaphore
 
 ## throws-like / Exception Types (19 tests)
 
-Many tests fail because mutsu doesn't throw the specific exception type the test expects. Several have been implemented recently: X::Adverb (#2505), X::PseudoPackage::InDeclaration (#2507), X::Worry::Precedence::Range (#2502), X::IllegalDimensionInShape (#2503), X::TypeCheck::Binding::Parameter (#2477), X::Assignment::RO (#2477). Remaining exceptions still need implementation.
+Many tests fail because mutsu doesn't throw the specific exception type the test expects. Recently implemented: X::Adverb (#2505), X::PseudoPackage::InDeclaration (#2507), X::Worry::Precedence::Range (#2502), X::IllegalDimensionInShape (#2503), X::TypeCheck::Binding::Parameter (#2477), X::Assignment::RO (#2477). PR #2532 adds proper `.message` methods for 17 exception types (X::Str::Numeric, X::Method::NotFound, X::Undeclared, X::Cannot::Lazy, X::ControlFlow::Return, X::OutOfRange, X::Immutable, X::Multi::NoMatch, X::Multi::Ambiguous, X::Redeclaration, X::StubCode, X::Bind, X::Match::Bool, X::Assignment::RO, X::NYI, X::Signature::Placeholder, X::IO::Closed). Remaining issues are throwing the right exception types in the right places.
 
 - roast/S02-types/capture.t (X::Cannot::Lazy)
 - roast/S02-types/baghash.t (X::TypeCheck::Binding)
@@ -52,7 +52,7 @@ Many tests fail because mutsu doesn't throw the specific exception type the test
 - roast/S02-types/range.t (still 56 failing — other issues beyond X::Worry)
 - roast/S03-operators/range.t (still 18 failing — other issues beyond X::Worry)
 - roast/S04-statements/for.t (no exception on bad params)
-- roast/S04-statements/return.t (X::ControlFlow::Return — 2/26 failing)
+- roast/S04-statements/return.t (X::ControlFlow::Return — PR #2531 improves to 25/26)
 - roast/S05-substitution/subst.t (missing Exception throws)
 - roast/S06-advanced/lexical-subs.t (X::Undeclared::Symbols)
 - roast/S09-typed-arrays/arrays.t (type constraint violations don't throw)
@@ -141,8 +141,8 @@ IO::CatHandle not implemented, IO::Path subclasses (::Unix, ::Cygwin) incomplete
 
 Coroutine-based lazy gather/take implemented (#2511). range-iterator.t now passes (all 103 tests). Remaining issues: nested gathers, take-rw, and Seq laziness edge cases.
 
-- roast/S04-statements/gather.t (35/39 pass — nested gathers, take-rw still failing)
-- roast/S32-list/seq.t (planned 50, ran 22 — Seq laziness edge cases)
+- roast/S04-statements/gather.t (36/39 pass — nested gathers, take-rw, take inside m:g)
+- roast/S32-list/seq.t (48/50 pass — .raku.EVAL roundtrip, methods on cached Seqs)
 
 ## Hyper/Meta Operators (5 tests)
 
@@ -154,11 +154,10 @@ Hyper operators (>>op<<) with assignment forms, reduce operator edge cases ([,],
 - roast/S03-operators/inplace.t (.= on class instantiation)
 - roast/S03-operators/assign.t (assignment as function, list assignment)
 
-## EVAL Completeness (3 tests)
+## EVAL Completeness (2 tests)
 
-EVAL works for basic cases but fails for advanced scenarios: EVAL with specific language, nested EVAL, some edge cases past test 23 of 30.
+EVAL now passes all 30 tests in eval.t (#2513). Remaining issues are EVAL scope visibility and EVAL inside class bodies.
 
-- roast/S29-context/eval.t (23/30 passing)
 - roast/S04-declarations/my-6e.t (EVAL scope visibility)
 - roast/S12-attributes/class.t (EVAL inside class body)
 

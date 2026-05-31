@@ -1408,10 +1408,6 @@ impl Interpreter {
         }
         let saved_functions_keys: HashSet<String> =
             self.functions.keys().map(|k| k.resolve()).collect();
-        // Collect LEAVE phaser bodies to run after the class body exits.
-        // LEAVE phasers on class-scoped `my` variables should fire when the
-        // class block scope exits, not immediately when declared.
-        let mut deferred_leave_bodies: Vec<Vec<Stmt>> = Vec::new();
         for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl {
@@ -2139,17 +2135,6 @@ impl Interpreter {
                     }
                 }
                 _ => {
-                    // LEAVE phasers (from `my $x will leave { ... }`) should
-                    // fire when the class body exits, not immediately. Collect
-                    // them for deferred execution after the body loop.
-                    if let Stmt::Phaser {
-                        kind: PhaserKind::Leave,
-                        body: leave_body,
-                    } = stmt
-                    {
-                        deferred_leave_bodies.push(leave_body.clone());
-                        continue;
-                    }
                     // BEGIN phasers and EVAL calls in class bodies may fail
                     // (e.g. `BEGIN EVAL q[has $.x]` or `EVAL q[has $.x]`).
                     // Swallow errors from these so the class still registers.
@@ -2204,13 +2189,7 @@ impl Interpreter {
             }
             self.classes.insert(name.to_string(), class_def.clone());
         }
-        self.current_package = saved_package.clone();
-        // Run deferred LEAVE phaser bodies now that the class scope has exited.
-        // These come from `my $x will leave { ... }` declarations inside the class body.
-        // They run in the outer (restored) scope so they can modify outer variables.
-        for leave_body in deferred_leave_bodies {
-            let _ = self.run_block_raw(&leave_body);
-        }
+        self.current_package = saved_package;
         if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
             restore_previous_state(self);
             return Err(err);

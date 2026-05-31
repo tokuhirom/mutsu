@@ -244,12 +244,10 @@ impl VM {
             self.fn_resolve_cache.clear();
             self.fn_resolve_cache_gen = self.fn_resolve_gen;
         }
-        let expected_fingerprint = self
-            .interpreter
-            .resolve_function_with_types(name, args)
-            .map(|def| {
-                crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
-            });
+        let resolved_def = self.interpreter.resolve_function_with_types(name, args);
+        let expected_fingerprint = resolved_def.as_ref().map(|def| {
+            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
+        });
         // If runtime resolution fails, avoid reusing stale compiled cache entries.
         // This can happen across repeated EVAL calls that redefine the same routine name.
         let expected_fingerprint = expected_fingerprint?;
@@ -392,9 +390,7 @@ impl VM {
         }
         if let Some(key) = found_key {
             // Cache the resolution result for future lookups
-            let cached_pkg = self
-                .interpreter
-                .resolve_function_with_types(name, args)
+            let cached_pkg = resolved_def
                 .map(|def| def.package.resolve())
                 .unwrap_or_else(|| self.interpreter.current_package().to_string());
             if use_cache {
