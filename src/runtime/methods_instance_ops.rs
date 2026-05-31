@@ -614,14 +614,23 @@ impl Interpreter {
                     self.class_mro(&class_name.resolve()).contains(&target_name),
                 ));
             }
-            if method == "gist"
+            if (method == "gist" || method == "message")
                 && args.is_empty()
                 && (class_name.resolve().starts_with("X::")
                     || class_name == "Exception"
                     || class_name.resolve().ends_with("Exception"))
-                && let Some(msg) = attributes.get("message")
             {
-                return Ok(Value::str(msg.to_string_value()));
+                if let Some(msg) = attributes.get("message") {
+                    return Ok(Value::str(msg.to_string_value()));
+                }
+                if let Some(formatted) =
+                    crate::builtins::exception_message::format_exception_message(
+                        &class_name.resolve(),
+                        attributes,
+                    )
+                {
+                    return Ok(Value::str(formatted));
+                }
             }
             if (method == "raku" || method == "perl")
                 && args.is_empty()
