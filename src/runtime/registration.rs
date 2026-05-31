@@ -691,6 +691,19 @@ impl Interpreter {
             .any(|k| k.resolve().starts_with(&fq_slash))
     }
 
+    /// Check if a user-defined function with the given name can accept the
+    /// given args (arity + type check). Used to decide whether a user-defined
+    /// sub should shadow a same-named builtin.
+    pub(crate) fn user_function_matches_call(&mut self, name: &str, args: &[Value]) -> bool {
+        if !self.has_function(name) && !self.has_multi_function(name) {
+            return false;
+        }
+        let Some(def) = self.resolve_function_with_types(name, args) else {
+            return false;
+        };
+        self.args_match_param_types(args, &def.param_defs)
+    }
+
     pub(super) fn malformed_return_value_compile_error() -> RuntimeError {
         let mut err = RuntimeError::new("Malformed return value");
         let mut attrs = std::collections::HashMap::new();
