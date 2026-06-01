@@ -60,7 +60,7 @@ Many tests fail because mutsu doesn't throw the specific exception type the test
 - roast/S12-meta/exporthow.t (X::EXPORTHOW::InvalidDirective)
 - roast/S32-array/adverbs.t (X::Adverb implemented, but 283/606 — parser stops mid-file)
 - roast/S32-hash/adverbs.t (X::Adverb implemented, but still failing on some edge cases)
-- roast/S32-exceptions/misc.t (X::Undeclared)
+- roast/S32-exceptions/misc.t (broad: ~40 distinct compile-time error/exception features; 42/157 pass. X::Undeclared post/highexpect now done. Remaining: compile-time undeclared-symbol checking for non-EVAL programs, X::NotParametric, X::Syntax::Extension::SpecialForm, X::Redeclaration of subs/methods, X::Bind, sink-context "Useless use" warnings, and ~30 one-off exception types. See TODO_roast/S32.md for the full list.)
 - roast/S32-exceptions/misc2.t (exception attribute matching)
 - roast/S04-exceptions/exceptions-alternatives.t (3/3 failing)
 

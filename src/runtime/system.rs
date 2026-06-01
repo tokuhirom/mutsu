@@ -221,6 +221,13 @@ impl Interpreter {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("name".to_string(), Value::str(symbol.clone()));
                 attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
+                // `post` is the source text following the eject point. For a bare
+                // undeclared variable reference, that is the symbol itself.
+                attrs.insert("post".to_string(), Value::str(symbol.clone()));
+                // `highexpect` is the list of additional things the parser was
+                // still expecting at the eject point. For an undeclared variable
+                // there is nothing else expected, so it is an empty list.
+                attrs.insert("highexpect".to_string(), Value::array(vec![]));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!("Variable '{}' is not declared.", symbol)),
