@@ -492,7 +492,14 @@ fn run_main() {
             std::process::exit(code as i32);
         }
         Err(err) => {
-            print_error("Runtime error", &err, Some(&input), Some(&program_name));
+            // When `%*ENV<RAKU_EXCEPTIONS_HANDLER>` selects the JSON handler,
+            // print uncaught exceptions as a JSON document instead of the
+            // human-readable backtrace.
+            if interpreter.exceptions_handler().as_deref() == Some("JSON") {
+                eprintln!("{}", err.to_json_exception());
+            } else {
+                print_error("Runtime error", &err, Some(&input), Some(&program_name));
+            }
             interpreter.flush_all_handles();
             interpreter.flush_stderr_buffer();
             let code = interpreter.exit_code();

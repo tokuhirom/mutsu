@@ -1330,7 +1330,7 @@ impl Interpreter {
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         let (source_path, _inst_dist_json) = self
             .resolve_module_path(module)
-            .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
+            .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?;
         // Track operator subs exported by this module so EVAL can see them.
         if let Ok(source) = fs::read_to_string(&source_path) {
             for name in Self::extract_module_exported_operator_names(&source) {

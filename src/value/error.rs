@@ -106,6 +106,16 @@ impl RuntimeError {
         }
     }
 
+    /// Check if this error represents an X::CompUnit::UnsatisfiedDependency error.
+    pub(crate) fn is_unsatisfied_dependency(&self) -> bool {
+        if let Some(ref ex) = self.exception
+            && let Value::Instance { class_name, .. } = ex.as_ref()
+        {
+            return class_name.resolve() == "X::CompUnit::UnsatisfiedDependency";
+        }
+        false
+    }
+
     /// Check if this error represents a method-not-found error.
     pub(crate) fn is_method_not_found(&self) -> bool {
         if let Some(ref ex) = self.exception
@@ -522,6 +532,15 @@ impl RuntimeError {
         Self::typed_msg("X::Undeclared::Symbols", message)
     }
 
+    /// X::CompUnit::UnsatisfiedDependency - a required module could not be found.
+    pub(crate) fn unsatisfied_dependency(module: &str) -> Self {
+        let msg = format!("Could not find {} in:\n    (module repositories)", module);
+        let mut attrs = HashMap::new();
+        attrs.insert("specification".to_string(), Value::str(module.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::CompUnit::UnsatisfiedDependency", attrs)
+    }
+
     /// X::Redeclaration - Redeclared symbol
     #[allow(dead_code)]
     pub(crate) fn redeclaration(what: &str, name: &str) -> Self {
@@ -814,6 +833,111 @@ impl RuntimeError {
         attrs.insert("got".to_string(), Value::str(got.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
+    }
+
+    /// Serialize this error as a JSON document of the form
+    /// `{"<ClassName>":{<attr>:<value>, ...}}`.
+    ///
+    /// This is the format used by the `RAKU_EXCEPTIONS_HANDLER=JSON`
+    /// environment-variable exception handler. The object always contains a
+    /// `message` key (null when the exception has no message attribute).
+    pub fn to_json_exception(&self) -> String {
+        let (class_name, attrs): (String, HashMap<String, Value>) = match &self.exception {
+            Some(boxed) => match boxed.as_ref() {
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } => (
+                    class_name.resolve(),
+                    attributes
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                ),
+                other => ("X::AdHoc".to_string(), {
+                    let mut m = HashMap::new();
+                    m.insert("message".to_string(), Value::str(other.to_string_value()));
+                    m
+                }),
+            },
+            None => ("X::AdHoc".to_string(), {
+                let mut m = HashMap::new();
+                m.insert("message".to_string(), Value::str(self.message.clone()));
+                m
+            }),
+        };
+
+        // Emit attributes in a stable order: `message` first, then the rest
+        // sorted by name. Always include `message` (null if absent).
+        let mut keys: Vec<&String> = attrs.keys().collect();
+        keys.sort();
+        let mut parts: Vec<String> = Vec::new();
+        parts.push(format!(
+            "\"message\":{}",
+            match attrs.get("message") {
+                Some(v) => json_value(v),
+                None => "null".to_string(),
+            }
+        ));
+        for k in keys {
+            if k == "message" {
+                continue;
+            }
+            parts.push(format!("{}:{}", json_string(k), json_value(&attrs[k])));
+        }
+
+        format!("{{{}:{{{}}}}}", json_string(&class_name), parts.join(","))
+    }
+}
+
+/// Encode a Rust string as a JSON string literal (with surrounding quotes).
+fn json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Encode a runtime Value as a JSON value for the exception handler.
+fn json_value(v: &Value) -> String {
+    match v {
+        Value::Nil => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Int(n) => n.to_string(),
+        Value::Num(f) => {
+            if f.is_finite() {
+                f.to_string()
+            } else {
+                "null".to_string()
+            }
+        }
+        Value::Str(s) => json_string(s),
+        Value::Array(items, _) => {
+            let elems: Vec<String> = items.iter().map(json_value).collect();
+            format!("[{}]", elems.join(","))
+        }
+        Value::Hash(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let pairs: Vec<String> = keys
+                .iter()
+                .map(|k| format!("{}:{}", json_string(k), json_value(&map[*k])))
+                .collect();
+            format!("{{{}}}", pairs.join(","))
+        }
+        other => json_string(&other.to_string_value()),
     }
 }
 
