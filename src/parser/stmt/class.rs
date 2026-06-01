@@ -322,6 +322,25 @@ fn reject_no_self_in_subs(body: &[Stmt]) -> Result<(), PError> {
     Ok(())
 }
 
+/// Reject attribute-twigil references (`$!a`, `$.a`, ...) inside a `where`
+/// constraint on an attribute declaration. The `where` clause is evaluated as a
+/// thunk that has no `self`, so such a reference is an X::Syntax::NoSelf error.
+/// Note: this only applies to the `where` constraint, not to the `= default`
+/// initializer (where `$!a` is allowed, since defaults run with `self`).
+fn reject_no_self_in_attr_where(body: &[Stmt]) -> Result<(), PError> {
+    for stmt in body {
+        if let Stmt::HasDecl {
+            where_constraint: Some(wc),
+            ..
+        } = stmt
+            && expr_uses_attr_twigil(wc)
+        {
+            return Err(no_self_error());
+        }
+    }
+    Ok(())
+}
+
 /// Collect no-twigil attribute names from HasDecl statements in a class body.
 fn collect_no_twigil_attr_names(body: &[Stmt]) -> Vec<String> {
     let mut names = Vec::new();
@@ -848,6 +867,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     }
     let (rest, body) = block(r)?;
     reject_no_self_in_subs(&body)?;
+    reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
     let class_decl = Stmt::ClassDecl {
         name: Symbol::intern(&user_name),
@@ -1021,6 +1041,7 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
 
     let (rest, mut body) = block(r)?;
     reject_no_self_in_subs(&body)?;
+    reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
