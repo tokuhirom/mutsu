@@ -1,23 +1,35 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Snapshot of the compiler's lexical-scope-sensitive state, saved on block
+/// entry and restored on block exit.
+pub(super) struct LexicalScopeSnapshot {
+    dynamic_scope_all: bool,
+    dynamic_scope_names: Option<std::collections::HashSet<String>>,
+    constant_vars_in_scope: std::collections::HashSet<String>,
+}
+
 impl Compiler {
     fn normalize_dynamic_scope_name(name: &str) -> String {
         name.trim_start_matches(['$', '@', '%', '&']).to_string()
     }
 
-    pub(super) fn push_dynamic_scope_lexical(
-        &mut self,
-    ) -> (bool, Option<std::collections::HashSet<String>>) {
-        (self.dynamic_scope_all, self.dynamic_scope_names.clone())
+    pub(super) fn push_dynamic_scope_lexical(&mut self) -> LexicalScopeSnapshot {
+        LexicalScopeSnapshot {
+            dynamic_scope_all: self.dynamic_scope_all,
+            dynamic_scope_names: self.dynamic_scope_names.clone(),
+            constant_vars_in_scope: self.constant_vars_in_scope.clone(),
+        }
     }
 
-    pub(super) fn pop_dynamic_scope_lexical(
-        &mut self,
-        saved: (bool, Option<std::collections::HashSet<String>>),
-    ) {
-        self.dynamic_scope_all = saved.0;
-        self.dynamic_scope_names = saved.1;
+    pub(super) fn pop_dynamic_scope_lexical(&mut self, saved: LexicalScopeSnapshot) {
+        self.dynamic_scope_all = saved.dynamic_scope_all;
+        self.dynamic_scope_names = saved.dynamic_scope_names;
+        // Constants declared inside the exiting block are `our`-scoped: they stay
+        // installed in the package, but their lexical local slot is no longer
+        // valid, so drop them from the in-scope set. Subsequent bare-word access
+        // then resolves them via GetBareWord (package/global lookup).
+        self.constant_vars_in_scope = saved.constant_vars_in_scope;
     }
 
     pub(super) fn apply_dynamic_scope_pragma(&mut self, arg: Option<&Expr>) {
