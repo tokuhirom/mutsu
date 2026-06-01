@@ -274,6 +274,10 @@ impl VM {
                 Value::Rat(n, d)
             } else if let Some(val) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
                 Value::Int(val)
+            } else if let Some(our_val) = self.interpreter.get_our_var(name).cloned() {
+                // Single-character `our`-scoped constant declared in an inner
+                // block (see the multi-char case below for rationale).
+                our_val
             } else {
                 Value::str(name.to_string())
             }
@@ -290,6 +294,13 @@ impl VM {
                 attrs,
             )));
             return Err(err);
+        } else if let Some(our_val) = self.interpreter.get_our_var(name).cloned() {
+            // `our`-scoped constants (and `our` variables) declared in an inner
+            // block survive block-scope restoration in the package store
+            // (`our_vars`) even though the lexical env entry was discarded.
+            // Resolve the bare word to that persisted package value rather than
+            // treating it as an undeclared bareword string.
+            our_val
         } else {
             Value::str(name.to_string())
         };

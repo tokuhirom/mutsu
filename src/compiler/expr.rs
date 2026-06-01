@@ -67,12 +67,14 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     } else if self.sigilless_locals.contains(name.as_str())
-                        || self.constant_vars.contains(name.as_str())
+                        || self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"
                         || name == "__ANON_STATE__"
                     {
-                        // Sigilless bindings and constants: the bare word IS the
-                        // variable, so read directly from the local slot.
+                        // Sigilless bindings and in-scope constants: the bare word
+                        // IS the variable, so read directly from the local slot.
+                        // (Out-of-scope constants fall through to GetBareWord, which
+                        // resolves them as `our`-scoped package globals.)
                         self.code.emit(OpCode::GetLocal(slot));
                     } else {
                         // The local is a `$`-sigiled variable — a bare word with the

@@ -649,6 +649,9 @@ impl Interpreter {
                     || self.has_function(name)
                     || self.has_multi_function(name)
                     || self.env().contains_key(name)
+                    // `our`-scoped constants/variables installed in the package
+                    // survive in `our_vars` even after their lexical block exits.
+                    || self.get_our_var(name).is_some()
                     || local_classes.contains(name.as_str())
                     || declared.contains(name.as_str())
                     || crate::vm::VM::is_builtin_type(name)

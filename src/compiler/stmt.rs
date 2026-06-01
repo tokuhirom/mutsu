@@ -613,6 +613,7 @@ impl Compiler {
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
                 if is_constant_decl {
                     self.constant_vars.insert(name.clone());
+                    self.constant_vars_in_scope.insert(name.clone());
                 }
                 // X::ParametricConstant: typed @/% constants are forbidden
                 if is_constant_decl

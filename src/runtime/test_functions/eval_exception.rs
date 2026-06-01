@@ -204,6 +204,15 @@ impl Interpreter {
             }
             nested.env.insert_sym(*k, v.clone());
         }
+        // Propagate `our`-scoped variables/constants (installed in the package
+        // store) so the evaluated snippet can resolve them as bare words.
+        let our_vars: Vec<(String, Value)> = self
+            .our_vars_iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (k, v) in our_vars {
+            nested.set_our_var(k, v);
+        }
         let eval_result = nested.eval_eval_string(&code);
         let ok = eval_result.is_ok();
         let eval_err_msg = match &eval_result {

@@ -2182,6 +2182,15 @@ impl VM {
                     .env_mut()
                     .insert("!".to_string(), Value::Nil);
                 self.interpreter.discard_let_saves(let_mark);
+                // A `try` that completes normally but yields a soft Failure value
+                // (e.g. the result of an expression that returned a Failure rather
+                // than throwing) handles that Failure: its value is now "caught",
+                // so subsequent uses must not re-throw the stored exception.
+                if let Some(top) = self.stack.last()
+                    && matches!(top, Value::Instance { class_name, .. } if class_name == "Failure")
+                {
+                    top.mark_failure_handled();
+                }
                 *ip = end;
                 Ok(())
             }

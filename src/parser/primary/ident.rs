@@ -313,7 +313,14 @@ pub(super) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     {
         // If the declared callable is immediately followed by `(`, defer to
         // identifier_or_call so `name(...)` parses as a single call expression.
-        if callable && input[consumed_len..].starts_with('(') {
+        //
+        // The same applies to a non-callable term (e.g. a sigilless `constant`)
+        // whose name also names a user-declared sub: parens always indicate a
+        // sub call, so `name()` must dispatch to the sub rather than evaluate
+        // the constant term and call its value.
+        if input[consumed_len..].starts_with('(')
+            && (callable || crate::parser::stmt::simple::is_user_declared_sub(&name))
+        {
             return Err(PError::expected("declared term symbol"));
         }
         let expr = if callable {
