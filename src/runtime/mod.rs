@@ -913,6 +913,11 @@ pub struct Interpreter {
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.
     exported_vars: HashMap<String, HashMap<String, HashSet<String>>>,
+    /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
+    /// mixed a role into it) keyed by package and routine name. Captured at
+    /// `is export` registration time so `import` can restore the `&name` env
+    /// binding with the role mixed in, rather than just the plain FunctionDef.
+    exported_sub_values: HashMap<String, HashMap<String, Value>>,
     /// Mirrored export tables for modules declared with `unit module X`
     /// when the actual runtime package registration used "GLOBAL".
     /// Populated during `load_module` so that `import_module` can perform
@@ -2994,6 +2999,7 @@ impl Interpreter {
             current_distribution: None,
             package_distributions: HashMap::new(),
             exported_subs: HashMap::new(),
+            exported_sub_values: HashMap::new(),
             exported_vars: HashMap::new(),
             unit_module_exported_subs: HashMap::new(),
             unit_module_loading_stack: Vec::new(),
@@ -3646,6 +3652,15 @@ impl Interpreter {
         result
     }
 
+    /// Record a trait-modified routine value for an exported sub, so that
+    /// `import_module` can restore the `&name` env binding with the role mixed in.
+    pub(crate) fn record_exported_sub_value(&mut self, package: String, name: String, val: Value) {
+        self.exported_sub_values
+            .entry(package)
+            .or_default()
+            .insert(name, val);
+    }
+
     pub(crate) fn register_exported_sub(
         &mut self,
         package: String,
@@ -3859,6 +3874,19 @@ impl Interpreter {
                 .collect();
             for (k, v) in proto_entries {
                 self.proto_functions.insert(k, v);
+            }
+
+            // If this exported sub carried a trait-modified value (e.g. a role
+            // mixed in via a custom `is` trait), restore it as the `&name` env
+            // binding so `&name ~~ Role` works after import.
+            if let Some(val) = self
+                .exported_sub_values
+                .get(module)
+                .and_then(|m| m.get(&name))
+                .cloned()
+            {
+                self.env.insert(format!("&{name}"), val.clone());
+                self.env.insert(format!("&{target_pkg}::{name}"), val);
             }
         }
 
@@ -4951,6 +4979,7 @@ impl Interpreter {
             package_distributions: self.package_distributions.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
+            exported_sub_values: self.exported_sub_values.clone(),
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
             suppress_exports: false,

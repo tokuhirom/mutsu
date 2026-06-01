@@ -768,11 +768,14 @@ impl Interpreter {
             return Err(RuntimeError::redeclaration_routine(name));
         }
         if self.proto_subs.contains(&key) {
-            if self.current_package == "GLOBAL" {
-                // `is export` on a GLOBAL proto hits both local/global registration paths.
-                return Ok(());
-            }
-            return Err(RuntimeError::redeclaration_routine(name));
+            // A proto with this name is already visible in GLOBAL. This happens
+            // when `is export` on a GLOBAL proto hits both local/global paths,
+            // or when an outer (mainline) `proto sub` of the same name already
+            // exists before a module declares its own exported proto. In both
+            // cases the existing proto subsumes the exported one; the actual
+            // candidates are merged later at `import` time. Re-registering would
+            // be a spurious redeclaration error, so skip it.
+            return Ok(());
         }
         self.proto_subs.insert(key.clone());
         self.proto_functions.insert(
