@@ -3444,7 +3444,7 @@ impl Interpreter {
             // Missing helper modules remain non-fatal for compatibility.
             match self.load_module(module) {
                 Ok(()) => Ok(()),
-                Err(err) if err.message.starts_with("Module not found:") => Ok(()),
+                Err(err) if err.is_unsatisfied_dependency() => Ok(()),
                 Err(err) => Err(err),
             }
         } else {
@@ -4043,6 +4043,21 @@ impl Interpreter {
 
     pub fn exit_code(&self) -> i64 {
         self.exit_code
+    }
+
+    /// Return the value of `%*ENV<RAKU_EXCEPTIONS_HANDLER>`, if set.
+    /// This selects the format used to print uncaught exceptions (e.g. "JSON").
+    pub fn exceptions_handler(&self) -> Option<String> {
+        let env_hash = self.env.get("%*ENV")?;
+        if let Value::Hash(map) = env_hash
+            && let Some(v) = map.get("RAKU_EXCEPTIONS_HANDLER")
+        {
+            let s = v.to_string_value();
+            if !s.is_empty() {
+                return Some(s);
+            }
+        }
+        None
     }
 
     pub(crate) fn is_halted(&self) -> bool {

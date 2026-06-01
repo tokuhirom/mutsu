@@ -346,11 +346,20 @@ impl Interpreter {
                 let (stdout_only, tap_err) = Self::split_tap_output_streams(&combined);
                 let mut err = stderr_content;
                 err.push_str(&tap_err);
-                if !e.message.is_empty() {
+                // When the nested program selected the JSON exceptions handler
+                // (via %*ENV<RAKU_EXCEPTIONS_HANDLER>="JSON"), serialize the
+                // uncaught exception as JSON, matching how the standalone
+                // process prints it.
+                let printed = if nested.exceptions_handler().as_deref() == Some("JSON") {
+                    e.to_json_exception()
+                } else {
+                    e.message.clone()
+                };
+                if !printed.is_empty() {
                     if !err.is_empty() && !err.ends_with('\n') {
                         err.push('\n');
                     }
-                    err.push_str(&e.message);
+                    err.push_str(&printed);
                     err.push('\n');
                 }
                 let s = if nested.exit_code != 0 {

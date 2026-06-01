@@ -253,7 +253,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let path = self
             .resolve_require_file_path(file)
-            .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", file)))?;
+            .ok_or_else(|| RuntimeError::unsatisfied_dependency(file))?;
 
         // Try loading from precompilation cache
         let stmts = if self.precomp_enabled {

@@ -285,6 +285,7 @@ roast/S04-exception-handlers/catch.t
 roast/S04-exception-handlers/control.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-exceptions/exceptions-alternatives.t
 roast/S04-exceptions/fail-6e.t
 roast/S04-exceptions/fail.t
 roast/S04-exceptions/pending.t
