@@ -21,16 +21,28 @@ impl Interpreter {
             // Check role attribute accessors: has $.foo stores as __mutsu_attr__foo
             let attr_key = format!("__mutsu_attr__{}", method);
             if let Some(attr_val) = mixins.get(&attr_key) {
-                let is_public = mixins
+                // An explicit method declared in a composed role shadows the
+                // auto-generated accessor for an attribute of the same name
+                // (e.g. `has $.b` + `method b() {...}` — the method wins).
+                let has_explicit_method = mixins
                     .keys()
                     .filter_map(|k| k.strip_prefix("__mutsu_role__"))
                     .any(|role_name| {
-                        self.roles.get(role_name).is_some_and(|role| {
-                            role.attributes
-                                .iter()
-                                .any(|(name, is_pub, ..)| name == method && *is_pub)
-                        })
+                        self.roles
+                            .get(role_name)
+                            .is_some_and(|role| role.methods.contains_key(method))
                     });
+                let is_public = !has_explicit_method
+                    && mixins
+                        .keys()
+                        .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+                        .any(|role_name| {
+                            self.roles.get(role_name).is_some_and(|role| {
+                                role.attributes
+                                    .iter()
+                                    .any(|(name, is_pub, ..)| name == method && *is_pub)
+                            })
+                        });
                 if is_public {
                     return Some(Ok(attr_val.clone()));
                 }

@@ -1656,13 +1656,30 @@ impl Compiler {
             // --- No-ops: these statements are handled elsewhere ---
             // CATCH/CONTROL are extracted by compile_try/compile_body_with_implicit_try
             Stmt::Catch(_) | Stmt::Control(_) => {}
-            // HasDecl outside class context is an error
+            // HasDecl outside class context.
             Stmt::HasDecl {
                 name,
                 sigil,
                 is_public,
+                is_our,
+                is_my,
                 ..
             } => {
+                // `our $.x` / `my $.x` in the mainline is not a fatal error in
+                // Raku; it merely warns that generating an accessor method here
+                // is useless (there is no package to attach it to). Only the
+                // `has $.x` form (no `our`/`my`) is fatal.
+                if *is_our || *is_my {
+                    let warn_call = Expr::Call {
+                        name: Symbol::intern("warn"),
+                        args: vec![Expr::Literal(Value::str(
+                            "Useless generation of accessor method in mainline".to_string(),
+                        ))],
+                    };
+                    self.compile_expr(&warn_call);
+                    self.code.emit(OpCode::Pop);
+                    return;
+                }
                 let twigil = if *is_public { "." } else { "!" };
                 let bare = name.resolve();
                 let bare = bare.trim_start_matches(['.', '!']);
