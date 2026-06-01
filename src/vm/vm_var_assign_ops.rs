@@ -3043,8 +3043,16 @@ impl VM {
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
             self.update_local_if_exists(code, &var_name, &updated);
+            // Write the whole topic back to its source variable only when the
+            // source is a scalar (e.g. `for $x { $_[1] = ... }`). For array/hash
+            // sources (`for @a { $_[1] = ... }`), the for-loop's own per-element
+            // writeback (write_back_for_topic_item) syncs the mutated element
+            // back at the correct index; replacing the whole container with the
+            // single topic value here would corrupt the source.
             if var_name == "_"
                 && let Some(ref source_var) = self.topic_source_var
+                && !source_var.starts_with('@')
+                && !source_var.starts_with('%')
             {
                 let source_name = source_var.clone();
                 self.set_env_with_main_alias(&source_name, updated.clone());
