@@ -3045,7 +3045,13 @@ impl VM {
             self.update_local_if_exists(code, &var_name, &updated);
             if var_name == "_"
                 && let Some(ref source_var) = self.topic_source_var
+                && !source_var.starts_with('@')
+                && !source_var.starts_with('%')
             {
+                // For @/% sources, element writeback to a per-index slot is
+                // handled by write_back_for_topic_item at the end of the loop
+                // body. Overwriting the whole container with $_ here would
+                // clobber the aggregate (e.g. `$_[1] = 9 for @a`).
                 let source_name = source_var.clone();
                 self.set_env_with_main_alias(&source_name, updated.clone());
                 self.update_local_if_exists(code, &source_name, &updated);

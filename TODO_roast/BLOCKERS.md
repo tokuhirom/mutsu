@@ -250,7 +250,7 @@ Binding to attributes, nested binding, and container semantics (Scalar decontain
 
 categorize.t now fully passes (28/28, whitelisted). minmax.t fully passes (whitelisted, #2510). classify.t nearly passes (38/40 — 2 edge cases remaining).
 
-- roast/S32-list/classify.t (38/40 pass — 2 edge cases remaining)
+- roast/S32-list/classify.t (39/40 pass — only the Junction-threading subtest remains; classify with a mapper returning a Junction must thread and store values under multiple keys)
 
 ## Miscellaneous (25 tests)
 
