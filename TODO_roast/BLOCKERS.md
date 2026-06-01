@@ -139,9 +139,14 @@ IO::CatHandle not implemented, IO::Path subclasses (::Unix, ::Cygwin) incomplete
 
 ## gather/take Laziness (2 tests)
 
-Coroutine-based lazy gather/take implemented (#2511). range-iterator.t now passes (all 103 tests). Remaining issues: nested gathers, take-rw, and Seq laziness edge cases.
+Coroutine-based lazy gather/take implemented (#2511). range-iterator.t now passes (all 103 tests). Remaining issues: Seq laziness edge cases and take-rw container identity.
 
-- roast/S04-statements/gather.t (36/39 pass — nested gathers, take-rw, take inside m:g)
+- roast/S04-statements/gather.t (38/39 pass — only failure is test 38 take-rw
+  reference identity `@neighbors[1][1][0] =:= @spot[0][0]`. Blocked on
+  first-class array-element containers: mutsu arrays store plain Values with no
+  per-element Scalar container, so take-rw cannot preserve container identity
+  through nested indexing. See TODO_roast/S04.md for details. Nested gathers,
+  take inside m:g, and take on lists already pass.)
 - roast/S32-list/seq.t (48/50 pass — .raku.EVAL roundtrip, methods on cached Seqs)
 
 ## Hyper/Meta Operators (5 tests)
