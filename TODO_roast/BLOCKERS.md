@@ -221,12 +221,11 @@ Pod6 formatting codes (Pod::FormattingCode type), table rendering, and trailing 
 - roast/S26-documentation/block-trailing.t
 - roast/S26-documentation/why-trailing.t
 
-## Temporal / DateTime (3 tests)
+## Temporal / DateTime (2 tests)
 
-Duration arithmetic (Inf, NaN, modulo), $*TZ dynamic variable not pre-set, and time numification.
+Duration arithmetic (Inf, NaN, modulo), and time numification.
 
 - roast/S32-temporal/DateTime-Instant-Duration.t (Duration.new(Inf/NaN), modulo)
-- roast/S32-temporal/local.t ($*TZ not defined by default)
 - roast/S32-temporal/time.t (Time::Local numification)
 
 ## Subset Types / Where Clauses (2 tests)
