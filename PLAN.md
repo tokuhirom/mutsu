@@ -24,7 +24,7 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ### Container semantics
 
-- [ ] `our $x` クラス属性のバインド (attributes.t tests 11-12)
+- [x] `our $x` クラス属性のバインド (S12-attributes/class.t — tests 11-12 は既に pass、#2541 で 26/28 に改善)
 - [x] 多次元構造のエレメントレベルバインド (nested.t — PR #2413 で 42/43 に改善)
 - [x] `undefine` の aggregate 参照セマンティクス (undef.t — PR #2414 で 90/91 に改善)
 

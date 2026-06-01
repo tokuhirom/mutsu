@@ -328,11 +328,24 @@ impl VM {
             self.last_method_resolve = None;
             self.fast_method_cache.clear();
             if *is_export && !self.interpreter.suppress_exports {
+                let pkg = self.interpreter.current_package().to_string();
                 self.interpreter.register_exported_sub(
-                    self.interpreter.current_package().to_string(),
+                    pkg.clone(),
                     resolved_name.clone(),
                     export_tags.clone(),
                 );
+                // If a custom `is` trait mixed a role into this routine, the
+                // resulting Mixin lives in the lexical env as `&name` but would
+                // be dropped when the module scope exits. Capture it so `import`
+                // can restore the trait-modified value.
+                let code_var_key = format!("&{}", resolved_name);
+                if let Some(val @ Value::Mixin(..)) = self.interpreter.env().get(&code_var_key) {
+                    self.interpreter.record_exported_sub_value(
+                        pkg,
+                        resolved_name.clone(),
+                        val.clone(),
+                    );
+                }
             }
             for (alt_params, alt_param_defs) in signature_alternates {
                 self.interpreter.register_sub_decl(
