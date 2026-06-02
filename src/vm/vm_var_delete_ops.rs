@@ -181,6 +181,22 @@ impl VM {
         let _target_is_mixhash = declared_type_del.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type_del.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type_del.as_deref().is_some_and(|t| t == "SetHash");
+        // Deleting from a native typed array (e.g. `array[int]`) is illegal:
+        // native arrays have no "holes" to create. Throw X::Delete.
+        if let Some(dt) = declared_type_del.as_deref()
+            && let Some(elem) = dt.strip_prefix("array[").and_then(|s| s.strip_suffix(']'))
+            && crate::runtime::native_types::is_native_array_element_type(elem)
+        {
+            return Err(RuntimeError::typed(
+                "X::Delete",
+                [(
+                    "message".to_string(),
+                    Value::str(format!("Cannot delete from a native {elem} array")),
+                )]
+                .into_iter()
+                .collect(),
+            ));
+        }
         // Note: Bag/Set immutability checks for :delete are intentionally
         // omitted here because Bag/BagHash and Set/SetHash share the same
         // Value variants and the declared_type metadata is not always

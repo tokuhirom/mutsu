@@ -669,6 +669,16 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
     let Some(op) = compound_assign_op_from_name(op_name) else {
         return assignment_ro_expr(target, value);
     };
+    // Bare `* op= value` curries to a WhateverCode that mutates its topic,
+    // i.e. `{ $_ op= value }`. Used for e.g. `@a.map(* *= 2)`.
+    if matches!(target, Expr::Whatever) {
+        let body = build_compound_assign_target_expr(Expr::Var("_".to_string()), op_name, value);
+        return Expr::Lambda {
+            param: "_".to_string(),
+            body: vec![crate::ast::Stmt::Expr(body)],
+            is_whatever_code: true,
+        };
+    }
     match target {
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),

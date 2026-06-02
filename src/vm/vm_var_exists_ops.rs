@@ -528,9 +528,11 @@ impl VM {
             return Ok(());
         }
 
-        let items = match &target {
-            Value::Array(items, ..) => items.as_ref(),
-            _ => &[] as &[Value],
+        let (items, is_shaped): (&[Value], bool) = match &target {
+            Value::Array(items, kind) => {
+                (items.as_slice(), *kind == crate::value::ArrayKind::Shaped)
+            }
+            _ => (&[] as &[Value], false),
         };
 
         let is_multi = indices.len() != 1 || is_zen;
@@ -538,10 +540,16 @@ impl VM {
         if !is_multi {
             // Single index
             let i = indices[0];
-            let slot_present = i >= 0
-                && items
-                    .get(i as usize)
-                    .is_some_and(|v| !matches!(v, Value::Nil));
+            // Shaped arrays are fixed-size: any in-range index exists,
+            // regardless of whether the slot holds the (default) Nil value.
+            let slot_present = if is_shaped {
+                i >= 0 && (i as usize) < items.len()
+            } else {
+                i >= 0
+                    && items
+                        .get(i as usize)
+                        .is_some_and(|v| !matches!(v, Value::Nil))
+            };
             let is_deleted = array_var_name
                 .as_deref()
                 .is_some_and(|n| self.is_deleted_index(n, i));
@@ -580,10 +588,14 @@ impl VM {
         let pairs: Vec<(i64, bool)> = indices
             .iter()
             .map(|&i| {
-                let slot_present = i >= 0
-                    && items
-                        .get(i as usize)
-                        .is_some_and(|v| !matches!(v, Value::Nil));
+                let slot_present = if is_shaped {
+                    i >= 0 && (i as usize) < items.len()
+                } else {
+                    i >= 0
+                        && items
+                            .get(i as usize)
+                            .is_some_and(|v| !matches!(v, Value::Nil))
+                };
                 let is_deleted = array_var_name
                     .as_deref()
                     .is_some_and(|n| self.is_deleted_index(n, i));
