@@ -424,17 +424,28 @@ impl Interpreter {
         let mut args = Vec::new();
         for (i, arg) in parsed.positional.iter().enumerate() {
             let mut coerced = if let Some(pd) = positional_params.get(i) {
-                Self::coerce_cli_arg(arg, pd)
+                self.coerce_cli_arg(arg, pd)
             } else {
-                arg.clone()
+                // Beyond the declared positionals (e.g. into a slurpy `*@a`):
+                // untyped, so apply enum auto-conversion like an untyped param.
+                self.autoconvert_cli_enum_value(arg)
             };
             if let Some(ref target_type) = opts.coerce_allomorphs_to {
                 coerced = Self::coerce_to_type(&coerced, target_type);
             }
             args.push(coerced);
         }
+        // Build a lookup from accepted named-arg names to their parameter so that
+        // CLI string values can be coerced (e.g. to an enum) before binding.
+        let named_params: Vec<&ParamDef> =
+            candidate.param_defs.iter().filter(|p| p.named).collect();
         for (name, value) in &parsed.named {
-            args.push(Value::Pair(name.clone(), Box::new(value.clone())));
+            let coerced = named_params
+                .iter()
+                .find(|pd| Self::param_all_names(pd).iter().any(|n| n == name))
+                .map(|pd| self.coerce_cli_arg(value, pd))
+                .unwrap_or_else(|| value.clone());
+            args.push(Value::Pair(name.clone(), Box::new(coerced)));
         }
         let all_candidates = self.collect_main_candidates();
         let usage_text = self.generate_usage_from_candidates(&all_candidates);
@@ -495,10 +506,13 @@ impl Interpreter {
                     let is_bool = pd.type_constraint.as_ref().is_some_and(|t| t == "Bool");
                     if is_bool {
                         parts.push(format!("[--{}]", name));
-                    } else if pd.required {
-                        parts.push(format!("--{}", name));
                     } else {
-                        parts.push(format!("[--{}=<value>]", name));
+                        let value_placeholder = self.usage_value_placeholder(pd);
+                        if pd.required {
+                            parts.push(format!("--{}{}", name, value_placeholder));
+                        } else {
+                            parts.push(format!("[--{}{}]", name, value_placeholder));
+                        }
                     }
                 } else if pd.slurpy {
                     let name = pd.name.trim_start_matches(['$', '@', '%', '*']);
@@ -521,10 +535,61 @@ impl Interpreter {
         lines.join("\n")
     }
 
-    fn coerce_cli_arg(arg: &Value, pd: &ParamDef) -> Value {
+    /// Build the `=<value>` placeholder for a named parameter in the usage
+    /// message. Enum-typed params show `=<EnumName> (variants...)`, subset-typed
+    /// params show `[=SubsetName]`, everything else shows `=<value>`.
+    fn usage_value_placeholder(&self, pd: &ParamDef) -> String {
+        if let Some(tc) = &pd.type_constraint {
+            if let Some(variants) = self.enum_types.get(tc.as_str()) {
+                let mut names: Vec<&str> = variants.iter().map(|(k, _)| k.as_str()).collect();
+                names.sort_unstable();
+                return format!("=<{}> ({})", tc, names.join(" "));
+            }
+            if self.subsets.contains_key(tc.as_str()) {
+                return format!("[={}]", tc);
+            }
+        }
+        "=<value>".to_string()
+    }
+
+    /// Auto-convert an untyped CLI argument string to an enum value when the
+    /// string is an unambiguous value name of a known enum. Used for MAIN
+    /// parameters without a type constraint (e.g. slurpy `*@a`).
+    fn autoconvert_cli_enum_value(&mut self, arg: &Value) -> Value {
+        let name = match arg {
+            Value::Str(s) => s.to_string(),
+            _ => return arg.clone(),
+        };
+        // Bool is a core enum but is represented natively rather than in
+        // `enum_types`; convert its value names directly.
+        match name.as_str() {
+            "True" => return Value::Bool(true),
+            "False" => return Value::Bool(false),
+            _ => {}
+        }
+        let matching: Vec<String> = self
+            .enum_types
+            .iter()
+            .filter(|(_, variants)| variants.iter().any(|(k, _)| k == &name))
+            .map(|(enum_name, _)| enum_name.clone())
+            .collect();
+        if matching.len() == 1
+            && let Some(variants) = self.enum_types.get(&matching[0]).cloned()
+            && let Some(enum_val) =
+                self.coerce_to_enum_variant(&matching[0], &variants, Value::str(name))
+        {
+            return enum_val;
+        }
+        arg.clone()
+    }
+
+    fn coerce_cli_arg(&mut self, arg: &Value, pd: &ParamDef) -> Value {
         let tc = match &pd.type_constraint {
             Some(t) => t.as_str(),
-            None => return arg.clone(),
+            // Untyped parameters: Raku auto-converts a CLI argument that is an
+            // unambiguous value name of a known enum (e.g. `True` -> Bool::True,
+            // `Less` -> Order::Less). Leave the string unchanged otherwise.
+            None => return self.autoconvert_cli_enum_value(arg),
         };
         let s = arg.to_string_value();
         match tc {
@@ -540,7 +605,20 @@ impl Interpreter {
                 .parse::<f64>()
                 .map(Value::Num)
                 .unwrap_or_else(|_| arg.clone()),
-            _ => arg.clone(),
+            _ => {
+                // If the parameter is typed with an enum, coerce the CLI string to
+                // the matching enum variant so type-checked binding succeeds. An
+                // unmatched string is left unchanged so dispatch can reject it.
+                if let Some(variants) = self.enum_types.get(tc).cloned()
+                    && let Some(enum_val) =
+                        self.coerce_to_enum_variant(tc, &variants, Value::str(s.clone()))
+                {
+                    return enum_val;
+                }
+                // Subset-typed parameters keep the raw string; the subset's `where`
+                // clause is validated during signature binding.
+                arg.clone()
+            }
         }
     }
 

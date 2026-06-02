@@ -540,6 +540,10 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         // Bare |, possibly followed by traits/where
         let mut p = make_param("_capture".to_string());
         p.slurpy = true;
+        // An anonymous capture absorbs both positional and named arguments,
+        // exactly like a named capture (|c). Mark it sigilless so binding and
+        // multi-dispatch treat it as a hash+positional slurpy.
+        p.sigilless = true;
         let (r, _) = ws(r)?;
         let mut param_traits = Vec::new();
         let (mut r, _) = ws(r)?;
