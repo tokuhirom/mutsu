@@ -207,15 +207,18 @@ impl Interpreter {
                     | "Buf"
                     | "Blob"
                     | "Capture"
+                    | "array"
             )
         {
+            // The bare native `array` type (and its parameterized form
+            // `array[int]`, whose base name is `array`) does Positional.
             return true;
         }
         // Array is-a List in Raku type hierarchy
         if constraint == "List"
             && matches!(
                 value_type,
-                "Array" | "List" | "Seq" | "HyperSeq" | "RaceSeq"
+                "Array" | "List" | "Seq" | "HyperSeq" | "RaceSeq" | "array"
             )
         {
             return true;

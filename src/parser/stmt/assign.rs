@@ -805,6 +805,16 @@ pub(crate) fn build_compound_assign_expr(
         other => other,
     };
     Ok(match lhs {
+        // Bare `* op= rhs` curries to a WhateverCode that mutates its topic:
+        // `{ $_ op= rhs }`. Used for e.g. `@a.map(* *= 2)`.
+        Expr::Whatever => {
+            let body = build_compound_assign_expr(Expr::Var("_".to_string()), op, rhs)?;
+            Expr::Lambda {
+                param: "_".to_string(),
+                body: vec![crate::ast::Stmt::Expr(body)],
+                is_whatever_code: true,
+            }
+        }
         Expr::AssignExpr {
             name,
             expr,

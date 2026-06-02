@@ -2723,6 +2723,29 @@ impl Interpreter {
             return Ok(Value::Package(Symbol::intern("Mu")));
         }
 
+        // .of on a parametric type object, e.g. `array[int]`, `Array[Int]`,
+        // `Positional[Int]`. Returns the element type.
+        if method == "of"
+            && args.is_empty()
+            && let Value::Package(name) = &target
+        {
+            let resolved = name.resolve();
+            if let Some(open) = resolved.find('[')
+                && resolved.ends_with(']')
+            {
+                let base = &resolved[..open];
+                if matches!(
+                    base,
+                    "array" | "Array" | "Positional" | "List" | "Seq" | "Hash" | "Map"
+                ) {
+                    let inner = &resolved[open + 1..resolved.len() - 1];
+                    // Hash[ValueType, KeyType] -> .of is the value type.
+                    let value_type = inner.split(',').next().unwrap_or(inner).trim();
+                    return Ok(Value::Package(Symbol::intern(value_type)));
+                }
+            }
+        }
+
         // .keyof on Hash
         if method == "keyof" && args.is_empty() && matches!(&target, Value::Hash(_)) {
             if let Some(info) = self.container_type_metadata(&target)

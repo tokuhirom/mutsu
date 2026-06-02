@@ -2066,22 +2066,40 @@ impl VM {
         // For hash variables, expand Range indices into individual keys so that
         // `%h{^5} = (0 xx 5)` performs a hash slice assignment (5 separate keys)
         // instead of treating the stringified range as a single key.
+        // Native typed arrays (e.g. `array[num]`) need numeric Range slice
+        // indices expanded to an explicit index list so the slice-assign path
+        // distributes each value to a single element (rather than checking the
+        // whole RHS list against the scalar element type).
+        let array_var_is_native = !var_name.starts_with('%')
+            && matches!(index_target, Some(Value::Array(..)))
+            && (self
+                .interpreter
+                .var_type_constraint(&var_name)
+                .as_deref()
+                .is_some_and(crate::runtime::native_types::is_native_array_element_type)
+                || index_target
+                    .as_ref()
+                    .and_then(|v| self.interpreter.container_type_metadata(v))
+                    .is_some_and(|info| {
+                        crate::runtime::native_types::is_native_array_element_type(&info.value_type)
+                    }));
+        let expand_range = var_name.starts_with('%') || array_var_is_native;
         let idx = match idx {
             Value::Seq(items) => Value::Array(items, crate::value::ArrayKind::List),
             Value::Slip(items) => Value::Array(items, crate::value::ArrayKind::List),
-            Value::Range(a, b) if var_name.starts_with('%') => {
+            Value::Range(a, b) if expand_range => {
                 let items: Vec<Value> = (a..=b).map(Value::Int).collect();
                 Value::Array(Arc::new(items), crate::value::ArrayKind::List)
             }
-            Value::RangeExcl(a, b) if var_name.starts_with('%') => {
+            Value::RangeExcl(a, b) if expand_range => {
                 let items: Vec<Value> = (a..b).map(Value::Int).collect();
                 Value::Array(Arc::new(items), crate::value::ArrayKind::List)
             }
-            Value::RangeExclStart(a, b) if var_name.starts_with('%') => {
+            Value::RangeExclStart(a, b) if expand_range => {
                 let items: Vec<Value> = ((a + 1)..=b).map(Value::Int).collect();
                 Value::Array(Arc::new(items), crate::value::ArrayKind::List)
             }
-            Value::RangeExclBoth(a, b) if var_name.starts_with('%') => {
+            Value::RangeExclBoth(a, b) if expand_range => {
                 let items: Vec<Value> = ((a + 1)..b).map(Value::Int).collect();
                 Value::Array(Arc::new(items), crate::value::ArrayKind::List)
             }

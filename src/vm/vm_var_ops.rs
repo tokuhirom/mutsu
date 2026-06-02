@@ -164,6 +164,13 @@ impl VM {
             Some(Value::Package(name)) if name == "Any" && !matches!(default, Value::Nil) => {
                 default
             }
+            // Shaped arrays are pre-allocated with Nil placeholders; an
+            // uninitialized in-range slot reads as the element default
+            // (e.g. 0 for `array[int]`). Non-shaped arrays may legitimately
+            // hold Nil values, so this only applies to Shaped arrays.
+            Some(Value::Nil) if kind == ArrayKind::Shaped && !matches!(default, Value::Nil) => {
+                default
+            }
             Some(value) => value.clone(),
             None => default,
         }
@@ -345,6 +352,12 @@ impl VM {
             return def.clone();
         }
         if let Some(info) = self.interpreter.container_type_metadata(target) {
+            // Native typed arrays default their elements to the native type's
+            // zero value rather than the (uninstantiable) type object:
+            // int -> 0, num -> 0e0, str -> "".
+            if let Some(def) = native_element_default(&info.value_type) {
+                return def;
+            }
             Value::Package(Symbol::intern(&info.value_type))
         } else if matches!(target, Value::Hash(_)) {
             Value::Package(Symbol::intern("Any"))
@@ -779,5 +792,21 @@ impl VM {
                 map.remove(&idx.to_string_value());
             }
         }
+    }
+}
+
+/// The default ("zero") value for a native array element type.
+/// Native integer types default to 0, native floats (num/num32/num64) to 0e0,
+/// and native `str` to the empty string. Returns `None` for non-native types
+/// (e.g. `Int`, `Str`), which keep their type-object default.
+pub(super) fn native_element_default(value_type: &str) -> Option<Value> {
+    if crate::runtime::native_types::is_native_int_type(value_type) {
+        Some(Value::Int(0))
+    } else if matches!(value_type, "num" | "num32" | "num64") {
+        Some(Value::Num(0.0))
+    } else if value_type == "str" {
+        Some(Value::str_from(""))
+    } else {
+        None
     }
 }

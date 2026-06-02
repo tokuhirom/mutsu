@@ -460,7 +460,7 @@ impl VM {
                     return Err(RuntimeError::new(format!(
                         "Index {} for dimension 1 out of range (must be 0..{})",
                         i,
-                        items.len() - 1
+                        items.len().saturating_sub(1)
                     )));
                 } else {
                     let default =
