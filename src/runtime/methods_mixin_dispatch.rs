@@ -103,18 +103,33 @@ impl Interpreter {
                 {
                     continue;
                 }
-                let role_attrs: HashMap<String, Value> = mixins
-                    .iter()
-                    .filter_map(|(key, value)| {
-                        key.strip_prefix("__mutsu_attr__")
-                            .map(|attr| (attr.to_string(), value.clone()))
-                    })
-                    .collect();
+                // Build the attribute set visible to the role method body.
+                // Start with the inner instance's own attributes (e.g. class
+                // attributes like `@.order`) so that `$.attr` accessors inside
+                // the role method see and can mutate the class's state, then
+                // overlay the role's own `__mutsu_attr__` attributes.
+                let (inner_class, inner_id, mut method_attrs) = match inner.as_ref() {
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        id,
+                    } => (
+                        Some(class_name.resolve()),
+                        Some(*id),
+                        (**attributes).clone(),
+                    ),
+                    _ => (None, None, HashMap::new()),
+                };
+                for (key, value) in mixins.iter() {
+                    if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
+                        method_attrs.insert(attr.to_string(), value.clone());
+                    }
+                }
                 let method_result = self.run_instance_method_resolved(
                     &role_name,
                     &role_name,
                     def,
-                    role_attrs,
+                    method_attrs,
                     args,
                     Some(target.clone()),
                 );
@@ -125,10 +140,18 @@ impl Interpreter {
                         self.env.remove(name);
                     }
                 }
-                let (result, _updated) = match method_result {
+                let (result, updated) = match method_result {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),
                 };
+                // Propagate attribute mutations made by the role method back to
+                // the inner instance, so that changes to class attributes (e.g.
+                // `push @.order, ...`) are visible after the call returns. This
+                // updates every binding in scope that holds the same instance
+                // (including the one wrapped inside this Mixin).
+                if let (Some(class_name), Some(id)) = (inner_class, inner_id) {
+                    self.overwrite_instance_bindings_by_identity(&class_name, id, updated);
+                }
                 return Some(Ok(result));
             }
             for (name, previous) in saved_role_params {

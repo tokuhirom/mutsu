@@ -1741,7 +1741,13 @@ impl Interpreter {
                 }
                 let is_multi = overloads.len() > 1;
                 let return_type = first.return_type.clone();
-                let method_obj = self.make_method_object(method_name, first, is_multi, return_type);
+                let method_obj = self.make_method_object_with_candidates(
+                    method_name,
+                    first,
+                    is_multi,
+                    return_type,
+                    Some(overloads),
+                );
                 result.push(method_obj);
             }
             // Also include native (built-in) methods
@@ -1777,7 +1783,13 @@ impl Interpreter {
                 }
                 let is_multi = overloads.len() > 1;
                 let return_type = first.return_type.clone();
-                let method_obj = self.make_method_object(method_name, first, is_multi, return_type);
+                let method_obj = self.make_method_object_with_candidates(
+                    method_name,
+                    first,
+                    is_multi,
+                    return_type,
+                    Some(overloads),
+                );
                 result.push(method_obj);
             }
         }
@@ -1808,6 +1820,20 @@ impl Interpreter {
         is_dispatcher: bool,
         return_type: Option<String>,
     ) -> Value {
+        self.make_method_object_with_candidates(name, method_def, is_dispatcher, return_type, None)
+    }
+
+    /// Build a Method object. When `is_dispatcher` is true and `overloads`
+    /// is supplied, a `candidates` attribute holding a Method object per
+    /// overload is attached so that `.candidates` works on a multi method.
+    pub(super) fn make_method_object_with_candidates(
+        &self,
+        name: &str,
+        method_def: &MethodDef,
+        is_dispatcher: bool,
+        return_type: Option<String>,
+        overloads: Option<&[MethodDef]>,
+    ) -> Value {
         let mut attrs = std::collections::HashMap::new();
 
         // Store the display name (with ! prefix for private methods)
@@ -1831,6 +1857,20 @@ impl Interpreter {
         let rt = return_type.unwrap_or_else(|| "Mu".to_string());
         attrs.insert("returns".to_string(), Value::Package(Symbol::intern(&rt)));
         attrs.insert("of".to_string(), Value::Package(Symbol::intern(&rt)));
+
+        // For a multi method dispatcher, attach one Method object per
+        // candidate so that `.candidates` returns them. A non-multi (single)
+        // method is its own sole candidate.
+        let candidates: Vec<Value> = match overloads {
+            Some(defs) if is_dispatcher => defs
+                .iter()
+                .map(|def| self.make_method_object(name, def, false, def.return_type.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        if !candidates.is_empty() {
+            attrs.insert("candidates".to_string(), Value::array(candidates));
+        }
 
         Value::make_instance(Symbol::intern("Method"), attrs)
     }

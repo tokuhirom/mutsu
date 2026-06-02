@@ -303,6 +303,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
     ) -> Option<(String, MethodDef)> {
+        self.dispatch_ambiguous = false;
         let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         let mro = self.class_mro(class_name);
         // Collect all matching multi candidates across the MRO, then pick the
@@ -420,11 +421,19 @@ impl Interpreter {
             if let Some(&i) = narrowed.first() {
                 best_idx = i;
             }
+            let mut default_winner = false;
             for &i in &tied {
                 if all_matches[i].1.is_default {
                     best_idx = i;
+                    default_winner = true;
                     break;
                 }
+            }
+            // Ambiguous dispatch: two or more candidates remain equally specific
+            // (same type distance and same number of `where` constraints) and
+            // none is marked `is default`. Raku raises X::Multi::Ambiguous here.
+            if !default_winner && narrowed.len() > 1 {
+                self.dispatch_ambiguous = true;
             }
         }
         let _ = submethod_blocks; // used for control flow above

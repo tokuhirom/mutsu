@@ -717,6 +717,71 @@ impl Interpreter {
         attrs
     }
 
+    /// Format the candidate signatures of a (multi) method across the
+    /// receiver class's MRO, e.g. `(WorkingTie: Int $z, *%_)`. Used to build a
+    /// Raku-style `X::Multi::NoMatch` message naming the invocant type and the
+    /// available candidates.
+    pub(crate) fn format_method_candidate_signatures(
+        &self,
+        receiver_class_name: &str,
+        method_name: &str,
+    ) -> Vec<String> {
+        let mut sigs = Vec::new();
+        for cn in self.mro_readonly(receiver_class_name) {
+            let is_ancestor = cn.as_str() != receiver_class_name;
+            let Some(class_def) = self.classes.get(cn.as_str()) else {
+                continue;
+            };
+            let Some(overloads) = class_def.methods.get(method_name) else {
+                continue;
+            };
+            for def in overloads {
+                if def.is_private || (def.is_my && is_ancestor) {
+                    continue;
+                }
+                let mut parts = Vec::new();
+                for pd in &def.param_defs {
+                    if pd.is_invocant {
+                        continue;
+                    }
+                    // Skip the implicit `*%_` slurpy named param; we append it
+                    // explicitly at the end of every candidate signature.
+                    if pd.named
+                        && (pd.slurpy || pd.double_slurpy)
+                        && (pd.name == "%_" || pd.name == "_" || pd.name.is_empty())
+                    {
+                        continue;
+                    }
+                    let ty = pd.type_constraint.as_deref().unwrap_or("Any");
+                    let sigil_prefix = if pd.slurpy || pd.double_slurpy {
+                        "*"
+                    } else {
+                        ""
+                    };
+                    let var = if pd.name.is_empty() {
+                        String::new()
+                    } else if pd.name.starts_with('$')
+                        || pd.name.starts_with('@')
+                        || pd.name.starts_with('%')
+                    {
+                        format!(" {}{}", sigil_prefix, pd.name)
+                    } else {
+                        format!(" {}${}", sigil_prefix, pd.name)
+                    };
+                    parts.push(format!("{}{}", ty, var));
+                }
+                let mut sig = format!("({}: ", receiver_class_name);
+                sig.push_str(&parts.join(", "));
+                if !parts.is_empty() {
+                    sig.push_str(", ");
+                }
+                sig.push_str("*%_)");
+                sigs.push(sig);
+            }
+        }
+        sigs
+    }
+
     pub(crate) fn run_instance_method(
         &mut self,
         receiver_class_name: &str,
@@ -755,9 +820,15 @@ impl Interpreter {
                     })
             });
             if has_visible_method {
-                return Err(super::methods_signature::make_multi_no_match_error(
-                    method_name,
-                ));
+                let sigs =
+                    self.format_method_candidate_signatures(receiver_class_name, method_name);
+                return Err(
+                    super::methods_signature::make_multi_no_match_error_detailed(
+                        method_name,
+                        receiver_class_name,
+                        &sigs,
+                    ),
+                );
             }
             let type_name = receiver_class_name.to_string();
             return Err(super::methods_signature::make_method_not_found_error(
@@ -766,6 +837,17 @@ impl Interpreter {
                 false,
             ));
         };
+        // Ambiguous multi dispatch: two or more candidates were equally
+        // specific. Raise X::Multi::Ambiguous rather than silently choosing.
+        if self.dispatch_ambiguous {
+            self.dispatch_ambiguous = false;
+            let sigs = self.format_method_candidate_signatures(receiver_class_name, method_name);
+            return Err(super::methods_signature::make_multi_ambiguous_error(
+                method_name,
+                receiver_class_name,
+                &sigs,
+            ));
+        }
         // Helper to build remaining candidates, skipping the chosen one
         let build_remaining = |this: &mut Self,
                                method_def: &MethodDef|
@@ -1161,6 +1243,24 @@ impl Interpreter {
             self.env
                 .insert(format!("!{}", attr_name), private_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
+            // Also bind sigil-prefixed keys for @/% attributes so that
+            // `@.attr` / `%.attr` accessors (and their mutating ops like
+            // `push @.attr, ...`) resolve correctly and are written back.
+            match private_val {
+                Value::Array(..) => {
+                    self.env
+                        .insert(format!("@!{}", attr_name), private_val.clone());
+                    self.env
+                        .insert(format!("@.{}", attr_name), attr_val.clone());
+                }
+                Value::Hash(..) => {
+                    self.env
+                        .insert(format!("%!{}", attr_name), private_val.clone());
+                    self.env
+                        .insert(format!("%.{}", attr_name), attr_val.clone());
+                }
+                _ => {}
+            }
             self.var_bindings
                 .insert(attr_name.clone(), format!("!{}", attr_name));
             self.var_bindings.insert(
@@ -1302,8 +1402,35 @@ impl Interpreter {
             let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
             let env_key = format!("!{}", attr_name);
             let public_env_key = format!(".{}", attr_name);
+            let env_array_private_key = format!("@!{}", attr_name);
+            let env_array_public_key = format!("@.{}", attr_name);
+            let env_hash_private_key = format!("%!{}", attr_name);
+            let env_hash_public_key = format!("%.{}", attr_name);
             let env_private = self.env.get(&env_key).cloned();
             let env_public = self.env.get(&public_env_key).cloned();
+            let env_array_private = self.env.get(&env_array_private_key).cloned();
+            let env_array_public = self.env.get(&env_array_public_key).cloned();
+            let env_hash_private = self.env.get(&env_hash_private_key).cloned();
+            let env_hash_public = self.env.get(&env_hash_public_key).cloned();
+            // Sigil-prefixed @/% keys take precedence: mutating ops on
+            // `@.attr` / `%.attr` (e.g. `push @.attr, ...`) write through
+            // these bindings, not the plain `!attr` / `.attr` ones.
+            if let (Some(private_val), Some(public_val)) = (&env_array_private, &env_array_public) {
+                if *private_val == original && *public_val != original {
+                    attributes.insert(attr_name, public_val.clone());
+                } else {
+                    attributes.insert(attr_name, private_val.clone());
+                }
+                continue;
+            }
+            if let (Some(private_val), Some(public_val)) = (&env_hash_private, &env_hash_public) {
+                if *private_val == original && *public_val != original {
+                    attributes.insert(attr_name, public_val.clone());
+                } else {
+                    attributes.insert(attr_name, private_val.clone());
+                }
+                continue;
+            }
             if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
                 // `$.attr` aliases (public) should still write back when only the
                 // public mirror changed (e.g. `$.count++`).
@@ -1314,12 +1441,12 @@ impl Interpreter {
                 }
                 continue;
             }
-            if let Some(val) = self.env.get(&env_key) {
-                attributes.insert(attr_name, val.clone());
+            if let Some(val) = env_array_private.or(env_hash_private).or(env_private) {
+                attributes.insert(attr_name, val);
                 continue;
             }
-            if let Some(val) = self.env.get(&public_env_key) {
-                attributes.insert(attr_name, val.clone());
+            if let Some(val) = env_array_public.or(env_hash_public).or(env_public) {
+                attributes.insert(attr_name, val);
             }
         }
         let mut merged_env = saved_env.clone();

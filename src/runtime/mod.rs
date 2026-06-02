@@ -179,7 +179,7 @@ mod methods_promise;
 mod methods_promise_class;
 mod methods_qualified;
 mod methods_seq_dispatch;
-mod methods_signature;
+pub(crate) mod methods_signature;
 mod methods_string;
 mod methods_sub;
 mod methods_supply_dispatch;
@@ -1011,6 +1011,10 @@ pub struct Interpreter {
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,
+    /// Set by multi-method resolution when two or more candidates are equally
+    /// specific (an ambiguous dispatch). Consumed by the caller to raise an
+    /// `X::Multi::Ambiguous` error instead of silently picking one.
+    pub(crate) dispatch_ambiguous: bool,
     /// Pending Proxy subclass attribute reference for writeback on mutating methods.
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,
@@ -3036,6 +3040,7 @@ impl Interpreter {
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
+            dispatch_ambiguous: false,
             pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
@@ -4992,6 +4997,7 @@ impl Interpreter {
             shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
+            dispatch_ambiguous: false,
             pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),

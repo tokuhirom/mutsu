@@ -560,6 +560,14 @@ impl Interpreter {
                     }
                 }
             }
+            // A value mixed in with a role (`$obj does Role`) wraps the original
+            // instance inside a Mixin. Recurse into the inner value so that
+            // mutations to the instance's attributes propagate through the Mixin.
+            Value::Mixin(inner, mixins) => {
+                let mut new_inner = (**inner).clone();
+                Self::overwrite_instance_recursive(&mut new_inner, class_name, id, updated);
+                *value = Value::Mixin(std::sync::Arc::new(new_inner), mixins.clone());
+            }
             _ => {}
         }
     }
