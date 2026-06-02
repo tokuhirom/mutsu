@@ -165,6 +165,7 @@ mod methods_dispatch_match3;
 mod methods_dispatch_new;
 mod methods_distribution;
 mod methods_enum_dispatch;
+mod methods_format;
 mod methods_grammar;
 mod methods_instance_ops;
 mod methods_introspect;

@@ -349,6 +349,7 @@ impl VM {
                 | "Lock"
                 | "Semaphore"
                 | "Whatever"
+                | "Format"
                 | "Instant"
                 | "Buf"
                 | "Blob"
