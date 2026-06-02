@@ -1,5 +1,5 @@
 use super::super::super::expr::expression;
-use super::super::super::helpers::{skip_balanced_parens, ws, ws1};
+use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult, opt_char};
 use super::super::{ident, keyword, qualified_ident, var_name};
 use super::helpers::{
@@ -177,15 +177,29 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (mut rest, _) = ws(rest)?;
+    let mut is_export = false;
+    let mut export_tags: Vec<String> = Vec::new();
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
-        let (r, _) = ws(r)?;
         if trait_name == "export" {
-            rest = skip_balanced_parens(r);
-            let (r2, _) = ws(rest)?;
+            is_export = true;
+            let (r2, tags) = parse_export_trait_tags(r)?;
+            if tags.is_empty() {
+                if !export_tags.iter().any(|t| t == "DEFAULT") {
+                    export_tags.push("DEFAULT".to_string());
+                }
+            } else {
+                for tag in tags {
+                    if !export_tags.iter().any(|t| t == &tag) {
+                        export_tags.push(tag);
+                    }
+                }
+            }
+            let (r2, _) = ws(r2)?;
             rest = r2;
         } else {
+            let (r, _) = ws(r)?;
             rest = r;
         }
     }
@@ -213,6 +227,8 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             base,
             predicate,
             version: super::super::simple::current_language_version(),
+            is_export,
+            export_tags,
         },
     ))
 }

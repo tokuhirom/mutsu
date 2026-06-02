@@ -1391,14 +1391,38 @@ impl VM {
             base,
             predicate,
             version,
+            is_export,
+            export_tags,
         } = stmt
         {
+            let resolved_name = name.resolve();
             self.interpreter.register_subset_decl(
-                &name.resolve(),
+                &resolved_name,
                 base,
                 predicate.as_ref(),
                 version,
             );
+            // When a subset is declared `is export` inside a module, record it
+            // in the export table so `import M` (and `use M`) can find it.
+            // The subset type itself is already registered under its bare name
+            // in the global env by `register_subset_decl`, so importing only
+            // needs to make `import M` succeed (and validate export tags).
+            if *is_export && !self.interpreter.suppress_exports {
+                let (export_pkg, export_short) =
+                    if let Some((pkg, short)) = resolved_name.rsplit_once("::") {
+                        (pkg.to_string(), short.to_string())
+                    } else {
+                        (
+                            self.interpreter.current_package().to_string(),
+                            resolved_name,
+                        )
+                    };
+                self.interpreter.register_exported_var(
+                    export_pkg,
+                    export_short,
+                    export_tags.clone(),
+                );
+            }
             self.env_dirty = true;
             Ok(())
         } else {
