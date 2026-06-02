@@ -1190,11 +1190,11 @@ mod tests {
     #[test]
     fn parse_meta_op_accepts_set_union_variants() {
         assert_eq!(
-            parse_meta_op("Z(|) 2..4").map(|(m, op, len)| (m, op, len)),
+            parse_meta_op("Z(|) 2..4"),
             Some(("Z".to_string(), "(|)".to_string(), 4))
         );
         assert_eq!(
-            parse_meta_op("Z∪ 2..4").map(|(m, op, len)| (m, op, len)),
+            parse_meta_op("Z∪ 2..4"),
             Some(("Z".to_string(), "∪".to_string(), 1 + "∪".len()))
         );
     }
@@ -1202,7 +1202,7 @@ mod tests {
     #[test]
     fn parse_meta_op_accepts_not_container_identity() {
         assert_eq!(
-            parse_meta_op("X!=:= $a, $b").map(|(m, op, len)| (m, op, len)),
+            parse_meta_op("X!=:= $a, $b"),
             Some(("X".to_string(), "!=:=".to_string(), 5))
         );
     }
@@ -1210,7 +1210,7 @@ mod tests {
     #[test]
     fn parse_meta_op_accepts_container_identity() {
         assert_eq!(
-            parse_meta_op("X=:= $a, $b").map(|(m, op, len)| (m, op, len)),
+            parse_meta_op("X=:= $a, $b"),
             Some(("X".to_string(), "=:=".to_string(), 4))
         );
     }

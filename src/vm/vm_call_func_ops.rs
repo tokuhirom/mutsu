@@ -720,11 +720,7 @@ impl VM {
         for stmt in body {
             match stmt {
                 Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => return true,
-                Stmt::Expr(expr) => {
-                    if Self::expr_needs_interpreter(expr) {
-                        return true;
-                    }
-                }
+                Stmt::Expr(expr) if Self::expr_needs_interpreter(expr) => return true,
                 _ => {}
             }
         }

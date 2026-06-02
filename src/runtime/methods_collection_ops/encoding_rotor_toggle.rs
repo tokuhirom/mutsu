@@ -219,13 +219,8 @@ impl Interpreter {
                     let gap = match &gap_val {
                         Value::Int(n) => *n,
                         Value::Num(n) => *n as i64,
-                        Value::Rat(n, d) => {
-                            if *d != 0 {
-                                n / d
-                            } else {
-                                0
-                            }
-                        }
+                        Value::Rat(n, d) if *d != 0 => n / d,
+                        Value::Rat(..) => 0,
                         _ => 0,
                     };
                     rotor_specs.push(RotorSpec { count, gap });

@@ -175,13 +175,8 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 .trim()
                 .parse::<i64>()
                 .unwrap_or_else(|_| s.trim().parse::<f64>().unwrap_or(0.0) as i64),
-            Some(Value::Bool(b)) => {
-                if *b {
-                    1
-                } else {
-                    0
-                }
-            }
+            Some(Value::Bool(true)) => 1,
+            Some(Value::Bool(false)) => 0,
             _ => 0,
         };
         let bigint_val = || match arg {

@@ -166,10 +166,8 @@ impl Interpreter {
                 for arg in &args {
                     match arg {
                         Value::Int(n) => max_chars = Some(*n as usize),
-                        Value::Pair(key, value) => {
-                            if key.as_str() == "bin" {
-                                bin_mode = value.as_ref().truthy();
-                            }
+                        Value::Pair(key, value) if key.as_str() == "bin" => {
+                            bin_mode = value.as_ref().truthy();
                         }
                         _ => {}
                     }

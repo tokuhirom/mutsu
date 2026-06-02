@@ -400,12 +400,10 @@ impl Compiler {
                     then_branch,
                     else_branch,
                     ..
-                } => {
-                    if !Self::do_if_branch_supported(then_branch)
-                        || !Self::do_if_branch_supported(else_branch)
-                    {
-                        return false;
-                    }
+                } if !Self::do_if_branch_supported(then_branch)
+                    || !Self::do_if_branch_supported(else_branch) =>
+                {
+                    return false;
                 }
                 _ => {}
             }

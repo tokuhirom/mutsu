@@ -1436,90 +1436,6 @@ fn check_io_func_followed_by_loop<'a>(name: &str, rest_after_ws: &'a str) -> PRe
     Ok((rest_after_ws, ()))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::extract_exported_names;
-    use super::{say_stmt, statement};
-    use crate::ast::{Expr, Stmt};
-
-    #[test]
-    fn extract_exported_names_fallback_handles_proto_and_kebab_case_names() {
-        let source = r#"
-proto sub is_run(|) is export {*}
-sub get_out(Str $code, :@compiler-args) is export { }
-proto doesn't-hang(|) is export {*}
-sub helper() { }
-"#;
-        let exports = extract_exported_names(source);
-        let names: Vec<String> = exports.iter().map(|e| e.name.clone()).collect();
-        assert!(names.contains(&"is_run".to_string()));
-        assert!(names.contains(&"get_out".to_string()));
-        assert!(names.contains(&"doesn't-hang".to_string()));
-        assert!(!names.contains(&"helper".to_string()));
-    }
-
-    #[test]
-    fn say_stmt_rejects_adjacent_statement_keyword_without_separator() {
-        let err = say_stmt("say and die 73266").unwrap_err();
-        assert!(
-            err.messages
-                .iter()
-                .any(|msg| msg.contains("comma or statement end after argument"))
-        );
-    }
-
-    #[test]
-    fn statement_does_not_fall_back_after_invalid_say_args() {
-        assert!(statement("say and die 73266").is_err());
-    }
-
-    #[test]
-    fn statement_rewrites_scalar_decl_before_cross_metaop() {
-        let (_, stmt) = statement("my $a = (1, 3) X (2, 4);").unwrap();
-        match stmt {
-            Stmt::Expr(Expr::MetaOp { meta, left, .. }) => {
-                assert_eq!(meta, "X");
-                match left.as_ref() {
-                    Expr::DoStmt(inner) => match inner.as_ref() {
-                        Stmt::VarDecl { name, expr, .. } => {
-                            assert_eq!(name, "a");
-                            assert!(matches!(expr, Expr::ArrayLiteral(items) if items.len() == 2));
-                        }
-                        other => panic!("expected VarDecl in DoStmt, got {other:?}"),
-                    },
-                    other => panic!("expected DoStmt on left side, got {other:?}"),
-                }
-            }
-            other => panic!("expected rewritten X meta-op statement, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn statement_keeps_array_meta_assign_as_assignment() {
-        let (_, stmt) = statement("@a [X+]= @b;").unwrap();
-        match stmt {
-            Stmt::Assign { name, expr, .. } => {
-                assert_eq!(name, "@a");
-                match expr {
-                    Expr::MetaOp {
-                        meta,
-                        op,
-                        left,
-                        right,
-                    } => {
-                        assert_eq!(meta, "X");
-                        assert_eq!(op, "+");
-                        assert!(matches!(left.as_ref(), Expr::ArrayVar(name) if name == "a"));
-                        assert!(matches!(right.as_ref(), Expr::ArrayVar(name) if name == "b"));
-                    }
-                    other => panic!("expected meta-op rhs, got {other:?}"),
-                }
-            }
-            other => panic!("expected array assignment statement, got {other:?}"),
-        }
-    }
-}
-
 /// Parse a `say` statement.
 pub(super) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("say", input).ok_or_else(|| PError::expected("say statement"))?;
@@ -2054,4 +1970,88 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         args,
     };
     parse_statement_modifier(rest, stmt)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_exported_names;
+    use super::{say_stmt, statement};
+    use crate::ast::{Expr, Stmt};
+
+    #[test]
+    fn extract_exported_names_fallback_handles_proto_and_kebab_case_names() {
+        let source = r#"
+proto sub is_run(|) is export {*}
+sub get_out(Str $code, :@compiler-args) is export { }
+proto doesn't-hang(|) is export {*}
+sub helper() { }
+"#;
+        let exports = extract_exported_names(source);
+        let names: Vec<String> = exports.iter().map(|e| e.name.clone()).collect();
+        assert!(names.contains(&"is_run".to_string()));
+        assert!(names.contains(&"get_out".to_string()));
+        assert!(names.contains(&"doesn't-hang".to_string()));
+        assert!(!names.contains(&"helper".to_string()));
+    }
+
+    #[test]
+    fn say_stmt_rejects_adjacent_statement_keyword_without_separator() {
+        let err = say_stmt("say and die 73266").unwrap_err();
+        assert!(
+            err.messages
+                .iter()
+                .any(|msg| msg.contains("comma or statement end after argument"))
+        );
+    }
+
+    #[test]
+    fn statement_does_not_fall_back_after_invalid_say_args() {
+        assert!(statement("say and die 73266").is_err());
+    }
+
+    #[test]
+    fn statement_rewrites_scalar_decl_before_cross_metaop() {
+        let (_, stmt) = statement("my $a = (1, 3) X (2, 4);").unwrap();
+        match stmt {
+            Stmt::Expr(Expr::MetaOp { meta, left, .. }) => {
+                assert_eq!(meta, "X");
+                match left.as_ref() {
+                    Expr::DoStmt(inner) => match inner.as_ref() {
+                        Stmt::VarDecl { name, expr, .. } => {
+                            assert_eq!(name, "a");
+                            assert!(matches!(expr, Expr::ArrayLiteral(items) if items.len() == 2));
+                        }
+                        other => panic!("expected VarDecl in DoStmt, got {other:?}"),
+                    },
+                    other => panic!("expected DoStmt on left side, got {other:?}"),
+                }
+            }
+            other => panic!("expected rewritten X meta-op statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn statement_keeps_array_meta_assign_as_assignment() {
+        let (_, stmt) = statement("@a [X+]= @b;").unwrap();
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "+");
+                        assert!(matches!(left.as_ref(), Expr::ArrayVar(name) if name == "a"));
+                        assert!(matches!(right.as_ref(), Expr::ArrayVar(name) if name == "b"));
+                    }
+                    other => panic!("expected meta-op rhs, got {other:?}"),
+                }
+            }
+            other => panic!("expected array assignment statement, got {other:?}"),
+        }
+    }
 }
