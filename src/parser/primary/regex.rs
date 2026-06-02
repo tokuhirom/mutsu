@@ -313,10 +313,7 @@ fn parse_trans_adverbs(input: &str) -> Option<(&str, char, char, bool, bool, boo
     let mut complement = false;
     let mut squash = false;
 
-    loop {
-        let Some(after_colon) = rest.strip_prefix(':') else {
-            break;
-        };
+    while let Some(after_colon) = rest.strip_prefix(':') {
         let name_len = after_colon
             .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
             .unwrap_or(after_colon.len());

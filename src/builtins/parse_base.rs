@@ -56,11 +56,9 @@ fn char_digit_value(ch: char, radix: u32) -> Option<u32> {
         (ch as u32) - ('A' as u32) + 10
     } else if ch.is_ascii_lowercase() {
         (ch as u32) - ('a' as u32) + 10
-    } else if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
-        // Unicode Nd character
-        d
     } else {
-        return None;
+        // Unicode Nd character
+        crate::builtins::unicode::unicode_decimal_digit_value(ch)?
     };
     if v < radix { Some(v) } else { None }
 }

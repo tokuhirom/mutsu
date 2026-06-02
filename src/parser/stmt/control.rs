@@ -1033,11 +1033,15 @@ fn find_rw_pointy_block(input: &str) -> Option<usize> {
                 // Start of block — stop scanning
                 return None;
             }
-            b'<' if depth_paren == 0 && depth_bracket == 0 && depth_angle == 0 => {
-                // Check for `<->`
-                if i + 2 < bytes.len() && bytes[i + 1] == b'-' && bytes[i + 2] == b'>' {
-                    return Some(i);
-                }
+            // Check for `<->`
+            b'<' if depth_paren == 0
+                && depth_bracket == 0
+                && depth_angle == 0
+                && i + 2 < bytes.len()
+                && bytes[i + 1] == b'-'
+                && bytes[i + 2] == b'>' =>
+            {
+                return Some(i);
             }
             _ => {}
         }

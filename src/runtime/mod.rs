@@ -5477,6 +5477,24 @@ impl TestState {
     }
 }
 
+impl Interpreter {
+    /// Flush all open file handle buffers. Call before process exit.
+    pub fn flush_all_handles(&mut self) {
+        for state in self.handles.values_mut() {
+            if state.closed {
+                continue;
+            }
+            if !state.out_buffer_pending.is_empty()
+                && let Some(file) = state.file.as_mut()
+            {
+                let _ = file.write_all(&state.out_buffer_pending);
+                let _ = file.flush();
+                state.out_buffer_pending.clear();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
@@ -5742,23 +5760,5 @@ mod tests {
                 "$target".to_string(),
             ]
         );
-    }
-}
-
-impl Interpreter {
-    /// Flush all open file handle buffers. Call before process exit.
-    pub fn flush_all_handles(&mut self) {
-        for state in self.handles.values_mut() {
-            if state.closed {
-                continue;
-            }
-            if !state.out_buffer_pending.is_empty()
-                && let Some(file) = state.file.as_mut()
-            {
-                let _ = file.write_all(&state.out_buffer_pending);
-                let _ = file.flush();
-                state.out_buffer_pending.clear();
-            }
-        }
     }
 }

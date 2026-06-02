@@ -919,13 +919,7 @@ impl Interpreter {
                 j
             }
             // Backslash escape: \x
-            '\\' => {
-                if chars.len() > 1 {
-                    2
-                } else {
-                    1
-                }
-            }
+            '\\' if chars.len() > 1 => 2,
             // Single character atom
             _ => 1,
         };

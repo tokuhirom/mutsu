@@ -1474,7 +1474,7 @@ mod tests {
 
     #[test]
     fn parse_forward_sub_without_signature_is_invalid() {
-        let err = program("sub foo;").err().expect("expected parse error");
+        let err = program("sub foo;").expect_err("expected parse error");
         assert!(err.to_string().contains("X::UnitScope::Invalid"));
     }
 
@@ -1517,9 +1517,7 @@ mod tests {
 
     #[test]
     fn parse_main_semicolon_after_module_is_too_late() {
-        let err = program("module AtBeginning {}; sub MAIN;")
-            .err()
-            .expect("expected parse error");
+        let err = program("module AtBeginning {}; sub MAIN;").expect_err("expected parse error");
         assert!(err.to_string().contains("X::UnitScope::TooLate"));
     }
 

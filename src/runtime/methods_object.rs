@@ -1500,10 +1500,8 @@ impl Interpreter {
                                         version_matcher = Some(value.to_string_value());
                                     }
                                 }
-                                "api-matcher" => {
-                                    if !matches!(value.as_ref(), Value::Bool(true)) {
-                                        api_matcher = Some(value.to_string_value());
-                                    }
+                                "api-matcher" if !matches!(value.as_ref(), Value::Bool(true)) => {
+                                    api_matcher = Some(value.to_string_value());
                                 }
                                 _ => {}
                             }
@@ -3693,34 +3691,32 @@ impl Interpreter {
                         return Err(err);
                     }
                 }
-                "D" => {
-                    // :D means the value must be defined
-                    if !super::types::value_is_defined(value) {
-                        let mut ex_attrs = HashMap::new();
-                        ex_attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
-                        ex_attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Type check failed in default value of attribute $!{}; expected {}, got {}",
-                                attr_name,
-                                self.classes.get(class_name)
-                                    .and_then(|cd| cd.attribute_types.get(attr_name))
-                                    .map(|t| format!("{}:D", t))
-                                    .unwrap_or_else(|| "Any:D".to_string()),
-                                super::value_type_name(value),
-                            )),
-                        );
-                        let ex = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Attribute::Default"),
-                            ex_attrs,
-                        );
-                        let mut err = RuntimeError::new(format!(
-                            "Type check failed in default value of attribute $!{}",
-                            attr_name
-                        ));
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
-                    }
+                // :D means the value must be defined
+                "D" if !super::types::value_is_defined(value) => {
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Type check failed in default value of attribute $!{}; expected {}, got {}",
+                            attr_name,
+                            self.classes.get(class_name)
+                                .and_then(|cd| cd.attribute_types.get(attr_name))
+                                .map(|t| format!("{}:D", t))
+                                .unwrap_or_else(|| "Any:D".to_string()),
+                            super::value_type_name(value),
+                        )),
+                    );
+                    let ex = Value::make_instance(
+                        Symbol::intern("X::TypeCheck::Attribute::Default"),
+                        ex_attrs,
+                    );
+                    let mut err = RuntimeError::new(format!(
+                        "Type check failed in default value of attribute $!{}",
+                        attr_name
+                    ));
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
                 }
                 _ => {} // "_" or anything else: no constraint
             }

@@ -575,10 +575,12 @@ impl Interpreter {
                                 return Ok(Value::str(format!("Hash[{}]", info.value_type)));
                             }
                         }
-                        Value::Array(_, kind) if kind.is_real_array() => {
-                            if info.value_type != "Any" && info.value_type != "Mu" {
-                                return Ok(Value::str(format!("Array[{}]", info.value_type)));
-                            }
+                        Value::Array(_, kind)
+                            if kind.is_real_array()
+                                && info.value_type != "Any"
+                                && info.value_type != "Mu" =>
+                        {
+                            return Ok(Value::str(format!("Array[{}]", info.value_type)));
                         }
                         _ => {}
                     }
