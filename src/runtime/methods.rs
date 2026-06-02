@@ -1895,6 +1895,11 @@ impl Interpreter {
             return result;
         }
 
+        // Qualified method on a runtime-mixed-in value (Value::Mixin): Class::method
+        if let Some(result) = self.dispatch_qualified_mixin_method(&target, method, args.clone()) {
+            return result;
+        }
+
         // Qualified method on non-Instance values
         if let Some(result) =
             self.dispatch_qualified_non_instance_method(&target, method, args.clone())

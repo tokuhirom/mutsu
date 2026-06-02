@@ -1132,6 +1132,20 @@ impl Interpreter {
                                 if non_my_overloads.is_empty() {
                                     continue;
                                 }
+                                // If the composing role (base_role_name, e.g. R2) defines
+                                // this method itself, it has already resolved the same-named
+                                // method it inherits from its parent role (parent_base, e.g.
+                                // R1). Do not re-propagate the parent's copy into the consumer
+                                // as an independent candidate -- doing so would create a spurious
+                                // X::Role::Composition::Conflict. The parent role's method is
+                                // still reachable via a qualified call (self.R1::method).
+                                let resolved_by_composing_role =
+                                    role.methods.get(mname).is_some_and(|defs| {
+                                        defs.iter().any(|d| d.role_origin.is_none() && !d.is_my)
+                                    });
+                                if resolved_by_composing_role {
+                                    continue;
+                                }
                                 let composed: Vec<MethodDef> = if parent_type_subs.is_empty() {
                                     non_my_overloads
                                         .into_iter()
@@ -2508,7 +2522,12 @@ impl Interpreter {
             .collect();
         for stmt in &check_body {
             let declaration = match stmt {
-                Stmt::ClassDecl { .. } => Some("class"),
+                // A `my class` inside a role is a lexically-scoped class private to the
+                // role and is allowed; only an implicitly our-scoped `class` is forbidden.
+                Stmt::ClassDecl {
+                    is_lexical: false, ..
+                } => Some("class"),
+                Stmt::ClassDecl { .. } => None,
                 Stmt::SubsetDecl { .. } => Some("subset"),
                 Stmt::EnumDecl { .. } => Some("enum"),
                 Stmt::RoleDecl { .. } => Some("role"),
