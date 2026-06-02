@@ -1,6 +1,55 @@
 use super::*;
 
 impl Interpreter {
+    /// Verify that every `is rw` positional parameter in a subsignature is
+    /// matched by a writable variable argument.  `args` is the full positional
+    /// argument list of the enclosing call and `start` is the index of the
+    /// first argument consumed by the capture carrying this subsignature.
+    /// Positional (non-Pair) args are mapped to positional subsignature params
+    /// in order; an `is rw` param requires a VarRef or a known argument source.
+    fn sub_signature_rw_args_writable(
+        &self,
+        sub_params: &[ParamDef],
+        args: &[Value],
+        start: usize,
+    ) -> bool {
+        let mut arg_idx = start;
+        for pd in sub_params {
+            if pd.named || pd.slurpy {
+                continue;
+            }
+            // Advance to the next positional (non-Pair) argument.
+            while arg_idx < args.len()
+                && matches!(
+                    unwrap_varref_value(args[arg_idx].clone()),
+                    Value::Pair(..) | Value::ValuePair(..)
+                )
+            {
+                arg_idx += 1;
+            }
+            if arg_idx >= args.len() {
+                break;
+            }
+            if pd.traits.iter().any(|t| t == "rw") {
+                let raw_arg = args.get(arg_idx);
+                let is_varref = raw_arg
+                    .map(|a| varref_from_value(a).is_some())
+                    .unwrap_or(false);
+                let has_arg_source = self
+                    .pending_call_arg_sources
+                    .as_ref()
+                    .and_then(|sources| sources.get(arg_idx))
+                    .and_then(|name| name.as_ref())
+                    .is_some();
+                if !is_varref && !has_arg_source {
+                    return false;
+                }
+            }
+            arg_idx += 1;
+        }
+        true
+    }
+
     fn coercion_dispatch_value(&mut self, constraint: &str, arg: &Value) -> Option<Value> {
         let (target, source) = parse_coercion_type(constraint)?;
         if let Some(src) = source
@@ -307,6 +356,16 @@ impl Interpreter {
                     if !sub_signature_matches_value(self, sub_params, arg) {
                         return false;
                     }
+                    // `is rw` narrowing for subsignature params: an `is rw`
+                    // parameter only binds to a writable variable argument, so a
+                    // candidate whose subsignature requires `is rw` must not match
+                    // a literal/constant argument.  Map each positional subsignature
+                    // param to the corresponding raw positional arg (the subsignature
+                    // consumes the capture's positional args in order, starting at
+                    // index `i`).
+                    if !self.sub_signature_rw_args_writable(sub_params, args, i) {
+                        return false;
+                    }
                 }
                 if let Some((sig_params, sig_ret)) = &pd.code_signature {
                     let Some(arg) = arg_for_checks.as_ref() else {
@@ -359,9 +418,15 @@ impl Interpreter {
                     i += 1;
                 }
             }
-            let has_named_slurpy = param_defs
-                .iter()
-                .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
+            // A capture parameter carrying a subsignature (e.g. `|(*@all, :$really!)`
+            // or `|c(...)`) consumes all arguments and validates named arguments
+            // via its subsignature (already checked above), so the top-level
+            // named-argument consumption/required checks do not apply here.
+            let has_capture_subsignature = param_defs.iter().any(|pd| pd.is_capture_subsignature());
+            let has_named_slurpy = has_capture_subsignature
+                || param_defs
+                    .iter()
+                    .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
             if !has_named_slurpy {
                 for arg in args {
                     let arg = unwrap_varref_value(arg.clone());

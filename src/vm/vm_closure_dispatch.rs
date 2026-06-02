@@ -517,10 +517,17 @@ impl VM {
         for p in &data.params {
             param_names.insert(p.as_str());
         }
+        // Collect names bound by subsignature parameters (e.g. `|c(Str $x)`),
+        // which are also strictly call-local and must not leak to the caller.
+        let mut subsig_names: std::collections::HashSet<String> = std::collections::HashSet::new();
         for pd in &data.param_defs {
             if !pd.name.is_empty() {
                 param_names.insert(pd.name.as_str());
             }
+            Interpreter::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
+        }
+        for name in &subsig_names {
+            param_names.insert(name.as_str());
         }
         for (k, v) in self.interpreter.env().iter() {
             if *k != "_"

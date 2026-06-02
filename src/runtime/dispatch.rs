@@ -28,14 +28,42 @@ impl Interpreter {
         self.pending_dispatch_error = Some(err);
     }
 
-    fn dispatch_visible_params<'a>(
-        def: &'a FunctionDef,
-    ) -> impl Iterator<Item = &'a ParamDef> + 'a {
-        def.param_defs.iter().filter(|p| p.multi_invocant)
+    fn dispatch_visible_params(def: &FunctionDef) -> Vec<&ParamDef> {
+        Self::dispatch_visible_params_from(&def.param_defs)
+    }
+
+    /// Compute the parameters that participate in multi dispatch from a slice
+    /// of parameter definitions.
+    ///
+    /// When a candidate's signature is a single capture parameter carrying a
+    /// subsignature (e.g. `multi sub foo(|c(Int $x))`), dispatch must rank and
+    /// tie-break on the subsignature's parameters, exactly as if they had been
+    /// written as a normal positional/named signature (`multi sub foo(Int $x)`).
+    /// Without flattening, every such candidate would look like a single
+    /// sigilless slurpy capture and all candidates would appear tied.
+    fn dispatch_visible_params_from(param_defs: &[ParamDef]) -> Vec<&ParamDef> {
+        let visible: Vec<&ParamDef> = param_defs.iter().filter(|p| p.multi_invocant).collect();
+        // Detect the "single capture with a subsignature" shape and descend
+        // into the subsignature for dispatch purposes.
+        if visible.len() == 1 {
+            let p = visible[0];
+            // A named capture `|c(...)` is a sigilless slurpy param; an anonymous
+            // capture `|(...)` is recorded as a `__subsig__` param.  Both carry
+            // the real dispatch parameters in their subsignature.
+            let is_capture_subsig = (p.slurpy && p.sigilless) || p.name == "__subsig__";
+            if is_capture_subsig
+                && p.type_constraint.is_none()
+                && p.literal_value.is_none()
+                && let Some(sub) = &p.sub_signature
+            {
+                return Self::dispatch_visible_params_from(sub);
+            }
+        }
+        visible
     }
 
     fn candidate_uses_order_sensitive_dispatch(&self, def: &FunctionDef) -> bool {
-        Self::dispatch_visible_params(def).any(|p| {
+        Self::dispatch_visible_params(def).into_iter().any(|p| {
             p.literal_value.is_some()
                 || p.where_constraint.is_some()
                 || p.type_constraint
@@ -48,6 +76,7 @@ impl Interpreter {
 
     fn candidate_dispatch_shape(&self, def: &FunctionDef) -> Vec<DispatchShape> {
         Self::dispatch_visible_params(def)
+            .into_iter()
             .map(|p| {
                 // Include sigil-based implicit type constraint in the shape
                 // so that @-param and $-param are distinguishable.
@@ -228,13 +257,14 @@ impl Interpreter {
         &self,
         def: &FunctionDef,
     ) -> (usize, usize, usize, usize, usize, usize, usize) {
-        let literal_value_count = Self::dispatch_visible_params(def)
-            .filter(|p| p.literal_value.is_some())
-            .count();
-        let where_count = Self::dispatch_visible_params(def)
+        let params = Self::dispatch_visible_params(def);
+        let literal_value_count = params.iter().filter(|p| p.literal_value.is_some()).count();
+        let where_count = params
+            .iter()
             .filter(|p| p.where_constraint.is_some())
             .count();
-        let subset_type_count = Self::dispatch_visible_params(def)
+        let subset_type_count = params
+            .iter()
             .filter(|p| {
                 p.type_constraint
                     .as_deref()
@@ -243,7 +273,8 @@ impl Interpreter {
                     .unwrap_or(false)
             })
             .count();
-        let typed_param_count = Self::dispatch_visible_params(def)
+        let typed_param_count = params
+            .iter()
             .filter(|p| {
                 p.type_constraint.is_some()
                     || (!p.slurpy
@@ -252,13 +283,10 @@ impl Interpreter {
                             || p.name.starts_with('&')))
             })
             .count();
-        let subsig_count = Self::dispatch_visible_params(def)
-            .filter(|p| p.sub_signature.is_some())
-            .count();
-        let named_count = Self::dispatch_visible_params(def)
-            .filter(|p| p.named)
-            .count();
-        let trait_count = Self::dispatch_visible_params(def)
+        let subsig_count = params.iter().filter(|p| p.sub_signature.is_some()).count();
+        let named_count = params.iter().filter(|p| p.named).count();
+        let trait_count = params
+            .iter()
             .filter(|p| {
                 p.traits
                     .iter()
@@ -280,7 +308,7 @@ impl Interpreter {
     /// AFTER rank and type distance, so it only matters when type constraints
     /// are equally specific.
     fn candidate_required_named_count(def: &FunctionDef) -> usize {
-        def.param_defs
+        Self::dispatch_visible_params(def)
             .iter()
             .filter(|p| p.named && p.required)
             .count()
@@ -293,7 +321,7 @@ impl Interpreter {
     /// large constant so that constrained candidates are always preferred.
     fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
         let mut total = 0usize;
-        let params: Vec<&ParamDef> = Self::dispatch_visible_params(def).collect();
+        let params: Vec<&ParamDef> = Self::dispatch_visible_params(def);
         let mut pos_idx = 0usize;
         for pd in params.iter() {
             if let Some(constraint) = &pd.type_constraint {
@@ -670,6 +698,29 @@ impl Interpreter {
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
                 return Some(def);
             }
+            // Capture-subsignature candidates (`multi foo(|c(...))`) are registered
+            // at arity 0 because the capture consumes all arguments; the real
+            // dispatch parameters live in the subsignature.  Such candidates are
+            // not found by the arity-keyed lookup above, so collect them
+            // separately (across all arities under `name/`) and dispatch on them.
+            let subsig_prefix = format!("{}/", name);
+            let mut subsig_candidates: Vec<(String, FunctionDef)> = self
+                .functions
+                .iter()
+                .filter(|(key, def)| {
+                    key.resolve().starts_with(&subsig_prefix)
+                        && def.param_defs.iter().any(|p| p.is_capture_subsignature())
+                })
+                .map(|(key, def)| (key.resolve(), def.clone()))
+                .collect();
+            if !subsig_candidates.is_empty() {
+                self.sort_candidates_by_specificity(&mut subsig_candidates);
+                if let Some(def) =
+                    self.choose_best_matching_candidate(name, arg_values, subsig_candidates)
+                {
+                    return Some(def);
+                }
+            }
             if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
                 if !self.is_my_scoped_package_item(name) {
                     return Some(def);
@@ -822,7 +873,10 @@ impl Interpreter {
             .filter(|(k, def)| {
                 let ks = k.resolve();
                 slurpy_prefixes.iter().any(|prefix| ks.starts_with(prefix))
-                    && def.param_defs.iter().any(|p| p.slurpy)
+                    && def
+                        .param_defs
+                        .iter()
+                        .any(|p| p.slurpy || p.is_capture_subsignature())
             })
             .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();
@@ -945,7 +999,10 @@ impl Interpreter {
             .filter(|(k, def)| {
                 let ks = k.resolve();
                 slurpy_prefixes.iter().any(|prefix| ks.starts_with(prefix))
-                    && def.param_defs.iter().any(|p| p.slurpy)
+                    && def
+                        .param_defs
+                        .iter()
+                        .any(|p| p.slurpy || p.is_capture_subsignature())
             })
             .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();
