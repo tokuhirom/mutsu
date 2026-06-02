@@ -26,6 +26,7 @@ temp-file-*
 bom-test-*
 tempfile*
 wip.txt
+handle-between-threads-*
 
 target-local/
 .claude/worktrees/
