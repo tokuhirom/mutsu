@@ -496,7 +496,11 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                                     r2,
                                     CallArg::Named {
                                         name,
-                                        value: Some(Expr::ArrayLiteral(items)),
+                                        // `:name[...]` builds a real Array, matching the
+                                        // expression-level colonpair form. Use BracketArray
+                                        // (not ArrayLiteral) so a single inner list element
+                                        // is flattened (`:args[<1 2>]` -> [1, 2], not [[1,2]]).
+                                        value: Some(Expr::BracketArray(items, false)),
                                     },
                                 ));
                             }
@@ -519,7 +523,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         r,
                         CallArg::Named {
                             name,
-                            value: Some(Expr::ArrayLiteral(items)),
+                            value: Some(Expr::BracketArray(items, false)),
                         },
                     ));
                 }

@@ -282,6 +282,11 @@ impl Interpreter {
         self.current_package = saved_package;
         run_result?;
 
+        // A `sub MAIN` defined in a required module is NOT the program's MAIN
+        // and must not be auto-dispatched at program end. Remove any top-level
+        // MAIN routines that this module introduced.
+        Self::remove_leaked_main_routines(&mut self.functions, &before_function_keys);
+
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
@@ -341,6 +346,35 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    /// Remove top-level `MAIN` routines that were registered while loading a
+    /// module (via `require`/`use`). A `sub MAIN` declared in a loaded module
+    /// is not the program's MAIN and must not be auto-dispatched at program
+    /// end. `before_keys` is the set of function-registry keys that existed
+    /// before the module body ran; only newly-added MAIN keys are removed.
+    pub(crate) fn remove_leaked_main_routines(
+        functions: &mut HashMap<Symbol, FunctionDef>,
+        before_keys: &std::collections::HashSet<Symbol>,
+    ) {
+        let leaked: Vec<Symbol> = functions
+            .keys()
+            .filter(|k| {
+                if before_keys.contains(*k) {
+                    return false;
+                }
+                let ks = k.resolve();
+                // Match GLOBAL::MAIN, GLOBAL::MAIN/<arity>, GLOBAL::MAIN/<...>:<sig>
+                // i.e. the routine's short name is exactly `MAIN`.
+                let after_pkg = ks.rsplit_once("::").map(|(_, t)| t).unwrap_or(&ks);
+                let short = after_pkg.split(['/', ':']).next().unwrap_or(after_pkg);
+                short == "MAIN"
+            })
+            .copied()
+            .collect();
+        for k in leaked {
+            functions.remove(&k);
+        }
     }
 
     fn import_single_require_symbol(&mut self, module: &str, symbol: &str) -> bool {

@@ -1300,7 +1300,9 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             ));
         }
 
-        // Bare capture marker
+        // Bare capture marker. An anonymous capture absorbs both positional and
+        // named arguments, exactly like a named capture (|c), so it must be
+        // sigilless for binding/dispatch to treat it as a full slurpy.
         return Ok((
             r,
             ParamDef {
@@ -1312,7 +1314,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 slurpy: true,
                 double_slurpy: false,
                 onearg: false,
-                sigilless: false,
+                sigilless: true,
                 type_constraint,
                 literal_value: None,
                 sub_signature: None,
