@@ -89,6 +89,23 @@ impl Interpreter {
                 actual_method, qualifier, inst_cn_str
             ))));
         }
+        // Relaxed-dispatch ambiguity: if the qualifier names a parametric role and the
+        // nearest consumer (the class itself, or a role it composes) composes that base
+        // role under two or more *distinct* concretizations, the qualified lookup is
+        // ambiguous. Resolution happens against the consumer's immediate roles, so an
+        // indirect second concretization (reached through another role) does not count.
+        if in_composed_roles
+            && self.roles.contains_key(qualifier)
+            && self
+                .role_concretizations_at_nearest(&inst_cn_str, qualifier)
+                .len()
+                > 1
+        {
+            return Some(Err(RuntimeError::new(format!(
+                "Ambiguous concretization lookup for {}",
+                qualifier
+            ))));
+        }
         // Read: look up the attribute in the qualifier class's attribute definitions
         if args.is_empty() {
             let class_attrs = self.collect_class_attributes(qualifier);
@@ -195,6 +212,207 @@ impl Interpreter {
                     self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
                     return Some(Ok(result));
                 }
+            }
+        }
+
+        None
+    }
+
+    /// Find the distinct concretizations of parametric role `base_role` as composed by
+    /// the *nearest* consumer reachable from `class_name`. Resolution follows the
+    /// "immediate roles" model: a breadth-first walk over consumer nodes (the class,
+    /// then each role it composes, then those roles' composed roles, ...). The first
+    /// consumer node that directly composes `base_role` determines the result; its set
+    /// of distinct concretizations (e.g. `{"R1[Int]", "R1[Str]"}`) is returned. A second
+    /// concretization reached only through a deeper role does not contribute, so it does
+    /// not create ambiguity.
+    pub(crate) fn role_concretizations_at_nearest(
+        &self,
+        class_name: &str,
+        base_role: &str,
+    ) -> std::collections::BTreeSet<String> {
+        use std::collections::{BTreeSet, VecDeque};
+        // The consumer's directly-composed roles: classes use class_composed_roles,
+        // roles use role_parents (which records `does`-composed sub-roles).
+        let direct_roles = |node: &str| -> Vec<String> {
+            if let Some(roles) = self.class_composed_roles.get(node) {
+                roles.clone()
+            } else if let Some(parents) = self.role_parents.get(node) {
+                parents.clone()
+            } else {
+                Vec::new()
+            }
+        };
+        let base_of = |full: &str| -> String {
+            full.split_once('[')
+                .map(|(b, _)| b.to_string())
+                .unwrap_or_else(|| full.to_string())
+        };
+        let mut queue: VecDeque<String> = VecDeque::new();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        queue.push_back(class_name.to_string());
+        seen.insert(class_name.to_string());
+        while let Some(node) = queue.pop_front() {
+            let composed = direct_roles(&node);
+            let matches: BTreeSet<String> = composed
+                .iter()
+                .filter(|r| base_of(r) == base_role)
+                .cloned()
+                .collect();
+            if !matches.is_empty() {
+                // Nearest consumer found; ambiguity is decided by its own composition.
+                return matches;
+            }
+            for r in composed {
+                let rb = base_of(&r);
+                if seen.insert(rb.clone()) {
+                    queue.push_back(rb);
+                }
+            }
+        }
+        BTreeSet::new()
+    }
+
+    /// Handle qualified method names on a runtime-mixed-in value (Value::Mixin):
+    /// e.g. after `self does Foo2`, calls like `self.Foo::foo`, `self.Foo1::foo`,
+    /// `self.Foo2::foo` must still resolve through the inner instance's MRO/roles
+    /// and through roles applied at run time.
+    /// Returns Some(result) if handled, None to continue.
+    pub(super) fn dispatch_qualified_mixin_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let (qualifier, actual_method) = method.rsplit_once("::")?;
+        if method.starts_with('!') {
+            return None;
+        }
+        let Value::Mixin(inner, mixins) = target else {
+            return None;
+        };
+
+        // 1) Qualifier is a role: applied at run time on this mixin, composed on the
+        //    inner instance's class, or otherwise a known role. Dispatch directly to
+        //    that role's method, keeping the mixin as self so any run-time mixin
+        //    survives the call.
+        let inner_class = if let Value::Instance { class_name, .. } = inner.as_ref() {
+            Some(class_name.resolve())
+        } else {
+            None
+        };
+        let composed_on_inner = inner_class.as_deref().is_some_and(|cn| {
+            self.class_mro(cn).iter().any(|c| {
+                self.class_composed_roles.get(c).is_some_and(|roles| {
+                    roles.iter().any(|r| {
+                        r == qualifier
+                            || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                    })
+                })
+            })
+        });
+        let role_applied = mixins.contains_key(&format!("__mutsu_role__{qualifier}"))
+            || mixins.contains_key(qualifier)
+            || composed_on_inner;
+        if role_applied
+            && let Some(role) = self.role_def_for_mixin_role(mixins, qualifier)
+            && let Some(overloads) = role.methods.get(actual_method).cloned()
+        {
+            let role_param_bindings: Vec<(String, Value)> = mixins
+                .iter()
+                .filter_map(|(key, value)| {
+                    key.strip_prefix("__mutsu_role_param__")
+                        .map(|name| (name.to_string(), value.clone()))
+                })
+                .collect();
+            for def in overloads {
+                if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                    continue;
+                }
+                // Start from the inner instance's attributes (for compose-time
+                // roles whose state lives on the class), then layer mixin-stored
+                // role attributes on top (for run-time-applied roles).
+                let mut role_attrs: HashMap<String, Value> =
+                    if let Value::Instance { attributes, .. } = inner.as_ref() {
+                        (**attributes).clone()
+                    } else {
+                        HashMap::new()
+                    };
+                for (key, value) in mixins.iter() {
+                    if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
+                        role_attrs.insert(attr.to_string(), value.clone());
+                    }
+                }
+                let mut saved: Vec<(String, Option<Value>)> = Vec::new();
+                for (name, value) in &role_param_bindings {
+                    saved.push((name.clone(), self.env.get(name).cloned()));
+                    self.env.insert(name.clone(), value.clone());
+                }
+                let res = self.run_instance_method_resolved(
+                    qualifier,
+                    qualifier,
+                    def,
+                    role_attrs,
+                    args,
+                    Some(target.clone()),
+                );
+                for (name, prev) in saved {
+                    if let Some(prev) = prev {
+                        self.env.insert(name, prev);
+                    } else {
+                        self.env.remove(&name);
+                    }
+                }
+                return Some(res.map(|(result, _updated)| result));
+            }
+        }
+
+        // 2) Otherwise the qualifier names a class (or compose-time role) reachable
+        //    through the inner instance's MRO. Resolve and run the qualified method,
+        //    but keep the Mixin as the invocant so the run-time mixin survives the
+        //    call (a plain-instance identity writeback would drop the mixin).
+        if let Value::Instance {
+            class_name: inner_cn,
+            ..
+        } = inner.as_ref()
+        {
+            let inst_cn_str = inner_cn.resolve();
+            let inst_mro = self.class_mro(&inst_cn_str);
+            let in_mro = inst_mro.iter().any(|c| c == qualifier);
+            let in_composed_roles = !in_mro
+                && inst_mro.iter().any(|c| {
+                    self.class_composed_roles.get(c).is_some_and(|roles| {
+                        roles.iter().any(|r| {
+                            r == qualifier
+                                || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                        })
+                    })
+                });
+            if !in_mro && !in_composed_roles {
+                return Some(Err(RuntimeError::new(format!(
+                    "X::Method::InvalidQualifier: Cannot dispatch to method {} on {} because it is not inherited or done by {}",
+                    actual_method, qualifier, inst_cn_str
+                ))));
+            }
+            if let Some((_owner, def)) =
+                self.resolve_method_with_owner(qualifier, actual_method, &args)
+            {
+                // Use the inner instance's attributes so the method body can read
+                // attributes, but run with the Mixin target as the invocant.
+                let attrs_map = if let Value::Instance { attributes, .. } = inner.as_ref() {
+                    (**attributes).clone()
+                } else {
+                    HashMap::new()
+                };
+                let res = self.run_instance_method_resolved(
+                    &inst_cn_str,
+                    qualifier,
+                    def,
+                    attrs_map,
+                    args,
+                    Some(target.clone()),
+                );
+                return Some(res.map(|(result, _updated)| result));
             }
         }
 
