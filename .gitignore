@@ -27,6 +27,7 @@ bom-test-*
 tempfile*
 wip.txt
 handle-between-threads-*
+proc-async-*
 
 target-local/
 .claude/worktrees/
