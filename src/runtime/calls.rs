@@ -100,7 +100,7 @@ impl Interpreter {
     }
 
     /// Recursively collect variable names from sub_signature parameters.
-    fn collect_sub_signature_names(
+    pub(crate) fn collect_sub_signature_names(
         sub_sig: &Option<Vec<crate::ast::ParamDef>>,
         names: &mut std::collections::HashSet<String>,
     ) {

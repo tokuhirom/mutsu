@@ -217,6 +217,40 @@ pub(in crate::runtime) fn extract_named_from_unpack_target(
         .ok()
 }
 
+/// Evaluate a subsignature parameter's `where` constraint against a candidate
+/// value during multi dispatch.  Mirrors the top-level positional `where`
+/// handling in `args_match_param_types`.
+fn where_constraint_matches(
+    interpreter: &mut Interpreter,
+    where_expr: &Expr,
+    pd: &ParamDef,
+    candidate: &Value,
+) -> bool {
+    let saved = interpreter.env.clone();
+    interpreter.env.insert("_".to_string(), candidate.clone());
+    if !pd.name.is_empty() {
+        interpreter.env.insert(pd.name.clone(), candidate.clone());
+    }
+    let ok = match where_expr {
+        Expr::AnonSub { body, .. } => interpreter
+            .eval_block_value(body)
+            .map(|v| v.truthy())
+            .unwrap_or(false),
+        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+            interpreter
+                .eval_block_value(&[Stmt::Expr(where_expr.clone())])
+                .map(|v| v.truthy())
+                .unwrap_or(false)
+        }
+        expr => interpreter
+            .eval_block_value(&[Stmt::Expr(expr.clone())])
+            .map(|v| interpreter.smart_match(candidate, &v))
+            .unwrap_or(false),
+    };
+    interpreter.env = saved;
+    ok
+}
+
 pub(in crate::runtime) fn sub_signature_matches_value(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
@@ -245,8 +279,10 @@ pub(in crate::runtime) fn sub_signature_matches_value(
                 .ok();
         }
         let Some(candidate) = candidate else {
-            // Optional params are OK without a value
-            if pd.optional_marker || pd.default.is_some() {
+            // Optional params are OK without a value.  Named parameters are
+            // optional unless explicitly marked required (`:$x!`), so a missing
+            // optional named arg must not fail the match.
+            if pd.optional_marker || pd.default.is_some() || (pd.named && !pd.required) {
                 continue;
             }
             return false;
@@ -255,6 +291,23 @@ pub(in crate::runtime) fn sub_signature_matches_value(
             && !interpreter.type_matches_value(constraint, &candidate)
         {
             return false;
+        }
+        // Sigil-based type constraints: an `@`-param requires a Positional
+        // argument and a `%`-param requires an Associative one.  Without this a
+        // scalar would wrongly bind to `@x`/`%h` during multi dispatch.
+        if !pd.slurpy {
+            if pd.name.starts_with('@')
+                && !matches!(candidate, Value::Nil)
+                && !interpreter.type_matches_value("Positional", &candidate)
+            {
+                return false;
+            }
+            if pd.name.starts_with('%')
+                && !matches!(candidate, Value::Nil)
+                && !interpreter.type_matches_value("Associative", &candidate)
+            {
+                return false;
+            }
         }
         // Implicit Any constraint: untyped $ parameters reject Junction type objects
         if pd.type_constraint.is_none()
@@ -271,11 +324,36 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         {
             return false;
         }
+        if let Some(where_expr) = &pd.where_constraint
+            && !where_constraint_matches(interpreter, where_expr, pd, &candidate)
+        {
+            return false;
+        }
     }
     // If there are unconsumed positional elements and no slurpy param, the match fails
-    let has_slurpy = sub_params.iter().any(|p| p.slurpy);
+    let has_slurpy = sub_params.iter().any(|p| !p.named && p.slurpy);
     if !has_slurpy && positional_idx < positional.len() {
         return false;
+    }
+    // Reject unexpected named arguments (for the multi-dispatch case where the
+    // value is a Capture).  A named slurpy (`*%h`) accepts any named argument.
+    if let Value::Capture { named, .. } = value {
+        let has_named_slurpy = sub_params
+            .iter()
+            .any(|p| p.slurpy && (p.named || p.name.starts_with('%')));
+        if !has_named_slurpy {
+            for key in named.keys() {
+                if key.starts_with("__mutsu_") {
+                    continue;
+                }
+                let consumed = sub_params.iter().any(|p| {
+                    p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key
+                });
+                if !consumed {
+                    return false;
+                }
+            }
+        }
     }
     true
 }
@@ -449,13 +527,28 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
 }
 
 pub(in crate::runtime) fn sub_signature_target_from_remaining_args(args: &[Value]) -> Value {
+    // A single argument unpacks directly (e.g. `|(Int $x)` matching one value,
+    // or `|(Pair $p (:$key, :$value))` matching one Pair whose `.key`/`.value`
+    // accessors must remain reachable).  Only when multiple arguments remain do
+    // we build a Capture, separating named (Pair) arguments into the named slot
+    // so that subsignature named parameters can find them.
     if args.len() == 1 {
         return args[0].clone();
     }
-    Value::Capture {
-        positional: args.to_vec(),
-        named: std::collections::HashMap::new(),
+    let mut positional = Vec::new();
+    let mut named = std::collections::HashMap::new();
+    for arg in args {
+        match arg {
+            Value::Pair(key, val) => {
+                named.insert(key.clone(), val.as_ref().clone());
+            }
+            Value::ValuePair(key, val) => {
+                named.insert(key.to_string_value(), val.as_ref().clone());
+            }
+            other => positional.push(other.clone()),
+        }
     }
+    Value::Capture { positional, named }
 }
 
 pub(in crate::runtime) fn callable_signature_info(

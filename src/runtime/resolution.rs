@@ -1447,9 +1447,18 @@ impl Interpreter {
                     }
                 }
             } else {
+                // Names bound from subsignature parameters are block-local and
+                // must not be written back to the caller (otherwise a parameter
+                // such as `|c(Str $x)` would clobber a caller variable that
+                // happens to share the parameter's name).
+                let mut subsig_names = std::collections::HashSet::new();
+                for pd in &data.param_defs {
+                    Self::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
+                }
                 for (k, v) in self.env.iter() {
                     if k != "_"
                         && k != "@_"
+                        && !subsig_names.contains(&k.resolve())
                         && (matches!(v, Value::Array(..))
                             || (merged.contains_key_sym(*k)
                                 && matches!(

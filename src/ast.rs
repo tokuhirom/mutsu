@@ -56,6 +56,20 @@ pub(crate) struct ParamDef {
     pub(crate) shape_constraints: Option<Vec<Expr>>,
 }
 
+impl ParamDef {
+    /// True when this parameter is a capture that carries a subsignature, i.e.
+    /// `|c(...)` (a named, sigilless slurpy capture) or `|(...)` (an anonymous
+    /// capture recorded under the synthetic `__subsig__` name).  Such a
+    /// parameter consumes all remaining arguments and delegates dispatch to its
+    /// subsignature, so for arity counting it behaves like a slurpy capture.
+    pub(crate) fn is_capture_subsignature(&self) -> bool {
+        self.sub_signature.is_some()
+            && self.type_constraint.is_none()
+            && self.literal_value.is_none()
+            && ((self.slurpy && self.sigilless) || self.name == "__subsig__")
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FunctionDef {
     pub(crate) package: Symbol,

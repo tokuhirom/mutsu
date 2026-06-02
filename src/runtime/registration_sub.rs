@@ -303,13 +303,19 @@ impl Interpreter {
             } else {
                 def.param_defs
                     .iter()
-                    .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+                    .filter(|p| {
+                        !p.named
+                            && (!p.slurpy || p.name == "_capture")
+                            && !p.is_capture_subsignature()
+                    })
                     .count()
             };
             let type_sig: Vec<&str> = def
                 .param_defs
                 .iter()
-                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+                .filter(|p| {
+                    !p.named && (!p.slurpy || p.name == "_capture") && !p.is_capture_subsignature()
+                })
                 .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
                 .collect();
             let has_types = type_sig.iter().any(|t| *t != "Any");
@@ -701,11 +707,15 @@ impl Interpreter {
             }
             let arity = param_defs
                 .iter()
-                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+                .filter(|p| {
+                    !p.named && (!p.slurpy || p.name == "_capture") && !p.is_capture_subsignature()
+                })
                 .count();
             let type_sig: Vec<&str> = param_defs
                 .iter()
-                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+                .filter(|p| {
+                    !p.named && (!p.slurpy || p.name == "_capture") && !p.is_capture_subsignature()
+                })
                 .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
                 .collect();
             let has_types = type_sig.iter().any(|t| *t != "Any");

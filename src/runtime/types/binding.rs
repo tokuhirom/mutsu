@@ -714,6 +714,17 @@ impl Interpreter {
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 }
+            } else if pd.name == "__subsig__"
+                && let Some(sub_params) = &pd.sub_signature
+            {
+                // An anonymous capture `|(...)` consumes ALL remaining arguments
+                // (positional and named) and binds them via its subsignature.
+                // This must happen even when no arguments remain, so that an
+                // empty capture `|()` binds successfully against a 0-arity call.
+                let capture = sub_signature_target_from_remaining_args(&args[positional_idx..]);
+                bind_sub_signature_from_value(self, sub_params, &capture)?;
+                positional_idx = args.len();
+                continue;
             } else {
                 // Positional param -- skip over Value::Pair entries (named args)
                 while positional_idx < args.len()
@@ -725,15 +736,6 @@ impl Interpreter {
                     positional_idx += 1;
                 }
                 if positional_idx < args.len() {
-                    if pd.name == "__subsig__"
-                        && let Some(sub_params) = &pd.sub_signature
-                    {
-                        let capture =
-                            sub_signature_target_from_remaining_args(&args[positional_idx..]);
-                        bind_sub_signature_from_value(self, sub_params, &capture)?;
-                        positional_idx = args.len();
-                        continue;
-                    }
                     let is_rw = pd.traits.iter().any(|t| t == "rw");
                     let is_raw = pd.traits.iter().any(|t| t == "raw");
                     if is_rw || is_raw {
