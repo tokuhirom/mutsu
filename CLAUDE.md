@@ -432,8 +432,8 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 ## Agent workflow
 
-- **Do not ask before launching agents.** When an agent completes, immediately launch the next task from PLAN.md or BLOCKERS.md. Asking "should I continue?" wastes time.
-- Always maintain up to 4 concurrent agents (not more, to avoid quota exhaustion).
+- **Do not launch sub-agents unless explicitly asked.** The default is single-threaded work: implement, verify, commit, and open a PR yourself. Roast coverage is now in its final stretch (remaining tests are mostly hard, multi-prerequisite, or niche single files), and Rust builds are expensive — every parallel agent multiplies `cargo build`/`clippy`/`make test` cost and accumulates large `target/` worktrees. The coordination overhead (PR conflicts, rebases, merge ordering) no longer pays for itself. Only fan out to sub-agents when the user explicitly requests parallel work.
+- When parallel work *is* requested, maintain at most 4 concurrent agents (not more, to avoid quota exhaustion).
 - **Task selection order:**
   1. PLAN.md current quarter priorities
   2. BLOCKERS.md highest-impact missing features
