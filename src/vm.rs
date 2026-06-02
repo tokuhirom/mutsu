@@ -1149,10 +1149,47 @@ impl VM {
                 if is_rebind {
                     self.rebind_context = false;
                 }
-                let name = match &code.constants[*name_idx as usize] {
-                    Value::Str(s) => s.to_string(),
+                let name_str = match &code.constants[*name_idx as usize] {
+                    Value::Str(s) => s.as_str(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
+                // Fast path for the anonymous state scalar (`$` and `$.` desugaring).
+                // `__ANON_STATE__` is a synthetic internal name that can never be a
+                // private attribute, package/class, sigilless-bound alias, or strict-
+                // undeclared symbol, so the heavy general store path below (including
+                // the O(env) reverse-alias scan, shared-var sync, and our-var store)
+                // is unnecessary. This is extremely hot in tight loops assigning to `$`.
+                // The remaining special cases (typed/readonly anon scalar, fatal-mode
+                // Failure explosion, `:=` container write-through, capture RHS) are
+                // excluded by the guards and fall through to the general path.
+                if name_str == "__ANON_STATE__"
+                    && !raw_mode
+                    && !is_rebind
+                    && !self.interpreter.fatal_mode
+                    && self
+                        .interpreter
+                        .var_type_constraint_fast(name_str)
+                        .is_none()
+                    && !self.interpreter.is_readonly(name_str)
+                    && !matches!(self.stack.last(), Some(Value::Capture { .. }))
+                    && !matches!(
+                        self.interpreter.env().get(name_str),
+                        Some(Value::ContainerRef(_))
+                    )
+                {
+                    let val = self.stack.pop().unwrap_or(Value::Nil);
+                    // Preserve `$` state persistence across closure calls.
+                    self.sync_anon_state_value("__ANON_STATE__", &val);
+                    let sym = Symbol::intern("__ANON_STATE__");
+                    if let Some(slot) = self.interpreter.env_mut().get_mut_sym(sym) {
+                        *slot = val;
+                    } else {
+                        self.interpreter.env_mut().insert_sym(sym, val);
+                    }
+                    *ip += 1;
+                    return Ok(());
+                }
+                let name = name_str.to_string();
                 // Reject private attribute twigil (!) assignment when no self is available
                 {
                     let bare = name.trim_start_matches(['$', '@', '%', '&']);

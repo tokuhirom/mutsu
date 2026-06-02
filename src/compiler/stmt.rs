@@ -1005,7 +1005,12 @@ impl Compiler {
                 let name_idx = self
                     .code
                     .add_constant(Value::str(effective_name.to_string()));
-                if !matches!(op, AssignOp::Bind) {
+                // The anonymous state scalar (`$`, compiled as `__ANON_STATE__`)
+                // can never be readonly via the sigilless-binding mechanism, and
+                // SetGlobal performs its own readonly_vars check, so the extra
+                // CheckReadOnly op (which allocates a `__mutsu_sigilless_readonly::`
+                // lookup key on every assignment) is pure overhead here.
+                if !matches!(op, AssignOp::Bind) && effective_name != "__ANON_STATE__" {
                     self.code.emit(OpCode::CheckReadOnly(name_idx));
                 }
                 if matches!(op, AssignOp::Bind) {
