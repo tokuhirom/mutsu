@@ -464,12 +464,66 @@ impl Interpreter {
                 _ => Self::value_to_list(&target),
             }
         };
+        // In Raku, `.map` returns a lazy Seq. mutsu evaluates map eagerly for
+        // performance, which is observationally equivalent except when the
+        // callback contains a `return`: that `return` targets the lexically
+        // enclosing routine, and if the Seq is forced after that routine has
+        // exited it must surface as `X::ControlFlow::Return` with
+        // out-of-dynamic-scope set. To get that right without making every map
+        // lazy (which perturbs list shape/context in many call sites), only
+        // defer evaluation when the callback body actually contains a `return`.
+        if let Some(Value::Sub(sub_data)) = args.first()
+            && Self::body_contains_return(&sub_data.body)
+        {
+            return Ok(self.create_lazy_map_list(items, sub_data));
+        }
         let result = self.eval_map_over_items(args.first().cloned(), items)?;
         // .map() returns a Seq per Raku spec
         Ok(match result {
             Value::Array(items, _) => Value::Seq(items),
             other => other,
         })
+    }
+
+    /// Create a `LazyList` that lazily maps `callback` over `items`.
+    ///
+    /// Instead of eagerly evaluating the map, stores the items and callback
+    /// in a `LazyList`. When the list is forced, `eval_map_over_items` runs
+    /// the callback for each item. This ensures that `return` inside the
+    /// callback correctly detects when the lexically enclosing routine has
+    /// already exited (out-of-dynamic-scope).
+    fn create_lazy_map_list(
+        &self,
+        items: Vec<Value>,
+        callback: &std::sync::Arc<crate::value::SubData>,
+    ) -> Value {
+        let mut env = self.env.clone();
+        env.insert(
+            "__mutsu_lazy_map_items".to_string(),
+            Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List),
+        );
+        env.insert(
+            "__mutsu_lazy_map_func".to_string(),
+            Value::Sub(callback.clone()),
+        );
+        // Mark as gather-based so the VM auto-forces it for chained methods.
+        env.insert(
+            "__mutsu_lazylist_from_gather".to_string(),
+            Value::Bool(true),
+        );
+
+        let list = crate::value::LazyList {
+            body: Vec::new(),
+            env,
+            cache: std::sync::Mutex::new(None),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: None,
+            sequence_spec: None,
+            coroutine: None,
+        };
+        Value::LazyList(std::sync::Arc::new(list))
     }
 
     /// Dispatch "min" and "max" methods.
