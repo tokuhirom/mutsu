@@ -732,6 +732,14 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // Hyper meta-operators called via their subroutine name, e.g.
+        // `&infix:<<<+>>>(@a, @b)` / `&infix:<»+«>(@a, @b)`. Apply the inner
+        // operator elementwise according to the dwim sides.
+        if args.len() == 2
+            && let Some((inner, dwim_left, dwim_right)) = parse_hyper_infix(op)
+        {
+            return self.apply_hyper_infix(inner, dwim_left, dwim_right, &args[0], &args[1]);
+        }
         let is_set_op = matches!(
             op,
             "(-)"
@@ -1580,4 +1588,102 @@ impl Interpreter {
             _ => TokenKind::Ident(op.to_string()),
         }
     }
+
+    /// Apply a hyper meta-operator elementwise. `inner` is the inner operator
+    /// (e.g. `+`), and `dwim_left`/`dwim_right` indicate which side may be
+    /// recycled (the pointy end of `»`/`«`).
+    fn apply_hyper_infix(
+        &mut self,
+        inner: &str,
+        dwim_left: bool,
+        dwim_right: bool,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let left_list = Self::value_to_list(left);
+        let right_list = Self::value_to_list(right);
+        let left_len = left_list.len();
+        let right_len = right_list.len();
+        if left_len == 0 && right_len == 0 {
+            return Ok(Value::array(Vec::new()));
+        }
+        let result_len = if !dwim_left && !dwim_right {
+            if left_len != right_len {
+                return Err(RuntimeError::new(format!(
+                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
+                    left_len, right_len
+                )));
+            }
+            left_len
+        } else if dwim_left && dwim_right {
+            std::cmp::max(left_len, right_len)
+        } else if dwim_right {
+            left_len
+        } else {
+            right_len
+        };
+        let mut results = Vec::with_capacity(result_len);
+        for i in 0..result_len {
+            let l = if left_len == 0 {
+                Value::Int(0)
+            } else {
+                left_list[i % left_len].clone()
+            };
+            let r = if right_len == 0 {
+                Value::Int(0)
+            } else {
+                right_list[i % right_len].clone()
+            };
+            let infix_name = format!("infix:<{}>", inner);
+            let pair_result = if let Some(v) =
+                self.resolve_function_with_types(&infix_name, &[l.clone(), r.clone()])
+            {
+                self.call_function_def(&v, &[l, r])?
+            } else {
+                Self::apply_reduction_op(inner, &l, &r)?
+            };
+            results.push(pair_result);
+        }
+        Ok(Value::real_array(results))
+    }
+}
+
+/// Parse a hyper meta-operator name into `(inner_op, dwim_left, dwim_right)`.
+/// Recognizes both ASCII (`<<`/`>>`) and Unicode (`«`/`»`) delimiters.
+///
+/// The dwimmy side (the one that may be recycled) is the one whose delimiter
+/// points "outward" away from the operator. Verified against the reference
+/// implementation:
+///   `[1,2,3] »+» [4]`  => `5 6 7`   (right dwims; result length = left)
+///   `[1] «+« [4,5,6]`  => `5 6 7`   (left dwims;  result length = right)
+///   `[1] «+» [4,5,6]`  => dwim both (result length = max)
+///   `[1] »+« [4,5,6]`  => non-dwimmy (length mismatch is an error)
+/// So: left `«`/`<<` => dwim left; right `»`/`>>` => dwim right.
+fn parse_hyper_infix(op: &str) -> Option<(&str, bool, bool)> {
+    let (after_left, dwim_left) = if let Some(rest) = op.strip_prefix("<<") {
+        (rest, true)
+    } else if let Some(rest) = op.strip_prefix('\u{00AB}') {
+        (rest, true)
+    } else if let Some(rest) = op.strip_prefix(">>") {
+        (rest, false)
+    } else if let Some(rest) = op.strip_prefix('\u{00BB}') {
+        (rest, false)
+    } else {
+        return None;
+    };
+    let (inner, dwim_right) = if let Some(rest) = after_left.strip_suffix(">>") {
+        (rest, true)
+    } else if let Some(rest) = after_left.strip_suffix('\u{00BB}') {
+        (rest, true)
+    } else if let Some(rest) = after_left.strip_suffix("<<") {
+        (rest, false)
+    } else if let Some(rest) = after_left.strip_suffix('\u{00AB}') {
+        (rest, false)
+    } else {
+        return None;
+    };
+    if inner.is_empty() {
+        return None;
+    }
+    Some((inner, dwim_left, dwim_right))
 }

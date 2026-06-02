@@ -523,12 +523,20 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
         for cn in &mro {
-            if let Some(overloads) = self
+            // An MRO entry may be a regular class or a punned role used as a
+            // parent (`class Foo is R1 { ... }`). Role methods are stored in
+            // `self.roles`, so fall back there when the entry is not a class.
+            let overloads = self
                 .classes
                 .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
-                .cloned()
-            {
+                .or_else(|| {
+                    self.roles
+                        .get(cn.as_str())
+                        .and_then(|r| r.methods.get(method_name))
+                })
+                .cloned();
+            if let Some(overloads) = overloads {
                 let is_ancestor = cn != class_name;
                 for def in overloads {
                     if def.is_private {

@@ -1058,6 +1058,10 @@ impl VM {
             "$" => name.to_string(),
             "@" => format!("@{}", name),
             "%" => format!("%{}", name),
+            // Code variables (`&::("infix:<times>")`) must be stored under the
+            // `&`-sigilled name so that operator dispatch can find the closure
+            // via its `&infix:<...>` env key.
+            "&" => format!("&{}", name),
             _ => name.to_string(),
         };
         // For $ sigil (item context), take only first element if value is a list.
