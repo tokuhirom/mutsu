@@ -464,11 +464,17 @@ impl Interpreter {
                 _ => Self::value_to_list(&target),
             }
         };
-        // Create a lazy map Seq (gather/take) when the callback is a Sub closure.
-        // In Raku, .map always returns a lazy Seq. Deferring callback execution
-        // ensures that `return` inside the callback correctly detects when the
-        // lexically enclosing routine has already exited (out-of-dynamic-scope).
-        if let Some(Value::Sub(sub_data)) = args.first() {
+        // In Raku, `.map` returns a lazy Seq. mutsu evaluates map eagerly for
+        // performance, which is observationally equivalent except when the
+        // callback contains a `return`: that `return` targets the lexically
+        // enclosing routine, and if the Seq is forced after that routine has
+        // exited it must surface as `X::ControlFlow::Return` with
+        // out-of-dynamic-scope set. To get that right without making every map
+        // lazy (which perturbs list shape/context in many call sites), only
+        // defer evaluation when the callback body actually contains a `return`.
+        if let Some(Value::Sub(sub_data)) = args.first()
+            && Self::body_contains_return(&sub_data.body)
+        {
             return Ok(self.create_lazy_map_list(items, sub_data));
         }
         let result = self.eval_map_over_items(args.first().cloned(), items)?;

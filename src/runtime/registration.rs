@@ -718,6 +718,56 @@ impl Interpreter {
         err
     }
 
+    /// Returns true if the statement list contains a `return` statement
+    /// (including a bare `return` with no value), descending into nested
+    /// control-flow blocks but not into nested routine declarations.
+    ///
+    /// Used to decide whether a `.map` callback must be evaluated lazily: a
+    /// `return` inside a map block targets the lexically enclosing routine, so
+    /// the callback must be deferred until the Seq is forced to get the correct
+    /// out-of-dynamic-scope semantics. Plain map blocks (the overwhelming
+    /// majority) keep eager evaluation.
+    pub(crate) fn body_contains_return(stmts: &[Stmt]) -> bool {
+        for stmt in stmts {
+            match stmt {
+                Stmt::Return(_) => return true,
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    if Self::body_contains_return(then_branch)
+                        || Self::body_contains_return(else_branch)
+                    {
+                        return true;
+                    }
+                }
+                Stmt::While { body, .. }
+                | Stmt::React { body }
+                | Stmt::SyntheticBlock(body)
+                | Stmt::Block(body)
+                | Stmt::Subtest { body, .. }
+                | Stmt::For { body, .. } => {
+                    if Self::body_contains_return(body) {
+                        return true;
+                    }
+                }
+                Stmt::Loop { init, body, .. } => {
+                    if let Some(init) = init
+                        && Self::body_contains_return(std::slice::from_ref(init.as_ref()))
+                    {
+                        return true;
+                    }
+                    if Self::body_contains_return(body) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     pub(super) fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
         for stmt in stmts {
             match stmt {

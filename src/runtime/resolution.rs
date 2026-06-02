@@ -861,49 +861,26 @@ impl Interpreter {
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }
-        // Lazy map: evaluate the stored callback over the stored items.
-        // Since the map is forced outside the lexically enclosing routine,
-        // `return` inside the callback is out-of-dynamic-scope and must
-        // throw X::ControlFlow::Return. We call the callback via
-        // call_sub_value and convert any CX::Return signal accordingly.
+        // Lazy map: evaluate the stored callback over the stored items now.
+        //
+        // `.map` returns a lazy Seq in Raku, so the callback runs only when the
+        // Seq is forced. By deferring evaluation to this point we get the
+        // correct out-of-dynamic-scope behaviour for `return` inside the
+        // callback for free: if the lexically enclosing routine has already
+        // exited (it is no longer on the dynamic call stack), the existing
+        // CX::Return propagation machinery (calls.rs / the top-level VM loop)
+        // converts the signal into `X::ControlFlow::Return` with
+        // out-of-dynamic-scope set. Delegating to `eval_map_over_items` keeps
+        // full fidelity with eager map: block arity > 1, Slip flattening,
+        // LAST/NEXT phasers, and composed callbacks all behave identically.
         if let (Some(map_items), Some(map_func)) = (
             list.env.get("__mutsu_lazy_map_items"),
             list.env.get("__mutsu_lazy_map_func"),
         ) {
             let items_list = crate::runtime::value_to_list(map_items);
-            // Save the current active callable ID so we can check whether
-            // the CX::Return target is still on the dynamic call stack.
-            let active_callable_id = self.env.get("__mutsu_callable_id").and_then(|v| match v {
-                Value::Int(id) => Some(*id as u64),
-                _ => None,
-            });
-            let mut result_items = Vec::new();
-            for item in items_list {
-                match self.call_sub_value(map_func.clone(), vec![item], true) {
-                    Ok(val) => match val {
-                        Value::Slip(elems) => result_items.extend(elems.iter().cloned()),
-                        v => result_items.push(v),
-                    },
-                    Err(e) if e.is_next => {}
-                    Err(e) if e.is_last => break,
-                    Err(e) if e.is_return => {
-                        // CX::Return inside a lazy map callback: check if
-                        // the target routine is still on the dynamic call
-                        // stack by comparing with the active callable ID.
-                        if let Some(target_id) = e.return_target_callable_id
-                            && active_callable_id == Some(target_id)
-                        {
-                            // Target routine is the current active one
-                            // — propagate the CX::Return normally.
-                            return Err(e);
-                        }
-                        // Target routine is not active or has no ID —
-                        // convert to X::ControlFlow::Return.
-                        return Err(RuntimeError::controlflow_return(true));
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
+            let func = map_func.clone();
+            let result = self.eval_map_over_items(Some(func), items_list)?;
+            let result_items = crate::runtime::value_to_list(&result);
             *list.cache.lock().unwrap() = Some(result_items.clone());
             return Ok(result_items);
         }
@@ -2068,7 +2045,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_next => {}
                     Err(e) if e.is_last => break,
-                    Err(e) => {
+                    Err(mut e) => {
                         *self = vm.into_interpreter();
                         for (k, orig) in &saved {
                             match orig {
@@ -2079,6 +2056,18 @@ impl Interpreter {
                                     self.env.remove(k);
                                 }
                             }
+                        }
+                        // A `return` inside the map block targets the routine
+                        // that lexically encloses the block. Stamp the signal
+                        // with that routine's callable id (captured in the
+                        // closure env) so propagation/out-of-dynamic-scope
+                        // detection works when the map is forced lazily after
+                        // the enclosing routine has exited.
+                        if e.is_return
+                            && e.return_target_callable_id.is_none()
+                            && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
+                        {
+                            e.return_target_callable_id = Some(*id as u64);
                         }
                         return Err(e);
                     }
