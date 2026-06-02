@@ -36,6 +36,48 @@ if [ "$NEED_RESTART" = true ]; then
     sleep 5
 fi
 
+echo "=== Ensuring host network forwarding for incusbr0 ==="
+# When Docker is installed it sets the iptables FORWARD policy to DROP, which
+# also blocks traffic forwarded from the incus bridge (incusbr0). The VM can
+# then reach its gateway but not the internet, breaking every apt/curl below.
+# Insert ACCEPT rules into Docker's DOCKER-USER chain (idempotent) so incus VM
+# traffic is forwarded. Also install a systemd unit so this survives reboots
+# without needing iptables-persistent (which conflicts with ufw on Pop!_OS).
+BRIDGE=$(incus network get incusbr0 ipv4.address >/dev/null 2>&1 && echo incusbr0 || true)
+BRIDGE="${BRIDGE:-incusbr0}"
+if command -v docker &>/dev/null && command -v iptables &>/dev/null; then
+    if sudo iptables -L DOCKER-USER -n >/dev/null 2>&1; then
+        sudo iptables -C DOCKER-USER -i "$BRIDGE" -j ACCEPT 2>/dev/null \
+            || sudo iptables -I DOCKER-USER -i "$BRIDGE" -j ACCEPT
+        sudo iptables -C DOCKER-USER -o "$BRIDGE" -j ACCEPT 2>/dev/null \
+            || sudo iptables -I DOCKER-USER -o "$BRIDGE" -j ACCEPT
+        echo "DOCKER-USER ACCEPT rules for $BRIDGE ensured"
+
+        # Persist via a systemd oneshot service (avoids iptables-persistent/ufw conflict).
+        UNIT=/etc/systemd/system/incus-docker-forward.service
+        if [ ! -f "$UNIT" ]; then
+            sudo tee "$UNIT" >/dev/null <<EOF
+[Unit]
+Description=Allow forwarding for $BRIDGE through Docker's FORWARD DROP policy
+After=docker.service incus.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -i $BRIDGE -j ACCEPT 2>/dev/null || iptables -I DOCKER-USER -i $BRIDGE -j ACCEPT'
+ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -o $BRIDGE -j ACCEPT 2>/dev/null || iptables -I DOCKER-USER -o $BRIDGE -j ACCEPT'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            sudo systemctl daemon-reload
+            sudo systemctl enable --now incus-docker-forward.service
+            echo "Installed and enabled incus-docker-forward.service"
+        fi
+    fi
+fi
+
 echo "=== Updating packages ==="
 incus exec "$VM" -- apt-get update -qq
 incus exec "$VM" -- apt-get upgrade -y -qq
