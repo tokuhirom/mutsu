@@ -100,6 +100,8 @@ pub(super) fn try_keyword_dispatch(
                     base: routine_type,
                     predicate,
                     version: super::super::simple::current_language_version(),
+                    is_export: false,
+                    export_tags: Vec::new(),
                 },
             )));
         }

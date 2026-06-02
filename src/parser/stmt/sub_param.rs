@@ -1697,6 +1697,8 @@ fn method_decl_body_with_my(
                 })
                 .cloned()
                 .collect(),
+            is_export: traits.is_export,
+            export_tags: traits.export_tags.clone(),
         },
     ))
 }

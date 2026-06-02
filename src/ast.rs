@@ -746,6 +746,10 @@ pub(crate) enum Stmt {
         handles: Vec<HandleSpec>,
         /// Custom `is` traits (non-builtin trait names) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// `is export` on the method: when a class/role is imported, exported
+        /// methods are made available as their sub-form (e.g. operator subs).
+        is_export: bool,
+        export_tags: Vec<String>,
     },
     RoleDecl {
         name: Symbol,
@@ -776,6 +780,8 @@ pub(crate) enum Stmt {
         base: String,
         predicate: Option<Expr>,
         version: String,
+        is_export: bool,
+        export_tags: Vec<String>,
     },
     Phaser {
         kind: PhaserKind,

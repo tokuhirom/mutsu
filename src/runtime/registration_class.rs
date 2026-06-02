@@ -1610,6 +1610,8 @@ impl Interpreter {
                     deprecated_message,
                     handles: method_handles,
                     custom_traits: method_custom_traits,
+                    is_export: method_is_export,
+                    export_tags: method_export_tags,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
@@ -1764,6 +1766,23 @@ impl Interpreter {
                                 .methods
                                 .insert(resolved_method_name.clone(), vec![def]);
                         }
+                    }
+                    // A method declared `is export` is recorded as an export of
+                    // the enclosing class so that `import ClassName` succeeds
+                    // (and exposes the method's sub-form name). This is mainly
+                    // used by operator methods such as `method infix:<as> is
+                    // export`, whose sub-form is importable.
+                    if *method_is_export && !self.suppress_exports {
+                        let tags = if method_export_tags.is_empty() {
+                            vec!["DEFAULT".to_string()]
+                        } else {
+                            method_export_tags.clone()
+                        };
+                        self.register_exported_var(
+                            name.to_string(),
+                            format!("&{}", resolved_method_name),
+                            tags,
+                        );
                     }
                     // Apply custom trait_mod:<is> for each non-builtin trait on methods
                     if !method_custom_traits.is_empty() {
@@ -2879,6 +2898,8 @@ impl Interpreter {
                     deprecated_message: _,
                     handles: method_handles,
                     custom_traits: _,
+                    is_export: _,
+                    export_tags: _,
                 } => {
                     // Validate that $!attr references in the method body are declared
                     // in this role (same check as for class methods).
