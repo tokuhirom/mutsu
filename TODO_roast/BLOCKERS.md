@@ -197,11 +197,24 @@ WhateverCode (*) in certain contexts: dummy assignment to *, &infix:<+>(*, 42) n
 
 ## Sprintf / Format Edge Cases (2 tests)
 
-The 6.d/S32-str/sprintf*.t suites all pass now. The non-6.d sprintf.t (zprintf) has roast test bugs.
+The 6.d/S32-str/sprintf*.t suites all pass now. The non-6.d sprintf.t (zprintf) has roast test bugs. The `Format` class (6.e) is now implemented; format.t is blocked on RakuAST.
 
-**Fail (roast test bugs):**
-- roast/S32-str/sprintf.t (166/174 pass; 8 failures from buggy test expectations)
-- roast/S32-str/format.t
+**Fail (roast test bugs — cannot pass as written):**
+- roast/S32-str/sprintf.t (166/174 pass; the 8 failures, tests 71-74 and
+  101-104, have buggy expected values — `%5.2g` cases expect a `g`/`G` exponent
+  letter while the parallel `%20.2g` cases correctly expect `e`/`E`, and the
+  `%020.2g` cases expect mantissa `34.1` where the un-padded twins expect the
+  correct `3.14`. mutsu is self-consistent. See TODO_roast/S32.md.)
+
+**Blocked on RakuAST:**
+- roast/S32-str/format.t (26/49 reachable tests now pass; was 0). The Format
+  class — `Format.new`, `~~ Format`, `.arity`/`.count`/`.Callable`, `CALL-ME`,
+  stringification, and full `.fmt($format, $sep)` integration with arity-aware
+  batching and `X::Str::Sprintf::Directives::Count` — is implemented, plus
+  string interpolation of postcircumfix calls (`"$f()"`). The file aborts at
+  test 27 because `Formatter.AST` must return a `RakuAST::Node` (lines 50-52)
+  and mutsu has no RakuAST; a mid-file error aborts the remaining 23 `.fmt`
+  tests. Local coverage: t/format-class.t (40 tests).
 
 ## Unicode / Collation (6 tests)
 

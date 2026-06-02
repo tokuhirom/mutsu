@@ -1,6 +1,96 @@
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
+/// Count the number of arguments a sprintf-style format string consumes.
+/// This is the number of directives (excluding `%%`), counting `*` width/precision
+/// as additional sequential args, and using the highest positional index when
+/// `N$` positional directives are used. Used for `Format.count` / `Format.arity`.
+pub(crate) fn sprintf_directive_count(fmt: &str) -> usize {
+    let bytes = fmt.as_bytes();
+    let len = bytes.len();
+    let mut pos = 0usize;
+    let mut sequential_args = 0usize;
+    let mut max_positional = 0usize;
+    let mut uses_positional = false;
+    while pos < len {
+        if bytes[pos] != b'%' {
+            pos += 1;
+            continue;
+        }
+        pos += 1; // skip '%'
+        if pos < len && bytes[pos] == b'%' {
+            pos += 1;
+            continue;
+        }
+        // Positional argument specifier: N$
+        let mut positional_arg = None;
+        {
+            let start = pos;
+            while pos < len && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            if pos > start && pos < len && bytes[pos] == b'$' {
+                let n: usize = fmt[start..pos].parse().unwrap_or(0);
+                positional_arg = Some(n);
+                uses_positional = true;
+                pos += 1;
+            } else {
+                pos = start;
+            }
+        }
+        // Flags
+        while pos < len {
+            let b = bytes[pos];
+            if b == b'-' || b == b'+' || b == b' ' || b == b'#' || b == b'0' {
+                pos += 1;
+            } else {
+                break;
+            }
+        }
+        // Width
+        if pos < len && bytes[pos] == b'*' {
+            pos += 1;
+            if positional_arg.is_none() {
+                sequential_args += 1;
+            }
+        } else {
+            while pos < len && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+        }
+        // Precision
+        if pos < len && bytes[pos] == b'.' {
+            pos += 1;
+            if pos < len && bytes[pos] == b'*' {
+                pos += 1;
+                if positional_arg.is_none() {
+                    sequential_args += 1;
+                }
+            } else {
+                while pos < len && bytes[pos].is_ascii_digit() {
+                    pos += 1;
+                }
+            }
+        }
+        // Conversion specifier
+        if pos < len {
+            pos += 1;
+        }
+        if let Some(p) = positional_arg {
+            if p > max_positional {
+                max_positional = p;
+            }
+        } else {
+            sequential_args += 1;
+        }
+    }
+    if uses_positional {
+        max_positional
+    } else {
+        sequential_args
+    }
+}
+
 /// Validate sprintf format directives. Throws typed exceptions for:
 /// - Unsupported directives (X::Str::Sprintf::Directives::Unsupported)
 /// - Arg count mismatch (X::Str::Sprintf::Directives::Count)

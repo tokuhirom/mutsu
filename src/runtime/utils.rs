@@ -977,6 +977,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Whatever"
             | "WhateverCode"
             | "HyperWhatever"
+            | "Format"
             | "Version"
             | "Date"
             | "DateTime"

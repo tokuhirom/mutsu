@@ -1947,25 +1947,16 @@ impl Interpreter {
             return Ok(val);
         }
 
-        // Format instance dispatch
-        if let Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } = &target
-            && class_name == "Format"
+        // Format type-object / instance dispatch (new, arity, count, Callable,
+        // Str, gist, CALL-ME, ...).
+        if let Some(result) = self.dispatch_format_method(&target, method, &args) {
+            return result;
+        }
+        // <collection>.fmt($format) where $format is a Format object.
+        if method == "fmt"
+            && let Some(result) = self.dispatch_fmt_with_format(&target, &args)
         {
-            let fmt = attributes
-                .get("format")
-                .map(Value::to_string_value)
-                .unwrap_or_default();
-            match method {
-                "CALL-ME" => {
-                    return Ok(Value::str(super::sprintf::format_sprintf_args(&fmt, &args)));
-                }
-                "Str" | "gist" => return Ok(Value::str(fmt)),
-                _ => {}
-            }
+            return result;
         }
         // Match.make
         if let Value::Instance {

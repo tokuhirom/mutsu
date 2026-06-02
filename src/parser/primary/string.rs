@@ -1404,6 +1404,55 @@ pub(super) fn process_escape_sequence<'a>(
     Ok(Some((after_escape, false)))
 }
 
+/// Try to parse a postcircumfix call on an interpolated variable: "$var()" or "$var(args)".
+/// In Raku, `"$callable(args)"` invokes the callable during interpolation. Only triggers
+/// when `(` immediately follows the variable (or its index/postcircumfix). The argument
+/// text must not contain a nested string delimiter, since the surrounding string scanner
+/// does not balance quotes inside interpolation.
+fn try_parse_interp_call(input: &str, target: Expr) -> (Expr, &str) {
+    if !input.starts_with('(') {
+        return (target, input);
+    }
+    // Find the matching close paren, respecting nesting.
+    let mut depth = 0usize;
+    let mut paren_end = None;
+    for (idx, ch) in input.char_indices() {
+        if ch == '(' {
+            depth += 1;
+        } else if ch == ')' {
+            depth -= 1;
+            if depth == 0 {
+                paren_end = Some(idx);
+                break;
+            }
+        }
+    }
+    let Some(pe) = paren_end else {
+        return (target, input);
+    };
+    let args_str = &input[1..pe];
+    let after = &input[pe + 1..];
+    let args = if args_str.trim().is_empty() {
+        vec![]
+    } else {
+        let mut args = vec![];
+        for arg in args_str.split(',') {
+            let arg = arg.trim();
+            if let Ok((_, e)) = crate::parser::expr::expression(arg) {
+                args.push(e);
+            }
+        }
+        args
+    };
+    (
+        Expr::CallOn {
+            target: Box::new(target),
+            args,
+        },
+        after,
+    )
+}
+
 /// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
 /// Only recognizes simple identifier method names followed by `()` (no args).
 /// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
@@ -1959,6 +2008,8 @@ pub(super) fn try_interpolate_var<'a>(
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
             let (expr, var_rest) = parse_postcircumfix_index(var_rest, Expr::Var(var_name));
+            // Handle postcircumfix call interpolation: "$var()" / "$var(args)"
+            let (expr, var_rest) = try_parse_interp_call(var_rest, expr);
             // Handle method call interpolation: "$var.method()" or "$var.method"
             let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);

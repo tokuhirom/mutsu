@@ -1402,6 +1402,12 @@ pub(crate) fn native_method_1arg(
             }
         }
         "fmt" => {
+            // A Format object argument is handled by the slow-path Format dispatch
+            // (arity-aware batching, separators, X::Str::Sprintf::Directives::Count).
+            if matches!(arg, Value::Instance { class_name, .. } if class_name.resolve() == "Format")
+            {
+                return None;
+            }
             let fmt = arg.to_string_value();
             if let Value::Hash(items) = target {
                 // Hash.fmt(format): format each key-value pair, join with "\n"
@@ -2815,6 +2821,11 @@ pub(crate) fn native_method_2arg(
             }
         }
         "fmt" => {
+            // A Format object argument is handled by the slow-path Format dispatch.
+            if matches!(arg1, Value::Instance { class_name, .. } if class_name.resolve() == "Format")
+            {
+                return None;
+            }
             let fmt_str = arg1.to_string_value();
             let sep = arg2.to_string_value();
             if let Value::Hash(items) = target {

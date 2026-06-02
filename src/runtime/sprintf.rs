@@ -5,7 +5,9 @@ use super::sprintf_helpers::{
     apply_float_minus_zero, apply_width, format_float_fixed, format_g, format_inf_nan,
     format_rat_fixed, normalize_sci_exponent, sign_prefix,
 };
-pub(crate) use super::sprintf_validate::{validate_sprintf_arg_types, validate_sprintf_directives};
+pub(crate) use super::sprintf_validate::{
+    sprintf_directive_count, validate_sprintf_arg_types, validate_sprintf_directives,
+};
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     match arg {
