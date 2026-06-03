@@ -320,4 +320,102 @@ VM は env・クラスレジストリ・型検査・signature binder を Interpr
 
 ---
 
-*この分析は静的読解 + 実機再現に基づく。再現コマンドは 0 章および 2 章に記載。*
+## 8. 深掘り (Deep Dive) — 再現済み欠陥カタログと根本原因マッピング
+
+初版の指摘を、追加の実機調査でさらに具体化した。すべて mutsu 実バイナリ vs `raku` の
+実出力で確認済み。
+
+### 8.1 「遅延崩壊」は一様ではなく、特定メソッドに隔離されている (重要な精緻化)
+
+2.1 を切り分けた結果、無限 Range の遅延は**メソッドごとに当たり外れがある**。
+正しく遅延処理されるもの:
+
+```raku
+(1..Inf).map(* * 2)[^3]      # mutsu => (2 4 6)   OK
+(1..Inf).first(* %% 7)       # mutsu => 7         OK
+(1..Inf)[5]                  # mutsu => 6         OK
+(1..Inf).head(3)             # mutsu => (1 2 3)   OK
+(1..Inf).kv.head(4)          # mutsu => (0 1 1 2) OK
+(1..Inf).elems               # mutsu => "Cannot .elems a lazy list"  OK (正しく throw)
+```
+
+崩壊するもの (Rust パニック → プロセスクラッシュ):
+
+```raku
+(1..Inf).grep(* %% 2)[^3]    # mutsu => thread panicked: capacity overflow / exit 101
+(1..Inf).grep(* %% 2).head(3)# mutsu => 同上クラッシュ          (raku は両方 (2 4 6))
+(1..Inf).grep(*.is-prime)[^5]# mutsu => 同上クラッシュ          (raku は (2 3 5 7 11))
+```
+
+→ `map`/`first`/`head`/`[]`/`kv` は Range の遅延を尊重するが、**`grep` は Range を即時 collect** する。
+原因は「遅延が未実装」ではなく「**eager 展開する経路と遅延を尊重する経路が混在し、ガードも不統一**」
+であること。これは初版 2.1 より正確で、修正は「全面書き換え」ではなく「`grep` 等の落ちる経路を
+遅延イテレータ経由に揃える」ことだと示唆する。
+
+### 8.2 系統的欠陥: 無ガードの Range 即時展開が 43 箇所、ガードは 9 箇所のみ
+
+`(a..=b).map(Value::Int).collect()` という **無限 Range を `Vec<Value>` に即時展開するパターンが
+src 全体で 43 箇所**存在する (`builtins/methods_0arg/coercion.rs:249,256,308,...`,
+`runtime/utils.rs:630,1659,1668`, `runtime/methods_signature.rs:236` など)。一方
+上限ガード `MAX_ARRAY_EXPAND` (`runtime/utils.rs:10`) の参照は **9 箇所だけ**。
+つまり大多数の展開サイトは無ガードで、`b = i64::MAX` (無限 Range) が届いた瞬間に
+`capacity overflow` で**メインスレッド/ワーカースレッドが panic しプロセスごと落ちる**。
+これは単発バグではなく**欠陥クラス**であり、ユーザコードから容易に到達する Rust パニックは
+5 章で述べた「panic→`X::` 変換境界の不在」を裏付ける。
+**改善**: Range は `Value::Int` の Vec へ展開せず遅延イテレータ (pull) として扱う型を導入し、
+43 箇所の即時 collect を排除する。少なくとも全展開サイトを単一ヘルパ経由にしてガードを一元化する。
+
+### 8.3 並行: state 変数もスレッドへ反映されない (2.2 の追加確認)
+
+```raku
+sub f { state $n = 0; $n++ }
+await (^3).map: { start f() }
+say f();         # mutsu => 0     raku => 3
+```
+
+`start` ブロック内の `f()` が更新した `state $n` がスナップショットコピー
+(`clone_for_thread`) のため親へ反映されず、最終的に 0。2.2 の `$counter` 問題と同根で、
+レキシカル変数だけでなく state 変数でも共有が壊れている。
+
+### 8.4 正規表現の毎マッチ再パースを実測 (5 章の数値裏付け)
+
+`"hello world 123" ~~ /(\w+) \s+ (\w+) \s+ (\d+)/` を 20000 回ループ:
+
+| | 実行時間 |
+|---|---|
+| mutsu (インラインリテラル) | **3.43 s** |
+| mutsu (`my $rx = rx/.../;` で事前コンパイル) | **3.51 s** (改善せず) |
+| raku | **0.40 s** |
+
+→ mutsu は raku の約 **8.6 倍遅く**、しかも regex を変数に束ねても速くならない。
+これは `Value::Regex(Arc<String>)` (生文字列) が**マッチのたびに `parse_regex` で
+構造を再構築している**ことを定量的に裏付ける (5 章)。
+**改善**: パターン文字列 → コンパイル済み構造 (`RegexAtom` ツリー) のキャッシュを導入。
+
+### 8.5 根本原因 → roast ブロッカーの対応 (`TODO_roast/BLOCKERS.md`)
+
+`BLOCKERS.md` は ~170 件を 19 機能に分類している。本分析の根本原因と対応づけると、
+修正の投資対効果が見える:
+
+| 本分析の根本原因 | 対応する BLOCKERS グループ (件数) |
+|---|---|
+| 8.1/8.2 遅延リスト崩壊・無限 Range 即時展開 | Threading/Async (31) の hang の一部, gather/take Laziness (2), Hyper/Meta (5) |
+| 8.3/2.2 並行 state 共有・clone_for_thread | Threading/Concurrency/Async (31) の中核 |
+| 2.4 制御フローを Err で運ぶ god-struct | Exception Types / throws-like (19) の一部 |
+| 3.1 regex 二重実装 / 8.4 再パース | Regex/Match Advanced (12), Unicode/Collation (6) の一部 |
+| 4-2 `.^methods` 直書きリストのドリフト | Traits/Metaprogramming (7), Multi Dispatch (5) の introspection 依存分 |
+
+最大群の **Threading/Async (31 件)** は 8.2 (展開クラッシュ) と 8.3 (state 共有崩壊) の
+両方が効いており、**遅延イテレータ化 + ライブセル共有の 2 つを直すことが
+roast 残件の最大ボトルネックを崩す近道**である可能性が高い。
+
+### 8.6 初版からの訂正
+
+- `(1..Inf).elems` は mutsu でも正しく `Cannot .elems a lazy list` を throw する
+  (初版調査の一部メモは誤り)。遅延の問題は「一様な崩壊」ではなく「**経路ごとの不統一**」
+  (8.1) が正確な姿である。
+
+---
+
+*この分析は静的読解 + 実機再現に基づく。再現コマンドは 0・2・8 章に記載。
+深掘りで用いた一時スクリプトは `tmp/` (gitignored) に置いた。*
