@@ -1955,7 +1955,11 @@ impl VM {
         if list.is_empty() {
             self.stack.push(runtime::reduction_identity(&base_op));
         } else {
-            let is_comparison = runtime::is_chain_comparison_op(&base_op);
+            // Chain-associative operators (built-in comparisons and user-defined
+            // `is assoc<chain>` infixes) reduce as a conjunction of pairwise
+            // applications, not a left-fold.
+            let is_comparison =
+                runtime::is_chain_comparison_op(&base_op) || matches!(assoc, ReductionAssoc::Chain);
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {

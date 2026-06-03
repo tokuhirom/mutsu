@@ -284,6 +284,29 @@ impl Compiler {
         });
     }
 
+    /// Build the right-hand operand for a short-circuiting `Z` meta-op.
+    ///
+    /// For a literal list `(a, b, c)` we produce an array of per-element 0-arg
+    /// thunks so each element's side effects only fire when the operator needs
+    /// it. For any other expression we pass it through as a value (it is already
+    /// evaluated once, like a normal infix operand), and the runtime treats
+    /// non-thunk entries as plain values.
+    fn zip_shortcircuit_rhs_thunks(right: &Expr) -> Expr {
+        if let Expr::ArrayLiteral(items) = right {
+            let thunks = items
+                .iter()
+                .map(|item| Expr::AnonSub {
+                    body: vec![Stmt::Expr(item.clone())],
+                    is_rw: false,
+                    is_block: true,
+                })
+                .collect();
+            Expr::ArrayLiteral(thunks)
+        } else {
+            right.clone()
+        }
+    }
+
     /// Compile MetaOp (Rop, Xop, Zop).
     pub(super) fn compile_expr_meta_op(&mut self, meta: &str, op: &str, left: &Expr, right: &Expr) {
         if meta == "X" && matches!(op, "and" | "&&" | "or" | "||" | "andthen" | "orelse") {
@@ -316,15 +339,34 @@ impl Compiler {
             self.compile_expr(&rewritten);
             return;
         }
-        // Z with short-circuit operators: thunk the right side
-        if meta == "Z" && matches!(op, "and" | "&&" | "or" | "||" | "andthen" | "orelse") {
+        // Z with short-circuit operators: thunk each right-hand element so its
+        // side effects only fire when the operator actually needs the right
+        // operand. When the right side is a literal list we can thunk per
+        // element; otherwise we pass the pre-evaluated value directly.
+        if meta == "Z" && matches!(op, "and" | "&&" | "or" | "||") {
+            let thunks = Self::zip_shortcircuit_rhs_thunks(right);
+            let rewritten = Expr::Call {
+                name: Symbol::intern("__mutsu_zip_shortcircuit"),
+                args: vec![
+                    Expr::Literal(Value::str(op.to_string())),
+                    left.clone(),
+                    thunks,
+                ],
+            };
+            self.compile_expr(&rewritten);
+            return;
+        }
+        // Zandthen / Zorelse topicalize the right operand with the left value, so
+        // they keep a single whole-list thunk (per-element wrapping would create
+        // an implicit `$_` block parameter that shadows the topic).
+        if meta == "Z" && matches!(op, "andthen" | "orelse") {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(right.clone())],
                 is_rw: false,
                 is_block: true,
             };
             let rewritten = Expr::Call {
-                name: Symbol::intern("__mutsu_zip_shortcircuit"),
+                name: Symbol::intern("__mutsu_zip_shortcircuit_topic"),
                 args: vec![
                     Expr::Literal(Value::str(op.to_string())),
                     left.clone(),
