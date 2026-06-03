@@ -26,6 +26,15 @@ impl VM {
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
+        // A reduction operator used as the inner op of a hyper op, e.g.
+        // `(1,2) >>[+]<< (100,200)`. Reducing the base op over the two operands
+        // is just the base op applied once.
+        if let Some(inner) = op.strip_prefix('[')
+            && let Some(inner_op) = inner.strip_suffix(']')
+            && !inner_op.is_empty()
+        {
+            return self.eval_reduction_operator_values(inner_op, left, right);
+        }
         if let Some(inner_op) = op.strip_prefix('R')
             && !inner_op.is_empty()
         {
