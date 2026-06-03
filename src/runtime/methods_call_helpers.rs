@@ -292,6 +292,46 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Arc::new(items), kind))
             }
+            "splice" => {
+                // On a bare Array value (not a named variable) there is no
+                // container to write back to, so return the removed elements as
+                // a List, matching `@a.splice(...)`'s return value.
+                let len = items.len();
+                let resolve = |v: &Value| -> i64 {
+                    match v {
+                        Value::Int(i) => *i,
+                        Value::Whatever => len as i64,
+                        Value::Num(n) => *n as i64,
+                        Value::Str(s) => s.parse::<i64>().unwrap_or(0),
+                        Value::Mixin(inner, _) => match inner.as_ref() {
+                            Value::Int(i) => *i,
+                            _ => 0,
+                        },
+                        _ => 0,
+                    }
+                };
+                let start = (args.first().map(&resolve).unwrap_or(0).max(0) as usize).min(len);
+                let count = args
+                    .get(1)
+                    .map(&resolve)
+                    .unwrap_or((len - start) as i64)
+                    .max(0) as usize;
+                let end = (start + count).min(len);
+                let removed: Vec<Value> = items.drain(start..end).collect();
+                let mut replacement: Vec<Value> = Vec::new();
+                for arg in args.iter().skip(2) {
+                    match arg {
+                        Value::Array(arr, ..) | Value::Seq(arr) | Value::Slip(arr) => {
+                            replacement.extend(arr.iter().cloned())
+                        }
+                        other => replacement.push(other.clone()),
+                    }
+                }
+                for (i, item) in replacement.into_iter().enumerate() {
+                    items.insert(start + i, item);
+                }
+                Ok(Value::real_array(removed))
+            }
             _ => unreachable!(),
         }
     }
