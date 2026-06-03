@@ -208,15 +208,19 @@ impl Interpreter {
     }
 
     /// Zip with short-circuit semantics for and/&&/or/||/andthen/orelse.
-    /// Args: [op_name, left_list, right_thunk]
-    /// The right thunk is only evaluated per-element when the operator needs it.
+    /// Args: [op_name, left_list, right_thunks]
+    /// `right_thunks` is a list with one entry per right-hand element. Each entry
+    /// is either a 0-arg thunk (from a literal list, so side effects only fire
+    /// when the operator actually needs the right operand) or a plain value (from
+    /// a pre-evaluated right operand). Zip is 1:1, so element `i` of the left list
+    /// pairs with thunk `i`.
     pub(super) fn builtin_zip_shortcircuit(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         if args.len() != 3 {
             return Err(RuntimeError::new(
-                "__mutsu_zip_shortcircuit expects op, lhs, thunk",
+                "__mutsu_zip_shortcircuit expects op, lhs, thunks",
             ));
         }
         let op = args[0].to_string_value();
@@ -231,9 +235,11 @@ impl Interpreter {
                 list
             }
         };
-        let thunk = args[2].clone();
-        let mut out = Vec::new();
-        for left in left_values {
+        let right_thunks = crate::runtime::value_to_list(&args[2]);
+        let len = left_values.len().min(right_thunks.len());
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            let left = left_values[i].clone();
             let needs_rhs = match op.as_str() {
                 "and" | "&&" => left.truthy(),
                 "or" | "||" => !left.truthy(),
@@ -245,10 +251,14 @@ impl Interpreter {
                 out.push(left);
                 continue;
             }
-            let rhs_value = if op == "andthen" || op == "orelse" {
+            let entry = right_thunks[i].clone();
+            // A plain value (not a thunk) is used as-is; a thunk is evaluated now.
+            let rhs_value = if !matches!(entry, Value::Sub(_)) {
+                entry
+            } else if op == "andthen" || op == "orelse" {
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), left.clone());
-                let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+                let result = self.eval_call_on_value(entry, Vec::new());
                 match saved_topic {
                     Some(value) => {
                         self.env.insert("_".to_string(), value);
@@ -259,12 +269,65 @@ impl Interpreter {
                 }
                 result?
             } else {
-                self.eval_call_on_value(thunk.clone(), Vec::new())?
+                self.eval_call_on_value(entry, Vec::new())?
             };
-            // The thunk returns a list; zip pairs elements 1:1
+            out.push(rhs_value);
+        }
+        Ok(Value::array(out))
+    }
+
+    /// Zip with short-circuit semantics for `andthen`/`orelse`, which topicalize
+    /// the right operand with the corresponding left value. Args: [op, lhs,
+    /// whole_list_thunk]. The right operand is a single thunk over the whole
+    /// list so that referencing `$_` inside resolves to the topic we set rather
+    /// than an implicit block parameter.
+    pub(super) fn builtin_zip_shortcircuit_topic(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() != 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_zip_shortcircuit_topic expects op, lhs, thunk",
+            ));
+        }
+        let op = args[0].to_string_value();
+        let left_values = if matches!(args[1], Value::Nil) {
+            vec![Value::Nil]
+        } else {
+            let list = crate::runtime::value_to_list(&args[1]);
+            if list.is_empty() {
+                vec![args[1].clone()]
+            } else {
+                list
+            }
+        };
+        let thunk = args[2].clone();
+        let mut out = Vec::new();
+        for (i, left) in left_values.iter().enumerate() {
+            let needs_rhs = match op.as_str() {
+                "andthen" => crate::runtime::types::value_is_defined(left),
+                "orelse" => !crate::runtime::types::value_is_defined(left),
+                _ => false,
+            };
+            if !needs_rhs {
+                out.push(left.clone());
+                continue;
+            }
+            let saved_topic = self.env.get("_").cloned();
+            self.env.insert("_".to_string(), left.clone());
+            let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+            match saved_topic {
+                Some(value) => {
+                    self.env.insert("_".to_string(), value);
+                }
+                None => {
+                    self.env.remove("_");
+                }
+            }
+            let rhs_value = result?;
+            // The thunk returns the whole right list; pick element i (zip is 1:1).
             let rhs_items = crate::runtime::value_to_list(&rhs_value);
-            // Take the first element from the thunked result (zip is 1:1)
-            out.push(rhs_items.into_iter().next().unwrap_or(Value::Nil));
+            out.push(rhs_items.into_iter().nth(i).unwrap_or(Value::Nil));
         }
         Ok(Value::array(out))
     }

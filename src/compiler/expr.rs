@@ -347,6 +347,95 @@ impl Compiler {
                 // inline with short-circuit bytecode to preserve lazy evaluation semantics.
                 let base_op = op.strip_prefix('\\').unwrap_or(op.as_str());
                 let is_scan = op.starts_with('\\');
+                // `[Z&&]` / `[Z||]` / `[Zand]` / `[Zor]` etc. reduce a list of
+                // lists by left-folding the binary short-circuiting `Z` meta-op,
+                // which thunks its right operand. Rewrite into a left-nested
+                // MetaOp tree so the per-element thunking is preserved.
+                if !is_scan
+                    && let Some(zop) = base_op.strip_prefix('Z')
+                    && matches!(zop, "and" | "&&" | "or" | "||" | "andthen" | "orelse")
+                    && let Expr::ArrayLiteral(items) = expr.as_ref()
+                    && items.len() >= 2
+                {
+                    let mut iter = items.iter();
+                    let mut acc = iter.next().unwrap().clone();
+                    for item in iter {
+                        acc = Expr::MetaOp {
+                            meta: "Z".to_string(),
+                            op: zop.to_string(),
+                            left: Box::new(acc),
+                            right: Box::new(item.clone()),
+                        };
+                    }
+                    self.compile_expr(&acc);
+                    return;
+                }
+                // `[=:=]` / `[!=:=]` are chain-associative container-identity
+                // reductions. The binary `=:=` operator resolves container
+                // identity from the operand expressions (variable names / index
+                // sources), which is lost once operands are evaluated into a
+                // value list. Rewrite into a conjunction of pairwise binary
+                // comparisons so identity is preserved.
+                if !is_scan
+                    && matches!(base_op, "=:=" | "!=:=")
+                    && let Expr::ArrayLiteral(items) = expr.as_ref()
+                    && items.len() >= 2
+                {
+                    let negate = base_op == "!=:=";
+                    let mut acc: Option<Expr> = None;
+                    for pair in items.windows(2) {
+                        // `=:=` resolves container identity from the operand
+                        // expressions; `!=:=` is parsed as `!(... =:= ...)`.
+                        let mut cmp = Expr::Binary {
+                            left: Box::new(pair[0].clone()),
+                            op: TokenKind::Ident("=:=".to_string()),
+                            right: Box::new(pair[1].clone()),
+                        };
+                        if negate {
+                            cmp = Expr::Unary {
+                                op: TokenKind::Bang,
+                                expr: Box::new(cmp),
+                            };
+                        }
+                        acc = Some(match acc {
+                            None => cmp,
+                            Some(prev) => Expr::Binary {
+                                left: Box::new(prev),
+                                op: TokenKind::AndAnd,
+                                right: Box::new(cmp),
+                            },
+                        });
+                    }
+                    // Each `=:=` / `!=:=` yields a Bool, so the &&-chain result
+                    // is already a Bool (no further coercion needed).
+                    let combined = acc.unwrap();
+                    self.compile_expr(&combined);
+                    return;
+                }
+                // `[=] $a, $b, $c, 42` is a right-associative assignment reduce:
+                // `$a = ($b = ($c = 42))`. Rewrite into nested assignments so the
+                // values are written back through the variable containers.
+                if !is_scan
+                    && base_op == "="
+                    && let Expr::ArrayLiteral(items) = expr.as_ref()
+                    && items.len() >= 2
+                    && items[..items.len() - 1]
+                        .iter()
+                        .all(|e| matches!(e, Expr::Var(_)))
+                {
+                    let mut acc = items.last().unwrap().clone();
+                    for target in items[..items.len() - 1].iter().rev() {
+                        if let Expr::Var(name) = target {
+                            acc = Expr::AssignExpr {
+                                name: name.clone(),
+                                expr: Box::new(acc),
+                                is_bind: false,
+                            };
+                        }
+                    }
+                    self.compile_expr(&acc);
+                    return;
+                }
                 if matches!(
                     base_op,
                     "&&" | "||" | "and" | "or" | "//" | "andthen" | "orelse" | "^^" | "xor"

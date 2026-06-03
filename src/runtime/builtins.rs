@@ -214,6 +214,7 @@ impl Interpreter {
             "__mutsu_andthen_finalize" => self.builtin_andthen_finalize(&args),
             "__mutsu_cross_shortcircuit" => self.builtin_cross_shortcircuit(&args),
             "__mutsu_zip_shortcircuit" => self.builtin_zip_shortcircuit(&args),
+            "__mutsu_zip_shortcircuit_topic" => self.builtin_zip_shortcircuit_topic(&args),
             "__mutsu_zip_xx" => self.builtin_zip_xx(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
