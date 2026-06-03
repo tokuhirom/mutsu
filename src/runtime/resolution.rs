@@ -303,6 +303,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
     ) -> Option<(String, MethodDef)> {
+        self.dispatch_ambiguous = false;
         let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         let mro = self.class_mro(class_name);
         // Collect all matching multi candidates across the MRO, then pick the
@@ -420,11 +421,44 @@ impl Interpreter {
             if let Some(&i) = narrowed.first() {
                 best_idx = i;
             }
+            // Invocant specificity tie-break: candidates whose argument-type
+            // distance is equal can still differ in how derived their owning
+            // class is. A `multi method` defined on the receiver's own class is
+            // more specific than one inherited from an ancestor, so the
+            // most-derived owner (earliest in the MRO) wins rather than being
+            // treated as ambiguous.
+            let mro_index = |owner: &str| -> usize {
+                mro.iter()
+                    .position(|cn| cn.as_str() == owner)
+                    .unwrap_or(usize::MAX)
+            };
+            let best_mro = narrowed
+                .iter()
+                .map(|&i| mro_index(all_matches[i].0.as_str()))
+                .min()
+                .unwrap_or(usize::MAX);
+            let mro_narrowed: Vec<usize> = narrowed
+                .iter()
+                .copied()
+                .filter(|&i| mro_index(all_matches[i].0.as_str()) == best_mro)
+                .collect();
+            if let Some(&i) = mro_narrowed.first() {
+                best_idx = i;
+            }
+            let mut default_winner = false;
             for &i in &tied {
                 if all_matches[i].1.is_default {
                     best_idx = i;
+                    default_winner = true;
                     break;
                 }
+            }
+            // Ambiguous dispatch: two or more candidates remain equally specific
+            // (same type distance, same number of `where` constraints, and the
+            // same most-derived owner class) and none is marked `is default`.
+            // Raku raises X::Multi::Ambiguous here.
+            if !default_winner && mro_narrowed.len() > 1 {
+                self.dispatch_ambiguous = true;
             }
         }
         let _ = submethod_blocks; // used for control flow above
@@ -438,6 +472,15 @@ impl Interpreter {
         let mut arg_idx = 0;
         for pd in &def.param_defs {
             if pd.is_invocant || pd.named || pd.name.starts_with("__type_capture__") {
+                continue;
+            }
+            // Slurpy parameters (`*@x`, `*%h`, `**@x`) are less specific than a
+            // required positional of the same type. When a single Positional
+            // argument matches both `(@x)` and `(*@x)`, the non-slurpy candidate
+            // must win rather than being treated as equally specific (ambiguous).
+            if pd.slurpy || pd.double_slurpy {
+                total += 2000;
+                arg_idx += 1;
                 continue;
             }
             if let Some(tc) = &pd.type_constraint {

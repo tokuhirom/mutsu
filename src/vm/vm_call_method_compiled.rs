@@ -659,6 +659,19 @@ impl VM {
                 .interpreter
                 .resolve_method_with_owner_invocant(&cn, method, &args, &target)
         {
+            // Ambiguous multi dispatch: two or more candidates matched equally
+            // well. Raise X::Multi::Ambiguous instead of silently picking one.
+            if self.interpreter.dispatch_ambiguous {
+                self.interpreter.dispatch_ambiguous = false;
+                let sigs = self
+                    .interpreter
+                    .format_method_candidate_signatures(&cn, method);
+                return Err(
+                    crate::runtime::methods_signature::make_multi_ambiguous_error(
+                        method, &cn, &sigs,
+                    ),
+                );
+            }
             if let Some(result) =
                 self.check_method_wrap_chain(&cn, &owner_class, method, &method_def, &target, &args)
             {

@@ -644,6 +644,7 @@ roast/S12-methods/instance.t
 roast/S12-methods/lastcall.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
+roast/S12-methods/multi.t
 roast/S12-methods/parallel-dispatch.t
 roast/S12-methods/private.t
 roast/S12-methods/submethods.t

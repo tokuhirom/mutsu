@@ -1988,6 +1988,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = if let Some(r) = keyword("token", rest)
         .or_else(|| keyword("rule", rest))
         .or_else(|| keyword("sub", rest))
+        .or_else(|| keyword("submethod", rest))
         .or_else(|| keyword("method", rest))
     {
         let (r, _) = ws1(r)?;

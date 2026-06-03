@@ -88,6 +88,70 @@ pub(super) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
     err
 }
 
+/// Build an `X::Multi::Ambiguous` error naming the dispatch target and the
+/// candidate signatures that all matched equally well.
+pub(crate) fn make_multi_ambiguous_error(
+    method_name: &str,
+    invocant_type: &str,
+    candidate_sigs: &[String],
+) -> RuntimeError {
+    let sig_lines = if candidate_sigs.is_empty() {
+        String::new()
+    } else {
+        let mut s = String::new();
+        for sig in candidate_sigs {
+            s.push_str("\n  ");
+            s.push_str(sig);
+        }
+        s
+    };
+    let msg = format!(
+        "Ambiguous call to '{}({}: )'; these signatures all match:{}",
+        method_name, invocant_type, sig_lines
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Multi::Ambiguous"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+/// Build an `X::Multi::NoMatch` error with a Raku-style message that names the
+/// dispatch target (invocant type + method name) and lists the candidate
+/// signatures, e.g.:
+///
+/// ```text
+/// Cannot resolve caller has_tie(WorkingTie:D: Array:D); none of these
+/// signatures matches: ...
+/// ```
+pub(super) fn make_multi_no_match_error_detailed(
+    method_name: &str,
+    invocant_type: &str,
+    candidate_sigs: &[String],
+) -> RuntimeError {
+    let sig_lines = if candidate_sigs.is_empty() {
+        String::new()
+    } else {
+        let mut s = String::new();
+        for sig in candidate_sigs {
+            s.push_str("\n    ");
+            s.push_str(sig);
+        }
+        s
+    };
+    let msg = format!(
+        "Cannot resolve caller {}({}:D: ); none of these signatures matches:{}",
+        method_name, invocant_type, sig_lines
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 impl Interpreter {
     /// Extract shape dimensions from a default expression that matches the pattern
     /// `Array.new(:shape(N))` or `Array.new(:shape(N, M, ...))`, as generated

@@ -1572,10 +1572,20 @@ pub(super) fn method_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse `submethod` declaration (treated like method, not inherited by subclasses).
+/// Accepts an optional `multi` declarator prefix (`multi submethod foo(...) {...}`).
 pub(super) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
-    let r = keyword("submethod", input).ok_or_else(|| PError::expected("submethod declaration"))?;
-    let (r, _) = ws1(r)?;
-    method_decl_body_with_my(r, false, false, true, true)
+    let (r, multi) = if let Some(r) = keyword("multi", input) {
+        let (r, _) = ws1(r)?;
+        let r = keyword("submethod", r).ok_or_else(|| PError::expected("submethod declaration"))?;
+        let (r, _) = ws1(r)?;
+        (r, true)
+    } else {
+        let r =
+            keyword("submethod", input).ok_or_else(|| PError::expected("submethod declaration"))?;
+        let (r, _) = ws1(r)?;
+        (r, false)
+    };
+    method_decl_body_with_my(r, multi, false, true, true)
 }
 
 pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
