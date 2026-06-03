@@ -49,6 +49,10 @@ impl VM {
             crate::runtime::value_to_list(&target)
         };
         let mut results = Vec::with_capacity(items.len());
+        // A "nodal" hyper method (one natively defined on the list type, e.g.
+        // .reverse/.sort/.elems) operates on each node rather than recursing to
+        // leaves, and its hyper result is a List rather than an Array.
+        let mut method_is_nodal = false;
         for (idx, item) in items.iter_mut().enumerate() {
             let method = Self::rewrite_method_name(method_raw, modifier);
             // Special case: CALL-ME on callable items (from >>.(args) syntax).
@@ -273,6 +277,9 @@ impl VM {
                             | "flatmap"
                             | "pairup"
                     );
+                    if is_list_native_method {
+                        method_is_nodal = true;
+                    }
                     if is_iterable_item && !is_list_native_method {
                         let sub_items = crate::runtime::value_to_list(item);
                         let mut sub_results = Vec::with_capacity(sub_items.len());
@@ -428,9 +435,11 @@ impl VM {
             }
             _ => {}
         }
-        // Preserve the container type of the target: Array->Array, List->List
+        // Preserve the container type of the target: Array->Array, List->List.
+        // Nodal methods (applied at the node level) always yield a List, even
+        // when hypered over an Array (e.g. `[[2,3],[4,5]]>>.reverse` is a List).
         let result_kind = match &target {
-            Value::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
+            Value::Array(_, kind) if kind.is_real_array() && !method_is_nodal => ArrayKind::Array,
             _ => ArrayKind::List,
         };
         self.stack
