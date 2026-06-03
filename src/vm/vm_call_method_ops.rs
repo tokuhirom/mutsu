@@ -12,6 +12,7 @@ impl VM {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        crate::vm::vm_stats::record_method_dispatch();
         if self.locals_dirty {
             self.ensure_env_synced(code);
         }

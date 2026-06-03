@@ -486,6 +486,7 @@ fn run_main() {
             // Subtest-indented output is also flushed here.
             interpreter.flush_all_handles();
             interpreter.flush_stderr_buffer();
+            mutsu::dump_vm_stats();
             let code = interpreter.exit_code();
             // Always call process::exit to terminate any lingering background
             // threads (e.g. TCP accept loops for IO::Socket::Async listeners).
@@ -502,6 +503,7 @@ fn run_main() {
             }
             interpreter.flush_all_handles();
             interpreter.flush_stderr_buffer();
+            mutsu::dump_vm_stats();
             let code = interpreter.exit_code();
             std::process::exit(if code != 0 { code as i32 } else { 1 });
         }
