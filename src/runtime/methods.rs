@@ -1000,7 +1000,7 @@ impl Interpreter {
         // Mutating array methods on Value::Array (non-container path)
         if matches!(
             method,
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
         ) && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
         {
             // Check element type constraints from container metadata (e.g., typed attribute arrays)
