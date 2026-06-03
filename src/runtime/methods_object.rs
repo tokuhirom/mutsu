@@ -2967,11 +2967,35 @@ impl Interpreter {
                                     .get(&(class_key.to_string(), attr_name.clone()))
                                     .cloned();
                                 if let Some(type_name) = is_type {
-                                    let type_obj =
-                                        Value::Package(crate::symbol::Symbol::intern(&type_name));
-                                    match self.call_method_with_values(type_obj, "new", vec![]) {
-                                        Ok(v) => v,
-                                        Err(_) => Value::real_array(Vec::new()),
+                                    // For a parameterized container type (`is Array[Rat]`),
+                                    // build the empty array directly with type metadata so
+                                    // `.WHAT` / `~~ Array[Rat]` see the declared element type
+                                    // (a `Package` built from the string name loses its
+                                    // type parameter when `.new` is dispatched).
+                                    if let Some(inner) = type_name
+                                        .strip_prefix("Array[")
+                                        .or_else(|| type_name.strip_prefix("array["))
+                                        .and_then(|s| s.strip_suffix(']'))
+                                    {
+                                        let arr = Value::real_array(Vec::new());
+                                        self.register_container_type_metadata(
+                                            &arr,
+                                            super::ContainerTypeInfo {
+                                                value_type: inner.trim().to_string(),
+                                                key_type: None,
+                                                declared_type: Some(type_name.clone()),
+                                            },
+                                        );
+                                        arr
+                                    } else {
+                                        let type_obj = Value::Package(
+                                            crate::symbol::Symbol::intern(&type_name),
+                                        );
+                                        match self.call_method_with_values(type_obj, "new", vec![])
+                                        {
+                                            Ok(v) => v,
+                                            Err(_) => Value::real_array(Vec::new()),
+                                        }
                                     }
                                 } else {
                                     let arr = Value::real_array(Vec::new());
@@ -3314,14 +3338,34 @@ impl Interpreter {
                                 .get(&(declaring_class.clone(), attr_name.clone()))
                                 .cloned();
                             if let Some(type_name) = is_type_val {
-                                let type_obj =
-                                    Value::Package(crate::symbol::Symbol::intern(&type_name));
-                                self.call_method_with_values(type_obj, "new", vec![])
-                                    .unwrap_or_else(|_| match sigil {
-                                        '@' => Value::real_array(Vec::new()),
-                                        '%' => Value::hash(HashMap::new()),
-                                        _ => Value::Nil,
-                                    })
+                                // `is Array[T]`: build the empty array with type
+                                // metadata directly (a Package built from the string
+                                // name loses its type parameter on `.new`).
+                                if let Some(inner) = type_name
+                                    .strip_prefix("Array[")
+                                    .or_else(|| type_name.strip_prefix("array["))
+                                    .and_then(|s| s.strip_suffix(']'))
+                                {
+                                    let arr = Value::real_array(Vec::new());
+                                    self.register_container_type_metadata(
+                                        &arr,
+                                        super::ContainerTypeInfo {
+                                            value_type: inner.trim().to_string(),
+                                            key_type: None,
+                                            declared_type: Some(type_name.clone()),
+                                        },
+                                    );
+                                    arr
+                                } else {
+                                    let type_obj =
+                                        Value::Package(crate::symbol::Symbol::intern(&type_name));
+                                    self.call_method_with_values(type_obj, "new", vec![])
+                                        .unwrap_or_else(|_| match sigil {
+                                            '@' => Value::real_array(Vec::new()),
+                                            '%' => Value::hash(HashMap::new()),
+                                            _ => Value::Nil,
+                                        })
+                                }
                             } else {
                                 match sigil {
                                     '@' => Value::real_array(Vec::new()),

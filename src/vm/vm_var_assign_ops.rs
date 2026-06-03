@@ -1592,11 +1592,28 @@ impl VM {
         // Type-check the incremented value against the element constraint of a
         // typed array/hash, e.g. `subset Y of Int where 1..10; my Y @x; @x[0]=10;
         // @x[0]++` must throw when the new value (11) falls outside the subset.
-        // Native arrays wrap instead of erroring, so skip them.
+        // Native arrays wrap instead of erroring, so skip them. Skip container-type
+        // constraints (e.g. `%h is SetHash`), where the constraint names the whole
+        // container rather than its element/value type.
         if (name.starts_with('@') || name.starts_with('%'))
             && let Some(constraint) = declared_constraint_incdec.as_deref()
             && !crate::runtime::native_types::is_native_array_element_type(constraint)
             && !matches!(constraint, "num" | "num32" | "num64" | "str")
+            && !matches!(
+                constraint,
+                "Hash"
+                    | "Array"
+                    | "Map"
+                    | "List"
+                    | "Bag"
+                    | "Set"
+                    | "Mix"
+                    | "BagHash"
+                    | "SetHash"
+                    | "MixHash"
+                    | "Seq"
+            )
+            && !self.interpreter.is_container_subclass(constraint)
             && !matches!(&new_val, Value::Nil)
             && !self.interpreter.type_matches_value(constraint, &new_val)
         {
