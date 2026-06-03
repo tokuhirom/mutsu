@@ -1577,7 +1577,11 @@ impl Interpreter {
                 };
                 let mut result = Vec::new();
                 for (i, item) in indices.iter().zip(items.iter()) {
-                    result.push(Value::Pair(i.to_string(), Box::new(item.clone())));
+                    // The key is the Int index (`3 => v`), not a Str ("3" => v).
+                    result.push(Value::ValuePair(
+                        Box::new(Value::Int(*i as i64)),
+                        Box::new(item.clone()),
+                    ));
                 }
                 Ok(Value::array(result))
             }

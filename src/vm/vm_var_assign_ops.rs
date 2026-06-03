@@ -958,8 +958,16 @@ impl VM {
         coercion_target: &dyn Fn(&str) -> Option<String>,
         explicit_initializer: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
+        let native_constraint =
+            crate::runtime::native_types::is_native_array_element_type(constraint);
         let mut coerced_items = Vec::with_capacity(items.len());
         for item in items.iter() {
+            // A type-object hole (e.g. an `Any` gap from `@a[1] = x`) assigned to a
+            // native array becomes that array's default (`0`/`0e0`/`""`).
+            if native_constraint && matches!(item, Value::Package(_)) {
+                coerced_items.push(Self::native_fill_for_constraint(Some(constraint)));
+                continue;
+            }
             if matches!(item, Value::Nil) {
                 if let Some(default) = self.interpreter.var_default(var_name) {
                     coerced_items.push(default.clone());

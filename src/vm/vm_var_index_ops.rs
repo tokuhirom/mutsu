@@ -211,7 +211,16 @@ impl VM {
         &mut self,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
-        let index = self.stack.pop().unwrap();
+        let mut index = self.stack.pop().unwrap();
+        // An *itemized* Range used as a subscript (`@a[my $ = ^2]`) is a single
+        // numeric index, not a slice: the contained Range numifies to its element
+        // count. (A bare Range index `@a[^2]` is still a slice.)
+        if let Value::Scalar(inner) = &index
+            && inner.is_range()
+        {
+            let n = crate::runtime::utils::value_to_list(inner).len() as i64;
+            index = Value::Int(n);
+        }
         let mut target = self.stack.pop().unwrap();
         if let Value::Junction { kind, values } = &target {
             let mut results = Vec::with_capacity(values.len());

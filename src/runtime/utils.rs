@@ -3271,11 +3271,12 @@ pub(crate) fn type_check_element_typed_error(
     val: &Value,
 ) -> RuntimeError {
     let msg = type_check_element_error(var_name, expected, val);
-    let got_type = value_type_name(val);
     let display_name = format_var_name_for_error(var_name);
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("expected".to_string(), Value::str(expected.to_string()));
-    attrs.insert("got".to_string(), Value::str(got_type.to_string()));
+    // `.got` is the offending value itself (e.g. `42`), so `$!.got ~~ Int` holds,
+    // matching Rakudo's X::TypeCheck.
+    attrs.insert("got".to_string(), val.clone());
     attrs.insert("symbol".to_string(), Value::str(display_name));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     RuntimeError::typed("X::TypeCheck::Assignment", attrs)
