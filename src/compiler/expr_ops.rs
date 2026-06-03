@@ -214,6 +214,26 @@ impl Compiler {
         let is_assign_op = op.ends_with('=')
             && op.len() > 1
             && !matches!(op, "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>");
+        // Hyper meta-assignment over a literal list of lvalues, e.g.
+        // `($a, $b, $c) »~=» <pie tart>`: compute the element-wise result with
+        // the base op, then distribute it back to each lvalue via the regular
+        // list-assignment machinery so each scalar is mutated.
+        if is_assign_op && matches!(left, Expr::ArrayLiteral(_)) {
+            let base_op = op[..op.len() - 1].to_string();
+            let value_expr = Expr::HyperOp {
+                op: base_op,
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+                dwim_left,
+                dwim_right,
+            };
+            let assign_call = Expr::Call {
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![left.clone(), Expr::ArrayLiteral(vec![]), value_expr],
+            };
+            self.compile_expr(&assign_call);
+            return;
+        }
         if is_assign_op {
             let base_op = &op[..op.len() - 1];
             self.compile_expr(left);
