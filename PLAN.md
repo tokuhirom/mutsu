@@ -12,6 +12,28 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ---
 
+## 🔴 最優先: バイトコード VM をちゃんと治す
+
+**roast テストを1件ずつ潰すより、VM アーキテクチャの根本改修を最優先する** (ユーザー方針 2026-06-03)。
+
+mutsu の「バイトコード VM」は実態として tree-walking Interpreter の薄いフロントエンドであり、
+VM は Interpreter を共有実行状態コンテナ + フォールバック先として使っている
+([ANALYSIS.md](ANALYSIS.md) §1)。これを **strangler-fig 方式**で段階的に切り離す:
+古いフォールバックを残したまま計測し、毎 PR で「フォールバック率 X%→Y%」を可視化しながら縮める。
+進捗台帳は [docs/vm-decoupling.md](docs/vm-decoupling.md)。
+
+- [x] **計測機構の導入** (strangler step 1, PR #2571) — `MUTSU_VM_STATS=1` で VM→Interpreter の
+      メソッドディスパッチ・フォールバック率を出力。判明: 明示メソッド呼び出しの実行委譲は既に低率で、
+      支配的結合は共有状態 (env/env_mut) 側 (§1.1–1.2)。
+- [ ] **関数ディスパッチの計測**を追加 (`call_function`/`call_function_fallback` — 委譲面はメソッドより広い見込み)
+- [ ] **`locals`↔`env` 二重ストアの解消** — 単一権威ストアに統合し dirty 追跡機構を撤廃 (§1.2)
+- [ ] **クロージャに upvalue 導入** — 全フレーム env 同期を撤廃 (§1.3)
+- [ ] **env/クラスレジストリ/型検査を VM 所有データへ移し**、残存実行フォールバックを排除 (§1.1)。
+      当面は CLAUDE.md の記述を実態に合わせ、フォールバックに `// TODO: compile to bytecode` を付け負債を可視化
+- [ ] 最終: メソッド/関数フォールバック率を 0% にし、Interpreter のメソッド実行パスを削除
+
+---
+
 ## Q2 (5〜6月): パフォーマンスと Container semantics
 
 目標: **「簡単なスクリプトなら raku の代わりに使える」レベルに到達**
@@ -184,13 +206,10 @@ BLOCKERS.md の分析に基づき、インパクト順に並べたもの。
 - [ ] Hyper assignment (`@a >>+=>> 1`)
 - [ ] Triangular reduction (`[\+]`, `[\*]`, etc.)
 
-### アーキテクチャ・リファクタ (中長期 — [ANALYSIS.md](ANALYSIS.md) §1, §3)
+### アーキテクチャ・リファクタ (中長期 — [ANALYSIS.md](ANALYSIS.md) §3, §4, §6)
 
-- [ ] VM↔Interpreter の結合を解く — env/クラスレジストリ/型検査を VM 所有データへ移し、
-      残存する実行フォールバック (`call_method_with_values` 等) を排除。当面は CLAUDE.md の
-      記述を実態に合わせ、フォールバックに `// TODO: compile to bytecode` を付け負債を可視化 (§1.1)
-- [ ] locals↔env 二重ストアを単一権威ストアに統合し dirty 追跡機構を撤廃 (§1.2)
-- [ ] クロージャに upvalue を導入し全フレーム env 同期を撤廃 (§1.3)
+VM↔Interpreter の切り離し本体は冒頭の「🔴 最優先」セクション参照。以下はそれ以外の構造的負債。
+
 - [ ] 正規表現の validator/matcher 二重実装を単一パーサに統合 (§3.1)
 - [ ] `.^methods`/`.can` の型別メソッド一覧を実ディスパッチ表から導出 (§4)
 - [ ] roast fudge ロジックを核から分離 / テストの一時ファイルを `tmp/` へ / 500行超ファイルの分割 (§6)
