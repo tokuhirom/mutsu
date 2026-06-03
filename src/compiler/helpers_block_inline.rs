@@ -57,6 +57,20 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    // An `if`/`unless` in block-final position should yield its
+                    // taken branch's value (like `do if ...`), not Nil. This
+                    // matters e.g. for `do { if $c { ... } }` and statement-form
+                    // `with`/`without` (lowered to an `if`) used as expressions.
+                    Stmt::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                        binding_var,
+                    } if binding_var.is_none() => {
+                        self.compile_do_if_expr(cond, then_branch, else_branch);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::Whenever { supply, .. } => {
                         // `do whenever ...` should produce the created Tap in expression context.
                         self.compile_stmt(stmt);
