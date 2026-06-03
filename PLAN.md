@@ -38,6 +38,27 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 - [ ] 残りの型付き例外 (X::Str::Numeric, X::Method::NotFound, X::Undeclared, X::Cannot::Lazy, X::EXPORTHOW::InvalidDirective 等)
 - [ ] 詳細は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) の "throws-like / Exception Types" セクション参照
 
+### アーキテクチャ・正しさの修正 (高インパクト — [ANALYSIS.md](ANALYSIS.md) 由来)
+
+コードベース精読で判明した根本的な正しさ・健全性の問題。Threading/Async (BLOCKERS 31件) の
+最大ボトルネックに直結するため最優先。詳細・再現コマンドは ANALYSIS.md 各節を参照。
+
+- [ ] **無限 Range の即時展開クラッシュを撲滅** (ANALYSIS §8.2) — `(a..=b).map(Value::Int).collect()`
+      が src 全体 43 箇所で無ガード、`MAX_ARRAY_EXPAND` ガードは 9 箇所のみ。無限 Range で
+      `capacity overflow` パニックしプロセスごと落ちる。展開サイトを単一ヘルパに集約しガードを一元化。
+      `(1..Inf).grep(* %% 2)[^3]` がクラッシュ (raku は `(2 4 6)`)。
+- [ ] **遅延リストを pull/Iterator モデルに統一** (ANALYSIS §8.1) — `grep` 等の eager 経路を
+      `map`/`first`/`head`/`[]` と同じ遅延扱いに揃える。Seq/Range を真の遅延イテレータに。
+- [ ] **並行 state 共有の修正** (ANALYSIS §8.3, §2.2) — `clone_for_thread` のスナップショットコピーを
+      やめ、共有すべきレキシカル/state/global を `Arc<Mutex>` のライブセルとして真に共有する。
+      `start` ブロック間で `$counter`/`state $n` が共有されない (mutsu 1/0、raku 4/3)。
+- [ ] **`unsafe` の "single-threaded 前提" を是正** (ANALYSIS §2.3) — `Arc::as_ptr as *mut` での
+      エイリアス書き換え 11 箇所がスレッド生成と矛盾し UB の余地。配列/ハッシュを共有セル化して撤廃。
+- [ ] **VM の panic→`X::` 変換境界を `run()` に設置** (ANALYSIS §2.1, §5) — ユーザコード起因の
+      Rust パニックを Raku 例外に変換し、プロセスクラッシュを防ぐ (Q4 「panic/crash を 0 に」の前倒し)。
+- [ ] **正規表現のコンパイル済みキャッシュ導入** (ANALYSIS §8.4) — `Value::Regex(Arc<String>)` が
+      毎マッチ再パース。実測 raku 比 8.6x 遅 (変数束縛でも改善せず)。パターン→構造のキャッシュを追加。
+
 ---
 
 ## Q3 (7〜9月): ウェブアプリに必要なモジュール互換性
@@ -83,8 +104,11 @@ roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 
 
 ### 安定性
 
-- [ ] エッジケースでの panic/crash を 0 にする
+- [ ] エッジケースでの panic/crash を 0 にする（[ANALYSIS.md](ANALYSIS.md) §8.2 の Range 展開クラッシュ・
+      §2.1 の panic→`X::` 変換境界。Q2 で着手済みなら継続）
 - [ ] エラーメッセージの品質向上
+- [ ] 制御フロー (`return`/`last`/`next`/`take`/`emit`) を `RuntimeError` god-struct から
+      `enum Control` へ分離（[ANALYSIS.md](ANALYSIS.md) §2.4 — `result_large_err` 負債の解消）
 
 ### パフォーマンス Phase 2
 
@@ -159,6 +183,17 @@ BLOCKERS.md の分析に基づき、インパクト順に並べたもの。
 - [ ] Generalized negation meta (`!op`) — beyond `!~~` and `!%%`
 - [ ] Hyper assignment (`@a >>+=>> 1`)
 - [ ] Triangular reduction (`[\+]`, `[\*]`, etc.)
+
+### アーキテクチャ・リファクタ (中長期 — [ANALYSIS.md](ANALYSIS.md) §1, §3)
+
+- [ ] VM↔Interpreter の結合を解く — env/クラスレジストリ/型検査を VM 所有データへ移し、
+      残存する実行フォールバック (`call_method_with_values` 等) を排除。当面は CLAUDE.md の
+      記述を実態に合わせ、フォールバックに `// TODO: compile to bytecode` を付け負債を可視化 (§1.1)
+- [ ] locals↔env 二重ストアを単一権威ストアに統合し dirty 追跡機構を撤廃 (§1.2)
+- [ ] クロージャに upvalue を導入し全フレーム env 同期を撤廃 (§1.3)
+- [ ] 正規表現の validator/matcher 二重実装を単一パーサに統合 (§3.1)
+- [ ] `.^methods`/`.can` の型別メソッド一覧を実ディスパッチ表から導出 (§4)
+- [ ] roast fudge ロジックを核から分離 / テストの一時ファイルを `tmp/` へ / 500行超ファイルの分割 (§6)
 
 ### Practicality (将来)
 
