@@ -143,7 +143,19 @@ impl Interpreter {
         if constraint == "Cool"
             && matches!(
                 value_type,
-                "Int" | "Num" | "Str" | "Bool" | "Rat" | "FatRat" | "Complex"
+                "Int"
+                    | "Num"
+                    | "Str"
+                    | "Bool"
+                    | "Rat"
+                    | "FatRat"
+                    | "Complex"
+                    | "Array"
+                    | "List"
+                    | "Hash"
+                    | "Map"
+                    | "Range"
+                    | "Seq"
             )
         {
             return true;

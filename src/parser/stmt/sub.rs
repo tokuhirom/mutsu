@@ -1288,7 +1288,12 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             let (r, _) = ws(r)?;
             let (r, type_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
-            return_type = Some(type_name.to_string());
+            // `of` parameterizes a preceding `returns`/role type, e.g.
+            // `returns Positional of Int` means return type `Positional[Int]`.
+            return_type = Some(match return_type {
+                Some(base) if !base.contains('[') => format!("{base}[{type_name}]"),
+                _ => type_name.to_string(),
+            });
             input = r;
             continue;
         }
@@ -1819,6 +1824,21 @@ pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
             ));
         }
     }
+    // Normalize parameterizing `of` in the return type, e.g.
+    // `--> Array of Str` means return type `Array[Str]`.
+    let annotation = if let Some(of_pos) = annotation.find(" of ")
+        && !annotation.contains('[')
+    {
+        let base = annotation[..of_pos].trim();
+        let inner = annotation[of_pos + 4..].trim();
+        if !base.is_empty() && !inner.is_empty() {
+            format!("{base}[{inner}]")
+        } else {
+            annotation
+        }
+    } else {
+        annotation
+    };
     // Validate type smiley in return type annotation
     super::sub_param::check_invalid_type_smiley(&Some(annotation.clone()))?;
     let (tail, _) = ws(&rest[idx..])?;

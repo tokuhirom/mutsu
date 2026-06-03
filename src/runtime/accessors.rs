@@ -93,6 +93,11 @@ impl Interpreter {
         if s.contains('(') && s.ends_with(')') {
             return false;
         }
+        // Parameterized types like Positional[Int] or Array[Str] are type
+        // constraints, not definite return-value expressions.
+        if s.contains('[') && s.ends_with(']') {
+            return false;
+        }
         if Self::return_spec_scalar_name(s).is_some() {
             return true;
         }

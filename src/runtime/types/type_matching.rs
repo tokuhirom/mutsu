@@ -333,8 +333,22 @@ impl Interpreter {
                     return false;
                 }
                 "Array" | "List" | "Positional" => {
-                    if let Value::Array(items, ..) = value {
-                        return items.iter().all(|v| self.type_matches_value(inner, v));
+                    if let Value::Array(..) = value {
+                        // A parameterized Positional/Array type checks the
+                        // container's DECLARED element type (`.of`), not the
+                        // runtime values. An untyped array (no declared element
+                        // type) only matches when the parameter is Mu/Any.
+                        let (inner_base, _) = strip_type_smiley(inner);
+                        if let Some(metadata) = self.container_type_metadata(value)
+                            && !metadata.value_type.is_empty()
+                        {
+                            let (mvt_base, _) = strip_type_smiley(&metadata.value_type);
+                            return Self::type_matches(inner_base, mvt_base)
+                                || inner_base == "Mu"
+                                || inner_base == "Any";
+                        }
+                        // No declared element type: element type is Mu.
+                        return inner_base == "Mu" || inner_base == "Any";
                     }
                     return false;
                 }

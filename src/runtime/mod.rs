@@ -4326,6 +4326,56 @@ impl Interpreter {
         self.var_hash_key_constraints.contains_key(name)
     }
 
+    /// Autovivify a typed array element when a mutating array method (push/append/
+    /// unshift/prepend) is called on its type object, e.g. `my Array of Int @x;
+    /// @x[0].push(3)`. `type_name` is the element type object name (e.g.
+    /// `Array[Int]`). Returns `Some(new_array)` when `type_name` is a positional
+    /// container type, `None` otherwise. The result carries type metadata so the
+    /// elements stay constrained.
+    pub(crate) fn autoviv_typed_array_push(
+        &mut self,
+        type_name: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let base = type_name.split('[').next().unwrap_or(type_name);
+        if !matches!(base, "Array" | "List") {
+            return Ok(None);
+        }
+        let inner = type_name
+            .strip_prefix(base)
+            .and_then(|s| s.strip_prefix('['))
+            .and_then(|s| s.strip_suffix(']'))
+            .map(|s| s.trim().to_string());
+        let mut items = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Slip(vals) => items.extend(vals.iter().cloned()),
+                other => items.push(other.clone()),
+            }
+        }
+        if let Some(ref constraint) = inner
+            && constraint.starts_with(char::is_uppercase)
+        {
+            for item in &items {
+                if !self.type_matches_value(constraint, item) {
+                    return Err(crate::runtime::utils::type_check_element_typed_error(
+                        "", constraint, item,
+                    ));
+                }
+            }
+        }
+        let result = Value::real_array(items);
+        if let Some(constraint) = inner {
+            let info = ContainerTypeInfo {
+                value_type: constraint,
+                key_type: None,
+                declared_type: Some(type_name.to_string()),
+            };
+            self.register_container_type_metadata(&result, info);
+        }
+        Ok(Some(result))
+    }
+
     pub(crate) fn register_container_type_metadata(
         &mut self,
         value: &Value,

@@ -18,7 +18,22 @@ impl VM {
             ) => Value::Int(0),
             Some("num" | "num32" | "num64") => Value::Num(0.0),
             Some("str") => Value::str(String::new()),
-            _ => Value::Package(Symbol::intern("Any")),
+            // A boxed typed array (e.g. `my Int @a`) fills empty slots with the
+            // element type's type object, so holes gist as `(Int)` and roundtrip
+            // through `.raku`. Strip any smiley/coercion suffix first.
+            Some(c) => {
+                let base = c
+                    .split_once('(')
+                    .map_or(c, |(b, _)| b)
+                    .trim_end_matches(":D")
+                    .trim_end_matches(":U");
+                if base.is_empty() || base == "Any" || base == "Mu" || base.contains('[') {
+                    Value::Package(Symbol::intern("Any"))
+                } else {
+                    Value::Package(Symbol::intern(base))
+                }
+            }
+            None => Value::Package(Symbol::intern("Any")),
         }
     }
 
@@ -830,9 +845,13 @@ impl VM {
                     [
                         (
                             "message".to_string(),
-                            Value::str(format!("Cannot store a lazy list onto a {}", declared)),
+                            Value::str(format!(
+                                "Cannot initialize an array of {} with a lazy list",
+                                constraint
+                            )),
                         ),
-                        ("action".to_string(), Value::str_from("store")),
+                        ("action".to_string(), Value::str_from("initialize")),
+                        ("what".to_string(), Value::str(declared)),
                     ]
                     .into_iter()
                     .collect(),
@@ -971,6 +990,10 @@ impl VM {
                 continue;
             }
             let target_type = coercion_target(constraint).unwrap_or_else(|| constraint.to_string());
+            // Whether the constraint is an explicit coercion type like `Array()`.
+            // A plain type constraint (e.g. `Array`) must type-check elements
+            // strictly without coercing scalars into containers.
+            let is_coercion = coercion_target(constraint).is_some();
             let coerced = if self.interpreter.type_matches_value(&target_type, item) {
                 item.clone()
             } else if target_type == "Array" {
@@ -983,15 +1006,17 @@ impl VM {
                             Value::Array(items.clone(), crate::value::ArrayKind::Array)
                         }
                         Value::Array(..) => inner.as_ref().clone(),
-                        _ => self
+                        _ if is_coercion => self
                             .interpreter
                             .try_coerce_value_for_constraint("Array()", item.clone())?,
+                        _ => item.clone(),
                     },
-                    _ => self
+                    _ if is_coercion => self
                         .interpreter
                         .try_coerce_value_for_constraint("Array()", item.clone())?,
+                    _ => item.clone(),
                 }
-            } else if matches!(target_type.as_str(), "Array" | "List" | "Hash") {
+            } else if matches!(target_type.as_str(), "Array" | "List" | "Hash") && is_coercion {
                 self.interpreter
                     .try_coerce_value_for_constraint(&format!("{target_type}()"), item.clone())?
             } else {
@@ -1495,6 +1520,9 @@ impl VM {
         return_new: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
+        // Element type constraint of the variable, used to fill array holes with
+        // the proper type object (`(Int)`) instead of Nil when autovivifying.
+        let declared_constraint_incdec = self.interpreter.var_type_constraint(&name);
         let declared_type_incdec = self
             .interpreter
             .env()
@@ -1561,118 +1589,139 @@ impl VM {
         } else {
             self.decrement_value_smart(&effective)?
         };
+        // Type-check the incremented value against the element constraint of a
+        // typed array/hash, e.g. `subset Y of Int where 1..10; my Y @x; @x[0]=10;
+        // @x[0]++` must throw when the new value (11) falls outside the subset.
+        // Native arrays wrap instead of erroring, so skip them.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(constraint) = declared_constraint_incdec.as_deref()
+            && !crate::runtime::native_types::is_native_array_element_type(constraint)
+            && !matches!(constraint, "num" | "num32" | "num64" | "str")
+            && !matches!(&new_val, Value::Nil)
+            && !self.interpreter.type_matches_value(constraint, &new_val)
+        {
+            return Err(runtime::utils::type_check_element_typed_error(
+                &name, constraint, &new_val,
+            ));
+        }
         // Modify the container in-place in the env to preserve Arc sharing
         // (e.g. when two variables reference the same array via Arc).
         // First try to modify via env_mut().get_mut() to avoid clone.
-        let modified_in_place =
-            if let Some(container_value) = self.interpreter.env_mut().get_mut(&name) {
-                match container_value {
-                    Value::Hash(h) => {
-                        Arc::make_mut(h).insert(key.clone(), new_val.clone());
-                        true
-                    }
-                    Value::Array(arr, ..) => {
-                        if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
-                            // Use in-place mutation when the array is shared
-                            // (strong_count > 1) to preserve identity semantics,
-                            // matching the behavior of index assignment.
-                            // SAFETY: mutsu is single-threaded.
-                            let use_inplace = Arc::strong_count(arr) > 1 && !name.starts_with('@');
-                            let a: &mut Vec<Value> = if use_inplace {
-                                unsafe { &mut *(Arc::as_ptr(arr) as *mut _) }
-                            } else {
-                                Arc::make_mut(arr)
-                            };
-                            while a.len() <= i {
-                                a.push(Value::Nil);
-                            }
-                            a[i] = new_val.clone();
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    Value::Mix(mix, is_mutable) => {
-                        if !*is_mutable {
-                            return Err(RuntimeError::assignment_ro(Some("Mix")));
-                        }
-                        let weight = Self::mix_assignment_weight(&new_val)?;
-                        let m = Arc::make_mut(mix);
-                        if new_val.truthy() {
-                            m.insert(key.clone(), weight);
-                        } else {
-                            m.remove(&key);
-                        }
-                        true
-                    }
-                    Value::Set(set, is_mutable) => {
-                        if !*is_mutable {
-                            return Err(RuntimeError::assignment_ro(Some("Set")));
-                        }
-                        let s = Arc::make_mut(set);
-                        if new_val.truthy() {
-                            s.insert(key.clone());
-                        } else {
-                            s.remove(&key);
-                        }
-                        true
-                    }
-                    Value::Bag(bag, is_mutable) => {
-                        if !*is_mutable {
-                            return Err(RuntimeError::assignment_ro(Some("Bag")));
-                        }
-                        let b = Arc::make_mut(bag);
-                        let n = match &new_val {
-                            Value::Int(i) => *i,
-                            _ => 0,
-                        };
-                        if n > 0 {
-                            b.insert(key.clone(), n);
-                        } else {
-                            b.remove(&key);
-                        }
-                        true
-                    }
-                    // Autovivify typed variables: `my MixHash $mh; $mh<key>++`
-                    Value::Package(sym) => {
-                        let type_name = sym.resolve();
-                        match type_name.as_str() {
-                            "MixHash" => {
-                                let mut weights = HashMap::new();
-                                let weight = Self::mix_assignment_weight(&new_val)?;
-                                if new_val.truthy() {
-                                    weights.insert(key.clone(), weight);
-                                }
-                                *container_value = Value::mix_hash(weights);
-                                true
-                            }
-                            "BagHash" => {
-                                let mut counts = HashMap::new();
-                                if let Value::Int(n) = &new_val
-                                    && *n > 0
-                                {
-                                    counts.insert(key.clone(), *n);
-                                }
-                                *container_value = Value::bag_hash(counts);
-                                true
-                            }
-                            "SetHash" => {
-                                let mut items = std::collections::HashSet::new();
-                                if new_val.truthy() {
-                                    items.insert(key.clone());
-                                }
-                                *container_value =
-                                    Value::Set(Arc::new(crate::value::SetData::new(items)), true);
-                                true
-                            }
-                            _ => false,
-                        }
-                    }
-                    _ => false,
+        let modified_in_place = if let Some(container_value) =
+            self.interpreter.env_mut().get_mut(&name)
+        {
+            match container_value {
+                Value::Hash(h) => {
+                    Arc::make_mut(h).insert(key.clone(), new_val.clone());
+                    true
                 }
-            } else {
-                false
-            };
+                Value::Array(arr, ..) => {
+                    if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
+                        // Use in-place mutation when the array is shared
+                        // (strong_count > 1) to preserve identity semantics,
+                        // matching the behavior of index assignment.
+                        // SAFETY: mutsu is single-threaded.
+                        let use_inplace = Arc::strong_count(arr) > 1 && !name.starts_with('@');
+                        let a: &mut Vec<Value> = if use_inplace {
+                            unsafe { &mut *(Arc::as_ptr(arr) as *mut _) }
+                        } else {
+                            Arc::make_mut(arr)
+                        };
+                        // Fill holes with the element type's type object for a
+                        // typed array (e.g. `my Int @a; @a[4]++` leaves `(Int)`
+                        // placeholders), or 0/0.0/"" for native arrays.
+                        let fill =
+                            Self::native_fill_for_constraint(declared_constraint_incdec.as_deref());
+                        while a.len() <= i {
+                            a.push(fill.clone());
+                        }
+                        a[i] = new_val.clone();
+                        true
+                    } else {
+                        false
+                    }
+                }
+                Value::Mix(mix, is_mutable) => {
+                    if !*is_mutable {
+                        return Err(RuntimeError::assignment_ro(Some("Mix")));
+                    }
+                    let weight = Self::mix_assignment_weight(&new_val)?;
+                    let m = Arc::make_mut(mix);
+                    if new_val.truthy() {
+                        m.insert(key.clone(), weight);
+                    } else {
+                        m.remove(&key);
+                    }
+                    true
+                }
+                Value::Set(set, is_mutable) => {
+                    if !*is_mutable {
+                        return Err(RuntimeError::assignment_ro(Some("Set")));
+                    }
+                    let s = Arc::make_mut(set);
+                    if new_val.truthy() {
+                        s.insert(key.clone());
+                    } else {
+                        s.remove(&key);
+                    }
+                    true
+                }
+                Value::Bag(bag, is_mutable) => {
+                    if !*is_mutable {
+                        return Err(RuntimeError::assignment_ro(Some("Bag")));
+                    }
+                    let b = Arc::make_mut(bag);
+                    let n = match &new_val {
+                        Value::Int(i) => *i,
+                        _ => 0,
+                    };
+                    if n > 0 {
+                        b.insert(key.clone(), n);
+                    } else {
+                        b.remove(&key);
+                    }
+                    true
+                }
+                // Autovivify typed variables: `my MixHash $mh; $mh<key>++`
+                Value::Package(sym) => {
+                    let type_name = sym.resolve();
+                    match type_name.as_str() {
+                        "MixHash" => {
+                            let mut weights = HashMap::new();
+                            let weight = Self::mix_assignment_weight(&new_val)?;
+                            if new_val.truthy() {
+                                weights.insert(key.clone(), weight);
+                            }
+                            *container_value = Value::mix_hash(weights);
+                            true
+                        }
+                        "BagHash" => {
+                            let mut counts = HashMap::new();
+                            if let Value::Int(n) = &new_val
+                                && *n > 0
+                            {
+                                counts.insert(key.clone(), *n);
+                            }
+                            *container_value = Value::bag_hash(counts);
+                            true
+                        }
+                        "SetHash" => {
+                            let mut items = std::collections::HashSet::new();
+                            if new_val.truthy() {
+                                items.insert(key.clone());
+                            }
+                            *container_value =
+                                Value::Set(Arc::new(crate::value::SetData::new(items)), true);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
         if modified_in_place {
             // Update local slot to match the modified env value
             if let Some(val) = self.interpreter.env().get(&name).cloned() {
@@ -2237,6 +2286,17 @@ impl VM {
             }
         }
         let encoded_idx = Self::encode_bound_index(&idx);
+        // Native typed arrays store unboxed scalars and cannot bind containers to
+        // their elements: `my num @a; @a[0] := $x` is illegal.
+        if bind_mode
+            && var_name.starts_with('@')
+            && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+            && crate::runtime::native_types::is_native_array_element_type(&constraint)
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot bind to a native {constraint} array"
+            )));
+        }
         let is_bound_index = if bind_mode {
             self.is_bound_index(&var_name, &encoded_idx)
         } else {
@@ -2329,6 +2389,23 @@ impl VM {
         match &idx {
             Value::Array(keys, ..) => {
                 let mut vals = self.assignment_rhs_values(&val)?;
+                // Per-element type check for slice assignment to a typed array,
+                // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
+                if var_name.starts_with('@')
+                    && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+                {
+                    for v in &vals {
+                        if !matches!(v, Value::Nil)
+                            && !self.interpreter.type_matches_value(&constraint, v)
+                        {
+                            return Err(runtime::utils::type_check_element_typed_error(
+                                &var_name,
+                                &constraint,
+                                v,
+                            ));
+                        }
+                    }
+                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
@@ -2501,15 +2578,19 @@ impl VM {
                 if let Some(constraint) = array_elem_constraint
                     && !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
-                    // Container type constraints (Hash, Array, etc.) apply to the
-                    // whole container, not individual elements. Skip element-level
-                    // type checking for these types.
-                    && !matches!(
-                        constraint.as_str(),
-                        "Hash" | "Array" | "Map" | "List" | "Bag" | "Set" | "Mix"
-                            | "BagHash" | "SetHash" | "MixHash" | "Seq"
-                    )
-                    && !self.interpreter.is_container_subclass(&constraint)
+                    // For `$`-sigil variables holding a container (e.g. a `Hash $h`
+                    // parameter), a container type constraint describes the whole
+                    // container, not its elements, so element assignment like
+                    // `$h<k> = v` must not be checked against it. For `@`/`%`
+                    // variables the constraint IS the element/value type and must
+                    // be enforced (e.g. `my Array @x; @x[0] = 1` is a type error).
+                    && (var_name.starts_with('@')
+                        || var_name.starts_with('%')
+                        || !(matches!(
+                            constraint.as_str(),
+                            "Hash" | "Array" | "Map" | "List" | "Bag" | "Set" | "Mix"
+                                | "BagHash" | "SetHash" | "MixHash" | "Seq"
+                        ) || self.interpreter.is_container_subclass(&constraint)))
                 {
                     return Err(runtime::utils::type_check_element_typed_error(
                         &var_name,
@@ -2550,6 +2631,24 @@ impl VM {
                     } else {
                         None
                     };
+                // Per-element type check for slice assignment to a typed array,
+                // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
+                if let Some((_, ref rhs_values)) = range_slice
+                    && (var_name.starts_with('@') || var_name.starts_with('%'))
+                    && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+                {
+                    for v in rhs_values {
+                        if !matches!(v, Value::Nil)
+                            && !self.interpreter.type_matches_value(&constraint, v)
+                        {
+                            return Err(runtime::utils::type_check_element_typed_error(
+                                &var_name,
+                                &constraint,
+                                v,
+                            ));
+                        }
+                    }
+                }
                 if let Some(current) = self.interpreter.env().get(&var_name).cloned()
                     && let Value::Mixin(inner, mixins) = current
                 {

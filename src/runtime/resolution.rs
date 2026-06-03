@@ -1696,13 +1696,14 @@ impl Interpreter {
         self.restore_let_saves(let_mark);
         self.run_pending_instance_destroys()?;
         result.map(|value| {
-            let missing_value = matches!(value, Value::Nil)
-                || matches!(&value, Value::Package(name) if name == "Any");
-            if missing_value {
-                trailing_sub_value.unwrap_or(Value::Nil)
-            } else {
-                value
+            // When the block's last statement is a sub declaration, its value is
+            // the declared sub — not a leftover topic/`$_` value from an earlier
+            // statement (e.g. a Failure that propagated through a sink). Prefer
+            // the trailing sub unconditionally in that case.
+            if let Some(sub) = trailing_sub_value {
+                return sub;
             }
+            value
         })
     }
 

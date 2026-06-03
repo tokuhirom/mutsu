@@ -392,6 +392,66 @@ impl VM {
         }
     }
 
+    /// Build the appropriate error for a typed-array initializer whose elements
+    /// fail the element type constraint. Native integer arrays produce an AdHoc
+    /// "Cannot unbox" error; boxed types produce X::TypeCheck::Assignment naming
+    /// the offending element.
+    fn typed_array_element_error(
+        &mut self,
+        var_name: Option<&str>,
+        base_constraint: &str,
+        constraint: &str,
+        value: &Value,
+    ) -> RuntimeError {
+        let bad = self
+            .first_array_element_mismatch(constraint, value)
+            .unwrap_or_else(|| value.clone());
+        if crate::runtime::native_types::is_native_array_element_type(base_constraint) {
+            return RuntimeError::new(format!(
+                "Cannot unbox a {} to {}.",
+                crate::runtime::value_type_name(&bad),
+                base_constraint,
+            ));
+        }
+        let name = var_name.unwrap_or("@");
+        crate::runtime::utils::type_check_element_typed_error(name, constraint, &bad)
+    }
+
+    /// Like `array_elements_match_constraint`, but returns the first element that
+    /// does not satisfy the constraint (recursing into sub-arrays for scalar
+    /// element types), used to build a precise type-check error.
+    fn first_array_element_mismatch(&mut self, constraint: &str, value: &Value) -> Option<Value> {
+        let constraint_base = constraint
+            .split_once('[')
+            .map_or(constraint, |(base, _)| base);
+        let is_container_constraint = matches!(
+            constraint_base,
+            "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
+        );
+        match value {
+            Value::Array(items, ..) | Value::Seq(items) => {
+                for item in items.iter() {
+                    if is_container_constraint {
+                        if !self.interpreter.type_matches_value(constraint, item) {
+                            return Some(item.clone());
+                        }
+                    } else if let Some(bad) = self.first_array_element_mismatch(constraint, item) {
+                        return Some(bad);
+                    }
+                }
+                None
+            }
+            Value::Nil => None,
+            _ => {
+                if self.interpreter.type_matches_value(constraint, value) {
+                    None
+                } else {
+                    Some(value.clone())
+                }
+            }
+        }
+    }
+
     /// Check if a range endpoint is invalid (Range, Complex, Seq, etc.) and return
     /// X::Range::InvalidArg if so.
     fn check_range_invalid_arg(left: &Value, right: &Value) -> Option<RuntimeError> {
@@ -2315,9 +2375,11 @@ impl VM {
             && matches!(&value, Value::Array(..) | Value::Seq(_))
         {
             if !self.array_elements_match_constraint(constraint, &value) {
-                return Err(RuntimeError::typed_msg(
-                    "X::Syntax::Number::LiteralType",
-                    "Literal type mismatch",
+                return Err(self.typed_array_element_error(
+                    var_name,
+                    base_constraint,
+                    constraint,
+                    &value,
                 ));
             }
             return Ok(());
@@ -2353,9 +2415,11 @@ impl VM {
             && !is_container_constraint
         {
             if !self.array_elements_match_constraint(constraint, &value) {
-                return Err(RuntimeError::typed_msg(
-                    "X::Syntax::Number::LiteralType",
-                    "Literal type mismatch",
+                return Err(self.typed_array_element_error(
+                    var_name,
+                    base_constraint,
+                    constraint,
+                    &value,
                 ));
             }
             return Ok(());

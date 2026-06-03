@@ -183,6 +183,25 @@ impl VM {
         Ok(())
     }
 
+    /// Build the value for a positional slice of an array `source`. A slice of a
+    /// native typed array (e.g. `array[num]`) preserves the native element type,
+    /// returning a fresh native array; slices of ordinary arrays decontainerize to
+    /// a `List` (real-array kind) or `Seq` (non-real kind), matching Raku.
+    fn slice_result_value(&mut self, source: &Value, items: Vec<Value>) -> Value {
+        if let Some(meta) = self.interpreter.container_type_metadata(source)
+            && crate::runtime::native_types::is_native_array_element_type(&meta.value_type)
+        {
+            let result = Value::real_array(items);
+            self.interpreter
+                .register_container_type_metadata(&result, meta);
+            return result;
+        }
+        match source {
+            Value::Array(_, kind) if kind.is_real_array() => Value::array(items),
+            _ => Value::Seq(Arc::new(items)),
+        }
+    }
+
     /// Backward-compatible wrapper: defaults to associative indexing.
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         self.exec_index_op_with_positional(false)
@@ -469,8 +488,12 @@ impl VM {
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
-                let depth = Self::array_depth(&target);
-                if depth <= 1 && indices.len() > 1 {
+                // A comma-list index (`@a[0,1]`) is always a positional slice,
+                // EXCEPT on shaped arrays where it is multi-dimensional access
+                // (`@a[0;1]` uses MultiDimIndex, a separate opcode). A plain
+                // array-of-arrays is NOT shaped, so it slices.
+                let is_shaped = crate::runtime::utils::is_shaped_array(&target);
+                if !is_shaped && indices.len() > 1 {
                     // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
                     let Value::Array(items, kind) = &target else {
                         unreachable!()
@@ -525,7 +548,7 @@ impl VM {
                             out.push(self.typed_container_default(&target));
                         }
                     }
-                    Value::array(out)
+                    self.slice_result_value(&target, out)
                 } else {
                     let strict_oob = indices.len() > 1;
                     let indexed =
@@ -544,16 +567,13 @@ impl VM {
                 } else {
                     b.max(-1) as usize
                 };
-                let default = self.typed_container_default(&Value::Array(items.clone(), kind));
+                let source = Value::Array(items.clone(), kind);
+                let default = self.typed_container_default(&source);
                 let mut slice = Vec::new();
                 for i in start..=end {
                     slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
                 }
-                if kind.is_real_array() {
-                    Value::array(slice)
-                } else {
-                    Value::Seq(Arc::new(slice))
-                }
+                self.slice_result_value(&source, slice)
             }
             (Value::Array(items, kind), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
@@ -562,23 +582,16 @@ impl VM {
                 } else {
                     b.max(0) as usize
                 };
+                let source = Value::Array(items.clone(), kind);
                 if start >= end_excl {
-                    if kind.is_real_array() {
-                        Value::array(Vec::new())
-                    } else {
-                        Value::Seq(Arc::new(Vec::new()))
-                    }
+                    self.slice_result_value(&source, Vec::new())
                 } else {
-                    let default = self.typed_container_default(&Value::Array(items.clone(), kind));
+                    let default = self.typed_container_default(&source);
                     let mut slice = Vec::with_capacity(end_excl - start);
                     for i in start..end_excl {
                         slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
                     }
-                    if kind.is_real_array() {
-                        Value::array(slice)
-                    } else {
-                        Value::Seq(Arc::new(slice))
-                    }
+                    self.slice_result_value(&source, slice)
                 }
             }
             (Value::Array(items, is_arr), Value::Num(n)) => {

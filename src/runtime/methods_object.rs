@@ -786,6 +786,17 @@ impl Interpreter {
                     for arg in &args {
                         match arg {
                             Value::Slip(vals) => items.extend(vals.iter().cloned()),
+                            // Ranges and sequences passed to `.new` flatten into
+                            // their elements (e.g. `array[num].new(1e0..10e0)`).
+                            Value::Range(..)
+                            | Value::RangeExcl(..)
+                            | Value::RangeExclStart(..)
+                            | Value::RangeExclBoth(..)
+                            | Value::GenericRange { .. }
+                            | Value::Seq(_)
+                            | Value::LazyList(_) => {
+                                items.extend(crate::runtime::utils::value_to_list(arg));
+                            }
                             other => items.push(other.clone()),
                         }
                     }

@@ -534,6 +534,7 @@ roast/S09-multidim/subs.t
 roast/S09-subscript/multidim-assignment.t
 roast/S09-typed-arrays/hashes.t
 roast/S09-typed-arrays/native-decl.t
+roast/S09-typed-arrays/native.t
 roast/S10-packages/export.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/nested-use.t

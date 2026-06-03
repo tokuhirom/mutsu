@@ -213,9 +213,22 @@ impl Interpreter {
                 Some(Value::Bool(true))
             );
         let code_var_key = format!("&{}", name);
+        // A sub declared inside `EVAL` is lexically scoped to that EVAL and its
+        // registry is restored afterwards, so it must not be treated as a
+        // redeclaration of an outer `&name` (e.g. a loop's `my &name := EVAL
+        // 'sub name {...}'`, where a previous iteration's binding still lingers
+        // in env, or a forward `my &name` placeholder).
+        let is_in_eval = matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)));
         if let Some(existing) = self.env.get(&code_var_key) {
-            // Mixin values in &name come from trait_mod and should not block registration
+            // Mixin values in &name come from trait_mod and should not block registration.
+            // A bare type-object/Nil placeholder (e.g. an undeclared forward
+            // `my &name` being bound via `my &name := EVAL 'sub name {...}'`) is not
+            // a real routine, so registering the actual sub over it is allowed.
+            let is_forward_placeholder =
+                matches!(existing, Value::Nil) || matches!(existing, Value::Package(_));
             if !matches!(existing, Value::Mixin(..))
+                && !is_forward_placeholder
+                && !is_in_eval
                 && !allow_lexical_shadow
                 && !is_method_value_decl
             {
