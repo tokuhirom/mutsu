@@ -328,6 +328,17 @@ impl Interpreter {
             }
             return Err(RuntimeError::emit_signal(target));
         }
+        // `.sum(:wrap)` / `.sum(:method)`: the only adverb that affects native
+        // arrays (`:wrap` selects wrapping overflow) is equivalent here; treat a
+        // named-only argument list as a plain `.sum`.
+        if method == "sum"
+            && !args.is_empty()
+            && args
+                .iter()
+                .all(|a| matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+        {
+            return self.call_method_with_values(target, "sum", Vec::new());
+        }
         // Scalar containers are transparent for method dispatch (except .item and .VAR)
         if let Value::Scalar(inner) = target {
             if method == "VAR" {

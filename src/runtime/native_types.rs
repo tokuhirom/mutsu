@@ -30,6 +30,18 @@ pub(crate) fn is_native_array_element_type(name: &str) -> bool {
     is_native_int_type(name) || matches!(name, "num" | "num32" | "num64" | "str")
 }
 
+/// Map a native type to the generic family name Rakudo uses in messages such as
+/// "Cannot bind to a native <family> array" (e.g. `int8`/`int64` -> `int`,
+/// `uint16` -> `uint`, `num32` -> `num`).
+pub(crate) fn native_family_name(name: &str) -> &'static str {
+    match name {
+        "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" => "uint",
+        "num" | "num32" | "num64" => "num",
+        "str" => "str",
+        _ => "int",
+    }
+}
+
 /// Returns (min, max) bounds for a native integer type as BigInt values.
 /// `byte` is an alias for `uint8`.
 /// `int` is an alias for `int64`, `uint` is an alias for `uint64`.

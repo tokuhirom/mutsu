@@ -388,6 +388,13 @@ impl VM {
                 }
             }
             Value::Nil => true,
+            // A type-object hole (e.g. an `Any` gap) is acceptable for a native
+            // array: it is coerced to the array's default on store.
+            Value::Package(_)
+                if crate::runtime::native_types::is_native_array_element_type(constraint) =>
+            {
+                true
+            }
             _ => self.interpreter.type_matches_value(constraint, value),
         }
     }

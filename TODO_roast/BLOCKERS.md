@@ -64,42 +64,31 @@ Many tests fail because mutsu doesn't throw the specific exception type the test
 - roast/S32-exceptions/misc2.t (exception attribute matching)
 - roast/S04-exceptions/exceptions-alternatives.t (3/3 failing)
 
-## Native Typed Arrays (6 tests)
+## Native Typed Arrays (3 tests — shaped only)
 
-Native typed arrays (int @a, num @a, str @a) work for most operations now.
-Several general fixes landed: `Array`/`List`/`Hash`/`Map`/`Range`/`Seq` now do
-`Cool`; `.Real` on containers returns elem count; typed-array element/slice
-assignment type-checks (`my Array @x; @x[0]=1` throws); `Positional[T]` checks
-the declared element type rather than runtime values; `returns X of Y` /
-`--> Array of Str` parameterize the return type; `my T @x .= new` targets
-`Array[T]`; comma-index slices of plain arrays-of-arrays no longer collapse to
-multidim; typed-array holes fill with the element type object (`(Int)`);
-native-array slices preserve their type; `.new` flattens Ranges; binding to a
-native element and pop/shift on empty natives behave correctly (no metadata
-loss). A separate EVAL bug — `throws-like` blocks leaking a stale `$_`/Failure
-into a later `EVAL`, which broke `my &f := EVAL 'sub f {...}'` after an empty
-`.pop` — was the abort blocking native-int/num/str past test ~159.
+Non-shaped native typed arrays (`int @a`, `num @a`, `str @a`) all pass now, along
+with the general typed-array tests. Only the *shaped* native arrays remain.
 
-**Passing now:**
-- roast/S09-typed-arrays/native.t (whitelisted)
+**Passing now (whitelisted):**
+- roast/S09-typed-arrays/native.t
+- roast/S09-typed-arrays/native-int.t
+- roast/S09-typed-arrays/native-num.t
+- roast/S09-typed-arrays/native-str.t
 - roast/S09-typed-arrays/arrays.t (84/84)
-
-**Already passing (were stale entries, whitelisted):**
 - roast/S02-types/signed-unsigned-native.t
 - roast/S02-types/multi_dimensional_array.t
 - roast/S09-multidim/XX-POS-on-dimensioned.t
 
-**Still failing (much improved, runs to completion or near it):**
-- roast/S09-typed-arrays/native-num.t (~11 failing of 510: containerized-range
-  index `@a[my $ = ^2]` numifying to a single index, left-infinite range init
-  `-Inf..0e0` not detected as lazy, `grep(:p)` Int-keyed Pair format)
-- roast/S09-typed-arrays/native-int.t (runs 1831/1840; same families plus
-  int-specific edge cases)
-- roast/S09-typed-arrays/native-str.t (runs 183/191)
-- roast/S09-typed-arrays/native-shape1-int.t (aborts ~test 101 — shaped-array
-  `.first`/`.grep` adverb handling and Arc-metadata loss on shaped ops)
-- roast/S09-typed-arrays/native-shape1-num.t (aborts ~test 101)
-- roast/S09-typed-arrays/native-shape1-str.t (aborts ~test 101)
+**Still failing — shaped native arrays (`array[T].new(:shape(n))`):**
+mutsu's shaped-array support is weak: `.map(* *= 2)` does not mutate in place,
+`@a[*-1,*-2]` slices return 0, `.raku` omits `:shape(...)`, clearing a shaped
+array (`@a = ()`) should reset to its fixed size of defaults rather than empty
+it, and `.grep`/`.values`/`.pairs` see stale (pre-mutation) values. ~33 failing
+of 101 run before the file aborts. These need real fixed-dimension array
+semantics, not the per-fix work that fixed the non-shaped suites.
+- roast/S09-typed-arrays/native-shape1-int.t
+- roast/S09-typed-arrays/native-shape1-num.t
+- roast/S09-typed-arrays/native-shape1-str.t
 
 ## Regex / Match Advanced Features (12 tests)
 

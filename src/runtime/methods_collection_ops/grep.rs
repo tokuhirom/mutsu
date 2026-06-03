@@ -399,8 +399,8 @@ impl Interpreter {
                 match grep_adverb {
                     GrepAdverb::K => Ok(Value::Int(0)),
                     GrepAdverb::Kv => Ok(Value::array(vec![Value::Int(0), Value::Str(s.clone())])),
-                    GrepAdverb::P => Ok(Value::Pair(
-                        "0".to_string(),
+                    GrepAdverb::P => Ok(Value::ValuePair(
+                        Box::new(Value::Int(0)),
                         Box::new(Value::Str(s.clone())),
                     )),
                     GrepAdverb::V => Ok(Value::Str(s.clone())),

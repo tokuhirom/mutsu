@@ -191,7 +191,10 @@ impl VM {
                 "X::Delete",
                 [(
                     "message".to_string(),
-                    Value::str(format!("Cannot delete from a native {elem} array")),
+                    Value::str(format!(
+                        "Cannot delete from a native {} array",
+                        crate::runtime::native_types::native_family_name(elem)
+                    )),
                 )]
                 .into_iter()
                 .collect(),

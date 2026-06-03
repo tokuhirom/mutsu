@@ -958,8 +958,39 @@ impl VM {
         coercion_target: &dyn Fn(&str) -> Option<String>,
         explicit_initializer: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
+        let native_constraint =
+            crate::runtime::native_types::is_native_array_element_type(constraint);
         let mut coerced_items = Vec::with_capacity(items.len());
         for item in items.iter() {
+            // A lazy/infinite Range (e.g. `-Inf..0e0`, `0e0..Inf`) cannot initialize
+            // a native array, regardless of which end is unbounded.
+            if native_constraint && crate::builtins::methods_0arg::is_value_lazy(item) {
+                return Err(RuntimeError::typed(
+                    "X::Cannot::Lazy",
+                    [
+                        (
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Cannot initialize an array of {} with a lazy list",
+                                constraint
+                            )),
+                        ),
+                        ("action".to_string(), Value::str_from("initialize")),
+                        (
+                            "what".to_string(),
+                            Value::str(format!("array[{constraint}]")),
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ));
+            }
+            // A type-object hole (e.g. an `Any` gap from `@a[1] = x`) assigned to a
+            // native array becomes that array's default (`0`/`0e0`/`""`).
+            if native_constraint && matches!(item, Value::Package(_)) {
+                coerced_items.push(Self::native_fill_for_constraint(Some(constraint)));
+                continue;
+            }
             if matches!(item, Value::Nil) {
                 if let Some(default) = self.interpreter.var_default(var_name) {
                     coerced_items.push(default.clone());
@@ -2311,7 +2342,8 @@ impl VM {
             && crate::runtime::native_types::is_native_array_element_type(&constraint)
         {
             return Err(RuntimeError::new(format!(
-                "Cannot bind to a native {constraint} array"
+                "Cannot bind to a native {} array",
+                crate::runtime::native_types::native_family_name(&constraint)
             )));
         }
         let is_bound_index = if bind_mode {
@@ -2627,6 +2659,10 @@ impl VM {
                         &idx,
                     ));
                 }
+                // Native integer arrays store the wrapped value (`-1` -> `255` in a
+                // uint8 array); the assignment expression still yields the original.
+                let native_store_val =
+                    Self::wrap_native_int_for_var(&self.interpreter, &var_name, val.clone());
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
                 let idx_for_slice = if let Value::GenericRange { .. } = &idx {
@@ -2991,7 +3027,11 @@ impl VM {
                                         arr[i] = if is_self_array_ref {
                                             Self::self_array_ref_marker()
                                         } else {
-                                            val.clone()
+                                            // A native integer array stores the
+                                            // wrapped value (e.g. -1 -> 255 in a
+                                            // uint8 array), while the assignment
+                                            // expression still yields the original.
+                                            native_store_val.clone()
                                         };
                                     }
                                 }
@@ -5621,6 +5661,22 @@ impl VM {
     }
 
     /// Wrap an integer value to fit within a native integer type's range.
+    /// Wrap `val` for storage into the native-integer array named by `var_name`
+    /// (e.g. `-1` -> `255` for a `uint8` array). Returns the value unchanged when
+    /// the variable is not a native integer array or wrapping does not apply.
+    fn wrap_native_int_for_var(
+        interpreter: &crate::runtime::Interpreter,
+        var_name: &str,
+        val: Value,
+    ) -> Value {
+        if let Some(constraint) = interpreter.var_type_constraint(var_name)
+            && crate::runtime::native_types::is_native_int_type(&constraint)
+        {
+            return Self::wrap_native_int_by_constraint(&constraint, val.clone()).unwrap_or(val);
+        }
+        val
+    }
+
     /// For non-native constraints or non-integer values, returns the value unchanged.
     pub(super) fn wrap_native_int_by_constraint(
         constraint: &str,

@@ -815,6 +815,21 @@ impl Interpreter {
             }
             return Ok(value);
         }
+        // Handle .head/.tail rw write-back: `@a.head = v` / `@a.tail = v`.
+        if matches!(method, "head" | "tail")
+            && method_args.is_empty()
+            && let Value::Array(ref items, ref kind) = target
+            && !items.is_empty()
+        {
+            let idx = if method == "head" { 0 } else { items.len() - 1 };
+            let mut updated = items.to_vec();
+            updated[idx] = value.clone();
+            let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+            if let Some(var_name) = target_var {
+                self.env.insert(var_name.to_string(), replacement);
+            }
+            return Ok(value);
+        }
         // Handle class-level attribute assignment (our $.x / my $.x)
         {
             let class_name_for_lookup = match &target {
