@@ -1004,6 +1004,14 @@ pub(crate) struct CompiledCode {
     /// Locals that are only accessed via GetLocal don't need env sync,
     /// reducing env size and clone cost.
     pub(crate) needs_env_sync: Vec<bool>,
+    /// Free variables this code (and its nested closures) reference from an
+    /// enclosing scope: names used via GetGlobal-family ops that are not this
+    /// code's own locals. For a closure body this is the set of captured
+    /// lexicals whose per-instance mutable state actually matters, so the
+    /// closure-call path can persist/restore only these instead of iterating
+    /// the entire (~100-entry) captured env. Empty until `compute_free_vars`
+    /// runs (during `compute_needs_env_sync`).
+    pub(crate) free_var_syms: Vec<Symbol>,
 }
 
 /// Pre-computed local slot indices for a single attribute.
@@ -1037,6 +1045,7 @@ impl CompiledCode {
             may_capture_outer_vars: false,
             attr_slots: Vec::new(),
             needs_env_sync: Vec::new(),
+            free_var_syms: Vec::new(),
         }
     }
 
@@ -1124,6 +1133,7 @@ impl CompiledCode {
     /// which reduces env size and makes method call env clones cheaper.
     pub(crate) fn compute_needs_env_sync(&mut self) {
         self.compute_locals_sym();
+        self.compute_free_vars();
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
         if n == 0 {
@@ -1162,6 +1172,51 @@ impl CompiledCode {
                 self.needs_env_sync[slot] = true;
             }
         }
+    }
+
+    /// The constant-pool index naming the variable an op reads/writes by name,
+    /// for the GetGlobal-family opcodes that resolve against the env.
+    fn op_name_const_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::GetGlobal(idx)
+            | OpCode::SetGlobal(idx)
+            | OpCode::SetGlobalRaw(idx)
+            | OpCode::PostIncrement(idx)
+            | OpCode::PostDecrement(idx)
+            | OpCode::PreIncrement(idx)
+            | OpCode::PreDecrement(idx)
+            | OpCode::GetArrayVar(idx)
+            | OpCode::GetHashVar(idx)
+            | OpCode::AssignExpr(idx) => Some(*idx),
+            _ => None,
+        }
+    }
+
+    /// Compute `free_var_syms`: the names this code references from an enclosing
+    /// scope (GetGlobal-family ops whose name is not one of this code's own
+    /// locals), unioned with the free variables of nested closures that are not
+    /// resolved by this code's locals. Nested closures have already had their
+    /// own `free_var_syms` computed (they are finalized before being embedded),
+    /// so they are folded in directly without re-walking their ops.
+    pub(crate) fn compute_free_vars(&mut self) {
+        let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
+        let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        for op in &self.ops {
+            if let Some(idx) = Self::op_name_const_idx(op)
+                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && !own.contains(name.as_str())
+            {
+                free.insert(Symbol::intern(name));
+            }
+        }
+        for nested in &self.closure_compiled_codes {
+            for sym in &nested.free_var_syms {
+                if !sym.with_str(|s| own.contains(s)) {
+                    free.insert(*sym);
+                }
+            }
+        }
+        self.free_var_syms = free.into_iter().collect();
     }
 
     /// Store a compiled closure body and return its index.
