@@ -9,7 +9,16 @@ impl Interpreter {
             Self::positional_value_required(args, 1, "throws-like expects type")?.to_string_value();
         let desc = Self::positional_string(args, 2);
         let result = match &code_val {
-            Value::Sub(data) => self.eval_block_value(&data.body),
+            Value::Sub(data) => {
+                // Evaluating the assertion block must not leak its last expression
+                // value (e.g. an unhandled Failure from `@a.pop` on an empty array)
+                // into the caller, where a subsequent `EVAL` would surface it as
+                // its own result. Save and restore the outer last_value.
+                let saved_last_value = self.last_value.take();
+                let r = self.eval_block_value(&data.body);
+                self.last_value = saved_last_value;
+                r
+            }
             Value::Str(code) => {
                 let mut nested = Interpreter::new();
                 nested.strict_mode = self.strict_mode;
@@ -324,7 +333,12 @@ impl Interpreter {
 
         // Execute the code (reuse the same logic as throws-like)
         let result = match &code_val {
-            Value::Sub(data) => self.eval_block_value(&data.body),
+            Value::Sub(data) => {
+                let saved_last_value = self.last_value.take();
+                let r = self.eval_block_value(&data.body);
+                self.last_value = saved_last_value;
+                r
+            }
             Value::Str(code) => {
                 let mut nested = Interpreter::new();
                 nested.strict_mode = self.strict_mode;

@@ -393,7 +393,22 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         (rest_ws, Vec::new())
     };
     // Build: Type.method(args)
-    let target_name = s.type_constraint.clone().unwrap_or_else(|| s.name.clone());
+    // For typed `@`/`%` declarations, the `.=` target is the *container* type
+    // parameterized by the element constraint, e.g. `my Int @x .= new` calls
+    // `Array[Int].new`, and `my Array of Bool @x .= new` calls
+    // `Array[Array[Bool]].new` — not `Int.new` / `Array[Bool].new`.
+    let target_name = match &s.type_constraint {
+        Some(c) if s.name.starts_with('@') => {
+            if crate::runtime::native_types::is_native_array_element_type(c) {
+                format!("array[{c}]")
+            } else {
+                format!("Array[{c}]")
+            }
+        }
+        Some(c) if s.name.starts_with('%') => format!("Hash[{c}]"),
+        Some(c) => c.clone(),
+        None => s.name.clone(),
+    };
     let expr = Expr::MethodCall {
         target: Box::new(Expr::BareWord(target_name)),
         name: Symbol::intern(&method_name),

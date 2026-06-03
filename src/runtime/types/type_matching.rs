@@ -334,6 +334,18 @@ impl Interpreter {
                 }
                 "Array" | "List" | "Positional" => {
                     if let Value::Array(items, ..) = value {
+                        // Prefer the container's declared element type when known
+                        // (typed arrays carry metadata); otherwise fall back to a
+                        // value-based check (an empty array matches vacuously).
+                        let (inner_base, _) = strip_type_smiley(inner);
+                        if let Some(metadata) = self.container_type_metadata(value)
+                            && !metadata.value_type.is_empty()
+                        {
+                            let (mvt_base, _) = strip_type_smiley(&metadata.value_type);
+                            return Self::type_matches(inner_base, mvt_base)
+                                || inner_base == "Mu"
+                                || inner_base == "Any";
+                        }
                         return items.iter().all(|v| self.type_matches_value(inner, v));
                     }
                     return false;

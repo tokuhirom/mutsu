@@ -59,11 +59,20 @@ pub(crate) fn normalize_buf_type_name(name: &str) -> String {
 
 /// Create a Failure value for operations on empty arrays (pop, shift, etc.)
 pub(crate) fn make_empty_array_failure(op: &str) -> Value {
+    make_empty_array_failure_what(op, "Array")
+}
+
+/// Like `make_empty_array_failure`, but with an explicit `what` (the container
+/// description, e.g. `array[num]` for a native typed array). Sets the
+/// `X::Cannot::Empty` `action` and `what` attributes that roast inspects.
+pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
     let mut ex_attrs = HashMap::new();
     ex_attrs.insert(
         "message".to_string(),
-        Value::str(format!("Cannot {op} from an empty Array")),
+        Value::str(format!("Cannot {op} from an empty {what}")),
     );
+    ex_attrs.insert("action".to_string(), Value::str(op.to_string()));
+    ex_attrs.insert("what".to_string(), Value::str(what.to_string()));
     let exception = Value::make_instance(Symbol::intern("X::Cannot::Empty"), ex_attrs);
     let mut failure_attrs = HashMap::new();
     failure_attrs.insert("exception".to_string(), exception);

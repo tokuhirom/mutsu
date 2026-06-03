@@ -617,6 +617,9 @@ pub(super) fn dispatch(
                         )))));
                     }
                 }
+                Value::Array(items, ..) => Value::Int(items.len() as i64),
+                Value::Hash(h) => Value::Int(h.len() as i64),
+                Value::Seq(items) => Value::Int(items.len() as i64),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))

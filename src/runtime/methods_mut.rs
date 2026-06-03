@@ -2172,6 +2172,17 @@ impl Interpreter {
                 return Err(RuntimeError::illegal_on_fixed_dimension_array(method));
             }
             let key = target_var.to_string();
+            // Container description for X::Cannot::Empty (`array[num]` for a
+            // native typed array, otherwise `Array`).
+            let empty_what = match self.var_type_constraint(&key) {
+                Some(c)
+                    if crate::runtime::native_types::is_native_array_element_type(&c)
+                        || matches!(c.as_str(), "num" | "num32" | "num64" | "str") =>
+                {
+                    format!("array[{c}]")
+                }
+                _ => "Array".to_string(),
+            };
             match method {
                 "push" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
@@ -2256,23 +2267,23 @@ impl Interpreter {
                         return Err(RuntimeError::cannot_lazy("pop"));
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        // Avoid `Arc::make_mut` on an empty array: it would clone a
+                        // shared Arc and drop the native type metadata keyed by the
+                        // old pointer, demoting `array[num]` to a plain Array.
+                        if arc_items.is_empty() {
+                            return Ok(make_empty_array_failure_what("pop", &empty_what));
+                        }
                         let items = Arc::make_mut(arc_items);
-                        let out = if items.is_empty() {
-                            make_empty_array_failure("pop")
-                        } else {
-                            items.pop().unwrap_or(Value::Nil)
-                        };
-                        return Ok(out);
+                        return Ok(items.pop().unwrap_or(Value::Nil));
                     }
                     let mut items = match target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    let out = if items.is_empty() {
-                        make_empty_array_failure("pop")
-                    } else {
-                        items.pop().unwrap_or(Value::Nil)
-                    };
+                    if items.is_empty() {
+                        return Ok(make_empty_array_failure_what("pop", &empty_what));
+                    }
+                    let out = items.pop().unwrap_or(Value::Nil);
                     self.env.insert(key, Value::real_array(items));
                     return Ok(out);
                 }
@@ -2284,23 +2295,20 @@ impl Interpreter {
                         )));
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        if arc_items.is_empty() {
+                            return Ok(make_empty_array_failure_what("shift", &empty_what));
+                        }
                         let items = Arc::make_mut(arc_items);
-                        let out = if items.is_empty() {
-                            make_empty_array_failure("shift")
-                        } else {
-                            items.remove(0)
-                        };
-                        return Ok(out);
+                        return Ok(items.remove(0));
                     }
                     let mut items = match target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    let out = if items.is_empty() {
-                        make_empty_array_failure("shift")
-                    } else {
-                        items.remove(0)
-                    };
+                    if items.is_empty() {
+                        return Ok(make_empty_array_failure_what("shift", &empty_what));
+                    }
+                    let out = items.remove(0);
                     self.env.insert(key, Value::real_array(items));
                     return Ok(out);
                 }
@@ -2550,6 +2558,15 @@ impl Interpreter {
         // Handle push/append/pop/shift/unshift on sigilless array bindings
         if !target_var.starts_with('@') && matches!(&target, Value::Array(..)) {
             let key = target_var.to_string();
+            let empty_what = match self.var_type_constraint(&key) {
+                Some(c)
+                    if crate::runtime::native_types::is_native_array_element_type(&c)
+                        || matches!(c.as_str(), "num" | "num32" | "num64" | "str") =>
+                {
+                    format!("array[{c}]")
+                }
+                _ => "Array".to_string(),
+            };
             let array_flag = match self.env.get(&key) {
                 Some(Value::Array(_, kind)) => *kind,
                 _ => match &target {
@@ -2619,7 +2636,7 @@ impl Interpreter {
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         let out = if items.is_empty() {
-                            make_empty_array_failure("pop")
+                            make_empty_array_failure_what("pop", &empty_what)
                         } else {
                             items.pop().unwrap_or(Value::Nil)
                         };
@@ -2630,7 +2647,7 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let out = if items.is_empty() {
-                        make_empty_array_failure("pop")
+                        make_empty_array_failure_what("pop", &empty_what)
                     } else {
                         items.pop().unwrap_or(Value::Nil)
                     };
@@ -2688,7 +2705,7 @@ impl Interpreter {
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         let out = if items.is_empty() {
-                            make_empty_array_failure("shift")
+                            make_empty_array_failure_what("shift", &empty_what)
                         } else {
                             items.remove(0)
                         };
@@ -2699,7 +2716,7 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let out = if items.is_empty() {
-                        make_empty_array_failure("shift")
+                        make_empty_array_failure_what("shift", &empty_what)
                     } else {
                         items.remove(0)
                     };

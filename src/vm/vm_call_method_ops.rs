@@ -57,6 +57,21 @@ impl VM {
             err.return_value = Some(target);
             return Err(err);
         }
+        // Autovivify a typed array element when a mutating array method is called
+        // on its (undefined) type object, e.g. `my Array of Int @x; @x[0].push(3)`
+        // reads `@x[0]` as the `Array[Int]` type object — pushing builds a fresh
+        // typed `Array[Int]` whose elements are type-checked (so a later
+        // `@x[0].push('foo')` still dies), and the result is written back to the slot.
+        if let Value::Package(type_name) = &target
+            && matches!(method, "push" | "append" | "unshift" | "prepend")
+            && let Some(result) = self
+                .interpreter
+                .autoviv_typed_array_push(&type_name.resolve(), &args)?
+        {
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
         // .emit on any value: push to supply emit buffer if inside a supply
         // block, otherwise raise CX::Emit. Skip for Supplier instances (they
         // have their own emit method).

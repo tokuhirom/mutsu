@@ -840,6 +840,15 @@ impl Interpreter {
         }
         let previous_pod = self.env.get("=pod").cloned();
         let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
+        // Record the `&name` code-vars that already exist in the enclosing scope,
+        // so a sub declared inside this EVAL may shadow them without being treated
+        // as a redeclaration (see registration_sub.rs).
+        crate::runtime::registration_sub::push_eval_outer_amp_names(
+            self.env
+                .keys()
+                .map(|k| k.resolve().to_string())
+                .filter(|k| k.starts_with('&')),
+        );
         self.env
             .insert("__mutsu_in_eval".to_string(), Value::Bool(true));
         self.collect_pod_blocks(trimmed);
@@ -1004,6 +1013,7 @@ impl Interpreter {
         } else {
             self.env.remove("_");
         }
+        crate::runtime::registration_sub::pop_eval_outer_amp_names();
         result
     }
 

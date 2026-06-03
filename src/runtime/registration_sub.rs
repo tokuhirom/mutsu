@@ -1,5 +1,41 @@
 use super::*;
 use crate::symbol::Symbol;
+use std::cell::RefCell;
+use std::collections::HashSet;
+
+thread_local! {
+    /// Stack (for nested EVALs) of the `&name` code-variable keys that already
+    /// existed in the enclosing scope when an `EVAL` began. A sub declared inside
+    /// the EVAL may shadow one of these outer names (e.g.
+    /// `my &f := EVAL 'sub f {...}'`, or a loop re-binding) without it counting as
+    /// a redeclaration — but a name declared *inside* the same EVAL
+    /// (`EVAL 'my &x; sub x {}'`) is NOT in this set and still conflicts.
+    static EVAL_OUTER_AMP_NAMES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Push the set of `&name` keys currently in `env` as the outer-amp snapshot for
+/// an EVAL that is about to run.
+pub(crate) fn push_eval_outer_amp_names(amp_names: impl Iterator<Item = String>) {
+    let set: HashSet<String> = amp_names.collect();
+    EVAL_OUTER_AMP_NAMES.with(|stack| stack.borrow_mut().push(set));
+}
+
+/// Pop the outer-amp snapshot when an EVAL finishes.
+pub(crate) fn pop_eval_outer_amp_names() {
+    EVAL_OUTER_AMP_NAMES.with(|stack| {
+        stack.borrow_mut().pop();
+    });
+}
+
+/// Whether `code_var_key` (`&name`) existed before the innermost active EVAL.
+fn is_outer_amp_name(code_var_key: &str) -> bool {
+    EVAL_OUTER_AMP_NAMES.with(|stack| {
+        stack
+            .borrow()
+            .last()
+            .is_some_and(|set| set.contains(code_var_key))
+    })
+}
 
 /// Format a function body for comparison, stripping SetLine annotations.
 /// Used to allow identical sub redeclarations that differ only in source line.
@@ -213,9 +249,18 @@ impl Interpreter {
                 Some(Value::Bool(true))
             );
         let code_var_key = format!("&{}", name);
+        // A sub declared inside `EVAL` is lexically scoped to that EVAL and its
+        // registry is restored afterwards, so it may shadow an `&name` that
+        // already existed in the enclosing scope (e.g. a loop's `my &name := EVAL
+        // 'sub name {...}'`, where a previous iteration's binding or a forward
+        // `my &name` placeholder still lingers in env). But a name declared
+        // *inside* the same EVAL (`EVAL 'my &x; sub x {}'`) still conflicts.
+        let is_in_eval = matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)));
+        let shadows_outer_eval_name = is_in_eval && is_outer_amp_name(&code_var_key);
         if let Some(existing) = self.env.get(&code_var_key) {
-            // Mixin values in &name come from trait_mod and should not block registration
+            // Mixin values in &name come from trait_mod and should not block registration.
             if !matches!(existing, Value::Mixin(..))
+                && !shadows_outer_eval_name
                 && !allow_lexical_shadow
                 && !is_method_value_decl
             {

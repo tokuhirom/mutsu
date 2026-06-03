@@ -93,6 +93,11 @@ impl Interpreter {
         if s.contains('(') && s.ends_with(')') {
             return false;
         }
+        // Parameterized types like Positional[Int] or Array[Str] are type
+        // constraints, not definite return-value expressions.
+        if s.contains('[') && s.ends_with(']') {
+            return false;
+        }
         if Self::return_spec_scalar_name(s).is_some() {
             return true;
         }
@@ -372,6 +377,32 @@ impl Interpreter {
         // Check if this is a coercion type like Str(Numeric:D) or Foo:D()
         if spec.contains('(') && spec.ends_with(')') {
             return self.enforce_coercion_return(spec, value);
+        }
+
+        // A parameterized Positional/Array/List return type checks the array's
+        // DECLARED element type strictly: an untyped array does not satisfy
+        // `Positional[Int]` even if its current values happen to be Int. (Elsewhere
+        // `~~` is lenient for empty/untyped arrays; the return contract is strict.)
+        if let Some(open) = spec.find('[')
+            && spec.ends_with(']')
+            && matches!(&spec[..open], "Positional" | "Array" | "List")
+            && matches!(&value, Value::Array(..))
+        {
+            let inner = &spec[open + 1..spec.len() - 1];
+            let (inner_base, _) = super::types::strip_type_smiley(inner);
+            let ok = match self.container_type_metadata(&value) {
+                Some(meta) if !meta.value_type.is_empty() => {
+                    let (mvt_base, _) = super::types::strip_type_smiley(&meta.value_type);
+                    Self::type_matches(inner_base, mvt_base)
+                        || inner_base == "Mu"
+                        || inner_base == "Any"
+                }
+                _ => inner_base == "Mu" || inner_base == "Any",
+            };
+            if !ok {
+                return Err(self.throw_type_check_return(spec, &value));
+            }
+            return Ok(value);
         }
 
         // Plain type constraint (e.g., Str, Int:D)
