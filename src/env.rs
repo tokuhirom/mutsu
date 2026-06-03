@@ -139,6 +139,15 @@ impl Env {
         }
     }
 
+    /// Insert only if key is not present, keyed directly by an interned Symbol.
+    /// Avoids the `resolve()` (Symbol -> String) + re-intern round trip that
+    /// `entry_or_insert` pays when the caller already holds a Symbol.
+    pub fn entry_or_insert_sym(&mut self, key: Symbol, value: Value) {
+        if !self.inner.contains_key(&key) {
+            self.cow_mut().insert(key, value);
+        }
+    }
+
     /// Insert only if key is not present (lazy value).
     pub fn entry_or_insert_with<F: FnOnce() -> Value>(&mut self, key: String, f: F) {
         let sym = Symbol::intern(&key);

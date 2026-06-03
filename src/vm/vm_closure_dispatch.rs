@@ -172,19 +172,25 @@ impl VM {
 
         self.interpreter.inject_pending_callsite_line();
 
-        // Merge captured environment into current env (or_insert = don't overwrite existing)
+        // Merge captured environment into current env (or_insert = don't overwrite existing).
+        // Key directly by the captured Symbol to avoid a resolve()+re-intern per entry.
         for (k, v) in data.env.iter() {
             self.interpreter
                 .env_mut()
-                .entry_or_insert(k.resolve(), v.clone());
+                .entry_or_insert_sym(*k, v.clone());
         }
         // Override with persisted per-closure-instance captured variable state.
         // This ensures that each closure instance maintains independent mutable
         // state across calls (e.g. two closures from the same factory each get
         // their own copy of captured variables).
-        let cap_overrides: Vec<(Symbol, Value)> = data
-            .env
-            .keys()
+        //
+        // Only the closure's free variables can be mutated by its body, so only
+        // those carry per-instance state. Iterating `cc.free_var_syms` (a handful
+        // of names) instead of the whole captured env (~100 names) avoids that
+        // many `format!` allocations and state-var lookups per call.
+        let cap_overrides: Vec<(Symbol, Value)> = cc
+            .free_var_syms
+            .iter()
             .filter_map(|k| {
                 let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
                 self.interpreter
@@ -475,9 +481,16 @@ impl VM {
             self.sync_locals_from_env(cc);
         }
 
-        // Sync locals back to env so captured variable changes are visible
+        // Sync locals back to env so captured variable changes are visible.
+        // Only captured variables that also occupy a local slot need this: a
+        // non-captured local is strictly frame-local and is discarded when the
+        // env is restored to `saved_env` below, while a captured variable not in
+        // a slot is mutated through the env directly (SetGlobal). Restricting the
+        // writeback to captured locals avoids an O(env) copy-on-write deep copy
+        // per call for the common read-only closure (which has no captured
+        // locals to flush at all).
         for (i, local_name) in cc.locals.iter().enumerate() {
-            if !local_name.is_empty() {
+            if !local_name.is_empty() && data.env.contains_key(local_name) {
                 self.interpreter
                     .env_mut()
                     .insert(local_name.clone(), self.locals[i].clone());
@@ -486,7 +499,9 @@ impl VM {
 
         // Persist captured variable state so this closure instance retains
         // its own mutable state across calls (independent from other closures).
-        for k in data.env.keys() {
+        // Mirror of `cap_overrides` above: only free variables can be mutated by
+        // the body, so only those need persisting.
+        for k in &cc.free_var_syms {
             if let Some(val) = self.interpreter.env().get_sym(*k).cloned() {
                 let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
                 self.interpreter.set_state_var(persist_key, val);
@@ -552,7 +567,9 @@ impl VM {
         }
         // Write back readonly/alias metadata for captured variables that were
         // modified inside the closure (e.g. `$a := $arg` where `$a` is captured).
-        for captured_sym in &captured_names {
+        // Only free variables can be modified by the body, so restrict the
+        // (format!-heavy) metadata scan to them instead of the whole captured env.
+        for captured_sym in &cc.free_var_syms {
             let captured_name = captured_sym.resolve();
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", captured_name);
             if let Some(v) = self.interpreter.env().get(&readonly_key).cloned() {
@@ -566,15 +583,15 @@ impl VM {
         self.interpreter
             .merge_sigilless_alias_writes(&mut restored_env, self.interpreter.env());
 
-        // Only run the state-variable sync and cleanup when there are
-        // captured variables that reference state keys.  This avoids the
+        // Only run the state-variable sync and cleanup when the closure
+        // references captured variables that may be state vars.  This avoids the
         // per-call overhead for simple closures in hot loops.
-        if !captured_names.is_empty() {
+        if !cc.free_var_syms.is_empty() {
             // Update state variable storage when closures modify captured
             // state variables.  The metadata key "__mutsu_state_key::<name>"
             // maps the variable name to its state storage key (set by
             // StateVarInit in the declaring scope).
-            for k in captured_names.iter() {
+            for k in &cc.free_var_syms {
                 let meta_key = format!("__mutsu_state_key::{}", k);
                 if let Some(Value::Str(state_key)) = self.interpreter.env().get(&meta_key).cloned()
                     && let Some(val) = self.interpreter.env().get_sym(*k).cloned()

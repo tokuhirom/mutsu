@@ -147,9 +147,63 @@ Reaching that requires, roughly in order:
       (`opcode.rs:1175`), so most non-leaf methods are not `can_skip_merge`.
       (Pre-existing, unrelated: `t/tail-function.t` test 4 fails in *debug*
       builds on `main` too — a release-only PredictiveIterator path.)
-- [ ] **Slice 3 — closure upvalues.** Capture free variables explicitly so
-      closures stop reading parent `env`; drop the conservative whole-frame
-      `needs_env_sync`.
+- [x] **Slice 3 — shrink closure capture-state work to free variables.** Done.
+
+      **Measurement first (the headline was *not* deep copies).** A closure-heavy
+      micro-benchmark (5000× a factory sub that builds a closure and calls it 20×,
+      = 105000 closure calls) runs in **~15 s** and `MUTSU_VM_STATS` reports ~2
+      `env_deep_copies` per closure call. But a `perf` profile showed `Env::cow_mut`
+      (the deep copy) is only **1.3 %** of runtime. The real cost is the
+      **per-call O(captured-env) work**: every closure call iterates the *entire*
+      captured env (~110 entries, because `MakeBlockClosure` captures
+      `self.env.clone()` = the whole outer env) in several loops —
+      `cap_overrides`, the state persist loop, the readonly/alias writeback, and
+      the state-key sync — each doing a `format!("__mutsu_closure_cap::{id}::{k}")`
+      (or similar) per entry. Profile hotspots: `Symbol::intern` 9.3 %, hashing
+      ~14 %, `format!`/`Display` ~10 %. ~550 `format!` allocations **per closure
+      call**.
+
+      **Backtraces** (gated `MUTSU_DEEPCOPY_BT` in `Env::cow_mut`) further showed
+      the residual deep copies come from the `&?BLOCK` setup insert and the
+      param-binding env write — both feeding cross-cutting interpreter features
+      (`last`/`next` target resolution, `&?ROUTINE`, regex `$/`) that read
+      `__mutsu_callable_id` / `&?BLOCK` from `env` *by name* even when the body
+      text never mentions them. So those env writes **cannot** be made conditional
+      or removed piecemeal — confirming the deep-copy count itself only falls with
+      the full scoped/overlay-env refactor (Slice 4+).
+
+      **What shipped instead — restrict the per-call loops to free variables.**
+      Only a closure's *free* variables (names its body, or a nested closure's
+      body, references from an enclosing scope) can be mutated by it, so only those
+      carry per-instance captured state. `CompiledCode` now precomputes
+      `free_var_syms` (GetGlobal-family operand names not in its own locals, unioned
+      with nested closures' already-computed `free_var_syms`). `call_compiled_closure`
+      iterates `cc.free_var_syms` (a handful of names) instead of `data.env.keys()`
+      (~110) for `cap_overrides`, the state persist loop, the readonly/alias
+      writeback, and the state-key sync. The captured-env *merge* keeps copying the
+      full env (a foreign-scope caller may need any captured lexical for an
+      interpreter fallback) but now keys by the interned `Symbol` directly
+      (`Env::entry_or_insert_sym`) instead of `resolve()`+re-intern. The exit
+      locals→env flush now writes back only captured locals (frame-local closure
+      locals are discarded on env restore anyway).
+
+      Capture semantics are unchanged: `data.env` still holds the full snapshot
+      for fallback reads; only the *state-persistence* loops are narrowed, which is
+      sound because non-free captured names can't be mutated by the body.
+
+      **Result:** closure-heavy bench **~15 s → ~5 s (read-only closure, ~3×)** and
+      **~15 s → ~6.5 s (mutating closure, ~2.3×)**, output identical to `raku`.
+      `env_deep_copies` is unchanged (expected — this slice removes O(env) hashing/
+      formatting, not the make_mut copies). `make test` failure set unchanged from
+      the `main` baseline (`t/wrap.t`, `t/placeholder.t`, `t/tail-function.t`
+      pre-existing). New regression pin: `t/closure-captured-state.t`.
+
+- [ ] **Slice 4 — closure upvalues / scoped env.** Capture free variables into an
+      explicit upvalue list (or a scoped overlay env) so closures stop reading the
+      parent `env` by name, the `&?BLOCK` / `__mutsu_callable_id` setup writes move
+      off the shared global env, and the conservative whole-frame `needs_env_sync`
+      (`fill(true)` whenever any closure exists) can be dropped. This is what
+      actually removes the per-call `make_mut` deep copies.
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
