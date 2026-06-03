@@ -51,40 +51,52 @@ impl Env {
         self.inner.contains_key(&key)
     }
 
+    /// Copy-on-write access to the inner map for mutation. Equivalent to
+    /// `Arc::make_mut`, but when stats are enabled it records an actual
+    /// O(env_size) deep copy whenever the env is shared (the real dual-store
+    /// cost; see docs/vm-dual-store.md and `vm_stats::record_env_deep_copy`).
+    #[inline]
+    fn cow_mut(&mut self) -> &mut HashMap<Symbol, Value> {
+        if crate::vm::vm_stats::enabled() && Arc::strong_count(&self.inner) > 1 {
+            crate::vm::vm_stats::record_env_deep_copy();
+        }
+        Arc::make_mut(&mut self.inner)
+    }
+
     #[inline]
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
         let sym = Symbol::intern(&key);
-        Arc::make_mut(&mut self.inner).insert(sym, value)
+        self.cow_mut().insert(sym, value)
     }
 
     #[inline]
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
-        Arc::make_mut(&mut self.inner).insert(key, value)
+        self.cow_mut().insert(key, value)
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Value> {
         let sym = Symbol::intern(key);
-        Arc::make_mut(&mut self.inner).remove(&sym)
+        self.cow_mut().remove(&sym)
     }
 
     pub fn remove_sym(&mut self, key: Symbol) -> Option<Value> {
-        Arc::make_mut(&mut self.inner).remove(&key)
+        self.cow_mut().remove(&key)
     }
 
     pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
         let sym = Symbol::intern(key);
-        Arc::make_mut(&mut self.inner).get_mut(&sym)
+        self.cow_mut().get_mut(&sym)
     }
 
     pub fn get_mut_sym(&mut self, key: Symbol) -> Option<&mut Value> {
-        Arc::make_mut(&mut self.inner).get_mut(&key)
+        self.cow_mut().get_mut(&key)
     }
 
     pub fn retain<F>(&mut self, f: F)
     where
         F: FnMut(&Symbol, &mut Value) -> bool,
     {
-        Arc::make_mut(&mut self.inner).retain(f);
+        self.cow_mut().retain(f);
     }
 
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
@@ -100,7 +112,7 @@ impl Env {
     }
 
     pub fn values_mut(&mut self) -> std::collections::hash_map::ValuesMut<'_, Symbol, Value> {
-        Arc::make_mut(&mut self.inner).values_mut()
+        self.cow_mut().values_mut()
     }
 
     pub fn flatten(&self) -> HashMap<String, Value> {
@@ -123,7 +135,7 @@ impl Env {
     pub fn entry_or_insert(&mut self, key: String, value: Value) {
         let sym = Symbol::intern(&key);
         if !self.inner.contains_key(&sym) {
-            Arc::make_mut(&mut self.inner).insert(sym, value);
+            self.cow_mut().insert(sym, value);
         }
     }
 
@@ -131,14 +143,14 @@ impl Env {
     pub fn entry_or_insert_with<F: FnOnce() -> Value>(&mut self, key: String, f: F) {
         let sym = Symbol::intern(&key);
         if !self.inner.contains_key(&sym) {
-            Arc::make_mut(&mut self.inner).insert(sym, f());
+            self.cow_mut().insert(sym, f());
         }
     }
 
     /// Direct access to the inner HashMap (for bulk mutation).
     #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut HashMap<Symbol, Value> {
-        Arc::make_mut(&mut self.inner)
+        self.cow_mut()
     }
 
     /// Direct read access to the inner HashMap.

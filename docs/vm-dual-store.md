@@ -69,22 +69,29 @@ Reaching that requires, roughly in order:
 
 - [ ] **Slice 0 (this doc).** Document the stores, consumers, and target. No code.
 - [x] **Slice 1 — measure the sync cost.** Opt-in `MUTSU_VM_STATS` counters for
-      `clone_env()`, `ensure_env_synced` flushes/slots, `sync_locals_from_env`
-      pulls (no behavior change). **Baseline / key finding:**
+      `clone_env()`, **actual env deep copies** (`Arc::make_mut` on a shared env),
+      `ensure_env_synced` flushes/slots, and `sync_locals_from_env` pulls (no
+      behavior change).
 
-      | program | clone_env | env_flushes | locals_pulls |
-      |---|---|---|---|
-      | `fib(25)` (242785 user-sub calls) | **0** | 0 | 0 |
-      | 5000× `P.new(x=>$_).g` (method calls) | **5000** | 0 | 5001 |
-      | `roast/6.d/S32-str/sprintf.t` | 0 | 0 | 8 |
+      **Correction (important):** `Env` is *already* copy-on-write
+      (`Arc<HashMap<Symbol, Value>>`, `src/env.rs`), so `clone_env()` is an O(1)
+      Arc bump — **not** the real cost. The real cost is the O(env_size)
+      `Arc::make_mut` deep copy triggered the first time a method body writes the
+      env while its frame still holds a clone of it. Measured:
 
-      The per-call `clone_env()` cost is **localized to method calls** (and
-      `:=`-binding function calls that use `push_call_frame`/`push_light_call_frame`).
-      Plain/recursive **function** calls already avoid it — they go through the
-      light call paths (`call_compiled_function_light` /
-      `call_compiled_function_positional_light`) that bind params to slots without
-      cloning env. So `bench-class` (2.3× raku, `PLAN.md`) pays one full env clone
-      per method dispatch, while `fib` (1.0×) pays none.
+      | program | clone_env (O(1)) | **env_deep_copies (O(env))** |
+      |---|---|---|
+      | `fib(25)` (242785 user-sub calls) | 0 | **0** |
+      | 5000× `P.new(x=>$_).g` (method calls) | 5000 | **15002 (~3 / call)** |
+      | 2000× `C.new(n=>$_).calc` (writes locals) | 2000 | **6002 (~3 / call)** |
+
+      So `bench-class` (2.3× raku, `PLAN.md`) pays **~3 full env-HashMap deep
+      copies per method call**, while recursive **functions** pay **0** — the
+      function light paths (`call_compiled_function_light` /
+      `call_compiled_function_positional_light`) bind params to slots and never
+      share-then-mutate the env. The lever is to stop method bodies from writing
+      the env (bind `self`/params/locals to slots), which removes the `make_mut`
+      deep copies.
 
 - [ ] **Slice 2 — remove `clone_env()` from the method-call frame.** The
       function light path (`call_compiled_function_positional_light`,

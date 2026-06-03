@@ -19,13 +19,15 @@ static FUNCTION_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_FALLBACK: AtomicU64 = AtomicU64::new(0);
 // Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
 static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
+static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 static LOCALS_PULL: AtomicU64 = AtomicU64::new(0);
 
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
-fn enabled() -> bool {
+#[inline]
+pub(crate) fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var_os("MUTSU_VM_STATS").is_some())
 }
@@ -65,11 +67,25 @@ pub(crate) fn record_function_fallback() {
     }
 }
 
-/// Record a full `clone_env()` of the interpreter env (one per pushed call frame).
+/// Record a `clone_env()` of the interpreter env (one per pushed call frame).
+/// Note: `Env` is copy-on-write (`Arc<HashMap>`), so this is an O(1) Arc bump,
+/// *not* a deep copy. The deep copy is counted separately by
+/// `record_env_deep_copy` when a shared env is first mutated.
 #[inline]
 pub(crate) fn record_clone_env() {
     if enabled() {
         CLONE_ENV.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record an actual O(env_size) deep copy of the env HashMap, triggered when
+/// `Arc::make_mut` clones a shared env on first mutation (e.g. the first env
+/// write inside a method body whose frame holds a clone of the env). This is
+/// the real cost the dual-store work targets, not `clone_env`.
+#[inline]
+pub(crate) fn record_env_deep_copy() {
+    if enabled() {
+        ENV_DEEP_COPY.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -127,10 +143,11 @@ pub(crate) fn dump() {
         "[mutsu vm-stats] function-call opcodes={f_total} interpreter_fallbacks={f_fallback} ({f_pct:.1}% of opcodes)"
     );
     let clone_env = CLONE_ENV.load(Ordering::Relaxed);
+    let deep_copy = ENV_DEEP_COPY.load(Ordering::Relaxed);
     let env_flush = ENV_FLUSH.load(Ordering::Relaxed);
     let slots = ENV_SLOTS_FLUSHED.load(Ordering::Relaxed);
     let locals_pull = LOCALS_PULL.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] dual-store: clone_env={clone_env} env_flushes={env_flush} slots_flushed={slots} locals_pulls={locals_pull}"
+        "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots} locals_pulls={locals_pull}"
     );
 }
