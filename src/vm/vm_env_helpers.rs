@@ -17,6 +17,7 @@ impl VM {
     /// Save the current env, locals, stack depth, readonly vars, and env_dirty flag
     /// into a new call frame. Resets env_dirty to false for the new frame.
     pub(super) fn push_call_frame(&mut self) {
+        crate::vm::vm_stats::record_clone_env();
         let frame = VmCallFrame {
             saved_env: self.interpreter.clone_env(),
             saved_readonly: Some(self.interpreter.save_readonly_vars()),
@@ -35,6 +36,7 @@ impl VM {
     /// Lightweight call frame for simple methods: skips saving readonly vars
     /// since simple methods don't use `:=` binding.
     pub(super) fn push_light_call_frame(&mut self) {
+        crate::vm::vm_stats::record_clone_env();
         let frame = VmCallFrame {
             saved_env: self.interpreter.clone_env(),
             saved_readonly: None,
@@ -284,6 +286,7 @@ impl VM {
     }
 
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
+        crate::vm::vm_stats::record_locals_pull();
         for (i, name) in code.locals.iter().enumerate() {
             // Don't overwrite ArraySlotRef/HashSlotRef locals with env values.
             // These are live container references from `:=` binding and must
@@ -349,6 +352,7 @@ impl VM {
     /// Only runs when locals_dirty is set.
     pub(super) fn ensure_env_synced(&mut self, code: &CompiledCode) {
         if self.locals_dirty {
+            let mut flushed_slots: u64 = 0;
             for (i, name) in code.locals.iter().enumerate() {
                 // Only flush slots that have actually been written to.
                 // This prevents uninitialized locals (from later code that
@@ -368,8 +372,10 @@ impl VM {
                         None
                     };
                     self.set_env_with_main_alias_sym(name, sym, self.locals[i].clone());
+                    flushed_slots += 1;
                 }
             }
+            crate::vm::vm_stats::record_env_flush(flushed_slots);
             self.locals_dirty = false;
             for slot in self.locals_dirty_slots.iter_mut() {
                 *slot = false;

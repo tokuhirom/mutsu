@@ -17,6 +17,11 @@ static METHOD_TOTAL: AtomicU64 = AtomicU64::new(0);
 static METHOD_FALLBACK: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_FALLBACK: AtomicU64 = AtomicU64::new(0);
+// Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
+static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
+static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
+static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
+static LOCALS_PULL: AtomicU64 = AtomicU64::new(0);
 
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
@@ -60,6 +65,33 @@ pub(crate) fn record_function_fallback() {
     }
 }
 
+/// Record a full `clone_env()` of the interpreter env (one per pushed call frame).
+#[inline]
+pub(crate) fn record_clone_env() {
+    if enabled() {
+        CLONE_ENV.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record an `ensure_env_synced` flush of dirty locals into env, along with how
+/// many slots were actually written.
+#[inline]
+pub(crate) fn record_env_flush(slots: u64) {
+    if enabled() {
+        ENV_FLUSH.fetch_add(1, Ordering::Relaxed);
+        ENV_SLOTS_FLUSHED.fetch_add(slots, Ordering::Relaxed);
+    }
+}
+
+/// Record a `sync_locals_from_env` pull (env -> locals after an interpreter
+/// bridge modified env).
+#[inline]
+pub(crate) fn record_locals_pull() {
+    if enabled() {
+        LOCALS_PULL.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 /// Print a one-line summary of VM fallback statistics to stderr.
 ///
 /// No-op unless `MUTSU_VM_STATS` is set. Counts aggregate across worker threads
@@ -93,5 +125,12 @@ pub(crate) fn dump() {
     );
     eprintln!(
         "[mutsu vm-stats] function-call opcodes={f_total} interpreter_fallbacks={f_fallback} ({f_pct:.1}% of opcodes)"
+    );
+    let clone_env = CLONE_ENV.load(Ordering::Relaxed);
+    let env_flush = ENV_FLUSH.load(Ordering::Relaxed);
+    let slots = ENV_SLOTS_FLUSHED.load(Ordering::Relaxed);
+    let locals_pull = LOCALS_PULL.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] dual-store: clone_env={clone_env} env_flushes={env_flush} slots_flushed={slots} locals_pulls={locals_pull}"
     );
 }

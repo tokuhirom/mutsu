@@ -452,6 +452,7 @@ impl VM {
         // any env write inside the function body (e.g. `$ = expr`).
         let has_locals = !cf.code.locals.is_empty();
         let saved_env = if has_locals {
+            crate::vm::vm_stats::record_clone_env();
             Some(self.interpreter.clone_env())
         } else {
             None

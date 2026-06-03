@@ -365,6 +365,7 @@ impl VM {
         // Flush any pending locals→env writes so env is consistent.
         // We do a manual sync rather than ensure_env_synced since we don't
         // have the outer code here -- we'll restore locals directly.
+        crate::vm::vm_stats::record_clone_env();
         let saved_env = self.interpreter.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
@@ -542,6 +543,7 @@ impl VM {
         };
 
         // Save current VM state
+        crate::vm::vm_stats::record_clone_env();
         let saved_env = self.interpreter.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
