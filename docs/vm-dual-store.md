@@ -93,29 +93,10 @@ Reaching that requires, roughly in order:
       the env (bind `self`/params/locals to slots), which removes the `make_mut`
       deep copies.
 
-- [ ] **Slice 2 — remove `clone_env()` from the method-call frame.** The
-      function light path (`call_compiled_function_positional_light`,
-      vm_call_dispatch.rs:732) already shows the pattern: instead of
-      `clone_env()` (O(env_size)), it `mem::take`s `self.locals` and saves only
-      the env entries for the *function's own local names* (`saved_env_locals`,
-      O(locals)), restoring those on return. Apply the same selective
-      save/restore to the method frame.
+- [x] **Slice 2 — skip the dispatch type-check's per-arg env bind.** Done.
 
-      Method-frame push sites to convert: `vm_method_dispatch.rs:140`
-      (`push_call_frame`) / `:744` (`push_light_call_frame`); also
-      `vm_closure_dispatch.rs:168` and `vm_call_dispatch.rs:1386`.
-
-      **Risk / verify first:** `pop_call_frame` returns `saved_env` and some
-      callers use it "for site-specific merge logic" — the full clone may be
-      load-bearing for restoring env mutations a method made to *non-local* names
-      (dynamic vars, attribute writeback, `$_`). Audit every `pop_call_frame()`
-      caller's use of `frame.saved_env` before removing the clone. Guard with the
-      full OO / closure / dynamic-var roast suites + `bench-class` (target:
-      method clone_env → ~0, bench-class 2.3× → <2×).
-
-      **Investigation (2026-06): real source located; first fix prototyped then
-      reverted.** A temporary backtrace on the deep-copy site (gated `Backtrace`
-      in `Env::cow_mut`) showed the per-call deep copies do **not** come from the
+      A temporary backtrace on the deep-copy site (gated `Backtrace` in
+      `Env::cow_mut`) showed the per-call deep copies do **not** come from the
       method-frame env setup writes (skipping those changed the count by zero).
       They come from **method *resolution* / dispatch type-checking**:
       `resolve_method_with_owner_invocant → method_args_match →
@@ -125,18 +106,41 @@ Reaching that requires, roughly in order:
       first bind `make_mut`-deep-copies the whole ~110-entry env. It runs ~3-4×
       per call (once per candidate / resolution phase).
 
-      **Prototype fix (reverted — do not re-apply naively):** skip the outer
-      per-arg `bind_param_value` + its env snapshot unless some param has a
-      `where`/sub-signature/code-signature (`needs_outer_bind`). This cut
-      `method g{42}` / `$!x*2` from **4 → 1 env deep copy per call** (20001 →
-      5001 over 5000 calls). **But `make test` regressed** `t/wrap.t` (callsame
-      re-dispatch), `t/placeholder.t` (`@^/%^` typed placeholders + `@_/%_`
-      capture). So the outer bind has more consumers than where/sub-sig/code-sig:
-      `callsame`/`callwith` re-dispatch and placeholder/capture matching also
-      read the bound params from env. A correct fix must enumerate those
-      consumers — or, better, bind into a **scratch env that is not shared**
-      (so `make_mut` does not deep-copy the live env) and is discarded after
-      matching, instead of mutating `self.env` and rolling it back.
+      **Fix:** the outer per-arg `bind_param_value` only exists so a *later*
+      param's `where {...}` / sub-signature / code-signature can reference
+      earlier params by name (each such check already does its own local env
+      snapshot+bind+restore). When no param has such a constraint
+      (`needs_outer_bind == false`), the binds are skipped; the env
+      snapshot/restore is kept unconditionally so coercion/subset checks still
+      roll back. `method g{42}` / `$!x*2` dropped from **4 → 1 env deep copy per
+      call** (20001 → 5001 over 5000 calls); `where`/sub-sig methods still bind.
+
+      **Validation note (process lesson):** an earlier identical change was
+      *mistakenly reverted* after attributing `t/wrap.t` / `t/placeholder.t`
+      failures to it. Those three tests (`wrap.t`, `placeholder.t`,
+      `tail-function.t`) in fact **fail on `origin/main` too**, in *release*
+      builds, run individually and via full `prove t/` — they are pre-existing,
+      not caused by this change. The optimized build's `make test` failure set is
+      identical to main's baseline (plus the flaky concurrency test `t/lock.t`,
+      which passes 5/5 in isolation). Lesson: when `make test` shows failures,
+      diff the failure *set* against a clean build of the same revision before
+      blaming a change — `main` does not currently pass `make test` cleanly in a
+      local release build.
+
+      **Remaining ~1 deep copy/call (located, deferred):** a follow-up backtrace
+      shows the last per-call deep copy is the method **setup env writes** in
+      `call_compiled_method_fast` (`vm_method_dispatch.rs` ~814/832: `self`,
+      `?CLASS`, params, attrs). `push_light_call_frame` shares the env Arc, then
+      the *first* of these inserts `make_mut`-deep-copies it; the rest are
+      in-place. The body reads these from slots (they are populated into
+      `self.locals` right after), so the writes exist only for interpreter
+      fallbacks *within* the body. This one can't be cut by partial removal
+      (any single remaining write still triggers the one fork) and full removal
+      risks breaking in-method interpreter fallbacks that read `self`/`?CLASS`/
+      params by name. The clean fix is the deeper one: stop snapshotting the
+      whole ~110-entry flat env per call — i.e. a scoped/overlay env (the
+      `locals`↔`env` collapse itself, Slice 3+) — so a per-call fork is O(scope)
+      not O(global env). Deferred to that work rather than a risky local hack.
 
       Side facts: `can_skip_merge = !has_rw_params && !cc.has_env_writes`, and
       `has_env_writes` is set by **any** `CallFunc`/`CallMethod` in the body

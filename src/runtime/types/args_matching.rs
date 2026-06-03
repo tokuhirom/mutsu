@@ -68,6 +68,21 @@ impl Interpreter {
         param_defs: &[ParamDef],
     ) -> bool {
         let saved_env = self.env.clone();
+        // The outer per-arg `bind_param_value` below only exists so that a
+        // *later* param's `where {...}` / sub-signature / code-signature can
+        // reference earlier params by name (each such check already does its own
+        // local env snapshot+bind+restore). When no param has such a constraint
+        // the binds are pure waste, and because the env is copy-on-write the
+        // first bind `make_mut`-deep-copies the whole (shared) env on every
+        // dispatch type-check -- the dominant bench-class cost. Skip just the
+        // binds in that case. The env snapshot/restore is kept unconditionally so
+        // any env mutation from coercion/subset type checks is still rolled back.
+        let needs_outer_bind = param_defs.iter().any(|pd| {
+            pd.where_constraint.is_some()
+                || pd.sub_signature.is_some()
+                || pd.outer_sub_signature.is_some()
+                || pd.code_signature.is_some()
+        });
         let result = (|| {
             let positional_params: Vec<&ParamDef> =
                 param_defs.iter().filter(|p| !p.named).collect();
@@ -404,7 +419,8 @@ impl Interpreter {
                         return false;
                     }
                 }
-                if let Some(arg) = arg_for_checks.as_ref()
+                if needs_outer_bind
+                    && let Some(arg) = arg_for_checks.as_ref()
                     && !pd.name.is_empty()
                     && pd.name != "_capture"
                     && pd.name != "__subsig__"
