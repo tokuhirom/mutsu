@@ -1301,11 +1301,7 @@ impl Interpreter {
             ) {
                 Ok(result) => return Ok(result),
                 Err(err) => {
-                    if !err
-                        .message
-                        .starts_with("No matching candidates for method:")
-                        && !err.is_method_not_found()
-                    {
+                    if !err.is_multi_no_match() && !err.is_method_not_found() {
                         return Err(err);
                     }
                 }

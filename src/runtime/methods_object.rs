@@ -2696,8 +2696,7 @@ impl Interpreter {
                             // fall through to the built-in Mu.new default constructor.
                             // This matches Raku's behavior where Mu.new(*%attrinit) is
                             // always available as a fallback multi candidate.
-                            let msg = e.message.to_lowercase();
-                            if !msg.contains("no matching candidates") {
+                            if !e.is_multi_no_match() {
                                 return Err(e);
                             }
                             // Mu.new only accepts named arguments. If the call

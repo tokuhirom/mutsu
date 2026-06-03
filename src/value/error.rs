@@ -128,6 +128,19 @@ impl RuntimeError {
             || self.message.contains("No such private method '")
     }
 
+    /// Check if this error represents a multi-dispatch no-match
+    /// (`X::Multi::NoMatch`). Used by constructor/accessor dispatch to decide
+    /// whether to fall back to a default candidate (e.g. `Mu.new`).
+    pub(crate) fn is_multi_no_match(&self) -> bool {
+        if let Some(ref ex) = self.exception
+            && let Value::Instance { class_name, .. } = ex.as_ref()
+        {
+            return class_name.resolve() == "X::Multi::NoMatch";
+        }
+        let msg = self.message.to_lowercase();
+        msg.contains("no matching candidates") || msg.contains("none of these signatures match")
+    }
+
     /// Create a RuntimeError from an exception Value.
     /// Extracts the message from the exception's attributes and wraps it.
     pub(crate) fn from_exception_value(ex: Value) -> Self {
