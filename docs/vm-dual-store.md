@@ -127,8 +127,20 @@ Reaching that requires, roughly in order:
       blaming a change — `main` does not currently pass `make test` cleanly in a
       local release build.
 
-      The remaining ~1 deep copy/call comes from elsewhere in dispatch (next
-      target, e.g. the resolution phases that still snapshot+mutate the env).
+      **Remaining ~1 deep copy/call (located, deferred):** a follow-up backtrace
+      shows the last per-call deep copy is the method **setup env writes** in
+      `call_compiled_method_fast` (`vm_method_dispatch.rs` ~814/832: `self`,
+      `?CLASS`, params, attrs). `push_light_call_frame` shares the env Arc, then
+      the *first* of these inserts `make_mut`-deep-copies it; the rest are
+      in-place. The body reads these from slots (they are populated into
+      `self.locals` right after), so the writes exist only for interpreter
+      fallbacks *within* the body. This one can't be cut by partial removal
+      (any single remaining write still triggers the one fork) and full removal
+      risks breaking in-method interpreter fallbacks that read `self`/`?CLASS`/
+      params by name. The clean fix is the deeper one: stop snapshotting the
+      whole ~110-entry flat env per call — i.e. a scoped/overlay env (the
+      `locals`↔`env` collapse itself, Slice 3+) — so a per-call fork is O(scope)
+      not O(global env). Deferred to that work rather than a risky local hack.
 
       Side facts: `can_skip_merge = !has_rw_params && !cc.has_env_writes`, and
       `has_env_writes` is set by **any** `CallFunc`/`CallMethod` in the body
