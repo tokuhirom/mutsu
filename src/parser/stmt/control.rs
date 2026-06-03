@@ -2104,6 +2104,13 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // read-only so that mutating ops like tr/// throw X::Assignment::RO.
     // Encoding the read-only flag in the value itself avoids leaking marker
     // variables across exception boundaries.
+    // When the topic is a plain variable and there is no pointy parameter, run
+    // the body under a `given` so `$_` aliases that variable (matching `given`'s
+    // semantics). This lets in-place mutations through `$_` (e.g. `.=uc`,
+    // `$_ = ...`) write back to the original container, while `$_` stays writable
+    // exactly as in `given`. The `.defined` condition is still evaluated
+    // separately via `$tmp`.
+    let use_given_alias = param_name.is_none() && matches!(&cond_expr, Expr::Var(_));
     let topic_assign = if let Expr::Literal(lit) = &cond_expr {
         let mut overrides = std::collections::HashMap::new();
         overrides.insert("__mutsu_topic_ro__".to_string(), Value::Bool(true));
@@ -2116,7 +2123,11 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         topicalize(&tmp_var)
     };
-    let mut with_body = vec![topic_assign];
+    let mut with_body = if use_given_alias {
+        Vec::new()
+    } else {
+        vec![topic_assign]
+    };
     // If a named parameter was given (-> $param), also assign it
     if let Some(ref pname) = param_name {
         // Check if this is a sub-signature destructuring (e.g. -> ($x) or -> (Int() $x is copy))
@@ -2228,7 +2239,14 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             });
         }
     }
-    with_body.extend(body);
+    if use_given_alias {
+        with_body = vec![Stmt::Given {
+            topic: cond_expr.clone(),
+            body,
+        }];
+    } else {
+        with_body.extend(body);
+    }
 
     // Build the condition as (my $tmp = cond_expr).defined() (or
     // !(my $tmp = cond_expr).defined() for without). The DoStmt(VarDecl)

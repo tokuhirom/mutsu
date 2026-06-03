@@ -393,9 +393,13 @@ impl Compiler {
         if Self::has_phasers(stmts) {
             return false;
         }
-        for stmt in stmts {
+        let last = stmts.len().saturating_sub(1);
+        for (i, stmt) in stmts.iter().enumerate() {
             match stmt {
-                Stmt::Given { .. } => return false,
+                // A `given` in final position is handled by compile_block_inline
+                // (it leaves the block value on the stack); only a non-final
+                // `given` is unsupported here.
+                Stmt::Given { .. } if i != last => return false,
                 Stmt::If {
                     then_branch,
                     else_branch,
