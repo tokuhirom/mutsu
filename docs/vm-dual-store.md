@@ -198,6 +198,26 @@ Reaching that requires, roughly in order:
       the `main` baseline (`t/wrap.t`, `t/placeholder.t`, `t/tail-function.t`
       pre-existing). New regression pin: `t/closure-captured-state.t`.
 
+      **Follow-up — skip the full-env writeback scan for read-only closures.**
+      A re-profile after the above showed the new top hotspot (~45 %) was the
+      *other* per-call O(env) loop: the exit writeback scans the whole working
+      env (~110 entries) to propagate the closure's mutations back to the caller
+      (`Symbol::starts_with`/`with_str`/`contains` on every entry). But a closure
+      can only change outer state through a **free variable** — directly, or
+      transitively via a nested closure that captured it from this frame and
+      wrote it back; either way the variable's value in this frame's env differs
+      from entry. So `call_compiled_closure` now snapshots its free vars' values
+      before the body and skips the entire writeback scan when none changed (and
+      `env_dirty` is clear, no rw params, no captured locals). The free-var-value
+      diff is immune to the per-statement `?LINE` bookkeeping write that always
+      dirties the env Arc (so a naive env-pointer-identity check is *not* usable —
+      it always reports "changed"). It also correctly catches transitive
+      grandparent mutation because a nested closure's free vars are folded into
+      this code's `free_var_syms`. **Read-only closure ~5 s → ~2.7 s, mutating
+      ~6.5 s → ~4.6 s** (cumulative from the original ~15 s: **~5.6× / ~3.2×**).
+      Validated with `make test` (same pre-existing failures) and 193 closure/
+      block/routine/sort/gather/sigilless roast files (3937 subtests) green.
+
 - [ ] **Slice 4 — closure upvalues / scoped env.** Capture free variables into an
       explicit upvalue list (or a scoped overlay env) so closures stop reading the
       parent `env` by name, the `&?BLOCK` / `__mutsu_callable_id` setup writes move
