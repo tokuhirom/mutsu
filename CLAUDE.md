@@ -252,6 +252,14 @@ The project is in its final stretch. Work should be driven by strategic prioriti
 
 The `main` branch is protected by GitHub branch protection rules — only PRs that pass CI (`make test` + `make roast`) can be merged. **Do NOT waste time checking whether a failing test also fails on `main`.** If a test fails on your feature branch, the problem is in your changes, not in `main`. Checking out `main` or running tests against it to "verify" is pointless and wastes AI resources.
 
+## Delegate the full roast run to CI
+
+Running the entire roast suite locally is wasteful and slow — **let CI run the full `make roast`.** Locally, run only the specific tests relevant to your change:
+
+- Run individual roast tests with `prove -e 'target/debug/mutsu' roast/<path>.t`, or the exact files you touched / suspect regressed.
+- CI runs `make test` and `make roast` on a clean machine with the **release build** (`cargo build --release`, `MUTSU_BIN=target/release/mutsu`). Local debug builds are much slower, so a local timeout on a heavy test does not necessarily indicate a real failure — confirm with a release build (`target/release/mutsu`) before assuming a regression, and otherwise trust CI's verdict.
+- Push the branch and rely on CI for the comprehensive roast result rather than running the whole suite locally.
+
 ## Checking `make test` / `make roast` results
 
 `make test` and `make roast` automatically save their full output to log files via `tee`:
