@@ -252,6 +252,18 @@ The project is in its final stretch. Work should be driven by strategic prioriti
 
 The `main` branch is protected by GitHub branch protection rules — only PRs that pass CI (`make test` + `make roast`) can be merged. **Do NOT waste time checking whether a failing test also fails on `main`.** If a test fails on your feature branch, the problem is in your changes, not in `main`. Checking out `main` or running tests against it to "verify" is pointless and wastes AI resources.
 
+## Known flaky tests
+
+Some tests are non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.
+
+- `roast/S17-supply/batch.t` and other `S17-supply/*` / `S17-*` concurrency tests — fail occasionally, pass on retry.
+- `t/lock.t`, `t/wrap.t` — lock contention / occasional `exit 255` timeout.
+- `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — CI-load-sensitive timeouts; pass reliably locally.
+
+Separately, these **consistently** fail on a clean `main` (pre-existing, NOT flaky — don't blame your change): `t/placeholder.t` (callable placeholder `&^cb()` + `@_/%_` capture), `t/tail-function.t` (`tail` PredictiveIterator count-only path).
+
+Also: before a local `make roast`, `rm -f temp-file-RT-126006-test` — a stale temp file left by an interrupted `roast/S32-io/spurt.t` makes that test abort with "cannot run test while file ... exists".
+
 ## Delegate the full roast run to CI
 
 Running the entire roast suite locally is wasteful and slow — **let CI run the full `make roast`.** Locally, run only the specific tests relevant to your change:
