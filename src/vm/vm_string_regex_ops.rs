@@ -1126,6 +1126,10 @@ impl VM {
         let meta = Self::const_str(code, meta_idx).to_string();
         let op = Self::const_str(code, op_idx).to_string();
         let result = match meta.as_str() {
+            // `[op]=` compound assignment (e.g. `$x [+]= 6`) lowers to a "reduce"
+            // meta-op: reducing the base op over the two operands is just the base
+            // op applied once.
+            "reduce" => self.eval_reduction_operator_values(&op, &left, &right)?,
             "R" => {
                 if op == "..." || op == "...^" {
                     let exclude_end = op == "...^";

@@ -24,6 +24,25 @@ impl Compiler {
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
+            && let Expr::AssignExpr {
+                name: var_name,
+                is_bind: false,
+                ..
+            } = &args[0]
+        {
+            // `($c = 3) = 4`: an assignment yields the assigned container as an
+            // lvalue, so the outer assignment writes through to the same
+            // variable. Run the inner assignment for its side effect, then
+            // assign the RHS to the same variable.
+            self.compile_expr(&args[0]);
+            self.code.emit(OpCode::Pop);
+            self.compile_expr(&args[2]);
+            self.code.emit(OpCode::Dup);
+            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::AssignExpr(name_idx));
+            return;
+        } else if name == "__mutsu_assign_callable_lvalue"
+            && args.len() == 3
             && let Expr::ArrayLiteral(targets) = &args[0]
             && targets.iter().all(|t| {
                 matches!(
