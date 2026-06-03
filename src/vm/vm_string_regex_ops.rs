@@ -975,6 +975,42 @@ impl VM {
         let right = self.stack.pop().unwrap_or(Value::Nil);
         let left = self.stack.pop().unwrap_or(Value::Nil);
         let op = Self::const_str(code, op_idx).to_string();
+        // Hyper op on two hashes: combine values key-by-key, with the dwim arrows
+        // selecting the resulting key set. A missing value on either side uses the
+        // operator's identity element (e.g. 0 for `+`).
+        if let (Value::Hash(la), Value::Hash(ra)) = (&left, &right) {
+            let la = la.clone();
+            let ra = ra.clone();
+            // Key set by dwim direction:
+            //   >>op<<  (neither dwims)  -> union
+            //   <<op>>  (both dwim)      -> intersection
+            //   >>op>>  (right dwims)    -> left's keys
+            //   <<op<<  (left dwims)     -> right's keys
+            let keys: Vec<String> = match (dwim_left, dwim_right) {
+                (false, false) => {
+                    let mut ks: Vec<String> = la.keys().cloned().collect();
+                    for k in ra.keys() {
+                        if !la.contains_key(k) {
+                            ks.push(k.clone());
+                        }
+                    }
+                    ks
+                }
+                (true, true) => la.keys().filter(|k| ra.contains_key(*k)).cloned().collect(),
+                (false, true) => la.keys().cloned().collect(),
+                (true, false) => ra.keys().cloned().collect(),
+            };
+            let identity = runtime::reduction_identity(&op);
+            let mut result = std::collections::HashMap::with_capacity(keys.len());
+            for key in keys {
+                let l = la.get(&key).unwrap_or(&identity).clone();
+                let r = ra.get(&key).unwrap_or(&identity).clone();
+                let v = self.eval_reduction_operator_values(&op, &l, &r)?;
+                result.insert(key, v);
+            }
+            self.stack.push(Value::Hash(std::sync::Arc::new(result)));
+            return Ok(());
+        }
         let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
         let left_list = Interpreter::value_to_list(&left);
         let right_list = Interpreter::value_to_list(&right);
