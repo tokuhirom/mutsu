@@ -1011,6 +1011,34 @@ impl VM {
             self.stack.push(Value::Hash(std::sync::Arc::new(result)));
             return Ok(());
         }
+        // Hyper op between a hash and a scalar: apply the op to each value with
+        // the scalar broadcast over every key (`%h >>*>> 4`, `2 <<**<< %h`).
+        if let Value::Hash(map) = &left
+            && !Self::is_listy(&right)
+        {
+            let map = map.clone();
+            let scalar = right.clone();
+            let mut result = std::collections::HashMap::with_capacity(map.len());
+            for (key, value) in map.iter() {
+                let v = self.eval_reduction_operator_values(&op, value, &scalar)?;
+                result.insert(key.clone(), v);
+            }
+            self.stack.push(Value::Hash(std::sync::Arc::new(result)));
+            return Ok(());
+        }
+        if let Value::Hash(map) = &right
+            && !Self::is_listy(&left)
+        {
+            let map = map.clone();
+            let scalar = left.clone();
+            let mut result = std::collections::HashMap::with_capacity(map.len());
+            for (key, value) in map.iter() {
+                let v = self.eval_reduction_operator_values(&op, &scalar, value)?;
+                result.insert(key.clone(), v);
+            }
+            self.stack.push(Value::Hash(std::sync::Arc::new(result)));
+            return Ok(());
+        }
         let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
         let left_list = Interpreter::value_to_list(&left);
         let right_list = Interpreter::value_to_list(&right);

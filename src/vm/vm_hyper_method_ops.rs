@@ -32,8 +32,23 @@ impl VM {
         if let Value::Seq(ref arc) = target {
             crate::value::seq_consume(arc)?;
         }
+        // Hyper method/postfix on a Hash applies to each *value*, preserving the
+        // keys: `%h>>.uc` and `%h>>!` yield a Hash, not a list of pairs.
+        let hash_keys: Option<Vec<String>> = if let Value::Hash(map) = &target {
+            Some(map.keys().cloned().collect())
+        } else {
+            None
+        };
         // For Buf/Blob instances, expand to individual byte values for hyper dispatch
-        let mut items = if let Value::Instance {
+        let mut items = if let Some(keys) = &hash_keys {
+            if let Value::Hash(map) = &target {
+                keys.iter()
+                    .map(|k| map.get(k).cloned().unwrap_or(Value::Nil))
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        } else if let Value::Instance {
             class_name,
             attributes,
             ..
@@ -434,6 +449,16 @@ impl VM {
                 return Ok(());
             }
             _ => {}
+        }
+        // Hash target: rebuild a Hash pairing the original keys with the
+        // per-value results.
+        if let Some(keys) = hash_keys {
+            let mut map = std::collections::HashMap::with_capacity(keys.len());
+            for (key, value) in keys.into_iter().zip(results) {
+                map.insert(key, value);
+            }
+            self.stack.push(Value::Hash(std::sync::Arc::new(map)));
+            return Ok(());
         }
         // Preserve the container type of the target: Array->Array, List->List.
         // Nodal methods (applied at the node level) always yield a List, even
