@@ -87,6 +87,41 @@ impl Interpreter {
                         }
                         return Ok(acc);
                     }
+                    // Hyper prefix operator, e.g. prefix:<-«> / prefix:<-<<>:
+                    // apply the base prefix element-wise (recursing into nested
+                    // Iterables, like `>>`).
+                    let base = normalized
+                        .strip_suffix('\u{00AB}')
+                        .or_else(|| normalized.strip_suffix("<<"))
+                        .or_else(|| normalized.strip_suffix('\u{00BB}'))
+                        .or_else(|| normalized.strip_suffix(">>"))
+                        .or_else(|| normalized.strip_prefix('\u{00AB}'))
+                        .or_else(|| normalized.strip_prefix("<<"))
+                        .or_else(|| normalized.strip_prefix('\u{00BB}'))
+                        .or_else(|| normalized.strip_prefix(">>"));
+                    if let Some(base) = base
+                        && !base.is_empty()
+                        && base != normalized
+                    {
+                        let base_name = format!("prefix:<{}>", base);
+                        let items = crate::runtime::value_to_list(arg);
+                        let mut results = Vec::with_capacity(items.len());
+                        for item in &items {
+                            let v = if matches!(
+                                item,
+                                Value::Array(..) | Value::Seq(_) | Value::Slip(_)
+                            ) {
+                                self.call_function_fallback(name, std::slice::from_ref(item))?
+                            } else {
+                                self.call_function_fallback(&base_name, std::slice::from_ref(item))?
+                            };
+                            results.push(v);
+                        }
+                        return Ok(Value::Array(
+                            std::sync::Arc::new(results),
+                            crate::value::ArrayKind::List,
+                        ));
+                    }
                     Err(RuntimeError::new(format!(
                         "Unknown prefix operator: {}",
                         normalized
@@ -133,6 +168,43 @@ impl Interpreter {
                         return Ok(Value::Complex(0.0, num_val));
                     }
                     _ => {
+                        // Hyper postfix operator, e.g. postfix:<»i>: apply the
+                        // base postfix element-wise (recursing into Iterables).
+                        let base = op
+                            .strip_prefix('\u{00BB}')
+                            .or_else(|| op.strip_prefix(">>"))
+                            .or_else(|| op.strip_prefix('\u{00AB}'))
+                            .or_else(|| op.strip_prefix("<<"))
+                            .or_else(|| op.strip_suffix('\u{00BB}'))
+                            .or_else(|| op.strip_suffix(">>"))
+                            .or_else(|| op.strip_suffix('\u{00AB}'))
+                            .or_else(|| op.strip_suffix("<<"));
+                        if let Some(base) = base
+                            && !base.is_empty()
+                            && base != op
+                        {
+                            let base_name = format!("postfix:<{}>", base);
+                            let items = crate::runtime::value_to_list(arg);
+                            let mut results = Vec::with_capacity(items.len());
+                            for item in &items {
+                                let v = if matches!(
+                                    item,
+                                    Value::Array(..) | Value::Seq(_) | Value::Slip(_)
+                                ) {
+                                    self.call_function_fallback(name, std::slice::from_ref(item))?
+                                } else {
+                                    self.call_function_fallback(
+                                        &base_name,
+                                        std::slice::from_ref(item),
+                                    )?
+                                };
+                                results.push(v);
+                            }
+                            return Ok(Value::Array(
+                                std::sync::Arc::new(results),
+                                crate::value::ArrayKind::List,
+                            ));
+                        }
                         // Unknown postfix operator is a syntax error in Raku (X::Syntax::Confused)
                         return Err(RuntimeError::syntax_confused_with_reason(format!(
                             "Bogus postfix: {}",
