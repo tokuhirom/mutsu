@@ -65,6 +65,7 @@ impl VM {
         {
             return self.compile_and_call_function_def(&def, args, compiled_fns);
         }
+        crate::vm::vm_stats::record_function_fallback();
         self.interpreter.call_function(name, args)
     }
 

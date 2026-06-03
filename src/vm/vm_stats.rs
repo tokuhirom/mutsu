@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static METHOD_TOTAL: AtomicU64 = AtomicU64::new(0);
 static METHOD_FALLBACK: AtomicU64 = AtomicU64::new(0);
+static FUNCTION_TOTAL: AtomicU64 = AtomicU64::new(0);
+static FUNCTION_FALLBACK: AtomicU64 = AtomicU64::new(0);
 
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
@@ -40,6 +42,24 @@ pub(crate) fn record_method_fallback() {
     }
 }
 
+/// Record that an explicit function-call opcode (`foo(...)`) was executed.
+#[inline]
+pub(crate) fn record_function_dispatch() {
+    if enabled() {
+        FUNCTION_TOTAL.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record that a function dispatch fell back to the tree-walking interpreter
+/// (`Interpreter::call_function` / `call_function_fallback`) instead of running
+/// compiled or native code.
+#[inline]
+pub(crate) fn record_function_fallback() {
+    if enabled() {
+        FUNCTION_FALLBACK.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 /// Print a one-line summary of VM fallback statistics to stderr.
 ///
 /// No-op unless `MUTSU_VM_STATS` is set. Counts aggregate across worker threads
@@ -48,19 +68,30 @@ pub(crate) fn dump() {
     if !enabled() {
         return;
     }
-    let total = METHOD_TOTAL.load(Ordering::Relaxed);
-    let fallback = METHOD_FALLBACK.load(Ordering::Relaxed);
-    let pct = if total == 0 {
+    // `*_opcodes` count explicit call opcodes; `*_fallbacks` count executions
+    // delegated to the tree-walking interpreter. The two are measured at
+    // different layers, so a `fallback` count may exceed its opcode count for
+    // code dominated by calls that reach the interpreter without going through
+    // a call opcode (implicit coercions like .Str/.Numeric/.Bool for methods;
+    // Routine-value and meta-operator calls for functions).
+    let m_total = METHOD_TOTAL.load(Ordering::Relaxed);
+    let m_fallback = METHOD_FALLBACK.load(Ordering::Relaxed);
+    let m_pct = if m_total == 0 {
         0.0
     } else {
-        fallback as f64 * 100.0 / total as f64
+        m_fallback as f64 * 100.0 / m_total as f64
     };
-    // `total` counts explicit method-call opcodes; `fallback` counts method
-    // executions delegated to the tree-walking interpreter. The two are
-    // measured at different layers, so `fallback` may exceed `total` for code
-    // dominated by implicit coercion calls (.Str/.Numeric/.Bool) that reach the
-    // interpreter without going through a method-call opcode.
+    let f_total = FUNCTION_TOTAL.load(Ordering::Relaxed);
+    let f_fallback = FUNCTION_FALLBACK.load(Ordering::Relaxed);
+    let f_pct = if f_total == 0 {
+        0.0
+    } else {
+        f_fallback as f64 * 100.0 / f_total as f64
+    };
     eprintln!(
-        "[mutsu vm-stats] method-call opcodes={total} interpreter_fallbacks={fallback} ({pct:.1}% of opcodes)"
+        "[mutsu vm-stats] method-call opcodes={m_total} interpreter_fallbacks={m_fallback} ({m_pct:.1}% of opcodes)"
+    );
+    eprintln!(
+        "[mutsu vm-stats] function-call opcodes={f_total} interpreter_fallbacks={f_fallback} ({f_pct:.1}% of opcodes)"
     );
 }
