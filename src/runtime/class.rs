@@ -1390,7 +1390,25 @@ impl Interpreter {
                 // still propagating changes from nested method calls.
                 if private_unchanged && public_unchanged {
                     self.env.insert(env_key, attr_val.clone());
-                    self.env.insert(public_env_key, attr_val);
+                    self.env.insert(public_env_key, attr_val.clone());
+                }
+                // Mirror the sync onto the sigil-prefixed @/% bindings. These
+                // take precedence during writeback below, so if a nested method
+                // call (e.g. `self.reg-DESTROY` doing `push @!attr, ...`) mutated
+                // the attribute, the stale sigil keys must be refreshed too —
+                // otherwise they would clobber the change with their entry value.
+                for (priv_key, pub_key) in [
+                    (format!("@!{}", attr_name), format!("@.{}", attr_name)),
+                    (format!("%!{}", attr_name), format!("%.{}", attr_name)),
+                ] {
+                    let priv_present = self.env.get(&priv_key).is_some_and(|v| *v == original);
+                    let pub_present = self.env.get(&pub_key).is_some_and(|v| *v == original);
+                    if priv_present {
+                        self.env.insert(priv_key, attr_val.clone());
+                    }
+                    if pub_present {
+                        self.env.insert(pub_key, attr_val.clone());
+                    }
                 }
             }
         }
