@@ -112,6 +112,37 @@ Reaching that requires, roughly in order:
       caller's use of `frame.saved_env` before removing the clone. Guard with the
       full OO / closure / dynamic-var roast suites + `bench-class` (target:
       method clone_env → ~0, bench-class 2.3× → <2×).
+
+      **Investigation (2026-06): real source located; first fix prototyped then
+      reverted.** A temporary backtrace on the deep-copy site (gated `Backtrace`
+      in `Env::cow_mut`) showed the per-call deep copies do **not** come from the
+      method-frame env setup writes (skipping those changed the count by zero).
+      They come from **method *resolution* / dispatch type-checking**:
+      `resolve_method_with_owner_invocant → method_args_match →
+      args_match_param_types → bind_param_value → env.insert`. To evaluate type
+      matches, `args_match_param_types` snapshots the env (`saved_env =
+      self.env.clone()`, O(1) Arc bump) then binds every arg into it — and the
+      first bind `make_mut`-deep-copies the whole ~110-entry env. It runs ~3-4×
+      per call (once per candidate / resolution phase).
+
+      **Prototype fix (reverted — do not re-apply naively):** skip the outer
+      per-arg `bind_param_value` + its env snapshot unless some param has a
+      `where`/sub-signature/code-signature (`needs_outer_bind`). This cut
+      `method g{42}` / `$!x*2` from **4 → 1 env deep copy per call** (20001 →
+      5001 over 5000 calls). **But `make test` regressed** `t/wrap.t` (callsame
+      re-dispatch), `t/placeholder.t` (`@^/%^` typed placeholders + `@_/%_`
+      capture). So the outer bind has more consumers than where/sub-sig/code-sig:
+      `callsame`/`callwith` re-dispatch and placeholder/capture matching also
+      read the bound params from env. A correct fix must enumerate those
+      consumers — or, better, bind into a **scratch env that is not shared**
+      (so `make_mut` does not deep-copy the live env) and is discarded after
+      matching, instead of mutating `self.env` and rolling it back.
+
+      Side facts: `can_skip_merge = !has_rw_params && !cc.has_env_writes`, and
+      `has_env_writes` is set by **any** `CallFunc`/`CallMethod` in the body
+      (`opcode.rs:1175`), so most non-leaf methods are not `can_skip_merge`.
+      (Pre-existing, unrelated: `t/tail-function.t` test 4 fails in *debug*
+      builds on `main` too — a release-only PredictiveIterator path.)
 - [ ] **Slice 3 — closure upvalues.** Capture free variables explicitly so
       closures stop reading parent `env`; drop the conservative whole-frame
       `needs_env_sync`.
