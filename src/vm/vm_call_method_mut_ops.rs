@@ -9,6 +9,7 @@ impl VM {
         arity: u32,
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        crate::vm::vm_stats::record_method_dispatch();
         self.ensure_env_synced(code);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
@@ -243,6 +244,7 @@ impl VM {
         target_name_idx: u32,
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        crate::vm::vm_stats::record_method_dispatch();
         self.ensure_env_synced(code);
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -317,6 +319,7 @@ impl VM {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        crate::vm::vm_stats::record_method_dispatch();
         self.ensure_env_synced(code);
         // Set pending arg sources for `is rw` dispatch matching
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
@@ -1166,6 +1169,7 @@ impl VM {
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
                         // Perform the operation on the backing array
+                        crate::vm::vm_stats::record_method_fallback();
                         let result = self
                             .interpreter
                             .call_method_mut_with_values(

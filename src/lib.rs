@@ -21,6 +21,14 @@ mod vm;
 pub use interpreter::Interpreter;
 pub use value::{RuntimeError, RuntimeErrorCode, Value};
 
+/// Print VM -> interpreter fallback statistics to stderr.
+///
+/// No-op unless the `MUTSU_VM_STATS` environment variable is set. Used to track
+/// progress on decoupling the bytecode VM from the tree-walking interpreter.
+pub fn dump_vm_stats() {
+    vm::vm_stats::dump();
+}
+
 /// Parse source code and return a pretty-printed AST string.
 #[allow(clippy::result_large_err)]
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
