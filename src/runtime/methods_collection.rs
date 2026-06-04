@@ -9,11 +9,17 @@ impl Interpreter {
         let mut elems = HashSet::new();
         let mut original_keys: HashMap<String, Value> = HashMap::new();
         let mut has_non_str = false;
+        // `flatten` is true when this item sits in a list-context-flattening
+        // position (an element of a List `(...)` invocant): nested Lists/Arrays/
+        // Seqs/Hashes spill their contents. It is false for elements of an Array
+        // `[...]` invocant, where each element is taken whole (matches Raku:
+        // `[1,[2,3]].Set` has two elements, but `(1,[2,3]).Set` has three).
         fn add_item(
             elems: &mut HashSet<String>,
             original_keys: &mut HashMap<String, Value>,
             has_non_str: &mut bool,
             item: &Value,
+            flatten: bool,
         ) {
             match item {
                 Value::Pair(k, v) => {
@@ -33,21 +39,21 @@ impl Interpreter {
                         elems.insert(str_key);
                     }
                 }
-                Value::Hash(h) => {
+                Value::Hash(h) if flatten => {
                     for (k, v) in h.iter() {
                         if v.truthy() {
                             elems.insert(k.clone());
                         }
                     }
                 }
-                Value::Array(inner, kind) if !kind.is_itemized() => {
+                Value::Array(inner, kind) if flatten && !kind.is_itemized() => {
                     for inner_item in inner.iter() {
-                        add_item(elems, original_keys, has_non_str, inner_item);
+                        add_item(elems, original_keys, has_non_str, inner_item, true);
                     }
                 }
-                Value::Seq(inner) | Value::Slip(inner) => {
+                Value::Seq(inner) | Value::Slip(inner) if flatten => {
                     for inner_item in inner.iter() {
-                        add_item(elems, original_keys, has_non_str, inner_item);
+                        add_item(elems, original_keys, has_non_str, inner_item, true);
                     }
                 }
                 Value::Str(_) => {
@@ -65,9 +71,27 @@ impl Interpreter {
         }
         match target {
             Value::Set(_, _) => return Ok(target),
+            // A List `(...)` invocant flattens its elements in list context; an
+            // Array `[...]` (or itemized) invocant takes each element whole.
+            Value::Array(items, crate::value::ArrayKind::List) => {
+                for item in items.iter() {
+                    add_item(&mut elems, &mut original_keys, &mut has_non_str, item, true);
+                }
+            }
             Value::Array(items, ..) => {
                 for item in items.iter() {
-                    add_item(&mut elems, &mut original_keys, &mut has_non_str, item);
+                    add_item(
+                        &mut elems,
+                        &mut original_keys,
+                        &mut has_non_str,
+                        item,
+                        false,
+                    );
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    add_item(&mut elems, &mut original_keys, &mut has_non_str, item, true);
                 }
             }
             Value::Hash(items) => {
@@ -111,7 +135,13 @@ impl Interpreter {
             }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {
-                    add_item(&mut elems, &mut original_keys, &mut has_non_str, &item);
+                    add_item(
+                        &mut elems,
+                        &mut original_keys,
+                        &mut has_non_str,
+                        &item,
+                        false,
+                    );
                 }
             }
             other => {
@@ -242,23 +272,31 @@ impl Interpreter {
             Ok(())
         }
 
-        /// Flatten items from a value into the bag, recursing into arrays and hashes.
+        /// Flatten items from a value into the bag. `flatten` is true when the
+        /// value sits in a list-context-flattening position (an element of a
+        /// List `(...)` invocant): nested non-itemized arrays, seqs, hashes and
+        /// quant-hashes spill. When false (an element of an Array `[...]`
+        /// invocant) the value is taken whole as a single key (matches Raku:
+        /// `[1,[2,3]].Bag` has two keys, `(1,[2,3]).Bag` has three).
         fn flatten_into(
             counts: &mut HashMap<String, i64>,
             original_keys: &mut HashMap<String, Value>,
             has_non_str_keys: &mut bool,
             value: &Value,
+            flatten: bool,
         ) -> Result<(), RuntimeError> {
             match value {
-                Value::Array(_, kind) if kind.is_itemized() => {
-                    add_item(counts, original_keys, has_non_str_keys, value)?;
-                }
-                Value::Array(items, ..) => {
+                Value::Array(items, kind) if flatten && !kind.is_itemized() => {
                     for item in items.iter() {
-                        add_item(counts, original_keys, has_non_str_keys, item)?;
+                        flatten_into(counts, original_keys, has_non_str_keys, item, true)?;
                     }
                 }
-                Value::Hash(h) => {
+                Value::Seq(items) | Value::Slip(items) if flatten => {
+                    for item in items.iter() {
+                        flatten_into(counts, original_keys, has_non_str_keys, item, true)?;
+                    }
+                }
+                Value::Hash(h) if flatten => {
                     for (k, v) in h.iter() {
                         let weight = pair_weight(v)?;
                         if weight > 0 {
@@ -266,17 +304,17 @@ impl Interpreter {
                         }
                     }
                 }
-                Value::Set(s, _) => {
+                Value::Set(s, _) if flatten => {
                     for k in s.iter() {
                         counts.insert(k.clone(), 1);
                     }
                 }
-                Value::Mix(m, _) => {
+                Value::Mix(m, _) if flatten => {
                     for (k, v) in m.iter() {
                         counts.insert(k.clone(), *v as i64);
                     }
                 }
-                Value::Bag(b, _) => {
+                Value::Bag(b, _) if flatten => {
                     for (k, v) in b.iter() {
                         *counts.entry(k.clone()).or_insert(0) += *v;
                     }
@@ -310,6 +348,30 @@ impl Interpreter {
                     *counts.entry(str_key).or_insert(0) += 1;
                 }
             }
+            // A List `(...)` invocant flattens its elements in list context; an
+            // Array `[...]` (or itemized) invocant takes each element whole.
+            Value::Array(ref items, crate::value::ArrayKind::List) | Value::Seq(ref items) => {
+                for item in items.iter() {
+                    flatten_into(
+                        &mut counts,
+                        &mut original_keys,
+                        &mut has_non_str_keys,
+                        item,
+                        true,
+                    )?;
+                }
+            }
+            Value::Array(ref items, _) => {
+                for item in items.iter() {
+                    flatten_into(
+                        &mut counts,
+                        &mut original_keys,
+                        &mut has_non_str_keys,
+                        item,
+                        false,
+                    )?;
+                }
+            }
             _ => {
                 // Flatten the target into a list and process each item.
                 // This handles tuples/lists like (@a, %x).Bag where arrays
@@ -325,7 +387,13 @@ impl Interpreter {
                     )?;
                 } else {
                     for item in &items {
-                        flatten_into(&mut counts, &mut original_keys, &mut has_non_str_keys, item)?;
+                        flatten_into(
+                            &mut counts,
+                            &mut original_keys,
+                            &mut has_non_str_keys,
+                            item,
+                            true,
+                        )?;
                     }
                 }
             }
@@ -457,6 +525,7 @@ impl Interpreter {
         weights: &mut HashMap<String, f64>,
         mut original_keys: Option<&mut HashMap<String, Value>>,
         item: &Value,
+        flatten: bool,
     ) -> Result<(), RuntimeError> {
         match item {
             Value::Pair(k, v) => {
@@ -473,7 +542,7 @@ impl Interpreter {
                 }
                 *weights.entry(str_key).or_insert(0.0) += w;
             }
-            Value::Hash(h) => {
+            Value::Hash(h) if flatten => {
                 for (k, v) in h.iter() {
                     let w = Self::mix_pair_weight(v)?;
                     if w != 0.0 {
@@ -481,17 +550,30 @@ impl Interpreter {
                     }
                 }
             }
-            Value::Array(items, kind) if !kind.is_itemized() => {
+            // A nested non-itemized array / seq flattens one level in
+            // list-context (List `(...)` invocant); an Array `[...]` invocant
+            // element (flatten == false) is kept whole.
+            Value::Array(items, kind) if flatten && !kind.is_itemized() => {
                 for sub_item in items.iter() {
-                    Self::mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item)?;
+                    Self::mix_add_item_with_keys(
+                        weights,
+                        original_keys.as_deref_mut(),
+                        sub_item,
+                        true,
+                    )?;
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            Value::Seq(items) | Value::Slip(items) if flatten => {
                 for sub_item in items.iter() {
-                    Self::mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item)?;
+                    Self::mix_add_item_with_keys(
+                        weights,
+                        original_keys.as_deref_mut(),
+                        sub_item,
+                        true,
+                    )?;
                 }
             }
-            Value::Set(s, _) => {
+            Value::Set(s, _) if flatten => {
                 for k in s.iter() {
                     let typed = s.typed_key(k);
                     if let Some(ref mut orig) = original_keys
@@ -502,7 +584,7 @@ impl Interpreter {
                     *weights.entry(k.clone()).or_insert(0.0) += 1.0;
                 }
             }
-            Value::Bag(b, _) => {
+            Value::Bag(b, _) if flatten => {
                 for (k, v) in b.iter() {
                     let typed = b.typed_key(k);
                     if let Some(ref mut orig) = original_keys
@@ -513,7 +595,7 @@ impl Interpreter {
                     *weights.entry(k.clone()).or_insert(0.0) += *v as f64;
                 }
             }
-            Value::Mix(m, _) => {
+            Value::Mix(m, _) if flatten => {
                 for (k, v) in m.iter() {
                     let typed = m.typed_key(k);
                     if let Some(ref mut orig) = original_keys
@@ -570,9 +652,28 @@ impl Interpreter {
         let mut original_keys: HashMap<String, Value> = HashMap::new();
         match target {
             Value::Mix(_, _) => return Ok(target),
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            // A List `(...)` invocant flattens its elements in list context; an
+            // Array `[...]` (or itemized) invocant takes each element whole.
+            Value::Array(items, crate::value::ArrayKind::List)
+            | Value::Seq(items)
+            | Value::Slip(items) => {
                 for item in items.iter() {
-                    Self::mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item)?;
+                    Self::mix_add_item_with_keys(
+                        &mut weights,
+                        Some(&mut original_keys),
+                        item,
+                        true,
+                    )?;
+                }
+            }
+            Value::Array(items, ..) => {
+                for item in items.iter() {
+                    Self::mix_add_item_with_keys(
+                        &mut weights,
+                        Some(&mut original_keys),
+                        item,
+                        false,
+                    )?;
                 }
             }
             ref other @ (Value::Set(_, _)
@@ -580,7 +681,7 @@ impl Interpreter {
             | Value::Pair(..)
             | Value::ValuePair(..)
             | Value::Hash(_)) => {
-                Self::mix_add_item_with_keys(&mut weights, Some(&mut original_keys), other)?;
+                Self::mix_add_item_with_keys(&mut weights, Some(&mut original_keys), other, true)?;
             }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {
