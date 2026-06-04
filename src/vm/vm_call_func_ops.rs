@@ -405,7 +405,7 @@ impl VM {
             self.env_dirty = true;
         } else if self.interpreter.user_function_matches_call(&name, &args) {
             // A user-defined sub shadows a same-named builtin.
-            crate::vm::vm_stats::record_function_fallback();
+            crate::vm::vm_stats::record_function_fallback(&name);
             let result = self.interpreter.call_function_fallback(&name, &args)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
@@ -672,14 +672,14 @@ impl VM {
                 // User-defined multi candidates take priority over builtins.
                 // Call call_function_fallback directly to bypass the builtin match
                 // in call_function, which would shadow user-defined multi subs.
-                crate::vm::vm_stats::record_function_fallback();
+                crate::vm::vm_stats::record_function_fallback(name);
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.interpreter.call_function_fallback(name, &args);
                 self.interpreter.set_pending_call_arg_sources(None);
                 self.interpreter.maybe_fetch_rw_proxy(result?, true)
             } else if self.interpreter.user_function_matches_call(name, &args) {
                 // A user-defined sub shadows a same-named builtin.
-                crate::vm::vm_stats::record_function_fallback();
+                crate::vm::vm_stats::record_function_fallback(name);
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.interpreter.call_function_fallback(name, &args);
                 self.interpreter.set_pending_call_arg_sources(None);
@@ -707,7 +707,7 @@ impl VM {
                 if name == "start" {
                     self.sync_env_from_locals(code);
                 }
-                crate::vm::vm_stats::record_function_fallback();
+                crate::vm::vm_stats::record_function_fallback(name);
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.interpreter.call_function(name, args);
                 self.interpreter.set_pending_call_arg_sources(None);

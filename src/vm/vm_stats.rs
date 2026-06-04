@@ -10,13 +10,23 @@
 //! Enable with `MUTSU_VM_STATS=1`; a one-line summary is printed to stderr at
 //! the end of the run via `crate::dump_vm_stats()`.
 
-use std::sync::OnceLock;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 static METHOD_TOTAL: AtomicU64 = AtomicU64::new(0);
 static METHOD_FALLBACK: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_FALLBACK: AtomicU64 = AtomicU64::new(0);
+
+/// Per-name function-fallback histogram (only populated when stats are on).
+/// Tells us *which* builtins/subs still route through the interpreter, so
+/// decoupling work can target the highest-count names first. See
+/// docs/vm-decoupling.md.
+fn function_fallback_by_name() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
 // Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
 static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
 static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
@@ -61,9 +71,12 @@ pub(crate) fn record_function_dispatch() {
 /// (`Interpreter::call_function` / `call_function_fallback`) instead of running
 /// compiled or native code.
 #[inline]
-pub(crate) fn record_function_fallback() {
+pub(crate) fn record_function_fallback(name: &str) {
     if enabled() {
         FUNCTION_FALLBACK.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = function_fallback_by_name().lock() {
+            *map.entry(name.to_string()).or_insert(0) += 1;
+        }
     }
 }
 
@@ -150,4 +163,20 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots} locals_pulls={locals_pull}"
     );
+    if let Ok(map) = function_fallback_by_name().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] function-fallback by name (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
 }
