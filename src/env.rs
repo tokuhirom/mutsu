@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use crate::symbol::Symbol;
@@ -29,6 +30,47 @@ pub(crate) fn set_global_base(map: HashMap<Symbol, Value>) {
 #[inline(always)]
 fn global_base() -> Option<&'static HashMap<Symbol, Value>> {
     GLOBAL_BASE.get()
+}
+
+/// Monotonic, process-global flag: set the first time any closure-writeback
+/// metadata key is inserted into *any* env. These keys --
+/// `__mutsu_sigilless_readonly::*`, `__mutsu_sigilless_alias::*`,
+/// `__mutsu_state_key::*`, `__mutsu_predictive_seq_iter::*` -- drive the
+/// per-call sigilless/alias/state-var write-back scans in the closure exit path
+/// (`call_compiled_closure`). The common program never creates any of them, so
+/// the closure path consults [`closure_meta_keys_possible`] to skip those
+/// scans (and their `format!` allocations) entirely.
+///
+/// Soundness: every such key is created via the String-keyed [`Env::insert`]
+/// (always a `format!` result), so detecting them there catches *every*
+/// creation site regardless of which of the ~20 scattered callers inserts it --
+/// the robustness the per-site approach could not guarantee. The flag is
+/// monotonic and global: once `true` it stays `true`, and `true` only ever
+/// makes the (correct) scan run, so an over-set is conservative, never wrong.
+/// A program's metadata lives in its own (per-thread) env, and the creating
+/// `insert` runs earlier in that thread's program order than any closure that
+/// reads it, so `Relaxed` ordering suffices.
+static CLOSURE_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// True if any closure-writeback metadata key may exist in some env. See
+/// [`CLOSURE_META_KEY_SEEN`].
+#[inline]
+pub(crate) fn closure_meta_keys_possible() -> bool {
+    CLOSURE_META_KEY_SEEN.load(Ordering::Relaxed)
+}
+
+/// Flip [`CLOSURE_META_KEY_SEEN`] if `key` is a closure-writeback metadata key.
+/// The outer `__mutsu_` gate keeps this ~1 byte compare for ordinary lexical
+/// names (which never start with `_`).
+#[inline]
+fn note_closure_meta_key(key: &str) {
+    if key.as_bytes().starts_with(b"__mutsu_")
+        && (key.starts_with("__mutsu_sigilless_")
+            || key.starts_with("__mutsu_state_key::")
+            || key.starts_with("__mutsu_predictive_seq_iter::"))
+    {
+        CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Copy-on-write environment wrapper.
@@ -98,6 +140,7 @@ impl Env {
 
     #[inline]
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
+        note_closure_meta_key(&key);
         let sym = Symbol::intern(&key);
         self.cow_mut().insert(sym, value)
     }

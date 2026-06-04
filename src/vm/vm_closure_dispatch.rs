@@ -608,6 +608,11 @@ impl VM {
             || has_writable_params
             || !rw_bindings.is_empty()
             || cc.has_calls;
+        // Whether any closure-writeback metadata key (sigilless readonly/alias,
+        // state-var, predictive-seq) may exist in any env. The common program
+        // creates none, so this stays false and the per-call metadata scans
+        // (and the `__mutsu_*` prefix checks below) are skipped entirely.
+        let meta_possible = crate::env::closure_meta_keys_possible();
         if needs_caller_writeback {
             let rw_sources: std::collections::HashSet<Symbol> = rw_bindings
                 .iter()
@@ -618,8 +623,10 @@ impl VM {
             // Write back captured-variable changes, but NOT the closure's own
             // parameters/locals (which live in cc.locals).  Without this filter,
             // recursive &?BLOCK calls clobber the outer frame's $n, etc.
+            // `cc.locals_sym` is `cc.locals` pre-interned at compile time, so
+            // this avoids re-interning every local on every call.
             let local_names: std::collections::HashSet<Symbol> =
-                cc.locals.iter().map(|s| Symbol::intern(s)).collect();
+                cc.locals_sym.iter().copied().collect();
             let underscore_sym = Symbol::intern("_");
             let at_underscore_sym = Symbol::intern("@_");
             for (k, v) in self.interpreter.env().iter() {
@@ -629,8 +636,9 @@ impl VM {
                     && !param_names.contains(k)
                     && (restored_env.contains_key_sym(*k)
                         || captured_names.contains(k)
-                        || k.starts_with("__mutsu_predictive_seq_iter::")
-                        || k.starts_with("__mutsu_sigilless_alias::!"))
+                        || (meta_possible
+                            && (k.starts_with("__mutsu_predictive_seq_iter::")
+                                || k.starts_with("__mutsu_sigilless_alias::!"))))
                     && (!local_names.contains(k) || captured_names.contains(k))
                 {
                     // Don't leak captured-only variables to callers that don't have
@@ -648,24 +656,31 @@ impl VM {
         // modified inside the closure (e.g. `$a := $arg` where `$a` is captured).
         // Only free variables can be modified by the body, so restrict the
         // (format!-heavy) metadata scan to them instead of the whole captured env.
-        for captured_sym in &cc.free_var_syms {
-            let captured_name = captured_sym.resolve();
-            let readonly_key = format!("__mutsu_sigilless_readonly::{}", captured_name);
-            if let Some(v) = self.interpreter.env().get(&readonly_key).cloned() {
-                restored_env.insert(readonly_key, v);
+        // Skipped wholesale when no sigilless/alias/predictive metadata has ever
+        // been created (the common case) -- `meta_possible` gates the per-free-var
+        // `format!`s and the env-wide `merge_sigilless_alias_writes` scan.
+        if meta_possible {
+            for captured_sym in &cc.free_var_syms {
+                let captured_name = captured_sym.resolve();
+                let readonly_key = format!("__mutsu_sigilless_readonly::{}", captured_name);
+                if let Some(v) = self.interpreter.env().get(&readonly_key).cloned() {
+                    restored_env.insert(readonly_key, v);
+                }
+                let alias_key = format!("__mutsu_sigilless_alias::{}", captured_name);
+                if let Some(v) = self.interpreter.env().get(&alias_key).cloned() {
+                    restored_env.insert(alias_key, v);
+                }
             }
-            let alias_key = format!("__mutsu_sigilless_alias::{}", captured_name);
-            if let Some(v) = self.interpreter.env().get(&alias_key).cloned() {
-                restored_env.insert(alias_key, v);
-            }
+            self.interpreter
+                .merge_sigilless_alias_writes(&mut restored_env, self.interpreter.env());
         }
-        self.interpreter
-            .merge_sigilless_alias_writes(&mut restored_env, self.interpreter.env());
 
         // Only run the state-variable sync and cleanup when the closure
         // references captured variables that may be state vars.  This avoids the
-        // per-call overhead for simple closures in hot loops.
-        if !cc.free_var_syms.is_empty() {
+        // per-call overhead for simple closures in hot loops.  The `meta_possible`
+        // gate skips the per-free-var `format!("__mutsu_state_key::...")` lookups
+        // entirely for programs with no state variables.
+        if meta_possible && !cc.free_var_syms.is_empty() {
             // Update state variable storage when closures modify captured
             // state variables.  The metadata key "__mutsu_state_key::<name>"
             // maps the variable name to its state storage key (set by
