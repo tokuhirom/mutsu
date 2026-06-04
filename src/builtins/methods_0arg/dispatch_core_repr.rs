@@ -454,7 +454,7 @@ pub(super) fn dispatch(
                             .iter()
                             .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
                             .collect();
-                        format!("{{{}}}", parts.join(" "))
+                        format!("{{{}}}", parts.join(", "))
                     }
                     Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
                     Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
@@ -502,7 +502,7 @@ pub(super) fn dispatch(
                             .iter()
                             .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
                             .collect();
-                        format!("{{{}}}", parts.join(" "))
+                        format!("{{{}}}", parts.join(", "))
                     }
                     Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
                     Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
