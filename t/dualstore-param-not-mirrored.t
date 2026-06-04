@@ -7,7 +7,7 @@ use Test;
 # lives purely in the VM's `locals`. This must not change any observable
 # behaviour.
 
-plan 14;
+plan 16;
 
 # Pure recursion: slot-only param, never mirrored into env.
 sub fib($n) { $n < 2 ?? $n !! fib($n - 1) + fib($n - 2) }
@@ -50,3 +50,10 @@ multi mtype(Int $x) { "int:$x" }
 multi mtype(Str $x) { "str:$x" }
 is mtype(7), "int:7", 'multi dispatch Int param';
 is mtype("hi"), "str:hi", 'multi dispatch Str param';
+
+# A gather block compiles its body inline and snapshots the whole env by name;
+# the param it reads ($num) must stay env-synced even though the gather body is
+# not in closure_compiled_codes (regression: S02-types/lazy-lists.t).
+sub make-lazy-list($num) { gather { take $_ for 0 ..^ $num }.lazy }
+is make-lazy-list(4).List.join(','), '0,1,2,3', 'gather body reads slot-only param via env snapshot';
+is make-lazy-list(10).first(*.is-prime), 2, 'lazy gather over param stays correct';

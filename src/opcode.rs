@@ -1184,15 +1184,22 @@ impl CompiledCode {
         // loop-phaser desugaring threads state through by name via `env`, e.g.
         // the `__mutsu_loop_first_`/`__mutsu_loop_ran_` control temps) cannot
         // safely treat any local as slot-only -- a slot value may not survive the
-        // loop's per-iteration env round-trips. Mark every local env-synced so the
-        // dual-store flush gate (vm_env_helpers) keeps the full flush for such
-        // frames. Recursion-heavy code without loops (e.g. `fib`) is unaffected
-        // and still skips the per-call flush for its slot-only params.
-        let has_inline_loop = self
-            .ops
-            .iter()
-            .any(|op| matches!(op, OpCode::ForLoop { .. } | OpCode::BlockScope { .. }));
-        if has_inline_loop {
+        // loop's per-iteration env round-trips. The same applies to `MakeGather`:
+        // a gather block compiles its body inline and snapshots the *whole*
+        // interpreter env by name (vm_register_ops::exec_make_gather_op), but the
+        // body is not registered in `closure_compiled_codes`, so the nested-closure
+        // free-var scan below cannot see which locals it reads. Mark every local
+        // env-synced so the dual-store flush gate (vm_env_helpers) keeps the full
+        // flush for such frames. Recursion-heavy code without loops/gather (e.g.
+        // `fib`) is unaffected and still skips the per-call flush for its slot-only
+        // params.
+        let captures_env_by_name = self.ops.iter().any(|op| {
+            matches!(
+                op,
+                OpCode::ForLoop { .. } | OpCode::BlockScope { .. } | OpCode::MakeGather(_)
+            )
+        });
+        if captures_env_by_name {
             self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             return;
         }
