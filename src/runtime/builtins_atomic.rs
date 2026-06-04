@@ -84,6 +84,7 @@ impl Interpreter {
     }
 
     pub(super) fn atomic_value_key_for_name(&mut self, name: &str) -> String {
+        self.mark_atomic_var_seen();
         let name_key = Self::atomic_shared_name_key(name);
         if let Some(Value::Str(existing)) = self.env.get(&name_key) {
             return existing.to_string();

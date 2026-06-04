@@ -957,6 +957,13 @@ pub struct Interpreter {
     /// preserves env keys that existed before the block).
     our_vars: HashMap<String, Value>,
     state_vars: HashMap<String, Value>,
+    /// Per-closure-instance captured-variable state, keyed by
+    /// (closure instance id, captured variable Symbol). This is the hot
+    /// closure-call persistence store (loaded/saved on every closure call for
+    /// its free variables); a typed key avoids the per-call
+    /// `format!("__mutsu_closure_cap::{id}::{name}")` String allocation and the
+    /// String hashing that dominated the closure dispatch profile.
+    closure_captured_state: HashMap<(u64, Symbol), Value>,
     once_values: HashMap<String, Value>,
     once_scope_stack: Vec<u64>,
     next_once_scope_id: u64,
@@ -977,6 +984,14 @@ pub struct Interpreter {
     pub(crate) attributes_pragma: String,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
+    /// Monotonic flag: set once any `atomicint` variable / atomic storage has been
+    /// registered in this interpreter (or inherited from a parent thread). The
+    /// per-`GetGlobal`/`GetLocal` atomic-variable check is expensive (a `format!`
+    /// plus two `var_type_constraint` lookups, each itself a `format!`), yet
+    /// atomics are exotic; when this flag is clear the entire check is skipped,
+    /// which removes that cost from the hot variable-read path. Never cleared, so
+    /// a program that stops using an atomic still resolves correctly.
+    atomic_var_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
     /// Container element defaults for arrays/hashes with `is default(...)`,
@@ -3047,6 +3062,7 @@ impl Interpreter {
             fatal_mode: false,
             our_vars: HashMap::new(),
             state_vars: HashMap::new(),
+            closure_captured_state: HashMap::new(),
             once_values: HashMap::new(),
             once_scope_stack: Vec::new(),
             next_once_scope_id: 1,
@@ -3056,6 +3072,7 @@ impl Interpreter {
             variables_pragma: String::new(),
             attributes_pragma: String::new(),
             var_type_constraints: HashMap::new(),
+            atomic_var_seen: false,
             var_defaults: HashMap::new(),
             container_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
@@ -4244,6 +4261,9 @@ impl Interpreter {
         let meta_key = format!("__mutsu_type::{}", key);
         if let Some(constraint) = constraint {
             let info = Self::parse_container_constraint(name, &constraint);
+            if info.value_type == "atomicint" || constraint.contains("atomicint") {
+                self.atomic_var_seen = true;
+            }
             self.var_type_constraints
                 .insert(key.clone(), info.value_type.clone());
             self.env
@@ -4290,6 +4310,20 @@ impl Interpreter {
     /// fast path for simple scalar variables where the env-based constraint is never set.
     pub(crate) fn var_type_constraint_fast(&self, name: &str) -> Option<&String> {
         self.var_type_constraints.get(name)
+    }
+
+    /// Whether any `atomicint`/atomic-storage variable has ever been registered
+    /// (monotonic). When false, the hot variable-read path can skip the entire
+    /// atomic-variable check (which otherwise costs `format!`s and constraint
+    /// lookups on every `GetGlobal`/`GetLocal`).
+    #[inline(always)]
+    pub(crate) fn atomic_var_seen(&self) -> bool {
+        self.atomic_var_seen
+    }
+
+    /// Mark that an atomic variable / atomic storage has been registered.
+    pub(crate) fn mark_atomic_var_seen(&mut self) {
+        self.atomic_var_seen = true;
     }
 
     /// Set the default value for a variable declared with `is default(...)`.
@@ -5096,6 +5130,10 @@ impl Interpreter {
             fatal_mode: self.fatal_mode,
             our_vars: HashMap::new(),
             state_vars: HashMap::new(),
+            // Mirror state_vars: a thread clone starts with no persisted
+            // closure captured state (falls back to the captured-env initial
+            // values), exactly as before this store existed.
+            closure_captured_state: HashMap::new(),
             once_values: self.once_values.clone(),
             once_scope_stack: Vec::new(),
             next_once_scope_id: self.next_once_scope_id,
@@ -5105,6 +5143,10 @@ impl Interpreter {
             variables_pragma: self.variables_pragma.clone(),
             attributes_pragma: self.attributes_pragma.clone(),
             var_type_constraints: self.var_type_constraints.clone(),
+            // Inherit monotonically: if the parent ever registered an atomic var,
+            // the child (which shares the atomic storage via shared_vars) must keep
+            // running the atomic-variable read check.
+            atomic_var_seen: self.atomic_var_seen,
             var_defaults: self.var_defaults.clone(),
             container_defaults: self.container_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),

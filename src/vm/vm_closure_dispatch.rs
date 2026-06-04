@@ -192,9 +192,8 @@ impl VM {
             .free_var_syms
             .iter()
             .filter_map(|k| {
-                let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
                 self.interpreter
-                    .get_state_var(&persist_key)
+                    .get_closure_captured_state(data.id, *k)
                     .map(|val| (*k, val.clone()))
             })
             .collect();
@@ -524,8 +523,8 @@ impl VM {
         // the body, so only those need persisting.
         for k in &cc.free_var_syms {
             if let Some(val) = self.interpreter.env().get_sym(*k).cloned() {
-                let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
-                self.interpreter.set_state_var(persist_key, val);
+                self.interpreter
+                    .set_closure_captured_state(data.id, *k, val);
             }
         }
 

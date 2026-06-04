@@ -344,13 +344,63 @@ Reaching that requires, roughly in order:
         `t/base-tier-magic-vars.t` (read / underscore alias / sub / block / closure
         / shadow / thread visibility).
 
-  - [ ] **Slice 4c (part 2) — upvalue capture + move setup writes off the shared
+  - [x] **Slice 4c (part 2a) — kill the per-read/per-call `format!` on the hot
+        variable-read and closure-call paths.** Done.
+
+        **Measurement first (the deep-copy count was a red herring at this scale).**
+        A `perf` profile of a closure-heavy bench showed `Env::cow_mut` (the
+        `make_mut` deep copy) is now negligible; the dominant runtime cost is
+        per-op string/format/Symbol churn. Two hot `format!` sources:
+        1. **`exec_get_global` / the `GetLocal` shared-read path run an atomic-var
+           check on *every* variable read**: a `format!("__mutsu_atomic_name::{n}")`
+           plus *two* `var_type_constraint` calls (each itself a
+           `format!("__mutsu_type::{n}")` + env lookup). Closures read their free
+           vars via `GetGlobal`, and recursion (`fib`) reads its param constantly,
+           so this is on the critical path of essentially all variable-read-heavy
+           code — yet atomics are exotic.
+        2. **The closure capture-state persist/load** keyed state by
+           `format!("__mutsu_closure_cap::{id}::{name}")` (String) in the shared
+           `state_vars` map, allocating + string-hashing per free var per call.
+
+        **What shipped.**
+        * A monotonic `Interpreter::atomic_var_seen` flag, set when any `atomicint`
+          constraint is registered (`set_var_type_constraint`) or atomic storage is
+          created (`atomic_value_key_for_name`), and inherited across thread clones
+          (atomics are shared via `shared_vars`). The two hot atomic-read checks are
+          gated behind it, so a program with no atomics skips the whole check
+          (`format!` + constraint lookups) on every read. All three trigger
+          conditions of the check are covered by the two flag-set sites, so the gate
+          can never hide a real atomic.
+        * A dedicated typed store `closure_captured_state: HashMap<(u64, Symbol),
+          Value>` replaces the formatted-String `__mutsu_closure_cap::` keys,
+          removing the per-call `format!` + String hashing from closure capture
+          persistence.
+
+        **Result (release, best-of-7, interleaved).** **`bench-fib` 1.56s→1.23s
+        (~21%)** (every recursive call reads its param), **read-only closure
+        8.05s→7.06s (~12%)**, **mutating closure 15.20s→14.18s (~7%)**, `bench-class`
+        ~3%. Bench output byte-identical. `make test` failure set unchanged from the
+        `main` baseline (`placeholder.t` t8, `tail-function.t` t4, `wrap.t`,
+        `hyper-func-op-writeback.t` t8). Atomic semantics verified: whitelisted
+        `roast/S17-lowlevel/atomic.t` + `atomic-ops.t` (62 subtests) green; new pin
+        `t/atomic-read-gate.t` (ordinary/closure reads + atomic inc/fetch/assign +
+        cross-thread counter). (`roast/S17-lowlevel/lock.t` fails identically on the
+        pre-change binary — pre-existing, not whitelisted.)
+
+  - [ ] **Slice 4c (part 2b) — upvalue capture + move setup writes off the shared
         env.** Still to do: give closures an explicit upvalue list (or scoped
         overlay env) and move the `&?BLOCK` / `__mutsu_callable_id` / param-binding
         setup writes off the shared global env. This removes the per-call
         `make_mut` deep copies *entirely* (Slice 3 located them at exactly those
-        setup writes; Slices 4b/4c-part1 only shrank each copy, they did not cut the
-        count).
+        setup writes; Slices 4b/4c-part1 only shrank each copy, 4c-part2a removed
+        the per-op `format!` overhead — none of them cut the deep-copy count). The
+        remaining structural cost is the full-`data.env` merge loop in
+        `call_compiled_closure` (`entry_or_insert_sym` over ~100 captured entries
+        per call); replacing it with a captured-env *fallback layer* (so `GetGlobal`
+        consults `data.env` on miss instead of merging it in) is the natural next
+        step, but it must preserve the intricate exit writeback semantics
+        (advent integration tests, recursive `&?BLOCK`, rw bindings, sigilless
+        aliases).
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
