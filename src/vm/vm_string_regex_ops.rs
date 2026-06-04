@@ -1110,37 +1110,64 @@ impl VM {
         // At least one side is a (non-hash) Iterable: distribute element-wise,
         // recursing so nested Iterables/Hashes are handled at every depth.
         if Self::is_listy(left) || Self::is_listy(right) {
-            let left_list = Interpreter::value_to_list(left);
-            let right_list = Interpreter::value_to_list(right);
+            let mut left_list = Interpreter::value_to_list(left);
+            let mut right_list = Interpreter::value_to_list(right);
+            // A list literal ending in `*` (Whatever) is "infinitely extensible
+            // by copying its last real element". Strip the trailing Whatever;
+            // such a side adapts to the other side's length (like a dwim side)
+            // but pads with its last real element instead of cycling.
+            let left_ext = matches!(left_list.last(), Some(Value::Whatever));
+            let right_ext = matches!(right_list.last(), Some(Value::Whatever));
+            if left_ext {
+                left_list.pop();
+            }
+            if right_ext {
+                right_list.pop();
+            }
             let left_len = left_list.len();
             let right_len = right_list.len();
-            if left_len == 0 && right_len == 0 {
+            // A side determines the result length only when it neither dwims nor
+            // is `*`-extensible.
+            let left_fixed = !dwim_left && !left_ext;
+            let right_fixed = !dwim_right && !right_ext;
+            // A non-dwimmy, non-extensible hyper requires equal lengths.
+            if left_fixed && right_fixed && left_len != right_len {
+                return Err(Self::hyperop_nondwim_error(left_len, right_len));
+            }
+            // An empty operand cannot be cycled or padded to fill a dwim side, so
+            // any empty side yields an empty result (`True »+» ()` is `()`, not a
+            // `0`-padded `(1,)`). The fixed-length mismatch above already covers
+            // the case where the empty side must raise X::HyperOp::NonDWIM.
+            if left_len == 0 || right_len == 0 {
                 return Ok(Value::array(Vec::new()));
             }
-            let result_len = if !dwim_left && !dwim_right {
-                if left_len != right_len {
-                    return Err(Self::hyperop_nondwim_error(left_len, right_len));
-                }
+            let result_len = if left_fixed {
                 left_len
-            } else if dwim_left && dwim_right {
-                std::cmp::max(left_len, right_len)
-            } else if dwim_right {
-                left_len
-            } else {
+            } else if right_fixed {
                 right_len
+            } else {
+                std::cmp::max(left_len, right_len)
+            };
+            // A `*`-extensible side pads with its last real element; an ordinary
+            // dwim side cycles from the start.
+            let l_index = |i: usize| {
+                if left_ext {
+                    i.min(left_len - 1)
+                } else {
+                    i % left_len
+                }
+            };
+            let r_index = |i: usize| {
+                if right_ext {
+                    i.min(right_len - 1)
+                } else {
+                    i % right_len
+                }
             };
             let mut results = Vec::with_capacity(result_len);
             for i in 0..result_len {
-                let l = if left_len == 0 {
-                    &Value::Int(0)
-                } else {
-                    &left_list[i % left_len]
-                };
-                let r = if right_len == 0 {
-                    &Value::Int(0)
-                } else {
-                    &right_list[i % right_len]
-                };
+                let l = &left_list[l_index(i)];
+                let r = &right_list[r_index(i)];
                 results.push(self.hyper_op_pair(op, l, r, dwim_left, dwim_right)?);
             }
             // Preserve List kind when inputs are Lists (not Arrays)
