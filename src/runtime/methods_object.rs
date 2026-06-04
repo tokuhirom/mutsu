@@ -22,6 +22,143 @@ fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
 }
 
 impl Interpreter {
+    /// Returns `true` if `class_name` (and every user class in its MRO) can be
+    /// default-constructed (`Foo.new(...)`) without running any user code:
+    /// no BUILD/TWEAK/BUILDALL/custom-new, only public `$`-sigiled attributes
+    /// with no required/type/where constraints, and no native methods. Parents
+    /// must themselves be either `Any`/`Mu`/`Cool` or another such simple class
+    /// (so a plain inheritance chain like `Dog is Animal` still qualifies).
+    /// Construction is then pure data: assign named args to attributes and
+    /// evaluate attribute defaults.
+    pub(crate) fn is_native_default_constructible(&self, cn_resolved: &str) -> bool {
+        if cn_resolved.contains('[') || cn_resolved.contains("::") {
+            return false;
+        }
+        if !self.classes.contains_key(cn_resolved) {
+            return false;
+        }
+        let mut has_attribute = false;
+        for cls in self.mro_readonly(cn_resolved) {
+            if cls == "Any" || cls == "Mu" || cls == "Cool" {
+                continue;
+            }
+            let Some(class_def) = self.classes.get(&cls) else {
+                // A non-class entry in the MRO (e.g. a role) — be conservative.
+                return false;
+            };
+            let simple = !class_def.methods.contains_key("BUILD")
+                && !class_def.methods.contains_key("TWEAK")
+                && !class_def.methods.contains_key("BUILDALL")
+                && !class_def.methods.contains_key("new")
+                && class_def.native_methods.is_empty()
+                && class_def.parents.iter().all(|p| {
+                    p == "Any" || p == "Mu" || p == "Cool" || self.classes.contains_key(p)
+                })
+                && class_def.attributes.iter().all(
+                    |(_, _, _, is_required, type_constraint, sigil, where_constraint)| {
+                        *sigil == '$'
+                            && !is_required
+                            && type_constraint.is_none()
+                            && where_constraint.is_none()
+                    },
+                )
+                && class_def.attribute_types.is_empty()
+                && class_def.attribute_smileys.is_empty();
+            if !simple {
+                return false;
+            }
+            has_attribute |= !class_def.attributes.is_empty();
+        }
+        has_attribute
+    }
+
+    /// Default-construct `class_name` natively when it is eligible (see
+    /// `is_native_default_constructible`). Returns `None` for ineligible
+    /// classes so callers fall through to the full constructor dispatch.
+    /// This is the construction fast path shared by `dispatch_new` and the VM.
+    pub(crate) fn try_native_default_construct(
+        &mut self,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let cn_resolved = class_name.resolve();
+        if !self.is_native_default_constructible(&cn_resolved) {
+            return None;
+        }
+        Some(self.build_native_default_instance(class_name, &cn_resolved, args))
+    }
+
+    fn build_native_default_instance(
+        &mut self,
+        class_name: Symbol,
+        cn_resolved: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut attrs = HashMap::new();
+        for arg in args {
+            if let Value::Pair(key, val) = arg
+                && self.is_attribute_buildable(cn_resolved, key)
+            {
+                attrs.insert(key.clone(), *val.clone());
+            }
+        }
+        // Fill defaults for missing attributes (including Nil for uninitialized ones).
+        // Set up `self` as the partially-constructed instance so that
+        // default expressions referencing `self` (e.g. `has $.x = self.y`)
+        // work correctly. Update `self` after each default so that later
+        // defaults can see earlier defaults' values.
+        let class_attrs = self.collect_class_attributes(cn_resolved);
+        let has_defaults = class_attrs.iter().any(|(_, _, d, ..)| d.is_some());
+        if has_defaults {
+            let partial = Value::make_instance(class_name, attrs.clone());
+            self.env.insert("self".to_string(), partial.clone());
+            self.env.insert("__ANON_STATE__".to_string(), partial);
+            // Also set !attr and .attr in env so that default expressions
+            // like `has $.c = $!a + $!b` can reference earlier attributes.
+            for (k, v) in &attrs {
+                self.env.insert(format!("!{}", k), v.clone());
+                self.env.insert(format!(".{}", k), v.clone());
+            }
+        }
+        // Switch package to class scope so class-scoped subs are accessible
+        // in default expressions (e.g. `has $.inner = inner()` where `inner`
+        // is a sub defined inside the class body).
+        let saved_package = self.current_package.clone();
+        if self.has_class_scoped_subs(cn_resolved) {
+            self.current_package = cn_resolved.to_string();
+        }
+        for (attr_name, _is_public, default_expr, _, _, _, _) in &class_attrs {
+            if !attrs.contains_key(attr_name) {
+                if let Some(expr) = default_expr {
+                    let val = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
+                    attrs.insert(attr_name.clone(), val.clone());
+                    // Update self and !attr/.attr so later defaults see this value
+                    let updated = Value::make_instance(class_name, attrs.clone());
+                    self.env.insert("self".to_string(), updated.clone());
+                    self.env.insert("__ANON_STATE__".to_string(), updated);
+                    self.env.insert(format!("!{}", attr_name), val.clone());
+                    self.env.insert(format!(".{}", attr_name), val);
+                } else {
+                    attrs.insert(attr_name.clone(), Value::Nil);
+                }
+            }
+        }
+        // Restore package after default evaluation
+        self.current_package = saved_package;
+        if has_defaults {
+            self.env.remove("self");
+            self.env.remove("__ANON_STATE__");
+            // Clean up the !attr/.attr env entries we added
+            for k in attrs.keys() {
+                self.env.remove(&format!("!{}", k));
+                self.env.remove(&format!(".{}", k));
+            }
+        }
+        // Add alias metadata for `has $x` (no twigil) attributes
+        self.add_alias_attribute_metadata(cn_resolved, &mut attrs);
+        Ok(Value::make_instance(class_name, attrs))
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,
@@ -260,95 +397,11 @@ impl Interpreter {
             let cn_resolved = class_name.resolve();
             // Fast path: user-defined class with no BUILD/TWEAK/custom new,
             // only simple parents (Any/Mu/Cool), only $-sigiled attributes,
-            // and no native methods (which indicates a built-in type).
-            if let Some(class_def) = self.classes.get(&cn_resolved)
-                && !class_def.methods.contains_key("BUILD")
-                && !class_def.methods.contains_key("TWEAK")
-                && !class_def.methods.contains_key("BUILDALL")
-                && !class_def.methods.contains_key("new")
-                && !cn_resolved.contains('[')
-                && !cn_resolved.contains("::")
-                && class_def.native_methods.is_empty()
-                && class_def
-                    .parents
-                    .iter()
-                    .all(|p| p == "Any" || p == "Mu" || p == "Cool")
-                && class_def.attributes.iter().all(
-                    |(_, _, _, is_required, type_constraint, sigil, where_constraint)| {
-                        *sigil == '$'
-                            && !is_required
-                            && type_constraint.is_none()
-                            && where_constraint.is_none()
-                    },
-                )
-                && !class_def.attributes.is_empty()
-                && class_def.attribute_types.is_empty()
-                && class_def.attribute_smileys.is_empty()
-            {
-                let mut attrs = HashMap::new();
-                for arg in &args {
-                    if let Value::Pair(key, val) = arg
-                        && self.is_attribute_buildable(&cn_resolved, key)
-                    {
-                        attrs.insert(key.clone(), *val.clone());
-                    }
-                }
-                // Fill defaults for missing attributes (including Nil for uninitialized ones).
-                // Set up `self` as the partially-constructed instance so that
-                // default expressions referencing `self` (e.g. `has $.x = self.y`)
-                // work correctly. Update `self` after each default so that later
-                // defaults can see earlier defaults' values.
-                let class_attrs = self.collect_class_attributes(&cn_resolved);
-                let has_defaults = class_attrs.iter().any(|(_, _, d, ..)| d.is_some());
-                if has_defaults {
-                    let partial = Value::make_instance(*class_name, attrs.clone());
-                    self.env.insert("self".to_string(), partial.clone());
-                    self.env.insert("__ANON_STATE__".to_string(), partial);
-                    // Also set !attr and .attr in env so that default expressions
-                    // like `has $.c = $!a + $!b` can reference earlier attributes.
-                    for (k, v) in &attrs {
-                        self.env.insert(format!("!{}", k), v.clone());
-                        self.env.insert(format!(".{}", k), v.clone());
-                    }
-                }
-                // Switch package to class scope so class-scoped subs are accessible
-                // in default expressions (e.g. `has $.inner = inner()` where `inner`
-                // is a sub defined inside the class body).
-                let saved_package = self.current_package.clone();
-                if self.has_class_scoped_subs(&cn_resolved) {
-                    self.current_package = cn_resolved.clone();
-                }
-                for (attr_name, _is_public, default_expr, _, _, _, _) in &class_attrs {
-                    if !attrs.contains_key(attr_name) {
-                        if let Some(expr) = default_expr {
-                            let val =
-                                self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
-                            attrs.insert(attr_name.clone(), val.clone());
-                            // Update self and !attr/.attr so later defaults see this value
-                            let updated = Value::make_instance(*class_name, attrs.clone());
-                            self.env.insert("self".to_string(), updated.clone());
-                            self.env.insert("__ANON_STATE__".to_string(), updated);
-                            self.env.insert(format!("!{}", attr_name), val.clone());
-                            self.env.insert(format!(".{}", attr_name), val);
-                        } else {
-                            attrs.insert(attr_name.clone(), Value::Nil);
-                        }
-                    }
-                }
-                // Restore package after default evaluation
-                self.current_package = saved_package;
-                if has_defaults {
-                    self.env.remove("self");
-                    self.env.remove("__ANON_STATE__");
-                    // Clean up the !attr/.attr env entries we added
-                    for k in attrs.keys() {
-                        self.env.remove(&format!("!{}", k));
-                        self.env.remove(&format!(".{}", k));
-                    }
-                }
-                // Add alias metadata for `has $x` (no twigil) attributes
-                self.add_alias_attribute_metadata(&cn_resolved, &mut attrs);
-                return Ok(Value::make_instance(*class_name, attrs));
+            // and no native methods. Shared with the VM so `Foo.new(...)` for
+            // such classes is constructed without entering the generic method
+            // dispatch machinery (see `VM::try_native_default_construct`).
+            if let Some(result) = self.try_native_default_construct(*class_name, &args) {
+                return result;
             }
             let parametric = Self::parse_parametric_type_name(&cn_resolved);
             let (base_class_name, type_args) = if let Some((base, args)) = &parametric {

@@ -115,6 +115,19 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Native default construction: `Foo.new(...)` for a simple user-defined
+        // class is pure data assembly (named args + attribute defaults), so the
+        // VM builds the instance directly instead of routing through the
+        // interpreter's generic constructor dispatch (lever A: shrink method-call
+        // interpreter fallback).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && let Some(result) = self
+                .interpreter
+                .try_native_default_construct(*class_name, &args)
+        {
+            return result;
+        }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             if self.interpreter.is_native_method(&class, method) {
@@ -540,6 +553,15 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Native default construction (see `try_compiled_method_or_interpret`).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && let Some(result) = self
+                .interpreter
+                .try_native_default_construct(*class_name, &args)
+        {
+            return result;
+        }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             if self.interpreter.is_native_method(&class, method) {

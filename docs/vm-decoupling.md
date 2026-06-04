@@ -147,14 +147,47 @@ Pre-existing, out of scope: a typed `@.items` / `%.foo` accessor read throws
 typed-container accessors); `try_fast_accessor_read` returns the value when the
 attribute is present, so it does not regress this — it falls through identically.
 
+## Step 5 — native default construction (`Foo.new(...)`) (2026-06)
+
+`.new` was the dominant remaining method fallback (`new=10001` in
+`method-call.raku`, `new=9000` in `bench-class`). The interpreter already had a
+**fast path** for default-constructing a simple user class (no
+BUILD/TWEAK/BUILDALL/custom-new, only public `$`-sigiled attributes with no
+required/type/where constraints, no native methods) — but it lived *inside*
+`dispatch_new`, reachable only after `Foo.new` had already routed through the
+VM→`call_method_with_values`→generic-dispatch→`dispatch_new` chain (method
+dispatch frame push/pop, samewith context, parametric-role/array/hash/enum
+guards). So every such `.new` counted as an interpreter fallback.
+
+Extracted that fast path into `Interpreter::try_native_default_construct`
+(eligibility = `is_native_default_constructible`, construction =
+`build_native_default_instance`) and call it **directly** from the VM's
+`try_compiled_method_or_interpret` / `_mut_` variants before recording a
+fallback. `dispatch_new` now calls the same helper, so behavior is identical —
+this is a relocation of the dispatch decision into the VM, not a new code path.
+
+Eligibility was also generalized from "parents are only Any/Mu/Cool" to "every
+user class in the MRO is simple" so a plain inheritance chain (`Dog is Animal`)
+qualifies too. Construction stays pure data (named args → attributes, evaluate
+attribute defaults); anything needing user code (BUILD/TWEAK, typed/required
+attrs, custom `new`) is ineligible and falls through unchanged.
+
+| program | method fallback before | after |
+|---|---|---|
+| `method-call.raku` | 10001 / 50002 (20.0%) | 0 / 50002 (**0.0%**) |
+| `bench-class` | 9000 / 65000 (13.8%) | 0 / 65000 (**0.0%**) |
+
+Both OO benchmarks now have **zero** method-call interpreter fallback. The
+residual `.new` fallback that remains in the wild is for classes with custom
+constructors / BUILD / TWEAK / typed attributes, whose construction genuinely
+runs user code — the next, larger step is moving the class registry + BUILD/
+TWEAK execution to VM-owned data (`ANALYSIS.md` §1.1).
+
 ## Next steps (candidate strangler targets)
 
-1. **`.new` constructor**: now the dominant method fallback (`new=10001` /
-   `9000`). Nativizing default construction (allocate Instance, run BUILD/TWEAK,
-   apply attribute defaults + type coercion) would remove it.
-2. `Test` functions: would need the TAP `TestState` reachable from the VM rather
+1. `Test` functions: would need the TAP `TestState` reachable from the VM rather
    than only the interpreter — large, defer.
-3. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
+2. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
    `ANALYSIS.md` §1.2) so the VM stops borrowing the interpreter's env.
 
 Record each step's before/after numbers in this file so the trend is visible.
