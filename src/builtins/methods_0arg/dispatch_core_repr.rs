@@ -458,6 +458,16 @@ pub(super) fn dispatch(
                     }
                     Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
                     Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
+                    Value::Junction { kind, values } => {
+                        let kind_str = match kind {
+                            crate::value::JunctionKind::Any => "any",
+                            crate::value::JunctionKind::All => "all",
+                            crate::value::JunctionKind::One => "one",
+                            crate::value::JunctionKind::None => "none",
+                        };
+                        let elems = values.iter().map(gist_item).collect::<Vec<_>>().join(", ");
+                        format!("{}({})", kind_str, elems)
+                    }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
@@ -496,6 +506,16 @@ pub(super) fn dispatch(
                     }
                     Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
                     Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
+                    Value::Junction { kind, values } => {
+                        let kind_str = match kind {
+                            crate::value::JunctionKind::Any => "any",
+                            crate::value::JunctionKind::All => "all",
+                            crate::value::JunctionKind::One => "one",
+                            crate::value::JunctionKind::None => "none",
+                        };
+                        let elems = values.iter().map(gist_item).collect::<Vec<_>>().join(", ");
+                        format!("{}({})", kind_str, elems)
+                    }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
