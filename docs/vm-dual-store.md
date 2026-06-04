@@ -427,17 +427,46 @@ Reaching that requires, roughly in order:
         S32-hash/S03-metaops files + closure pins + advent integration tests all
         green.
 
-  - [ ] **Slice 4c (part 2c) — the fork itself (deferred, low priority).** Removing
-        the per-call `make_mut` deep copy *entirely* (born-owned overlay / moving
-        the `&?BLOCK` / `__mutsu_callable_id` / param setup writes off the shared
-        env) is still open, but the profile above shows it is now worth only ~2 %,
-        so it is no longer the priority. Higher-value remaining targets in the
-        closure profile: the residual per-free-var metadata `format!`s
-        (`__mutsu_sigilless_readonly::` / `__mutsu_sigilless_alias::` /
-        `__mutsu_state_key::`), which almost always miss but whose write-sites are
-        scattered across 5+ files (so a robust monotonic gate like
-        `atomic_var_seen` needs care), and the two remaining `Symbol::starts_with`
-        prefix checks in the writeback scan.
+  - [x] **Slice 4c (part 2c) — gate the per-call sigilless/state metadata
+        write-back scans behind a monotonic flag.** Done.
+
+        **What was costing.** After part 2b the closure exit path still ran, on
+        *every* call, three per-free-var / per-env scans that almost always find
+        nothing: (1) a `format!("__mutsu_sigilless_readonly::{n}")` +
+        `format!("__mutsu_sigilless_alias::{n}")` lookup per free var, (2)
+        `merge_sigilless_alias_writes`, which scans the whole working env **twice**
+        doing `Symbol::starts_with` on every key, and (3) a
+        `format!("__mutsu_state_key::{n}")` lookup per free var. A program with no
+        sigilless variables and no state variables (the common case, incl. the
+        read-only `map`/`grep` blocks) created none of those metadata keys yet paid
+        all three scans. The profile put `format!`/`fmt::write` at ~11 % and
+        `Symbol::starts_with` at ~8.5 %.
+
+        **The robustness problem the doc flagged, solved at the choke point.** The
+        ~20 metadata-creation sites are scattered across 5+ files, so a per-site
+        monotonic gate (like `atomic_var_seen`) was error-prone. But *every* such
+        key is created via the String-keyed `Env::insert` (always a `format!`
+        result) — `insert_sym` is never used for them (verified). So a single
+        prefix check in `Env::insert` catches all creation sites regardless of
+        caller. A process-global monotonic `AtomicBool` (`env.rs
+        CLOSURE_META_KEY_SEEN`) is set there for `__mutsu_sigilless_*` /
+        `__mutsu_state_key::*` / `__mutsu_predictive_seq_iter::*`; the closure exit
+        path reads `closure_meta_keys_possible()` once and skips all three scans
+        (and the two residual `starts_with` prefix checks in the main writeback
+        loop) when it is false. The flag is global + monotonic, so an over-set only
+        ever makes the (correct) scan run — never wrong — and a program's metadata
+        lives in its own per-thread env created earlier in that thread's program
+        order, so `Relaxed` ordering suffices. Also switched the writeback scan's
+        `local_names` set from re-interning `cc.locals` per call to the
+        compile-time-precomputed `cc.locals_sym`.
+
+        **Result (release, best-of-7, interleaved): read-only closure 7.21s→5.79s
+        (~19.7 %), mutating closure 12.55s→10.55s (~15.9 %)**; `bench-fib` and
+        `bench-class` neutral (within noise). Bench output byte-identical.
+        Focused S03-binding/S04-blocks/S04-declarations(state)/S02-names/S06
+        roast set (9 files) + closure pins + the three advent integration tests
+        green. New pin `t/closure-meta-writeback-gate.t` (plain / read-only /
+        state-var-per-instance / monotonic-flag / forwarded-call-mutation).
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
