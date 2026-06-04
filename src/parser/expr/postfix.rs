@@ -3184,20 +3184,39 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 }
             }
 
-            // User-declared postfix operator in dotted form: ».??? / >>.???
+            // User-declared postfix operator in dotted form (».??? / >>.???) is
+            // only allowed for *non-wordy* (symbolic) operators. A wordy postfix
+            // like `foo` in dotted form is a plain method call (and throws
+            // X::Method::NotFound if no such method exists), per S03:
+            // `@a».???` calls `postfix:<???>`, but `@a».foo` looks up a method.
             if modifier.is_none()
                 && let Some((full_name, consumed)) =
                     super::super::stmt::simple::match_user_declared_postfix_op(r)
             {
-                expr = Expr::HyperMethodCall {
-                    target: Box::new(expr),
-                    name: Symbol::intern(&full_name),
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                };
-                rest = &r[consumed..];
-                continue;
+                let inner = full_name
+                    .strip_prefix("postfix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                    .unwrap_or("");
+                let is_wordy = inner
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_')
+                    && inner
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                if !is_wordy {
+                    expr = Expr::HyperMethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern(&full_name),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    };
+                    rest = &r[consumed..];
+                    continue;
+                }
+                // Wordy postfix in dotted form: fall through to method-name
+                // parsing so it dispatches as a method call.
             }
 
             // Hyper with quoted method name: ».""() / »."name"() / »."{expr}"()
