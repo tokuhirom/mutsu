@@ -243,5 +243,41 @@ Reaching that requires, roughly in order:
       (`fill(true)` whenever any closure exists) can be dropped. This is what
       actually removes the per-call `make_mut` deep copies.
 
+  - [x] **Slice 4a — drop the conservative whole-frame `needs_env_sync`.** Done.
+
+        `compute_needs_env_sync` previously did `needs_env_sync.fill(true)` (mirror
+        *every* local of the frame into `env`) the moment any closure existed in
+        the frame, "because closures may capture any outer variable via GetGlobal."
+        Since Slice 3 each `CompiledCode` knows its exact `free_var_syms` (the names
+        it, or a nested closure, reads from an enclosing scope). A local of *this*
+        frame is observable by a closure created here **iff** its name is in some
+        nested closure's `free_var_syms` — that is precisely the set
+        `ensure_env_synced` must flush before `MakeBlockClosure` snapshots the env.
+        So the `fill(true)` is replaced by marking only those locals (unioned with
+        the existing GetGlobal-family-in-this-code set). Frames with many locals but
+        few captured ones now mirror only the captured handful instead of all.
+
+        Soundness: a closure can only read an outer local by name through a compiled
+        GetGlobal-family op in its (or a nested closure's) body, which is exactly
+        what `compute_free_vars` collects; interpreter fallbacks inside the body read
+        from the full captured-env snapshot, and special names (`&?BLOCK`, `$/`,
+        dynamics) are not parent-frame locals. Verified that even `{ EVAL '$x' }`
+        capturing a slot-local `$x` from an enclosing sub still resolves correctly.
+
+        Perf: closure benches unchanged within noise (read-only ~3.0s, mutating
+        ~5.0s release — the bench closures capture nearly all their parent's
+        locals, so `fill(true)` and the precise set coincide; the win is in
+        wide-frame code). No deep-copy count change (that needs 4b/4c). `make test`
+        failure set unchanged from the `main` baseline (`t/placeholder.t`,
+        `t/tail-function.t`, `t/wrap.t` pre-existing); S04/S06 (157 files) and
+        S02/S12/S14 (241 files) whitelist green. New pin:
+        `t/closure-selective-env-sync.t`.
+
+  - [ ] **Slice 4b/4c — upvalue capture + move setup writes off the shared env.**
+        Still to do: give closures an explicit upvalue list (or scoped overlay env)
+        and move the `&?BLOCK` / `__mutsu_callable_id` / param-binding setup writes
+        off the shared global env. This is what removes the residual per-call
+        `make_mut` deep copies (Slice 3 located them at exactly those setup writes).
+
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
