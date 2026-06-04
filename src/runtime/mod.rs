@@ -1161,6 +1161,33 @@ impl Default for Interpreter {
     }
 }
 
+/// Immutable process-constant magic/dynamic variables hoisted into the shared
+/// env base tier (see `Interpreter::new`). These hold the same value for the
+/// whole process and are never reassigned/removed by normal programs, so they
+/// need not live in every per-frame env overlay (docs/vm-dual-store.md 4c).
+const IMMUTABLE_BASE_DYNAMICS: &[&str] = &[
+    "*PID",
+    "*TZ",
+    "*INIT-INSTANT",
+    "$*VM",
+    "*VM",
+    "?VM",
+    "*PERL",
+    "?PERL",
+    "*RAKU",
+    "?RAKU",
+    "*KERNEL",
+    "?KERNEL",
+    "*DISTRO",
+    "?DISTRO",
+    "$*EXECUTABLE",
+    "*EXECUTABLE",
+    "$*EXECUTABLE-NAME",
+    "*EXECUTABLE-NAME",
+    "$*SPEC",
+    "*SPEC",
+];
+
 impl Interpreter {
     /// Take any pending regex security error from the thread-local store.
     pub(crate) fn take_pending_regex_error() -> Option<RuntimeError> {
@@ -3087,6 +3114,20 @@ impl Interpreter {
         interpreter.init_endian_enum(&mut enum_base);
         interpreter.init_protocol_family_enum(&mut enum_base);
         interpreter.init_signal_enum(&mut enum_base);
+        // Hoist the immutable process-constant magic/dynamic vars out of every
+        // per-frame env overlay into the shared base tier (docs/vm-dual-store.md
+        // 4c "natural extension"). These are set once at interpreter start and
+        // never reassigned/removed by normal programs; reads fall back to the
+        // base tier, and a rare write is promoted into the overlay by
+        // `Env::get_mut`, so semantics are preserved while the per-call deep
+        // copy forks a smaller overlay. Mutable dynamics ($*OUT, $*CWD, %*ENV,
+        // @*ARGS, $*SCHEDULER, $*REPO, handles, ...) intentionally stay in the
+        // overlay.
+        for key in IMMUTABLE_BASE_DYNAMICS {
+            if let Some(v) = interpreter.env.remove(key) {
+                enum_base.insert(Symbol::intern(key), v);
+            }
+        }
         crate::env::set_global_base(enum_base);
         interpreter.env.insert("Any".to_string(), Value::Nil);
         // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
