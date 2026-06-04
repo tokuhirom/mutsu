@@ -1,9 +1,35 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::symbol::Symbol;
 use crate::value::Value;
+
+/// Process-wide immutable "base" tier of the environment.
+///
+/// Holds the built-in enum constants (`Order`, `Endian`, `ProtocolFamily`,
+/// `Signal` and their bare/qualified variant names) -- ~70 entries that are
+/// constant for the whole process. They are looked up by name but never
+/// mutated, removed, or iterated-over as part of the lexical environment.
+///
+/// Keeping them out of every per-frame `Env` overlay is the point: each
+/// compiled call clones the env and the first write `Arc::make_mut`-deep-copies
+/// it, an O(env_size) cost. With ~70 of the ~119 entries hoisted into this
+/// shared, never-copied base, the per-call deep copy shrinks to the handful of
+/// real lexicals. See docs/vm-dual-store.md (Slice 4b).
+static GLOBAL_BASE: OnceLock<HashMap<Symbol, Value>> = OnceLock::new();
+
+/// Install the immutable base tier. Idempotent: the first caller wins and
+/// later calls are ignored (the base is identical for every interpreter in a
+/// process, so re-installation is a no-op rather than an error).
+pub(crate) fn set_global_base(map: HashMap<Symbol, Value>) {
+    let _ = GLOBAL_BASE.set(map);
+}
+
+#[inline(always)]
+fn global_base() -> Option<&'static HashMap<Symbol, Value>> {
+    GLOBAL_BASE.get()
+}
 
 /// Copy-on-write environment wrapper.
 ///
@@ -11,6 +37,12 @@ use crate::value::Value;
 /// Mutation goes through `Arc::make_mut`, triggering a deep clone only when
 /// the Arc is shared.  Symbol keys make the deep clone cheaper: key clone is
 /// O(1) (Copy) instead of O(n) heap allocation for String keys.
+///
+/// Name lookups (`get`/`contains_key`/`get_mut`) fall back to the shared
+/// immutable [`GLOBAL_BASE`] tier on an overlay miss. Iteration, removal, and
+/// in-place value iteration operate on the overlay only -- the base tier is a
+/// read-only constant pool (built-in enums), not part of the mutable lexical
+/// environment, so it is invisible to `iter`/`keys`/`values`/`len`/`remove`.
 #[derive(Clone)]
 pub struct Env {
     inner: Arc<HashMap<Symbol, Value>>,
@@ -31,24 +63,25 @@ impl Env {
 
     #[inline(always)]
     pub fn get(&self, key: &str) -> Option<&Value> {
-        let sym = Symbol::intern(key);
-        self.inner.get(&sym)
+        self.get_sym(Symbol::intern(key))
     }
 
     #[inline(always)]
     pub fn get_sym(&self, key: Symbol) -> Option<&Value> {
-        self.inner.get(&key)
+        if let Some(v) = self.inner.get(&key) {
+            return Some(v);
+        }
+        global_base().and_then(|b| b.get(&key))
     }
 
     #[inline]
     pub fn contains_key(&self, key: &str) -> bool {
-        let sym = Symbol::intern(key);
-        self.inner.contains_key(&sym)
+        self.contains_key_sym(Symbol::intern(key))
     }
 
     #[inline]
     pub fn contains_key_sym(&self, key: Symbol) -> bool {
-        self.inner.contains_key(&key)
+        self.inner.contains_key(&key) || global_base().is_some_and(|b| b.contains_key(&key))
     }
 
     /// Copy-on-write access to the inner map for mutation. Equivalent to
@@ -84,11 +117,19 @@ impl Env {
     }
 
     pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
-        let sym = Symbol::intern(key);
-        self.cow_mut().get_mut(&sym)
+        self.get_mut_sym(Symbol::intern(key))
     }
 
     pub fn get_mut_sym(&mut self, key: Symbol) -> Option<&mut Value> {
+        // Promote a base-only key into the overlay before handing out a mutable
+        // reference, so in-place mutation of a built-in constant (rare) is not
+        // silently lost. Common case (overlay hit, or absent) pays nothing extra.
+        if !self.inner.contains_key(&key)
+            && let Some(v) = global_base().and_then(|b| b.get(&key))
+        {
+            let v = v.clone();
+            self.cow_mut().insert(key, v);
+        }
         self.cow_mut().get_mut(&key)
     }
 
@@ -115,11 +156,18 @@ impl Env {
         self.cow_mut().values_mut()
     }
 
+    /// Full name->value snapshot, merging the immutable base tier under the
+    /// overlay (overlay shadows base). Used where a complete view of every
+    /// reachable name is required (serialization / cross-context copy), unlike
+    /// `iter`/`keys`/`values`, which expose only the mutable overlay.
     pub fn flatten(&self) -> HashMap<String, Value> {
-        self.inner
-            .iter()
-            .map(|(k, v)| (k.resolve(), v.clone()))
-            .collect()
+        let mut out: HashMap<String, Value> = global_base()
+            .map(|b| b.iter().map(|(k, v)| (k.resolve(), v.clone())).collect())
+            .unwrap_or_default();
+        for (k, v) in self.inner.iter() {
+            out.insert(k.resolve(), v.clone());
+        }
+        out
     }
 
     pub fn len(&self) -> usize {
@@ -131,19 +179,16 @@ impl Env {
         self.inner.is_empty()
     }
 
-    /// Insert only if key is not present.
+    /// Insert only if key is not present (in overlay or the base tier).
     pub fn entry_or_insert(&mut self, key: String, value: Value) {
-        let sym = Symbol::intern(&key);
-        if !self.inner.contains_key(&sym) {
-            self.cow_mut().insert(sym, value);
-        }
+        self.entry_or_insert_sym(Symbol::intern(&key), value);
     }
 
     /// Insert only if key is not present, keyed directly by an interned Symbol.
     /// Avoids the `resolve()` (Symbol -> String) + re-intern round trip that
     /// `entry_or_insert` pays when the caller already holds a Symbol.
     pub fn entry_or_insert_sym(&mut self, key: Symbol, value: Value) {
-        if !self.inner.contains_key(&key) {
+        if !self.contains_key_sym(key) {
             self.cow_mut().insert(key, value);
         }
     }
@@ -151,7 +196,7 @@ impl Env {
     /// Insert only if key is not present (lazy value).
     pub fn entry_or_insert_with<F: FnOnce() -> Value>(&mut self, key: String, f: F) {
         let sym = Symbol::intern(&key);
-        if !self.inner.contains_key(&sym) {
+        if !self.contains_key_sym(sym) {
             self.cow_mut().insert(sym, f());
         }
     }

@@ -3079,10 +3079,15 @@ impl Interpreter {
             is_thread_clone: false,
         };
         interpreter.init_io_environment();
-        interpreter.init_order_enum();
-        interpreter.init_endian_enum();
-        interpreter.init_protocol_family_enum();
-        interpreter.init_signal_enum();
+        // Built-in enum constants (Order/Endian/ProtocolFamily/Signal) are
+        // process-wide immutables: collect them into the shared base tier
+        // instead of every per-frame env overlay (docs/vm-dual-store.md 4b).
+        let mut enum_base: HashMap<Symbol, Value> = HashMap::new();
+        interpreter.init_order_enum(&mut enum_base);
+        interpreter.init_endian_enum(&mut enum_base);
+        interpreter.init_protocol_family_enum(&mut enum_base);
+        interpreter.init_signal_enum(&mut enum_base);
+        crate::env::set_global_base(enum_base);
         interpreter.env.insert("Any".to_string(), Value::Nil);
         // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
         {

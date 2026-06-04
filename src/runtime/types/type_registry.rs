@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(in crate::runtime) fn init_endian_enum(&mut self) {
+    pub(in crate::runtime) fn init_endian_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
         let variants = vec![
             ("NativeEndian".to_string(), EnumValue::Int(0)),
             ("LittleEndian".to_string(), EnumValue::Int(1)),
@@ -9,8 +9,7 @@ impl Interpreter {
         ];
         self.enum_types
             .insert("Endian".to_string(), variants.clone());
-        self.env
-            .insert("Endian".to_string(), Value::str_from("Endian"));
+        base.insert(Symbol::intern("Endian"), Value::str_from("Endian"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Endian"),
@@ -19,13 +18,18 @@ impl Interpreter {
                 index,
             };
             // Register as both Endian::NativeEndian and bare NativeEndian
-            self.env
-                .insert(format!("Endian::{}", key), enum_val.clone());
-            self.env.insert(key.clone(), enum_val);
+            base.insert(
+                Symbol::intern(&format!("Endian::{}", key)),
+                enum_val.clone(),
+            );
+            base.insert(Symbol::intern(key), enum_val);
         }
     }
 
-    pub(in crate::runtime) fn init_protocol_family_enum(&mut self) {
+    pub(in crate::runtime) fn init_protocol_family_enum(
+        &mut self,
+        base: &mut HashMap<Symbol, Value>,
+    ) {
         let variants = vec![
             ("PF_UNSPEC".to_string(), EnumValue::Int(0)),
             ("PF_INET".to_string(), EnumValue::Int(1)),
@@ -36,8 +40,8 @@ impl Interpreter {
         ];
         self.enum_types
             .insert("ProtocolFamily".to_string(), variants.clone());
-        self.env.insert(
-            "ProtocolFamily".to_string(),
+        base.insert(
+            Symbol::intern("ProtocolFamily"),
             Value::Package(Symbol::intern("ProtocolFamily")),
         );
         for (index, (key, val)) in variants.iter().enumerate() {
@@ -47,13 +51,15 @@ impl Interpreter {
                 value: val.clone(),
                 index,
             };
-            self.env
-                .insert(format!("ProtocolFamily::{}", key), enum_val.clone());
-            self.env.insert(key.clone(), enum_val);
+            base.insert(
+                Symbol::intern(&format!("ProtocolFamily::{}", key)),
+                enum_val.clone(),
+            );
+            base.insert(Symbol::intern(key), enum_val);
         }
     }
 
-    pub(in crate::runtime) fn init_order_enum(&mut self) {
+    pub(in crate::runtime) fn init_order_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
         let variants = vec![
             ("Less".to_string(), EnumValue::Int(-1)),
             ("Same".to_string(), EnumValue::Int(0)),
@@ -61,8 +67,7 @@ impl Interpreter {
         ];
         self.enum_types
             .insert("Order".to_string(), variants.clone());
-        self.env
-            .insert("Order".to_string(), Value::str_from("Order"));
+        base.insert(Symbol::intern("Order"), Value::str_from("Order"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Order"),
@@ -70,12 +75,12 @@ impl Interpreter {
                 value: val.clone(),
                 index,
             };
-            self.env.insert(format!("Order::{}", key), enum_val.clone());
-            self.env.insert(key.clone(), enum_val);
+            base.insert(Symbol::intern(&format!("Order::{}", key)), enum_val.clone());
+            base.insert(Symbol::intern(key), enum_val);
         }
     }
 
-    pub(in crate::runtime) fn init_signal_enum(&mut self) {
+    pub(in crate::runtime) fn init_signal_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
         // Use libc constants on Unix, standard POSIX numbers on other platforms
         let variants = vec![
             ("SIGHUP".to_string(), EnumValue::Int(Self::sig_num(1))),
@@ -100,8 +105,7 @@ impl Interpreter {
         ];
         self.enum_types
             .insert("Signal".to_string(), variants.clone());
-        self.env
-            .insert("Signal".to_string(), Value::str_from("Signal"));
+        base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Signal"),
@@ -109,9 +113,11 @@ impl Interpreter {
                 value: val.clone(),
                 index,
             };
-            self.env
-                .insert(format!("Signal::{}", key), enum_val.clone());
-            self.env.insert(key.clone(), enum_val);
+            base.insert(
+                Symbol::intern(&format!("Signal::{}", key)),
+                enum_val.clone(),
+            );
+            base.insert(Symbol::intern(key), enum_val);
         }
     }
 
