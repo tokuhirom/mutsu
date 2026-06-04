@@ -1132,7 +1132,7 @@ impl VM {
             let bare = name.trim_start_matches('&');
             let mut found = None;
             for key in [format!("&{}", bare), bare.to_string()] {
-                if let Some(v @ (Value::Sub(_) | Value::WeakSub(_))) =
+                if let Some(v @ (Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })) =
                     self.interpreter.env().get(&key)
                 {
                     found = Some(v.clone());
@@ -1167,19 +1167,32 @@ impl VM {
             self.stack.push(Value::array(Vec::new()));
             return Ok(());
         }
+        let length_mismatch = || {
+            RuntimeError::new(format!(
+                "Non-dwimmy hyper operator: left has {} elements, right has {}",
+                left_len, right_len
+            ))
+        };
         let result_len = if !dwim_left && !dwim_right {
             if left_len != right_len {
-                return Err(RuntimeError::new(format!(
-                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
-                    left_len, right_len
-                )));
+                return Err(length_mismatch());
             }
             left_len
         } else if dwim_left && dwim_right {
             std::cmp::max(left_len, right_len)
         } else if dwim_right {
+            // Only the right side dwims: it is cycled up to the (fixed) left
+            // length, so the right must not be longer than the left.
+            if right_len > left_len {
+                return Err(length_mismatch());
+            }
             left_len
         } else {
+            // Only the left side dwims: it is cycled up to the (fixed) right
+            // length, so the left must not be longer than the right.
+            if left_len > right_len {
+                return Err(length_mismatch());
+            }
             right_len
         };
         // When the left operand is a writable lvalue and the code-ref's first
@@ -1188,14 +1201,24 @@ impl VM {
         // (e.g. `&[+=]`) writes back. We then collect the (possibly mutated)
         // left elements and leave them on the stack for the compiler-emitted
         // store into the lvalue.
-        let do_writeback = writeback
-            && self.hyper_func_first_param_writable(
-                &name,
-                func_value.as_ref(),
-                compiled_fns,
-                &left_list,
-                &right_list,
-            );
+        let func_writable = self.hyper_func_first_param_writable(
+            &name,
+            func_value.as_ref(),
+            compiled_fns,
+            &left_list,
+            &right_list,
+        );
+        // An assignment meta-op (`&[+=]`) applied to a non-lvalue left operand
+        // (a literal or literal list, e.g. `3 >>[&metaop]<< @a`) cannot write
+        // back and dies, just like `3 += 1` would. (A sigilless user sub that
+        // does not actually assign — e.g. `cst` — must NOT die here; it dies
+        // naturally only if its body assigns to the read-only bound value.)
+        if !writeback && Self::is_assign_metaop_ref(func_value.as_ref()) {
+            return Err(RuntimeError::new(
+                "Cannot modify an immutable value".to_string(),
+            ));
+        }
+        let do_writeback = writeback && func_writable;
         // Look up the function by name (&name variable or compiled function)
         let mut results = Vec::with_capacity(result_len);
         let mut mutated_left: Vec<Value> =
@@ -1292,15 +1315,24 @@ impl VM {
             Value::Hash(m) => m.values().cloned().collect(),
             other => vec![other.clone()],
         };
-        let do_writeback = writeback
-            && matches!(&left, Value::Hash(..))
-            && self.hyper_func_first_param_writable(
-                name,
-                func_value,
-                compiled_fns,
-                &probe_left,
-                &probe_right,
-            );
+        let func_writable = self.hyper_func_first_param_writable(
+            name,
+            func_value,
+            compiled_fns,
+            &probe_left,
+            &probe_right,
+        );
+        // An assignment meta-op whose left operand is not a writable hash lvalue
+        // (e.g. `3 <<[&metaop]>> %a`, where the scalar would be the mutated
+        // element) cannot write back and therefore dies.
+        if !(writeback && matches!(&left, Value::Hash(..)))
+            && Self::is_assign_metaop_ref(func_value)
+        {
+            return Err(RuntimeError::new(
+                "Cannot modify an immutable value".to_string(),
+            ));
+        }
+        let do_writeback = writeback && matches!(&left, Value::Hash(..)) && func_writable;
         // Determine the key set and a per-key (left, right) value source.
         let (keys, la, ra, right_scalar) = match (&left, &right) {
             (Value::Hash(la), Value::Hash(ra)) => {
@@ -1321,11 +1353,26 @@ impl VM {
                 (keys, Some(la.clone()), Some(ra.clone()), None)
             }
             (Value::Hash(la), _) => {
+                // `%hash OP scalar`: the scalar (right) must be on a dwim side
+                // to broadcast over the hash's keys; otherwise the lengths
+                // mismatch (N vs 1) and it is a non-dwimmy error.
+                if !dwim_right {
+                    return Err(RuntimeError::new(
+                        "Non-dwimmy hyper operator: cannot apply a hash against a non-dwim scalar"
+                            .to_string(),
+                    ));
+                }
                 let keys: Vec<String> = la.keys().cloned().collect();
                 (keys, Some(la.clone()), None, Some(right.clone()))
             }
             (_, Value::Hash(ra)) => {
-                // scalar >>op<< %hash : broadcast left over right's keys
+                // `scalar OP %hash`: the scalar (left) must be on a dwim side.
+                if !dwim_left {
+                    return Err(RuntimeError::new(
+                        "Non-dwimmy hyper operator: cannot apply a non-dwim scalar against a hash"
+                            .to_string(),
+                    ));
+                }
                 let keys: Vec<String> = ra.keys().cloned().collect();
                 (keys, None, Some(ra.clone()), None)
             }
@@ -1378,6 +1425,30 @@ impl VM {
         Ok(())
     }
 
+    /// True when the resolved code-ref is a built-in assignment meta-operator
+    /// (`&[+=]`, `&[~=]`, ...) — a `Routine` named `infix:<op=>`. Such a
+    /// routine unconditionally mutates its first argument, so applying it to a
+    /// non-lvalue is a hard error.
+    fn is_assign_metaop_ref(func_value: Option<&Value>) -> bool {
+        let Some(Value::Routine { name, .. }) = func_value else {
+            return false;
+        };
+        let Some(inner) = name
+            .resolve()
+            .strip_prefix("infix:<")
+            .and_then(|s| s.strip_suffix('>'))
+            .map(str::to_string)
+        else {
+            return false;
+        };
+        inner.ends_with('=')
+            && inner.len() > 1
+            && !matches!(
+                inner.as_str(),
+                "==" | "!=" | "<=" | ">=" | "===" | "!==" | "=:=" | "!=:=" | "<=>"
+            )
+    }
+
     /// Dispatch a single per-element call of a hyper function-op. Lexical
     /// code-refs (`func_value`) go through the VM closure dispatch; named subs
     /// go through the compiled-first path.
@@ -1415,6 +1486,24 @@ impl VM {
             pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw")
         }
         // A code-ref held in a lexical `&name` variable: inspect its SubData.
+        // An assignment meta-operator routine (`&[+=]`, `&[~=]`, ...) mutates
+        // its first argument even though its synthesized signature does not
+        // carry an `rw` marker. Detect it by name so the element is passed by
+        // writable reference.
+        if let Some(Value::Routine { name: rname, .. }) = func_value
+            && let Some(inner) = rname
+                .resolve()
+                .strip_prefix("infix:<")
+                .and_then(|s| s.strip_suffix('>'))
+            && inner.ends_with('=')
+            && inner.len() > 1
+            && !matches!(
+                inner,
+                "==" | "!=" | "<=" | ">=" | "===" | "!==" | "=:=" | "!=:=" | "<=>"
+            )
+        {
+            return true;
+        }
         let sub = match func_value {
             Some(Value::Sub(data)) => Some(data.clone()),
             Some(Value::WeakSub(weak)) => weak.upgrade(),
