@@ -1012,6 +1012,13 @@ pub(crate) struct CompiledCode {
     /// the entire (~100-entry) captured env. Empty until `compute_free_vars`
     /// runs (during `compute_needs_env_sync`).
     pub(crate) free_var_syms: Vec<Symbol>,
+    /// True if this code contains any call opcode (function/method/closure
+    /// invocation). Set during `emit()`. The closure exit-writeback skip uses
+    /// this as the "is this a leaf closure" test: a non-leaf closure may have a
+    /// nested call write back an arbitrary captured variable, so it cannot skip
+    /// the caller writeback even when its own free variables are unchanged.
+    /// Distinct from `has_env_writes`, which lists only *some* call opcodes.
+    pub(crate) has_calls: bool,
 }
 
 /// Pre-computed local slot indices for a single attribute.
@@ -1046,6 +1053,7 @@ impl CompiledCode {
             attr_slots: Vec::new(),
             needs_env_sync: Vec::new(),
             free_var_syms: Vec::new(),
+            has_calls: false,
         }
     }
 
@@ -1227,6 +1235,29 @@ impl CompiledCode {
     }
 
     pub(crate) fn emit(&mut self, op: OpCode) -> usize {
+        if !self.has_calls {
+            // Every call opcode -- any of these can invoke a callee that writes
+            // back an arbitrary captured variable into this frame's env. Keep
+            // this list exhaustive: the closure writeback-skip's soundness
+            // depends on it (a missed variant silently drops outward mutations).
+            self.has_calls = matches!(
+                op,
+                OpCode::CallDefined
+                    | OpCode::CallFunc { .. }
+                    | OpCode::CallFuncSlip { .. }
+                    | OpCode::CallMethod { .. }
+                    | OpCode::CallMethodMut { .. }
+                    | OpCode::CallMethodDynamic { .. }
+                    | OpCode::CallMethodDynamicMut { .. }
+                    | OpCode::ExecCall { .. }
+                    | OpCode::ExecCallPairs { .. }
+                    | OpCode::ExecCallSlip { .. }
+                    | OpCode::CallOnValue { .. }
+                    | OpCode::CallOnCodeVar { .. }
+                    | OpCode::HyperMethodCall { .. }
+                    | OpCode::HyperMethodCallDynamic { .. }
+            );
+        }
         if !self.has_env_writes {
             self.has_env_writes = matches!(
                 op,

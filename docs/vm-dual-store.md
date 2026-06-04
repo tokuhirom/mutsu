@@ -218,6 +218,24 @@ Reaching that requires, roughly in order:
       Validated with `make test` (same pre-existing failures) and 193 closure/
       block/routine/sort/gather/sigilless roast files (3937 subtests) green.
 
+      **Soundness fix — the skip is only valid for a *leaf* closure.** The
+      original "free var changed" reasoning above is incomplete: it assumes the
+      only outward mutation a closure can make is to its own free variables. But
+      once the body makes a **call**, a nested method/closure that closes over an
+      enclosing lexical can write *any* captured variable back into this frame's
+      env — including one that is captured here yet is **not** a free variable of
+      this closure, so the `free_changed` diff never sees it. The regressing case
+      was `roast/integration/advent2011-day03.t`'s `capture-out`:
+      `{ $*OUT.write($buf) }` mutates the enclosing `$output` through the
+      dynamically-dispatched `$*OUT.write` method (a separate closure over
+      `$output`), and that change must reach the caller. `advent2009-day07.t` and
+      `advent2012-day20.t` failed the same way. Fix: gate the skip additionally on
+      `!cc.has_env_writes`, which is set for any call / env-writing op in the body
+      — so only a genuinely leaf, read-only closure skips the scan. The hot
+      map/grep/sort blocks (`{ $_ * 2 }`, `{ $_ > 3 }`) contain no calls, so they
+      still skip; bench numbers above are unchanged (read-only ~2.4 s, mutating
+      ~4.4 s release). The three advent integration tests are green again.
+
 - [ ] **Slice 4 — closure upvalues / scoped env.** Capture free variables into an
       explicit upvalue list (or a scoped overlay env) so closures stop reading the
       parent `env` by name, the `&?BLOCK` / `__mutsu_callable_id` setup writes move

@@ -562,15 +562,34 @@ impl VM {
         // the caller: a free variable changed value (direct or transitive write),
         // it dirtied the env with a non-bookkeeping write (e.g. a sigilless
         // alias), it has rw parameters, or it modified a captured local. A
-        // read-only closure (the common map/grep/sort block) trips none of these
-        // and skips the whole scan.
+        // read-only *leaf* closure (the common map/grep/sort block) trips none of
+        // these and skips the whole scan.
+        //
+        // The skip is only sound for a leaf closure (one that makes no calls,
+        // i.e. `!cc.has_calls`). Once the body makes a call we cannot reason
+        // locally about what got mutated: a nested method/closure call can write
+        // *any* captured variable back into this frame's env -- including one that
+        // is captured here but is not a free variable of this closure (so it is
+        // invisible to the `free_changed` check). Two regressing shapes:
+        //   * `{ $*OUT.write($buf) }` (advent2011) mutates the enclosing `$output`
+        //     through the dynamically-dispatched `$*OUT.write` method closing over
+        //     it.
+        //   * `-> $blk, $v { $blk($v) }` forwards a call to a closure that mutates
+        //     an outer lexical the forwarder never names.
+        // `cc.has_calls` covers *every* call opcode (CallFunc/CallMethod/ExecCall/
+        // CallOnValue/CallOnCodeVar/Hyper.../CallDefined/...) -- unlike
+        // `has_env_writes`, which lists only some of them and so missed
+        // `CallOnCodeVar` (the `$blk($v)` case).
         let free_changed = cc
             .free_var_syms
             .iter()
             .zip(free_at_entry.iter())
             .any(|(k, old)| self.interpreter.env().get_sym(*k) != old.as_ref());
-        let needs_caller_writeback =
-            free_changed || self.env_dirty || has_captured_local || !rw_bindings.is_empty();
+        let needs_caller_writeback = free_changed
+            || self.env_dirty
+            || has_captured_local
+            || !rw_bindings.is_empty()
+            || cc.has_calls;
         if needs_caller_writeback {
             let rw_sources: std::collections::HashSet<String> = rw_bindings
                 .iter()
