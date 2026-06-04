@@ -812,6 +812,19 @@ impl Interpreter {
         {
             return self.apply_hyper_infix(inner, dwim_left, dwim_right, &args[0], &args[1]);
         }
+        // Assignment meta-operator called as a routine, e.g. `&[+=]` / `&[~=]`.
+        // When the left operand is a writable reference (passed by a hyper
+        // function-op or any rw caller), compute the base op and write the
+        // result back into the referenced variable, mirroring `$a op= $b`.
+        if args.len() == 2
+            && let Some(base) = assignment_metaop_base(op)
+            && let Some((source_name, inner, _)) =
+                crate::runtime::types::indexed_varref_from_value(&args[0])
+        {
+            let result = self.call_infix_routine(base, &[inner, args[1].clone()])?;
+            self.env.insert(source_name, result.clone());
+            return Ok(result);
+        }
         let is_set_op = matches!(
             op,
             "(-)"
@@ -1758,4 +1771,27 @@ fn parse_hyper_infix(op: &str) -> Option<(&str, bool, bool)> {
         return None;
     }
     Some((inner, dwim_left, dwim_right))
+}
+
+/// If `op` is an assignment meta-operator (`+=`, `~=`, `min=`, ...), return the
+/// base operator. Comparison/identity operators that merely *end* in `=` are
+/// excluded.
+fn assignment_metaop_base(op: &str) -> Option<&str> {
+    let base = op.strip_suffix('=')?;
+    if base.is_empty() {
+        return None;
+    }
+    // Exclude operators where the trailing `=` is part of the operator itself.
+    if matches!(
+        op,
+        "==" | "!=" | "<=" | ">=" | "===" | "!==" | "=:=" | "!=:=" | "<=>"
+    ) {
+        return None;
+    }
+    // A base that itself ends in `=`/`<`/`>`/`!` is a comparison-like operator
+    // (`==`, `<=`, `>=`, `!=`), not an assignment meta-op.
+    if base.ends_with(['=', '<', '>', '!']) {
+        return None;
+    }
+    Some(base)
 }
