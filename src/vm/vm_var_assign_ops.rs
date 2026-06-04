@@ -488,6 +488,28 @@ impl VM {
         {
             return Ok(value);
         }
+        // A multi-param for-loop `%`-binding keeps its QuantHash identity (Raku
+        // binds params; it does not assign-coerce them). A Set/Bag/Mix value
+        // passes through unchanged; any other value (e.g. a Seq of pairs from a
+        // `%a = %reset.pairs` reset) is coerced to the binding's *current*
+        // QuantHash type rather than collapsing to a plain Hash.
+        if self.quanthash_bind_params.iter().any(|n| n == name) {
+            if matches!(
+                value,
+                Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)
+            ) {
+                return Ok(value);
+            }
+            let trait_name = match self.interpreter.env().get(name) {
+                Some(Value::Set(_, _)) => Some("SetHash"),
+                Some(Value::Bag(_, _)) => Some("BagHash"),
+                Some(Value::Mix(_, _)) => Some("MixHash"),
+                _ => None,
+            };
+            if let Some(tn) = trait_name {
+                return self.try_compiled_method_or_interpret(value, tn, vec![]);
+            }
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && constraint.starts_with("SetHash")
         {

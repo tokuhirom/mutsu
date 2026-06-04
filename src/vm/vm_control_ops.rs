@@ -464,6 +464,7 @@ impl VM {
             .then(|| self.interpreter.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
+        let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
         let container_binding = self.container_ref_var.take();
         let container_reversed = self.container_ref_reversed;
         self.container_ref_reversed = false;
@@ -566,6 +567,16 @@ impl VM {
             {
                 self.interpreter.mark_readonly(name);
             }
+            // `%`-sigil for-loop bindings preserve a QuantHash value (and keep
+            // its type across a `%a = ...pairs` reset) instead of coercing it to
+            // a plain Hash — Raku binds params, it does not assign-coerce them.
+            self.quanthash_bind_params = spec
+                .multi_param_names
+                .iter()
+                .chain(param_name.iter())
+                .filter(|n| n.starts_with('%'))
+                .cloned()
+                .collect();
             // Temporarily clear readonly flags for multi-param names
             // so the bind stmts (Stmt::Assign) at the start of the body can
             // re-bind variables that may be readonly from an outer scope.
@@ -805,6 +816,7 @@ impl VM {
                             self.interpreter.readonly_vars_mut().remove(name);
                         }
                         self.topic_source_var = saved_topic_source;
+                        self.quanthash_bind_params = saved_quanthash_bind.clone();
                         if spec.restore_topic {
                             match saved_topic {
                                 Some(v) => {
@@ -881,6 +893,7 @@ impl VM {
             }
         }
         self.topic_source_var = saved_topic_source;
+        self.quanthash_bind_params = saved_quanthash_bind.clone();
         if spec.restore_topic {
             match saved_topic {
                 Some(v) => {

@@ -101,6 +101,10 @@ pub(crate) struct VM {
     container_ref_reversed: bool,
     /// Source variable name for topic binding in for loops
     topic_source_var: Option<String>,
+    /// Names of multi-param for-loop bindings (`-> %a, %b`) whose `%`/`@` params
+    /// must preserve a QuantHash (Set/Bag/Mix) value rather than coercing it to
+    /// a plain Hash, matching Raku's parameter-binding semantics.
+    quanthash_bind_params: Vec<String>,
     /// Stack of saved call frames for compiled function/closure/method calls.
     call_frames: Vec<VmCallFrame>,
     /// When true, locals may be stale relative to env (interpreter bridge modified env).
@@ -347,6 +351,7 @@ impl VM {
             container_ref_var: None,
             container_ref_reversed: false,
             topic_source_var: None,
+            quanthash_bind_params: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
             locals_dirty: false,

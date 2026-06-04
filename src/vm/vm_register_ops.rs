@@ -815,6 +815,10 @@ impl VM {
                 let has_init_values = match &current_val {
                     Some(Value::Hash(h)) => !h.is_empty(),
                     Some(Value::Array(a, _)) => !a.is_empty(),
+                    // A Seq/Slip initializer (e.g. `is SetHash = %h.map: {...}`)
+                    // must be coerced, not treated as "no initializer".
+                    Some(Value::Seq(s) | Value::Slip(s)) => !s.is_empty(),
+                    Some(Value::LazyList(_)) => true,
                     // Already converted to a QuantHash by type constraint coercion
                     Some(Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) => true,
                     _ => false,
