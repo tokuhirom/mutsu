@@ -309,14 +309,48 @@ Reaching that requires, roughly in order:
         regression). 791-file enum/closure/integration whitelist green. New pin
         `t/builtin-enum-base-tier.t` (bare/qualified/closure/thread/shadow).
 
-  - [ ] **Slice 4c — upvalue capture + move setup writes off the shared env.**
-        Still to do: give closures an explicit upvalue list (or scoped overlay env)
-        and move the `&?BLOCK` / `__mutsu_callable_id` / param-binding setup writes
-        off the shared global env. This removes the per-call `make_mut` deep copies
-        *entirely* (Slice 3 located them at exactly those setup writes; Slice 4b only
-        shrank each copy, it did not cut the count). A natural extension of 4b is to
-        also hoist the remaining immutable dynamic/magic-var defaults into the base
-        tier so the overlay shrinks further.
+  - [x] **Slice 4c (part 1) — hoist the immutable dynamic/magic-var defaults into
+        the base tier.** Done (the "natural extension of 4b" below).
+
+        A per-call env probe after 4b showed the ~49-entry overlay still carried
+        ~20 *immutable* process-constant magic/dynamic vars: `$*VM`/`*VM`/`?VM`,
+        `*PERL`/`?PERL`, `*RAKU`/`?RAKU`, `*KERNEL`/`?KERNEL`, `*DISTRO`/`?DISTRO`,
+        `$*EXECUTABLE`(`-NAME`), `$*SPEC`, `*PID`, `*TZ`, `*INIT-INSTANT`. These are
+        set once at interpreter start and never reassigned/removed by normal
+        programs, yet every per-frame env clone+fork copied all of them.
+
+        **What shipped.** `Interpreter::new` now moves this fixed allowlist
+        (`IMMUTABLE_BASE_DYNAMICS`) out of `self.env` and into the shared
+        [`GLOBAL_BASE`] tier (alongside the 4b enum constants) before
+        `set_global_base`. Reads fall back to the base via `Env::get`/`get_sym`; a
+        rare write is promoted into the overlay by `Env::get_mut`; a `my $*VM`
+        shadow writes the overlay and reverts on scope exit. The base stays
+        invisible to `iter`/`keys`/`len`/`remove`, so the block-exit writeback scan,
+        `clone_for_thread`'s env iteration, and the handle-id scan are all
+        unaffected (none of these vars are handles or mutable dynamics).
+        *Mutable* dynamics (`$*OUT`, `$*ERR`, `$*IN`, `$*CWD`, `$*TMPDIR`, `$*HOME`,
+        `%*ENV`, `@*ARGS`, `$*SCHEDULER`, `$*REPO`, `$*ARGFILES`) intentionally stay
+        in the overlay.
+
+        **Result.** The per-call deep copy now forks a ~29-entry overlay instead of
+        ~49 (the *count* is still unchanged — that needs part 2). Release benches
+        (best-of-5, interleaved): **read-only closure 1.30s→1.11s (~1.17x),
+        mutating closure 2.15s→1.66s (~1.30x), 30k read-only closure 9.44s→8.07s
+        (~1.17x); `bench-class` neutral** (its methods take the
+        `skip_env_setup` light path, which already avoids the big-env fork). Bench
+        output byte-identical between baseline and change. `make test` failure set
+        unchanged from the `main` baseline (`placeholder.t` t8, `tail-function.t`
+        t4, `wrap.t`, `hyper-func-op-writeback.t` t8 all pre-existing). New pin
+        `t/base-tier-magic-vars.t` (read / underscore alias / sub / block / closure
+        / shadow / thread visibility).
+
+  - [ ] **Slice 4c (part 2) — upvalue capture + move setup writes off the shared
+        env.** Still to do: give closures an explicit upvalue list (or scoped
+        overlay env) and move the `&?BLOCK` / `__mutsu_callable_id` / param-binding
+        setup writes off the shared global env. This removes the per-call
+        `make_mut` deep copies *entirely* (Slice 3 located them at exactly those
+        setup writes; Slices 4b/4c-part1 only shrank each copy, they did not cut the
+        count).
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
