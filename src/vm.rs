@@ -792,21 +792,27 @@ impl VM {
                     *ip += 1;
                     return Ok(());
                 }
-                let atomic_name = name.strip_prefix('$').unwrap_or(name);
-                let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
-                let is_atomic_int = self.interpreter.var_type_constraint(name).as_deref()
-                    == Some("atomicint")
-                    || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                // Atomic-variable read: only possible once some `atomicint`/atomic
+                // storage has been registered. Skip the whole check (a `format!`
+                // plus two `var_type_constraint` lookups) on the hot read path when
+                // no atomics exist, which is the overwhelmingly common case.
+                if self.interpreter.atomic_var_seen() {
+                    let atomic_name = name.strip_prefix('$').unwrap_or(name);
+                    let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+                    let is_atomic_int = self.interpreter.var_type_constraint(name).as_deref()
                         == Some("atomicint")
-                    || self.interpreter.get_shared_var(&atomic_name_key).is_some();
-                if is_atomic_int {
-                    let fetched = self.interpreter.call_function(
-                        "__mutsu_atomic_fetch_var",
-                        vec![Value::str(atomic_name.to_string())],
-                    )?;
-                    self.stack.push(fetched);
-                    *ip += 1;
-                    return Ok(());
+                        || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                            == Some("atomicint")
+                        || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+                    if is_atomic_int {
+                        let fetched = self.interpreter.call_function(
+                            "__mutsu_atomic_fetch_var",
+                            vec![Value::str(atomic_name.to_string())],
+                        )?;
+                        self.stack.push(fetched);
+                        *ip += 1;
+                        return Ok(());
+                    }
                 }
                 let val = self
                     .get_env_with_main_alias(name)

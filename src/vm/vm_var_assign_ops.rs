@@ -3935,23 +3935,28 @@ impl VM {
             self.stack.push(val);
             return Ok(());
         }
-        let atomic_name = name.strip_prefix('$').unwrap_or(&name);
-        let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
-        // Only use the scalar atomic fast path for scalar ($) variables.
-        // Array (@) variables with `atomicint` constraint are element-wise
-        // atomic and should go through the normal array read path.
-        let is_atomic_int = !name.starts_with('@')
-            && (self.interpreter.var_type_constraint(&name).as_deref() == Some("atomicint")
-                || self.interpreter.var_type_constraint(atomic_name).as_deref()
-                    == Some("atomicint")
-                || self.interpreter.get_shared_var(&atomic_name_key).is_some());
-        if is_atomic_int {
-            let fetched = self
-                .interpreter
-                .builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])?;
-            self.locals[idx] = fetched.clone();
-            self.stack.push(fetched);
-            return Ok(());
+        // Atomic-variable read: skip entirely (a `format!` plus two
+        // `var_type_constraint` lookups) when no atomic storage has ever been
+        // registered — the common case on this hot local-read path.
+        if self.interpreter.atomic_var_seen() {
+            let atomic_name = name.strip_prefix('$').unwrap_or(&name);
+            let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+            // Only use the scalar atomic fast path for scalar ($) variables.
+            // Array (@) variables with `atomicint` constraint are element-wise
+            // atomic and should go through the normal array read path.
+            let is_atomic_int = !name.starts_with('@')
+                && (self.interpreter.var_type_constraint(&name).as_deref() == Some("atomicint")
+                    || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                        == Some("atomicint")
+                    || self.interpreter.get_shared_var(&atomic_name_key).is_some());
+            if is_atomic_int {
+                let fetched = self
+                    .interpreter
+                    .builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])?;
+                self.locals[idx] = fetched.clone();
+                self.stack.push(fetched);
+                return Ok(());
+            }
         }
         // Atomic array CAS stores the authoritative array under an internal
         // shared key.  Check it first so reads pick up the latest CAS'd value.
