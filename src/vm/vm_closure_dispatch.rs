@@ -538,21 +538,25 @@ impl VM {
         // Build set of parameter names — these are strictly local to the
         // function call and must never leak back to the caller's env, even
         // when they share a name with a captured outer variable.
-        let mut param_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        // Keyed by interned Symbol so the per-entry membership checks in the
+        // writeback scan below compare Symbols directly (a u32 compare + hash)
+        // instead of resolving every env key back to a &str via `with_str` --
+        // that Symbol-to-string churn dominated the writeback profile.
+        let mut param_names: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
         for p in &data.params {
-            param_names.insert(p.as_str());
+            param_names.insert(Symbol::intern(p));
         }
         // Collect names bound by subsignature parameters (e.g. `|c(Str $x)`),
         // which are also strictly call-local and must not leak to the caller.
         let mut subsig_names: std::collections::HashSet<String> = std::collections::HashSet::new();
         for pd in &data.param_defs {
             if !pd.name.is_empty() {
-                param_names.insert(pd.name.as_str());
+                param_names.insert(Symbol::intern(&pd.name));
             }
             Interpreter::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
         }
         for name in &subsig_names {
-            param_names.insert(name.as_str());
+            param_names.insert(Symbol::intern(name));
         }
 
         // The full-env writeback below scans the entire working env (~100
@@ -605,27 +609,29 @@ impl VM {
             || !rw_bindings.is_empty()
             || cc.has_calls;
         if needs_caller_writeback {
-            let rw_sources: std::collections::HashSet<String> = rw_bindings
+            let rw_sources: std::collections::HashSet<Symbol> = rw_bindings
                 .iter()
-                .map(|(_, source)| source.clone())
+                .map(|(_, source)| Symbol::intern(source))
                 .collect();
             let captured_names: std::collections::HashSet<Symbol> =
                 data.env.keys().copied().collect();
             // Write back captured-variable changes, but NOT the closure's own
             // parameters/locals (which live in cc.locals).  Without this filter,
             // recursive &?BLOCK calls clobber the outer frame's $n, etc.
-            let local_names: std::collections::HashSet<&str> =
-                cc.locals.iter().map(|s| s.as_str()).collect();
+            let local_names: std::collections::HashSet<Symbol> =
+                cc.locals.iter().map(|s| Symbol::intern(s)).collect();
+            let underscore_sym = Symbol::intern("_");
+            let at_underscore_sym = Symbol::intern("@_");
             for (k, v) in self.interpreter.env().iter() {
-                if *k != "_"
-                    && *k != "@_"
-                    && !k.with_str(|s| rw_sources.contains(s))
-                    && !k.with_str(|s| param_names.contains(s))
+                if *k != underscore_sym
+                    && *k != at_underscore_sym
+                    && !rw_sources.contains(k)
+                    && !param_names.contains(k)
                     && (restored_env.contains_key_sym(*k)
                         || captured_names.contains(k)
                         || k.starts_with("__mutsu_predictive_seq_iter::")
                         || k.starts_with("__mutsu_sigilless_alias::!"))
-                    && (!k.with_str(|s| local_names.contains(s)) || captured_names.contains(k))
+                    && (!local_names.contains(k) || captured_names.contains(k))
                 {
                     // Don't leak captured-only variables to callers that don't have
                     // them. This prevents independent closures from sharing state
@@ -679,7 +685,7 @@ impl VM {
         for local_name in cc.locals.iter() {
             if !local_name.is_empty()
                 && !data.env.contains_key(local_name)
-                && !param_names.contains(local_name.as_str())
+                && !param_names.contains(&Symbol::intern(local_name))
                 && !local_name.starts_with("__mutsu_")
             {
                 restored_env.remove(local_name);

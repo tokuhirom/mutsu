@@ -387,20 +387,57 @@ Reaching that requires, roughly in order:
         cross-thread counter). (`roast/S17-lowlevel/lock.t` fails identically on the
         pre-change binary — pre-existing, not whitelisted.)
 
-  - [ ] **Slice 4c (part 2b) — upvalue capture + move setup writes off the shared
-        env.** Still to do: give closures an explicit upvalue list (or scoped
-        overlay env) and move the `&?BLOCK` / `__mutsu_callable_id` / param-binding
-        setup writes off the shared global env. This removes the per-call
-        `make_mut` deep copies *entirely* (Slice 3 located them at exactly those
-        setup writes; Slices 4b/4c-part1 only shrank each copy, 4c-part2a removed
-        the per-op `format!` overhead — none of them cut the deep-copy count). The
-        remaining structural cost is the full-`data.env` merge loop in
-        `call_compiled_closure` (`entry_or_insert_sym` over ~100 captured entries
-        per call); replacing it with a captured-env *fallback layer* (so `GetGlobal`
-        consults `data.env` on miss instead of merging it in) is the natural next
-        step, but it must preserve the intricate exit writeback semantics
-        (advent integration tests, recursive `&?BLOCK`, rw bindings, sigilless
-        aliases).
+  - [x] **Slice 4c (part 2b) — Symbol-key the closure exit writeback scan.** Done.
+
+        **The deep-copy count turned out not to be the prize.** A `perf` profile of
+        a mutating-closure bench on the post-part2a binary put `Env::cow_mut` (the
+        `make_mut` deep copy) at only **~2 %**. The dominant cost is **Symbol→string
+        churn (~33 %: `Symbol::starts_with` / `with_str` / `PartialEq<&str>` /
+        `intern`)** plus residual `format!` (~14 %), concentrated in the closure
+        **exit writeback scan** (`call_compiled_closure`). So neither removing the
+        per-call fork nor the merge loop is where the time is.
+
+        **Negative result recorded — the captured-env *fallback layer* does not pay
+        off.** I prototyped giving `Env` an `Arc<Env>` fallback tier so closure
+        dispatch could expose `SubData::env` by reference instead of the
+        `entry_or_insert_sym` merge loop (reads fall through; iteration stays
+        overlay-only, so the writeback semantics are provably unchanged — verified
+        green incl. the advent tests). But Slice 4b already hoisted ~110 constants
+        out of the env, so the captured overlay is now only **~30 entries**, not
+        ~100: the merge is cheap, while the fallback adds a per-call
+        `Arc::new(data.env.clone())` allocation + a read indirection. Measured net:
+        read-only closure ~5 % faster but **mutating closure ~3 % slower** — not
+        worth the blast radius to `Env`. Abandoned. (Lesson: post-4b the dual-store
+        per-call cost is small; the lever moved to the writeback machinery.)
+
+        **What shipped instead.** The exit writeback scan built its
+        param/local/rw-source membership sets as `HashSet<&str>`/`HashSet<String>`
+        and did a `with_str` (Symbol→&str resolve) on *every* working-env entry for
+        each set, plus `*k != "_"` / `*k != "@_"` `PartialEq<&str>` compares. These
+        are now `HashSet<Symbol>` (names interned once per call) and precomputed
+        sentinel `Symbol`s, so the per-entry checks compare interned `Symbol`s
+        directly (u32 + hash) with no string resolution. The scan only runs for
+        non-leaf / mutating closures (read-only leaf closures already skip it), so
+        this targets exactly the mutating-closure path.
+
+        **Result (release, best-of-9, interleaved): mutating closure 13.71s→12.43s
+        (~9.3 %)**; read-only closure, `bench-class`, `bench-fib` neutral (they do
+        not run the writeback scan). Output byte-identical. `make test` failure set
+        unchanged from the `main` baseline; 68 whitelisted S04/S06/S32-list/
+        S32-hash/S03-metaops files + closure pins + advent integration tests all
+        green.
+
+  - [ ] **Slice 4c (part 2c) — the fork itself (deferred, low priority).** Removing
+        the per-call `make_mut` deep copy *entirely* (born-owned overlay / moving
+        the `&?BLOCK` / `__mutsu_callable_id` / param setup writes off the shared
+        env) is still open, but the profile above shows it is now worth only ~2 %,
+        so it is no longer the priority. Higher-value remaining targets in the
+        closure profile: the residual per-free-var metadata `format!`s
+        (`__mutsu_sigilless_readonly::` / `__mutsu_sigilless_alias::` /
+        `__mutsu_state_key::`), which almost always miss but whose write-sites are
+        scattered across 5+ files (so a robust monotonic gate like
+        `atomic_var_seen` needs care), and the two remaining `Symbol::starts_with`
+        prefix checks in the writeback scan.
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
