@@ -2359,9 +2359,14 @@ impl Interpreter {
             // Type objects (e.g. Array, Hash) — return as-is to avoid hanging
             Value::Package(_) => Ok(target.clone()),
             Value::Array(items, kind) => {
+                // A sublist is itemized (wrapped in a Scalar container) only when
+                // its *parent* is a List, not when the parent is a real Array.
+                // Compare Rakudo: `(1,[2,3]).deepmap(*+1)` -> `(2, $[3, 4])` but
+                // `[1,[2,3]].deepmap(*+1)` -> `[2, [3, 4]]`.
+                let child_itemize = !kind.is_real_array();
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    match self.deepmap_iterate_inner(block, item, true) {
+                    match self.deepmap_iterate_inner(block, item, child_itemize) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next => continue,
                         Err(e) => return Err(e),
@@ -2438,7 +2443,9 @@ impl Interpreter {
         target: &Value,
     ) -> Result<Value, RuntimeError> {
         match target {
-            Value::Array(items, kind) => {
+            // nodemap always returns a List, even from a real Array or a Seq.
+            // Compare Rakudo: `[2,3].nodemap(*+1).WHAT` is `List`.
+            Value::Array(items, _kind) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     match self.call_sub_value(block.clone(), vec![item.clone()], false) {
@@ -2447,11 +2454,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                if kind.is_real_array() {
-                    Ok(Value::real_array(result))
-                } else {
-                    Ok(Value::array(result))
-                }
+                Ok(Value::array(result))
             }
             Value::Seq(items) => {
                 let mut result = Vec::new();
@@ -2462,7 +2465,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::Seq(std::sync::Arc::new(result)))
+                Ok(Value::array(result))
             }
             // Single value: apply the block directly
             _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
