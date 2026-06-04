@@ -20,17 +20,55 @@ mutsu の「バイトコード VM」は実態として tree-walking Interpreter 
 VM は Interpreter を共有実行状態コンテナ + フォールバック先として使っている
 ([ANALYSIS.md](ANALYSIS.md) §1)。これを **strangler-fig 方式**で段階的に切り離す:
 古いフォールバックを残したまま計測し、毎 PR で「フォールバック率 X%→Y%」を可視化しながら縮める。
-進捗台帳は [docs/vm-decoupling.md](docs/vm-decoupling.md)。
+進捗台帳は [docs/vm-decoupling.md](docs/vm-decoupling.md)（dispatch）と
+[docs/vm-dual-store.md](docs/vm-dual-store.md)（locals↔env）。
 
-- [x] **計測機構の導入** (strangler step 1, PR #2571) — `MUTSU_VM_STATS=1` で VM→Interpreter の
-      メソッドディスパッチ・フォールバック率を出力。判明: 明示メソッド呼び出しの実行委譲は既に低率で、
-      支配的結合は共有状態 (env/env_mut) 側 (§1.1–1.2)。
-- [ ] **関数ディスパッチの計測**を追加 (`call_function`/`call_function_fallback` — 委譲面はメソッドより広い見込み)
-- [ ] **`locals`↔`env` 二重ストアの解消** — 単一権威ストアに統合し dirty 追跡機構を撤廃 (§1.2)
-- [ ] **クロージャに upvalue 導入** — 全フレーム env 同期を撤廃 (§1.3)
-- [ ] **env/クラスレジストリ/型検査を VM 所有データへ移し**、残存実行フォールバックを排除 (§1.1)。
-      当面は CLAUDE.md の記述を実態に合わせ、フォールバックに `// TODO: compile to bytecode` を付け負債を可視化
-- [ ] 最終: メソッド/関数フォールバック率を 0% にし、Interpreter のメソッド実行パスを削除
+**これはアーキテクチャ改善 = 結合削減が目的であり、パフォーマンス改善ではない**（perf は副次的、
+fib が速くなるかでは判断しない。ユーザー方針 2026-06-04）。CI（`make test` + 包括的 `make roast`）が
+全マージをゲートするので、本質的リファクタは小さく刻みすぎず**大胆に**やり、CI を安全網にする
+（CLAUDE.md「Refactor boldly」）。
+
+### 計測（done）
+- [x] メソッド/関数ディスパッチのフォールバック率計測 + **関数名・メソッド名別 histogram**
+      (`MUTSU_VM_STATS=1`、PR #2571/#2601/#2604)。どの builtin/method がフォールバックしているかを
+      推測でなくデータで特定できる。
+
+### レバー A: ディスパッチのフォールバックを native 化（フォールバック率を下げる）
+- [x] **`sprintf`/`zprintf`** を VM native テーブルへ (#2601)。sprintf.t の function fallback 96%→3.5%、
+      実スクリプト 0%。純粋 builtin の典型。
+- [x] **属性アクセサ読み** `$obj.x` を mut/非mut 両 opcode で native 化 (#2604)。method-call.raku 60%→20%。
+- [ ] **`.new`（デフォルトコンストラクタ）** = 残る method fallback の支配項。native 化は実質
+      「クラスレジストリ/BUILD/TWEAK/属性デフォルト/型強制を VM 所有データへ移す」大物（§1.1）。
+      まず「カスタム new/BUILD/TWEAK なし・単純属性」のデフォルト構築 fast path から段階的に。
+- [ ] **クロージャ/正規表現を取るメソッド** (`sort` の比較子, `.subst`, `map`/`grep` のブロック)。
+      VM→コンパイル済みコードへのコールバック基盤が要る。
+- [ ] **Test 関数** (`is`/`ok`/`plan`/`is-deeply`/`subtest`…) = roast の残フォールバックの大半。
+      TAP `TestState` を VM から到達可能にする必要（大物・後回し）。
+- [ ] `EVAL` / symbolic deref / `CALLER::` は本質的に interpreter 経由でよい（reflective）。
+
+### レバー B: `locals`↔`env` 二重ストアの解消（共有状態結合の本丸, §1.2）
+- [x] **Slice 1–4c**: 計測 + 環境の base-tier 化 + closure capture を free-var に限定 + 各種 format!/Symbol
+      churn 除去（docs/vm-dual-store.md 参照）。
+- [x] **Slice 5 step 1** (#2608): slot-only local（GetLocal でしか読まれない）を Interpreter env に
+      ミラーしない。`ensure_env_synced` を `needs_env_sync` でゲート。ループ/ブロックは制御テンポラリの
+      env 往復のため保守的に全 sync。
+- [ ] **Slice 5 collapse proper（次の本丸）**: per-call **scoped/overlay env**（呼び出しフレームごとの
+      子スコープ、復帰で破棄）を導入。これで callee の env 書き込みが caller を汚さなくなり、
+      param-bind の env 書き込み・`env_dirty` 起因の post-call pull・ループ保守フォールバックを一掃。
+      `clone_env()`/dirty 追跡（env_dirty/locals_dirty/locals_dirty_slots）の撤廃へ。
+
+### レバー C: クロージャ upvalue 化（§1.3）
+- [x] **Slice 4a**: closure 存在時の保守的 `needs_env_sync.fill(true)` を撤廃、free-var 集合に限定。
+- [ ] 自由変数を indexed upvalue として捕捉し、closure が親 env を名前で読むのをやめる。
+      `&?BLOCK`/`__mutsu_callable_id` の setup 書き込みを共有 env から外す。B（scoped env）と連動。
+
+### 最終ゴール
+- [ ] メソッド/関数フォールバック率を 0%（Test/EVAL 等の本質的例外を除く）にし、
+      Interpreter のメソッド/関数実行パスを削除。当面は残フォールバックに
+      `// TODO: compile to bytecode` を付け負債を可視化。
+
+**次の着手候補（優先順）:** B の scoped/overlay env（A の `.new` と C の upvalue の前提にもなる本丸）
+→ A の `.new` デフォルト構築 → C の upvalue。
 
 ---
 
