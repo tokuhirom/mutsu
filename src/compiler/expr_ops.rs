@@ -297,11 +297,25 @@ impl Compiler {
         self.compile_expr(left);
         self.compile_expr(right);
         let name_idx = self.code.add_constant(Value::str(func_name.to_string()));
+        // When the left operand is a simple lvalue (`$a`, `@a`), the hyper
+        // function-op binds each element `rw`; a mutating code-ref (`&[+=]`,
+        // a `sub (\a,\b) { a = ... }`) must write the result back into the
+        // lvalue. Ask the VM to push the mutated left value, then store it.
+        let writeback_target: Option<String> = match left {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            _ => None,
+        };
         self.code.emit(OpCode::HyperFuncOp {
             name_idx,
             dwim_left,
             dwim_right,
+            writeback: writeback_target.is_some(),
         });
+        if let Some(name) = writeback_target {
+            self.emit_set_named_var(&name);
+        }
     }
 
     /// Build the right-hand operand for a short-circuiting `Z` meta-op.

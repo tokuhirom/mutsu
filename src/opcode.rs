@@ -760,6 +760,11 @@ pub(crate) enum OpCode {
         name_idx: u32,
         dwim_left: bool,
         dwim_right: bool,
+        /// When true, the left operand is a mutable lvalue: bind each element
+        /// `rw` so a mutating code-ref (e.g. `&[+=]`) writes back, and push the
+        /// (possibly mutated) left value on top of the result so the compiler
+        /// can store it back into the lvalue.
+        writeback: bool,
     },
 
     // -- MetaOp (Rop, Xop, Zop) --

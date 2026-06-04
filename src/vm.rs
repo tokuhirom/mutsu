@@ -3437,8 +3437,16 @@ impl VM {
                 name_idx,
                 dwim_left,
                 dwim_right,
+                writeback,
             } => {
-                self.exec_hyper_func_op(code, *name_idx, *dwim_left, *dwim_right, compiled_fns)?;
+                self.exec_hyper_func_op(
+                    code,
+                    *name_idx,
+                    *dwim_left,
+                    *dwim_right,
+                    *writeback,
+                    compiled_fns,
+                )?;
                 *ip += 1;
             }
 

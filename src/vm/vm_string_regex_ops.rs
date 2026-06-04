@@ -1116,17 +1116,54 @@ impl VM {
         name_idx: u32,
         dwim_left: bool,
         dwim_right: bool,
+        writeback: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::Nil);
         let left = self.stack.pop().unwrap_or(Value::Nil);
         let name = Self::const_str(code, name_idx).to_string();
+        // Resolve a concrete code-ref value when `name` refers to a lexical
+        // `&name` variable (e.g. the `&op`/`&metaop` loop variables in
+        // S03-metaops/infix.t). Such calls must go through the VM closure
+        // dispatch (`vm_call_on_value`) so sigilless `rw` binding and the
+        // return value behave the same as a named-sub call; the interpreter
+        // fallback mishandles both for mutating sigilless subs.
+        let func_value: Option<Value> = {
+            let bare = name.trim_start_matches('&');
+            let mut found = None;
+            for key in [format!("&{}", bare), bare.to_string()] {
+                if let Some(v @ (Value::Sub(_) | Value::WeakSub(_))) =
+                    self.interpreter.env().get(&key)
+                {
+                    found = Some(v.clone());
+                    break;
+                }
+            }
+            found
+        };
+        // Hash operands: apply the code-ref to each value key-by-key, mirroring
+        // the dwim key-set semantics of `exec_hyper_op`.
+        if matches!(&left, Value::Hash(..)) || matches!(&right, Value::Hash(..)) {
+            return self.exec_hyper_func_op_hash(
+                left,
+                right,
+                &name,
+                func_value.as_ref(),
+                dwim_left,
+                dwim_right,
+                writeback,
+                compiled_fns,
+            );
+        }
         let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
         let left_list = Interpreter::value_to_list(&left);
         let right_list = Interpreter::value_to_list(&right);
         let left_len = left_list.len();
         let right_len = right_list.len();
         if left_len == 0 && right_len == 0 {
+            if writeback {
+                self.stack.push(Value::array(Vec::new()));
+            }
             self.stack.push(Value::array(Vec::new()));
             return Ok(());
         }
@@ -1145,38 +1182,254 @@ impl VM {
         } else {
             right_len
         };
+        // When the left operand is a writable lvalue and the code-ref's first
+        // parameter is bindable `rw` (sigilless `\a`, `$a is rw`, or `is raw`),
+        // pass each left element by writable reference so a mutating code-ref
+        // (e.g. `&[+=]`) writes back. We then collect the (possibly mutated)
+        // left elements and leave them on the stack for the compiler-emitted
+        // store into the lvalue.
+        let do_writeback = writeback
+            && self.hyper_func_first_param_writable(
+                &name,
+                func_value.as_ref(),
+                compiled_fns,
+                &left_list,
+                &right_list,
+            );
         // Look up the function by name (&name variable or compiled function)
         let mut results = Vec::with_capacity(result_len);
+        let mut mutated_left: Vec<Value> =
+            Vec::with_capacity(if do_writeback { result_len } else { 0 });
         for i in 0..result_len {
             let l = if left_len == 0 {
-                &Value::Int(0)
+                Value::Int(0)
             } else {
-                &left_list[i % left_len]
+                left_list[i % left_len].clone()
             };
             let r = if right_len == 0 {
                 &Value::Int(0)
             } else {
                 &right_list[i % right_len]
             };
-            let call_args = vec![l.clone(), r.clone()];
-            let result =
-                self.call_function_compiled_first(&name, call_args.clone(), compiled_fns)?;
-            results.push(result);
-        }
-        let result = if both_scalar && results.len() == 1 {
-            results.into_iter().next().unwrap()
-        } else {
-            // Preserve List kind when inputs are Lists (not Arrays)
-            let left_is_array = matches!(&left, Value::Array(_, crate::value::ArrayKind::Array));
-            let right_is_array = matches!(&right, Value::Array(_, crate::value::ArrayKind::Array));
-            if !left_is_array && !right_is_array {
-                Value::Array(std::sync::Arc::new(results), crate::value::ArrayKind::List)
+            if do_writeback {
+                let synth = format!("__mutsu_hyperfn_lv_{}", i);
+                self.interpreter.env_mut().insert(synth.clone(), l.clone());
+                let varref =
+                    crate::runtime::types::make_varref_value(synth.clone(), l.clone(), None);
+                let call_args = vec![varref, r.clone()];
+                let result = self.dispatch_hyper_func_call(
+                    &name,
+                    func_value.as_ref(),
+                    call_args,
+                    compiled_fns,
+                )?;
+                results.push(result);
+                let updated = self.interpreter.env().get(&synth).cloned().unwrap_or(l);
+                self.interpreter.env_mut().remove(&synth);
+                mutated_left.push(updated);
             } else {
-                Value::real_array(results)
+                let call_args = vec![l, r.clone()];
+                let result = self.dispatch_hyper_func_call(
+                    &name,
+                    func_value.as_ref(),
+                    call_args,
+                    compiled_fns,
+                )?;
+                results.push(result);
+            }
+        }
+        let left_is_array = matches!(&left, Value::Array(_, crate::value::ArrayKind::Array));
+        let right_is_array = matches!(&right, Value::Array(_, crate::value::ArrayKind::Array));
+        let wrap = |items: Vec<Value>| -> Value {
+            if both_scalar && items.len() == 1 {
+                items.into_iter().next().unwrap()
+            } else if !left_is_array && !right_is_array {
+                Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+            } else {
+                Value::real_array(items)
             }
         };
-        self.stack.push(result);
+        // For writeback, push the mutated-left value first (consumed by the
+        // store op) and leave the function results on top as the expression
+        // value.
+        if writeback {
+            let writeback_val = if do_writeback {
+                wrap(mutated_left)
+            } else {
+                // No mutation happened; restore the original left value so the
+                // compiler-emitted store is a harmless no-op.
+                left.clone()
+            };
+            self.stack.push(wrap(results));
+            self.stack.push(writeback_val);
+        } else {
+            self.stack.push(wrap(results));
+        }
         Ok(())
+    }
+
+    /// Hash variant of `exec_hyper_func_op`: apply a code-ref to hash values
+    /// key-by-key. Supports hash-hash (matched by key, dwim selecting the key
+    /// set) and hash-scalar broadcasting, plus `rw` write-back of the mutated
+    /// left hash for `%a >>[&metaop]<< %b`.
+    #[allow(clippy::too_many_arguments)]
+    fn exec_hyper_func_op_hash(
+        &mut self,
+        left: Value,
+        right: Value,
+        name: &str,
+        func_value: Option<&Value>,
+        dwim_left: bool,
+        dwim_right: bool,
+        writeback: bool,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let probe_left: Vec<Value> = match &left {
+            Value::Hash(m) => m.values().cloned().collect(),
+            other => vec![other.clone()],
+        };
+        let probe_right: Vec<Value> = match &right {
+            Value::Hash(m) => m.values().cloned().collect(),
+            other => vec![other.clone()],
+        };
+        let do_writeback = writeback
+            && matches!(&left, Value::Hash(..))
+            && self.hyper_func_first_param_writable(
+                name,
+                func_value,
+                compiled_fns,
+                &probe_left,
+                &probe_right,
+            );
+        // Determine the key set and a per-key (left, right) value source.
+        let (keys, la, ra, right_scalar) = match (&left, &right) {
+            (Value::Hash(la), Value::Hash(ra)) => {
+                let keys: Vec<String> = match (dwim_left, dwim_right) {
+                    (false, false) => {
+                        let mut ks: Vec<String> = la.keys().cloned().collect();
+                        for k in ra.keys() {
+                            if !la.contains_key(k) {
+                                ks.push(k.clone());
+                            }
+                        }
+                        ks
+                    }
+                    (true, true) => la.keys().filter(|k| ra.contains_key(*k)).cloned().collect(),
+                    (false, true) => la.keys().cloned().collect(),
+                    (true, false) => ra.keys().cloned().collect(),
+                };
+                (keys, Some(la.clone()), Some(ra.clone()), None)
+            }
+            (Value::Hash(la), _) => {
+                let keys: Vec<String> = la.keys().cloned().collect();
+                (keys, Some(la.clone()), None, Some(right.clone()))
+            }
+            (_, Value::Hash(ra)) => {
+                // scalar >>op<< %hash : broadcast left over right's keys
+                let keys: Vec<String> = ra.keys().cloned().collect();
+                (keys, None, Some(ra.clone()), None)
+            }
+            _ => unreachable!("exec_hyper_func_op_hash called without a hash operand"),
+        };
+        let identity = Value::Int(0);
+        let mut result: std::collections::HashMap<String, Value> =
+            std::collections::HashMap::with_capacity(keys.len());
+        let mut mutated: std::collections::HashMap<String, Value> =
+            std::collections::HashMap::with_capacity(if do_writeback { keys.len() } else { 0 });
+        for key in keys {
+            let l = match &la {
+                Some(m) => m.get(&key).cloned().unwrap_or_else(|| identity.clone()),
+                None => left.clone(),
+            };
+            let r = match (&ra, &right_scalar) {
+                (Some(m), _) => m.get(&key).cloned().unwrap_or_else(|| identity.clone()),
+                (None, Some(s)) => s.clone(),
+                (None, None) => identity.clone(),
+            };
+            if do_writeback {
+                let synth = format!("__mutsu_hyperfn_lvh_{}", key);
+                self.interpreter.env_mut().insert(synth.clone(), l.clone());
+                let varref =
+                    crate::runtime::types::make_varref_value(synth.clone(), l.clone(), None);
+                let call_args = vec![varref, r];
+                let v = self.dispatch_hyper_func_call(name, func_value, call_args, compiled_fns)?;
+                let updated = self.interpreter.env().get(&synth).cloned().unwrap_or(l);
+                self.interpreter.env_mut().remove(&synth);
+                result.insert(key.clone(), v);
+                mutated.insert(key, updated);
+            } else {
+                let call_args = vec![l, r];
+                let v = self.dispatch_hyper_func_call(name, func_value, call_args, compiled_fns)?;
+                result.insert(key, v);
+            }
+        }
+        let result_hash = Value::Hash(std::sync::Arc::new(result));
+        if writeback {
+            let writeback_val = if do_writeback {
+                Value::Hash(std::sync::Arc::new(mutated))
+            } else {
+                left.clone()
+            };
+            self.stack.push(result_hash);
+            self.stack.push(writeback_val);
+        } else {
+            self.stack.push(result_hash);
+        }
+        Ok(())
+    }
+
+    /// Dispatch a single per-element call of a hyper function-op. Lexical
+    /// code-refs (`func_value`) go through the VM closure dispatch; named subs
+    /// go through the compiled-first path.
+    fn dispatch_hyper_func_call(
+        &mut self,
+        name: &str,
+        func_value: Option<&Value>,
+        call_args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(fv) = func_value {
+            self.vm_call_on_value(fv.clone(), call_args, Some(compiled_fns))
+        } else {
+            self.call_function_compiled_first(name, call_args, compiled_fns)
+        }
+    }
+
+    /// Determine whether the code-ref named `name` binds its first positional
+    /// parameter in a way that can write back to the caller (sigilless raw,
+    /// `is rw`, or `is raw`). Used to decide whether a hyper function-op should
+    /// pass left elements by writable reference.
+    fn hyper_func_first_param_writable(
+        &mut self,
+        name: &str,
+        func_value: Option<&Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+        left_list: &[Value],
+        right_list: &[Value],
+    ) -> bool {
+        let probe = vec![
+            left_list.first().cloned().unwrap_or(Value::Int(0)),
+            right_list.first().cloned().unwrap_or(Value::Int(0)),
+        ];
+        fn writable(pd: &crate::ast::ParamDef) -> bool {
+            pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw")
+        }
+        // A code-ref held in a lexical `&name` variable: inspect its SubData.
+        let sub = match func_value {
+            Some(Value::Sub(data)) => Some(data.clone()),
+            Some(Value::WeakSub(weak)) => weak.upgrade(),
+            _ => None,
+        };
+        if let Some(data) = sub {
+            return data.param_defs.first().map(writable).unwrap_or(false);
+        }
+        if let Some(cf) = self.find_compiled_function(compiled_fns, name, &probe) {
+            return cf.param_defs.first().map(writable).unwrap_or(false);
+        }
+        if let Some(def) = self.interpreter.resolve_function_with_types(name, &probe) {
+            return def.param_defs.first().map(writable).unwrap_or(false);
+        }
+        false
     }
 
     pub(super) fn exec_meta_op(
