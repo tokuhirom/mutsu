@@ -361,6 +361,15 @@ impl VM {
                 if i < self.locals_dirty_slots.len() && !self.locals_dirty_slots[i] {
                     continue;
                 }
+                // Dual-store collapse (Slice 5): only mirror locals a name-based
+                // reader can actually observe -- those referenced via a
+                // GetGlobal-family op or captured by a nested closure
+                // (`needs_env_sync[i]`, computed in compute_needs_env_sync). A
+                // slot-only local (read via GetLocal) need never reach env, so the
+                // per-call flush is skipped for it (e.g. `fib`'s `$n`).
+                if i < code.needs_env_sync.len() && !code.needs_env_sync[i] {
+                    continue;
+                }
                 // Flush simple locals ($ vars that use the SetLocal fast path)
                 // AND bare-name params (no sigil, set by exec_direct_compiled_call).
                 // Skip topic (_), attributes (.x, !x), dynamic vars ($*x), and

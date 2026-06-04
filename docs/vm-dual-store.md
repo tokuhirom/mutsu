@@ -468,5 +468,92 @@ Reaching that requires, roughly in order:
         green. New pin `t/closure-meta-writeback-gate.t` (plain / read-only /
         state-var-per-instance / monotonic-flag / forwarded-call-mutation).
 
+- [~] **Slice 5 — stop mirroring slot-only locals into `env` (shrink the
+      shared-state surface).** First step landed. This is *decoupling* work, not a
+      perf optimization: the goal is to reduce how much of a frame's state the VM
+      mirrors into the interpreter's name-keyed `env` (ANALYSIS.md §1.2), moving
+      toward "locals are authoritative; `env` holds only what a name-based reader
+      needs."
+
+      **What landed.** `ensure_env_synced` (the locals→env flush) now skips a
+      local unless `needs_env_sync[i]` is set — i.e. unless the local is read via a
+      `GetGlobal`-family op or captured by a nested closure. A slot-only local
+      (read only via `GetLocal`, e.g. a recursive function's param) is no longer
+      written into the interpreter's `env` at all: it lives purely in the VM's
+      `locals`. For `fib` this drops the per-call flushed-slot count to **0**
+      (`MUTSU_VM_STATS`: `slots_flushed` 635593→0) — the param no longer crosses
+      into the interpreter's env.
+
+      **Soundness / the conservative fallback.** Every name-based reader must
+      still see current values. Compiled GetGlobal reads and closure captures are
+      exactly `needs_env_sync`. The remaining name-based readers — `EVAL`,
+      symbolic deref `::($n)`, `CALLER::`, and the **loop-phaser desugaring**,
+      which threads control state (`__mutsu_loop_first_`/`__mutsu_loop_ran_`) and
+      body-shared lexicals through `env` across the pre/body/post sections it
+      emits — are NOT captured by `needs_env_sync`. So `compute_needs_env_sync`
+      conservatively marks *every* local env-synced for any frame containing a
+      `ForLoop`/`BlockScope` op (loop/block bodies run inline ranges with their own
+      env round-trips). That keeps the full flush exactly where the inline
+      control-flow machinery needs it, while recursion-heavy loop-free code keeps
+      the slot-only optimization. Pin: `t/dualstore-slot-local-gate.t`
+      (recursion / EVAL-of-slot-local / symbolic / loop / FIRST-NEXT-LAST /
+      ENTER-LEAVE / closure / state / nested calls). `make test` failure set
+      unchanged from the `main` baseline.
+
+      **Remaining (the collapse proper, still open).** The conservative loop/block
+      fallback, the param-bind `env` write in the light call path, and the
+      `env_dirty`-triggered post-call pull (`sync_locals_from_env`) still mirror
+      state. Fully removing them needs the per-call **scoped/overlay env** (a child
+      scope per call frame that reads through to the parent and is dropped on
+      return), so a callee's writes never pollute the caller's `env` and the
+      bidirectional sync disappears. That is the larger structural change this
+      first step sets up.
+
+  - [ ] **Slice 5 (original design notes — superseded by the step above).**
+
+      **The waste, measured.** `bench-fib` does **0 % function/method fallback**
+      yet records **one `env_flush` per function-call opcode** (635593 flushes for
+      635593 calls). The flush is `ensure_env_synced`: before dispatching a call it
+      mirrors the caller's dirty simple-locals / bare-params into the shared `env`
+      so a *callee that reads the caller scope by name* (interpreter fallback,
+      closure, reflective access) sees current values. For a purely compiled callee
+      like `fib` that binds its own params and reads them via `GetLocal`, the
+      caller's `$n` flush is pure waste — the callee never reads the caller's `$n`
+      from `env`.
+
+      **Why it can't just be gated on `needs_env_sync`.** `needs_env_sync[i]`
+      (Slice 4a) is exactly "local `i` is read via a `GetGlobal`-family op in this
+      code, or captured by a nested closure." That covers GetGlobal reads and
+      closures, but **not** the reflective readers that go through the interpreter
+      without a compiled op: `EVAL` (verified: `sub f($n){ EVAL("\$n+1") }` reads
+      `$n` from the shared env), symbolic deref `::($name)`, and
+      `CALLER::`/`OUTER::`/`DYNAMIC::`. Those read arbitrary lexical names by
+      string. So gating the flush on `needs_env_sync` alone would silently feed
+      stale values to reflective code.
+
+      **The design.** All reflective readers reach the env *through an interpreter
+      fallback* (`call_function`/`call_method_*`/`run_instance_method` — the 18
+      sites the per-name diagnostic counts). So:
+        1. Gate the *pre-dispatch* flush (the `ensure_env_synced` calls that run
+           before attempting compiled dispatch) on `needs_env_sync[i]`, so a
+           compiled call no longer mirrors locals the callee can't name.
+        2. Do a *full* `sync_env_from_locals` immediately before each interpreter
+           fallback, so reflective callees still see a current env.
+      Net: `fib` (compiled path only) stops flushing → ~0 flushes; reflective code
+      gets a full sync exactly when it needs one.
+
+      **Why it is correctness-critical and must be staged.** `exec_call_func_op`
+      alone has *five* dispatch tiers (positional-light cache, named-light cache,
+      OTF cache, the `arity<=1` fast-call path, then `dispatch_func_call_inner`),
+      each with its own early `ensure_env_synced` and/or `return`. Method dispatch
+      and `vm_var_get_ops` add more. The full flush must be placed before **every**
+      fallback exit; a single missed site is a silent stale-read bug in reflective
+      code. So implement per-path in small slices (start with the function-dispatch
+      path that `fib` actually takes — pin which tier that is first — leaving method
+      dispatch full-flush/unchanged), validate each with `make test` + the
+      reflective roast tests (`EVAL`, `S02-names/symbolic-deref.t`,
+      `S02-names/caller.t`, dynamic-scope) + full CI roast, and report the
+      `env_flush` count drop per slice.
+
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
