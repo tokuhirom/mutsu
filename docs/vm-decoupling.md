@@ -116,11 +116,42 @@ So for non-test scripting code, function dispatch is now effectively fully
 decoupled; the residual roast-test function fallback is dominated by `Test`
 functions (TAP state) and `EVAL`, which are a separate, harder effort.
 
+## Method per-name histogram + step 4 — accessor reads on the mut opcode (2026-06)
+
+`MUTSU_VM_STATS=1` now also prints a per-name **method**-fallback histogram. It
+showed `method-call.raku`'s 60% method fallback was `new=10001 x=10000 y=10000`
+— i.e. the auto-generated attribute **accessor reads** `.x`/`.y`, not just the
+constructor.
+
+Root cause: a method call on a *variable* (`$obj.x`) compiles to `CallMethodMut`
+(for potential invocant write-back), but the 0-arg attribute-accessor fast path
+existed only in the non-mut `CallMethod` handler. So every accessor read on a
+lexical fell back to the interpreter. Extracted that fast path into a shared
+`VM::try_fast_accessor_read` and called it from both opcodes. It is a pure read
+(no invocant write-back), gated on `has_public_accessor` so a private attribute
+(`has $!secret`, stored under the `secret!` key) is **not** leaked — it falls
+through and the interpreter denies it (this also fixes a latent private-leak in
+the old non-mut fast path).
+
+| program | method fallback before | after |
+|---|---|---|
+| `method-call.raku` | 30001 / 50002 (60.0%) | 10001 / 50002 (**20.0%**) |
+| `bench-class` | 9000 / 65000 (13.8%) | unchanged (no accessor reads in its hot loop) |
+
+The remaining method fallback in both is `.new` (the default constructor),
+which is a larger nativization (BUILD/TWEAK/attribute init/type coercion) and is
+the clear next target.
+
+Pre-existing, out of scope: a typed `@.items` / `%.foo` accessor read throws
+`No such method` on `main` too (the interpreter accessor path does not handle
+typed-container accessors); `try_fast_accessor_read` returns the value when the
+attribute is present, so it does not regress this — it falls through identically.
+
 ## Next steps (candidate strangler targets)
 
-1. **Method dispatch**: `method-call.raku` is 60% fallback, `bench-class` 13.8%
-   — find which constructors/accessors/user-methods fall back and route them
-   natively (use the same per-name approach for methods).
+1. **`.new` constructor**: now the dominant method fallback (`new=10001` /
+   `9000`). Nativizing default construction (allocate Instance, run BUILD/TWEAK,
+   apply attribute defaults + type coercion) would remove it.
 2. `Test` functions: would need the TAP `TestState` reachable from the VM rather
    than only the interpreter — large, defer.
 3. Begin the state-ownership work (collapse the `locals`↔`env` dual store,

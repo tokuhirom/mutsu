@@ -3,6 +3,120 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    /// Fast path for a 0-arg public attribute-accessor read on an Instance
+    /// (`$obj.x`). Returns `Some(value)` to push when it handled the call, or
+    /// `None` to fall through to full method dispatch.
+    ///
+    /// This is a *pure read*: it never mutates the invocant and needs no
+    /// invocant write-back, so it is valid from both the non-mut (`CallMethod`)
+    /// and mut (`CallMethodMut`) opcodes. `$obj.x` on a *variable* compiles to
+    /// `CallMethodMut` (for potential invocant write-back), so without this
+    /// shared helper every accessor read on a lexical fell back to the
+    /// interpreter -- the dominant method fallback in `method-call.raku`
+    /// (`x`/`y` = 20000 fallbacks). See docs/vm-decoupling.md.
+    ///
+    /// Restricted to scalar attribute values: an `@.x` / `%.x` accessor must
+    /// register container type metadata on the returned value (so later typed
+    /// push/insert is enforced), which only the interpreter accessor path does,
+    /// so Array/Hash values fall through.
+    pub(super) fn try_fast_accessor_read(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+        has_modifier: bool,
+        quoted: bool,
+    ) -> Option<Value> {
+        if !args.is_empty() || has_modifier || quoted {
+            return None;
+        }
+        let Value::Instance {
+            attributes,
+            class_name,
+            ..
+        } = target
+        else {
+            return None;
+        };
+        if matches!(
+            method,
+            "new"
+                | "BUILD"
+                | "TWEAK"
+                | "BUILDALL"
+                | "DESTROY"
+                | "Bool"
+                | "so"
+                | "not"
+                | "defined"
+                | "DEFINITE"
+                | "WHAT"
+                | "WHO"
+                | "HOW"
+                | "WHY"
+                | "WHICH"
+                | "WHERE"
+                | "VAR"
+                | "Str"
+                | "gist"
+                | "raku"
+                | "perl"
+                | "ACCEPTS"
+                | "isa"
+                | "does"
+                | "can"
+                | "^name"
+                | "^mro"
+                | "^methods"
+                | "^attributes"
+                | "sink"
+                | "self"
+                | "clone"
+                | "return"
+                | "handled"
+                | "bytes"
+        ) {
+            return None;
+        }
+        let cn = class_name.resolve();
+        if self.interpreter.has_user_method(&cn, method) {
+            return None;
+        }
+        // Only a *public* accessor reads through the fast path. Gating on this
+        // first is essential: a private attribute (`has $!secret`) is stored
+        // under the `secret!` key, so reading it by the bare name must fall
+        // through to the interpreter (which denies the access) rather than
+        // leaking the private value.
+        if !self.interpreter.has_public_accessor(&cn, method) {
+            return None;
+        }
+        // Public accessor confirmed. Read its backing value, stored under the
+        // public name or the `!`-suffixed private storage name. This mirrors the
+        // long-standing non-mut fast path (which returned the value regardless of
+        // type); extending it to the mut path means an accessor read on a
+        // *variable* (`$obj.x`, compiled as CallMethodMut) no longer falls back
+        // to the interpreter.
+        let val = attributes
+            .get(method)
+            .or_else(|| attributes.get(&format!("{}!", method)));
+        match val {
+            Some(v) => {
+                let out = v.clone();
+                if let Some(msg) = self
+                    .interpreter
+                    .class_attribute_deprecated(&cn, method)
+                    .cloned()
+                {
+                    self.interpreter
+                        .check_deprecation_for_method(method, &cn, &msg);
+                }
+                Some(out)
+            }
+            // Public accessor exists but the attribute is unset.
+            None => Some(Value::Nil),
+        }
+    }
+
     pub(super) fn exec_call_method_op(
         &mut self,
         code: &CompiledCode,
@@ -92,88 +206,12 @@ impl VM {
             return Err(RuntimeError::emit_signal(target));
         }
         // Fast path: 0-arg attribute accessor on Instance (e.g. $obj.x)
-        if args.is_empty()
-            && modifier_idx.is_none()
-            && !quoted
-            && let Value::Instance {
-                attributes,
-                class_name,
-                ..
-            } = &target
-            && !matches!(
-                method,
-                "new"
-                    | "BUILD"
-                    | "TWEAK"
-                    | "BUILDALL"
-                    | "DESTROY"
-                    | "Bool"
-                    | "so"
-                    | "not"
-                    | "defined"
-                    | "DEFINITE"
-                    | "WHAT"
-                    | "WHO"
-                    | "HOW"
-                    | "WHY"
-                    | "WHICH"
-                    | "WHERE"
-                    | "VAR"
-                    | "Str"
-                    | "gist"
-                    | "raku"
-                    | "perl"
-                    | "ACCEPTS"
-                    | "isa"
-                    | "does"
-                    | "can"
-                    | "^name"
-                    | "^mro"
-                    | "^methods"
-                    | "^attributes"
-                    | "sink"
-                    | "self"
-                    | "clone"
-                    | "return"
-                    | "handled"
-                    | "bytes"
-            )
+        if let Some(val) =
+            self.try_fast_accessor_read(&target, method, &args, modifier_idx.is_some(), quoted)
         {
-            let cn = class_name.resolve();
-            if !self.interpreter.has_user_method(&cn, method) {
-                if let Some(val) = attributes.get(method) {
-                    if let Some(msg) = self
-                        .interpreter
-                        .class_attribute_deprecated(&cn, method)
-                        .cloned()
-                    {
-                        self.interpreter
-                            .check_deprecation_for_method(method, &cn, &msg);
-                    }
-                    self.stack.push(val.clone());
-                    self.env_dirty = true;
-                    return Ok(());
-                }
-                let attr_key = format!("{}!", method);
-                if let Some(val) = attributes.get(&attr_key) {
-                    if let Some(msg) = self
-                        .interpreter
-                        .class_attribute_deprecated(&cn, method)
-                        .cloned()
-                    {
-                        self.interpreter
-                            .check_deprecation_for_method(method, &cn, &msg);
-                    }
-                    self.stack.push(val.clone());
-                    self.env_dirty = true;
-                    return Ok(());
-                }
-                if self.interpreter.has_public_accessor(&cn, method) {
-                    self.stack.push(Value::Nil);
-                    self.env_dirty = true;
-                    return Ok(());
-                }
-            }
+            self.stack.push(val);
+            self.env_dirty = true;
+            return Ok(());
         }
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target

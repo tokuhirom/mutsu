@@ -118,7 +118,7 @@ impl VM {
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             if self.interpreter.is_native_method(&class, method) {
-                crate::vm::vm_stats::record_method_fallback();
+                crate::vm::vm_stats::record_method_fallback(method);
                 return self
                     .interpreter
                     .call_method_with_values(target, method, args);
@@ -130,7 +130,7 @@ impl VM {
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
         ) {
-            crate::vm::vm_stats::record_method_fallback();
+            crate::vm::vm_stats::record_method_fallback(method);
             return self
                 .interpreter
                 .call_method_with_values(target, method, args);
@@ -226,7 +226,7 @@ impl VM {
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
-                crate::vm::vm_stats::record_method_fallback();
+                crate::vm::vm_stats::record_method_fallback(method);
                 return self
                     .interpreter
                     .call_method_with_values(target, method, how_args);
@@ -353,7 +353,7 @@ impl VM {
                 }
             }
         }
-        crate::vm::vm_stats::record_method_fallback();
+        crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
     }
@@ -543,7 +543,7 @@ impl VM {
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             if self.interpreter.is_native_method(&class, method) {
-                crate::vm::vm_stats::record_method_fallback();
+                crate::vm::vm_stats::record_method_fallback(method);
                 return self.interpreter.call_method_mut_with_values(
                     target_name,
                     target,
@@ -556,7 +556,7 @@ impl VM {
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
         ) {
-            crate::vm::vm_stats::record_method_fallback();
+            crate::vm::vm_stats::record_method_fallback(method);
             return self
                 .interpreter
                 .call_method_mut_with_values(target_name, target, method, args);
@@ -577,7 +577,7 @@ impl VM {
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
-                crate::vm::vm_stats::record_method_fallback();
+                crate::vm::vm_stats::record_method_fallback(method);
                 return self
                     .interpreter
                     .call_method_with_values(target, method, how_args);
@@ -741,7 +741,7 @@ impl VM {
                 return Ok(result);
             }
         }
-        crate::vm::vm_stats::record_method_fallback();
+        crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_mut_with_values(target_name, target, method, args)
     }
