@@ -1012,6 +1012,42 @@ impl VM {
         let right = self.stack.pop().unwrap_or(Value::Nil);
         let left = self.stack.pop().unwrap_or(Value::Nil);
         let op = Self::const_str(code, op_idx).to_string();
+        // X::HyperOp::Infinite: when the result length is determined by an
+        // infinite/lazy operand, the hyper op cannot produce a finite result.
+        // Checked once at the top level (nested elements are already realized).
+        let left_inf = Self::is_listy(&left) && crate::builtins::methods_0arg::is_value_lazy(&left);
+        let right_inf =
+            Self::is_listy(&right) && crate::builtins::methods_0arg::is_value_lazy(&right);
+        if left_inf || right_inf {
+            // A side determines the result length unless it is the *sole* dwim
+            // (cycling) side: `!(dwim_x && !dwim_other)`.
+            let left_determines = !dwim_left || dwim_right;
+            let right_determines = !dwim_right || dwim_left;
+            if (left_inf && left_determines) || (right_inf && right_determines) {
+                let side = match (left_inf, right_inf) {
+                    (true, true) => "both",
+                    (true, false) => "left",
+                    _ => "right",
+                };
+                return Err(Self::hyperop_infinite_error(side));
+            }
+        }
+        let result = self.hyper_op_pair(&op, &left, &right, dwim_left, dwim_right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Apply a hyper binary op to a pair of values, recursing into nested
+    /// Iterables so that e.g. `(1, {a=>2}, 4) <<~>> <a b c>` distributes the
+    /// op into the hash element, yielding `("1a", {a=>"2b"}, "4c")`.
+    fn hyper_op_pair(
+        &mut self,
+        op: &str,
+        left: &Value,
+        right: &Value,
+        dwim_left: bool,
+        dwim_right: bool,
+    ) -> Result<Value, RuntimeError> {
         // Hyper op on two hashes: combine values key-by-key, with the dwim arrows
         // selecting the resulting key set. A missing value on either side uses the
         // operator's identity element (e.g. 0 for `+`).
@@ -1037,132 +1073,101 @@ impl VM {
                 (false, true) => la.keys().cloned().collect(),
                 (true, false) => ra.keys().cloned().collect(),
             };
-            let identity = runtime::reduction_identity(&op);
+            let identity = runtime::reduction_identity(op);
             let mut result = std::collections::HashMap::with_capacity(keys.len());
             for key in keys {
                 let l = la.get(&key).unwrap_or(&identity).clone();
                 let r = ra.get(&key).unwrap_or(&identity).clone();
-                let v = self.eval_reduction_operator_values(&op, &l, &r)?;
+                let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right)?;
                 result.insert(key, v);
             }
-            self.stack.push(Value::Hash(std::sync::Arc::new(result)));
-            return Ok(());
+            return Ok(Value::Hash(std::sync::Arc::new(result)));
         }
         // Hyper op between a hash and a scalar: apply the op to each value with
         // the scalar broadcast over every key (`%h >>*>> 4`, `2 <<**<< %h`).
         if let Value::Hash(map) = &left
-            && !Self::is_listy(&right)
+            && !Self::is_listy(right)
         {
             let map = map.clone();
-            let scalar = right.clone();
             let mut result = std::collections::HashMap::with_capacity(map.len());
             for (key, value) in map.iter() {
-                let v = self.eval_reduction_operator_values(&op, value, &scalar)?;
+                let v = self.hyper_op_pair(op, value, right, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            self.stack.push(Value::Hash(std::sync::Arc::new(result)));
-            return Ok(());
+            return Ok(Value::Hash(std::sync::Arc::new(result)));
         }
         if let Value::Hash(map) = &right
-            && !Self::is_listy(&left)
+            && !Self::is_listy(left)
         {
             let map = map.clone();
-            let scalar = left.clone();
             let mut result = std::collections::HashMap::with_capacity(map.len());
             for (key, value) in map.iter() {
-                let v = self.eval_reduction_operator_values(&op, &scalar, value)?;
+                let v = self.hyper_op_pair(op, left, value, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            self.stack.push(Value::Hash(std::sync::Arc::new(result)));
-            return Ok(());
+            return Ok(Value::Hash(std::sync::Arc::new(result)));
         }
-        let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
-        // X::HyperOp::Infinite: when the result length is determined by an
-        // infinite/lazy operand, the hyper op cannot produce a finite result.
-        // A side determines the result length unless it is the *sole* dwim
-        // (cycling) side bounded by a finite non-dwim side on the other end.
-        let left_inf = Self::is_listy(&left) && crate::builtins::methods_0arg::is_value_lazy(&left);
-        let right_inf =
-            Self::is_listy(&right) && crate::builtins::methods_0arg::is_value_lazy(&right);
-        if left_inf || right_inf {
-            // A side determines the result length unless it is the *sole* dwim
-            // (cycling) side: `!(dwim_x && !dwim_other)`.
-            let left_determines = !dwim_left || dwim_right;
-            let right_determines = !dwim_right || dwim_left;
-            if (left_inf && left_determines) || (right_inf && right_determines) {
-                let side = match (left_inf, right_inf) {
-                    (true, true) => "both",
-                    (true, false) => "left",
-                    _ => "right",
+        // At least one side is a (non-hash) Iterable: distribute element-wise,
+        // recursing so nested Iterables/Hashes are handled at every depth.
+        if Self::is_listy(left) || Self::is_listy(right) {
+            let left_list = Interpreter::value_to_list(left);
+            let right_list = Interpreter::value_to_list(right);
+            let left_len = left_list.len();
+            let right_len = right_list.len();
+            if left_len == 0 && right_len == 0 {
+                return Ok(Value::array(Vec::new()));
+            }
+            let result_len = if !dwim_left && !dwim_right {
+                if left_len != right_len {
+                    return Err(Self::hyperop_nondwim_error(left_len, right_len));
+                }
+                left_len
+            } else if dwim_left && dwim_right {
+                std::cmp::max(left_len, right_len)
+            } else if dwim_right {
+                left_len
+            } else {
+                right_len
+            };
+            let mut results = Vec::with_capacity(result_len);
+            for i in 0..result_len {
+                let l = if left_len == 0 {
+                    &Value::Int(0)
+                } else {
+                    &left_list[i % left_len]
                 };
-                return Err(Self::hyperop_infinite_error(side));
+                let r = if right_len == 0 {
+                    &Value::Int(0)
+                } else {
+                    &right_list[i % right_len]
+                };
+                results.push(self.hyper_op_pair(op, l, r, dwim_left, dwim_right)?);
             }
-        }
-        let left_list = Interpreter::value_to_list(&left);
-        let right_list = Interpreter::value_to_list(&right);
-        let left_len = left_list.len();
-        let right_len = right_list.len();
-        if left_len == 0 && right_len == 0 {
-            self.stack.push(Value::array(Vec::new()));
-            return Ok(());
-        }
-        let result_len = if !dwim_left && !dwim_right {
-            if left_len != right_len {
-                return Err(Self::hyperop_nondwim_error(left_len, right_len));
-            }
-            left_len
-        } else if dwim_left && dwim_right {
-            std::cmp::max(left_len, right_len)
-        } else if dwim_right {
-            left_len
-        } else {
-            right_len
-        };
-        let is_smartmatch = op == "~~";
-        let mut results = Vec::with_capacity(result_len);
-        for i in 0..result_len {
-            let l = if left_len == 0 {
-                &Value::Int(0)
-            } else {
-                &left_list[i % left_len]
-            };
-            let r = if right_len == 0 {
-                &Value::Int(0)
-            } else {
-                &right_list[i % right_len]
-            };
-            if is_smartmatch {
-                results.push(Value::Bool(self.vm_smart_match(l, r)));
-            } else {
-                // Try user-defined infix dispatch first when either operand
-                // is an instance, to avoid built-in ops silently coercing objects.
-                let mut resolved = false;
-                if matches!(l, Value::Instance { .. }) || matches!(r, Value::Instance { .. }) {
-                    let infix_name = format!("infix:<{}>", op);
-                    if let Some(v) = self.try_user_infix(&infix_name, l, r)? {
-                        results.push(v);
-                        resolved = true;
-                    }
-                }
-                if !resolved {
-                    results.push(self.eval_reduction_operator_values(&op, l, r)?);
-                }
-            }
-        }
-        let result = if both_scalar && results.len() == 1 {
-            results.into_iter().next().unwrap()
-        } else {
             // Preserve List kind when inputs are Lists (not Arrays)
-            let left_is_array = matches!(&left, Value::Array(_, crate::value::ArrayKind::Array));
-            let right_is_array = matches!(&right, Value::Array(_, crate::value::ArrayKind::Array));
-            if !left_is_array && !right_is_array {
-                Value::Array(std::sync::Arc::new(results), crate::value::ArrayKind::List)
+            let left_is_array = matches!(left, Value::Array(_, crate::value::ArrayKind::Array));
+            let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
+            return if !left_is_array && !right_is_array {
+                Ok(Value::Array(
+                    std::sync::Arc::new(results),
+                    crate::value::ArrayKind::List,
+                ))
             } else {
-                Value::real_array(results)
+                Ok(Value::real_array(results))
+            };
+        }
+        // Base case: both operands are scalars.
+        if op == "~~" {
+            return Ok(Value::Bool(self.vm_smart_match(left, right)));
+        }
+        // Try user-defined infix dispatch first when either operand is an
+        // instance, to avoid built-in ops silently coercing objects.
+        if matches!(left, Value::Instance { .. }) || matches!(right, Value::Instance { .. }) {
+            let infix_name = format!("infix:<{}>", op);
+            if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
+                return Ok(v);
             }
-        };
-        self.stack.push(result);
-        Ok(())
+        }
+        self.eval_reduction_operator_values(op, left, right)
     }
 
     pub(super) fn exec_hyper_func_op(
