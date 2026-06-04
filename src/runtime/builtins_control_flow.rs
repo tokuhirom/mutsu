@@ -385,6 +385,11 @@ impl Interpreter {
                 other => interp.call_function(routine, vec![other]),
             }
         }
+        // Auto-increment/decrement prefix hyper ops mutate the operand in place,
+        // so the original container variable must be written back (e.g.
+        // `--<<%h` and `--<<@a` both decrement the stored elements). Negation
+        // (`-<<`) and other non-mutating prefixes only return a new container.
+        let mutating = op == "++" || op == "--";
         // Handle hashes: apply the operation to values, preserving hash structure
         if let Value::Hash(map) = &args[1] {
             let mut result_map = std::collections::HashMap::new();
@@ -392,7 +397,24 @@ impl Interpreter {
                 let new_val = apply_hyper_prefix(self, &routine, v.clone())?;
                 result_map.insert(k.clone(), new_val);
             }
-            return Ok(Value::Hash(std::sync::Arc::new(result_map)));
+            let result = Value::Hash(std::sync::Arc::new(result_map));
+            if mutating {
+                self.overwrite_hash_bindings_by_identity(map, result.clone());
+            }
+            return Ok(result);
+        }
+        // Handle arrays: preserve the array kind and write the mutation back to
+        // the original variable for auto-increment/decrement.
+        if let Value::Array(items, kind) = &args[1] {
+            let mut results = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                results.push(apply_hyper_prefix(self, &routine, item.clone())?);
+            }
+            let result = Value::Array(std::sync::Arc::new(results), *kind);
+            if mutating {
+                self.overwrite_array_bindings_by_identity(items, result.clone());
+            }
+            return Ok(result);
         }
         let items = crate::runtime::value_to_list(&args[1]);
         let mut results = Vec::with_capacity(items.len());

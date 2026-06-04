@@ -300,7 +300,7 @@ impl Interpreter {
         Ok(out)
     }
 
-    pub(super) fn overwrite_array_bindings_by_identity(
+    pub(crate) fn overwrite_array_bindings_by_identity(
         &mut self,
         needle: &std::sync::Arc<Vec<Value>>,
         replacement: Value,
@@ -320,7 +320,7 @@ impl Interpreter {
         }
     }
 
-    fn overwrite_hash_bindings_by_identity(
+    pub(crate) fn overwrite_hash_bindings_by_identity(
         &mut self,
         needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
         replacement: Value,

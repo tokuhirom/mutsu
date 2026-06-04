@@ -378,6 +378,23 @@ impl VM {
             }
             self.env_dirty = true;
         }
+        // Hash target: write any in-place per-value mutation back to the
+        // original variable (e.g. `%h>>++` increments the stored values). The
+        // returned hash (built from `results` below) carries the method return
+        // values, which for postfix `++`/`--` differ from the new stored values.
+        if let Value::Hash(existing) = &target
+            && let Some(keys) = &hash_keys
+        {
+            let mut map = std::collections::HashMap::with_capacity(keys.len());
+            for (key, item) in keys.iter().zip(items.iter()) {
+                map.insert(key.clone(), item.clone());
+            }
+            self.interpreter.overwrite_hash_bindings_by_identity(
+                existing,
+                Value::Hash(std::sync::Arc::new(map)),
+            );
+            self.env_dirty = true;
+        }
         // Preserve the container type of the target for QuantHash types.
         // The items list was produced by value_to_list, which yields Pairs
         // in HashMap iteration order. Reconstruct the same type using the
