@@ -585,9 +585,24 @@ impl VM {
             .iter()
             .zip(free_at_entry.iter())
             .any(|(k, old)| self.interpreter.env().get_sym(*k) != old.as_ref());
+        // A writable parameter (sigilless `\a`, `is rw`, or `is raw`) bound to a
+        // caller-provided container writes the mutation into this frame's env
+        // under the *source container's* name (e.g. the synthetic `__mutsu_*`
+        // var a hyper function-op injects, or a `$x` the caller passed by
+        // reference). That source name is neither a free variable nor a
+        // parameter, so the `free_changed`/`rw_bindings` checks miss it; the
+        // env-scan below is what propagates it back to the caller. Force the
+        // scan whenever the closure has such a parameter so the write-back is
+        // not silently dropped for a non-mutating-looking frame (env_dirty may
+        // be clear if a prior call reset it).
+        let has_writable_params = data
+            .param_defs
+            .iter()
+            .any(|pd| pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw"));
         let needs_caller_writeback = free_changed
             || self.env_dirty
             || has_captured_local
+            || has_writable_params
             || !rw_bindings.is_empty()
             || cc.has_calls;
         if needs_caller_writeback {
