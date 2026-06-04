@@ -88,7 +88,7 @@ impl Interpreter {
             }
         } else {
             let mut thread_interp = self.clone_for_thread();
-            std::thread::spawn(move || {
+            crate::runtime::builtins_system::spawn_user_thread(move || {
                 let (result, output, stderr) = orig.wait();
                 let status = orig.status();
                 if should_run(&status) {

@@ -2,6 +2,24 @@ use super::*;
 use crate::symbol::Symbol;
 use std::sync::OnceLock;
 
+/// Stack size for worker threads that execute user code (Promise / `start` /
+/// Supply callbacks). Matches the main thread's stack (see `main.rs`): the
+/// default ~2 MiB thread stack overflows on deep VM recursion, which shows up
+/// as debug-build-only crashes (release frames are smaller and fit in 2 MiB).
+pub(crate) const USER_THREAD_STACK_SIZE: usize = 32 * 1024 * 1024;
+
+/// Spawn a worker thread with a large stack for running user code, so deep VM
+/// recursion does not overflow the default thread stack.
+pub(crate) fn spawn_user_thread<F>(f: F) -> std::thread::JoinHandle<()>
+where
+    F: FnOnce() + Send + 'static,
+{
+    std::thread::Builder::new()
+        .stack_size(USER_THREAD_STACK_SIZE)
+        .spawn(f)
+        .expect("failed to spawn worker thread")
+}
+
 /// State for a live child process (when `:in` is used with `run`).
 pub(super) struct LiveProcState {
     pub(super) child: std::process::Child,
@@ -98,7 +116,7 @@ impl Interpreter {
             block
         };
 
-        std::thread::spawn(move || {
+        spawn_user_thread(move || {
             let vm = crate::vm::VM::new(thread_interp);
             let (mut thread_interp, result) = vm.call_value(block, vec![]);
             // Transfer any handles opened by this thread back to the awaiter.
@@ -143,7 +161,7 @@ impl Interpreter {
                     {
                         let handler_interp = thread_interp.clone_for_thread();
                         let ex_val = error_val;
-                        std::thread::spawn(move || {
+                        spawn_user_thread(move || {
                             let vm = crate::vm::VM::new(handler_interp);
                             let (_interp, _result) = vm.call_value(handler, vec![ex_val]);
                         });
