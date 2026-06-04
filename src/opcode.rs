@@ -1152,18 +1152,26 @@ impl CompiledCode {
         if n == 0 {
             return;
         }
-        // If closures exist, conservatively mark all locals as needing env sync
-        // because closures may capture any outer variable via GetGlobal.
-        if !self.closure_compiled_codes.is_empty() {
-            self.needs_env_sync.fill(true);
-            return;
-        }
         let locals_map: std::collections::HashMap<&str, usize> = self
             .locals
             .iter()
             .enumerate()
             .map(|(i, name)| (name.as_str(), i))
             .collect();
+        // A nested closure created in this frame captures the env at creation
+        // time and later reads its free variables from that snapshot by name.
+        // Any local of *this* frame that is a free variable of some nested
+        // closure must therefore be flushed to env before the capture. This
+        // replaces the old conservative `fill(true)` (which mirrored *every*
+        // local to env whenever any closure existed) with the exact set of
+        // locals a closure can actually observe.
+        for nested in &self.closure_compiled_codes {
+            for sym in &nested.free_var_syms {
+                if let Some(slot) = sym.with_str(|s| locals_map.get(s).copied()) {
+                    self.needs_env_sync[slot] = true;
+                }
+            }
+        }
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
