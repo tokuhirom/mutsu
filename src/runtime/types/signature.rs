@@ -152,11 +152,7 @@ pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Va
     }
 }
 
-pub(in crate::runtime) fn make_varref_value(
-    name: String,
-    value: Value,
-    source_index: Option<usize>,
-) -> Value {
+pub(crate) fn make_varref_value(name: String, value: Value, source_index: Option<usize>) -> Value {
     let mut named = std::collections::HashMap::new();
     named.insert("__mutsu_varref_name".to_string(), Value::str(name));
     named.insert("__mutsu_varref_value".to_string(), value);
