@@ -965,6 +965,43 @@ impl VM {
         )
     }
 
+    /// Build an `X::HyperOp::Infinite` exception carrying the `side` attribute
+    /// (`left` / `right` / `both`) identifying which operand(s) are infinite.
+    fn hyperop_infinite_error(side: &str) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("side".to_string(), Value::str(side.to_string()));
+        let msg = "Lists on both sides of non-dwimmy hyperop are not of the same length, \
+                   and at least one is lazy or infinite"
+            .to_string();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let mut err = RuntimeError::new(format!("X::HyperOp::Infinite: {}", msg));
+        err.exception = Some(Box::new(Value::make_instance(
+            crate::symbol::Symbol::intern("X::HyperOp::Infinite"),
+            attrs,
+        )));
+        err
+    }
+
+    /// Build an `X::HyperOp::NonDWIM` exception carrying `left-elems` and
+    /// `right-elems` attributes for a non-dwimmy hyper op length mismatch.
+    fn hyperop_nondwim_error(left_elems: usize, right_elems: usize) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("left-elems".to_string(), Value::Int(left_elems as i64));
+        attrs.insert("right-elems".to_string(), Value::Int(right_elems as i64));
+        let msg = format!(
+            "Lists on both sides of non-dwimmy hyperop are not of the same length: \
+             left: {} elements, right: {} elements",
+            left_elems, right_elems
+        );
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let mut err = RuntimeError::new(format!("X::HyperOp::NonDWIM: {}", msg));
+        err.exception = Some(Box::new(Value::make_instance(
+            crate::symbol::Symbol::intern("X::HyperOp::NonDWIM"),
+            attrs,
+        )));
+        err
+    }
+
     pub(super) fn exec_hyper_op(
         &mut self,
         code: &CompiledCode,
@@ -1040,6 +1077,27 @@ impl VM {
             return Ok(());
         }
         let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
+        // X::HyperOp::Infinite: when the result length is determined by an
+        // infinite/lazy operand, the hyper op cannot produce a finite result.
+        // A side determines the result length unless it is the *sole* dwim
+        // (cycling) side bounded by a finite non-dwim side on the other end.
+        let left_inf = Self::is_listy(&left) && crate::builtins::methods_0arg::is_value_lazy(&left);
+        let right_inf =
+            Self::is_listy(&right) && crate::builtins::methods_0arg::is_value_lazy(&right);
+        if left_inf || right_inf {
+            // A side determines the result length unless it is the *sole* dwim
+            // (cycling) side: `!(dwim_x && !dwim_other)`.
+            let left_determines = !dwim_left || dwim_right;
+            let right_determines = !dwim_right || dwim_left;
+            if (left_inf && left_determines) || (right_inf && right_determines) {
+                let side = match (left_inf, right_inf) {
+                    (true, true) => "both",
+                    (true, false) => "left",
+                    _ => "right",
+                };
+                return Err(Self::hyperop_infinite_error(side));
+            }
+        }
         let left_list = Interpreter::value_to_list(&left);
         let right_list = Interpreter::value_to_list(&right);
         let left_len = left_list.len();
@@ -1050,10 +1108,7 @@ impl VM {
         }
         let result_len = if !dwim_left && !dwim_right {
             if left_len != right_len {
-                return Err(RuntimeError::new(format!(
-                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
-                    left_len, right_len
-                )));
+                return Err(Self::hyperop_nondwim_error(left_len, right_len));
             }
             left_len
         } else if dwim_left && dwim_right {
