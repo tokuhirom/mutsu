@@ -244,12 +244,16 @@ impl Compiler {
                 dwim_left,
                 dwim_right,
             });
-            // Assign the result back to the left-hand side variable
+            // Assign the result back to the left-hand side variable. Keep a copy
+            // on the stack (via Dup) so the hyper-assignment also yields its
+            // value as an expression, e.g. `my @r = @a »+=« (1,2,3)`.
             match left {
                 Expr::ArrayVar(name) => {
+                    self.code.emit(OpCode::Dup);
                     self.emit_set_named_var(&format!("@{}", name));
                 }
                 Expr::Var(name) => {
+                    self.code.emit(OpCode::Dup);
                     self.emit_set_named_var(name);
                 }
                 Expr::Index {
