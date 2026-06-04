@@ -273,11 +273,50 @@ Reaching that requires, roughly in order:
         S02/S12/S14 (241 files) whitelist green. New pin:
         `t/closure-selective-env-sync.t`.
 
-  - [ ] **Slice 4b/4c — upvalue capture + move setup writes off the shared env.**
+  - [x] **Slice 4b — split the env into an immutable shared base tier.** Done.
+
+        **Measurement first.** A per-call env probe on the closure bench showed the
+        env holds **119 entries, of which ~110 are immutable built-in constants** —
+        the `Order` / `Endian` / `ProtocolFamily` / `Signal` enum variants (bare +
+        qualified, ~70), plus dynamic/magic var defaults — and only ~9 are real
+        program lexicals (`base`, `factor`, `sum`, `_`, `@_`, ...). Each compiled
+        call clones the env and the first setup write `Arc::make_mut`-deep-copies
+        the whole 119-entry map (`env_deep_copies` ~2/call). So the dominant cost is
+        copying ~110 constants that never change.
+
+        **What shipped.** `Env` gains a process-wide immutable base tier
+        (`env.rs::GLOBAL_BASE: OnceLock<HashMap<Symbol,Value>>`). The four
+        `init_*_enum` functions now write their ~70 constant entries into that base
+        (installed once at `Interpreter::new`) instead of `self.env`. `Env::get` /
+        `contains_key` fall back to the base on an overlay miss; `get_mut` promotes a
+        base key into the overlay before handing out `&mut` (so in-place mutation of
+        a constant isn't lost); `flatten` merges base under overlay. Crucially
+        `iter` / `keys` / `values` / `len` / `remove` stay **overlay-only** — the
+        base is a name-lookup constant pool, not part of the mutable lexical
+        environment, so it is invisible to the closure writeback scan and every
+        other env iteration (which only ever look for lexicals/`__mutsu_*` keys,
+        never enum constants). User-defined enums / `my` shadowing still work: they
+        write to the overlay, which shadows base on read and reverts when the scope's
+        overlay entry is removed.
+
+        **Result.** The per-call deep copy now forks a ~49-entry overlay instead of
+        119 (~2.4x cheaper per copy; the *count* is unchanged — that needs 4c).
+        Release bench: **read-only closure 2.50s→1.33s (~1.9x), mutating
+        4.38s→2.00s (~2.2x), method-call 0.71s→0.52s (~1.4x).** `make test` failure
+        set unchanged from the `main` baseline (`placeholder.t`, `tail-function.t`,
+        and `hyper-func-op-writeback.t` test 8 all fail on a clean `main` build too —
+        the last is a pre-existing locale/version-sensitive failure, not a base-tier
+        regression). 791-file enum/closure/integration whitelist green. New pin
+        `t/builtin-enum-base-tier.t` (bare/qualified/closure/thread/shadow).
+
+  - [ ] **Slice 4c — upvalue capture + move setup writes off the shared env.**
         Still to do: give closures an explicit upvalue list (or scoped overlay env)
         and move the `&?BLOCK` / `__mutsu_callable_id` / param-binding setup writes
-        off the shared global env. This is what removes the residual per-call
-        `make_mut` deep copies (Slice 3 located them at exactly those setup writes).
+        off the shared global env. This removes the per-call `make_mut` deep copies
+        *entirely* (Slice 3 located them at exactly those setup writes; Slice 4b only
+        shrank each copy, it did not cut the count). A natural extension of 4b is to
+        also hoist the remaining immutable dynamic/magic-var defaults into the base
+        tier so the overlay shrinks further.
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
