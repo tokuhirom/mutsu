@@ -372,6 +372,18 @@ impl VM {
         } else {
             target
         };
+        // Fast path: 0-arg attribute accessor read on an Instance (e.g.
+        // `$obj.x`). A method call on a *variable* compiles to CallMethodMut for
+        // potential invocant write-back, so accessor reads land here -- without
+        // this they all fell back to the interpreter. The read does not mutate
+        // the invocant, so no write-back to `target_name` is needed.
+        if let Some(val) =
+            self.try_fast_accessor_read(&target, &method, &args, modifier.is_some(), quoted)
+        {
+            self.stack.push(val);
+            self.env_dirty = true;
+            return Ok(());
+        }
         // Detect calls on undeclared type names: when a BareWord resolved to a Str
         // (because the name wasn't a known type/class), and .new() is called on it,
         // this means the user tried to instantiate a nonexistent class.
@@ -1169,7 +1181,7 @@ impl VM {
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
                         // Perform the operation on the backing array
-                        crate::vm::vm_stats::record_method_fallback();
+                        crate::vm::vm_stats::record_method_fallback(&method);
                         let result = self
                             .interpreter
                             .call_method_mut_with_values(

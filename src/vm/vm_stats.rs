@@ -27,6 +27,13 @@ fn function_fallback_by_name() -> &'static Mutex<HashMap<String, u64>> {
     static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
 }
+
+/// Per-name method-fallback histogram (only populated when stats are on). Same
+/// purpose as [`function_fallback_by_name`] but for `.method(...)` dispatch.
+fn method_fallback_by_name() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
 // Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
 static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
 static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
@@ -53,9 +60,12 @@ pub(crate) fn record_method_dispatch() {
 /// Record that a method dispatch fell back to the tree-walking interpreter
 /// (`Interpreter::call_method_with_values`) instead of running compiled code.
 #[inline]
-pub(crate) fn record_method_fallback() {
+pub(crate) fn record_method_fallback(name: &str) {
     if enabled() {
         METHOD_FALLBACK.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = method_fallback_by_name().lock() {
+            *map.entry(name.to_string()).or_insert(0) += 1;
+        }
     }
 }
 
@@ -175,6 +185,22 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] function-fallback by name (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = method_fallback_by_name().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] method-fallback by name (top {}): {}",
             top.len(),
             top.join(" ")
         );
