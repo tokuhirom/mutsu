@@ -468,9 +468,48 @@ Reaching that requires, roughly in order:
         green. New pin `t/closure-meta-writeback-gate.t` (plain / read-only /
         state-var-per-instance / monotonic-flag / forwarded-call-mutation).
 
-- [ ] **Slice 5 — stop flushing locals the callee can't observe (the dual-store
-      collapse proper).** Designed; not yet implemented. This is the structural
-      lever the earlier slices only optimized *around*.
+- [~] **Slice 5 — stop mirroring slot-only locals into `env` (shrink the
+      shared-state surface).** First step landed. This is *decoupling* work, not a
+      perf optimization: the goal is to reduce how much of a frame's state the VM
+      mirrors into the interpreter's name-keyed `env` (ANALYSIS.md §1.2), moving
+      toward "locals are authoritative; `env` holds only what a name-based reader
+      needs."
+
+      **What landed.** `ensure_env_synced` (the locals→env flush) now skips a
+      local unless `needs_env_sync[i]` is set — i.e. unless the local is read via a
+      `GetGlobal`-family op or captured by a nested closure. A slot-only local
+      (read only via `GetLocal`, e.g. a recursive function's param) is no longer
+      written into the interpreter's `env` at all: it lives purely in the VM's
+      `locals`. For `fib` this drops the per-call flushed-slot count to **0**
+      (`MUTSU_VM_STATS`: `slots_flushed` 635593→0) — the param no longer crosses
+      into the interpreter's env.
+
+      **Soundness / the conservative fallback.** Every name-based reader must
+      still see current values. Compiled GetGlobal reads and closure captures are
+      exactly `needs_env_sync`. The remaining name-based readers — `EVAL`,
+      symbolic deref `::($n)`, `CALLER::`, and the **loop-phaser desugaring**,
+      which threads control state (`__mutsu_loop_first_`/`__mutsu_loop_ran_`) and
+      body-shared lexicals through `env` across the pre/body/post sections it
+      emits — are NOT captured by `needs_env_sync`. So `compute_needs_env_sync`
+      conservatively marks *every* local env-synced for any frame containing a
+      `ForLoop`/`BlockScope` op (loop/block bodies run inline ranges with their own
+      env round-trips). That keeps the full flush exactly where the inline
+      control-flow machinery needs it, while recursion-heavy loop-free code keeps
+      the slot-only optimization. Pin: `t/dualstore-slot-local-gate.t`
+      (recursion / EVAL-of-slot-local / symbolic / loop / FIRST-NEXT-LAST /
+      ENTER-LEAVE / closure / state / nested calls). `make test` failure set
+      unchanged from the `main` baseline.
+
+      **Remaining (the collapse proper, still open).** The conservative loop/block
+      fallback, the param-bind `env` write in the light call path, and the
+      `env_dirty`-triggered post-call pull (`sync_locals_from_env`) still mirror
+      state. Fully removing them needs the per-call **scoped/overlay env** (a child
+      scope per call frame that reads through to the parent and is dropped on
+      return), so a callee's writes never pollute the caller's `env` and the
+      bidirectional sync disappears. That is the larger structural change this
+      first step sets up.
+
+  - [ ] **Slice 5 (original design notes — superseded by the step above).**
 
       **The waste, measured.** `bench-fib` does **0 % function/method fallback**
       yet records **one `env_flush` per function-call opcode** (635593 flushes for

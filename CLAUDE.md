@@ -252,6 +252,17 @@ The project is in its final stretch. Work should be driven by strategic prioriti
 
 The `main` branch is protected by GitHub branch protection rules — only PRs that pass CI (`make test` + `make roast`) can be merged. **Do NOT waste time checking whether a failing test also fails on `main`.** If a test fails on your feature branch, the problem is in your changes, not in `main`. Checking out `main` or running tests against it to "verify" is pointless and wastes AI resources.
 
+## Refactor boldly — CI + roast are the safety net
+
+CI (`make test` + the extensive `make roast` spec suite) gates every merge, and the roast suite is comprehensive. **Do NOT hide behind "this is too risky, I'll ship a tiny slice / just document the design."** Over-caution that avoids the actual architectural change is a worse failure than a bold change that CI catches. When the right fix is a substantial, high-blast-radius refactor (e.g. collapsing the `locals`↔`env` dual store, reworking dispatch, changing core data structures), **do the real change**:
+
+- Make the architectural change in full, not as a string of timid micro-gates that never reach the goal.
+- Validate locally with `make test` + a few targeted tests, fix what those catch, then push and let CI's full roast run be the comprehensive safety net.
+- If CI fails, fix forward on the same branch and re-run. A red CI on a feature branch is cheap and expected during a big refactor — it cannot reach `main`.
+- Prefer one coherent architectural PR over ten micro-PRs that collectively dance around the real problem.
+
+The goal is essential architectural improvement, not the appearance of progress through small safe diffs.
+
 ## Known flaky tests
 
 Some tests are non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.

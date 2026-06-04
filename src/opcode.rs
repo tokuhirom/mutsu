@@ -1152,6 +1152,23 @@ impl CompiledCode {
         if n == 0 {
             return;
         }
+        // Conservative fallback: code that runs inline control-flow bodies with
+        // their own env/locals juggling (for/while/loop bodies, which the
+        // loop-phaser desugaring threads state through by name via `env`, e.g.
+        // the `__mutsu_loop_first_`/`__mutsu_loop_ran_` control temps) cannot
+        // safely treat any local as slot-only -- a slot value may not survive the
+        // loop's per-iteration env round-trips. Mark every local env-synced so the
+        // dual-store flush gate (vm_env_helpers) keeps the full flush for such
+        // frames. Recursion-heavy code without loops (e.g. `fib`) is unaffected
+        // and still skips the per-call flush for its slot-only params.
+        let has_inline_loop = self
+            .ops
+            .iter()
+            .any(|op| matches!(op, OpCode::ForLoop { .. } | OpCode::BlockScope { .. }));
+        if has_inline_loop {
+            self.needs_env_sync.iter_mut().for_each(|b| *b = true);
+            return;
+        }
         let locals_map: std::collections::HashMap<&str, usize> = self
             .locals
             .iter()
