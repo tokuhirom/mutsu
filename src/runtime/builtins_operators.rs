@@ -1729,7 +1729,19 @@ impl Interpreter {
             };
             results.push(pair_result);
         }
-        Ok(Value::real_array(results))
+        // Preserve List kind when the inputs are Lists (not real Arrays), so the
+        // function form `infix:<»+«>((1,2,3),(4,5,6))` returns a List just like
+        // the operator form `(1,2,3) »+« (4,5,6)`.
+        let left_is_array = matches!(left, Value::Array(_, crate::value::ArrayKind::Array));
+        let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
+        if !left_is_array && !right_is_array {
+            Ok(Value::Array(
+                std::sync::Arc::new(results),
+                crate::value::ArrayKind::List,
+            ))
+        } else {
+            Ok(Value::real_array(results))
+        }
     }
 }
 
