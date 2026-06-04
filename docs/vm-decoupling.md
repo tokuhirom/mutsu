@@ -83,11 +83,47 @@ So the two biggest decoupling levers are:
 2. **function** dispatch — moving hot builtins/`Test` functions into the VM's
    native dispatch so they stop routing through `call_function`.
 
+## Per-name fallback histogram (2026-06)
+
+`MUTSU_VM_STATS=1` now also prints the **top function names that fell back**, so
+decoupling work can target the highest-count builtin instead of guessing:
+
+```
+[mutsu vm-stats] function-fallback by name (top N): sprintf=183 EVAL=1 plan=1 ...
+```
+
+This immediately showed that `sprintf` alone was **183 of sprintf.t's 190**
+function fallbacks (96%). The rest were `Test` functions (`is`/`plan`/`subtest`/
+`is-deeply`) and `EVAL` — which genuinely need interpreter state.
+
+## Step 3 — nativize `sprintf` / `zprintf` (2026-06)
+
+`Interpreter::builtin_sprintf` was already pure (it only calls the free
+functions in `runtime::sprintf`; it never touches `&self`), yet `sprintf` lived
+in the interpreter's `call_function` match, so every call fell back. Moved it
+into the VM's `native_function` table (`builtins::functions::native_sprintf`),
+mirroring the interpreter exactly (single-array-arg flattening, directive/type
+validation, error propagation). The only case that still falls back is a
+**Junction format argument** (`.Str`-per-eigenvalue threading needs interpreter
+rendering) and object args (already excluded by `try_native_function`).
+
+| program | function fallback before | after |
+|---|---|---|
+| `roast/6.d/S32-str/sprintf.t` | 190 / 198 (96.0%) | 7 / 198 (**3.5%**) |
+| realistic scripting probe (`tmp/probe-script.raku`: map/join/split/sprintf/printf/sort/sum) | — | **0 / 2000 (0.0%)** |
+
+So for non-test scripting code, function dispatch is now effectively fully
+decoupled; the residual roast-test function fallback is dominated by `Test`
+functions (TAP state) and `EVAL`, which are a separate, harder effort.
+
 ## Next steps (candidate strangler targets)
 
-1. Move the hottest builtins / `Test` functions into the VM's
-   `try_native_function` table so they execute without `call_function`.
-2. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
+1. **Method dispatch**: `method-call.raku` is 60% fallback, `bench-class` 13.8%
+   — find which constructors/accessors/user-methods fall back and route them
+   natively (use the same per-name approach for methods).
+2. `Test` functions: would need the TAP `TestState` reachable from the VM rather
+   than only the interpreter — large, defer.
+3. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
    `ANALYSIS.md` §1.2) so the VM stops borrowing the interpreter's env.
 
 Record each step's before/after numbers in this file so the trend is visible.
