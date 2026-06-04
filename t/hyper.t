@@ -61,14 +61,15 @@ is @r11.join(" "), "11 22 13 24 15", '<<+>> shorter cycles to match longer';
 my @r12 = @y <<+>> @x;
 is @r12.join(" "), "11 22 13 24 15", '<<+>> commutative behavior';
 
-# empty arrays
+# empty arrays: a dwim side that is empty cannot be cycled/padded, so the
+# result is empty (matches Rakudo and roast/S03-metaops/hyper.t).
 my @empty;
 my @nonempty = 1, 2, 3;
 my @r13 = @empty <<+>> @nonempty;
-is @r13.join(" "), "1 2 3", '<<+>> empty left with nonempty right';
+is @r13.elems, 0, '<<+>> empty left with nonempty right yields empty';
 
 my @r14 = @nonempty <<+>> @empty;
-is @r14.join(" "), "1 2 3", '<<+>> nonempty left with empty right';
+is @r14.elems, 0, '<<+>> nonempty left with empty right yields empty';
 
 # chaining hyper operators
 my @c1 = 1, 2, 3;
