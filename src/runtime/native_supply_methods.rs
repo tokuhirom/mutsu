@@ -522,7 +522,7 @@ impl Interpreter {
                     let mut thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
                     let delay = delay_seconds;
-                    std::thread::spawn(move || {
+                    crate::runtime::builtins_system::spawn_user_thread(move || {
                         Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
                     });
                     return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
@@ -2501,7 +2501,7 @@ impl Interpreter {
                     let mut thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
                     let delay = delay_seconds;
-                    std::thread::spawn(move || {
+                    crate::runtime::builtins_system::spawn_user_thread(move || {
                         Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
                     });
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
@@ -3670,7 +3670,7 @@ impl Interpreter {
 
         // Spawn a thread to run the block asynchronously
         let mut thread_interp = self.clone_for_thread();
-        std::thread::spawn(move || {
+        crate::runtime::builtins_system::spawn_user_thread(move || {
             let result_val = thread_interp
                 .call_sub_value(callable, vec![value], true)
                 .unwrap_or(Value::Nil);
