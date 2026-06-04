@@ -344,6 +344,27 @@ impl VM {
             }
         }
 
+        // Snapshot the values of this closure's free variables so the writeback
+        // below can tell whether the body actually changed anything the caller
+        // cares about. The only outer state a closure can mutate is a free
+        // variable -- directly (SetGlobal in its body) or transitively (a nested
+        // closure that captured it from this frame and wrote it back). Both leave
+        // the variable's value in this frame's env differing from entry. This is
+        // a handful of values, and unlike comparing the env Arc it is immune to
+        // the per-statement `?LINE` bookkeeping write that always dirties env.
+        let free_at_entry: Vec<Option<Value>> = cc
+            .free_var_syms
+            .iter()
+            .map(|k| self.interpreter.env().get_sym(*k).cloned())
+            .collect();
+        // A captured variable that lives in a local slot is flushed to env on
+        // exit (above) rather than written through env during the body, so its
+        // change is not visible via `free_at_entry`; force the writeback then.
+        let has_captured_local = cc
+            .locals
+            .iter()
+            .any(|n| !n.is_empty() && data.env.contains_key(n));
+
         let let_mark = self.interpreter.let_saves_len();
         let mut ip = 0;
         let mut result = Ok(());
@@ -515,16 +536,6 @@ impl VM {
             .pop_caller_env_with_writeback(&mut restored_env);
         self.interpreter
             .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
-        let rw_sources: std::collections::HashSet<String> = rw_bindings
-            .iter()
-            .map(|(_, source)| source.clone())
-            .collect();
-        let captured_names: std::collections::HashSet<Symbol> = data.env.keys().copied().collect();
-        // Write back captured-variable changes, but NOT the closure's own
-        // parameters/locals (which live in cc.locals).  Without this filter,
-        // recursive &?BLOCK calls clobber the outer frame's $n, etc.
-        let local_names: std::collections::HashSet<&str> =
-            cc.locals.iter().map(|s| s.as_str()).collect();
         // Build set of parameter names — these are strictly local to the
         // function call and must never leak back to the caller's env, even
         // when they share a name with a captured outer variable.
@@ -544,25 +555,73 @@ impl VM {
         for name in &subsig_names {
             param_names.insert(name.as_str());
         }
-        for (k, v) in self.interpreter.env().iter() {
-            if *k != "_"
-                && *k != "@_"
-                && !k.with_str(|s| rw_sources.contains(s))
-                && !k.with_str(|s| param_names.contains(s))
-                && (restored_env.contains_key_sym(*k)
-                    || captured_names.contains(k)
-                    || k.starts_with("__mutsu_predictive_seq_iter::")
-                    || k.starts_with("__mutsu_sigilless_alias::!"))
-                && (!k.with_str(|s| local_names.contains(s)) || captured_names.contains(k))
-            {
-                // Don't leak captured-only variables to callers that don't have
-                // them. This prevents independent closures from sharing state
-                // via the calling env (e.g. two closures from the same factory
-                // should have their own captured variable copies).
-                if captured_names.contains(k) && !restored_env.contains_key_sym(*k) {
-                    continue;
+
+        // The full-env writeback below scans the entire working env (~100
+        // entries) to propagate the closure's mutations back to the caller. It
+        // is only needed when the closure actually changed something visible to
+        // the caller: a free variable changed value (direct or transitive write),
+        // it dirtied the env with a non-bookkeeping write (e.g. a sigilless
+        // alias), it has rw parameters, or it modified a captured local. A
+        // read-only *leaf* closure (the common map/grep/sort block) trips none of
+        // these and skips the whole scan.
+        //
+        // The skip is only sound for a leaf closure (one that makes no calls,
+        // i.e. `!cc.has_calls`). Once the body makes a call we cannot reason
+        // locally about what got mutated: a nested method/closure call can write
+        // *any* captured variable back into this frame's env -- including one that
+        // is captured here but is not a free variable of this closure (so it is
+        // invisible to the `free_changed` check). Two regressing shapes:
+        //   * `{ $*OUT.write($buf) }` (advent2011) mutates the enclosing `$output`
+        //     through the dynamically-dispatched `$*OUT.write` method closing over
+        //     it.
+        //   * `-> $blk, $v { $blk($v) }` forwards a call to a closure that mutates
+        //     an outer lexical the forwarder never names.
+        // `cc.has_calls` covers *every* call opcode (CallFunc/CallMethod/ExecCall/
+        // CallOnValue/CallOnCodeVar/Hyper.../CallDefined/...) -- unlike
+        // `has_env_writes`, which lists only some of them and so missed
+        // `CallOnCodeVar` (the `$blk($v)` case).
+        let free_changed = cc
+            .free_var_syms
+            .iter()
+            .zip(free_at_entry.iter())
+            .any(|(k, old)| self.interpreter.env().get_sym(*k) != old.as_ref());
+        let needs_caller_writeback = free_changed
+            || self.env_dirty
+            || has_captured_local
+            || !rw_bindings.is_empty()
+            || cc.has_calls;
+        if needs_caller_writeback {
+            let rw_sources: std::collections::HashSet<String> = rw_bindings
+                .iter()
+                .map(|(_, source)| source.clone())
+                .collect();
+            let captured_names: std::collections::HashSet<Symbol> =
+                data.env.keys().copied().collect();
+            // Write back captured-variable changes, but NOT the closure's own
+            // parameters/locals (which live in cc.locals).  Without this filter,
+            // recursive &?BLOCK calls clobber the outer frame's $n, etc.
+            let local_names: std::collections::HashSet<&str> =
+                cc.locals.iter().map(|s| s.as_str()).collect();
+            for (k, v) in self.interpreter.env().iter() {
+                if *k != "_"
+                    && *k != "@_"
+                    && !k.with_str(|s| rw_sources.contains(s))
+                    && !k.with_str(|s| param_names.contains(s))
+                    && (restored_env.contains_key_sym(*k)
+                        || captured_names.contains(k)
+                        || k.starts_with("__mutsu_predictive_seq_iter::")
+                        || k.starts_with("__mutsu_sigilless_alias::!"))
+                    && (!k.with_str(|s| local_names.contains(s)) || captured_names.contains(k))
+                {
+                    // Don't leak captured-only variables to callers that don't have
+                    // them. This prevents independent closures from sharing state
+                    // via the calling env (e.g. two closures from the same factory
+                    // should have their own captured variable copies).
+                    if captured_names.contains(k) && !restored_env.contains_key_sym(*k) {
+                        continue;
+                    }
+                    restored_env.insert_sym(*k, v.clone());
                 }
-                restored_env.insert_sym(*k, v.clone());
             }
         }
         // Write back readonly/alias metadata for captured variables that were
@@ -605,7 +664,7 @@ impl VM {
         // not captured from an outer scope.
         for local_name in cc.locals.iter() {
             if !local_name.is_empty()
-                && !captured_names.contains(&Symbol::intern(local_name))
+                && !data.env.contains_key(local_name)
                 && !param_names.contains(local_name.as_str())
                 && !local_name.starts_with("__mutsu_")
             {

@@ -198,6 +198,44 @@ Reaching that requires, roughly in order:
       the `main` baseline (`t/wrap.t`, `t/placeholder.t`, `t/tail-function.t`
       pre-existing). New regression pin: `t/closure-captured-state.t`.
 
+      **Follow-up — skip the full-env writeback scan for read-only closures.**
+      A re-profile after the above showed the new top hotspot (~45 %) was the
+      *other* per-call O(env) loop: the exit writeback scans the whole working
+      env (~110 entries) to propagate the closure's mutations back to the caller
+      (`Symbol::starts_with`/`with_str`/`contains` on every entry). But a closure
+      can only change outer state through a **free variable** — directly, or
+      transitively via a nested closure that captured it from this frame and
+      wrote it back; either way the variable's value in this frame's env differs
+      from entry. So `call_compiled_closure` now snapshots its free vars' values
+      before the body and skips the entire writeback scan when none changed (and
+      `env_dirty` is clear, no rw params, no captured locals). The free-var-value
+      diff is immune to the per-statement `?LINE` bookkeeping write that always
+      dirties the env Arc (so a naive env-pointer-identity check is *not* usable —
+      it always reports "changed"). It also correctly catches transitive
+      grandparent mutation because a nested closure's free vars are folded into
+      this code's `free_var_syms`. **Read-only closure ~5 s → ~2.7 s, mutating
+      ~6.5 s → ~4.6 s** (cumulative from the original ~15 s: **~5.6× / ~3.2×**).
+      Validated with `make test` (same pre-existing failures) and 193 closure/
+      block/routine/sort/gather/sigilless roast files (3937 subtests) green.
+
+      **Soundness fix — the skip is only valid for a *leaf* closure.** The
+      original "free var changed" reasoning above is incomplete: it assumes the
+      only outward mutation a closure can make is to its own free variables. But
+      once the body makes a **call**, a nested method/closure that closes over an
+      enclosing lexical can write *any* captured variable back into this frame's
+      env — including one that is captured here yet is **not** a free variable of
+      this closure, so the `free_changed` diff never sees it. The regressing case
+      was `roast/integration/advent2011-day03.t`'s `capture-out`:
+      `{ $*OUT.write($buf) }` mutates the enclosing `$output` through the
+      dynamically-dispatched `$*OUT.write` method (a separate closure over
+      `$output`), and that change must reach the caller. `advent2009-day07.t` and
+      `advent2012-day20.t` failed the same way. Fix: gate the skip additionally on
+      `!cc.has_env_writes`, which is set for any call / env-writing op in the body
+      — so only a genuinely leaf, read-only closure skips the scan. The hot
+      map/grep/sort blocks (`{ $_ * 2 }`, `{ $_ > 3 }`) contain no calls, so they
+      still skip; bench numbers above are unchanged (read-only ~2.4 s, mutating
+      ~4.4 s release). The three advent integration tests are green again.
+
 - [ ] **Slice 4 — closure upvalues / scoped env.** Capture free variables into an
       explicit upvalue list (or a scoped overlay env) so closures stop reading the
       parent `env` by name, the `&?BLOCK` / `__mutsu_callable_id` setup writes move
