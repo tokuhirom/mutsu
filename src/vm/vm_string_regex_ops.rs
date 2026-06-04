@@ -1,6 +1,15 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// The QuantHash family of a hyper-op operand, used to round-trip Set/Bag/Mix
+/// values through the plain-Hash hyper logic and back to their original type.
+#[derive(Clone, Copy)]
+enum QuantKind {
+    Set,
+    Bag,
+    Mix,
+}
+
 /// Detect the case pattern of a word.
 /// Returns one of: "uc" (all upper), "lc" (all lower), "ucfirst" (first upper, rest lower),
 /// "lcfirst" (first lower, rest upper).
@@ -1197,6 +1206,91 @@ impl VM {
         self.eval_reduction_operator_values(op, left, right)
     }
 
+    /// The QuantHash kind and mutability of a value, if it is a Set/Bag/Mix.
+    fn quanthash_kind(v: &Value) -> Option<(QuantKind, bool)> {
+        match v {
+            Value::Set(_, m) => Some((QuantKind::Set, *m)),
+            Value::Bag(_, m) => Some((QuantKind::Bag, *m)),
+            Value::Mix(_, m) => Some((QuantKind::Mix, *m)),
+            _ => None,
+        }
+    }
+
+    /// Project a QuantHash to a plain `key => weight` Hash so the existing hash
+    /// hyper logic applies. Set membership becomes `True`, Bag/Mix weights become
+    /// Int/Num. Non-QuantHash values pass through unchanged (scalar broadcast).
+    fn quanthash_to_hash(v: &Value) -> Value {
+        let map: std::collections::HashMap<String, Value> = match v {
+            Value::Set(d, _) => d
+                .elements
+                .iter()
+                .map(|k| (k.clone(), Value::Bool(true)))
+                .collect(),
+            Value::Bag(d, _) => d
+                .counts
+                .iter()
+                .map(|(k, c)| (k.clone(), Value::Int(*c)))
+                .collect(),
+            Value::Mix(d, _) => d
+                .weights
+                .iter()
+                .map(|(k, w)| (k.clone(), Value::Num(*w)))
+                .collect(),
+            other => return other.clone(),
+        };
+        Value::Hash(std::sync::Arc::new(map))
+    }
+
+    /// Rebuild a QuantHash of the given kind/mutability from a result Hash,
+    /// applying Rakudo's QuantHash coercion: Set keeps truthy keys, Bag keeps
+    /// strictly-positive integer weights, Mix keeps non-zero weights.
+    fn hash_to_quanthash(v: Value, kind: QuantKind, mutable: bool) -> Value {
+        let Value::Hash(map) = v else {
+            return v;
+        };
+        match kind {
+            QuantKind::Set => {
+                let elems: std::collections::HashSet<String> = map
+                    .iter()
+                    .filter(|(_, val)| val.truthy())
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                if mutable {
+                    Value::set_hash(elems)
+                } else {
+                    Value::set(elems)
+                }
+            }
+            QuantKind::Bag => {
+                let counts: std::collections::HashMap<String, i64> = map
+                    .iter()
+                    .filter_map(|(k, val)| {
+                        let c = crate::runtime::utils::to_int(val);
+                        (c > 0).then(|| (k.clone(), c))
+                    })
+                    .collect();
+                if mutable {
+                    Value::bag_hash(counts)
+                } else {
+                    Value::bag(counts)
+                }
+            }
+            QuantKind::Mix => {
+                let weights: std::collections::HashMap<String, f64> = map
+                    .iter()
+                    .filter_map(|(k, val)| {
+                        crate::runtime::utils::to_float_value(val).map(|w| (k.clone(), w))
+                    })
+                    .collect();
+                if mutable {
+                    Value::mix_hash(weights)
+                } else {
+                    Value::mix(weights)
+                }
+            }
+        }
+    }
+
     pub(super) fn exec_hyper_func_op(
         &mut self,
         code: &CompiledCode,
@@ -1209,6 +1303,19 @@ impl VM {
         let right = self.stack.pop().unwrap_or(Value::Nil);
         let left = self.stack.pop().unwrap_or(Value::Nil);
         let name = Self::const_str(code, name_idx).to_string();
+        // QuantHash (Set/Bag/Mix) operands: reuse the plain-Hash hyper logic by
+        // projecting each to a `key => weight` Hash, then convert the result
+        // (and any write-back value) back to the original QuantHash type. The
+        // result type/mutability follows whichever operand is a QuantHash.
+        let quant_result = Self::quanthash_kind(&left).or_else(|| Self::quanthash_kind(&right));
+        let (left, right) = if quant_result.is_some() {
+            (
+                Self::quanthash_to_hash(&left),
+                Self::quanthash_to_hash(&right),
+            )
+        } else {
+            (left, right)
+        };
         // Resolve a concrete code-ref value when `name` refers to a lexical
         // `&name` variable (e.g. the `&op`/`&metaop` loop variables in
         // S03-metaops/infix.t). Such calls must go through the VM closure
@@ -1231,7 +1338,8 @@ impl VM {
         // Hash operands: apply the code-ref to each value key-by-key, mirroring
         // the dwim key-set semantics of `exec_hyper_op`.
         if matches!(&left, Value::Hash(..)) || matches!(&right, Value::Hash(..)) {
-            return self.exec_hyper_func_op_hash(
+            let stack_before = self.stack.len();
+            self.exec_hyper_func_op_hash(
                 left,
                 right,
                 &name,
@@ -1240,7 +1348,14 @@ impl VM {
                 dwim_right,
                 writeback,
                 compiled_fns,
-            );
+            )?;
+            if let Some((kind, mutable)) = quant_result {
+                let pushed: Vec<Value> = self.stack.split_off(stack_before);
+                for v in pushed {
+                    self.stack.push(Self::hash_to_quanthash(v, kind, mutable));
+                }
+            }
+            return Ok(());
         }
         let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
         let left_list = Interpreter::value_to_list(&left);
