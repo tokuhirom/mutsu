@@ -78,7 +78,10 @@ impl VM {
             Value::Num(f64::NAN)
         } else if name == "Inf" {
             Value::Num(f64::INFINITY)
-        } else if name == "Empty" {
+        } else if name == "Empty" && !self.interpreter.has_type(name) {
+            // A user-declared type named `Empty` shadows the empty-Slip term
+            // (it is resolved to a Package by the `has_type` branch below).
+            // `Inf`/`NaN` are numeric literals and are not shadowable.
             Value::Slip(std::sync::Arc::new(vec![]))
         } else if Self::is_pseudo_package_bare(name) {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to

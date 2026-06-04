@@ -528,6 +528,16 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
     // Also reject if followed by `(` to prevent treating e() as a constant
     let try_kw = |kw: &str, val: Value| -> PResult<'_, Expr> {
+        // A user-declared type of the same name shadows the built-in term
+        // constant (e.g. `class Empty {}` makes `Empty` refer to the class,
+        // not the empty Slip); let it fall through to identifier parsing.
+        // `Inf`/`NaN` are numeric literals in Raku and are NOT shadowable, so
+        // they keep their constant value even when a like-named type exists.
+        if !matches!(kw, "Inf" | "-Inf" | "NaN")
+            && crate::parser::stmt::simple::is_user_declared_type(kw)
+        {
+            return Err(PError::expected("user-declared type shadows keyword"));
+        }
         let (rest, _) = parse_tag(input, kw)?;
         // Check word boundary (superscript digits are NOT word chars)
         if let Some(c) = rest.chars().next()
