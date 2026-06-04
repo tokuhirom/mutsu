@@ -1,8 +1,31 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
+
+/// Monotonic, process-global flag: set at compile time when any compiled code
+/// contains an op that can read a *caller frame's* lexical by dynamic name --
+/// `CALLER::`/`OUTER::` access, symbolic dereference `::($name)`, pseudo-stash
+/// access, indirect code lookup, or an `EVAL`/`EVALFILE` call (which compiles
+/// and runs a string in the caller's lexical scope).
+///
+/// The compiled-function light call path uses this to decide whether it may
+/// skip writing a *slot-only* parameter (one not in `needs_env_sync`, read only
+/// via `GetLocal`) into the interpreter's shared `env`: if no such reflective
+/// reader exists anywhere in the program, the param can stay purely in the VM's
+/// `locals` (dual-store decoupling, docs/vm-dual-store.md). The flag is
+/// monotonic and global, so `true` only ever forces the (correct) full param
+/// write -- an over-set is conservative, never wrong.
+static REFLECTIVE_NAME_ACCESS_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// True if any compiled code may read a caller frame's lexical by dynamic name.
+/// See [`REFLECTIVE_NAME_ACCESS_SEEN`].
+#[inline]
+pub(crate) fn reflective_name_access_possible() -> bool {
+    REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
+}
 
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
@@ -1147,6 +1170,10 @@ impl CompiledCode {
     pub(crate) fn compute_needs_env_sync(&mut self) {
         self.compute_locals_sym();
         self.compute_free_vars();
+        // Always scan for reflective caller-lexical access (independent of the
+        // needs_env_sync early returns below), so the global flag is set even for
+        // loop/block or zero-local frames.
+        self.scan_reflective_name_access();
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
         if n == 0 {
@@ -1157,15 +1184,22 @@ impl CompiledCode {
         // loop-phaser desugaring threads state through by name via `env`, e.g.
         // the `__mutsu_loop_first_`/`__mutsu_loop_ran_` control temps) cannot
         // safely treat any local as slot-only -- a slot value may not survive the
-        // loop's per-iteration env round-trips. Mark every local env-synced so the
-        // dual-store flush gate (vm_env_helpers) keeps the full flush for such
-        // frames. Recursion-heavy code without loops (e.g. `fib`) is unaffected
-        // and still skips the per-call flush for its slot-only params.
-        let has_inline_loop = self
-            .ops
-            .iter()
-            .any(|op| matches!(op, OpCode::ForLoop { .. } | OpCode::BlockScope { .. }));
-        if has_inline_loop {
+        // loop's per-iteration env round-trips. The same applies to `MakeGather`:
+        // a gather block compiles its body inline and snapshots the *whole*
+        // interpreter env by name (vm_register_ops::exec_make_gather_op), but the
+        // body is not registered in `closure_compiled_codes`, so the nested-closure
+        // free-var scan below cannot see which locals it reads. Mark every local
+        // env-synced so the dual-store flush gate (vm_env_helpers) keeps the full
+        // flush for such frames. Recursion-heavy code without loops/gather (e.g.
+        // `fib`) is unaffected and still skips the per-call flush for its slot-only
+        // params.
+        let captures_env_by_name = self.ops.iter().any(|op| {
+            matches!(
+                op,
+                OpCode::ForLoop { .. } | OpCode::BlockScope { .. } | OpCode::MakeGather(_)
+            )
+        });
+        if captures_env_by_name {
             self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             return;
         }
@@ -1208,6 +1242,39 @@ impl CompiledCode {
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
+            }
+        }
+    }
+
+    /// Scan this code's ops for reflective by-name access to a caller frame's
+    /// lexicals (`CALLER::`/`OUTER::`, symbolic deref, pseudo-stash, indirect
+    /// code lookup, `EVAL`/`EVALFILE`) and set the process-global
+    /// [`REFLECTIVE_NAME_ACCESS_SEEN`] flag. Runs unconditionally at finalize
+    /// (before the `needs_env_sync` early returns) so the flag covers loop/block
+    /// frames and zero-local frames too. Monotonic: only ever sets `true`.
+    pub(crate) fn scan_reflective_name_access(&self) {
+        if REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed) {
+            return;
+        }
+        for op in &self.ops {
+            let reflective = match op {
+                OpCode::GetCallerVar { .. }
+                | OpCode::GetOuterVar { .. }
+                | OpCode::GetPseudoStash(_)
+                | OpCode::SymbolicDeref(_)
+                | OpCode::SymbolicDerefStore(_)
+                | OpCode::IndirectCodeLookup(_) => true,
+                OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncSlip { name_idx, .. } => {
+                    matches!(
+                        self.constants.get(*name_idx as usize),
+                        Some(Value::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
+                    )
+                }
+                _ => false,
+            };
+            if reflective {
+                REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
+                return;
             }
         }
     }

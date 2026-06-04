@@ -791,6 +791,15 @@ impl VM {
         // the call (ensure_env_synced may write param locals to env during
         // execution, and those must not leak into the caller's scope).
         let saved_readonly = self.interpreter.save_readonly_vars();
+        // Dual-store decoupling: a slot-only param (read via GetLocal, not in
+        // `needs_env_sync`) need not be written into the interpreter's shared
+        // `env` at all -- it lives purely in the VM's `locals`. We must still
+        // write every param when some code may read a caller frame's lexical by
+        // dynamic name (EVAL / CALLER:: / symbolic deref), since such a reader
+        // resolves the name against `env`. Loop/block frames already mark all
+        // params `needs_env_sync` (the conservative fallback in
+        // compute_needs_env_sync), so they keep the full write.
+        let write_all_params = crate::opcode::reflective_name_access_possible();
         let mut saved_param_env: Vec<(String, Option<Value>)> =
             Vec::with_capacity(positional_count);
         for (param_idx, slot) in param_slots.iter().enumerate() {
@@ -819,15 +828,31 @@ impl VM {
                     }
                 }
                 let param_name = &cf.param_defs[param_idx].name;
-                saved_param_env.push((
-                    param_name.clone(),
-                    self.interpreter.env().get(param_name).cloned(),
-                ));
                 self.locals[*slot] = val.clone();
-                // Write params to env so sync_locals_from_env (triggered by
-                // ensure_locals_synced) doesn't clobber them with stale values
-                // from the caller's scope.
-                self.interpreter.env_mut().insert(param_name.clone(), val);
+                // Write the param into env only when a name-based reader needs it:
+                // it is referenced via a GetGlobal-family op / captured by a
+                // closure (`needs_env_sync`), or reflective access is possible
+                // anywhere in the program. Otherwise the param stays slot-only and
+                // never crosses into the interpreter's env.
+                //
+                // Exception: a `Nil`-valued param must still be written. The
+                // GetLocal handler treats a `Nil` slot as possibly-undeclared and
+                // verifies declaration via `env.contains_key(name)` (a legitimately
+                // `Nil` param would otherwise raise X::Undeclared). Nil params are
+                // rare, so this costs nothing on the hot Int-recursion path.
+                let needs_env = write_all_params
+                    || matches!(val, Value::Nil)
+                    || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
+                if needs_env {
+                    saved_param_env.push((
+                        param_name.clone(),
+                        self.interpreter.env().get(param_name).cloned(),
+                    ));
+                    // Write params to env so sync_locals_from_env (triggered by
+                    // ensure_locals_synced) doesn't clobber them with stale values
+                    // from the caller's scope.
+                    self.interpreter.env_mut().insert(param_name.clone(), val);
+                }
                 self.interpreter
                     .mark_readonly(&cf.param_defs[param_idx].name);
             }

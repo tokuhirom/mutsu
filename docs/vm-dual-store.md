@@ -500,14 +500,36 @@ Reaching that requires, roughly in order:
       ENTER-LEAVE / closure / state / nested calls). `make test` failure set
       unchanged from the `main` baseline.
 
+      **Step 2 — don't write slot-only params into `env` either.** The light call
+      path (`call_compiled_function_positional_light`) bound each param to its slot
+      *and* wrote it into the shared `env` (so a name-based reader / the post-call
+      pull would see it). Now it writes the param to `env` only when a name-based
+      reader needs it: the param is in `needs_env_sync` (GetGlobal / closure
+      capture), or program-wide reflective by-name access is possible
+      (`opcode::reflective_name_access_possible()` — a monotonic flag set at compile
+      time for any `CALLER::`/`OUTER::`/symbolic-deref/pseudo-stash/`EVAL` op), or
+      the value is `Nil` (GetLocal treats a `Nil` slot as possibly-undeclared and
+      verifies via `env.contains_key`, so `Nil` params stay mirrored to avoid a
+      spurious X::Undeclared). A slot-only param of a leaf/recursive function now
+      **never enters the interpreter `env`** — and because the param write was what
+      dirtied `env`, skipping it also drops the post-call pull. `fib`'s dual-store
+      activity goes to **all zeros** (`env_deep_copies`/`env_flushes`/`slots_flushed`
+      /`locals_pulls` = 0): its `$n` is purely VM-resident.
+
+      Regression found + fixed during this step: `return-Int(Nil)` (and any
+      `id(Nil)`) raised `X::Undeclared` because the `Nil` slot's declaration check
+      reads `env`; the `Nil`-value exception above fixes it. `t/S06-advanced/return.t`
+      (109 subtests) green again. New pin `t/dualstore-param-not-mirrored.t`
+      (recursion / Nil / type-object / shadow / EVAL / closure-capture / multi).
+
       **Remaining (the collapse proper, still open).** The conservative loop/block
-      fallback, the param-bind `env` write in the light call path, and the
-      `env_dirty`-triggered post-call pull (`sync_locals_from_env`) still mirror
-      state. Fully removing them needs the per-call **scoped/overlay env** (a child
-      scope per call frame that reads through to the parent and is dropped on
-      return), so a callee's writes never pollute the caller's `env` and the
-      bidirectional sync disappears. That is the larger structural change this
-      first step sets up.
+      `needs_env_sync` fallback, the named-param light path
+      (`call_compiled_function_light`) and `call_compiled_function_named` param
+      writes, and the residual `env_dirty` pull still mirror state in some paths.
+      Fully removing them needs the per-call **scoped/overlay env** (a child scope
+      per call frame that reads through to the parent and is dropped on return), so a
+      callee's writes never pollute the caller's `env` and the bidirectional sync
+      disappears. That is the larger structural change these steps set up.
 
   - [ ] **Slice 5 (original design notes — superseded by the step above).**
 
