@@ -4,11 +4,12 @@
 //! `dispatch_map_method` orchestration (see docs/vm-decoupling.md, lever A). The
 //! block *body* already runs compiled on the VM (`vm_call_on_value` ->
 //! `call_compiled_closure`); only the surrounding iteration loop lived in the
-//! interpreter. This runs that loop in the VM for the common, simple case and
-//! falls back for anything that needs the interpreter's richer orchestration
-//! (multi-arity chunking, Slip/phaser/lazy-`return` handling, `next`/`last`/
-//! `take` control flow, `.assuming`/composed blocks, non-array targets,
-//! pair-shaped elements, …).
+//! interpreter. This runs that loop in the VM for the common, simple case
+//! (including multi-arity blocks like `-> $a, $b { ... }`, which consume the
+//! source in `arity`-sized chunks) and falls back for anything that needs the
+//! interpreter's richer orchestration (Slip/phaser/lazy-`return` handling,
+//! `next`/`last`/`take` control flow, `.assuming`/composed blocks, non-array
+//! targets, pair-shaped elements, a short final chunk, …).
 //!
 //! Eligibility is intentionally conservative: when the block body contains any
 //! construct that could escape the map loop (a `return`, loop control,
@@ -94,11 +95,6 @@ impl VM {
         if requires_full_binding {
             return None;
         }
-        // Single-element-per-call only: a `-> $a, $b { }` block consumes items in
-        // chunks, which the interpreter handles.
-        if data.params.len() > 1 {
-            return None;
-        }
         // The body must not contain anything that escapes the loop (return / loop
         // control / take / emit / phaser), nor any expression form we cannot
         // prove safe.
@@ -106,10 +102,23 @@ impl VM {
             return None;
         }
 
+        // Each call consumes `arity` consecutive items. A 0-param block uses the
+        // implicit `$_` (arity 1); a multi-arity block (`-> $a, $b { }`) chunks
+        // the source. When the source length isn't a multiple of the arity the
+        // last chunk is short, which the interpreter (and raku) treat as an
+        // error ("Not enough elements" / "Too few positionals"); defer those so
+        // the error path stays in one place.
+        let arity = data.params.len().max(1);
+        if arity > 1 && !items.len().is_multiple_of(arity) {
+            return None;
+        }
+
         let block = args[0].clone();
-        let mut result: Vec<Value> = Vec::with_capacity(items.len());
-        for item in items.iter() {
-            let value = match self.vm_call_on_value(block.clone(), vec![item.clone()], None) {
+        let mut result: Vec<Value> = Vec::with_capacity(items.len() / arity + 1);
+        let mut i = 0usize;
+        while i < items.len() {
+            let chunk: Vec<Value> = items[i..i + arity].to_vec();
+            let value = match self.vm_call_on_value(block.clone(), chunk, None) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
@@ -117,6 +126,7 @@ impl VM {
                 Value::Slip(elems) => result.extend(elems.iter().cloned()),
                 v => result.push(v),
             }
+            i += arity;
         }
 
         // On a real array, mutsu's `.map` yields a List-kind array (matching the
@@ -149,6 +159,10 @@ fn stmt_is_simple(stmt: &Stmt) -> bool {
         Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
             es.iter().all(expr_is_simple)
         }
+        // A line-number marker for diagnostics; it neither escapes the loop nor
+        // mutates the topic. Pointy/`Lambda` block bodies carry these (placeholder
+        // blocks don't), so accepting them lets `-> $a { ... }` map natively too.
+        Stmt::SetLine(_) => true,
         // Self-contained nested control structures: safe as long as their bodies
         // are simple (a `last`/`next` inside them is over-conservatively rejected
         // by the leaf rules below, which is fine).
