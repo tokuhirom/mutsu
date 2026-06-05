@@ -125,11 +125,36 @@ impl Value {
             // Rat/FatRat: structural equality (n == n, d == d), including NaN (0/0)
             (Value::Rat(n1, d1), Value::Rat(n2, d2))
             | (Value::FatRat(n1, d1), Value::FatRat(n2, d2)) => n1 == n2 && d1 == d2,
+            // Sets: eqv must distinguish elements that share a string key but
+            // differ in type — specifically an allomorph (e.g. the IntStr <42>)
+            // from a plain value (Int 42), which rakudo separates by `.WHICH`.
+            // We compare the allomorph kind of each typed element rather than a
+            // full type-strict eqv, because mutsu does not always retain a Set
+            // element's exact numeric type (a Rat element can fall back to its
+            // Str key), and a full eqv would wrongly split two equal Rat sets.
+            // NOTE: mutability (Set vs SetHash) is intentionally NOT compared
+            // here — mutsu's set operators do not yet reliably preserve SetHash
+            // mutability through `(|)`/`(&)` etc., and comparing it would
+            // spuriously split results that only differ in that flag. The
+            // remaining Set-vs-SetHash eqv distinction (eqv.t test 165) is
+            // tracked in BLOCKERS.md.
+            (Value::Set(a, _), Value::Set(b, _)) => {
+                fn allomorph_kind(v: &Value) -> Option<String> {
+                    match v {
+                        Value::Mixin(inner, mixins) => allomorph_type_name(inner, mixins),
+                        _ => None,
+                    }
+                }
+                a.elements.len() == b.elements.len()
+                    && a.elements.iter().all(|k| {
+                        b.elements.contains(k)
+                            && allomorph_kind(&a.typed_key(k)) == allomorph_kind(&b.typed_key(k))
+                    })
+            }
             (Value::Int(_), Value::Int(_))
             | (Value::Str(_), Value::Str(_))
             | (Value::Bool(_), Value::Bool(_))
             | (Value::BigRat(_, _), Value::BigRat(_, _))
-            | (Value::Set(_, _), Value::Set(_, _))
             | (Value::Bag(_, _), Value::Bag(_, _))
             | (Value::Mix(_, _), Value::Mix(_, _))
             | (Value::Enum { .. }, Value::Enum { .. })

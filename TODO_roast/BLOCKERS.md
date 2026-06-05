@@ -209,8 +209,21 @@ Module versioning, import-multi semantics, CompUnit::Repository, and distributio
 
 WhateverCode (*) in certain contexts: dummy assignment to *, &infix:<+>(*, 42) not making a closure, and multi-* expressions.
 
-- roast/S02-types/whatever.t
-- roast/S03-operators/eqv.t (eqv on references)
+- roast/S02-types/whatever.t (33 distinct failing WhateverCode features: dummy
+  `*` assignment, `&infix:<+>(*,42)` closure, X+/Z+ metaop currying with Whatever,
+  `*++`, rw params, container preservation, compile-time WhateverCode, regex
+  whatever curry — not a single root cause)
+- roast/S03-operators/eqv.t — 62/64 (the 12/17/36/37 `# TODO huh?` failures also
+  fail in rakudo). Set allomorph eqv is now fixed (`set(<42>) eqv set(42)` is
+  False; see t/set-eqv-allomorph.t). Two subtests remain:
+    - "Setty eqv Setty": needs `Set eqv SetHash` to be False (test 165). mutsu's
+      `eqv` deliberately ignores Set/SetHash mutability because the set operators
+      `(|)`/`(&)`/etc. don't reliably return a SetHash; comparing the flag would
+      regress S03-operators/set_*.t. Blocked on set-operator mutability tracking.
+    - "Throws/lives in lazy cases": `eqv` must throw X::Cannot::Lazy for two
+      same-type lazy iterables. Blocked on real lazy infinite sequences — mutsu
+      materializes `1…∞` into a finite (~33-element) list, so it has no lazy
+      iterables to detect.
 - roast/S02-types/generics.t (nominalizable generic)
 
 ## Sprintf / Format Edge Cases (2 tests)
