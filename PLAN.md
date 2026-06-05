@@ -261,23 +261,31 @@ BLOCKERS.md の分析に基づき、インパクト順に並べたもの。
 
 ### Regex / Grammar
 
-- [ ] Match object `.caps` / `.chunks`
+- [ ] **Match キャプチャ番号付け / コンテナ kind**（`.caps`/`.chunks` の値と `Match.gist` 位置
+      キャプチャ表示・ネスト Match の corner-quote は #2644 で実装済み。残は別根の2件）:
+      (1) `$<x>=(...)` 名前付きキャプチャが positional スロットにも重複格納され `(\d)` の番号がずれる
+      （`/$<x>=(\w)(\d)/` で raku は `x`+`0`、mutsu は `0`+`x`+`1`）。
+      (2) `m:g//` 結果を `my @m` に代入後 `@m.gist` が `(…)` を返す（`say @m` は正しく `[…]`）—
+      method receiver が結果を List-kind で見る dual-store ナンス。
 - [ ] Lookbehind assertions (`<!after>`)
 - [ ] `:Perl5` modifier edge cases
 
 ### Parser: 未実装演算子
 
 - [ ] `ff` / `fff` — flipflop operators (8 variants)
-- [ ] `==>` / `<==` — feed operators
-- [ ] `minmax` — range from min to max
-- [ ] `unicmp` / `coll` — Unicode/collation comparison
-- [ ] `~&` / `~|` / `~^` / `~<` / `~>` — string buffer bitwise ops
+- [ ] `==>` / `<==` — feed operators の **precedence の残**（基本動作・インライン `my @o`/`my $x`
+      sink 代入・スカラー sink の Array 化は #2643 で実装済み）。`==>` は `=` より緩い結合のはずだが
+      mutsu は強く結合する: `my @out = (1,2,3) ==> map {...}` は raku では `@out = (1,2,3)`（feed は
+      map に流して捨てる）だが mutsu は `[2 4 6]`。`say [1,2,3] ==> grep {...}` も同様の結合差。
+- [ ] `~<` / `~>` — string bitwise shift（raku 本体も "not yet implemented" のため優先度低。
+      `~&` / `~|` / `~^` は実装済み）。
+  - 実装済み（Backlog から削除）: `minmax`（メソッド `.minmax` + 中置）、`unicmp` / `coll`。
 
 ### Parser: メタ演算子
 
 - [ ] Generalized negation meta (`!op`) — beyond `!~~` and `!%%`
 - [ ] Hyper assignment (`@a >>+=>> 1`)
-- [ ] Triangular reduction (`[\+]`, `[\*]`, etc.)
+  - 実装済み（Backlog から削除）: Triangular reduction (`[\+]`, `[\*]` など)。
 
 ### アーキテクチャ・リファクタ (中長期 — [ANALYSIS.md](ANALYSIS.md) §3, §4, §6)
 
