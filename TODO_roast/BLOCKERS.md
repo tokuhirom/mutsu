@@ -111,13 +111,38 @@ Advanced regex features: captures with aliases, reverse captures, % separator in
 
 Dynamic symbol lookup via pseudo-packages (MY::, OUR::, OUTER::, CALLER::, ::{}) doesn't work properly. `::{'$foo'}` syntax for indirect variable access is broken.
 
-- roast/S02-names/pseudo-6d.t (OUR::.{} binding)
-- roast/S02-names/pseudo-6e.t (root access to lexicals)
-- roast/S02-names-vars/names.t (::{'$foo'} lookup)
-- roast/S02-names-vars/variables-and-packages.t
-- roast/S06-advanced/caller.t (caller.sub, caller.line)
-- roast/S10-packages/basic.t (nested package autovivification)
-- roast/S10-packages/require-and-use--dead-file.t (%*INC tracking)
+**Unpassable as written (reference rakudo on this box also fails to compile):**
+- roast/S06-advanced/caller.t — `@_` in a method (and legacy `Control::Caller`);
+  rakudo: "Placeholder variables (eg. @_) cannot be used in a method."
+- roast/S02-names/pseudo-6d.t, pseudo-6e.t, S02-names-vars/names.t — all hit a
+  `===SORRY===` compile error in the installed rakudo (e.g. names.t: "Variable
+  '$' is not declared"). May be a roast-vs-rakudo version skew; cannot diff
+  against the reference here.
+- roast/S10-packages/require-and-use--dead-file.t — reference rakudo itself fails
+  ("Cannot convert string to number ... 'RequireAndUse1.rakumod'").
+
+**raku passes, mutsu fails (real work, but multi-feature — no single whitelist win):**
+- roast/S02-names-vars/variables-and-packages.t (16/39 fail). The dominant root
+  cause is **closure lexical capture**: a closure snapshots its captured scalar
+  *by name/value*, not by container reference, so
+  `{ my $x = 100; $f = { $x } }; my $x = 999; $f()` wrongly reads 999 (the later
+  same-named outer `$x` hijacks the capture). mutsu *does* handle the two common
+  shapes — shared in-scope mutation (`my $a=1; $f={$a}; $a=2; $f()` → 2) and
+  independent factory counters — and it relies on caller-wins for them, so a
+  naive merge-order flip regresses those. The principled fix needs first-class
+  Scalar **container identity** (the same limitation as take-rw), which is a
+  large multi-PR refactor: a prototype that promotes captured scalars to
+  `ContainerRef` fixed tests 18-20 locally but broadly regressed value-type-
+  sensitive sites in roast (typed vars / `let` / subset assignment / DESTROY /
+  submethods / concurrency) because `ContainerRef` is not dereferenced at every
+  consuming op. Closing that "deref everywhere" surface is the real prerequisite.
+  Other failures here are independent features: `&OUR::grtz()` (OUR:: code
+  lookup, 32-34), `X::Redeclaration::Outer` (37-38), `$OUTER::_` topic (39), and
+  a named sub closing over a `my` declared/`BEGIN`-initialized later (24-31,
+  needs the captured container hoisted to scope entry).
+- roast/S10-packages/basic.t (18/59 fail) — mostly compile-time undeclared-symbol
+  checking ("reference to class/role/module before definition dies") and
+  `X::Redeclaration` of subs in a class; overlaps the Exception-Types blocker.
 
 (roast/S10-packages/scope.t was stale here — it already passes and is whitelisted.)
 
@@ -126,7 +151,7 @@ Dynamic symbol lookup via pseudo-packages (MY::, OUR::, OUTER::, CALLER::, ::{})
 Trait system issues: `is` trait on variables, `will` trait, parameterized traits,
 attribute traits, and the `trusts` mechanism for cross-class private attribute
 access. routines.t now passes (#2492). User-defined `trait_mod:<is>` now
-dispatches on `Attribute` objects (#TBD).
+dispatches on `Attribute` objects (#2631).
 
 **Unpassable as written (reference rakudo also fails to compile — do NOT attempt):**
 - roast/S12-traits/basic.t — uses the removed `multi sub trait_auxiliary:<is>`
