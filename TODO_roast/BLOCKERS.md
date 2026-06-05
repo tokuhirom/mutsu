@@ -117,20 +117,44 @@ Dynamic symbol lookup via pseudo-packages (MY::, OUR::, OUTER::, CALLER::, ::{})
 - roast/S02-names-vars/variables-and-packages.t
 - roast/S06-advanced/caller.t (caller.sub, caller.line)
 - roast/S10-packages/basic.t (nested package autovivification)
-- roast/S10-packages/scope.t (package scope visibility)
 - roast/S10-packages/require-and-use--dead-file.t (%*INC tracking)
+
+(roast/S10-packages/scope.t was stale here — it already passes and is whitelisted.)
 
 ## Traits / Metaprogramming (7 tests)
 
-Trait system issues: `is` trait on variables, `will` trait, parameterized traits, attribute traits, and the `trusts` mechanism for cross-class private attribute access. routines.t now passes (#2492).
+Trait system issues: `is` trait on variables, `will` trait, parameterized traits,
+attribute traits, and the `trusts` mechanism for cross-class private attribute
+access. routines.t now passes (#2492). User-defined `trait_mod:<is>` now
+dispatches on `Attribute` objects (#TBD).
 
-- roast/S04-declarations/will.t
-- roast/S12-traits/basic.t (is trait on variables)
-- roast/S12-traits/parameterized.t
-- roast/S14-traits/attributes.t (trait application to attributes)
-- roast/S12-attributes/trusts.t (cross-class private access)
-- roast/S12-class/open_closed.t (augment/open classes)
-- roast/S12-introspection/walk.t (.walk with :canonical, :super, :breadth)
+**Unpassable as written (reference rakudo also fails to compile — do NOT attempt):**
+- roast/S12-traits/basic.t — uses the removed `multi sub trait_auxiliary:<is>`
+  category; rakudo: "Cannot add tokens of category 'trait_auxiliary'".
+- roast/S12-traits/parameterized.t — same removed `trait_auxiliary:<is>`.
+- roast/S12-class/open_closed.t — `use oo;` (module not in any repo).
+- roast/S12-attributes/trusts.t — `trusts B;` forward-references `B` before its
+  declaration; rakudo: "Type 'B' is not declared". (A pre-stubbed `B` would be
+  needed; the file as written cannot compile.)
+
+**Still failing (real mutsu work):**
+- roast/S14-traits/attributes.t (4/8 now pass). User-defined `trait_mod:<is>`
+  dispatched on `Attribute` objects works for named/positional-type traits
+  (tests 1-4: `is noted`, the `$a.name` introspection). Tests 5-8 need
+  `$a.container.VAR does Role($arg)` — mixing a parameterized role into a
+  per-attribute *container template* so every instance's `$.attr.VAR` carries
+  the role. Blocked on first-class per-attribute containers (mutsu stores
+  attribute values as plain Values with no Scalar container), the same root
+  limitation as take-rw container identity. Local test: t/attribute-trait-mod.t.
+- roast/S04-declarations/will.t (17/19; tests 5/7/13 are `# TODO`). Two real
+  failures: test 1 needs correct BEGIN-vs-CHECK phaser ordering interleaved with
+  `will begin`/`will check` (CHECK fires LIFO after all BEGIN); test 17 needs
+  `will leave` on a class-scoped `my` var to fire when the class body block is
+  left. Blocked on phaser ordering/`will`-phaser-on-class-scoped-var, not traits.
+- roast/S12-introspection/walk.t (passes in rakudo). Needs the `.WALK` method +
+  `WalkList` type with all MRO orderings (:canonical, :super, :breadth,
+  :descendant, :ascendant, :preorder, :omit, :include), submethod walking, lazy
+  batch invocation, and quiet-mode Failure capture. Large self-contained feature.
 
 ## IO Advanced Features
 

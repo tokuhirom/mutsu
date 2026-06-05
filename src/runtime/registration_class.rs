@@ -1447,22 +1447,21 @@ impl Interpreter {
                 } => {
                     let attr_name_str = attr_name.resolve();
 
-                    // Check for unknown traits (X::Comp::Trait::Unknown)
-                    if let Some((kind, trait_name)) = unknown_traits.first() {
-                        let msg = format!(
-                            "Can't use unknown trait '{}' -> '{}' in an attribute declaration.",
-                            kind, trait_name
-                        );
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        attrs.insert("type".to_string(), Value::str(kind.clone()));
-                        attrs.insert("subtype".to_string(), Value::str(trait_name.clone()));
-                        attrs.insert("declaring".to_string(), Value::str("attribute".to_string()));
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(Value::make_instance(
-                            crate::symbol::Symbol::intern("X::Comp::Trait::Unknown"),
-                            attrs,
-                        )));
+                    // Handle unknown traits. If a user-defined `trait_mod:<is>`
+                    // (or `trait_mod:<will>`, etc.) can handle the trait, dispatch
+                    // to it with an Attribute introspection object; otherwise raise
+                    // X::Comp::Trait::Unknown. Kept in a separate method so its
+                    // locals don't inflate this already-large function's frame.
+                    if !unknown_traits.is_empty()
+                        && let Err(err) = self.apply_attribute_traits(
+                            unknown_traits,
+                            &attr_name_str,
+                            *sigil,
+                            *is_public,
+                            name,
+                            type_constraint.as_deref(),
+                        )
+                    {
                         self.current_package = saved_package;
                         self.env = saved_env;
                         return Err(err);

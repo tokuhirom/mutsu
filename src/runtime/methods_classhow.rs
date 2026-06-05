@@ -2184,6 +2184,113 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 
+    /// Build a minimal Attribute introspection object for a `has` declaration
+    /// that is being processed at class-registration time, so it can be passed
+    /// to a user-defined `trait_mod:<is>`. Unlike `make_attribute_object`, this
+    /// does not require the owning class to already be present in `self.classes`.
+    pub(crate) fn make_trait_attribute_object(
+        &self,
+        attr_name: &str,
+        sigil: char,
+        is_public: bool,
+        owner: &str,
+        type_constraint: Option<&str>,
+    ) -> Value {
+        let full_name = format!("{}!{}", sigil, attr_name);
+        let type_name = match sigil {
+            '@' => type_constraint
+                .map(|t| format!("Positional[{}]", t))
+                .unwrap_or_else(|| "Positional".to_string()),
+            '%' => type_constraint
+                .map(|t| format!("Associative[{}]", t))
+                .unwrap_or_else(|| "Associative".to_string()),
+            _ => type_constraint.unwrap_or("Mu").to_string(),
+        };
+        let mut meta = HashMap::new();
+        meta.insert("name".to_string(), Value::str(full_name));
+        meta.insert(
+            "__mutsu_attr_name".to_string(),
+            Value::str(attr_name.to_string()),
+        );
+        meta.insert(
+            "__mutsu_attr_owner".to_string(),
+            Value::str(owner.to_string()),
+        );
+        meta.insert("is_public".to_string(), Value::Bool(is_public));
+        meta.insert("has_accessor".to_string(), Value::Bool(is_public));
+        meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
+        meta.insert(
+            "type".to_string(),
+            Value::Package(Symbol::intern(&type_name)),
+        );
+        Value::make_instance(Symbol::intern("Attribute"), meta)
+    }
+
+    /// Dispatch unknown attribute traits to user-defined `trait_mod:<...>` subs,
+    /// or raise X::Comp::Trait::Unknown if no handler is registered. Called at
+    /// class registration for each `has` declaration that carries unknown traits.
+    pub(crate) fn apply_attribute_traits(
+        &mut self,
+        unknown_traits: &[(String, String, Option<crate::ast::Expr>)],
+        attr_name_str: &str,
+        sigil: char,
+        is_public: bool,
+        owner: &str,
+        type_constraint: Option<&str>,
+    ) -> Result<(), RuntimeError> {
+        for (kind, trait_name, trait_arg) in unknown_traits {
+            let trait_mod_name = format!("trait_mod:<{}>", kind);
+            let has_handler =
+                self.has_proto(&trait_mod_name) || self.has_multi_candidates(&trait_mod_name);
+            if has_handler {
+                let attr_obj = self.make_trait_attribute_object(
+                    attr_name_str,
+                    sigil,
+                    is_public,
+                    owner,
+                    type_constraint,
+                );
+                let trait_arg_val = if let Some(arg_expr) = trait_arg {
+                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
+                } else {
+                    None
+                };
+                let type_obj = self.resolve_type_object(trait_name);
+                let mut args = vec![attr_obj];
+                if let Some(type_val) = type_obj {
+                    args.push(type_val);
+                    if let Some(arg_val) = trait_arg_val {
+                        args.push(arg_val);
+                    }
+                } else {
+                    let named_val = Value::Pair(
+                        trait_name.clone(),
+                        Box::new(trait_arg_val.unwrap_or(Value::Bool(true))),
+                    );
+                    args.push(named_val);
+                }
+                self.call_function(&trait_mod_name, args)?;
+                continue;
+            }
+            let msg = format!(
+                "Can't use unknown trait '{}' -> '{}' in an attribute declaration.",
+                kind, trait_name
+            );
+            let mut attrs = HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("type".to_string(), Value::str(kind.clone()));
+            attrs.insert("subtype".to_string(), Value::str(trait_name.clone()));
+            attrs.insert("declaring".to_string(), Value::str("attribute".to_string()));
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::Comp::Trait::Unknown"),
+                attrs,
+            )));
+            return Err(err);
+        }
+        Ok(())
+    }
+
     fn dispatch_classhow_parents(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let has_flag = |name: &str| -> bool {
             args[1..]

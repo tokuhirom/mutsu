@@ -225,7 +225,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_type: Option<String> = None;
     let mut deprecated_message: Option<String> = None;
     let mut is_built: Option<bool> = None;
-    let mut unknown_traits: Vec<(String, String)> = Vec::new();
+    let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -405,9 +405,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             // This is a container type trait for `@`/`%` attributes.
             is_type = Some(trait_name.to_string());
         } else {
-            // Unknown lowercase trait — record for X::Comp::Trait::Unknown error
-            unknown_traits.push(("is".to_string(), trait_name.to_string()));
-            // Skip optional argument in parens: `is bar(42)` -> skip `(42)`
+            // Unknown lowercase trait — dispatched to a custom `trait_mod:<is>`
+            // at class registration, or X::Comp::Trait::Unknown if none exists.
+            // Capture optional argument in parens: `is doc('barks')` -> `'barks'`.
             let (r_ws, _) = ws(r)?;
             if let Some(stripped) = r_ws.strip_prefix('(') {
                 let mut depth = 1u32;
@@ -418,18 +418,28 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                         ')' => {
                             depth -= 1;
                             if depth == 0 {
-                                idx = i + 1;
+                                idx = i;
                                 break;
                             }
                         }
                         _ => {}
                     }
                 }
-                rest = &stripped[idx..];
+                let inner = &stripped[..idx];
+                let mut trait_arg: Option<Expr> = None;
+                if !inner.trim().is_empty()
+                    && let Ok((leftover, arg_expr)) = expression(inner)
+                    && leftover.trim().is_empty()
+                {
+                    trait_arg = Some(arg_expr);
+                }
+                unknown_traits.push(("is".to_string(), trait_name.to_string(), trait_arg));
+                rest = &stripped[idx + 1..];
                 let (r2, _) = ws(rest)?;
                 rest = r2;
                 continue;
             }
+            unknown_traits.push(("is".to_string(), trait_name.to_string(), None));
         }
         let (r, _) = ws(r)?;
         rest = r;
@@ -440,7 +450,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         let Ok((r, _)) = ws1(r) else { break };
         let Ok((r, trait_name)) = ident(r) else { break };
         // `will` traits are not supported on attributes, record for X::Comp::Trait::Unknown
-        unknown_traits.push(("will".to_string(), trait_name.to_string()));
+        unknown_traits.push(("will".to_string(), trait_name.to_string(), None));
         // Skip optional block: `will bar { ... }` -> skip the block
         let (r_ws, _) = ws(r)?;
         if let Some(stripped_block) = r_ws.strip_prefix('{') {

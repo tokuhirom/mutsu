@@ -711,10 +711,13 @@ pub(crate) enum Stmt {
         /// Some(msg) = deprecated with custom message.
         deprecated_message: Option<String>,
         is_built: Option<bool>,
-        /// Unknown traits: list of `(kind, name)` tuples for unknown trait applications
-        /// (e.g., `is bar` -> `("is", "bar")`, `will bar` -> `("will", "bar")`).
-        /// These cause an `X::Comp::Trait::Unknown` error when the class is registered.
-        unknown_traits: Vec<(String, String)>,
+        /// Unknown traits: list of `(kind, name, arg)` tuples for unknown trait
+        /// applications (e.g., `is bar` -> `("is", "bar", None)`, `is doc('x')` ->
+        /// `("is", "doc", Some(<'x'>))`, `will bar` -> `("will", "bar", None)`).
+        /// If a user-defined `trait_mod:<is>` can handle the trait it is dispatched
+        /// to that sub at class registration; otherwise this causes an
+        /// `X::Comp::Trait::Unknown` error.
+        unknown_traits: Vec<(String, String, Option<Expr>)>,
     },
     MethodDecl {
         name: Symbol,
