@@ -105,6 +105,11 @@ impl Interpreter {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(" ")),
+            // A lazy IO lines iterator (e.g. `$fh.lines`) must be forced before
+            // comparison so it stringifies as its contents rather than "(...)".
+            Value::LazyIoLines { handle, .. } => {
+                Ok(self.force_lazy_io_lines(handle)?.to_string_value())
+            }
             _ => Ok(value.to_string_value()),
         }
     }
