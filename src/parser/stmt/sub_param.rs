@@ -454,6 +454,19 @@ fn parse_generic_suffix(input: &str) -> PResult<'_, String> {
 }
 
 pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
+    let (rest, mut p) = parse_single_param_inner(input)?;
+    // The `is required` trait is exactly the `!` required marker; normalize it
+    // onto the canonical `required` flag (and drop the now-redundant trait) so
+    // all binding sites enforce it identically to `:$n!` — e.g. `:$n is required`
+    // must die when `n` is not passed, even alongside a `*%h` slurpy.
+    if p.traits.iter().any(|t| t == "required") {
+        p.required = true;
+        p.traits.retain(|t| t != "required");
+    }
+    Ok((rest, p))
+}
+
+fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     let mut rest = input;
     let mut named = false;
     let mut slurpy = false;
