@@ -1128,6 +1128,19 @@ impl VM {
         self.stack.push(result);
     }
 
+    pub(super) fn exec_unicmp_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let left_s = left.to_string_value();
+        let right_s = right.to_string_value();
+
+        // Unlike `coll`, `unicmp` always uses the default Unicode collation and
+        // is not influenced by the `$*COLLATION` dynamic variable.
+        let settings = crate::builtins::collation::CollationSettings::default();
+        let result = crate::builtins::collation::coll_compare(&left_s, &right_s, &settings);
+        self.stack.push(result);
+    }
+
     pub(super) fn exec_leg_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

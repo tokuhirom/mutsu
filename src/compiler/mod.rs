@@ -521,6 +521,16 @@ impl Compiler {
         mut self,
         stmts: &[Stmt],
     ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
+        // Hoist top-level `use Test` declarations to the front (Raku `use` is
+        // BEGIN-time, so test functions are available throughout the file even
+        // when `plan`/`ok` appear textually before `use Test;`).
+        let test_hoisted;
+        let stmts = if let Some(r) = Self::hoist_test_use_decls(stmts) {
+            test_hoisted = r;
+            &test_hoisted[..]
+        } else {
+            stmts
+        };
         // Reorder stub class declarations so real definitions come right
         // after stubs (Raku class declarations are compile-time).
         let reordered;

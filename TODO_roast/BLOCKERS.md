@@ -1,8 +1,8 @@
 # Roast Blockers by Feature
 
-Summary: ~170 tests blocked across 19 features (fail, error, timeout).
+Summary: ~164 tests blocked across 19 features (fail, error, timeout).
 
-Generated: 2026-05-30
+Generated: 2026-05-30 (Unicode section updated 2026-06-05)
 
 ## Threading / Concurrency / Async (31 tests)
 
@@ -229,18 +229,34 @@ The 6.d/S32-str/sprintf*.t suites all pass now. The non-6.d sprintf.t (zprintf) 
   and mutsu has no RakuAST; a mid-file error aborts the remaining 23 `.fmt`
   tests. Local coverage: t/format-class.t (40 tests).
 
-## Unicode / Collation (6 tests)
+## Unicode / Collation (2 tests)
 
-Unicode collation (CollationTest files fail because `plan` is called before `use Test`), NFG grapheme break detection, and character encoding (GB18030, GB2312, Shift-JIS).
+The `unicmp` infix operator is now implemented (ICU4X-backed default UCA, not
+affected by `$*COLLATION`, unlike `coll`), and `use Test` is hoisted to BEGIN
+time so `plan`/`ok` work before the textual `use Test;`. CollationTest 0/1/2 now
+pass fully and are whitelisted. The GB18030/GB2312/Shift-JIS codecs were already
+complete; they only needed to run from the roast spec root (their data files are
+located relative to CWD) — `run-roast-test.sh` now runs them with CWD=roast.
 
-- roast/S32-str/CollationTest_NON_IGNORABLE-0.t (error - plan before use Test)
-- roast/S32-str/CollationTest_NON_IGNORABLE-1.t (error - same)
-- roast/S32-str/CollationTest_NON_IGNORABLE-2.t (error - same)
-- roast/S32-str/CollationTest_NON_IGNORABLE-3.t (error - same)
-- roast/S15-nfg/GraphemeBreakTest-3.t (grapheme segmentation)
-- roast/S32-str/gb18030-encode-decode.t
-- roast/S32-str/gb2312-encode-decode.t
-- roast/S32-str/shiftjis-encode-decode.t
+**Resolved (whitelisted):**
+- roast/S32-str/CollationTest_NON_IGNORABLE-0.t (2300/2300)
+- roast/S32-str/CollationTest_NON_IGNORABLE-1.t (2301/2301)
+- roast/S32-str/CollationTest_NON_IGNORABLE-2.t (2301/2301)
+- roast/S32-str/gb18030-encode-decode.t (5/5)
+- roast/S32-str/gb2312-encode-decode.t (5/5)
+- roast/S32-str/shiftjis-encode-decode.t (9/9)
+
+**Still failing:**
+- roast/S32-str/CollationTest_NON_IGNORABLE-3.t (1367/1369 — 2 noncharacter
+  cases fail: U+FFF0/U+FFFE and U+FFFF/U+1FFFE. ICU4X treats the noncharacters
+  as primary-ignorable so the comparison falls through to the trailing
+  codepoint, whereas UCA-17/MoarVM assign implicit primary weights by codepoint.
+  Needs custom implicit-weight handling for reserved/noncharacters.)
+- roast/S15-nfg/GraphemeBreakTest-3.t (157/166 — 9 failures are GB9c Indic
+  conjunct break (Myanmar/Balinese/Khmer virama clusters) and GB11 emoji-ZWJ
+  (`\x[2701,200D,2701]`). mutsu uses the `unicode-segmentation` crate, whose
+  bundled Unicode version doesn't implement these UAX-29 rules for Unicode 17.0.
+  Needs GB9c/GB11 post-processing or a crate upgrade.)
 
 ## Pod / Documentation (4 tests)
 

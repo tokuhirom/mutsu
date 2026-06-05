@@ -94,6 +94,7 @@ fn comparison_nonassoc_key(op: &TokenKind) -> Option<&'static str> {
         TokenKind::Ident(name) if name == "leg" => Some("leg"),
         TokenKind::Ident(name) if name == "cmp" => Some("cmp"),
         TokenKind::Ident(name) if name == "coll" => Some("coll"),
+        TokenKind::Ident(name) if name == "unicmp" => Some("unicmp"),
         // eqv, before, after are chaining operators (not non-associative)
         _ => None,
     }
@@ -105,7 +106,11 @@ fn is_structural_comparison_op(op: ComparisonOp) -> bool {
     // regular comparison chaining path.
     matches!(
         op,
-        ComparisonOp::Spaceship | ComparisonOp::Leg | ComparisonOp::Cmp | ComparisonOp::Coll
+        ComparisonOp::Spaceship
+            | ComparisonOp::Leg
+            | ComparisonOp::Cmp
+            | ComparisonOp::Coll
+            | ComparisonOp::Unicmp
     )
 }
 
@@ -1964,6 +1969,7 @@ fn is_reserved_infix_word(name: &str) -> bool {
             | "max"
             | "cmp"
             | "coll"
+            | "unicmp"
             | "leg"
             | "eq"
             | "ne"
@@ -2611,6 +2617,8 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
         Some((ComparisonOp::Cmp, 3))
     } else if r.starts_with("coll") && !is_ident_char(r.as_bytes().get(4).copied()) {
         Some((ComparisonOp::Coll, 4))
+    } else if r.starts_with("unicmp") && !is_ident_char(r.as_bytes().get(6).copied()) {
+        Some((ComparisonOp::Unicmp, 6))
     } else if r.starts_with("eqv") && !is_ident_char(r.as_bytes().get(3).copied()) {
         Some((ComparisonOp::Eqv, 3))
     } else if r.starts_with("before") && !is_ident_char(r.as_bytes().get(6).copied()) {

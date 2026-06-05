@@ -1117,6 +1117,9 @@ roast/S32-scalar/defined.t
 roast/S32-scalar/perl.t
 roast/S32-scalar/undef.t
 roast/S32-str/Collation.t
+roast/S32-str/CollationTest_NON_IGNORABLE-0.t
+roast/S32-str/CollationTest_NON_IGNORABLE-1.t
+roast/S32-str/CollationTest_NON_IGNORABLE-2.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
 roast/S32-str/capitalize.t
@@ -1128,6 +1131,8 @@ roast/S32-str/encode.t
 roast/S32-str/ends-with.t
 roast/S32-str/fc.t
 roast/S32-str/flip.t
+roast/S32-str/gb18030-encode-decode.t
+roast/S32-str/gb2312-encode-decode.t
 roast/S32-str/indent.t
 roast/S32-str/index.t
 roast/S32-str/indices.t
@@ -1141,6 +1146,7 @@ roast/S32-str/pos.t
 roast/S32-str/rindex.t
 roast/S32-str/samecase.t
 roast/S32-str/samemark.t
+roast/S32-str/shiftjis-encode-decode.t
 roast/S32-str/space-chars.t
 roast/S32-str/split-simple.t
 roast/S32-str/split.t

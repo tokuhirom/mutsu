@@ -32,8 +32,9 @@ const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
     "=:=", "!=:=", "=>", "=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "coll",
-    "~~", "min", "max", "gcd", "lcm", "and", "or", "not", "andthen", "orelse", "xor", ",", "after",
-    "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "⊍", "div", "mod", "minmax",
+    "unicmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", "andthen", "orelse", "xor",
+    ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "⊍", "div", "mod",
+    "minmax",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -241,7 +242,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         .strip_prefix('R')
         .filter(|s| !s.is_empty())
         .unwrap_or(base_for_check);
-    if matches!(base_for_check, "leg" | "<=>" | "cmp") {
+    if matches!(base_for_check, "leg" | "<=>" | "cmp" | "coll" | "unicmp") {
         return Err(PError::fatal(format!(
             "X::Syntax::CannotMeta: Cannot reduce with {base_for_check} because structural infix operators are diffy and not chaining"
         )));
