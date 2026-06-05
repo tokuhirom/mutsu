@@ -190,15 +190,20 @@ Module versioning, import-multi semantics, CompUnit::Repository, and distributio
 - roast/S11-repository/curli-install.t (C::R::Installable role)
 - roast/S19-command-line-options/01-dash-uppercase-i.t
 
-## Multi Method / Subsignature Dispatch (5 tests)
+## Multi Method / Subsignature Dispatch (2 tests remaining)
 
-Multi method dispatch on type signatures doesn't work properly. Subsignature matching in multi dispatch is incomplete.
+**Already passing/whitelisted (this section was stale — verified 2026-06-05):**
+- roast/S06-multi/subsignature.t (whitelisted; remaining `not ok` are `# TODO`)
+- roast/S12-methods/multi.t (whitelisted, passes)
+- roast/S06-other/main.t (whitelisted, passes)
 
-- roast/S06-multi/subsignature.t
-- roast/S12-methods/multi.t (multi method on Str/Numeric signatures)
-- roast/S12-methods/qualified.t (callsame in punned roles)
-- roast/S06-operator-overloading/infix.t
-- roast/S06-other/main.t (MAIN with enum type constraints)
+**Still failing:**
+- roast/S12-methods/qualified.t (6/7; only "parameterizations and inheritance" —
+  callsame in punned roles — fails)
+- roast/S06-operator-overloading/infix.t — **unpassable as written**: rakudo
+  itself fails to compile it ("Cannot bind to '&infix:<plus>' because Code items
+  cannot be rebound" at line 40). mutsu runs further but the test relies on
+  rebinding `&infix:<...>`, which is illegal in current Raku.
 
 ## WhateverCode / Currying Edge Cases (3 tests)
 
@@ -268,12 +273,22 @@ Pod6 formatting codes (Pod::FormattingCode type), table rendering, and trailing 
 - roast/S26-documentation/block-trailing.t
 - roast/S26-documentation/why-trailing.t
 
-## Temporal / DateTime (2 tests)
+## Temporal / DateTime (DONE except an unpassable test)
 
-Duration arithmetic (Inf, NaN, modulo), and time numification.
+**Resolved (whitelisted):**
+- roast/S32-temporal/DateTime-Instant-Duration.t (68/68) — Duration now stores
+  its seconds as a Rational (so `.tai` is a Rat / does Rational), `Duration % Real`
+  returns a Duration computed with exact rational arithmetic (matching
+  `Duration.new($seconds % $real)`), and `Duration.new` defaults to `0.0` (Rat).
+  Also fixed a general `arith_mod` bug where `Rat % BigInt` (e.g. `(7/1) % (2**66)`)
+  returned 0 — rational modulo now uses big-rational parts. (#TBD)
 
-- roast/S32-temporal/DateTime-Instant-Duration.t (Duration.new(Inf/NaN), modulo)
-- roast/S32-temporal/time.t (Time::Local numification)
+**Unpassable as written (cannot be fixed):**
+- roast/S32-temporal/time.t — uses Perl 5 builtins `localtime`/`gmtime`/`times`
+  which are NOT Raku core routines (rakudo itself fails to compile this file:
+  "localtime used at lines ...; times ... Did you mean 'lines'?"), and the file
+  contains two deliberate `flunk("FIXME Time::Local should by numifiable")` calls.
+  It can never reach a passing state. Leave un-whitelisted.
 
 ## Subset Types / Where Clauses (2 tests)
 
@@ -295,7 +310,15 @@ Binding to attributes, nested binding, and container semantics (Scalar decontain
 
 categorize.t now fully passes (28/28, whitelisted). minmax.t fully passes (whitelisted, #2510). classify.t nearly passes (38/40 — 2 edge cases remaining).
 
-- roast/S32-list/classify.t (39/40 pass — only the Junction-threading subtest remains; classify with a mapper returning a Junction must thread and store values under multiple keys)
+- roast/S32-list/classify.t (39/40 pass — only the "classify works with
+  Junctions" subtest remains. NOTE (verified 2026-06-05): this is NOT a small
+  fix. When the mapper returns a Junction, rakudo's `.classify` builds an
+  **object hash** (`my Any %{Mu}`) keyed by the Junction's `.WHICH` identity
+  (any(True,False) is one key, distinct from any(False,False)), and `$h{ any(...) }`
+  retrieves by object-key identity WITHOUT autothreading the subscript. mutsu's
+  `Value::Hash` is `HashMap<String, Value>` (string keys only) with no
+  object-hash support, so this subtest is blocked on full object-hash
+  (`%{Mu}` / non-Str keyed hash) semantics, not a classify-local tweak.)
 
 ## Miscellaneous (25 tests)
 
