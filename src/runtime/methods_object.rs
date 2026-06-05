@@ -1020,6 +1020,9 @@ impl Interpreter {
                             let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
                             if let Value::Seq(items) = &seq {
                                 let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                                // Store off the scoped env so the association
+                                // survives sub/block returns (see field docs).
+                                self.predictive_seq_iters.insert(seq_id, iterator.clone());
                                 self.env.insert(
                                     format!("__mutsu_predictive_seq_iter::{seq_id}"),
                                     iterator.clone(),

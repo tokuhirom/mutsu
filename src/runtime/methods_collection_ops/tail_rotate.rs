@@ -17,6 +17,18 @@ impl Interpreter {
         }
     }
 
+    /// Look up the PredictiveIterator backing a `Seq.new(iterator)` by seq_id.
+    /// Prefers the non-scoped `predictive_seq_iters` map (survives scope), then
+    /// falls back to the legacy env key for any in-scope registrations.
+    pub(in crate::runtime) fn predictive_seq_iter_for(&self, seq_id: usize) -> Option<Value> {
+        if let Some(iter) = self.predictive_seq_iters.get(&seq_id) {
+            return Some(iter.clone());
+        }
+        self.env
+            .get(&format!("__mutsu_predictive_seq_iter::{seq_id}"))
+            .cloned()
+    }
+
     pub(in crate::runtime) fn dispatch_tail(
         &mut self,
         target: Value,
@@ -40,7 +52,7 @@ impl Interpreter {
         {
             let seq_id = std::sync::Arc::as_ptr(items) as usize;
             let key = format!("__mutsu_predictive_seq_iter::{seq_id}");
-            if let Some(iterator) = self.env.get(&key).cloned() {
+            if let Some(iterator) = self.predictive_seq_iter_for(seq_id) {
                 let iter_slot = "$mutsu_predictive_tail_iterator";
                 let saved_iter = self.env.get(iter_slot).cloned();
                 self.env.insert(iter_slot.to_string(), iterator);
@@ -114,6 +126,10 @@ impl Interpreter {
                             }
                         }
                     }
+                    // Persist the advanced iterator state in both the non-scoped
+                    // map (authoritative, survives scope) and the legacy env key.
+                    self.predictive_seq_iters
+                        .insert(seq_id, updated_iter.clone());
                     self.env.insert(key, updated_iter);
                 }
                 if let Some(prev) = saved_iter {
