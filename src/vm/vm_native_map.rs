@@ -44,12 +44,16 @@ impl VM {
         let Value::Sub(data) = &args[0] else {
             return None;
         };
-        // Only concrete *real* arrays (`my @a = ...`). On a real array, mutsu's
-        // `.map` returns a `List` (not a `Seq`); itemized/shaped arrays, List-kind
-        // values, and lazy sequences/ranges have different dispatch semantics
-        // (they return a `Seq`), so leave those to the interpreter.
+        // Only a plain concrete array (`my @a = ...`, `ArrayKind::Array`). On
+        // such an array mutsu's `.map` returns a `List`. Every other kind needs
+        // the interpreter's specialized dispatch and must NOT come here:
+        // `Shaped` maps over *leaves* (not the raw items), `Lazy` must stay lazy
+        // (eager iteration could hang on an infinite source), `ItemArray`/`List`
+        // and ranges/seqs have their own one-arg-rule / Seq-returning semantics.
+        // (`ArrayKind::is_real_array()` is too broad — it also matches Shaped,
+        // Lazy and ItemArray — so match the kind explicitly.)
         let items = match target {
-            Value::Array(items, kind) if kind.is_real_array() => items.clone(),
+            Value::Array(items, ArrayKind::Array) => items.clone(),
             _ => return None,
         };
         // A `Pair`/`ValuePair` element passed positionally to the block is bound
