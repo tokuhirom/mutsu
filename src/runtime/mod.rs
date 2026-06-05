@@ -1005,23 +1005,16 @@ pub struct Interpreter {
     container_defaults: HashMap<usize, Value>,
     /// Optional hash key type constraints (e.g. `%h{Str}`).
     var_hash_key_constraints: HashMap<String, String>,
-    /// Type metadata for Array values keyed by Arc pointer identity. A `Weak`
-    /// of the container is stored alongside so lookups can detect Arc-pointer
-    /// *reuse*: a freed container's pointer gets reallocated to an unrelated
-    /// value, and without the `Weak::ptr_eq` validation the stale metadata
-    /// would alias onto it (e.g. an `EVAL`-created list inheriting a dropped
-    /// typed array's element type and dying on a type check).
-    array_type_metadata: HashMap<usize, (std::sync::Weak<Vec<Value>>, ContainerTypeInfo)>,
+    /// Type metadata for Array values keyed by Arc pointer identity.
+    array_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Mix values keyed by Arc pointer identity.
     mix_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Set values keyed by Arc pointer identity.
     set_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Bag values keyed by Arc pointer identity.
     bag_type_metadata: HashMap<usize, ContainerTypeInfo>,
-    /// Type metadata for Hash values keyed by Arc pointer identity. See
-    /// `array_type_metadata` for why a `Weak` is stored alongside.
-    hash_type_metadata:
-        HashMap<usize, (std::sync::Weak<HashMap<String, Value>>, ContainerTypeInfo)>,
+    /// Type metadata for Hash values keyed by Arc pointer identity.
+    hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Original key objects for object hashes, keyed by Hash Arc pointer identity.
     hash_object_keys: HashMap<usize, HashMap<String, Value>>,
     /// Type metadata for instance values keyed by stable instance id.
@@ -4486,8 +4479,7 @@ impl Interpreter {
         match value {
             Value::Array(items, ..) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.array_type_metadata
-                    .insert(id, (Arc::downgrade(items), info));
+                self.array_type_metadata.insert(id, info);
             }
             Value::Mix(items, _) => {
                 let id = Arc::as_ptr(items) as usize;
@@ -4503,8 +4495,7 @@ impl Interpreter {
             }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.hash_type_metadata
-                    .insert(id, (Arc::downgrade(items), info));
+                self.hash_type_metadata.insert(id, info);
             }
             Value::Instance { id, .. } => {
                 self.instance_type_metadata.insert(*id, info);
@@ -4538,10 +4529,7 @@ impl Interpreter {
         match value {
             Value::Array(items, ..) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.array_type_metadata
-                    .get(&id)
-                    .filter(|(weak, _)| weak.upgrade().is_some_and(|a| Arc::ptr_eq(&a, items)))
-                    .map(|(_, info)| info.clone())
+                self.array_type_metadata.get(&id).cloned()
             }
             Value::Mix(items, _) => {
                 let id = Arc::as_ptr(items) as usize;
@@ -4557,10 +4545,7 @@ impl Interpreter {
             }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.hash_type_metadata
-                    .get(&id)
-                    .filter(|(weak, _)| weak.upgrade().is_some_and(|a| Arc::ptr_eq(&a, items)))
-                    .map(|(_, info)| info.clone())
+                self.hash_type_metadata.get(&id).cloned()
             }
             Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
             Value::Mixin(inner, _) => self.container_type_metadata(inner),
@@ -4604,16 +4589,22 @@ impl Interpreter {
 
     /// Check if a hash is an object hash (has a key_type constraint).
     pub(crate) fn is_object_hash(&self, hash: &Value) -> bool {
-        // Goes through container_type_metadata so the Weak-validated lookup
-        // rejects stale entries left by Arc-pointer reuse.
-        self.container_type_metadata(hash)
-            .is_some_and(|info| info.key_type.is_some())
+        if let Value::Hash(arc) = hash {
+            let id = Arc::as_ptr(arc) as usize;
+            if let Some(info) = self.hash_type_metadata.get(&id) {
+                return info.key_type.is_some();
+            }
+        }
+        false
     }
 
     /// Get the key type constraint for an object hash, if any.
     pub(crate) fn hash_key_type(&self, hash: &Value) -> Option<String> {
-        if let Some(info) = self.container_type_metadata(hash) {
-            return info.key_type;
+        if let Value::Hash(arc) = hash {
+            let id = Arc::as_ptr(arc) as usize;
+            if let Some(info) = self.hash_type_metadata.get(&id) {
+                return info.key_type.clone();
+            }
         }
         None
     }
