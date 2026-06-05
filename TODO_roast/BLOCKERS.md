@@ -228,16 +228,28 @@ EVAL now passes all 30 tests in eval.t (#2513). Remaining issues are EVAL scope 
 - roast/S04-declarations/my-6e.t (EVAL scope visibility)
 - roast/S12-attributes/class.t (EVAL inside class body)
 
-## Module/Package System (6 tests)
+## Module/Package System (1 test remaining)
 
-Module versioning, import-multi semantics, CompUnit::Repository, and distribution metadata are incomplete.
+**This section was stale (verified 2026-06-05).** Most listed tests already pass
+and are whitelisted; one is unpassable as written:
 
-- roast/S11-modules/import-multi.t (X::Redeclaration in imports)
-- roast/S11-modules/versioning.t (core-revision)
-- roast/S11-repository/cur-candidates.t (error - repository queries)
-- roast/S11-repository/cur-current-distribution.t
-- roast/S11-repository/curli-install.t (C::R::Installable role)
-- roast/S19-command-line-options/01-dash-uppercase-i.t
+- roast/S11-modules/import-multi.t — **whitelisted, passes**
+- roast/S11-modules/versioning.t — **whitelisted, passes** (PR: `CORE-SETTING-REV`
+  compile-time term + `BEGIN $*RAKU.version` folding to the compunit's language
+  version + EVAL now sets parser lib paths so `use Foo; bar` resolves parenless
+  exports)
+- roast/S11-repository/cur-candidates.t — **whitelisted, passes**
+- roast/S11-repository/cur-current-distribution.t — **whitelisted, passes**
+- roast/S19-command-line-options/01-dash-uppercase-i.t — **unpassable as written**:
+  rakudo itself fails it (`@*INC` and `$*OS` no longer exist; "planned 8 tests,
+  but ran 0").
+
+**Still failing:**
+- roast/S11-repository/curli-install.t — needs a full
+  `CompUnit::Repository::Installation` implementation: `$*REPO ~~
+  CompUnit::Repository::Installable`/`::Locally` role smartmatch, `.install`,
+  `.need`, `Distribution::Hash`, `CompUnit::DependencySpecification`, and
+  `GLOBALish.WHO.merge-symbols`. Large feature; deferred.
 
 ## Multi Method / Subsignature Dispatch (2 tests remaining)
 

@@ -601,6 +601,18 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("NaN", Value::Num(f64::NAN)) {
         return Ok(r);
     }
+    // CORE-SETTING-REV — a compile-time constant equal to the language revision
+    // letter (c/d/e) of the current compilation unit, as set by `use v6.X`.
+    // The parser knows the active version while parsing each compunit, so we
+    // fold it to a string literal at parse time (matching Rakudo, where it is a
+    // BEGIN-time constant).
+    {
+        let ver = crate::parser::current_language_version();
+        let rev = ver.rsplit('.').next().unwrap_or("c").to_string();
+        if let Ok(r) = try_kw("CORE-SETTING-REV", Value::str(rev)) {
+            return Ok(r);
+        }
+    }
     // rand — generates a random number (term)
     if input.starts_with("rand")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')

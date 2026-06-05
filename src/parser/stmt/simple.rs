@@ -1801,7 +1801,56 @@ pub(super) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, s) = statement(rest)?;
         (r, vec![s])
     };
+    // `BEGIN $*RAKU.version` (and `$*PERL.version`) is a compile-time constant
+    // equal to the language version of the current compilation unit. The parser
+    // knows the active `use v6.X` version, so fold it to a Version literal here.
+    // BEGIN of a pure constant has no side effects, so the phaser wrapper is
+    // dropped — the value flows through directly (e.g. as a sub's return value).
+    if kind == PhaserKind::Begin
+        && body.len() == 1
+        && let Stmt::Expr(e) = &body[0]
+        && let Some(v) = fold_compile_time_version(e)
+    {
+        return Ok((rest, Stmt::Expr(Expr::Literal(v))));
+    }
     Ok((rest, Stmt::Phaser { kind, body }))
+}
+
+/// Fold `$*RAKU.version` / `$*PERL.version` to a Version literal of the current
+/// compilation unit's language version. These reflect the `use v6.X` pragma in
+/// effect and are constant per compunit.
+fn fold_compile_time_version(expr: &Expr) -> Option<Value> {
+    let Expr::MethodCall {
+        target, name, args, ..
+    } = expr
+    else {
+        return None;
+    };
+    if !args.is_empty() || name.resolve() != "version" {
+        return None;
+    }
+    let Expr::Var(v) = &**target else {
+        return None;
+    };
+    if v != "*RAKU" && v != "*PERL" {
+        return None;
+    }
+    let ver = current_language_version();
+    let parts: Vec<crate::value::VersionPart> = ver
+        .split('.')
+        .map(|s| {
+            if let Ok(n) = s.parse::<i64>() {
+                crate::value::VersionPart::Num(n)
+            } else {
+                crate::value::VersionPart::Str(s.to_string())
+            }
+        })
+        .collect();
+    Some(Value::Version {
+        parts,
+        plus: false,
+        minus: false,
+    })
 }
 
 /// Parse `subtest` declaration.

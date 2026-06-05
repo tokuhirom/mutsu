@@ -10,13 +10,20 @@ impl Interpreter {
         imported_names: &[String],
     ) -> Result<Value, RuntimeError> {
         let user_sub_names = self.collect_eval_user_sub_names();
-        match crate::parser::parse_program_with_operators_and_user_subs(
+        // Make module search paths visible to the parser so that `use Foo`
+        // inside the EVAL'd code can resolve and register Foo's exported sub
+        // names (needed for parenless calls like `use Foo; bar`).
+        crate::parser::set_parser_lib_paths(self.lib_paths.clone());
+        crate::parser::set_parser_program_path(self.program_path.clone());
+        let parse_result = crate::parser::parse_program_with_operators_and_user_subs(
             src,
             op_names,
             op_assoc,
             imported_names,
             &user_sub_names,
-        ) {
+        );
+        crate::parser::clear_parser_lib_paths();
+        match parse_result {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
