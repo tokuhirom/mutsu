@@ -186,6 +186,28 @@ impl Interpreter {
                 Symbol::intern("IO::Path"),
                 attributes.clone(),
             )),
+            "CWD" => {
+                let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                Ok(Value::str(cwd))
+            }
+            "SPEC" => {
+                // Return the IO::Spec type object backing this path. Normalize to
+                // a canonical `Value::Package` so that two paths sharing the same
+                // SPEC compare `eqv` regardless of whether the stored value was a
+                // `Package` (from `IO::Path::Unix.new`) or a type-object instance
+                // (from `$*SPEC`). Defaults to IO::Spec::Unix.
+                let spec_name = attributes
+                    .get("SPEC")
+                    .and_then(|s| match s {
+                        Value::Package(n) => Some(n.resolve().to_string()),
+                        Value::Instance { class_name, .. } => {
+                            Some(class_name.resolve().to_string())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "IO::Spec::Unix".to_string());
+                Ok(Value::Package(Symbol::intern(&spec_name)))
+            }
             "basename" => {
                 let (_, _, bname) = Self::io_path_parts(&p);
                 Ok(Value::str(bname))
@@ -624,11 +646,23 @@ impl Interpreter {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
                 let content = super::utils::strip_utf8_bom(content);
-                let parts = content
+                let mut parts: Vec<Value> = content
                     .split_whitespace()
                     .map(|token| Value::str(token.to_string()))
                     .collect();
-                Ok(Value::array(parts))
+                // Check for a positional limit argument
+                let limit = args.iter().find_map(|arg| match arg {
+                    Value::Int(i) => Some((*i).max(0) as usize),
+                    Value::BigInt(bi) => {
+                        use num_traits::ToPrimitive;
+                        Some(bi.to_usize().unwrap_or(usize::MAX))
+                    }
+                    _ => None,
+                });
+                if let Some(n) = limit {
+                    parts.truncate(n);
+                }
+                Ok(Value::Seq(std::sync::Arc::new(parts)))
             }
             "comb" => {
                 let content = fs::read_to_string(&path_buf)
@@ -2301,13 +2335,40 @@ impl Interpreter {
                 }
             }
             "words" => {
-                let mut words = Vec::new();
-                while let Some(line) = self.read_line_from_handle_value(&target_val)? {
-                    for token in line.split_whitespace() {
-                        words.push(Value::str(token.to_string()));
+                let mut limit: Option<usize> = None;
+                let mut close_after = false;
+                for arg in &args {
+                    match arg {
+                        Value::Pair(k, v) if k == "close" => {
+                            close_after = v.truthy();
+                        }
+                        Value::Pair(..) => {}
+                        Value::Int(i) => limit = Some((*i).max(0) as usize),
+                        Value::BigInt(bi) => {
+                            use num_traits::ToPrimitive;
+                            limit = Some(bi.to_usize().unwrap_or(usize::MAX));
+                        }
+                        Value::Whatever => {}
+                        Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
+                        Value::Num(f) if *f >= 0.0 => limit = Some(*f as usize),
+                        _ => {}
                     }
                 }
-                Ok(Value::array(words))
+                let mut words = Vec::new();
+                'outer: while let Some(line) = self.read_line_from_handle_value(&target_val)? {
+                    for token in line.split_whitespace() {
+                        words.push(Value::str(token.to_string()));
+                        if let Some(n) = limit
+                            && words.len() >= n
+                        {
+                            break 'outer;
+                        }
+                    }
+                }
+                if close_after {
+                    self.close_handle_value(&target_val)?;
+                }
+                Ok(Value::Seq(std::sync::Arc::new(words)))
             }
             "read" => {
                 // .read() always returns a Buf (Buf[uint8]) in Raku

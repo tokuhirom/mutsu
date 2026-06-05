@@ -1822,6 +1822,8 @@ impl Interpreter {
                     "watch",
                     "succ",
                     "pred",
+                    "CWD",
+                    "SPEC",
                 ]
                 .iter()
                 .map(|s| s.to_string())
