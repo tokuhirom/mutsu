@@ -147,14 +147,51 @@ Pre-existing, out of scope: a typed `@.items` / `%.foo` accessor read throws
 typed-container accessors); `try_fast_accessor_read` returns the value when the
 attribute is present, so it does not regress this — it falls through identically.
 
+## Step 5 — nativize the default `.new` constructor (2026-06)
+
+`.new` was the dominant remaining method fallback (`new=10001` in
+`method-call.raku`, `new=9000` in `bench-class`). `ClassName.new(:a(...))`
+routed through `Interpreter::call_method_with_values` → `dispatch_new` even
+though, for a plain user class, default construction is pure data assembly.
+
+Added `Interpreter::simple_ctor_plan` (a registry-only eligibility check that
+returns the list of attribute names to pre-fill with `Nil`) and a VM-side
+`try_native_default_construct` (`vm_call_method_compiled.rs`) called from both
+`try_compiled_method_or_interpret` and its mut twin, right before the
+`record_method_fallback`. The eligibility plan is cached per class
+(`simple_ctor_cache`, invalidated alongside `fast_method_cache`).
+
+A class is eligible when it **and its whole MRO** (excluding the `Any`/`Mu`/
+`Cool` roots) are plain user classes: no `BUILD`/`TWEAK`/`BUILDALL`/custom `new`,
+no composed roles or role-param bindings, no native methods, no wildcard
+`handles`, no twigil-less alias attributes, and only simple `$`-sigiled
+attributes with no default/required/type/where/smiley constraint, and no
+duplicated attribute names across the hierarchy. This covers single classes
+*and* inheritance (`Dog is Animal`). Any positional arg, an active wrap chain,
+or an ineligible class falls back unchanged (identical behavior, including the
+interpreter's positional/error handling). Attribute defaults still fall back
+(they need expression evaluation).
+
+| program | method fallback before | after |
+|---|---|---|
+| `method-call.raku` (`Point.new` ×10000) | 10001 / 50002 (20.0%) | **0 / 50002 (0.0%)** |
+| `bench-class` (`Animal`/`Dog.new`, inheritance) | 9000 / 65000 (13.8%) | **0 / 65000 (0.0%)** |
+
+Both benchmarks now have **zero** method fallback. Verified behavior-preserving:
+`make test` (only the pre-existing `placeholder`/`tail-function`/`wrap` failures),
+all 70 whitelisted S12/S14 tests pass, and an 88-file random whitelist sample
+passes; the 5 partially-failing non-whitelisted S12 tests fail at the identical
+subtest on `main`.
+
 ## Next steps (candidate strangler targets)
 
-1. **`.new` constructor**: now the dominant method fallback (`new=10001` /
-   `9000`). Nativizing default construction (allocate Instance, run BUILD/TWEAK,
-   apply attribute defaults + type coercion) would remove it.
-2. `Test` functions: would need the TAP `TestState` reachable from the VM rather
+1. `Test` functions: would need the TAP `TestState` reachable from the VM rather
    than only the interpreter — large, defer.
-3. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
+2. `.new` with **attribute defaults** / `BUILD` / `TWEAK` / custom `new`: still
+   falls back. Nativizing defaults needs the VM to evaluate the stored default
+   `Expr` (compile-to-bytecode), and BUILD/TWEAK need the compiled submethod
+   dispatch — a larger follow-up.
+3. Continue the state-ownership work (collapse the `locals`↔`env` dual store,
    `ANALYSIS.md` §1.2) so the VM stops borrowing the interpreter's env.
 
 Record each step's before/after numbers in this file so the trend is visible.

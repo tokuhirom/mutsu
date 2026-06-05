@@ -327,6 +327,7 @@ impl VM {
             self.method_resolve_cache.clear();
             self.last_method_resolve = None;
             self.fast_method_cache.clear();
+            self.simple_ctor_cache.clear();
             if *is_export && !self.interpreter.suppress_exports {
                 let pkg = self.interpreter.current_package().to_string();
                 self.interpreter.register_exported_sub(
@@ -513,6 +514,7 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.simple_ctor_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
@@ -541,6 +543,7 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.simple_ctor_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
@@ -556,6 +559,7 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.simple_ctor_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
@@ -571,6 +575,7 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.simple_ctor_cache.clear();
         self.env_dirty = true;
         Ok(())
     }
@@ -1203,6 +1208,9 @@ impl VM {
                 }
             }
 
+            // A newly registered class can change native-constructor eligibility
+            // (e.g. a forward-referenced parent), so drop the cache.
+            self.simple_ctor_cache.clear();
             self.env_dirty = true;
             Ok(())
         } else {
@@ -1230,6 +1238,9 @@ impl VM {
             self.interpreter.augment_class(&name_str, body)?;
             // Recompile augmented class methods for the fast path
             self.interpreter.compile_class_methods(&name_str);
+            // Augmenting may add BUILD/TWEAK/new or attributes, invalidating the
+            // native-constructor eligibility cache.
+            self.simple_ctor_cache.clear();
             Ok(())
         } else {
             Err(RuntimeError::new("AugmentClass expects AugmentClass stmt"))

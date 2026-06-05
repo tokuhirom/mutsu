@@ -495,6 +495,84 @@ impl Interpreter {
             .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
     }
 
+    /// If `class_name` (and its entire MRO) is a plain user class eligible for
+    /// native default construction in the VM, return the full list of attribute
+    /// names (public + private, across the MRO) that `.new` should pre-fill with
+    /// `Nil`. Otherwise return `None` (the VM falls back to the interpreter).
+    ///
+    /// "Eligible" mirrors the no-BUILD/no-default branch of `dispatch_new`:
+    /// the class and every class in its MRO (excluding the `Any`/`Mu`/`Cool`
+    /// roots) must be a registered user class with no `BUILD`/`TWEAK`/`BUILDALL`/
+    /// custom `new`, no composed roles or role-parameter bindings, no native
+    /// methods, no wildcard `handles`, no twigil-less alias attributes, and only
+    /// simple `$`-sigiled attributes that have no default, required marker,
+    /// type/where/smiley constraint. Attribute names must also be unique across
+    /// the hierarchy (duplicated names need per-class storage that only the
+    /// generic constructor sets up). See docs/vm-decoupling.md (lever A).
+    pub(crate) fn simple_ctor_plan(&mut self, class_name: &str) -> Option<Vec<String>> {
+        if class_name.contains('[') || class_name.contains("::") {
+            return None;
+        }
+        if !self.classes.contains_key(class_name) {
+            return None;
+        }
+        let mro = self.class_mro(class_name);
+        for cn in &mro {
+            if cn == "Any" || cn == "Mu" || cn == "Cool" {
+                continue;
+            }
+            if self
+                .class_composed_roles
+                .get(cn)
+                .is_some_and(|roles| !roles.is_empty())
+            {
+                return None;
+            }
+            if self.class_role_param_bindings.contains_key(cn) {
+                return None;
+            }
+            let Some(def) = self.classes.get(cn) else {
+                // A non-user (builtin) parent in the MRO — let the interpreter
+                // handle the (possibly type-specific) construction.
+                return None;
+            };
+            if def.methods.contains_key("BUILD")
+                || def.methods.contains_key("TWEAK")
+                || def.methods.contains_key("BUILDALL")
+                || def.methods.contains_key("new")
+            {
+                return None;
+            }
+            if !def.native_methods.is_empty()
+                || !def.attribute_types.is_empty()
+                || !def.attribute_smileys.is_empty()
+                || !def.alias_attributes.is_empty()
+                || !def.wildcard_handles.is_empty()
+            {
+                return None;
+            }
+            // Tuple layout: (name, is_public, default, is_rw, is_required, sigil, where).
+            // `is_rw` does not affect the stored value, so it is allowed.
+            for (_name, _is_public, default, _is_rw, is_required, sigil, where_c) in &def.attributes
+            {
+                if *sigil != '$' || default.is_some() || is_required.is_some() || where_c.is_some()
+                {
+                    return None;
+                }
+            }
+        }
+        // Duplicated attribute names across the hierarchy need per-class storage.
+        if !self.collect_per_class_attrs(class_name).is_empty() {
+            return None;
+        }
+        Some(
+            self.collect_class_attributes(class_name)
+                .into_iter()
+                .map(|attr| attr.0)
+                .collect(),
+        )
+    }
+
     /// Check if an attribute is buildable (can be set via .new).
     pub(crate) fn is_attribute_buildable(&self, class_name: &str, attr_name: &str) -> bool {
         if let Some(class_def) = self.classes.get(class_name) {

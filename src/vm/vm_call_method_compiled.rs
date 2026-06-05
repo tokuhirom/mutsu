@@ -353,9 +353,71 @@ impl VM {
                 }
             }
         }
+        // Native default constructor: build `ClassName.new(:a(...), :b(...))`
+        // for plain user classes in the VM instead of falling back to the
+        // interpreter's `dispatch_new`. This is the dominant remaining method
+        // fallback (see docs/vm-decoupling.md, lever A).
+        if let Some(instance) = self.try_native_default_construct(&target, method, &args) {
+            return Ok(instance);
+        }
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
+    }
+
+    /// Build `ClassName.new(named-args...)` natively for a plain user class,
+    /// returning `Some(instance)` when handled. Returns `None` (fall back to the
+    /// interpreter) for any non-trivial case: a non-`new` method, a non-`Package`
+    /// invocant, positional args (the interpreter raises the right error), an
+    /// active method-wrap chain, or a class that is not
+    /// `Interpreter::simple_ctor_plan`-eligible. The eligibility plan (the list
+    /// of attribute names to pre-fill with `Nil`) is cached per class.
+    fn try_native_default_construct(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        if method != "new" {
+            return None;
+        }
+        let Value::Package(class_sym) = target else {
+            return None;
+        };
+        let class_sym = *class_sym;
+        // Positional args need the interpreter's positional/error handling.
+        if args.iter().any(|a| !matches!(a, Value::Pair(..))) {
+            return None;
+        }
+        // A wrapped `new` (or BUILD/TWEAK) would change construction behavior.
+        if self.interpreter.has_any_wrap_chains() {
+            return None;
+        }
+        let plan = match self.simple_ctor_cache.get(&class_sym) {
+            Some(cached) => cached.clone(),
+            None => {
+                let computed = self
+                    .interpreter
+                    .simple_ctor_plan(&class_sym.resolve())
+                    .map(std::sync::Arc::new);
+                self.simple_ctor_cache.insert(class_sym, computed.clone());
+                computed
+            }
+        };
+        let names = plan?;
+        let cn = class_sym.resolve();
+        let mut attrs: HashMap<String, Value> = HashMap::with_capacity(names.len());
+        for arg in args {
+            if let Value::Pair(key, val) = arg
+                && self.interpreter.is_attribute_buildable(&cn, key)
+            {
+                attrs.insert(key.clone(), (**val).clone());
+            }
+        }
+        for name in names.iter() {
+            attrs.entry(name.clone()).or_insert(Value::Nil);
+        }
+        Some(Value::make_instance(class_sym, attrs))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -740,6 +802,11 @@ impl VM {
                 }
                 return Ok(result);
             }
+        }
+        // Native default constructor (mirrors the non-mut path) — see
+        // docs/vm-decoupling.md, lever A.
+        if let Some(instance) = self.try_native_default_construct(&target, method, &args) {
+            return Ok(instance);
         }
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter

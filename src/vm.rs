@@ -195,6 +195,16 @@ pub(crate) struct VM {
     /// Temporary storage for for-loop resume state when a gather take-limit
     /// interrupts a for loop.
     gather_for_loop_resume: Option<ForLoopResumeState>,
+    /// Native default-constructor eligibility cache: maps a class Symbol to its
+    /// construction plan. `Some(attr_names)` means the class (and its whole MRO)
+    /// is a plain user class with no BUILD/TWEAK/custom-new, only simple `$`
+    /// attributes with no defaults/required/constraints/roles, so `.new` can be
+    /// built natively in the VM without falling back to the interpreter; the
+    /// inner Vec is every attribute name (public + private, across the MRO) to
+    /// pre-fill with `Nil`. `None` means not eligible (always fall back).
+    /// Invalidated whenever the class/sub registry changes (see the
+    /// `simple_ctor_cache.clear()` calls alongside `fast_method_cache.clear()`).
+    simple_ctor_cache: HashMap<Symbol, Option<Arc<Vec<String>>>>,
 }
 
 impl VM {
@@ -379,6 +389,7 @@ impl VM {
             otf_call_cache_gen: 0,
             check_phaser_depth: 0,
             gather_for_loop_resume: None,
+            simple_ctor_cache: HashMap::new(),
         }
     }
 
