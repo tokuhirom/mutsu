@@ -332,12 +332,33 @@ impl Compiler {
                     continue;
                 }
                 if sub.named {
-                    let method_result = Expr::MethodCall {
+                    // Named destructuring `:$key` binds via the accessor method
+                    // when the object provides one (Pair.key/.value, object
+                    // attribute readers), otherwise by hash key (Hash/Map, which
+                    // have no method named after an arbitrary key). Decide at
+                    // runtime: `$_.^can("key") ?? $_.key !! $_<key>`.
+                    let method_call = Expr::MethodCall {
                         target: Box::new(Expr::Var(target_name.clone())),
                         name: Symbol::intern(&sub.name),
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
+                    };
+                    let hash_lookup = Expr::Index {
+                        target: Box::new(Expr::Var(target_name.clone())),
+                        index: Box::new(Expr::Literal(Value::str(sub.name.clone()))),
+                        is_positional: false,
+                    };
+                    let method_result = Expr::Ternary {
+                        cond: Box::new(Expr::MethodCall {
+                            target: Box::new(Expr::Var(target_name.clone())),
+                            name: Symbol::intern("can"),
+                            args: vec![Expr::Literal(Value::str(sub.name.clone()))],
+                            modifier: Some('^'),
+                            quoted: false,
+                        }),
+                        then_expr: Box::new(method_call),
+                        else_expr: Box::new(hash_lookup),
                     };
                     // If the named param has a sub_signature (e.g. :key($k)),
                     // bind to the sub_signature variable instead of the param name.
