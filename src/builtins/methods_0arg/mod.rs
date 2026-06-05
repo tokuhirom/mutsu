@@ -1388,23 +1388,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(attributes.get("to").cloned().unwrap_or(Value::Int(0))));
             }
             "gist" => {
-                let matched = target.to_string_value();
-                let mut gist = format!("\u{FF62}{}\u{FF63}", matched);
-                if let Some(Value::Hash(named)) = attributes.get("named")
-                    && !named.is_empty()
-                {
-                    let mut keys: Vec<&String> = named.keys().collect();
-                    keys.sort();
-                    for key in keys {
-                        if let Some(value) = named.get(key) {
-                            gist.push_str(&format!(
-                                "\n {} => \u{FF62}{}\u{FF63}",
-                                key,
-                                value.to_string_value()
-                            ));
-                        }
-                    }
-                }
+                // Full Match gist: corner-quoted text plus positional/named
+                // sub-captures, ordered by position and nested recursively.
+                let gist = crate::runtime::utils::match_gist(attributes, 0);
                 return Some(Ok(Value::str(gist)));
             }
             "Str" => {

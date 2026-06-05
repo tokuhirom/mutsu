@@ -468,6 +468,16 @@ pub(super) fn dispatch(
                         let elems = values.iter().map(gist_item).collect::<Vec<_>>().join(", ");
                         format!("{}({})", kind_str, elems)
                     }
+                    // A Match nested in a list/seq gist renders as its full
+                    // `Match.gist` (corner-quoted text + sub-captures), not the
+                    // bare matched string.
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Match" => {
+                        crate::runtime::utils::match_gist(attributes, 0)
+                    }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
@@ -515,6 +525,16 @@ pub(super) fn dispatch(
                         };
                         let elems = values.iter().map(gist_item).collect::<Vec<_>>().join(", ");
                         format!("{}({})", kind_str, elems)
+                    }
+                    // A Match nested in a list/seq gist renders as its full
+                    // `Match.gist` (corner-quoted text + sub-captures), not the
+                    // bare matched string.
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Match" => {
+                        crate::runtime::utils::match_gist(attributes, 0)
                     }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),

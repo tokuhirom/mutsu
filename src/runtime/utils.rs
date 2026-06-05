@@ -917,7 +917,109 @@ pub(crate) fn gist_value(value: &Value) -> String {
             let sep = if *excl_end { "..^" } else { ".." };
             format!("{}{}{}{}", prefix, gist_value(start), sep, gist_value(end))
         }
+        // A Match nested inside a container (e.g. the values of `$/.caps` or a
+        // `m:g//` result list) must still gist as `｢matched｣` plus its sub-
+        // captures, matching `Match.gist`. The generic Instance fall-through
+        // below would otherwise stringify it to the bare matched text.
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => match_gist(attributes, 0),
         _ => value.to_string_value(),
+    }
+}
+
+/// Render a Match's `.gist`: the corner-quoted matched text followed by its
+/// positional and named sub-captures, each on its own indented line, ordered by
+/// the capture's start position (`from`) and nested recursively. This mirrors
+/// Rakudo's `Match.gist`:
+///
+/// ```text
+/// ｢a1b2｣
+///  0 => ｢a1｣
+///   0 => ｢a｣
+///   1 => ｢1｣
+///  0 => ｢b2｣
+///   0 => ｢b｣
+///   1 => ｢2｣
+/// ```
+///
+/// A quantified capture (`(\w)+`) is a list of Match values, each emitted under
+/// the same index. `depth` controls indentation (one leading space per level).
+pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> String {
+    let matched = attributes
+        .get("str")
+        .map(|s| s.to_string_value())
+        .unwrap_or_default();
+    let mut out = format!("\u{FF62}{}\u{FF63}", matched);
+
+    // Flatten captures into (from, label, match-value) entries so a quantified
+    // capture contributes one entry per repetition, then order by match start
+    // position (named and positional interleave by position).
+    let mut entries: Vec<(i64, String, Value)> = Vec::new();
+    let push_capture = |label: &str, value: &Value, entries: &mut Vec<(i64, String, Value)>| {
+        match value {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Match" => {
+                entries.push((match_from(attributes), label.to_string(), value.clone()));
+            }
+            // Quantified capture: a list of Match values under one index.
+            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = item
+                        && class_name == "Match"
+                    {
+                        entries.push((match_from(attributes), label.to_string(), item.clone()));
+                    }
+                }
+            }
+            _ => {}
+        }
+    };
+
+    if let Some(Value::Array(list, _)) = attributes.get("list") {
+        for (i, cap) in list.iter().enumerate() {
+            push_capture(&i.to_string(), cap, &mut entries);
+        }
+    }
+    if let Some(Value::Hash(named)) = attributes.get("named") {
+        let mut keys: Vec<&String> = named.keys().collect();
+        keys.sort();
+        for k in keys {
+            if let Some(v) = named.get(k) {
+                push_capture(k, v, &mut entries);
+            }
+        }
+    }
+    entries.sort_by_key(|(from, _, _)| *from);
+
+    let indent = " ".repeat(depth + 1);
+    for (_, label, val) in entries {
+        if let Value::Instance { attributes, .. } = &val {
+            out.push_str(&format!(
+                "\n{}{} => {}",
+                indent,
+                label,
+                match_gist(attributes, depth + 1)
+            ));
+        }
+    }
+    out
+}
+
+/// The `from` (start offset) of a Match's attributes, or 0 when absent.
+fn match_from(attributes: &HashMap<String, Value>) -> i64 {
+    match attributes.get("from") {
+        Some(Value::Int(n)) => *n,
+        _ => 0,
     }
 }
 
