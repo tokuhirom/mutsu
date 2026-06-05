@@ -5,6 +5,19 @@ Tracking design for the highest-leverage VM-decoupling task
 so it is staged into small, individually-shippable slices. This file is the
 map; record each slice's before/after here.
 
+> **Correction (2026-06-05).** The slice notes below repeatedly cite
+> `t/wrap.t`, `t/placeholder.t`, and `t/tail-function.t` as "pre-existing"
+> failures used to validate "my change didn't break anything." That framing was
+> wrong: all three were **deterministic correctness bugs**, not flaky/pre-existing
+> noise, and have been fixed (#2629 closure-capture env writeback, #2630
+> scope-lost Seq iterator, #2632 missing `%_` placeholder capture). `t/wrap.t` in
+> particular was a real symptom of this very dual-store / closure-capture problem
+> (the interpreter `call_sub_value` overlaying + writing back a stale captured-env
+> snapshot). The lesson the slices half-learned — "diff the failure *set* before
+> blaming your change" — is right, but its converse also holds: a baseline
+> failure being stable does **not** make it acceptable; verify whether it is
+> deterministic and fix it. See CLAUDE.md "Triaging a suspected-flaky failure".
+
 ## The two stores today
 
 | store | shape | who reads/writes it |

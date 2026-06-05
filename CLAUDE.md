@@ -265,15 +265,24 @@ The goal is essential architectural improvement, not the appearance of progress 
 
 ## Known flaky tests
 
-Some tests are non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.
+Some tests are genuinely non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.
 
 - `roast/S17-supply/batch.t` and other `S17-supply/*` / `S17-*` concurrency tests — fail occasionally, pass on retry.
-- `t/lock.t`, `t/wrap.t` — lock contention / occasional `exit 255` timeout.
-- `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — CI-load-sensitive timeouts; pass reliably locally.
-
-Separately, these **consistently** fail on a clean `main` (pre-existing, NOT flaky — don't blame your change): `t/placeholder.t` (callable placeholder `&^cb()` + `@_/%_` capture), `t/tail-function.t` (`tail` PredictiveIterator count-only path).
+- `t/lock.t` — lock contention / occasional `exit 255` timeout.
+- `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — CI-load-sensitive **timeouts** (bad plan / `exit 255` with `Failed: 0`); pass reliably locally. A *concrete subtest* failure here is NOT load-related — see triage below.
 
 Also: before a local `make roast`, `rm -f temp-file-RT-126006-test` — a stale temp file left by an interrupted `roast/S32-io/spurt.t` makes that test abort with "cannot run test while file ... exists".
+
+### Triaging a suspected-flaky failure — don't mislabel a real bug
+
+"Flaky" is a claim about *non-determinism*; verify it before trusting it. A failure that reproduces every run is a real bug to fix, not noise to skip. `t/wrap.t`, `t/placeholder.t`, and `t/tail-function.t` sat here for months labeled "flaky / pre-existing" when all three were **deterministic correctness bugs** (closure-capture env writeback, scope-lost Seq iterator, missing `%_` placeholder capture — fixed in #2629 / #2630 / #2632). Before adding or trusting a flaky label:
+
+1. **Re-run the single file ~5× in a release build** (`cargo build --release && prove -e target/release/mutsu <file>`). Fails every time → deterministic → fix it, don't skip it.
+2. **Read the failure shape.** A *timeout* / `exit 255` with `Failed: 0` (bad plan, ran fewer than planned) is plausibly load/timing. A *concrete subtest* failure (`Failed: N`, a real `not ok` assertion) is almost always a logic bug — even on a "known flaky" file. Investigate the subtest.
+3. **debug vs release.** A debug-only timeout on a heavy test can be load; a failure that reproduces in *release* is real (CI uses release).
+4. Only label flaky if it actually **passes on retry**; note the pass/fail ratio when you do.
+
+Caveat: the `t/` TAP suite is **non-fatal** in CI (`prove ... t/ || echo "non-fatal; roast is authoritative"`), so a deterministic `t/` failure stays green in CI and can hide indefinitely. Don't rely on CI to surface `t/` regressions — check `tmp/make-test.log` locally.
 
 ## Delegate the full roast run to CI
 
