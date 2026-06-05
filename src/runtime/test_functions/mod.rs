@@ -128,6 +128,16 @@ impl Interpreter {
         self.test_state.is_some()
     }
 
+    /// True when a `Test` (or `Test::*`) module is loaded. This is the gate the
+    /// interpreter's `call_function_fallback` uses before dispatching a Test
+    /// function, so it is the correct precondition for the VM's native Test
+    /// dispatch too — unlike [`test_mode_active`], it is already true for the
+    /// very first test call (`plan`), before any `TestState` exists.
+    pub(crate) fn test_module_loaded(&self) -> bool {
+        self.loaded_modules.contains("Test")
+            || self.loaded_modules.iter().any(|m| m.starts_with("Test::"))
+    }
+
     /// Check if a name matches a known test function (Test or Test::Util).
     /// Used by the bare word resolver to dispatch zero-arg test function calls.
     pub(crate) fn is_test_function_name(name: &str) -> bool {

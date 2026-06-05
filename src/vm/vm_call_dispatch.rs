@@ -65,6 +65,10 @@ impl VM {
         {
             return self.compile_and_call_function_def(&def, args, compiled_fns);
         }
+        // Dispatch Test functions straight to their typed handler (lever A).
+        if let Some(result) = self.try_native_test_function(name, &args) {
+            return result;
+        }
         crate::vm::vm_stats::record_function_fallback(name);
         self.interpreter.call_function(name, args)
     }

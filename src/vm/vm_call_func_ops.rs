@@ -702,6 +702,9 @@ impl VM {
                 })
             {
                 self.compile_and_call_function_def(&def, args, compiled_fns)
+            } else if let Some(result) = self.try_native_test_function(name, &args) {
+                // Dispatch Test functions straight to their typed handler (lever A).
+                result
             } else {
                 // Sync VM locals to env before spawning threads so closures capture them
                 if name == "start" {

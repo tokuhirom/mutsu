@@ -52,6 +52,7 @@ mod vm_native_dispatch;
 mod vm_native_map;
 mod vm_native_sort;
 mod vm_native_subst;
+mod vm_native_test;
 mod vm_register_ops;
 mod vm_set_ops;
 pub(crate) mod vm_smart_match;
