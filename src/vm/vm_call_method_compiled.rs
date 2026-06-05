@@ -375,6 +375,10 @@ impl VM {
         if let Some(result) = self.try_native_subst(&target, method, &args) {
             return result;
         }
+        // Native `.sort` over a plain array with no/simple comparator (lever A).
+        if let Some(result) = self.try_native_sort(&target, method, &args) {
+            return result;
+        }
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
@@ -778,6 +782,10 @@ impl VM {
         }
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
         if let Some(result) = self.try_native_subst(&target, method, &args) {
+            return result;
+        }
+        // Native `.sort` over a plain array with no/simple comparator (lever A).
+        if let Some(result) = self.try_native_sort(&target, method, &args) {
             return result;
         }
         crate::vm::vm_stats::record_method_fallback(method);

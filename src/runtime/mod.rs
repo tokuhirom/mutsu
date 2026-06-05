@@ -158,7 +158,7 @@ mod methods;
 mod methods_call_helpers;
 mod methods_classhow;
 mod methods_collection;
-mod methods_collection_ops;
+pub(crate) mod methods_collection_ops;
 mod methods_dispatch_match;
 mod methods_dispatch_match2;
 mod methods_dispatch_match3;

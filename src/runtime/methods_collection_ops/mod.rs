@@ -5,7 +5,7 @@ mod grep;
 mod minmax_extrema;
 mod socket_inet_proc;
 mod socket_thread;
-mod sort;
+pub(crate) mod sort;
 mod tail_rotate;
 mod unique_squish;
 
