@@ -75,23 +75,32 @@ impl VM {
         args: Vec<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
-        self.call_compiled_closure_with_topic(data, cc, args, None, compiled_fns)
+        self.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns)
     }
 
-    /// Like [`Self::call_compiled_closure`] but with an optional explicit topic.
+    /// Like [`Self::call_compiled_closure`] but with an optional explicit topic
+    /// and optional rw-topic capture, both used by the native `.map` loop.
     ///
-    /// `explicit_topic` is used by the native `.map` loop for Pair-shaped source
-    /// elements: a positional `Pair` passed to the general call machinery is
-    /// bound as a *named* argument (and skipped when setting the implicit `$_`),
-    /// so the block would see no topic. When `Some`, the topic `$_` (and a lone
-    /// positional param) is force-bound to the element value regardless of its
-    /// pair-ness, matching the interpreter's `eval_map_over_items`.
+    /// `explicit_topic`: for Pair-shaped source elements, a positional `Pair`
+    /// passed to the general call machinery is bound as a *named* argument (and
+    /// skipped when setting the implicit `$_`), so the block would see no topic.
+    /// When `Some`, the topic `$_` (and a lone positional param) is force-bound to
+    /// the element value regardless of its pair-ness.
+    ///
+    /// `capture_rw_topic`: when true, the block's final `$_` value is stashed in
+    /// `self.rw_map_topic_capture` (read from the live frame just after the body
+    /// runs, before the frame is popped) so the native map loop can implement
+    /// Raku's rw binding — `@a.map({ $_++ })` mutates `@a`. This captures the
+    /// topic value directly rather than relying on the `__mutsu_rw_map_topic__`
+    /// signal, so it also covers `$_++`/`$_--` (which the interpreter's
+    /// signal-based writeback misses).
     pub(super) fn call_compiled_closure_with_topic(
         &mut self,
         data: &crate::value::SubData,
         cc: &CompiledCode,
         args: Vec<Value>,
         explicit_topic: Option<Value>,
+        capture_rw_topic: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         let (mut args, callsite_line) = self.interpreter.sanitize_call_args(&args);
@@ -153,6 +162,7 @@ impl VM {
                     cc,
                     threaded_args,
                     explicit_topic.clone(),
+                    capture_rw_topic,
                     compiled_fns,
                 )?);
             }
@@ -536,6 +546,27 @@ impl VM {
         };
 
         self.stack.truncate(saved_stack_depth);
+
+        // Capture the block's final `$_` for the native rw-`.map` writeback. Read
+        // it here — right after the body ran, before the env/locals re-sync below
+        // and the frame pop — so `$_++`/`$_=`/`s///` mutations are visible. The
+        // local slot is authoritative when `$_` compiled to a local; otherwise the
+        // env carries it (SetGlobal `_` / the `__mutsu_rw_map_topic__` signal).
+        if capture_rw_topic {
+            let local_topic = cc
+                .locals
+                .iter()
+                .position(|n| n == "_")
+                .map(|i| self.locals[i].clone());
+            self.rw_map_topic_capture = local_topic
+                .or_else(|| self.interpreter.env().get("_").cloned())
+                .or_else(|| {
+                    self.interpreter
+                        .env()
+                        .get("__mutsu_rw_map_topic__")
+                        .cloned()
+                });
+        }
 
         // Sync state variables back using scoped keys
         for (slot, key) in &cc.state_locals {

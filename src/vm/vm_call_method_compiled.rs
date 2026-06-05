@@ -367,8 +367,10 @@ impl VM {
             }
         }
         // Native `.map` / `.grep` over a concrete array with a simple block: run
-        // the iteration loop in the VM instead of the interpreter (lever A).
-        if let Some(result) = self.try_native_array_map(&target, method, &args) {
+        // the iteration loop in the VM instead of the interpreter (lever A). No
+        // `target_name` here (the receiver is a value, not a mutable variable),
+        // so `$_`-mutating blocks fall back to the interpreter.
+        if let Some(result) = self.try_native_array_map(None, &target, method, &args) {
             return result;
         }
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
@@ -777,7 +779,9 @@ impl VM {
             }
         }
         // Native `.map` / `.grep` over a concrete array with a simple block (lever A).
-        if let Some(result) = self.try_native_array_map(&target, method, &args) {
+        // `target_name` is the receiver variable, enabling rw-binding writeback
+        // for `$_`-mutating blocks (`@a.map({ $_++ })` mutates `@a`).
+        if let Some(result) = self.try_native_array_map(Some(target_name), &target, method, &args) {
             return result;
         }
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
