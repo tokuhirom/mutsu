@@ -475,9 +475,7 @@ pub(super) fn dispatch(
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Match" => {
-                        crate::runtime::utils::match_gist(attributes, 0)
-                    }
+                    } if class_name == "Match" => crate::runtime::utils::match_gist(attributes, 0),
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
@@ -533,9 +531,7 @@ pub(super) fn dispatch(
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Match" => {
-                        crate::runtime::utils::match_gist(attributes, 0)
-                    }
+                    } if class_name == "Match" => crate::runtime::utils::match_gist(attributes, 0),
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
