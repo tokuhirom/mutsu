@@ -497,6 +497,15 @@ impl VM {
                 (name.clone(), val, was_readonly, sigilless_ro)
             })
             .collect();
+        // Save the single named loop param (`for ... -> $x`) too, so a loop in a
+        // called sub that reuses the same variable name does not clobber an outer
+        // loop's binding of that name (the env keys these by bare name). Skip
+        // `@`/`%` sigils, which bind a shared mutable container the body may
+        // legitimately reassign, and skip the rw case (handled via writeback).
+        let saved_param: Option<(String, Option<Value>)> = param_name
+            .as_ref()
+            .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
+            .map(|name| (name.clone(), self.interpreter.env().get(name).cloned()));
         // Determine if the implicit topic ($_) should be read-only.
         // Only mark $_ readonly when iterating over a known immutable collection
         // (Mix, Set, Bag). This blocks `.value = ...` mutations on pairs from
@@ -890,6 +899,17 @@ impl VM {
                 self.interpreter.env_mut().insert(sigilless_key, ro_val);
             } else {
                 self.interpreter.env_mut().remove(&sigilless_key);
+            }
+        }
+        // Restore the single named loop param's prior binding.
+        if let Some((name, saved_val)) = saved_param {
+            match saved_val {
+                Some(v) => {
+                    self.interpreter.env_mut().insert(name, v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove(&name);
+                }
             }
         }
         self.topic_source_var = saved_topic_source;

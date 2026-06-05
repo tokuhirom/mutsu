@@ -586,6 +586,22 @@ impl VM {
                 "X::LibEmpty: Repository specification can not be an empty string",
             ));
         }
+        // An `inst#PREFIX` spec selects a CompUnit::Repository::Installation as
+        // the current `$*REPO`, chained in front of whatever was there before.
+        if let Some(prefix) = path.strip_prefix("inst#") {
+            let prev = self
+                .interpreter
+                .env()
+                .get("*REPO")
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
+            attrs.insert("next-repo".to_string(), prev);
+            let repo =
+                Value::make_instance(Symbol::intern("CompUnit::Repository::Installation"), attrs);
+            self.interpreter.env_mut().insert("*REPO".to_string(), repo);
+        }
         self.interpreter.add_lib_path(path);
         Ok(())
     }

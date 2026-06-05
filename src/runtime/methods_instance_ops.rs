@@ -518,22 +518,40 @@ impl Interpreter {
             }
             if class_name == "CompUnit" {
                 match method {
+                    "short-name" => {
+                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                    }
+                    "name" => {
+                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                    }
+                    "version" => {
+                        return Ok(attributes.get("version").cloned().unwrap_or(Value::Nil));
+                    }
                     // Rakudo exposes a handle object that can answer .globalish-package.
-                    // For mutsu, the current process-global stash models this behavior.
+                    // For mutsu, the handle carries the symbols this CompUnit loaded so
+                    // they can later be merged into GLOBAL via `merge-symbols`.
                     "handle" => {
+                        let mut handle_attrs = HashMap::new();
+                        if let Some(syms) = attributes.get("globalish-symbols") {
+                            handle_attrs.insert("globalish-symbols".to_string(), syms.clone());
+                        }
                         return Ok(Value::make_instance(
                             Symbol::intern("CompUnit::Handle"),
-                            HashMap::new(),
+                            handle_attrs,
                         ));
                     }
                     "globalish-package" => {
-                        return Ok(Value::Package(Symbol::intern("GLOBAL")));
+                        return Ok(self.make_globalish_package(attributes.get("globalish-symbols")));
                     }
                     _ => {}
                 }
             }
             if class_name == "CompUnit::Handle" && method == "globalish-package" {
-                return Ok(Value::Package(Symbol::intern("GLOBAL")));
+                return Ok(self.make_globalish_package(attributes.get("globalish-symbols")));
+            }
+            if class_name == "Stash" && method == "merge-symbols" {
+                let pkg = args.first().cloned().unwrap_or(Value::Nil);
+                return Ok(self.merge_global_symbols(&pkg));
             }
             if method == "can" {
                 let method_name = args
