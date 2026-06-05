@@ -151,6 +151,14 @@ impl Interpreter {
                 }
             }
             "IO" if args.is_empty() => {
+                // `.IO` on an IO::Path (sub)class type object returns the type
+                // object itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
+                if let Value::Package(name) = &target {
+                    let n = name.resolve();
+                    if n == "IO::Path" || n.starts_with("IO::Path::") {
+                        return Some(Ok(target.clone()));
+                    }
+                }
                 let s = target.to_string_value();
                 if s.contains('\0') {
                     return Some(Err(RuntimeError::new(

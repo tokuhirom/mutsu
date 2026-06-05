@@ -850,10 +850,39 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
         let target_buf = self.resolve_path(&target);
         let link_buf = self.resolve_path(&link);
-        fs::hard_link(&target_buf, &link_buf).map_err(|err| {
-            RuntimeError::new(format!("Failed to create link '{}': {}", target, err))
-        })?;
-        Ok(Value::Bool(true))
+        // Creates a new hard link `$link` pointing at `$target`. On failure
+        // (target missing, link already exists, ...) Raku returns a Failure
+        // carrying X::IO::Link rather than throwing immediately.
+        match fs::hard_link(&target_buf, &link_buf) {
+            Ok(()) => Ok(Value::Bool(true)),
+            Err(err) => Ok(Self::make_link_failure(&target, &link, &err)),
+        }
+    }
+
+    pub(super) fn make_link_failure(target: &str, link: &str, err: &std::io::Error) -> Value {
+        use crate::symbol::Symbol;
+        let msg = format!(
+            "Failed to create hard link '{}' for target '{}': {}",
+            link, target, err
+        );
+        let target_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
+            let mut a = std::collections::HashMap::new();
+            a.insert("path".to_string(), Value::str_from(target));
+            a
+        });
+        let name_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
+            let mut a = std::collections::HashMap::new();
+            a.insert("path".to_string(), Value::str_from(link));
+            a
+        });
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg));
+        attrs.insert("target".to_string(), target_io);
+        attrs.insert("name".to_string(), name_io);
+        let ex = Value::make_instance(Symbol::intern("X::IO::Link"), attrs);
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     pub(super) fn builtin_symlink(&self, args: &[Value]) -> Result<Value, RuntimeError> {

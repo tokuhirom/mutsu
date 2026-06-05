@@ -1824,6 +1824,7 @@ impl Interpreter {
                     "pred",
                     "CWD",
                     "SPEC",
+                    "link",
                 ]
                 .iter()
                 .map(|s| s.to_string())

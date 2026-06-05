@@ -614,10 +614,12 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Path" => attributes
-                .get("path")
-                .map(|v: &Value| v.to_string_value())
-                .unwrap_or_else(|| format!("{}()", class_name)),
+            } if class_name == "IO::Path" || class_name.resolve().starts_with("IO::Path::") => {
+                attributes
+                    .get("path")
+                    .map(|v: &Value| v.to_string_value())
+                    .unwrap_or_else(|| format!("{}()", class_name))
+            }
             Value::Instance {
                 class_name,
                 attributes,

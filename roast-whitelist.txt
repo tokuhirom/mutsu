@@ -1004,6 +1004,7 @@ roast/S32-io/IO-Socket-INET-UNIX.t
 roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/chdir.t
+roast/S32-io/child-secure.t
 roast/S32-io/copy.t
 roast/S32-io/dir.t
 roast/S32-io/indir.t
