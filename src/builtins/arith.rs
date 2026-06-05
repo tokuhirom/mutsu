@@ -225,6 +225,67 @@ fn instance_duration_value(value: &Value) -> Option<f64> {
     }
 }
 
+/// Return the raw stored `value` of a Duration instance (a Rational), if any.
+fn instance_duration_raw_value(value: &Value) -> Option<Value> {
+    match value {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Duration" => attributes.get("value").cloned(),
+        _ => None,
+    }
+}
+
+/// Coerce a Real value to a Rational, matching Rakudo's Duration which always
+/// stores its seconds as a Rat. Integers become exact Rats; existing rationals
+/// are kept; Inf/NaN map to the degenerate Rats `1/0`/`0/0`; floats use the
+/// standard epsilon conversion.
+pub(crate) fn real_to_rat(v: &Value) -> Value {
+    match v {
+        Value::Rat(..) | Value::BigRat(..) | Value::FatRat(..) => v.clone(),
+        Value::Int(i) => crate::value::make_rat(*i, 1),
+        Value::Bool(b) => crate::value::make_rat(*b as i64, 1),
+        // Preserve large integers exactly as a (big) Rat with denominator 1.
+        Value::BigInt(b) => crate::value::make_big_rat_arith((**b).clone(), NumBigInt::from(1)),
+        Value::Num(f) => {
+            if f.is_nan() {
+                Value::Rat(0, 0)
+            } else if f.is_infinite() {
+                if *f > 0.0 {
+                    Value::Rat(1, 0)
+                } else {
+                    Value::Rat(-1, 0)
+                }
+            } else {
+                crate::builtins::num_to_rat_with_epsilon(*f, 1e-6)
+            }
+        }
+        // Anything else (e.g. Str, allomorphs): fall back through f64.
+        _ => {
+            let f = runtime::to_float_value(v).unwrap_or(0.0);
+            if f.is_nan() {
+                Value::Rat(0, 0)
+            } else if f.is_infinite() {
+                if f > 0.0 {
+                    Value::Rat(1, 0)
+                } else {
+                    Value::Rat(-1, 0)
+                }
+            } else {
+                crate::builtins::num_to_rat_with_epsilon(f, 1e-6)
+            }
+        }
+    }
+}
+
+/// Build a Duration instance storing the given (already Rational) value.
+fn make_duration_from_value(val: Value) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("value".to_string(), val);
+    Value::make_instance(Symbol::intern("Duration"), attrs)
+}
+
 fn instance_datetime_parts(value: &Value) -> Option<(i64, i64, i64, i64, i64, f64, i64)> {
     match value {
         Value::Instance { attributes, .. }
@@ -1008,14 +1069,15 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
-    if let Some(dur) = instance_duration_value(&left)
+    if let Some(raw) = instance_duration_raw_value(&left)
         && right.is_numeric()
     {
-        let rhs = runtime::to_float_value(&right).unwrap_or(0.0);
-        if rhs == 0.0 {
-            return Err(RuntimeError::numeric_divide_by_zero());
-        }
-        return Ok(make_duration(dur.rem_euclid(rhs)));
+        // Duration % Real => Duration. Compute with exact rational arithmetic
+        // (the same code path as a plain modulo) so the result is eqv to
+        // Duration.new($seconds % $real). arith_mod throws X::Numeric::DivideByZero
+        // when the divisor is zero.
+        let modded = arith_mod(real_to_rat(&raw), right)?;
+        return Ok(make_duration_from_value(real_to_rat(&modded)));
     }
     let (mut l, mut r) = runtime::coerce_numeric(left, right);
     // Mixed Num/Rat modulo should use floating semantics; routing through
@@ -1036,70 +1098,38 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
     {
         l = Value::Num(runtime::to_float_value(&l).unwrap_or(f64::NAN));
     }
-    if let (Some((an, ad)), Some((bn, bd))) = (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
+    // Exact rational modulo (divisor-sign semantics) via big-rational parts so
+    // that large operands such as `(7/1) % (2**66)` are handled exactly instead
+    // of falling through to a 0 result.
+    let l_is_rat = matches!(
+        l,
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+    );
+    let r_is_rat = matches!(
+        r,
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+    );
+    if (l_is_rat || r_is_rat)
+        && let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
     {
-        if matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
-            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _))
-        {
-            if bn == 0 {
-                return Err(RuntimeError::numeric_divide_by_zero());
-            }
-            // Rational modulo with divisor-sign semantics.
-            let num = num_integer::Integer::mod_floor(&(an * bd), &(ad * bn));
-            let den = ad * bd;
-            let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
-            Ok(if has_fat_rat {
-                make_fat_rat(num, den)
-            } else {
-                crate::value::make_rat(num, den)
-            })
-        } else {
-            Ok(match (l, r) {
-                (Value::Int(_), Value::Int(0)) => {
-                    return Err(RuntimeError::numeric_divide_by_zero());
-                }
-                (Value::BigInt(_), Value::Int(0)) => {
-                    return Err(RuntimeError::numeric_divide_by_zero());
-                }
-                (Value::Int(_), Value::BigInt(b)) if b.is_zero() => {
-                    return Err(RuntimeError::numeric_divide_by_zero());
-                }
-                (Value::BigInt(_), Value::BigInt(b)) if b.is_zero() => {
-                    return Err(RuntimeError::numeric_divide_by_zero());
-                }
-                (Value::Int(a), Value::Int(b)) => {
-                    Value::Int(num_integer::Integer::mod_floor(&a, &b))
-                }
-                (Value::BigInt(a), Value::Int(b)) => {
-                    let bb = num_bigint::BigInt::from(b);
-                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))
-                }
-                (Value::Int(a), Value::BigInt(b)) => {
-                    let aa = num_bigint::BigInt::from(a);
-                    Value::from_bigint(num_integer::Integer::mod_floor(&aa, b.as_ref()))
-                }
-                (Value::BigInt(a), Value::BigInt(b)) => {
-                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
-                }
-                (Value::Num(a), Value::Num(0.0)) => {
-                    return Ok(RuntimeError::divide_by_zero_failure(
-                        Some(Value::Num(a)),
-                        Some("%"),
-                    ));
-                }
-                (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
-                (ref lv, Value::Num(0.0)) => {
-                    return Ok(RuntimeError::divide_by_zero_failure(
-                        Some(lv.clone()),
-                        Some("%"),
-                    ));
-                }
-                (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
-                (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
-                _ => Value::Int(0),
-            })
+        if bn.is_zero() {
+            return Err(RuntimeError::numeric_divide_by_zero());
         }
-    } else {
+        let num = num_integer::Integer::mod_floor(&(&an * &bd), &(&ad * &bn));
+        let den = &ad * &bd;
+        let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
+        return Ok(if has_fat_rat {
+            // FatRat % ... stays a FatRat. make_big_fat_rat normalizes small
+            // results down to Rat, so re-tag those as FatRat.
+            match crate::value::make_big_fat_rat(num, den) {
+                Value::Rat(n, d) => Value::FatRat(n, d),
+                other => other,
+            }
+        } else {
+            crate::value::make_big_rat_arith(num, den)
+        });
+    }
+    {
         Ok(match (l, r) {
             (Value::Int(_), Value::Int(0)) => {
                 return Err(RuntimeError::numeric_divide_by_zero());

@@ -650,6 +650,10 @@ impl Value {
                     | Value::FatRat(_, _)
                     | Value::BigRat(_, _)
             ),
+            "Rational" => matches!(
+                self,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            ),
             "Dateish" => matches!(
                 self,
                 Value::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"

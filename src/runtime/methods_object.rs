@@ -1089,6 +1089,9 @@ impl Interpreter {
                     } else {
                         0.0
                     };
+                    // Duration stores its seconds as a Rational (matching Rakudo,
+                    // where Duration.new(...).tai is always a Rat). Infinite/NaN
+                    // arguments map to the degenerate Rats 1/0 / -1/0 / 0/0.
                     let val = if secs.is_infinite() {
                         if secs > 0.0 {
                             Value::Rat(1, 0)
@@ -1098,7 +1101,10 @@ impl Interpreter {
                     } else if secs.is_nan() {
                         Value::Rat(0, 0)
                     } else {
-                        Value::Num(secs)
+                        match args.first() {
+                            Some(v) => crate::builtins::arith::real_to_rat(v),
+                            None => crate::value::make_rat(0, 1),
+                        }
                     };
                     let mut attrs = HashMap::new();
                     attrs.insert("value".to_string(), val);

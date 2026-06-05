@@ -318,6 +318,11 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // Duration % Real => Duration. Handle before numeric coercion strips
+            // the Duration wrapper down to a bare number.
+            if crate::builtins::arith::is_temporal_operand(&l) {
+                return crate::builtins::arith_mod(l, r);
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             crate::builtins::arith_mod(l, r)
         })?;

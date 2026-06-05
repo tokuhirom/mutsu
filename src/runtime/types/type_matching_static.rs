@@ -115,6 +115,10 @@ impl Interpreter {
         {
             return true;
         }
+        // Rational role: Rat and FatRat do Rational[Int,Int]
+        if constraint == "Rational" && matches!(value_type, "Rat" | "FatRat") {
+            return true;
+        }
         // Native integer/num types do Real and Numeric
         if constraint == "Real"
             && (crate::runtime::native_types::is_native_int_type(value_type)
