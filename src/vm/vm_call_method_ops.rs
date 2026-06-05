@@ -130,6 +130,10 @@ impl VM {
         if self.locals_dirty {
             self.ensure_env_synced(code);
         }
+        // Method dispatch may capture the env into a Sub / closure or run an
+        // interpreter fallback that iterates it; a transient scoped overlay env
+        // must be collapsed to a flat env first so the full lexical view is seen.
+        self.flatten_scoped_env();
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.interpreter
             .set_pending_call_arg_sources(arg_sources.clone());

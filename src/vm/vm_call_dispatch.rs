@@ -455,7 +455,27 @@ impl VM {
         // raises the refcount and triggers O(env_size) deep clones on
         // any env write inside the function body (e.g. `$ = expr`).
         let has_locals = !cf.code.locals.is_empty();
-        let saved_env = if has_locals {
+        // Scoped-overlay pilot (docs/vm-dual-store.md Slice 6): instead of cloning
+        // the whole caller env and merging non-local writes back with an
+        // O(full-env) scan, install an empty scoped overlay over the caller. The
+        // callee's writes accumulate in the overlay; on return we merge the
+        // *overlay only* (the callee's actual writes) back, and discard
+        // callee-local writes for free. Gated to bodies that never capture or
+        // iterate the env for a full lexical view: no inner subs (no
+        // closure/thread/block creation) and no reflective by-name access
+        // (EVAL / CALLER:: / symbolic deref / pseudo-stash).
+        let use_scoped =
+            has_locals && !cf.has_inner_subs && !crate::opcode::reflective_name_access_possible();
+        let caller_env: Option<Env> = if use_scoped {
+            // Flatten first so the parent tier holds the full lexical view even
+            // when the caller is itself a scoped frame (nested fast calls).
+            let parent_overlay = self.interpreter.env().flattened().overlay_arc();
+            let scoped = crate::env::Env::scoped_child(parent_overlay);
+            Some(std::mem::replace(self.interpreter.env_mut(), scoped))
+        } else {
+            None
+        };
+        let saved_env = if !use_scoped && has_locals {
             crate::vm::vm_stats::record_clone_env();
             Some(self.interpreter.clone_env())
         } else {
@@ -578,7 +598,34 @@ impl VM {
         // When has_locals is false, saved_env is None and no restore is needed
         // (functions without locals cannot leak local variables into the
         // caller's env — any env writes they do are intentional global state).
-        if let Some(saved_env) = saved_env {
+        if let Some(caller_env) = caller_env {
+            // Scoped path: restore the caller env, then merge the callee's
+            // overlay (its own writes only) back, dropping callee-local writes.
+            let local_names: std::collections::HashSet<&str> =
+                if let Some(ref declared) = cf.declared_locals {
+                    declared.iter().map(|s| s.as_str()).collect()
+                } else {
+                    cf.code.locals.iter().map(|s| s.as_str()).collect()
+                };
+            let scoped = std::mem::replace(self.interpreter.env_mut(), caller_env);
+            let mut changed = false;
+            for (k, v) in scoped.overlay_iter() {
+                // The callee's private topic / arg array / routine-id must not
+                // leak to the caller (the caller env already holds its own).
+                if *k == "_" || *k == "@_" || *k == "%_" || *k == "__mutsu_callable_id" {
+                    continue;
+                }
+                if !k.with_str(|s| local_names.contains(s)) {
+                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                    changed = true;
+                }
+            }
+            // Mark env dirty so the caller re-syncs locals when a captured outer
+            // variable was modified (e.g. $a++ where $a is from the caller scope).
+            if changed {
+                self.env_dirty = true;
+            }
+        } else if let Some(saved_env) = saved_env {
             if saved_env.ptr_eq(self.interpreter.env()) {
                 // No env changes, nothing to merge
             } else {
@@ -604,8 +651,11 @@ impl VM {
             }
         }
 
-        // Restore caller's $_ after routine call.
-        if cf.code.is_routine {
+        // Restore caller's $_ after routine call. In the scoped path the caller
+        // env already retains its own `_` (the callee's `_` lived in the dropped
+        // overlay and is skipped by the merge above), so this only runs for the
+        // non-scoped clone path.
+        if cf.code.is_routine && !use_scoped {
             match saved_topic {
                 Some(v) => {
                     self.interpreter.env_mut().insert("_".to_string(), v);

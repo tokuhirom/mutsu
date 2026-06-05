@@ -88,16 +88,85 @@ fn note_closure_meta_key(key: &str) {
 #[derive(Clone)]
 pub struct Env {
     inner: Arc<HashMap<Symbol, Value>>,
+    /// Optional read-through "parent" tier: a snapshot of an enclosing call
+    /// frame's overlay. When present (a *scoped* env), name lookups fall through
+    /// overlay -> parent -> [`GLOBAL_BASE`], but `insert`/`remove`/`get_mut` and
+    /// iteration (`iter`/`keys`/`values`/`len`) operate on the overlay only.
+    ///
+    /// `parent=None` is the flat env: byte-identical to the pre-scoped behavior,
+    /// so every non-converted dispatch path and the ~80 env-iteration consumers
+    /// are unaffected. A scoped env is transient -- it is only ever the live
+    /// `self.env` during a converted call frame's own opcode execution; anything
+    /// that captures/clones the env across a boundary (`clone_env`,
+    /// `clone_for_thread`) flattens it first via [`Env::flattened`]. See
+    /// docs/vm-dual-store.md (Slice 6).
+    parent: Option<Arc<HashMap<Symbol, Value>>>,
 }
 
 impl Env {
     pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(HashMap::new()),
+            parent: None,
         }
     }
 
-    /// Check whether two `Env` values point to the same underlying HashMap.
+    /// Create a *scoped child* env: an empty overlay that reads through to
+    /// `parent_overlay` (the caller frame's overlay snapshot) and then to
+    /// [`GLOBAL_BASE`]. Writes land in the (initially empty) overlay, so the
+    /// inherited entries are never `make_mut`-deep-copied. See docs/vm-dual-store.md.
+    pub(crate) fn scoped_child(parent_overlay: Arc<HashMap<Symbol, Value>>) -> Self {
+        Self {
+            inner: Arc::new(HashMap::new()),
+            parent: Some(parent_overlay),
+        }
+    }
+
+    /// True if this env has a parent tier (i.e. it is a scoped child).
+    #[inline(always)]
+    pub(crate) fn is_scoped(&self) -> bool {
+        self.parent.is_some()
+    }
+
+    /// O(1) handle to the overlay Arc, for installing a scoped child over it.
+    #[inline(always)]
+    pub(crate) fn overlay_arc(&self) -> Arc<HashMap<Symbol, Value>> {
+        Arc::clone(&self.inner)
+    }
+
+    /// Collapse a scoped env into a flat (`parent=None`) env. For a flat env
+    /// this is the O(1) `Arc` clone; for a scoped env it materializes
+    /// `parent` merged under `overlay` (overlay shadows parent) into a fresh flat
+    /// overlay. The base tier is never materialized (it stays shared). Used at
+    /// every boundary that captures/clones the env so no full-view iteration
+    /// consumer is starved of parent lexicals.
+    pub(crate) fn flattened(&self) -> Self {
+        match &self.parent {
+            None => self.clone(),
+            Some(parent) => {
+                let mut merged: HashMap<Symbol, Value> = (**parent).clone();
+                for (k, v) in self.inner.iter() {
+                    merged.insert(*k, v.clone());
+                }
+                Self {
+                    inner: Arc::new(merged),
+                    parent: None,
+                }
+            }
+        }
+    }
+
+    /// Overlay-only iterator: yields exactly this frame's own writes (the
+    /// callee's overlay), excluding parent and base tiers. This is what a
+    /// merge-back wants -- the keys the callee actually wrote.
+    pub(crate) fn overlay_iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
+        self.inner.iter()
+    }
+
+    /// Check whether two `Env` values point to the same underlying overlay map.
+    /// Note: this compares the overlay only; two scoped envs sharing an overlay
+    /// but differing in parent would compare equal (callers that rely on ptr_eq
+    /// to detect "no writes happened" only ever use it on flat envs).
     #[allow(dead_code)]
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
@@ -113,6 +182,11 @@ impl Env {
         if let Some(v) = self.inner.get(&key) {
             return Some(v);
         }
+        if let Some(parent) = &self.parent
+            && let Some(v) = parent.get(&key)
+        {
+            return Some(v);
+        }
         global_base().and_then(|b| b.get(&key))
     }
 
@@ -123,7 +197,9 @@ impl Env {
 
     #[inline]
     pub fn contains_key_sym(&self, key: Symbol) -> bool {
-        self.inner.contains_key(&key) || global_base().is_some_and(|b| b.contains_key(&key))
+        self.inner.contains_key(&key)
+            || self.parent.as_ref().is_some_and(|p| p.contains_key(&key))
+            || global_base().is_some_and(|b| b.contains_key(&key))
     }
 
     /// Copy-on-write access to the inner map for mutation. Equivalent to
@@ -164,14 +240,20 @@ impl Env {
     }
 
     pub fn get_mut_sym(&mut self, key: Symbol) -> Option<&mut Value> {
-        // Promote a base-only key into the overlay before handing out a mutable
-        // reference, so in-place mutation of a built-in constant (rare) is not
-        // silently lost. Common case (overlay hit, or absent) pays nothing extra.
-        if !self.inner.contains_key(&key)
-            && let Some(v) = global_base().and_then(|b| b.get(&key))
-        {
-            let v = v.clone();
-            self.cow_mut().insert(key, v);
+        // Promote a parent-tier or base-only key into the overlay before handing
+        // out a mutable reference, so a write to a caller lexical (scoped env) or
+        // a built-in constant lands in this frame's overlay and is not silently
+        // lost. Common case (overlay hit, or absent) pays nothing extra.
+        if !self.inner.contains_key(&key) {
+            let promote = self
+                .parent
+                .as_ref()
+                .and_then(|p| p.get(&key))
+                .or_else(|| global_base().and_then(|b| b.get(&key)))
+                .cloned();
+            if let Some(v) = promote {
+                self.cow_mut().insert(key, v);
+            }
         }
         self.cow_mut().get_mut(&key)
     }
@@ -207,6 +289,11 @@ impl Env {
         let mut out: HashMap<String, Value> = global_base()
             .map(|b| b.iter().map(|(k, v)| (k.resolve(), v.clone())).collect())
             .unwrap_or_default();
+        if let Some(parent) = &self.parent {
+            for (k, v) in parent.iter() {
+                out.insert(k.resolve(), v.clone());
+            }
+        }
         for (k, v) in self.inner.iter() {
             out.insert(k.resolve(), v.clone());
         }
@@ -271,6 +358,7 @@ impl From<HashMap<String, Value>> for Env {
             .collect();
         Self {
             inner: Arc::new(sym_map),
+            parent: None,
         }
     }
 }
@@ -279,6 +367,7 @@ impl From<HashMap<Symbol, Value>> for Env {
     fn from(map: HashMap<Symbol, Value>) -> Self {
         Self {
             inner: Arc::new(map),
+            parent: None,
         }
     }
 }

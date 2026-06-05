@@ -544,6 +544,63 @@ Reaching that requires, roughly in order:
       callee's writes never pollute the caller's `env` and the bidirectional sync
       disappears. That is the larger structural change these steps set up.
 
+  - [~] **Slice 6 — scoped/overlay `Env` primitive + fast-path pilot (collapse proper).**
+        In progress.
+
+        **The structural debt.** Every compiled call still saves the caller env
+        (`clone_env`, an Arc bump), lets the callee mutate `self.env` *in place*,
+        then on return runs an **O(full-env) merge loop** that re-inserts every
+        non-declared-local key back into the caller (e.g.
+        `call_compiled_function_fast` vm_call_dispatch.rs ~594, the named path
+        ~1746). The flat single-tier env means callee-local writes and
+        caller-escaping writes are indistinguishable structurally, so the merge
+        must scan the whole env and filter by name.
+
+        **The design — a third overlay tier on `Env`.** `Env` gains
+        `parent: Option<Arc<HashMap<Symbol,Value>>>` (a read-through snapshot of the
+        caller's overlay), giving a 3-tier lookup: **overlay → parent →
+        GLOBAL_BASE**. `parent=None` is byte-identical to today, so all ~80 env
+        iteration consumers and every non-converted dispatch path are untouched
+        (zero blast radius). Invariants:
+        - `insert` / `remove` / `get_mut` target the **overlay only** (callee scope).
+          `get_mut` promotes a parent/base key into the overlay before handing out
+          `&mut` (COW), so a write to a caller lexical lands in the overlay.
+        - `get` / `contains_key` fall through overlay → parent → base.
+        - `iter` / `keys` / `values` / `len` stay **overlay-only** — they now yield
+          exactly the callee's own writes, which is precisely what the merge wants.
+
+        With this, a scoped call frame installs an *empty* overlay over the caller's
+        Arc (no `make_mut` of the inherited ~30 entries), the callee's writes
+        accumulate in the overlay, and on return the merge iterates the **overlay
+        only** (O(callee-writes), not O(full-env)); callee-local writes are dropped
+        for free by discarding the overlay. Escaping writes (to a caller lexical)
+        were promoted into the overlay on first write, so the merge sees and
+        propagates them. The chain composes across nested calls: a write to a
+        grandparent lexical is promoted into the current overlay, propagated one
+        level on return, and so on.
+
+        **Safety invariant — scoped env is transient.** A `parent=Some` env is only
+        ever the live `self.env` during the converted frame's *own* opcode execution
+        between calls. Anything that **captures or clones** the env across a
+        boundary — `clone_env()` (nested call / block entry / frame save) and
+        `clone_for_thread` (which iterates the env overlay-only to seed
+        `shared_vars`) — flattens the scoped env into a flat (`parent=None`) env
+        first, so no full-view iteration consumer can be starved of parent
+        lexicals. The converted frame's own direct execution never iterates the env
+        for a full lexical view (the merge wants overlay-only), and the pilot path
+        is gated to exclude reflective/iterating bodies.
+
+        **Pilot (this slice): `call_compiled_function_fast`.** The zero-arg
+        compiled-helper path (`is_fast_call_eligible`: no params/param_defs/return
+        type) currently does the `clone_env` + O(full-env) merge when it has locals.
+        Convert it to install a scoped overlay and merge overlay-only, gated on
+        `!cf.has_inner_subs && !reflective_name_access_possible()` so no
+        closure/thread/EVAL/symbolic-deref body runs under the scoped env. The
+        caller's `$_` / `@_` / `%_` and `__mutsu_callable_id` are skipped by the
+        merge (the caller env retains them), replacing the explicit `saved_topic`
+        dance. Next slices: the named path merge, then method/closure/gather, then
+        drop dirty tracking.
+
   - [ ] **Slice 5 (original design notes — superseded by the step above).**
 
       **The waste, measured.** `bench-fib` does **0 % function/method fallback**

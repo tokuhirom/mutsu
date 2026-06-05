@@ -4228,9 +4228,14 @@ impl Interpreter {
         self.env.insert(key, value);
     }
 
-    /// O(1) clone of the env (just Arc::clone).
+    /// Clone the env for capture across a call/block/thread boundary. For a flat
+    /// env this is the O(1) `Arc::clone`; for a *scoped* env (a converted call
+    /// frame's transient overlay-over-parent) it flattens parent+overlay into a
+    /// flat env so the captured copy exposes the full lexical view to consumers
+    /// that iterate it overlay-only (nested call merges, `clone_for_thread`). See
+    /// docs/vm-dual-store.md (Slice 6).
     pub(crate) fn clone_env(&self) -> Env {
-        self.env.clone()
+        self.env.flattened()
     }
 
     /// Replace the entire env.

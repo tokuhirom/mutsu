@@ -14,10 +14,27 @@ impl VM {
         }
     }
 
+    /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
+    /// currently a scoped overlay. No-op (O(1)) for a flat env. Used at every
+    /// boundary that would otherwise let a transient scoped env survive into code
+    /// that captures or iterates it overlay-only. See docs/vm-dual-store.md (Slice 6).
+    #[inline]
+    pub(super) fn flatten_scoped_env(&mut self) {
+        if self.interpreter.env().is_scoped() {
+            let flat = self.interpreter.env().flattened();
+            *self.interpreter.env_mut() = flat;
+        }
+    }
+
     /// Save the current env, locals, stack depth, readonly vars, and env_dirty flag
     /// into a new call frame. Resets env_dirty to false for the new frame.
     pub(super) fn push_call_frame(&mut self) {
         crate::vm::vm_stats::record_clone_env();
+        // A scoped (overlay-over-parent) env must not survive into the callee's
+        // execution: the callee may capture it into a Sub / iterate it
+        // overlay-only, which would miss the parent tier. Collapse it to a flat
+        // env here so every non-converted call runs against the full lexical view.
+        self.flatten_scoped_env();
         let frame = VmCallFrame {
             saved_env: self.interpreter.clone_env(),
             saved_readonly: Some(self.interpreter.save_readonly_vars()),
@@ -37,6 +54,7 @@ impl VM {
     /// since simple methods don't use `:=` binding.
     pub(super) fn push_light_call_frame(&mut self) {
         crate::vm::vm_stats::record_clone_env();
+        self.flatten_scoped_env();
         let frame = VmCallFrame {
             saved_env: self.interpreter.clone_env(),
             saved_readonly: None,

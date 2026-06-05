@@ -11,6 +11,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.ensure_env_synced(code);
+        self.flatten_scoped_env();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
@@ -246,6 +247,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.ensure_env_synced(code);
+        self.flatten_scoped_env();
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
@@ -321,6 +323,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.ensure_env_synced(code);
+        self.flatten_scoped_env();
         // Set pending arg sources for `is rw` dispatch matching
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.interpreter
