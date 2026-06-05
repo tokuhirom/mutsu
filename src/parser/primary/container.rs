@@ -1396,28 +1396,56 @@ fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
     if let Some(complex) = parse_angle_complex(parse_word) {
         return make_allomorphic_value(complex, word);
     }
-    if let Ok((rest, expr)) = super::number::integer(parse_word)
+    // The plain integer/decimal/Num parsers accept only unsigned digits (the
+    // sign is normally a prefix operator), so a leading `+`/`-` is stripped here
+    // and reapplied to the parsed value. This makes `<-3>` an IntStr and
+    // `<-3.5>` a RatStr, matching Raku (rather than a bare Str). The allomorphic
+    // Str component keeps the original signed spelling.
+    let (negate, num_word) = match parse_word.strip_prefix('-') {
+        Some(rest) if !rest.is_empty() => (true, rest),
+        _ => (false, parse_word.strip_prefix('+').unwrap_or(parse_word)),
+    };
+    let apply = |val: Value| -> Value {
+        let val = if negate {
+            negate_angle_numeric(val)
+        } else {
+            val
+        };
+        make_allomorphic_value(val, word)
+    };
+    if let Ok((rest, Expr::Literal(val))) = super::number::integer(num_word)
         && rest.is_empty()
-        && let Expr::Literal(val) = expr
     {
-        return make_allomorphic_value(val, word);
+        return apply(val);
     }
-    if let Ok((rest, expr)) = super::number::decimal(parse_word)
+    if let Ok((rest, Expr::Literal(val))) = super::number::decimal(num_word)
         && rest.is_empty()
-        && let Expr::Literal(val) = expr
     {
-        return make_allomorphic_value(val, word);
+        return apply(val);
     }
-    if let Ok((rest, expr)) = super::number::dot_decimal(parse_word)
+    if let Ok((rest, Expr::Literal(val))) = super::number::dot_decimal(num_word)
         && rest.is_empty()
-        && let Expr::Literal(val) = expr
     {
-        return make_allomorphic_value(val, word);
+        return apply(val);
     }
-    if let Some(val) = parse_angle_num(parse_word) {
-        return make_allomorphic_value(val, word);
+    if let Some(val) = parse_angle_num(num_word) {
+        return apply(val);
     }
     Value::str(word.to_string())
+}
+
+/// Negate a numeric Value produced by the unsigned angle-word number parsers.
+/// Non-numeric values are returned unchanged (the caller only passes numerics).
+fn negate_angle_numeric(val: Value) -> Value {
+    match val {
+        Value::Int(n) => Value::Int(-n),
+        Value::BigInt(n) => Value::BigInt(std::sync::Arc::new(-(&*n))),
+        Value::Num(n) => Value::Num(-n),
+        Value::Rat(n, d) => Value::Rat(-n, d),
+        Value::FatRat(n, d) => Value::FatRat(-n, d),
+        Value::BigRat(n, d) => Value::BigRat(-n, d),
+        other => other,
+    }
 }
 
 fn make_allomorphic_value(val: Value, word: &str) -> Value {
