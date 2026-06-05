@@ -132,20 +132,23 @@ Trait system issues: `is` trait on variables, `will` trait, parameterized traits
 - roast/S12-class/open_closed.t (augment/open classes)
 - roast/S12-introspection/walk.t (.walk with :canonical, :super, :breadth)
 
-## IO Advanced Features (9 tests)
+## IO Advanced Features
 
-IO::CatHandle not implemented, IO::Path subclasses (::Unix, ::Cygwin) incomplete, file locking, pipe large blob handling, indir(), and child-secure path resolution.
+Remaining work is mostly Win32/Cygwin path canonicalization (platform-specific
+separator/volume/UNC semantics) plus a few niche edge cases. `pipe.t`, `spurt.t`,
+`indir.t`, and `child-secure.t` now pass and are whitelisted.
 
-- roast/S32-io/io-cathandle.t (IO::CatHandle not implemented)
-- roast/S32-io/io-handle.t (input-line-separator, chunking)
-- roast/S32-io/io-path.t (IO::Path::Unix)
-- roast/S32-io/io-path-cygwin.t (IO::Path::Cygwin)
-- roast/S32-io/child-secure.t (X::IO::Resolve)
-- roast/S32-io/lock.t (file locking)
-- roast/S32-io/pipe.t (large blob piping)
-- roast/S32-io/spurt.t (file existence guard)
-- roast/S32-io/indir.t (timeout - indir with path validation)
-- roast/S16-io/words.t (handle close detection)
+**Resolved:**
+- roast/S32-io/child-secure.t — `.child(:secure)` with X::IO::Resolve / X::IO::NotAChild (#2617, whitelisted)
+- roast/S32-io/pipe.t, spurt.t, indir.t — already passing/whitelisted
+
+**Still failing:**
+- roast/S32-io/io-cathandle.t (IO::CatHandle not implemented — note: raku itself fails test 31 "Cannot .elems a lazy list", so the file may be unpassable as written)
+- roast/S32-io/io-handle.t (nl-out=IO::Handle gist edge cases, internal chunking; subtest 2 nl-in fixed in #2618)
+- roast/S32-io/io-path.t (39/43; subtests 16/26/27/28/29/30 fixed in #2616/#2617. Remaining: Win32 `.gist`/`.parts` canonicalization (31, 33), X::Assignment::RO on `.SPEC=`/`.CWD=` + `temp $*SPEC`/`temp $*CWD` (34, 35), `.path` indir-independence (36), `.Numeric` Cool chain (37). See TODO_roast/S32.md.)
+- roast/S32-io/io-path-cygwin.t (IO::Path::Cygwin — UNC `//server/share`, drive letters `A:`, backslash separators in volume/dirname/basename/is-absolute; 10 failing)
+- roast/S32-io/lock.t (file locking — `.lock`/`.unlock` throw X::Method::NotFound, not implemented)
+- roast/S16-io/words.t (8/11; `$limit` fixed in #2616. Remaining: lazy close-on-exhaust for `words($fh, :close)` partial slices, and `IO::ArgFiles.new`)
 
 ## gather/take Laziness (2 tests)
 
