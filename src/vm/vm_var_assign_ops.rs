@@ -2066,6 +2066,13 @@ impl VM {
         // metadata key. Reapply them on the final container so typed-array
         // hole semantics and `is default(...)` are preserved.
         let save_var_name = Self::const_str(code, name_idx).to_string();
+        // Heal the hash's Arc-pointer-keyed type metadata from its authoritative
+        // name-based key constraint before assigning, so object-hash semantics
+        // survive across copy-on-write and Arc-pointer reuse (otherwise typed
+        // `%h{$int} = ...` intermittently loses its key constraint and stores the
+        // value under a stringified key, returning Nil on later reads).
+        self.interpreter
+            .reconcile_hash_type_metadata_from_name(&save_var_name);
         let saved_type_meta_outer = self
             .interpreter
             .env()
@@ -2090,14 +2097,23 @@ impl VM {
             None
         };
         let result = self.exec_index_assign_expr_named_op_inner(code, name_idx, is_positional);
-        // Restore metadata on the post-assignment container if the
-        // identity-keyed map lost it.
+        // Restore metadata on the post-assignment container when the
+        // identity-keyed map lost it OR holds a stale entry. Copy-on-write
+        // changes the hash's Arc pointer (the metadata key), and freed pointers
+        // get reused by later allocations carrying *different* stale metadata,
+        // so a mere `.is_none()` check leaves a reused pointer's wrong entry in
+        // place — re-register whenever the current entry differs from the value
+        // saved before the assignment. Object-hash element reads (`%h{$int}`)
+        // detect their key constraint only through this pointer-keyed metadata
+        // (the read op has no variable name to fall back on), so a stale/lost
+        // entry silently degrades them to string-keyed lookups returning Nil.
         if let Some(info) = saved_type_meta_outer
             && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
             && self
                 .interpreter
                 .container_type_metadata(&container)
-                .is_none()
+                .as_ref()
+                != Some(&info)
         {
             self.interpreter
                 .register_container_type_metadata(&container, info);

@@ -1134,7 +1134,7 @@ pub(crate) struct CustomTypeData {
     pub(crate) is_mixin: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ContainerTypeInfo {
     pub(crate) value_type: String,
     pub(crate) key_type: Option<String>,
@@ -4613,6 +4613,46 @@ impl Interpreter {
         if let Some(value) = self.env.get(name).cloned() {
             self.register_container_type_metadata(&value, info.clone());
         }
+    }
+
+    /// Re-establish a named typed hash's Arc-pointer-keyed metadata from its
+    /// authoritative, scope-correct name-based key constraint.
+    ///
+    /// `hash_type_metadata` is keyed by the hash's `Arc` pointer, which is
+    /// reused after the hash is dropped and changes across copy-on-write. Across
+    /// block scopes (e.g. a `my %h{Int}` declared after an earlier exited
+    /// `my Int %h`) the pointer-keyed entry can intermittently go missing while
+    /// the name-based `var_hash_key_constraints` entry stays correct — making
+    /// `%h{$int} = ...` lose object-hash (`.WHICH`-keyed) semantics so the value
+    /// is stored under a stringified key and later reads return Nil. Healing the
+    /// pointer-keyed entry from the name-based constraint before each typed-hash
+    /// element assignment removes that nondeterminism. No-op for hashes without
+    /// a key constraint (the common case).
+    pub(crate) fn reconcile_hash_type_metadata_from_name(&mut self, name: &str) {
+        let Some(name_key) = self.var_hash_key_constraint(name) else {
+            return;
+        };
+        let Some(value @ Value::Hash(_)) = self.env.get(name).cloned() else {
+            return;
+        };
+        let current = self.container_type_metadata(&value);
+        if current.as_ref().and_then(|i| i.key_type.clone()) == Some(name_key.clone()) {
+            return; // already correct
+        }
+        let info = match current {
+            Some(mut i) => {
+                i.key_type = Some(name_key);
+                i
+            }
+            None => ContainerTypeInfo {
+                value_type: self
+                    .var_type_constraint(name)
+                    .unwrap_or_else(|| "Mu".to_string()),
+                key_type: Some(name_key),
+                declared_type: None,
+            },
+        };
+        self.register_container_type_metadata(&value, info);
     }
 
     fn parse_container_constraint(name: &str, raw: &str) -> ContainerTypeInfo {
