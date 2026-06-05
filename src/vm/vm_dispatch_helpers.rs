@@ -263,6 +263,53 @@ impl VM {
         }
     }
 
+    /// Call a plain `Value::Sub` map block, optionally with an explicit topic
+    /// (Pair elements) and/or rw-topic capture (`$_`-mutating blocks).
+    ///
+    /// Used by the native `.map` loop (see [`Self::call_compiled_closure_with_topic`]).
+    /// The block is always a plain `Sub` here (the native map path rejects
+    /// assuming/compose/Routine wrappers), so only the two `Sub` fast-paths of
+    /// [`Self::vm_call_on_value`] are needed. When `capture_rw_topic` is set the
+    /// block's final `$_` lands in `self.rw_map_topic_capture`.
+    pub(super) fn vm_call_map_block(
+        &mut self,
+        block: &Value,
+        args: Vec<Value>,
+        explicit_topic: Option<Value>,
+        capture_rw_topic: bool,
+    ) -> Result<Value, RuntimeError> {
+        let Value::Sub(data) = block else {
+            return self.vm_call_on_value(block.clone(), args, None);
+        };
+        let empty_fns = HashMap::new();
+        if let Some(cc) = &data.compiled_code {
+            let cc = cc.clone();
+            let data = data.clone();
+            return self.call_compiled_closure_with_topic(
+                &data,
+                &cc,
+                args,
+                explicit_topic,
+                capture_rw_topic,
+                &empty_fns,
+            );
+        }
+        // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
+        let cc = {
+            let mut compiler = crate::compiler::Compiler::new();
+            compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body)
+        };
+        let data = data.clone();
+        self.call_compiled_closure_with_topic(
+            &data,
+            &cc,
+            args,
+            explicit_topic,
+            capture_rw_topic,
+            &empty_fns,
+        )
+    }
+
     /// VM-native dispatch for calling a value (Sub, Routine, Junction, etc.).
     ///
     /// This avoids the interpreter's `eval_call_on_value` for common cases:

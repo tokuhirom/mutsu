@@ -203,6 +203,13 @@ pub(crate) struct VM {
     /// Temporary storage for for-loop resume state when a gather take-limit
     /// interrupts a for loop.
     gather_for_loop_resume: Option<ForLoopResumeState>,
+    /// Scratch slot for the native rw-`.map` writeback path. When a closure call
+    /// is made with rw-topic capture armed, `call_compiled_closure_with_topic`
+    /// stashes the block's final `$_` mutation here (read from
+    /// `__mutsu_rw_map_topic__` before the call frame is popped) so the native
+    /// map loop can write it back to the source array element. `None` when the
+    /// block did not mutate `$_`. See `vm_native_map.rs`.
+    rw_map_topic_capture: Option<Value>,
 }
 
 impl VM {
@@ -388,6 +395,7 @@ impl VM {
             otf_call_cache_gen: 0,
             check_phaser_depth: 0,
             gather_for_loop_resume: None,
+            rw_map_topic_capture: None,
         }
     }
 

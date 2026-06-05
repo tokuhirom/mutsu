@@ -118,8 +118,10 @@ Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin 
   3. Push and open a PR with `gh pr create`.
   4. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
   5. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
-  6. After creating a PR, watch it with `gh pr checks <pr-number> --watch` until CI completes. If CI fails or a merge conflict occurs, fix the issue on the same branch, push again, and continue watching until the PR merges.
-- If CI fails, fix the issue on the same branch, push again, and wait for CI to pass.
+  6. After creating a PR, enable auto-merge — then **do NOT sit and watch CI** (`gh pr checks --watch` blocks for ~13 min and wastes the session). Instead, move on to the next non-conflicting task while CI runs in the background. Periodically (e.g. when you reach a natural stopping point) poll the PR with a single `gh pr checks <pr-number>`; if CI has failed, fix it on the same branch and push.
+- **Do not block on CI — keep working.** Waiting idly for CI is wasted time. After pushing + enabling auto-merge, pick up the next task that is unlikely to conflict with the open PR (a different module/area), and only circle back to check the PR result occasionally. Auto-merge lands the PR on its own when CI goes green; you do not need to babysit it.
+- If CI fails, fix the issue on the same branch, push again (no need to watch — re-poll later).
+  - **Known flaky:** `roast/S02-names-vars/perl.t` intermittently exits 255 with `Failed: 0` (plan incomplete) — the typed-container alloc/hash-order flaky documented in PLAN.md. Passes ~80% of runs. If CI fails *only* on this with `Failed: 0`, re-trigger CI (push an empty commit) rather than treating it as a regression; confirm locally with a release build a few times first.
 - **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
 - Write all documents, code comments, and commit messages in English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
