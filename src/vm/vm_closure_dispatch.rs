@@ -75,6 +75,25 @@ impl VM {
         args: Vec<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        self.call_compiled_closure_with_topic(data, cc, args, None, compiled_fns)
+    }
+
+    /// Like [`Self::call_compiled_closure`] but with an optional explicit topic.
+    ///
+    /// `explicit_topic` is used by the native `.map` loop for Pair-shaped source
+    /// elements: a positional `Pair` passed to the general call machinery is
+    /// bound as a *named* argument (and skipped when setting the implicit `$_`),
+    /// so the block would see no topic. When `Some`, the topic `$_` (and a lone
+    /// positional param) is force-bound to the element value regardless of its
+    /// pair-ness, matching the interpreter's `eval_map_over_items`.
+    pub(super) fn call_compiled_closure_with_topic(
+        &mut self,
+        data: &crate::value::SubData,
+        cc: &CompiledCode,
+        args: Vec<Value>,
+        explicit_topic: Option<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
         let (mut args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         if callsite_line.is_some() {
             self.interpreter.set_pending_callsite_line(callsite_line);
@@ -129,7 +148,13 @@ impl VM {
             for eigenvalue in values.iter() {
                 let mut threaded_args = args.clone();
                 threaded_args[junction_idx] = eigenvalue.clone();
-                results.push(self.call_compiled_closure(data, cc, threaded_args, compiled_fns)?);
+                results.push(self.call_compiled_closure_with_topic(
+                    data,
+                    cc,
+                    threaded_args,
+                    explicit_topic.clone(),
+                    compiled_fns,
+                )?);
             }
             return Ok(Value::junction(kind, results));
         }
@@ -324,6 +349,40 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert("!".to_string(), Value::Nil);
+        }
+
+        // Explicit topic override (native `.map` over Pair-shaped elements). The
+        // general call machinery binds a positional Pair as a named argument and
+        // skips the implicit `$_`, so force the topic — and a lone positional
+        // param — to the element value. Applied after the routine-`$_` reset so
+        // it wins, and before the locals load so the slot picks it up.
+        if let Some(topic) = explicit_topic {
+            let env = self.interpreter.env_mut();
+            env.insert("_".to_string(), topic.clone());
+            env.insert("$_".to_string(), topic.clone());
+            // A single simple positional param consumes the topic too (e.g.
+            // `-> $p { $p.key }`, which the native map call site stores as
+            // `params == ["p"]` with empty `param_defs`). The call site only
+            // passes a topic for blocks with no placeholder/special params, so a
+            // lone plain positional is the only param to force-bind here.
+            let pos_param = if let [pd] = data.param_defs.as_slice() {
+                (!pd.named
+                    && !pd.slurpy
+                    && !pd.is_invocant
+                    && !pd.name.is_empty()
+                    && !pd.name.starts_with(':'))
+                .then(|| pd.name.clone())
+            } else if data.param_defs.is_empty() {
+                match data.params.as_slice() {
+                    [p] if is_plain_positional_param(p) => Some(p.clone()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some(name) = pos_param {
+                env.insert(name, topic);
+            }
         }
 
         self.locals = vec![Value::Nil; cc.locals.len()];
@@ -742,4 +801,16 @@ impl VM {
             Err(e) => Err(e),
         }
     }
+}
+
+/// True when `p` is a plain positional parameter name as stored in
+/// `SubData::params` for a pointy/bare block — a bare identifier with no sigil,
+/// twigil, or placeholder/named prefix. Such a param is bound by position and
+/// can be force-set to the map topic; placeholder (`^a`) / named (`:x`) /
+/// aggregate (`@a`,`%h`) params cannot and must fall back to the interpreter.
+pub(super) fn is_plain_positional_param(p: &str) -> bool {
+    p.chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && p != "_"
 }

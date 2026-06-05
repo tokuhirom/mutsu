@@ -263,6 +263,42 @@ impl VM {
         }
     }
 
+    /// Call a plain `Value::Sub` block with an explicit topic `$_`.
+    ///
+    /// Used by the native `.map` loop for Pair-shaped source elements (see
+    /// [`Self::call_compiled_closure_with_topic`]). The block is always a plain
+    /// `Sub` here (the native map path rejects assuming/compose/Routine wrappers),
+    /// so only the two `Sub` fast-paths of [`Self::vm_call_on_value`] are needed.
+    pub(super) fn vm_call_block_with_topic(
+        &mut self,
+        block: &Value,
+        args: Vec<Value>,
+        topic: Value,
+    ) -> Result<Value, RuntimeError> {
+        let Value::Sub(data) = block else {
+            return self.vm_call_on_value(block.clone(), args, None);
+        };
+        let empty_fns = HashMap::new();
+        if let Some(cc) = &data.compiled_code {
+            let cc = cc.clone();
+            let data = data.clone();
+            return self.call_compiled_closure_with_topic(
+                &data,
+                &cc,
+                args,
+                Some(topic),
+                &empty_fns,
+            );
+        }
+        // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
+        let cc = {
+            let mut compiler = crate::compiler::Compiler::new();
+            compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body)
+        };
+        let data = data.clone();
+        self.call_compiled_closure_with_topic(&data, &cc, args, Some(topic), &empty_fns)
+    }
+
     /// VM-native dispatch for calling a value (Sub, Routine, Junction, etc.).
     ///
     /// This avoids the interpreter's `eval_call_on_value` for common cases:

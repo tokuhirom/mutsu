@@ -59,15 +59,14 @@ impl VM {
         };
         // A `Pair`/`ValuePair` element passed positionally to the block is bound
         // as a *named* argument by the closure-call machinery (and skipped when
-        // setting the implicit `$_`), so the block would see no topic. The
-        // interpreter's map sets `$_` explicitly; until the native path does the
-        // same, fall back when the source contains pair-shaped elements.
-        if items
+        // setting the implicit `$_`), so the block would see no topic. For the
+        // common single-element-per-call case we set `$_` explicitly via
+        // `call_compiled_closure_with_topic` (matching the interpreter); a
+        // multi-arity block (`-> $a, $b { }`) consumes a *chunk* per call, where
+        // a single override topic is ambiguous, so still fall back there.
+        let has_pairs = items
             .iter()
-            .any(|v| matches!(v, Value::Pair(..) | Value::ValuePair(..)))
-        {
-            return None;
-        }
+            .any(|v| matches!(v, Value::Pair(..) | Value::ValuePair(..)));
         // The block must be a plain single-arity closure with no signature
         // complexity and no `.assuming`/compose wrapping.
         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
@@ -112,13 +111,43 @@ impl VM {
         if arity > 1 && !items.len().is_multiple_of(arity) {
             return None;
         }
+        // A multi-arity block binds a chunk per call, where the single override
+        // topic of `call_compiled_closure_with_topic` is ambiguous: keep deferring
+        // pair-containing sources to the interpreter for arity > 1.
+        if has_pairs && arity > 1 {
+            return None;
+        }
+        // When the source has pair-shaped elements we set `$_`/the positional
+        // param explicitly via the topic override. That override only handles a
+        // pointy/bare block with no params (implicit `$_`) or a single *plain*
+        // positional param. Anything else — a placeholder param (`$^a`, which
+        // makes arg binding raise "Missing required placeholder"), an aggregate
+        // param, or a full signature (`param_defs` populated) — would mis-bind or
+        // error, so defer those to the interpreter.
+        if has_pairs
+            && !(data.param_defs.is_empty()
+                && match data.params.as_slice() {
+                    [] => true,
+                    [p] => super::vm_closure_dispatch::is_plain_positional_param(p),
+                    _ => false,
+                })
+        {
+            return None;
+        }
 
         let block = args[0].clone();
         let mut result: Vec<Value> = Vec::with_capacity(items.len() / arity + 1);
         let mut i = 0usize;
         while i < items.len() {
             let chunk: Vec<Value> = items[i..i + arity].to_vec();
-            let value = match self.vm_call_on_value(block.clone(), chunk, None) {
+            // For a Pair element (arity == 1) the general call machinery would
+            // bind it as a named arg and skip `$_`; force it as the topic.
+            let call = if has_pairs && matches!(chunk[0], Value::Pair(..) | Value::ValuePair(..)) {
+                self.vm_call_block_with_topic(&block, chunk.clone(), chunk[0].clone())
+            } else {
+                self.vm_call_on_value(block.clone(), chunk, None)
+            };
+            let value = match call {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
