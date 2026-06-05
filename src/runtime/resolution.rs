@@ -1167,24 +1167,35 @@ impl Interpreter {
                     remaining,
                     args: sanitized_args.clone(),
                 };
-                let wrapper_id = if let Value::Sub(ref wd) = outermost {
-                    Some(wd.id)
+                let (wrapper_id, wrapper_base_env) = if let Value::Sub(ref wd) = outermost {
+                    (Some(wd.id), Some(wd.env.clone()))
                 } else {
-                    None
+                    (None, None)
                 };
                 self.wrap_dispatch_stack.push(frame);
                 let result = self.call_sub_value(outermost, sanitized_args, false);
                 self.wrap_dispatch_stack.pop();
                 // Propagate closure variable mutations from the wrapper back to
                 // the current env so captured variables (e.g. $seen = True) are
-                // visible to the caller.
+                // visible to the caller. Only write back keys the wrapper actually
+                // *changed* relative to its captured lexical snapshot: a persisted
+                // value equal to the wrapper's capture is stale (never mutated) and
+                // must not clobber the caller's live value (e.g. the `$h` that holds
+                // this very WrapHandle, captured as Nil mid-`my $h = &foo.wrap(...)`).
                 if let Some(wid) = wrapper_id
                     && let Some(persisted) = self.closure_env_overrides.get(&wid).cloned()
                 {
                     for (k, v) in persisted.iter() {
-                        if self.env.contains_key_sym(*k) {
-                            self.env.insert_sym(*k, v.clone());
+                        if !self.env.contains_key_sym(*k) {
+                            continue;
                         }
+                        let unchanged = wrapper_base_env
+                            .as_ref()
+                            .is_some_and(|base| base.get_sym(*k) == Some(v));
+                        if unchanged {
+                            continue;
+                        }
+                        self.env.insert_sym(*k, v.clone());
                     }
                 }
                 return result;
@@ -1423,6 +1434,14 @@ impl Interpreter {
             });
             self.prepare_definite_return_slot(return_spec.as_deref());
             let let_mark = self.let_saves.len();
+            // Snapshot the body-entry env so the exit writeback can tell which
+            // captured outer scalars the body actually *mutated* (and propagate
+            // only those) from those it merely captured a stale snapshot of.
+            // Without this, a callee's stale captured value (e.g. an original
+            // sub's snapshot of `$h` taken before `my $h = &foo.wrap(...)`
+            // assigned it) would clobber the caller's live value on return.
+            // Env is copy-on-write, so this clone is O(1) until the body forks it.
+            let body_entry_env = self.env.clone();
             let result = match self.eval_block_value(&data.body) {
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", data.package, data.name);
@@ -1499,19 +1518,27 @@ impl Interpreter {
                     Self::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
                 }
                 for (k, v) in self.env.iter() {
-                    if k != "_"
-                        && k != "@_"
-                        && !subsig_names.contains(&k.resolve())
-                        && (matches!(v, Value::Array(..))
-                            || (merged.contains_key_sym(*k)
-                                && matches!(
-                                    v,
-                                    Value::Bool(_)
-                                        | Value::Int(_)
-                                        | Value::Num(_)
-                                        | Value::Str(_)
-                                        | Value::Rat(_, _)
-                                )))
+                    if k == "_" || k == "@_" || subsig_names.contains(&k.resolve()) {
+                        continue;
+                    }
+                    if matches!(v, Value::Array(..)) {
+                        // Arrays are Arc-shared; in-place mutations are already
+                        // visible to the caller, and reassignment should propagate.
+                        merged.insert_sym(*k, v.clone());
+                    } else if merged.contains_key_sym(*k)
+                        && matches!(
+                            v,
+                            Value::Bool(_)
+                                | Value::Int(_)
+                                | Value::Num(_)
+                                | Value::Str(_)
+                                | Value::Rat(_, _)
+                        )
+                        // Only write a captured scalar back to the caller when the
+                        // body actually changed it from its body-entry value. A
+                        // value equal to the entry snapshot is a stale capture, not
+                        // a mutation, and must not clobber the caller's live value.
+                        && body_entry_env.get_sym(*k) != Some(v)
                     {
                         merged.insert_sym(*k, v.clone());
                     }
