@@ -902,6 +902,12 @@ pub struct Interpreter {
     /// Used to propagate package declarations when a module is re-used.
     module_packages: HashMap<String, HashSet<String>>,
     closure_env_overrides: HashMap<u64, Env>,
+    /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the Seq's
+    /// Arc pointer (`seq_id`). Kept off the scoped `env` so the association
+    /// survives sub/block returns between Seq creation and `.tail`/`.Numeric`
+    /// (an env-keyed side table was lost on scope exit).
+    /// TODO: entries are never reclaimed; acceptable as predictive Seqs are rare.
+    predictive_seq_iters: HashMap<usize, Value>,
     protect_block_cache: ProtectBlockCache,
     private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
     module_load_stack: Vec<String>,
@@ -3043,6 +3049,7 @@ impl Interpreter {
             chain_declared_packages: HashSet::new(),
             module_packages: HashMap::new(),
             closure_env_overrides: HashMap::new(),
+            predictive_seq_iters: HashMap::new(),
             protect_block_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
@@ -5111,6 +5118,7 @@ impl Interpreter {
             chain_declared_packages: self.chain_declared_packages.clone(),
             module_packages: self.module_packages.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
+            predictive_seq_iters: self.predictive_seq_iters.clone(),
             protect_block_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),

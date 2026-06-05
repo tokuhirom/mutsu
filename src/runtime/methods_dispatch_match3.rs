@@ -17,8 +17,7 @@ impl Interpreter {
                 // Otherwise return the element count.
                 if let Value::Seq(items) = &target {
                     let seq_id = std::sync::Arc::as_ptr(items) as usize;
-                    let iter_key = format!("__mutsu_predictive_seq_iter::{seq_id}");
-                    if let Some(iter) = self.env.get(&iter_key).cloned() {
+                    if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
                         return Some(self.call_method_with_values(iter, "count-only", vec![]));
                     }
                     return Some(Ok(Value::Int(items.len() as i64)));
@@ -227,8 +226,7 @@ impl Interpreter {
                 if let Value::Seq(items) = &target {
                     // Check for PredictiveIterator-backed Seq (stored by Seq.new)
                     let seq_id = std::sync::Arc::as_ptr(items) as usize;
-                    let iter_key = format!("__mutsu_predictive_seq_iter::{seq_id}");
-                    if let Some(iter) = self.env.get(&iter_key).cloned() {
+                    if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
                         // Call count-only on the PredictiveIterator
                         return Some(self.call_method_with_values(iter, "count-only", vec![]));
                     }
