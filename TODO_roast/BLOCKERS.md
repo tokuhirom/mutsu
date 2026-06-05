@@ -245,11 +245,68 @@ and are whitelisted; one is unpassable as written:
   but ran 0").
 
 **Still failing:**
-- roast/S11-repository/curli-install.t — needs a full
-  `CompUnit::Repository::Installation` implementation: `$*REPO ~~
-  CompUnit::Repository::Installable`/`::Locally` role smartmatch, `.install`,
-  `.need`, `Distribution::Hash`, `CompUnit::DependencySpecification`, and
-  `GLOBALish.WHO.merge-symbols`. Large feature; deferred.
+- roast/S11-repository/curli-install.t — needs a real
+  `CompUnit::Repository::Installation` exposed through `$*REPO`. Large feature;
+  deferred. Concrete improvement plan below.
+
+### curli-install.t improvement plan
+
+The test does `use lib "inst#$repo-path"` and then exercises `$*REPO` as an
+installation repository: role smartmatch, `.install`, `.need`, symbol merge.
+Most of the runtime plumbing already exists but is not wired to `$*REPO`.
+
+**What already exists (reuse, don't rebuild):**
+- `inst#` paths are already understood by module *resolution*
+  (`run.rs::resolve_module_path` / `detect_inst_distribution`, run.rs:1009-1090,
+  1264-1330). Sources live at `{prefix}/sources/{hash}`, dist JSON under the repo.
+- `Interpreter::dispatch_cur_installation_method` (methods_distribution.rs:577)
+  already implements `candidates`, `install` (`cur_inst_install`), `uninstall`,
+  `installed`, `path-spec`, `resolve`, `files`, plus `cur_inst_candidates`
+  (methods_distribution.rs:277) for matching by short-name/api/ver/auth.
+- `CompUnit::DependencySpecification.new(:short-name, :api-matcher, ...)` is
+  built in methods_object.rs:1557-1591.
+
+**The gaps (root cause: `$*REPO` is a hardcoded `FileSystem` stub):**
+1. **`$*REPO` ignores the repo chain.** It is set once to a
+   `CompUnit::Repository::FileSystem` with `prefix="."` (mod.rs:3160-3167) and
+   never rebuilt from `lib_paths`. So `use lib "inst#PATH"` does not make
+   `$*REPO` an Installation. **Fix:** build the `$*REPO` chain from `lib_paths`
+   (honor the `inst#`/`file#` scheme prefixes already parsed in run.rs); when the
+   head path is `inst#PATH`, `$*REPO` must be a
+   `CompUnit::Repository::Installation` instance carrying `prefix=PATH`, with its
+   `.next-repo` pointing at the rest of the chain. Rebuild whenever `use lib`
+   mutates the paths (parse-time `try_add_parse_time_lib_path` and runtime).
+2. **Role smartmatch fails.** `$*REPO ~~ CompUnit::Repository::Installable` and
+   `~~ ::Locally` return False (and `.short-id` is missing on FileSystem). The
+   Installation instance must report that it does
+   `CompUnit::Repository::Installable`, `CompUnit::Repository::Locally`, and
+   `CompUnit::Repository`. Register these roles (see the existing
+   `CompUnit::Repository` role stub at mod.rs:2980-3008) and make the instance's
+   type/MRO include them, OR special-case `~~` for these CUR type names. Also
+   route `.short-id` → `'inst'`, `.id`, `.loaded` for the Installation type
+   (Installation dispatch returns `path-spec` already; add `short-id`).
+3. **`.install` reinstall guard.** Re-installing the identical distribution must
+   throw an `Exception` whose message contains `'already installed'`
+   (test line 30). `cur_inst_install` currently just writes; add the
+   already-present check.
+4. **`.need` must return a real `CompUnit`.** `$*REPO.need(depspec)` should
+   return a `CompUnit` object with `.short-name`, `.version`, and
+   `.handle.globalish-package` (a package whose `.WHO` holds the module's
+   symbols). Today `need` resolves candidates but does not hand back a CompUnit
+   with a usable `.handle`. Build a `CompUnit` Value wrapping the resolved
+   distribution + a `CompUnit::Handle` exposing `globalish-package`.
+5. **`GLOBALish.WHO.merge-symbols(...)`** (test line 53) — merge the CompUnit
+   handle's package symbols into `GLOBAL`'s stash so `::('Foo')` resolves after
+   the merge. Needs `Stash.merge-symbols` and a real `GLOBALish` package whose
+   `.WHO` is GLOBAL's symbol table.
+6. **`::('Foo')` indirect lookup** must yield a `Failure` (not throw) when the
+   symbol is unknown (`isa-ok ::('Foo'), Failure`), and a real value once merged.
+
+Suggested order: (1)+(2) first (gets tests 1-5 / 36-40 of the role+short-id
+block and unblocks the rest), then (3), then (4)+(5)+(6) together (the
+need→handle→merge→`::()` chain). Cross-cutting prerequisite for (5)/(6): a
+first-class `Stash`/`.WHO` with `merge-symbols`, which also helps the
+Pseudo-packages / Symbol Lookup blocker.
 
 ## Multi Method / Subsignature Dispatch (2 tests remaining)
 
