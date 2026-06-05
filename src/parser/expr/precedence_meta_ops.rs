@@ -102,8 +102,8 @@ pub(super) fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
         "(elem)" | "∈" => Some(TokenKind::SetElem),
         "(cont)" | "∋" => Some(TokenKind::SetCont),
         // Word operators are represented as Ident tokens
-        "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg" | "cmp" | "coll" | "min" | "max"
-        | "gcd" | "lcm" | "and" | "or" | "not" | "after" | "before" => {
+        "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg" | "cmp" | "coll" | "unicmp" | "min"
+        | "max" | "gcd" | "lcm" | "and" | "or" | "not" | "after" | "before" => {
             Some(TokenKind::Ident(op.to_string()))
         }
         _ => None,
@@ -161,9 +161,9 @@ fn flatten_bracket_op(s: &str) -> String {
 const KNOWN_OPS: &[&str] = &[
     "...^", "...", "…^", "…", "**", "==", "!=", "=:=", "!=:=", "<=", ">=", "<=>", "===", "~~",
     "%%", "//", "||", "&&", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|",
-    "+^", "?&", "?|", "?^", "cmp", "coll", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg",
-    "and", "or", "not", "after", "before", "gcd", "lcm", ",", "(|)", "(&)", "(.)", "(+)", "(^)",
-    "(elem)", "(cont)", "∪", "∩", "⊍", "⊎", "⊖", "∈", "∋",
+    "+^", "?&", "?|", "?^", "cmp", "coll", "unicmp", "min", "max", "eq", "ne", "lt", "gt", "le",
+    "ge", "leg", "and", "or", "not", "after", "before", "gcd", "lcm", ",", "(|)", "(&)", "(.)",
+    "(+)", "(^)", "(elem)", "(cont)", "∪", "∩", "⊍", "⊎", "⊖", "∈", "∋",
 ];
 
 fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
@@ -240,7 +240,7 @@ pub(super) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
     }
     // Try word operators: cmp, min, max, eq, ne, lt, gt, le, ge, leg
     let word_ops: &[&str] = &[
-        "cmp", "coll", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg",
+        "unicmp", "cmp", "coll", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg",
     ];
     for op in word_ops {
         if r.starts_with(op) && !is_ident_char(r.as_bytes().get(op.len()).copied()) {
@@ -818,7 +818,7 @@ fn classify_base_op(op: &str) -> OpPrecedence {
         "+" | "-" | "~|" | "~^" => OpPrecedence::Additive,
         "~" => OpPrecedence::Concatenation,
         "==" | "!=" | "=:=" | "!=:=" | "<" | ">" | "<=" | ">=" | "<=>" | "===" | "eq" | "ne"
-        | "lt" | "gt" | "le" | "ge" | "leg" | "cmp" | "coll" | "~~" | "%%" => {
+        | "lt" | "gt" | "le" | "ge" | "leg" | "cmp" | "coll" | "unicmp" | "~~" | "%%" => {
             OpPrecedence::Comparison
         }
         _ => OpPrecedence::Other,

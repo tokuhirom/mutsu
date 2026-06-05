@@ -320,4 +320,49 @@ impl Compiler {
         }
         Some(result)
     }
+
+    /// Hoist top-level `use Test` declarations to the front of the compilation
+    /// unit. In Raku, `use` is a BEGIN-time (compile-time) declaration, so the
+    /// Test functions (`plan`, `ok`, `is`, ...) become available throughout the
+    /// file regardless of textual position. Some roast tests (e.g. the
+    /// CollationTest files) call `plan` before the textual `use Test;`, which
+    /// only works because of these BEGIN semantics.
+    ///
+    /// We hoist only the core `Test` module (which is built in and needs no
+    /// search path), not `Test::Util` or other `Test::*` submodules: those may
+    /// depend on a preceding `use lib ...;` that we must not reorder past.
+    /// Returns a reordered statement list, or None if no move is needed.
+    pub(super) fn hoist_test_use_decls(stmts: &[Stmt]) -> Option<Vec<Stmt>> {
+        let is_test_use = |s: &Stmt| matches!(s, Stmt::Use { module, .. } if module == "Test");
+        // Collect indices of top-level Test `use` statements.
+        let test_indices: Vec<usize> = stmts
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| is_test_use(s))
+            .map(|(i, _)| i)
+            .collect();
+        if test_indices.is_empty() {
+            return None;
+        }
+        // No move needed if the Test uses are already a contiguous prefix
+        // (indices 0, 1, 2, ...).
+        let already_prefix = test_indices
+            .iter()
+            .enumerate()
+            .all(|(pos, &idx)| pos == idx);
+        if already_prefix {
+            return None;
+        }
+        let mut hoisted: Vec<Stmt> = Vec::with_capacity(stmts.len());
+        let mut rest: Vec<Stmt> = Vec::new();
+        for stmt in stmts {
+            if is_test_use(stmt) {
+                hoisted.push(stmt.clone());
+            } else {
+                rest.push(stmt.clone());
+            }
+        }
+        hoisted.extend(rest);
+        Some(hoisted)
+    }
 }

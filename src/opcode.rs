@@ -168,6 +168,7 @@ pub(crate) enum OpCode {
     Spaceship,
     Cmp,
     Coll,
+    Unicmp,
     Leg,
 
     // -- Identity/value equality --

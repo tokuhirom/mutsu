@@ -986,6 +986,7 @@ fn is_infix_word_op(name: &str) -> bool {
             | "ge"
             | "cmp"
             | "coll"
+            | "unicmp"
             | "leg"
             | "and"
             | "or"

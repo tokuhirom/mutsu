@@ -48,6 +48,29 @@ per_file_timeout() {
   esac
 }
 
+# Some roast tests locate their data files relative to the spec root using a
+# pattern like `"S32-str".IO.d ?? "S32-str" !! "t/spec/S32-str"`. In the
+# upstream roast harness the CWD is the spec root, so `"S32-str".IO.d` is true.
+# In our vendored layout the spec root is `roast/`, so these tests must run
+# with CWD set to `roast/` for the relative data paths (e.g. text-samples/) to
+# resolve. This does not affect tests that locate resources via `$*PROGRAM`.
+needs_roast_cwd() {
+  case "$1" in
+    roast/S32-str/gb18030-encode-decode.t \
+    | roast/S32-str/gb2312-encode-decode.t \
+    | roast/S32-str/shiftjis-encode-decode.t)
+      return 0 ;;
+    *)
+      return 1 ;;
+  esac
+}
+
 test_file="$1"
 file_timeout=$(per_file_timeout "$test_file")
+if needs_roast_cwd "$test_file"; then
+  abs_bin="$(cd "$(dirname "$MUTSU_BIN")" && pwd)/$(basename "$MUTSU_BIN")"
+  abs_test="$(cd "$(dirname "$test_file")" && pwd)/$(basename "$test_file")"
+  cd roast || exit 1
+  exec timeout "$file_timeout" "$abs_bin" "$abs_test"
+fi
 exec timeout "$file_timeout" "$MUTSU_BIN" "$test_file"

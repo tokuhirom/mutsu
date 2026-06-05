@@ -1939,6 +1939,10 @@ impl VM {
                 self.exec_coll_op();
                 *ip += 1;
             }
+            OpCode::Unicmp => {
+                self.exec_unicmp_op();
+                *ip += 1;
+            }
             OpCode::Leg => {
                 self.exec_leg_op();
                 *ip += 1;
