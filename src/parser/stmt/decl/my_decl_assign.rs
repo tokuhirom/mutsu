@@ -89,8 +89,16 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         return handle_binding(stripped, s);
     }
 
-    // No assignment — default value
-    let (rest, _) = opt_char(rest, ';');
+    // No assignment — default value. Optionally consume a trailing `;` only in
+    // statement context. In EXPRESSION context (e.g. a feed sink
+    // `(1,2,3) ==> my @o; say @o`) the `;` terminates the *enclosing* statement
+    // and must be left for it; eating it here swallows the following statement
+    // into the expression (`say` then parses as an infix word on the feed).
+    let rest = if s.apply_modifier {
+        opt_char(rest, ';').0
+    } else {
+        rest
+    };
     let expr = default_decl_expr(
         s.is_array,
         s.is_hash,
