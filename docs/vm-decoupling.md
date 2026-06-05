@@ -183,11 +183,49 @@ constructors / BUILD / TWEAK / typed attributes, whose construction genuinely
 runs user code — the next, larger step is moving the class registry + BUILD/
 TWEAK execution to VM-owned data (`ANALYSIS.md` §1.1).
 
+## Step 6 — native `.map` over an array with a simple block (2026-06)
+
+`@a.map({ ... })` always fell back to the interpreter's `dispatch_map_method`
+even though the block *body* already runs compiled on the VM
+(`eval_map_over_items` compiles it and runs it via `run_compiled_block`). Only
+the iteration loop lived in the interpreter, so each `.map` counted as a method
+fallback.
+
+`vm_native_map.rs::try_native_array_map` now runs that loop in the VM for the
+common case: a concrete *real* array, a single positional `Sub` block of arity
+≤1 with no signature complexity / `.assuming` / compose wrapping, whose body a
+conservative whitelist scanner proves cannot **escape the loop** (`return`,
+`last`/`next`/`redo`, `take`/`emit`, phasers — any unrecognized form defaults to
+"not simple") and cannot **mutate the topic `$_`** (`$_ = …` / `s///` / `tr///`
+/ `$_++`, which map's rw-aliased `$_` would write back to the source array).
+Pair-shaped elements also fall back (they bind as named args to the block).
+Everything else falls through to the interpreter unchanged.
+
+This is a **metric-only** decoupling (the block body was already compiled), not
+a tree-walk removal — unlike Step 5's `.new`. `.grep` is intentionally *not*
+nativized: its result is a subset of the *original* elements that must stay
+rw-view-bound to the source (`@a.grep(...)>>++` updates `@a`), which a freshly
+built result array cannot reproduce.
+
+| probe (`tmp/probe-closures.raku`, 50× over a 200-elem array) | method fallback before | after |
+|---|---|---|
+| `map` | 50 | **0** |
+| `grep` / `sort` / `subst` | 50 / 50 / 50 | unchanged (still fall back) |
+
+Behavior verified identical to the interpreter: `make test` (only pre-existing
+`placeholder`/`tail-function`/`wrap`), `roast/S32-list/map.t` + `grep.t` pass,
+`t/grep-regressions.t` + `t/pair-positional-arg.t` pass, and a combined ~325-file
+whitelist sweep is green.
+
 ## Next steps (candidate strangler targets)
 
-1. `Test` functions: would need the TAP `TestState` reachable from the VM rather
+1. `.grep` / `sort` comparator / `.subst` block: same idea but each needs extra
+   care (grep's rw-view result, sort's 2-arg stable comparator, subst's regex).
+2. `.map` residue: multi-arity (`-> $a, $b`) chunking, Pair elements (needs
+   explicit `$_` binding), and `$_`-mutation write-back.
+3. `Test` functions: would need the TAP `TestState` reachable from the VM rather
    than only the interpreter — large, defer.
-2. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
+4. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
    `ANALYSIS.md` §1.2) so the VM stops borrowing the interpreter's env.
 
 Record each step's before/after numbers in this file so the trend is visible.

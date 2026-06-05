@@ -366,6 +366,11 @@ impl VM {
                 }
             }
         }
+        // Native `.map` / `.grep` over a concrete array with a simple block: run
+        // the iteration loop in the VM instead of the interpreter (lever A).
+        if let Some(result) = self.try_native_array_map(&target, method, &args) {
+            return result;
+        }
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
@@ -762,6 +767,10 @@ impl VM {
                 }
                 return Ok(result);
             }
+        }
+        // Native `.map` / `.grep` over a concrete array with a simple block (lever A).
+        if let Some(result) = self.try_native_array_map(&target, method, &args) {
+            return result;
         }
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
