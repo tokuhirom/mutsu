@@ -124,6 +124,22 @@ impl IoPathExtensionPartsSpec {
 }
 
 impl Interpreter {
+    /// Build a `Failure` value wrapping an `X::IO::*` exception with the given
+    /// type name and offending path. The Failure throws the exception when sunk.
+    fn make_io_failure(&self, ex_type: &str, path: &str) -> Value {
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("path".to_string(), Value::str(path.to_string()));
+        ex_attrs.insert(
+            "message".to_string(),
+            Value::str(format!("{}: {}", ex_type, path)),
+        );
+        let exception = Value::make_instance(Symbol::intern(ex_type), ex_attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -323,8 +339,45 @@ impl Interpreter {
                     Self::stringify_path(&original.join(&child_name))
                 };
                 let mut new_attrs = attributes.clone();
-                new_attrs.insert("path".to_string(), Value::str(joined));
-                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+                new_attrs.insert("path".to_string(), Value::str(joined.clone()));
+                let child = Value::make_instance(Symbol::intern("IO::Path"), new_attrs);
+                // `.child($name, :secure)` verifies that the resulting path is a
+                // real child of the (completely resolved) parent. It fails with
+                // X::IO::Resolve when the parent or the child path cannot be
+                // completely resolved, and with X::IO::NotAChild when the
+                // resolved child escapes the parent directory.
+                if method == "child" && Self::named_bool(&args, "secure") {
+                    let parent_abs = if original.is_absolute() {
+                        path_buf.clone()
+                    } else if let Some(cwd) = &instance_cwd {
+                        PathBuf::from(cwd).join(original)
+                    } else {
+                        cwd_path.join(original)
+                    };
+                    let child_path = Path::new(&joined);
+                    let child_abs = if child_path.is_absolute() {
+                        child_path.to_path_buf()
+                    } else if let Some(cwd) = &instance_cwd {
+                        PathBuf::from(cwd).join(child_path)
+                    } else {
+                        cwd_path.join(child_path)
+                    };
+                    let res_parent = Self::resolve_io_path(&parent_abs, true, &p);
+                    let res_child = Self::resolve_io_path(&child_abs, true, &joined);
+                    match (res_parent, res_child) {
+                        (Err(_), _) | (_, Err(_)) => {
+                            return Ok(self.make_io_failure("X::IO::Resolve", &p));
+                        }
+                        (Ok(rp), Ok(rc)) => {
+                            let sep = Self::io_path_sep(attributes);
+                            let prefix = format!("{}{}", rp, sep);
+                            if !rc.starts_with(&prefix) || rc == rp {
+                                return Ok(self.make_io_failure("X::IO::NotAChild", &joined));
+                            }
+                        }
+                    }
+                }
+                Ok(child)
             }
             "extension" => {
                 let subst = Self::positional_value(&args, 0).map(|v| v.to_string_value());
@@ -449,8 +502,19 @@ impl Interpreter {
             }
             "resolve" => {
                 let completely = Self::named_bool(&args, "completely");
-                let resolved = Self::resolve_io_path(&path_buf, completely, &p)?;
-                Ok(Self::clone_io_path_with_path(attributes, resolved))
+                let resolved = match Self::resolve_io_path(&path_buf, completely, &p) {
+                    Ok(r) => r,
+                    // `.resolve(:completely)` fails (returns a Failure) rather
+                    // than throwing when the path cannot be fully resolved.
+                    Err(_) => return Ok(self.make_io_failure("X::IO::Resolve", &p)),
+                };
+                // A resolved path is absolute, so its CWD becomes the volume root
+                // (the SPEC's dir separator on POSIX).
+                let mut new_attrs = attributes.clone();
+                new_attrs.insert("path".to_string(), Value::str(resolved));
+                let sep = Self::io_path_sep(attributes).to_string();
+                new_attrs.insert("cwd".to_string(), Value::str(sep));
+                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
             }
             "volume" => {
                 let (volume, _, _) = Self::io_path_parts(&p);
@@ -1060,6 +1124,19 @@ impl Interpreter {
                 #[cfg(not(any(unix, windows)))]
                 {
                     Err(RuntimeError::new("symlink not supported on this platform"))
+                }
+            }
+            "link" => {
+                // IO::Path.link($name): creates a new hard link named $name
+                // pointing to self (the target). Fails with X::IO::Link.
+                let link_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
+                let link_buf = self.resolve_path(&link_name);
+                match fs::hard_link(&path_buf, &link_buf) {
+                    Ok(()) => Ok(Value::Bool(true)),
+                    Err(err) => Ok(Self::make_link_failure(&p, &link_name, &err)),
                 }
             }
             "watch" => {
