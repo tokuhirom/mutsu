@@ -226,11 +226,17 @@ impl Interpreter {
                 "@_".to_string(),
                 Value::array(positional_args[positional_idx..].to_vec()),
             );
-            // Insert %_ if explicitly listed in params, or if named placeholders ($:Name)
-            // are present (leftover named args should be captured in %_).
-            // WhateverCode closures use this legacy path with params like ["_"], and should
-            // NOT overwrite the caller's %_ hash in the environment.
-            if params.iter().any(|p| p == "%_" || p.starts_with(':')) {
+            // Insert %_ if explicitly listed in params, if named placeholders
+            // ($:Name) are present, or if the sub uses any `^`-twigil placeholder
+            // ($^a / @^arr / %^h / &^cb): such a sub also exposes the implicit
+            // %_ slurpy, so leftover named args must be captured there (mirrors
+            // the unconditional @_ capture above).
+            // WhateverCode closures use this legacy path with params like ["_"]
+            // (no `^`), and must NOT overwrite the caller's %_ hash.
+            if params
+                .iter()
+                .any(|p| p == "%_" || p.starts_with(':') || p.contains('^'))
+            {
                 let mut leftover_named = std::collections::HashMap::new();
                 for (key, val) in named_args {
                     if !consumed_named.contains(&key) {
