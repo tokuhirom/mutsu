@@ -2,7 +2,7 @@ use super::*;
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 
-fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
+pub(crate) fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => x.cmp(y),
         (Value::Num(x), Value::Num(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
@@ -120,7 +120,7 @@ fn detect_method_cmp_block(data: &crate::value::SubData) -> Option<(String, bool
     }
 }
 
-fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(bool, bool)> {
+pub(crate) fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(bool, bool)> {
     if data.params.len() < 2 {
         return None;
     }
