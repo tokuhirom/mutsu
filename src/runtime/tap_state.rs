@@ -11,8 +11,8 @@
 //! the state is owned/shared is a localized change to this type and the `tap`
 //! field, not a sweep over every call site. See PLAN.md "Test 関数の TAP 状態所有".
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Per-plan TAP counter and plan tracking. One instance per `plan`/subtest scope.
 #[derive(Debug, Default)]

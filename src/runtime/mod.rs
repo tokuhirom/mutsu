@@ -5622,7 +5622,6 @@ impl Interpreter {
     }
 }
 
-
 impl Interpreter {
     /// Flush all open file handle buffers. Call before process exit.
     pub fn flush_all_handles(&mut self) {
