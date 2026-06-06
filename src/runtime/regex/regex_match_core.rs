@@ -191,8 +191,14 @@ impl Interpreter {
                         pattern.ignore_case,
                     );
                     if token.ratchet {
-                        candidates
-                            .sort_by_key(|(next, c)| (*next, c.positional.len(), c.named.len()));
+                        // Ratchet (`:`) commits to the atom's highest-priority match
+                        // and forbids backtracking into it. Candidates are returned in
+                        // "lowest priority first, highest priority last" order, so the
+                        // atom's preferred match is the last element: for `||` it is the
+                        // first alternative, for `|`/greedy quantifiers it is the longest
+                        // match — both already sit last. Keep only that one. (Sorting by
+                        // length here was wrong: it picked the longest match even for `||`,
+                        // letting `( ab || abc ): de` backtrack into the group.)
                         if let Some(best) = candidates.pop() {
                             candidates = vec![best];
                         }
@@ -221,8 +227,8 @@ impl Interpreter {
                         pattern.ignore_case,
                     );
                     if token.ratchet {
-                        candidates
-                            .sort_by_key(|(next, c)| (*next, c.positional.len(), c.named.len()));
+                        // Same as the `One` case: commit to the atom's highest-priority
+                        // match (the last candidate), not the longest one.
                         if let Some(best) = candidates.pop() {
                             // Atom matched — commit to the match (no backtracking)
                             candidates = vec![best];
