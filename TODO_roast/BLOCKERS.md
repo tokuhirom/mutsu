@@ -394,15 +394,30 @@ located relative to CWD) — `run-roast-test.sh` now runs them with CWD=roast.
   bundled Unicode version doesn't implement these UAX-29 rules for Unicode 17.0.
   Needs GB9c/GB11 post-processing or a crate upgrade.)
 
-## Pod / Documentation (4 tests)
+## Pod / Documentation (1 test remaining)
 
-Pod6 formatting codes (Pod::FormattingCode type), table rendering, and trailing declarator docs.
+**Resolved (whitelisted):**
+- roast/S26-documentation/07-tables.t — already passing/whitelisted (stale entry)
+- roast/S26-documentation/08-formattingcodes.t — already passing/whitelisted (stale entry)
+- roast/S26-documentation/block-trailing.t — **whitelisted, passes (50/50)**. A
+  standalone trailing declarator comment (`#=` on its own line after the
+  declaration) now carries the declaration's callable-type / proto / return-type
+  metadata into `$=pod`, so `$=pod[i].WHEREFORE.^name` is the correct type
+  (Method/Submethod/Routine/`Sub+{Callable[Str]}`) instead of a generic `Sub`.
+  Fix in `src/runtime/io.rs` (the `#=`-on-own-line path threads
+  `callable_type_override`/`is_proto`/`return_type` from `last_declarant`).
+  Local test: t/declarator-trailing-wherefore.t.
+- roast/S26-documentation/why-trailing.t — **whitelisted, passes (54/54)** (same fix).
 
-- roast/S26-documentation/07-tables.t
-- roast/S26-documentation/08-formattingcodes.t (Pod::FormattingCode)
-- roast/S26-documentation/12-non-breaking-space.t
-- roast/S26-documentation/block-trailing.t
-- roast/S26-documentation/why-trailing.t
+**Still failing:**
+- roast/S26-documentation/12-non-breaking-space.t — NOT a Pod issue. Subtest 2
+  plans `$nbchar-count + 1` where `my $nbchar-count = @nbchars.elems` is read at
+  the top of the file but `@nbchars` is populated by a `BEGIN {}` block at the
+  *end* of the file. rakudo runs the textually-later `BEGIN` at compile time
+  (before the top-level `my` initialization), so `$nbchar-count` is 4; mutsu runs
+  `BEGIN` at its textual position, so it reads 0 and the subtest plan collapses to
+  `1..1`. Blocked on **compile-time BEGIN-phaser execution / hoisting** ordering,
+  not on Pod table rendering.
 
 ## Temporal / DateTime (DONE except an unpassable test)
 
