@@ -815,47 +815,41 @@ impl VM {
         self.locals_dirty = false;
         self.env_dirty = false;
 
+        // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
+        // born-owned overlay over the caller. Param / local env writes land in a
+        // fresh map and are discarded by dropping the overlay on return (for
+        // callee-local names) or merged overlay-only (for captured-outer writes).
+        // This replaces the previous name-keyed save/restore juggling
+        // (saved_env_locals / saved_param_env) with a single O(callee-writes)
+        // merge -- the function's own params/locals never pollute the caller env.
+        let parent_overlay = self.interpreter.env().flattened().overlay_arc();
+        let caller_env = std::mem::replace(
+            self.interpreter.env_mut(),
+            crate::env::Env::scoped_child(parent_overlay),
+        );
+
         let num_locals = cf.code.locals.len();
         self.locals.clear();
         self.locals.resize(num_locals, Value::Nil);
         self.locals_dirty_slots = vec![false; num_locals];
 
+        // Read-through to the caller (parent tier) for the initial value of a
+        // local that shadows a same-named caller variable, matching the prior
+        // env().get() semantics.
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
                 self.locals[i] = val.clone();
             }
         }
 
-        // Save env values for function locals BEFORE binding params, so we
-        // capture the caller's original values. This ensures correct restore
-        // when a function parameter has the same name as a caller's variable.
-        let saved_env_locals: Vec<(String, Option<Value>)> = cf
-            .code
-            .locals
-            .iter()
-            .map(|name| {
-                let old = self.interpreter.env().get(name).cloned();
-                (name.clone(), old)
-            })
-            .collect();
-
-        // Bind params to locals only (skip env writes for performance).
-        // The env will be synced lazily via ensure_env_synced if needed.
-        // Save old env values for param names so we can restore them after
-        // the call (ensure_env_synced may write param locals to env during
-        // execution, and those must not leak into the caller's scope).
         let saved_readonly = self.interpreter.save_readonly_vars();
-        // Dual-store decoupling: a slot-only param (read via GetLocal, not in
-        // `needs_env_sync`) need not be written into the interpreter's shared
-        // `env` at all -- it lives purely in the VM's `locals`. We must still
-        // write every param when some code may read a caller frame's lexical by
-        // dynamic name (EVAL / CALLER:: / symbolic deref), since such a reader
-        // resolves the name against `env`. Loop/block frames already mark all
-        // params `needs_env_sync` (the conservative fallback in
-        // compute_needs_env_sync), so they keep the full write.
+        // Bind params to slots. Also write the param into the overlay when a
+        // name-based reader needs it (reflective access anywhere / GetGlobal /
+        // closure capture via needs_env_sync), or when it is `Nil` (the GetLocal
+        // handler treats a `Nil` slot as possibly-undeclared and verifies via
+        // env.contains_key). The overlay write is born-owned (no caller-env fork)
+        // and is dropped on return, so no per-param save/restore is needed.
         let write_all_params = crate::opcode::reflective_name_access_possible();
-        let mut saved_param_env: Vec<(String, Option<Value>)> =
-            Vec::with_capacity(positional_count);
         for (param_idx, slot) in param_slots.iter().enumerate() {
             if param_idx < actual_count {
                 let val = crate::runtime::types::unwrap_varref_value(args[param_idx].clone());
@@ -863,6 +857,7 @@ impl VM {
                     && !Self::fast_type_check(&val, tc)
                 {
                     self.interpreter.restore_readonly_vars(saved_readonly);
+                    self.interpreter.set_env(caller_env);
                     self.locals = saved_locals;
                     self.locals_dirty = saved_locals_dirty;
                     self.locals_dirty_slots = saved_locals_dirty_slots;
@@ -883,28 +878,10 @@ impl VM {
                 }
                 let param_name = &cf.param_defs[param_idx].name;
                 self.locals[*slot] = val.clone();
-                // Write the param into env only when a name-based reader needs it:
-                // it is referenced via a GetGlobal-family op / captured by a
-                // closure (`needs_env_sync`), or reflective access is possible
-                // anywhere in the program. Otherwise the param stays slot-only and
-                // never crosses into the interpreter's env.
-                //
-                // Exception: a `Nil`-valued param must still be written. The
-                // GetLocal handler treats a `Nil` slot as possibly-undeclared and
-                // verifies declaration via `env.contains_key(name)` (a legitimately
-                // `Nil` param would otherwise raise X::Undeclared). Nil params are
-                // rare, so this costs nothing on the hot Int-recursion path.
                 let needs_env = write_all_params
                     || matches!(val, Value::Nil)
                     || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
                 if needs_env {
-                    saved_param_env.push((
-                        param_name.clone(),
-                        self.interpreter.env().get(param_name).cloned(),
-                    ));
-                    // Write params to env so sync_locals_from_env (triggered by
-                    // ensure_locals_synced) doesn't clobber them with stale values
-                    // from the caller's scope.
                     self.interpreter.env_mut().insert(param_name.clone(), val);
                 }
                 self.interpreter
@@ -970,78 +947,56 @@ impl VM {
 
         self.stack.truncate(saved_stack_depth);
 
+        self.locals = saved_locals;
+        self.locals_dirty = saved_locals_dirty;
+        self.locals_dirty_slots = saved_locals_dirty_slots;
+        self.env_dirty = saved_env_dirty;
+        self.interpreter.restore_readonly_vars(saved_readonly);
+
+        // Restore the caller env and merge the overlay (the callee's own writes)
+        // back: a write to a captured outer variable (not a declared local of
+        // this function) persists in the caller; the function's params/locals are
+        // dropped with the overlay. This replaces the prior per-name save/restore.
+        {
+            let local_names: std::collections::HashSet<&str> =
+                if let Some(ref declared) = cf.declared_locals {
+                    declared.iter().map(|s| s.as_str()).collect()
+                } else {
+                    cf.code.locals.iter().map(|s| s.as_str()).collect()
+                };
+            let scoped = std::mem::replace(self.interpreter.env_mut(), caller_env);
+            for (k, v) in scoped.overlay_iter() {
+                // The callee's private topic / arg array / routine id, and the
+                // per-frame contextual vars (`?LINE`/`?FILE`/...), must not
+                // propagate to the caller (which retains its own). Skipping the
+                // `?`-prefixed ones also avoids spurious `env_dirty` churn from
+                // the per-statement `?LINE` write on every recursive call.
+                if *k == "_"
+                    || *k == "@_"
+                    || *k == "%_"
+                    || *k == "__mutsu_callable_id"
+                    || k.with_str(|s| s.starts_with('?'))
+                {
+                    continue;
+                }
+                if !k.with_str(|s| local_names.contains(s)) {
+                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                    self.env_dirty = true;
+                }
+            }
+        }
+
         // Return type check (if specified). Allows type objects, Nil, and Failure through.
         if result.is_ok()
             && let Some(ref rt) = cf.return_type
         {
             let check_val = explicit_return.as_ref().unwrap_or(&ret_val);
             if !Self::light_return_type_check(check_val, rt) {
-                self.locals = saved_locals;
-                self.locals_dirty = saved_locals_dirty;
-                self.locals_dirty_slots = saved_locals_dirty_slots;
-                self.env_dirty = saved_env_dirty;
-                self.interpreter.restore_readonly_vars(saved_readonly);
-                for (name, old_val) in saved_param_env {
-                    match old_val {
-                        Some(v) => {
-                            self.interpreter.env_mut().insert(name, v);
-                        }
-                        None => {
-                            self.interpreter.env_mut().remove(&name);
-                        }
-                    }
-                }
                 return Err(RuntimeError::new(format!(
                     "Type check failed for return value; expected {}, got {}",
                     rt,
                     runtime::value_type_name(check_val)
                 )));
-            }
-        }
-
-        self.locals = saved_locals;
-        self.locals_dirty = saved_locals_dirty;
-        self.locals_dirty_slots = saved_locals_dirty_slots;
-        self.env_dirty = saved_env_dirty;
-
-        self.interpreter.restore_readonly_vars(saved_readonly);
-        // Restore caller's env values for param names that may have leaked
-        // into env via ensure_env_synced during the function body execution.
-        for (name, old_val) in saved_param_env {
-            match old_val {
-                Some(v) => {
-                    self.interpreter.env_mut().insert(name, v);
-                }
-                None => {
-                    self.interpreter.env_mut().remove(&name);
-                }
-            }
-        }
-
-        // Restore function-local variables in env to their pre-call values.
-        // Variables declared locally (via `my`) or as parameters are restored
-        // to prevent recursive calls from stomping on the caller's lexical vars.
-        // Captured outer variables (not declared in this function) keep their
-        // modified values so side effects (e.g. $a++) persist across calls.
-        let declared = cf.declared_locals.as_ref();
-        for (local_name, saved_val) in &saved_env_locals {
-            let is_declared = declared.is_some_and(|d| d.contains(local_name));
-            match saved_val {
-                None => {
-                    if is_declared {
-                        // This local was not in env before the call and is function-local
-                        self.interpreter.env_mut().remove(local_name);
-                    }
-                }
-                Some(v) => {
-                    if is_declared {
-                        // Restore function-local var to pre-call value
-                        self.interpreter
-                            .env_mut()
-                            .insert(local_name.clone(), v.clone());
-                    }
-                    // Captured vars: keep their modified value (side effects persist)
-                }
             }
         }
 
@@ -1119,15 +1074,22 @@ impl VM {
         self.locals_dirty = false;
         self.env_dirty = false;
 
+        // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
+        // born-owned overlay over the caller. Param / alias / @_ env writes below
+        // land in a fresh map and are discarded by dropping the overlay on return
+        // (callee-local names) or merged overlay-only (captured-outer writes),
+        // replacing the per-key save/restore the `modified_env_keys` list did.
+        let parent_overlay = self.interpreter.env().flattened().overlay_arc();
+        let caller_env = std::mem::replace(
+            self.interpreter.env_mut(),
+            crate::env::Env::scoped_child(parent_overlay),
+        );
+
         let num_locals = cf.code.locals.len();
         self.locals = vec![Value::Nil; num_locals];
         self.locals_dirty_slots = vec![false; num_locals];
 
-        // Track which env keys we modify so we can restore them.
-        let mut modified_env_keys: Vec<(String, Option<Value>)> =
-            Vec::with_capacity(cf.param_defs.len());
-
-        // Bind parameters directly to locals slots and env.
+        // Bind parameters directly to locals slots and the overlay env.
         let mut positional_idx = 0usize;
         for pd in &cf.param_defs {
             let param_name = &pd.name;
@@ -1211,10 +1173,6 @@ impl VM {
                             if let Some(slot) = cf.code.locals.iter().position(|n| n == sub_name) {
                                 self.locals[slot] = v.clone();
                             }
-                            modified_env_keys.push((
-                                sub_name.clone(),
-                                self.interpreter.env().get(sub_name).cloned(),
-                            ));
                             self.interpreter
                                 .env_mut()
                                 .insert(sub_name.clone(), v.clone());
@@ -1222,6 +1180,7 @@ impl VM {
                     }
                     Some(v)
                 } else if pd.required {
+                    self.interpreter.set_env(caller_env);
                     self.locals = saved_locals;
                     self.locals_dirty = saved_locals_dirty;
                     self.locals_dirty_slots = saved_locals_dirty_slots;
@@ -1247,6 +1206,7 @@ impl VM {
                     positional_idx += 1;
                     Some(val)
                 } else if pd.required {
+                    self.interpreter.set_env(caller_env);
                     self.locals = saved_locals;
                     self.locals_dirty = saved_locals_dirty;
                     self.locals_dirty_slots = saved_locals_dirty_slots;
@@ -1271,10 +1231,6 @@ impl VM {
             if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
                 self.locals[slot] = bound_val.clone();
             }
-            modified_env_keys.push((
-                param_name.clone(),
-                self.interpreter.env().get(param_name).cloned(),
-            ));
             self.interpreter
                 .env_mut()
                 .insert(param_name.clone(), bound_val);
@@ -1306,7 +1262,6 @@ impl VM {
                 .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
                 .map(|a| unwrap_varref_value(a.clone()))
                 .collect();
-            modified_env_keys.push(("@_".to_string(), self.interpreter.env().get("@_").cloned()));
             self.interpreter
                 .env_mut()
                 .insert("@_".to_string(), Value::array(plain_args));
@@ -1328,9 +1283,7 @@ impl VM {
                     if let Some(slot) = cf.code.locals.iter().position(|n| n == param) {
                         self.locals[slot] = val.clone();
                     }
-                    // Also set in env for the placeholder and its de-careted alias
-                    modified_env_keys
-                        .push((param.clone(), self.interpreter.env().get(param).cloned()));
+                    // Also set in (overlay) env for the placeholder and its alias
                     self.interpreter
                         .env_mut()
                         .insert(param.clone(), val.clone());
@@ -1340,8 +1293,6 @@ impl VM {
                         if let Some(slot) = cf.code.locals.iter().position(|n| *n == bare) {
                             self.locals[slot] = val.clone();
                         }
-                        modified_env_keys
-                            .push((bare.clone(), self.interpreter.env().get(&bare).cloned()));
                         self.interpreter.env_mut().insert(bare, val);
                     }
                 }
@@ -1419,14 +1370,31 @@ impl VM {
         // Restore readonly vars
         self.interpreter.restore_readonly_vars(saved_readonly);
 
-        // Restore modified env keys
-        for (name, old_val) in modified_env_keys {
-            match old_val {
-                Some(v) => {
-                    self.interpreter.env_mut().insert(name, v);
+        // Restore the caller env, merging the overlay (the callee's own writes)
+        // back: a write to a captured outer variable (not a declared local /
+        // param of this function) persists in the caller; the function's
+        // params/locals/aliases are dropped with the overlay. This replaces the
+        // per-key `modified_env_keys` save/restore.
+        {
+            let local_names: std::collections::HashSet<&str> =
+                if let Some(ref declared) = cf.declared_locals {
+                    declared.iter().map(|s| s.as_str()).collect()
+                } else {
+                    cf.code.locals.iter().map(|s| s.as_str()).collect()
+                };
+            let scoped = std::mem::replace(self.interpreter.env_mut(), caller_env);
+            for (k, v) in scoped.overlay_iter() {
+                if *k == "_"
+                    || *k == "@_"
+                    || *k == "%_"
+                    || *k == "__mutsu_callable_id"
+                    || k.with_str(|s| s.starts_with('?'))
+                {
+                    continue;
                 }
-                None => {
-                    self.interpreter.env_mut().remove(&name);
+                if !k.with_str(|s| local_names.contains(s)) {
+                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                    self.env_dirty = true;
                 }
             }
         }
