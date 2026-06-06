@@ -888,12 +888,14 @@ impl VM {
                     .mark_readonly(&cf.param_defs[param_idx].name);
             }
         }
-        // Mark all param slots dirty so ensure_env_synced flushes them.
-        for (param_idx, slot) in param_slots.iter().enumerate() {
-            if param_idx < actual_count {
-                self.mark_local_dirty(*slot);
-            }
-        }
+        // Bind-time param values that a name-based reader can observe were
+        // already written into the (born-owned) overlay env above when
+        // `needs_env` held. A slot-only param (read solely via GetLocal) never
+        // reaches env, so marking it dirty here only flips the global
+        // `locals_dirty` flag and forces a guaranteed-no-op `ensure_env_synced`
+        // flush on every call (e.g. once per recursive `fib` call). The bind
+        // value is already coherent, so no dirty mark is needed; any later
+        // reassignment in the body marks its own slot via the SetLocal path.
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.interpreter.let_saves_len();

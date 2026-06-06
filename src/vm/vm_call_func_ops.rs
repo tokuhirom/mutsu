@@ -64,7 +64,10 @@ impl VM {
                                 compiled_fns,
                             )?;
                             self.stack.push(result);
-                            self.env_dirty = true;
+                            // Compiled path: positional_light's scoped-overlay
+                            // merge already sets env_dirty iff a captured-outer
+                            // write happened. A blanket set here would force a
+                            // redundant locals pull on every pure call (e.g. fib).
                             return Ok(());
                         }
                     }
@@ -95,7 +98,8 @@ impl VM {
                         }
                         let result = self.call_compiled_function_light(cf, args, compiled_fns)?;
                         self.stack.push(result);
-                        self.env_dirty = true;
+                        // Compiled path: light's scoped-overlay merge already
+                        // signals env_dirty only on a captured-outer write.
                         return Ok(());
                     }
                 }
@@ -151,9 +155,17 @@ impl VM {
                             r
                         };
                         // Put CF back in cache
+                        let used_named = !Self::is_light_call_eligible(&cf, name_str)
+                            && !Self::is_positional_light_call_eligible(&cf, name_str);
                         self.otf_call_cache.insert(name_sym, cf);
                         self.stack.push(result?);
-                        self.env_dirty = true;
+                        // light / positional_light sub-cases signal env_dirty via
+                        // their scoped-overlay merge; the named sub-case (complex
+                        // signatures, possible `is rw`/`is raw` caller writeback)
+                        // is handled conservatively like the main named path.
+                        if used_named {
+                            self.env_dirty = true;
+                        }
                         return Ok(());
                     }
                     // Put CF back if we couldn't use it (stack underflow)
@@ -347,7 +359,13 @@ impl VM {
             compiled_fns,
         )?;
         self.stack.push(result);
-        self.env_dirty = true;
+        // env_dirty is now managed inside dispatch_func_call_inner: the
+        // interpreter / native fallback branches set it (they mutate env by
+        // name), while the compiled fast paths (positional_light / light /
+        // named) rely on their own scoped-overlay merge to signal env_dirty
+        // only when a captured-outer write actually happened. This stops a pure
+        // compiled call (e.g. `fib`) from forcing a redundant locals pull per
+        // call.
         Ok(())
     }
 
@@ -582,6 +600,7 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
+            self.env_dirty = true;
             self.interpreter.maybe_fetch_rw_proxy(result?, true)
         } else {
             self.interpreter
@@ -666,29 +685,47 @@ impl VM {
                 if pushed_dispatch {
                     self.interpreter.pop_multi_dispatch();
                 }
+                // The named (heavy) path is used for complex signatures that can
+                // write back into caller-named state in ways the scoped-overlay
+                // merge does not capture: an `is rw` param writeback targets a
+                // callee-local name (skipped by the merge), and `is raw` / Proxy
+                // returns alias caller containers. Conservatively mark env dirty
+                // so the caller re-syncs. This is not the hot recursion path
+                // (simple positional calls use positional_light), so keeping the
+                // old behavior here costs nothing measurable.
+                self.env_dirty = true;
                 self.interpreter
                     .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
-            } else if self.has_multi_candidates_cached(name) && !self.interpreter.has_proto(name) {
-                // User-defined multi candidates take priority over builtins.
-                // Call call_function_fallback directly to bypass the builtin match
-                // in call_function, which would shadow user-defined multi subs.
-                crate::vm::vm_stats::record_function_fallback(name);
-                self.interpreter.set_pending_call_arg_sources(arg_sources);
-                let result = self.interpreter.call_function_fallback(name, &args);
-                self.interpreter.set_pending_call_arg_sources(None);
-                self.interpreter.maybe_fetch_rw_proxy(result?, true)
-            } else if self.interpreter.user_function_matches_call(name, &args) {
-                // A user-defined sub shadows a same-named builtin.
-                crate::vm::vm_stats::record_function_fallback(name);
-                self.interpreter.set_pending_call_arg_sources(arg_sources);
-                let result = self.interpreter.call_function_fallback(name, &args);
-                self.interpreter.set_pending_call_arg_sources(None);
-                self.interpreter.maybe_fetch_rw_proxy(result?, true)
-            } else if let Some(native_result) =
-                self.try_native_function(Symbol::intern(name), &args)
-            {
-                native_result
-            } else if !self.is_interpreter_handled_function(name)
+            } else {
+                // Interpreter / native fallback paths route through the
+                // tree-walking interpreter, which can mutate the shared env by
+                // name (globals, dynamic vars, captured-outer writes). Mark env
+                // dirty so the caller re-syncs its locals. The compiled fast
+                // paths above instead rely on their own scoped-overlay merge to
+                // signal env_dirty only when a captured-outer write happened, so
+                // a pure compiled call no longer forces a per-call locals pull.
+                self.env_dirty = true;
+                if self.has_multi_candidates_cached(name) && !self.interpreter.has_proto(name) {
+                    // User-defined multi candidates take priority over builtins.
+                    // Call call_function_fallback directly to bypass the builtin match
+                    // in call_function, which would shadow user-defined multi subs.
+                    crate::vm::vm_stats::record_function_fallback(name);
+                    self.interpreter.set_pending_call_arg_sources(arg_sources);
+                    let result = self.interpreter.call_function_fallback(name, &args);
+                    self.interpreter.set_pending_call_arg_sources(None);
+                    self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                } else if self.interpreter.user_function_matches_call(name, &args) {
+                    // A user-defined sub shadows a same-named builtin.
+                    crate::vm::vm_stats::record_function_fallback(name);
+                    self.interpreter.set_pending_call_arg_sources(arg_sources);
+                    let result = self.interpreter.call_function_fallback(name, &args);
+                    self.interpreter.set_pending_call_arg_sources(None);
+                    self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                } else if let Some(native_result) =
+                    self.try_native_function(Symbol::intern(name), &args)
+                {
+                    native_result
+                } else if !self.is_interpreter_handled_function(name)
                 && !self.has_multi_candidates_cached(name)
                 && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
                 && !Self::function_body_needs_interpreter(&def.body)
@@ -699,27 +736,27 @@ impl VM {
                         && pd.where_constraint.is_none()
                         && pd.code_signature.is_none()
                         && !pd.name.starts_with('&')
-                })
-            {
-                self.compile_and_call_function_def(&def, args, compiled_fns)
-            } else if let Some(result) = self.try_native_test_function(name, &args) {
-                // Dispatch Test functions straight to their typed handler (lever A).
-                result
-            } else {
-                // Sync VM locals to env before spawning threads so closures capture them
-                if name == "start" {
-                    self.sync_env_from_locals(code);
+                }) {
+                    self.compile_and_call_function_def(&def, args, compiled_fns)
+                } else if let Some(result) = self.try_native_test_function(name, &args) {
+                    // Dispatch Test functions straight to their typed handler (lever A).
+                    result
+                } else {
+                    // Sync VM locals to env before spawning threads so closures capture them
+                    if name == "start" {
+                        self.sync_env_from_locals(code);
+                    }
+                    crate::vm::vm_stats::record_function_fallback(name);
+                    self.interpreter.set_pending_call_arg_sources(arg_sources);
+                    let result = self.interpreter.call_function(name, args);
+                    self.interpreter.set_pending_call_arg_sources(None);
+                    // Interpreter function calls (e.g. `require`) may register
+                    // new subs — invalidate function resolution caches.
+                    self.fn_resolve_gen += 1;
+                    // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
+                    let auto_fetch = name != "substr-rw";
+                    self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
                 }
-                crate::vm::vm_stats::record_function_fallback(name);
-                self.interpreter.set_pending_call_arg_sources(arg_sources);
-                let result = self.interpreter.call_function(name, args);
-                self.interpreter.set_pending_call_arg_sources(None);
-                // Interpreter function calls (e.g. `require`) may register
-                // new subs — invalidate function resolution caches.
-                self.fn_resolve_gen += 1;
-                // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
-                let auto_fetch = name != "substr-rw";
-                self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
             }
         }
     }
