@@ -678,6 +678,56 @@ fn try_custom_infix_at_level<'a>(
     Ok(None)
 }
 
+/// Numeric precedence ordering for a hyper operator's base op.
+/// Hyper operators inherit the precedence of the operator they are based on,
+/// so `(1,2,3) »+« (10,20,30) »*« (2,3,4)` multiplies before adding.
+fn hyper_op_prec(op: &str) -> i32 {
+    match classify_base_op(op) {
+        OpPrecedence::Multiplicative => 50,
+        OpPrecedence::Additive => 40,
+        OpPrecedence::Concatenation => 30,
+        OpPrecedence::Comparison => 20,
+        OpPrecedence::Other => 10,
+    }
+}
+
+/// Parse the right-hand side of a hyper operator, folding in any following
+/// hyper operators whose base precedence is *tighter* than `parent_prec`.
+/// This makes hyper operators honour their base operator's precedence while
+/// keeping equal-precedence chains left-associative (the outer `concat_expr`
+/// loop combines those).
+fn parse_hyper_rhs(input: &str, parent_prec: i32) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = replication_expr(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r) {
+            break;
+        }
+        if let Some((op, dwim_left, dwim_right, len)) = parse_hyper_op(r) {
+            let prec = hyper_op_prec(&op);
+            if prec <= parent_prec {
+                break;
+            }
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = parse_hyper_rhs(r, prec).map_err(|err| {
+                enrich_expected_error(err, "expected expression after hyper operator", r.len())
+            })?;
+            left = Expr::HyperOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+                dwim_left,
+                dwim_right,
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
 /// String concatenation: ~
 pub(super) fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = replication_expr(input)?;
@@ -709,9 +759,10 @@ pub(super) fn concat_expr(input: &str) -> PResult<'_, Expr> {
         }
         // Hyper operators: >>op<<, >>op>>, <<op<<, <<op>>
         if let Some((op, dwim_left, dwim_right, len)) = parse_hyper_op(r) {
+            let parent_prec = hyper_op_prec(&op);
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = replication_expr(r).map_err(|err| {
+            let (r, right) = parse_hyper_rhs(r, parent_prec).map_err(|err| {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
             left = Expr::HyperOp {
