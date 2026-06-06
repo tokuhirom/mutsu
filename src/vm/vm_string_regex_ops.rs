@@ -424,7 +424,15 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
-        let replacement = self.interpolate_subst_replacement_with_closures(&raw_replacement);
+        // A replacement containing a `{...}` code block (e.g. from `s[...] = $0 x 2`)
+        // must be evaluated *per match*, with `$/`, `$0`, ... bound to that match.
+        // For replacements without code blocks, interpolate once up front.
+        let has_code_block = raw_replacement.contains('{');
+        let replacement = if has_code_block {
+            raw_replacement.clone()
+        } else {
+            self.interpolate_subst_replacement_with_closures(&raw_replacement)
+        };
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
@@ -478,17 +486,30 @@ impl VM {
                     .interpreter
                     .regex_find_first_from_with_captures(&pattern, &text, 0);
                 if let Some((start, end, captures)) = found {
-                    // Expand $0, $1, ... in the replacement with captured groups
-                    let expanded = expand_capture_refs(&replacement, &captures);
-                    let out = Self::apply_substitutions(
-                        &text,
-                        &[(start, end)],
-                        &expanded,
-                        samecase,
-                        sigspace,
-                        samemark,
-                        samespace,
-                    );
+                    let out = if has_code_block {
+                        self.apply_substitutions_dynamic(
+                            &text,
+                            &[(start, end)],
+                            &raw_replacement,
+                            std::slice::from_ref(&captures),
+                            samecase,
+                            sigspace,
+                            samemark,
+                            samespace,
+                        )
+                    } else {
+                        // Expand $0, $1, ... in the replacement with captured groups
+                        let expanded = expand_capture_refs(&replacement, &captures);
+                        Self::apply_substitutions(
+                            &text,
+                            &[(start, end)],
+                            &expanded,
+                            samecase,
+                            sigspace,
+                            samemark,
+                            samespace,
+                        )
+                    };
                     let result = Value::str(out);
                     self.interpreter
                         .env_mut()
@@ -557,7 +578,24 @@ impl VM {
                 .collect();
             (selected, captures)
         };
+        // When :g, :x, or a multi-value :nth is used, the substitution result
+        // (and $/) is a List of Match objects rather than a single Match. A bare
+        // substitution yields a single Match. A *single* :nth(N) forces a single
+        // Match even when combined with :g (e.g. `s:2nd:g/./Z/` yields a Match).
+        let single_nth = nth_spec.as_deref().is_some_and(|s| !s.contains(','));
+        let nth_is_multi = nth_spec.as_deref().is_some_and(|s| s.contains(','));
+        let result_is_list = !single_nth && (global || x_count.is_some() || nth_is_multi);
         if ranges.is_empty() {
+            if result_is_list {
+                // :g / :x with no match: result is an empty List (falsy).
+                let empty = Value::array(Vec::new());
+                self.interpreter
+                    .env_mut()
+                    .insert("/".to_string(), empty.clone());
+                self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+                self.stack.push(empty);
+                return Ok(());
+            }
             self.interpreter
                 .env_mut()
                 .insert("/".to_string(), Value::Nil);
@@ -566,7 +604,19 @@ impl VM {
             return Ok(());
         }
 
-        let out = if !per_match_captures.is_empty() {
+        let out = if has_code_block {
+            // Replacement has `{...}` code block(s): interpolate per match.
+            self.apply_substitutions_dynamic(
+                &text,
+                &ranges,
+                &raw_replacement,
+                &per_match_captures,
+                samecase,
+                sigspace,
+                samemark,
+                samespace,
+            )
+        } else if !per_match_captures.is_empty() {
             // Build output with per-match capture expansion
             Self::apply_substitutions_with_captures(
                 &text,
@@ -600,6 +650,21 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("__mutsu_rw_map_topic__".to_string(), result);
+        // For :g / :x, $/ and the substitution result are a List of Match
+        // objects; otherwise a single Match for the first (and only) range.
+        if result_is_list {
+            let matches: Vec<Value> = ranges
+                .iter()
+                .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
+                .collect();
+            let list = Value::array(matches);
+            self.interpreter
+                .env_mut()
+                .insert("/".to_string(), list.clone());
+            self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+            self.stack.push(list);
+            return Ok(());
+        }
         // Create Match object from first match range and set $/
         let (first_start, first_end) = ranges[0];
         let match_obj = Self::make_subst_match(&text, first_start, first_end);
@@ -628,7 +693,15 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
-        let replacement = self.interpolate_subst_replacement_with_closures(&raw_replacement);
+        // A replacement containing a `{...}` code block (e.g. from `s[...] = $0 x 2`)
+        // must be evaluated *per match*, with `$/`, `$0`, ... bound to that match.
+        // For replacements without code blocks, interpolate once up front.
+        let has_code_block = raw_replacement.contains('{');
+        let replacement = if has_code_block {
+            raw_replacement.clone()
+        } else {
+            self.interpolate_subst_replacement_with_closures(&raw_replacement)
+        };
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
@@ -653,8 +726,16 @@ impl VM {
                         samemark,
                         samespace,
                     );
+                    // S/// sets $/ to the match (without mutating $_).
+                    let match_obj = Self::make_subst_match(&text, start, end);
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), Value::Nil);
                     self.stack.push(Value::str(text));
                 }
             } else {
@@ -662,18 +743,38 @@ impl VM {
                     .interpreter
                     .regex_find_first_from_with_captures(&pattern, &text, 0);
                 if let Some((start, end, captures)) = found {
-                    let expanded = expand_capture_refs(&replacement, &captures);
-                    let out = Self::apply_substitutions(
-                        &text,
-                        &[(start, end)],
-                        &expanded,
-                        samecase,
-                        sigspace,
-                        samemark,
-                        samespace,
-                    );
+                    let out = if has_code_block {
+                        self.apply_substitutions_dynamic(
+                            &text,
+                            &[(start, end)],
+                            &raw_replacement,
+                            std::slice::from_ref(&captures),
+                            samecase,
+                            sigspace,
+                            samemark,
+                            samespace,
+                        )
+                    } else {
+                        let expanded = expand_capture_refs(&replacement, &captures);
+                        Self::apply_substitutions(
+                            &text,
+                            &[(start, end)],
+                            &expanded,
+                            samecase,
+                            sigspace,
+                            samemark,
+                            samespace,
+                        )
+                    };
+                    let match_obj = Self::make_subst_match(&text, start, end);
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), Value::Nil);
                     self.stack.push(Value::str(text));
                 }
             }
@@ -716,11 +817,33 @@ impl VM {
                 .collect();
             (selected, captures)
         };
+        // Mirror the destructive path: a single :nth(N) yields a Match; :g, :x,
+        // or a multi-value :nth yields a List of Matches in $/.
+        let single_nth = nth_spec.as_deref().is_some_and(|s| !s.contains(','));
+        let nth_is_multi = nth_spec.as_deref().is_some_and(|s| s.contains(','));
+        let result_is_list = !single_nth && (global || x_count.is_some() || nth_is_multi);
         if ranges.is_empty() {
+            let slash = if result_is_list {
+                Value::array(Vec::new())
+            } else {
+                Value::Nil
+            };
+            self.interpreter.env_mut().insert("/".to_string(), slash);
             self.stack.push(Value::str(text));
             return Ok(());
         }
-        let out = if !per_match_captures.is_empty() {
+        let out = if has_code_block {
+            self.apply_substitutions_dynamic(
+                &text,
+                &ranges,
+                &raw_replacement,
+                &per_match_captures,
+                samecase,
+                sigspace,
+                samemark,
+                samespace,
+            )
+        } else if !per_match_captures.is_empty() {
             Self::apply_substitutions_with_captures(
                 &text,
                 &ranges,
@@ -742,6 +865,22 @@ impl VM {
                 samespace,
             )
         };
+        // Set $/ to the match result (List or single Match).
+        if result_is_list {
+            let matches: Vec<Value> = ranges
+                .iter()
+                .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
+                .collect();
+            self.interpreter
+                .env_mut()
+                .insert("/".to_string(), Value::array(matches));
+        } else {
+            let (s, e) = ranges[0];
+            let match_obj = Self::make_subst_match(&text, s, e);
+            self.interpreter
+                .env_mut()
+                .insert("/".to_string(), match_obj);
+        }
         self.stack.push(Value::str(out));
         Ok(())
     }
@@ -752,14 +891,26 @@ impl VM {
         x_count: Option<usize>,
     ) -> Result<Vec<(usize, usize)>, RuntimeError> {
         if let Some(raw) = nth_spec {
-            let n = Self::parse_subst_nth_spec(raw)?;
-            if n == 0 {
-                return Err(RuntimeError::new("Invalid :nth index (must be >= 1)"));
+            // :nth may carry a comma-separated list of 1-based indices, e.g.
+            // `:nth(1,3)`. Indices must be >= 1 and monotonically increasing.
+            let nth_list = Self::parse_subst_nth_spec(raw)?;
+            let mut selected: Vec<(usize, usize)> = Vec::new();
+            for &n in &nth_list {
+                if n <= all_matches.len() {
+                    let range = all_matches[n - 1];
+                    if !selected.contains(&range) {
+                        selected.push(range);
+                    }
+                }
             }
-            if n > all_matches.len() {
-                return Ok(Vec::new());
+            // When combined with :x(N), keep only the first N selected matches.
+            if let Some(n) = x_count {
+                if selected.len() < n {
+                    return Ok(Vec::new());
+                }
+                selected.truncate(n);
             }
-            return Ok(vec![all_matches[n - 1]]);
+            return Ok(selected);
         }
         if let Some(n) = x_count {
             if n == 0 {
@@ -773,18 +924,41 @@ impl VM {
         Ok(all_matches.first().copied().into_iter().collect())
     }
 
-    fn parse_subst_nth_spec(raw: &str) -> Result<usize, RuntimeError> {
+    /// Parse an `:nth` spec into a list of 1-based indices. Accepts a single
+    /// integer or a comma-separated list (e.g. `1,3`). Validates that every
+    /// index is >= 1 and that the list is monotonically increasing.
+    fn parse_subst_nth_spec(raw: &str) -> Result<Vec<usize>, RuntimeError> {
         let token = raw.trim();
         if token.eq_ignore_ascii_case("-Inf") {
             return Err(RuntimeError::new("Invalid :nth index (-Inf)"));
         }
-        let n = token
-            .parse::<i64>()
-            .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({token})")))?;
-        if n <= 0 {
+        let mut out: Vec<usize> = Vec::new();
+        let mut prev: i64 = 0;
+        for part in token.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let n = part
+                .parse::<i64>()
+                .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({part})")))?;
+            if n < 1 {
+                return Err(RuntimeError::new(format!(
+                    "Attempt to retrieve before :1st match -- :nth({n})"
+                )));
+            }
+            if n < prev {
+                return Err(RuntimeError::new(format!(
+                    "Attempt to fetch match #{n} after #{prev}"
+                )));
+            }
+            prev = n;
+            out.push(n as usize);
+        }
+        if out.is_empty() {
             return Err(RuntimeError::new(format!("Invalid :nth index ({token})")));
         }
-        Ok(n as usize)
+        Ok(out)
     }
 
     fn apply_substitutions(
@@ -879,6 +1053,120 @@ impl VM {
             prev_end_b = end_b;
         }
         out.push_str(&text[prev_end_b..]);
+        out
+    }
+
+    /// Build a substitution output when the replacement contains `{...}` code
+    /// blocks. The replacement is interpolated *per match*, with `$/`, `$0`,
+    /// `$1`, ... bound to the current match so closures like `{ $0 x 2 }` or
+    /// `{ uc($/) }` see the correct match.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_substitutions_dynamic(
+        &mut self,
+        text: &str,
+        ranges: &[(usize, usize)],
+        raw_replacement: &str,
+        per_match_captures: &[Vec<String>],
+        samecase: bool,
+        sigspace: bool,
+        samemark: bool,
+        samespace: bool,
+    ) -> String {
+        // Snapshot the env entries we overwrite so we can restore them after.
+        let saved_slash = self.interpreter.env().get("/").cloned();
+        let saved_caps: Vec<Option<Value>> = (0..10)
+            .map(|n| self.interpreter.env().get(&n.to_string()).cloned())
+            .collect();
+
+        let mut out = String::new();
+        let mut prev_end_b = 0usize;
+        for (i, (start, end)) in ranges.iter().enumerate() {
+            let start_b = runtime::char_idx_to_byte(text, *start);
+            let end_b = runtime::char_idx_to_byte(text, *end);
+            out.push_str(&text[prev_end_b..start_b]);
+            let matched_text = &text[start_b..end_b];
+
+            let caps: &[String] = per_match_captures
+                .get(i)
+                .map(|c| c.as_slice())
+                .unwrap_or(&[]);
+            // Bind `$/` to a Match object for this match, and `$0`, `$1`, ...
+            // to the positional captures.
+            let match_obj = Value::make_match_object_full(
+                matched_text.to_string(),
+                *start as i64,
+                *end as i64,
+                caps,
+                &std::collections::HashMap::new(),
+                &std::collections::HashMap::new(),
+                &[],
+                &[],
+                Some(text),
+            );
+            self.interpreter
+                .env_mut()
+                .insert("/".to_string(), match_obj);
+            for n in 0..10 {
+                if let Some(cap) = caps.get(n) {
+                    self.interpreter
+                        .env_mut()
+                        .insert(n.to_string(), Value::str(cap.clone()));
+                } else {
+                    self.interpreter.env_mut().remove(&n.to_string());
+                }
+            }
+
+            let interpolated = self.interpolate_subst_replacement_with_closures(raw_replacement);
+            let expanded = if caps.is_empty() {
+                interpolated
+            } else {
+                expand_capture_refs(&interpolated, caps)
+            };
+            let mut repl = if samecase {
+                if sigspace {
+                    samecase_per_word(&expanded, matched_text)
+                } else {
+                    crate::builtins::samecase_string(&expanded, matched_text)
+                }
+            } else if samemark {
+                if matched_text.contains(char::is_whitespace)
+                    && expanded.contains(char::is_whitespace)
+                {
+                    samemark_per_word(&expanded, matched_text)
+                } else {
+                    crate::builtins::samemark_string(&expanded, matched_text)
+                }
+            } else {
+                expanded
+            };
+            if samespace {
+                repl = samespace_replace(&repl, matched_text);
+            }
+            out.push_str(&repl);
+            prev_end_b = end_b;
+        }
+        out.push_str(&text[prev_end_b..]);
+
+        // Restore overwritten env entries (`$/` is reset to the match list/object
+        // by the caller after this returns).
+        match saved_slash {
+            Some(v) => {
+                self.interpreter.env_mut().insert("/".to_string(), v);
+            }
+            None => {
+                self.interpreter.env_mut().remove("/");
+            }
+        }
+        for (n, saved) in saved_caps.into_iter().enumerate() {
+            match saved {
+                Some(v) => {
+                    self.interpreter.env_mut().insert(n.to_string(), v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove(&n.to_string());
+                }
+            }
+        }
         out
     }
 

@@ -491,6 +491,28 @@ impl Interpreter {
             .map(|ch| reverse.get(&ch).copied().unwrap_or(b'?'))
             .collect()
     }
+    /// Validate an `:nth` index list for substitution: every index must be at
+    /// least 1 and the list must be monotonically increasing. Rakudo's lazy
+    /// match iterator cannot rewind, so a non-increasing list (e.g.
+    /// `:nth(2,4,1,6)`) or a zero/negative index throws.
+    fn validate_subst_nth_list(nth_list: &[i64]) -> Result<(), RuntimeError> {
+        let mut prev: i64 = 0;
+        for &n in nth_list {
+            if n < 1 {
+                return Err(RuntimeError::new(format!(
+                    "Attempt to retrieve before :1st match -- :nth({n})"
+                )));
+            }
+            if n < prev {
+                return Err(RuntimeError::new(format!(
+                    "Attempt to fetch match #{n} after #{prev}"
+                )));
+            }
+            prev = n;
+        }
+        Ok(())
+    }
+
     pub(super) fn dispatch_subst(
         &mut self,
         target: Value,
@@ -639,15 +661,14 @@ impl Interpreter {
 
                     // Apply :nth - select specific 1-based match indices
                     if let Some(ref nth_list) = nth {
+                        Self::validate_subst_nth_list(nth_list)?;
                         let total = selected.len();
                         let mut indices: Vec<usize> = Vec::new();
                         for &n in nth_list {
-                            if n >= 1 && (n as usize) <= total {
+                            if (n as usize) <= total && !indices.contains(&(n as usize - 1)) {
                                 indices.push(n as usize - 1);
                             }
                         }
-                        indices.sort();
-                        indices.dedup();
                         let new_selected: Vec<_> = indices
                             .iter()
                             .filter_map(|&i| selected.get(i).cloned())
@@ -769,15 +790,17 @@ impl Interpreter {
                         keep.truncate(1);
                     }
                     if let Some(ref nth_list) = nth {
+                        Self::validate_subst_nth_list(nth_list)?;
                         let total = keep.len();
                         let mut selected: Vec<usize> = Vec::new();
                         for &n in nth_list {
-                            if n >= 1 && (n as usize) <= total {
-                                selected.push(keep[n as usize - 1]);
+                            if (n as usize) <= total {
+                                let chosen = keep[n as usize - 1];
+                                if !selected.contains(&chosen) {
+                                    selected.push(chosen);
+                                }
                             }
                         }
-                        selected.sort();
-                        selected.dedup();
                         keep = selected;
                     }
                     if let Some((lo, hi)) = resolve_x_count(&x_count) {
