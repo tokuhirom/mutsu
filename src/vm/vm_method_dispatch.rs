@@ -743,6 +743,22 @@ impl VM {
 
         self.push_light_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
+        // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
+        // born-owned overlay over the caller so the `self`/`?CLASS`/param/attr
+        // env writes below land in a fresh map (strong_count 1) instead of
+        // `make_mut`-forking the inherited caller env — this removes the per-
+        // method-call env deep copy (the bench-class cost). Reads fall through to
+        // the parent; on return `set_env(saved_env)` (can_skip_merge) drops the
+        // overlay and `merge_method_env` iterates it overlay-only (the method's
+        // own writes, which is exactly what the merge needs). Gated to methods
+        // with no inner closures so no closure/thread/gather body captures or
+        // iterates the scoped env for a full lexical view.
+        let use_scoped = cc.closure_compiled_codes.is_empty();
+        if use_scoped {
+            let parent_overlay = self.interpreter.env().overlay_arc();
+            let scoped = crate::env::Env::scoped_child(parent_overlay);
+            self.interpreter.set_env(scoped);
+        }
         let saved_var_bindings = self.interpreter.take_var_bindings();
         self.interpreter.push_method_class(owner_class.to_string());
 

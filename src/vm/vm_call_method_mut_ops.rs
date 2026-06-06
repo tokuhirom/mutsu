@@ -323,7 +323,6 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.ensure_env_synced(code);
-        self.flatten_scoped_env();
         // Set pending arg sources for `is rw` dispatch matching
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.interpreter
@@ -387,6 +386,12 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // Beyond the pure-read accessor fast path above, full method dispatch may
+        // capture/iterate the env; collapse a transient scoped overlay env to a
+        // flat env so the full lexical view is seen. Placed after the accessor
+        // read so a `$.attr` read inside a scoped method body does not collapse
+        // the overlay (defeating the per-method-call deep-copy elimination).
+        self.flatten_scoped_env();
         // Detect calls on undeclared type names: when a BareWord resolved to a Str
         // (because the name wasn't a known type/class), and .new() is called on it,
         // this means the user tried to instantiate a nonexistent class.
