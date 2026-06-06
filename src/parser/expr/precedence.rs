@@ -1912,7 +1912,12 @@ pub(super) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
             }
         }
         let name = &input[..end];
-        if !is_reserved_infix_word(name) {
+        // A declared sigilless term symbol (e.g. `my \term = ...`) is a term, not
+        // an infix operator. Without this guard, `uc term` would be misparsed as
+        // `uc INFIX:<term> ...` instead of the listop call `uc(term)`.
+        let is_declared_term = super::super::stmt::simple::match_user_declared_term_symbol(input)
+            .is_some_and(|(_, consumed, _)| consumed == end);
+        if !is_reserved_infix_word(name) && !is_declared_term {
             word_match = Some((name.to_string(), end));
         }
     }

@@ -2574,6 +2574,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || (next == '\\' && r.starts_with("\\("))
             || next.is_ascii_digit()
             || starts_with_term_keyword(r)
+            || crate::parser::stmt::simple::match_user_declared_term_symbol(r).is_some()
             || hyphen_forward_call
             || is_user_sub
             || is_imported_sub

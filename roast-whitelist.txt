@@ -41,6 +41,7 @@ roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 roast/S02-lexical-conventions/sub-block-parsing.t
 roast/S02-lexical-conventions/unicode-whitespace.t
 roast/S02-lexical-conventions/unicode.t
+roast/S02-lexical-conventions/unspace.t
 roast/S02-lists/indexing.t
 roast/S02-lists/tree.t
 roast/S02-literals/adverbs.t
@@ -90,7 +91,6 @@ roast/S02-magicals/subname.t
 roast/S02-names-vars/contextual.t
 roast/S02-names-vars/fmt.t
 roast/S02-names-vars/list_array_perl.t
-roast/S02-names-vars/perl.t
 roast/S02-names-vars/signature.t
 roast/S02-names-vars/varnames.t
 roast/S02-names/SETTING-6e.t
