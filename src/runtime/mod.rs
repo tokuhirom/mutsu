@@ -5804,25 +5804,36 @@ mod tests {
 
     #[test]
     fn circular_module_dependency_is_reported() {
-        let mut interp = Interpreter::new();
-        let uniq = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+        // Needs a larger stack: nested module loading runs each module body in a
+        // fresh on-stack VM that owns a full `Interpreter` by value (see
+        // `run_block_raw`), so the recursive A->B->A load chain is stack-heavy in
+        // debug builds. Same precedent as `is_run_honors_compiler_include_paths`.
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let mut interp = Interpreter::new();
+                let uniq = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                let dir = std::env::temp_dir().join(format!("mutsu-circularmod-{}", uniq));
+                fs::create_dir_all(&dir).unwrap();
+                let a_path = dir.join("A.rakumod");
+                let b_path = dir.join("B.rakumod");
+                fs::write(&a_path, "unit class A; use B").unwrap();
+                fs::write(&b_path, "unit class B; use A").unwrap();
+
+                let program = format!("use lib '{}'; use A;", dir.to_string_lossy());
+                let err = interp.run(&program).unwrap_err();
+                assert!(err.message.to_lowercase().contains("circular"));
+
+                let _ = fs::remove_file(a_path);
+                let _ = fs::remove_file(b_path);
+                let _ = fs::remove_dir(dir);
+            })
             .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("mutsu-circularmod-{}", uniq));
-        fs::create_dir_all(&dir).unwrap();
-        let a_path = dir.join("A.rakumod");
-        let b_path = dir.join("B.rakumod");
-        fs::write(&a_path, "unit class A; use B").unwrap();
-        fs::write(&b_path, "unit class B; use A").unwrap();
-
-        let program = format!("use lib '{}'; use A;", dir.to_string_lossy());
-        let err = interp.run(&program).unwrap_err();
-        assert!(err.message.to_lowercase().contains("circular"));
-
-        let _ = fs::remove_file(a_path);
-        let _ = fs::remove_file(b_path);
-        let _ = fs::remove_dir(dir);
+            .join()
+            .unwrap();
     }
 
     #[test]

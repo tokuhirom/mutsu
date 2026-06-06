@@ -109,6 +109,12 @@ pub(crate) struct VM {
     /// must preserve a QuantHash (Set/Bag/Mix) value rather than coercing it to
     /// a plain Hash, matching Raku's parameter-binding semantics.
     quanthash_bind_params: Vec<String>,
+    /// Stack of single named for-loop params whose prior binding must be
+    /// restored *after* the loop's LAST/post phasers run. A for-loop pushes its
+    /// saved (name, prior-value) on normal completion; the matching
+    /// `RestoreForParam` opcode (emitted after the post phasers) pops and
+    /// applies it. LIFO so nested loops with the same param name nest correctly.
+    for_param_restore_stack: Vec<(String, Option<Value>)>,
     /// Stack of saved call frames for compiled function/closure/method calls.
     call_frames: Vec<VmCallFrame>,
     /// When true, locals may be stale relative to env (interpreter bridge modified env).
@@ -363,6 +369,7 @@ impl VM {
             container_ref_reversed: false,
             topic_source_var: None,
             quanthash_bind_params: Vec::new(),
+            for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
             locals_dirty: false,
@@ -3065,6 +3072,23 @@ impl VM {
                     multi_param_names: multi_param_names.clone(),
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
+            }
+            OpCode::RestoreForParam => {
+                // Restore the single named for-loop param's prior binding now
+                // that the loop's LAST/post phasers (which needed the param at
+                // its final value) have run. Paired with the push the ForLoop
+                // opcode performs on normal completion.
+                if let Some((name, saved_val)) = self.for_param_restore_stack.pop() {
+                    match saved_val {
+                        Some(v) => {
+                            self.interpreter.env_mut().insert(name, v);
+                        }
+                        None => {
+                            self.interpreter.env_mut().remove(&name);
+                        }
+                    }
+                }
+                *ip += 1;
             }
             OpCode::CStyleLoop {
                 cond_end,

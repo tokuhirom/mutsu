@@ -271,6 +271,15 @@ impl Compiler {
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);
+        // Balance the ForLoop opcode's deferred param-restore push (see the
+        // Stmt::For compile path). Required even though this collected form has
+        // no post phasers, so the push/pop stay balanced.
+        if param
+            .as_ref()
+            .is_some_and(|p| !p.starts_with('@') && !p.starts_with('%'))
+        {
+            self.code.emit(OpCode::RestoreForParam);
+        }
     }
 
     /// Compile `lazy for` expression: lower to `gather { for @items -> $param { take do { body } } }`.

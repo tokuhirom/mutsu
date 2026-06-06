@@ -901,16 +901,17 @@ impl VM {
                 self.interpreter.env_mut().remove(&sigilless_key);
             }
         }
-        // Restore the single named loop param's prior binding.
-        if let Some((name, saved_val)) = saved_param {
-            match saved_val {
-                Some(v) => {
-                    self.interpreter.env_mut().insert(name, v);
-                }
-                None => {
-                    self.interpreter.env_mut().remove(&name);
-                }
-            }
+        // Defer restoring the single named loop param's prior binding until
+        // after the loop's LAST/post phasers have run — they must still observe
+        // the param at its final iteration value (e.g.
+        // `for 1,2 -> $x { LAST { say $x } }` must see 2). The paired
+        // `RestoreForParam` opcode (emitted right after the post phasers) pops
+        // this and applies it. Only pushed here on normal completion, which
+        // keeps it balanced with that opcode; an early return/exception from the
+        // body exits before this point, so no entry is pushed and the matching
+        // opcode is likewise skipped as the frame unwinds.
+        if let Some(entry) = saved_param {
+            self.for_param_restore_stack.push(entry);
         }
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind.clone();
