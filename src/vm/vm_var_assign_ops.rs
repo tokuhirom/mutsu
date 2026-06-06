@@ -4164,6 +4164,15 @@ impl VM {
                     .env_mut()
                     .insert(name.to_string(), Value::Nil);
             }
+            // Per-iteration freshness for box-on-capture (lever C Slice 2): if a
+            // previous iteration's closure boxed this loop-body `my` into a
+            // ContainerRef (now sitting in the slot), the redeclaration is a
+            // *fresh binding* — clear the stale cell so the assignment below
+            // writes a new plain value instead of writing *through* the old Arc
+            // (which would corrupt the prior iteration's captured closure).
+            if matches!(self.locals[idx], Value::ContainerRef(_)) {
+                self.locals[idx] = Value::Nil;
+            }
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.

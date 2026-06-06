@@ -78,6 +78,8 @@ impl VM {
         if let Stmt::Block(body) = stmt {
             let params = crate::ast::collect_placeholders_shallow(body);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.box_captured_lexicals(code, &compiled_code);
+            let owned_captures = self.compute_owned_captures(&compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -97,7 +99,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
                 is_bare_block: is_block,
-                owned_captures: self.compute_owned_captures(&compiled_code),
+                owned_captures,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -128,6 +130,9 @@ impl VM {
             ..
         } = stmt
         {
+            let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.box_captured_lexicals(code, &compiled_code);
+            let owned_captures = self.compute_owned_captures(&compiled_code);
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
@@ -138,7 +143,6 @@ impl VM {
                     Value::str_from("WhateverCode"),
                 );
             }
-            let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -158,7 +162,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
-                owned_captures: self.compute_owned_captures(&compiled_code),
+                owned_captures,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -193,6 +197,67 @@ impl VM {
             .collect()
     }
 
+    /// Box-on-capture (lever C Slice 2): a closure captures the *container* of
+    /// each closed-over lexical scalar, not its value. Before snapshotting the
+    /// env into the new closure's `data.env`, replace each free-variable scalar
+    /// that lives in the *current* scope (has a slot in `code.locals`) with a
+    /// shared `ContainerRef` in BOTH the slot and the env. The env snapshot then
+    /// shares the same `Arc`, so:
+    ///
+    /// - mutation of the lexical *after* capture is visible to the closure
+    ///   (`my $x=1; my $c={$x}; $x=2; $c()` -> 2), and
+    /// - sibling closures over the same lexical share one cell
+    ///   (`my $g={$v}; my $s=->$n{$v=$n}; $s(42); $g()` -> 42).
+    ///
+    /// Per-iteration freshness for loop-body `my` is preserved because the `my`
+    /// redeclaration resets the stale ContainerRef in the slot+env each iteration
+    /// (see exec_set_local_op vardecl handling), so the next closure boxes a fresh
+    /// cell. Arrays/hashes/subs/type-objects are reference-shared already and are
+    /// left untouched.
+    fn box_captured_lexicals(
+        &mut self,
+        code: &CompiledCode,
+        cc: &Option<std::sync::Arc<CompiledCode>>,
+    ) {
+        let Some(cc) = cc else { return };
+        for sym in &cc.free_var_syms {
+            let Some(idx) = sym.with_str(|s| {
+                if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
+                    return None;
+                }
+                code.locals.iter().rposition(|n| n == s)
+            }) else {
+                continue;
+            };
+            let cur = &self.locals[idx];
+            // Already a shared cell -> a sibling closure (or earlier capture)
+            // boxed it; reuse the same Arc.
+            if cur.is_container_ref() {
+                continue;
+            }
+            // Only box plain scalar containers. Reference types share already;
+            // type objects / proxies must not be hidden behind a ContainerRef.
+            if matches!(
+                cur,
+                Value::Package(_)
+                    | Value::Array(..)
+                    | Value::Hash(..)
+                    | Value::Sub(..)
+                    | Value::Instance { .. }
+                    | Value::Proxy { .. }
+            ) {
+                continue;
+            }
+            let container = cur.clone().into_container_ref();
+            self.locals[idx] = container.clone();
+            sym.with_str(|s| {
+                self.interpreter
+                    .env_mut()
+                    .insert(s.to_string(), container.clone());
+            });
+        }
+    }
+
     pub(super) fn exec_make_lambda_op(
         &mut self,
         code: &CompiledCode,
@@ -211,6 +276,9 @@ impl VM {
             ..
         } = stmt
         {
+            let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.box_captured_lexicals(code, &compiled_code);
+            let owned_captures = self.compute_owned_captures(&compiled_code);
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
@@ -221,7 +289,6 @@ impl VM {
                     Value::str_from("WhateverCode"),
                 );
             }
-            let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -241,7 +308,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
-                owned_captures: self.compute_owned_captures(&compiled_code),
+                owned_captures,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -263,6 +330,8 @@ impl VM {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.box_captured_lexicals(code, &compiled_code);
+            let owned_captures = self.compute_owned_captures(&compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -282,7 +351,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
                 is_bare_block: true,
-                owned_captures: self.compute_owned_captures(&compiled_code),
+                owned_captures,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
