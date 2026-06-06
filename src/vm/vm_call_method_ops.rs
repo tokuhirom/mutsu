@@ -205,7 +205,11 @@ impl VM {
             }
             return Err(RuntimeError::emit_signal(target));
         }
-        // Fast path: 0-arg attribute accessor on Instance (e.g. $obj.x)
+        // Fast path: 0-arg attribute accessor on Instance (e.g. $obj.x). This is
+        // a pure read that touches no env, so it runs safely under a scoped
+        // overlay env (the common `$.attr` read inside a scoped method body) --
+        // hence the `flatten_scoped_env` below is placed *after* it, so an
+        // accessor read does not collapse the caller's scoped overlay.
         if let Some(val) =
             self.try_fast_accessor_read(&target, method, &args, modifier_idx.is_some(), quoted)
         {
@@ -213,6 +217,11 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // Full method dispatch from here on may capture the env into a Sub /
+        // closure or run an interpreter fallback that iterates it; collapse a
+        // transient scoped overlay env to a flat env first so the full lexical
+        // view is seen.
+        self.flatten_scoped_env();
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
