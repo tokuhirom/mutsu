@@ -196,6 +196,21 @@ pub(crate) struct VM {
     /// otherwise leaks the loop's final value into every closure. See
     /// docs/vm-dual-store.md / PLAN.md lever C.
     loop_local_vars: Vec<std::collections::HashSet<String>>,
+    /// Parallel stack to `loop_local_vars`: for each loop-body-local `my` name
+    /// that *shadows an existing outer binding*, the env value it shadowed at the
+    /// moment it was first declared in the loop body. On loop exit that outer
+    /// value is restored (in both env and the shared local slot), so a block-local
+    /// `my $x` inside a loop body does not clobber an enclosing same-named outer
+    /// `$x` (Raku lexical block scoping). Names with no prior binding are not
+    /// recorded. See pop_loop_local_scope / PLAN.md lever C Slice 3.
+    loop_local_saved_env: Vec<std::collections::HashMap<String, Value>>,
+    /// True while a loop's *condition* (not its body) is being evaluated. A `my`
+    /// declared in a `while`/`until`/`loop` condition — including the statement-
+    /// modifier form `... until COND` — is lexically the enclosing scope's, not
+    /// the loop body's, and is commonly read after the loop. Suppress recording
+    /// such a declaration in `loop_local_saved_env` so loop-exit restoration does
+    /// not wipe it. See pop_loop_local_scope.
+    loop_cond_active: bool,
     /// Stack of saved locals snapshots for each active BlockScope.
     /// Used by GetOuterVar to access variables from enclosing lexical scopes.
     outer_scope_locals: Vec<Vec<Value>>,
@@ -403,6 +418,8 @@ impl VM {
             fast_method_cache: HashMap::new(),
             block_declared_vars: Vec::new(),
             loop_local_vars: Vec::new(),
+            loop_local_saved_env: Vec::new(),
+            loop_cond_active: false,
             outer_scope_locals: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),

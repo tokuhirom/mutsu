@@ -1110,7 +1110,9 @@ impl Compiler {
                     self.code.emit(OpCode::FlattenSlurpy);
                     self.emit_set_named_var("@_");
                 }
-                if Self::body_mutates_topic(then_branch) {
+                if Self::body_mutates_topic(then_branch)
+                    || Self::body_declares_block_local(then_branch)
+                {
                     self.compile_stmt(&Stmt::Block(then_branch.clone()));
                 } else {
                     self.compile_body_with_implicit_try(then_branch);
@@ -1130,7 +1132,9 @@ impl Compiler {
                     }
                     if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
                         self.compile_stmt(&else_branch[0]);
-                    } else if Self::body_mutates_topic(else_branch) {
+                    } else if Self::body_mutates_topic(else_branch)
+                        || Self::body_declares_block_local(else_branch)
+                    {
                         self.compile_stmt(&Stmt::Block(else_branch.clone()));
                     } else {
                         self.compile_body_with_implicit_try(else_branch);

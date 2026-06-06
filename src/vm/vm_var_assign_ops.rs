@@ -5233,6 +5233,21 @@ impl VM {
         if name.starts_with('@') {
             self.interpreter.clear_atomic_array_state(name);
         }
+        // Before this loop-body-local declaration overwrites the env entry for
+        // `name`, record the outer value it shadows so the enclosing same-named
+        // binding can be restored when the loop exits. Conditions are excluded
+        // (`loop_cond_active`): a `my` in a `while`/`until`/`loop` condition is
+        // enclosing-scoped and often read after the loop. Only record names that
+        // already had a binding (a genuine shadow — there is nothing to clobber
+        // otherwise), and only the first time in this loop scope so the saved
+        // value is the pre-loop one. See VM::loop_local_saved_env.
+        if !self.loop_cond_active
+            && let Some(prev) = self.interpreter.env().get(name).cloned()
+            && let Some(saved) = self.loop_local_saved_env.last_mut()
+            && !saved.contains_key(name)
+        {
+            saved.insert(name.to_string(), prev);
+        }
         // Pre-initialize the variable in the env with a default value so that
         // closures created during the RHS expression can capture it.
         // This enables capture-by-reference patterns like:

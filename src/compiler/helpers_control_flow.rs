@@ -147,6 +147,26 @@ impl Compiler {
         matches!(first_real, Some(Stmt::Assign { name, .. }) if name == "_")
     }
 
+    /// Returns true if the body directly declares a block-local `my`/`state`
+    /// variable (not `our`, which is package-scoped). Used to decide whether an
+    /// `if`/`else` branch — which is otherwise compiled inline — must be wrapped
+    /// in a `Stmt::Block` so `BlockScope` save/restore keeps the declaration from
+    /// leaking into, or clobbering an enclosing same-named, outer binding. Loop
+    /// bodies handle this via `loop_local_saved_env` instead. See PLAN.md lever C
+    /// Slice 3.
+    pub(super) fn body_declares_block_local(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| {
+            let inner = match s {
+                Stmt::SyntheticBlock(body) => {
+                    body.iter().find(|b| matches!(b, Stmt::VarDecl { .. }))
+                }
+                Stmt::VarDecl { .. } => Some(s),
+                _ => None,
+            };
+            matches!(inner, Some(Stmt::VarDecl { is_our: false, .. }))
+        })
+    }
+
     /// Returns true only if the body contains a `$_ :=` rebind — used by the
     /// `while` loop to decide whether to wrap the body in a `Stmt::Block` so
     /// that the rebind is lexically scoped per iteration, without clobbering

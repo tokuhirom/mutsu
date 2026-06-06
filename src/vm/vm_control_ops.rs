@@ -110,11 +110,39 @@ impl VM {
     /// on every exit path.
     pub(super) fn push_loop_local_scope(&mut self) {
         self.loop_local_vars.push(std::collections::HashSet::new());
+        self.loop_local_saved_env
+            .push(std::collections::HashMap::new());
     }
 
-    /// Pop the loop-body declaration scope pushed by `push_loop_local_scope`.
-    pub(super) fn pop_loop_local_scope(&mut self) {
+    /// Pop the loop-body declaration scope pushed by `push_loop_local_scope` and
+    /// restore the env entries for loop-body-local `my` names to the values they
+    /// shadowed before the loop (or remove names that did not exist before). This
+    /// stops a block-local `my $x` inside the loop body from leaking its
+    /// last-iteration value into — or clobbering an enclosing same-named — outer
+    /// binding (the name-keyed env half of the dual store). The compiler already
+    /// gave a shadowing declaration a fresh slot, so the slot half is isolated;
+    /// any outer slot sharing the name re-syncs from the restored env on next read.
+    pub(super) fn pop_loop_local_scope(&mut self, code: &CompiledCode) {
         self.loop_local_vars.pop();
+        if let Some(saved) = self.loop_local_saved_env.pop() {
+            for (name, val) in saved {
+                // `saved` only holds names that shadowed an existing outer binding
+                // (recorded in exec_set_local_op), so restoring the captured value
+                // re-exposes the outer `$x` clobbered by the loop body's `my $x`.
+                self.interpreter.env_mut().insert(name.clone(), val.clone());
+                // Restore the local slot too: loop bodies mark every local
+                // `needs_env_sync`, so the shadowing `my` wrote the outer var's
+                // shared slot. `GetLocal`'s fast path returns a non-Nil slot value
+                // without consulting env, so an env-only restore would still read
+                // the stale last-iteration value. Mirror the restored value into
+                // every slot carrying this name.
+                for (idx, slot_name) in code.locals.iter().enumerate() {
+                    if slot_name == &name && idx < self.locals.len() {
+                        self.locals[idx] = val.clone();
+                    }
+                }
+            }
+        }
     }
 
     pub(super) fn exec_while_loop_op(
@@ -140,8 +168,11 @@ impl VM {
         self.push_loop_local_scope();
 
         'while_loop: loop {
-            if let Err(e) = self.run_range(code, cond_start, body_start, compiled_fns) {
-                self.pop_loop_local_scope();
+            self.loop_cond_active = true;
+            let cond_res = self.run_range(code, cond_start, body_start, compiled_fns);
+            self.loop_cond_active = false;
+            if let Err(e) = cond_res {
+                self.pop_loop_local_scope(code);
                 return Err(e);
             }
             let cond_val = self.stack.pop().unwrap();
@@ -178,7 +209,7 @@ impl VM {
                         // Process pending DESTROY submethods at loop iteration boundaries,
                         // mimicking GC-like behavior so DESTROY fires during execution.
                         if let Err(e) = self.interpreter.run_pending_instance_destroys() {
-                            self.pop_loop_local_scope();
+                            self.pop_loop_local_scope(code);
                             return Err(e);
                         }
                         break 'body_redo;
@@ -232,7 +263,7 @@ impl VM {
                         break 'body_redo;
                     }
                     Err(e) => {
-                        self.pop_loop_local_scope();
+                        self.pop_loop_local_scope(code);
                         return Err(e);
                     }
                 }
@@ -241,7 +272,7 @@ impl VM {
                 break;
             }
         }
-        self.pop_loop_local_scope();
+        self.pop_loop_local_scope(code);
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
@@ -917,7 +948,7 @@ impl VM {
                                 }
                             }
                         }
-                        self.pop_loop_local_scope();
+                        self.pop_loop_local_scope(code);
                         return Err(e);
                     }
                     Err(e) => {
@@ -943,7 +974,7 @@ impl VM {
                                 }
                             }
                         }
-                        self.pop_loop_local_scope();
+                        self.pop_loop_local_scope(code);
                         return Err(e);
                     }
                 }
@@ -1015,7 +1046,7 @@ impl VM {
         if let Some(entry) = saved_param {
             self.for_param_restore_stack.push(entry);
         }
-        self.pop_loop_local_scope();
+        self.pop_loop_local_scope(code);
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind.clone();
         if spec.restore_topic {
@@ -1228,7 +1259,7 @@ impl VM {
                             }
                         }
                         // Gather suspend: pop (body resumes and re-pushes).
-                        self.pop_loop_local_scope();
+                        self.pop_loop_local_scope(code);
                         return Err(e);
                     }
                     Err(e) => {
@@ -1250,7 +1281,7 @@ impl VM {
                                 }
                             }
                         }
-                        self.pop_loop_local_scope();
+                        self.pop_loop_local_scope(code);
                         return Err(e);
                     }
                 }
@@ -1292,7 +1323,7 @@ impl VM {
         if let Some(entry) = saved_param {
             self.for_param_restore_stack.push(entry);
         }
-        self.pop_loop_local_scope();
+        self.pop_loop_local_scope(code);
         Ok(())
     }
 
@@ -1947,8 +1978,11 @@ impl VM {
         self.push_loop_local_scope();
 
         'c_loop: loop {
-            if let Err(e) = self.run_range(code, cond_start, body_start, compiled_fns) {
-                self.pop_loop_local_scope();
+            self.loop_cond_active = true;
+            let cond_res = self.run_range(code, cond_start, body_start, compiled_fns);
+            self.loop_cond_active = false;
+            if let Err(e) = cond_res {
+                self.pop_loop_local_scope(code);
                 return Err(e);
             }
             let cond_val = self.stack.pop().unwrap();
@@ -1998,7 +2032,7 @@ impl VM {
                         break 'body_redo;
                     }
                     Err(e) => {
-                        self.pop_loop_local_scope();
+                        self.pop_loop_local_scope(code);
                         return Err(e);
                     }
                 }
@@ -2007,11 +2041,11 @@ impl VM {
                 break;
             }
             if let Err(e) = self.run_range(code, step_begin, loop_end, compiled_fns) {
-                self.pop_loop_local_scope();
+                self.pop_loop_local_scope(code);
                 return Err(e);
             }
         }
-        self.pop_loop_local_scope();
+        self.pop_loop_local_scope(code);
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
@@ -2278,8 +2312,11 @@ impl VM {
         let mut first = true;
         'repeat_loop: loop {
             if !first {
-                if let Err(e) = self.run_range(code, cond_start, loop_end, compiled_fns) {
-                    self.pop_loop_local_scope();
+                self.loop_cond_active = true;
+                let cond_res = self.run_range(code, cond_start, loop_end, compiled_fns);
+                self.loop_cond_active = false;
+                if let Err(e) = cond_res {
+                    self.pop_loop_local_scope(code);
                     return Err(e);
                 }
                 let cond_val = self.stack.pop().unwrap();
@@ -2317,7 +2354,7 @@ impl VM {
                         break 'body_redo;
                     }
                     Err(e) => {
-                        self.pop_loop_local_scope();
+                        self.pop_loop_local_scope(code);
                         return Err(e);
                     }
                 }
@@ -2326,7 +2363,7 @@ impl VM {
                 break;
             }
         }
-        self.pop_loop_local_scope();
+        self.pop_loop_local_scope(code);
         *ip = loop_end;
         Ok(())
     }
