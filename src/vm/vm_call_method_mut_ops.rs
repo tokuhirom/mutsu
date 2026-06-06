@@ -386,6 +386,28 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // `.so` / `.not` on a value whose type defines a user `Bool` method must
+        // dispatch through that method (Mu.so / Mu.not are defined in terms of
+        // .Bool) rather than the native truthiness fast path.
+        if matches!(method.as_str(), "so" | "not") && args.is_empty() {
+            let user_bool_owner = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = user_bool_owner
+                && self
+                    .interpreter
+                    .resolve_method_with_owner(&cn, "Bool", &[])
+                    .is_some()
+            {
+                let t = self.eval_truthy(&target);
+                self.stack
+                    .push(Value::Bool(if method == "not" { !t } else { t }));
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
         // Beyond the pure-read accessor fast path above, full method dispatch may
         // capture/iterate the env; collapse a transient scoped overlay env to a
         // flat env so the full lexical view is seen. Placed after the accessor

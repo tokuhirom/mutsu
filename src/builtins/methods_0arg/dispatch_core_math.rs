@@ -92,6 +92,57 @@ fn tree_recursive(items: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+/// Levenshtein edit distance between two strings (by Unicode scalar), used for
+/// the numeric value of a `StrDistance`.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut cur = vec![0usize; b.len() + 1];
+    for (i, ca) in a.iter().enumerate() {
+        cur[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            cur[j + 1] = (prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b.len()]
+}
+
+/// Real (numeric) value of a "Cool" builtin instance, used by the `.Rat`/`.FatRat`
+/// coercers: an `IO::Path` numifies via its path string, a `Match` via its
+/// matched substring, and a `StrDistance` via the edit distance between its
+/// `before`/`after` strings.
+fn cool_instance_numeric(target: &Value) -> Option<f64> {
+    let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+    else {
+        return None;
+    };
+    match class_name.resolve().as_str() {
+        "IO::Path" => target.to_string_value().trim().parse::<f64>().ok(),
+        "Match" => attributes
+            .get("str")
+            .and_then(|v| v.to_string_value().trim().parse::<f64>().ok()),
+        "StrDistance" => {
+            let before = attributes
+                .get("before")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let after = attributes
+                .get("after")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            Some(levenshtein(&before, &after) as f64)
+        }
+        _ => None,
+    }
+}
+
 /// Convert a Value to a string for Unicode normalization.
 /// If the value is an Array of Int (Uni-like), convert codepoints to a string.
 fn uni_or_str(target: &Value) -> String {
@@ -357,7 +408,30 @@ pub(super) fn dispatch(
                     Some(Ok(make_rat(0, 1)))
                 }
             }
-            Value::Instance { .. } => None,
+            // Duration/Instant store their seconds as a Real `value`; coerce that
+            // directly so the exact Rat is preserved (e.g. Duration.new(42).Rat).
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
+                match attributes.get("value") {
+                    Some(inner) => match dispatch(inner, "Rat") {
+                        Some(Some(r)) => Some(r),
+                        _ => Some(Ok(make_rat(0, 1))),
+                    },
+                    None => Some(Ok(make_rat(0, 1))),
+                }
+            }
+            Value::Instance { .. } => cool_instance_numeric(target).map(|n| {
+                if n.fract() == 0.0 && n.is_finite() {
+                    Ok(make_rat(n as i64, 1))
+                } else if n.is_finite() {
+                    Ok(crate::builtins::num_to_rat_with_epsilon(n, 1e-6))
+                } else {
+                    Ok(make_rat(0, 1))
+                }
+            }),
             Value::Package(_) => Some(Ok(make_rat(0, 1))),
             _ => {
                 let n = target.to_f64();
@@ -449,6 +523,20 @@ pub(super) fn dispatch(
                 }
             }
             Value::Package(_) => Some(Ok(Value::FatRat(0, 1))),
+            // IO::Path/Match/StrDistance numify via their Cool string/distance.
+            Value::Instance { .. } if cool_instance_numeric(target).is_some() => {
+                let n = cool_instance_numeric(target).unwrap_or(0.0);
+                if n.fract() == 0.0 && n.is_finite() {
+                    Some(Ok(Value::FatRat(n as i64, 1)))
+                } else if n.is_finite() {
+                    match crate::builtins::num_to_rat_with_epsilon(n, 1e-6) {
+                        Value::Rat(n, d) => Some(Ok(Value::FatRat(n, d))),
+                        _ => Some(Ok(Value::FatRat(0, 1))),
+                    }
+                } else {
+                    Some(Ok(Value::FatRat(0, 1)))
+                }
+            }
             _ => {
                 let n = target.to_f64();
                 if n.fract() == 0.0 && n.is_finite() {
