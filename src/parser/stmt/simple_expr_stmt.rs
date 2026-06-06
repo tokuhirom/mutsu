@@ -40,6 +40,30 @@ fn starts_with_term_token(input: &str) -> bool {
 }
 
 /// Returns true if the input starts with a token that is unambiguously a new
+/// term after a postfix `++`/`--`: a sigilled variable (`$`, `@`, `%`), a digit,
+/// or a string literal. These can never begin an infix operator, so flagging
+/// them avoids false positives with word infixes (`and`, `or`, `xx`, ...).
+fn starts_with_postfix_ambiguous_term(input: &str) -> bool {
+    let Some(ch) = input.chars().next() else {
+        return false;
+    };
+    ch.is_ascii_digit()
+        || matches!(
+            ch,
+            '$' | '@'
+                | '%'
+                | '\''
+                | '"'
+                | '\u{2018}'
+                | '\u{2019}'
+                | '\u{201A}'
+                | '\u{201C}'
+                | '\u{201D}'
+                | '\u{201E}'
+        )
+}
+
+/// Returns true if the input starts with a token that is unambiguously a new
 /// term (not an infix operator or statement modifier).  More conservative than
 /// `starts_with_term_token`: only digits and quote characters, which can never
 /// be the start of an operator.
@@ -459,6 +483,27 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         && !rest.starts_with(',')
         && !is_stmt_modifier_keyword(rest)
         && starts_with_unambiguous_term(rest)
+    {
+        return Err(PError::fatal("Confused. Two terms in a row".to_string()));
+    }
+    // Detect "two terms in a row" after a postfix increment/decrement: a postfix
+    // `++`/`--` (whether written as `$n++`, `$n.++`, or via an unspace such as
+    // `$n\ ++`) followed on the same line by an unambiguous new term (a sigilled
+    // variable, number, or string literal) is a syntax error in Raku. This is the
+    // postfix-vs-infix ambiguity rule: e.g. `$n++$m`, `$n.++ $m`, `$n\ ++ $m`.
+    // We only flag continuations that cannot begin an infix operator (sigils,
+    // digits, quotes) so word infixes like `and`/`or`/`xx` are not misflagged.
+    if !separated_by_newline
+        && matches!(
+            &expr,
+            Expr::PostfixOp {
+                op: crate::token_kind::TokenKind::PlusPlus
+                    | crate::token_kind::TokenKind::MinusMinus,
+                ..
+            }
+        )
+        && !is_stmt_modifier_keyword(rest)
+        && starts_with_postfix_ambiguous_term(rest)
     {
         return Err(PError::fatal("Confused. Two terms in a row".to_string()));
     }
