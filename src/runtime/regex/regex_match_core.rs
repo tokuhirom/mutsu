@@ -298,29 +298,48 @@ impl Interpreter {
             }
             return results;
         }
-        let apply_named_capture =
-            |token: &RegexToken, from: usize, to: usize, caps: RegexCaptures| -> RegexCaptures {
-                let Some(name) = token.named_capture.as_ref() else {
-                    return caps;
-                };
-                let mut updated = caps;
-                let captured: String = chars[from..to].iter().collect();
+        let apply_named_capture = |token: &RegexToken,
+                                   from: usize,
+                                   to: usize,
+                                   pos_base: usize,
+                                   caps: RegexCaptures|
+         -> RegexCaptures {
+            let Some(name) = token.named_capture.as_ref() else {
+                return caps;
+            };
+            let mut updated = caps;
+            let captured: String = chars[from..to].iter().collect();
+            // A named capture group `$<x>=(...)` aliases the group to the name and
+            // does NOT consume a positional number (Raku: `/$<x>=(\w)(\d)/` makes
+            // `$<x>` the \w and `$0` the \d). When this named token's atom is itself
+            // a capturing group, it pushed a parent positional during matching;
+            // drop those entries so the following `(...)` keeps the next number.
+            // A named NON-capturing group `$<x>=[...]` leaves its inner captures'
+            // positional numbers intact (its atom is not a CaptureGroup), so this
+            // truncation correctly does not fire for it.
+            if matches!(token.atom, RegexAtom::CaptureGroup(_))
+                && updated.positional.len() > pos_base
+            {
+                updated.positional.truncate(pos_base);
+                updated.positional_subcaps.truncate(pos_base);
+                updated.positional_quantified.truncate(pos_base);
+            }
+            updated
+                .named
+                .entry(name.clone())
+                .or_default()
+                .push(captured.clone());
+            // Also capture under the secondary name (e.g., original builtin class name
+            // when using `$<alias>=<builtin_class>` syntax).
+            if let Some(secondary) = token.secondary_named_capture.as_ref() {
                 updated
                     .named
-                    .entry(name.clone())
+                    .entry(secondary.clone())
                     .or_default()
-                    .push(captured.clone());
-                // Also capture under the secondary name (e.g., original builtin class name
-                // when using `$<alias>=<builtin_class>` syntax).
-                if let Some(secondary) = token.secondary_named_capture.as_ref() {
-                    updated
-                        .named
-                        .entry(secondary.clone())
-                        .or_default()
-                        .push(captured);
-                }
-                updated
-            };
+                    .push(captured);
+            }
+            updated
+        };
         let apply_hash_capture = |token: &RegexToken,
                                   _from: usize,
                                   _to: usize,
@@ -396,7 +415,7 @@ impl Interpreter {
                     stack.push((
                         idx + 1,
                         next,
-                        apply_named_capture(token, pos, next, new_caps),
+                        apply_named_capture(token, pos, next, pos_base, new_caps),
                     ));
                 }
                 continue;
@@ -433,7 +452,7 @@ impl Interpreter {
                                 pos,
                                 next,
                                 pos_base,
-                                apply_named_capture(token, pos, next, new_caps),
+                                apply_named_capture(token, pos, next, pos_base, new_caps),
                             ),
                         ));
                     }
@@ -470,7 +489,13 @@ impl Interpreter {
                                     pos,
                                     *next,
                                     pos_base,
-                                    apply_named_capture(token, pos, *next, new_caps.clone()),
+                                    apply_named_capture(
+                                        token,
+                                        pos,
+                                        *next,
+                                        pos_base,
+                                        new_caps.clone(),
+                                    ),
                                 ),
                             ));
                         }
@@ -488,7 +513,7 @@ impl Interpreter {
                                 pos,
                                 next,
                                 pos_base,
-                                apply_named_capture(token, pos, next, new_caps),
+                                apply_named_capture(token, pos, next, pos_base, new_caps),
                             ),
                         ));
                     }
@@ -620,7 +645,7 @@ impl Interpreter {
                                 current,
                                 next,
                                 iter_pos_base,
-                                apply_named_capture(token, current, next, new_caps),
+                                apply_named_capture(token, current, next, pos_base, new_caps),
                             );
                             current_caps = new_caps.clone();
                             positions.push((next, new_caps));
@@ -799,7 +824,7 @@ impl Interpreter {
                                     pos,
                                     next,
                                     pos_base,
-                                    apply_named_capture(token, pos, next, new_caps),
+                                    apply_named_capture(token, pos, next, pos_base, new_caps),
                                 );
                                 (next, new_caps)
                             }
@@ -826,7 +851,7 @@ impl Interpreter {
                                 current,
                                 next,
                                 iter_pos_base,
-                                apply_named_capture(token, current, next, new_caps),
+                                apply_named_capture(token, current, next, pos_base, new_caps),
                             );
                             current_caps = new_caps.clone();
                             positions.push((next, new_caps));
@@ -906,7 +931,7 @@ impl Interpreter {
                                     current,
                                     next,
                                     pos_base,
-                                    apply_named_capture(token, current, next, new_caps),
+                                    apply_named_capture(token, current, next, pos_base, new_caps),
                                 );
                                 current_caps = new_caps.clone();
                                 current = next;
