@@ -295,41 +295,18 @@ impl VM {
                         method_is_nodal = true;
                     }
                     if is_iterable_item && !is_list_native_method {
-                        let sub_items = crate::runtime::value_to_list(item);
-                        let mut sub_results = Vec::with_capacity(sub_items.len());
-                        for sub_item in sub_items {
-                            let sub_val = if !skip_native {
-                                if let Some(native_result) = self.try_native_method(
-                                    &sub_item,
-                                    Symbol::intern(&method),
-                                    &item_args,
-                                ) {
-                                    native_result?
-                                } else {
-                                    let (v, _updated) = self.call_method_mut_with_temp_target(
-                                        &sub_item,
-                                        &method,
-                                        item_args.clone(),
-                                        idx,
-                                    )?;
-                                    v
-                                }
-                            } else {
-                                let (v, _updated) = self.call_method_mut_with_temp_target(
-                                    &sub_item,
-                                    &method,
-                                    item_args.clone(),
-                                    idx,
-                                )?;
-                                v
-                            };
-                            sub_results.push(sub_val);
-                        }
-                        let sub_kind = match item {
-                            Value::Array(_, kind) => *kind,
-                            _ => ArrayKind::List,
-                        };
-                        results.push(Value::Array(std::sync::Arc::new(sub_results), sub_kind));
+                        // Hyper methods descend recursively through nested
+                        // Iterables (and Hash values) down to the leaves, and
+                        // any in-place leaf mutation (e.g. `@a>>++` on nested
+                        // arrays) is written back through every level.
+                        let (sub_result, sub_mutated) = self.hyper_method_apply_recursive(
+                            item,
+                            &method,
+                            &item_args,
+                            skip_native,
+                        )?;
+                        *item = sub_mutated;
+                        results.push(sub_result);
                     } else {
                         let val = if !skip_native {
                             if let Some(native_result) =
@@ -486,6 +463,82 @@ impl VM {
         self.stack
             .push(Value::Array(std::sync::Arc::new(results), result_kind));
         Ok(())
+    }
+
+    /// Recursively apply a (non-nodal) hyper method to a value, descending into
+    /// nested Iterables and Hash values down to the leaves. Returns
+    /// `(result, mutated)`: `result` mirrors the structure with the method
+    /// return values, while `mutated` mirrors the structure with any in-place
+    /// leaf mutations (e.g. `>>++`) applied at every level so the caller can
+    /// write the changes back to the original container.
+    fn hyper_method_apply_recursive(
+        &mut self,
+        item: &Value,
+        method: &str,
+        args: &[Value],
+        skip_native: bool,
+    ) -> Result<(Value, Value), RuntimeError> {
+        match item {
+            Value::Array(elems, kind) => {
+                let mut results = Vec::with_capacity(elems.len());
+                let mut mutated = Vec::with_capacity(elems.len());
+                for sub in elems.iter() {
+                    let (r, m) =
+                        self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
+                    results.push(r);
+                    mutated.push(m);
+                }
+                Ok((
+                    Value::Array(std::sync::Arc::new(results), *kind),
+                    Value::Array(std::sync::Arc::new(mutated), *kind),
+                ))
+            }
+            Value::Seq(elems) | Value::Slip(elems) => {
+                let mut results = Vec::with_capacity(elems.len());
+                let mut mutated = Vec::with_capacity(elems.len());
+                for sub in elems.iter() {
+                    let (r, m) =
+                        self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
+                    results.push(r);
+                    mutated.push(m);
+                }
+                Ok((
+                    Value::Array(std::sync::Arc::new(results), ArrayKind::List),
+                    Value::Array(std::sync::Arc::new(mutated), ArrayKind::List),
+                ))
+            }
+            Value::Hash(map) => {
+                let keys: Vec<String> = map.keys().cloned().collect();
+                let mut res_map = std::collections::HashMap::with_capacity(keys.len());
+                let mut mut_map = std::collections::HashMap::with_capacity(keys.len());
+                for k in keys {
+                    let v = map.get(&k).cloned().unwrap_or(Value::Nil);
+                    let (r, m) =
+                        self.hyper_method_apply_recursive(&v, method, args, skip_native)?;
+                    res_map.insert(k.clone(), r);
+                    mut_map.insert(k, m);
+                }
+                Ok((
+                    Value::Hash(std::sync::Arc::new(res_map)),
+                    Value::Hash(std::sync::Arc::new(mut_map)),
+                ))
+            }
+            _ => {
+                // Leaf: apply the method, mirroring the non-recursive leaf path.
+                if !skip_native
+                    && let Some(native_result) =
+                        self.try_native_method(item, Symbol::intern(method), args)
+                {
+                    let v = native_result?;
+                    // Native methods do not mutate the receiver: the mutated
+                    // value is the original leaf unchanged.
+                    return Ok((v, item.clone()));
+                }
+                let (v, updated) =
+                    self.call_method_mut_with_temp_target(item, method, args.to_vec(), 0)?;
+                Ok((v, updated))
+            }
+        }
     }
 
     pub(super) fn exec_hyper_method_call_dynamic_op(
