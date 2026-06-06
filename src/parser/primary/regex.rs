@@ -53,6 +53,26 @@ fn regex_adverb_error(adverb: &str, message: impl Into<String>) -> PError {
     PError::fatal_with_exception(message, exception)
 }
 
+/// Reject adverbs that make no sense on a substitution. `:overlap`/`:ov` and
+/// `:exhaustive`/`:ex` are only meaningful for matching (there is no way to
+/// substitute overlapping matches), so Raku rejects them at compile time with
+/// X::Syntax::Regex::Adverb.
+fn reject_subst_only_adverbs(adverbs: &MatchAdverbs) -> Result<(), PError> {
+    if adverbs.overlap {
+        return Err(regex_adverb_error(
+            "overlap",
+            "Adverb overlap not allowed on substitution",
+        ));
+    }
+    if adverbs.exhaustive {
+        return Err(regex_adverb_error(
+            "exhaustive",
+            "Adverb exhaustive not allowed on substitution",
+        ));
+    }
+    Ok(())
+}
+
 /// Reject obsolete Perl 5 trailing regex modifiers (e.g., m/pattern/i, m/pattern/g).
 /// In Raku, adverbs come before the delimiter (:i, :g), not after.
 fn reject_trailing_p5_modifiers(rest: &str) -> Result<(), PError> {
@@ -490,17 +510,14 @@ fn build_topic_subst_compound_expr(
     })
 }
 
+/// Build a destructive `s[pattern] = expr` substitution lowered to
+/// `$_ = $_.subst(pattern, { expr })`. Used for Perl5 substitutions, whose
+/// closure replacement must bind Perl5 captures via the `.subst` method.
 fn build_topic_subst_expr(
     pattern: String,
     replacement: Expr,
     adverbs: &MatchAdverbs,
 ) -> Result<Expr, PError> {
-    if adverbs.nth.is_some() || adverbs.repeat.is_some() {
-        return Err(PError::expected(
-            "s/// replacement expression without :nth or :x",
-        ));
-    }
-
     let pattern = if adverbs.perl5 {
         pattern
     } else {
@@ -1196,11 +1213,15 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // ss/pattern/replacement/ — shorthand for s:ss/.../.../
     // Also supports adverbs: ss:g/pattern/replacement/
+    // `ss` additionally allows whitespace before a bracketing delimiter
+    // (e.g. `ss (foo) = 'bar'`), since `ss` is always a substitution.
     if let Some(after_ss) = input.strip_prefix("ss")
         && !crate::parser::stmt::simple::is_user_declared_sub("ss")
         && let Some(first_ch) = after_ss.chars().next()
         && (first_ch == ':'
-            || (!first_ch.is_alphanumeric() && first_ch != '_' && !first_ch.is_whitespace()))
+            || (!first_ch.is_alphanumeric() && first_ch != '_' && !first_ch.is_whitespace())
+            || (first_ch.is_whitespace()
+                && after_ss.trim_start().starts_with(['(', '[', '{', '<'])))
     {
         let (spec, mut adverbs) = if first_ch == ':' {
             parse_match_adverbs(after_ss)?
@@ -1210,7 +1231,11 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         // ss implies :ss (:samespace + :sigspace)
         adverbs.samespace = true;
         adverbs.sigspace = true;
-        let spec = if first_ch == ':' { ws(spec)?.0 } else { spec };
+        let spec = if first_ch == ':' || first_ch.is_whitespace() {
+            ws(spec)?.0
+        } else {
+            spec
+        };
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             let looks_like_method = open_ch == '.'
@@ -1218,6 +1243,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
                 && spec[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
             if is_delim && !looks_like_method {
+                reject_subst_only_adverbs(&adverbs)?;
                 let (close_ch, is_paired) = match open_ch {
                     '{' => ('}', true),
                     '[' => (']', true),
@@ -1267,6 +1293,36 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             },
                         ));
                     }
+                    // Bracketing `ss[pattern] = replacement` assignment form.
+                    if is_paired {
+                        let (after_pat_ws, _) = ws(after_pat)?;
+                        if let Some(after_eq) = after_pat_ws.strip_prefix('=')
+                            && let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq)
+                        {
+                            let pattern = if adverbs.perl5 {
+                                pattern.to_string()
+                            } else {
+                                let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                                validate_regex_pattern_or_perror(&p)?;
+                                p
+                            };
+                            return Ok((
+                                rest,
+                                Expr::Subst {
+                                    pattern,
+                                    replacement,
+                                    samecase: adverbs.samecase,
+                                    sigspace: adverbs.sigspace,
+                                    samemark: adverbs.samemark,
+                                    samespace: adverbs.samespace,
+                                    global: adverbs.global,
+                                    nth: adverbs.nth.clone(),
+                                    x: adverbs.repeat,
+                                    perl5: adverbs.perl5,
+                                },
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -1297,6 +1353,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
                 && spec[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
             if is_delim && !looks_like_method {
+                reject_subst_only_adverbs(&adverbs)?;
                 let (close_ch, is_paired) = match open_ch {
                     '{' => ('}', true),
                     '[' => (']', true),
@@ -1413,10 +1470,50 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             ));
                         }
                         let (after_eq_ws, _) = ws(after_eq)?;
-                        let (rest, replacement) = expression(after_eq_ws)?;
+                        let (rest, replacement_expr) = expression(after_eq_ws)?;
+                        // Perl5 substitutions keep the legacy `$_ = $_.subst(...)`
+                        // lowering: the `.subst` closure path binds Perl5 captures
+                        // (`$1`, `$0`, ...) correctly per match, which the generic
+                        // Subst interpolator cannot reproduce for Perl5 regex.
+                        if adverbs.perl5 {
+                            return Ok((
+                                rest,
+                                build_topic_subst_expr(
+                                    pattern.to_string(),
+                                    replacement_expr,
+                                    &adverbs,
+                                )?,
+                            ));
+                        }
+                        // Capture the raw replacement source so the substitution
+                        // can be compiled to a `Subst` node. Compiling to `Subst`
+                        // (rather than `$_ = $_.subst(...)`) makes the expression
+                        // value the proper Match / List-of-Match result (so e.g.
+                        // `+(s:g[(\w)] = $0 x 2)` yields the match count) and sets
+                        // `$/` to a List under `:g`.
+                        let consumed = after_eq_ws.len() - rest.len();
+                        let raw_replacement = after_eq_ws[..consumed].trim().to_string();
+                        let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&p)?;
+                        let pattern = p;
+                        // Wrap the RHS expression in a `{...}` closure block so the
+                        // substitution-replacement interpolator evaluates it once per
+                        // match with `$/`, `$0`, ... bound to that match.
+                        let replacement = format!("{{{raw_replacement}}}");
                         return Ok((
                             rest,
-                            build_topic_subst_expr(pattern.to_string(), replacement, &adverbs)?,
+                            Expr::Subst {
+                                pattern,
+                                replacement,
+                                samecase: adverbs.samecase,
+                                sigspace: adverbs.sigspace,
+                                samemark: adverbs.samemark,
+                                samespace: adverbs.samespace,
+                                global: adverbs.global,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
+                                perl5: adverbs.perl5,
+                            },
                         ));
                     }
                 }
@@ -1439,6 +1536,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
                 && spec[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
             if is_delim && !looks_like_method {
+                reject_subst_only_adverbs(&adverbs)?;
                 let (close_ch, is_paired) = match open_ch {
                     '{' => ('}', true),
                     '[' => (']', true),

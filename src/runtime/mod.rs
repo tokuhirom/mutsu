@@ -2733,6 +2733,9 @@ impl Interpreter {
         // X::Str::Numeric
         register_x("X::Str::Numeric", "Exception");
 
+        // X::Str::Match::x — invalid :x argument to .subst / s///
+        register_x("X::Str::Match::x", "Exception");
+
         // X::Multi::NoMatch / X::Multi::Ambiguous
         register_x("X::Multi::NoMatch", "Exception");
         register_x("X::Multi::Ambiguous", "Exception");
