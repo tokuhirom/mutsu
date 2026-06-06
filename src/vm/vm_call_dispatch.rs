@@ -1448,6 +1448,17 @@ impl VM {
         );
         self.interpreter.push_block(sub_val);
 
+        // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
+        // born-owned overlay over the caller now that sub_val / push_caller_env
+        // captured the flat caller. Callee setup/body env writes land in the
+        // overlay; on return the merge iterates it overlay-only into the restored
+        // caller env. frame.saved_env holds the flat caller for restoration.
+        {
+            let parent_overlay = self.interpreter.env().overlay_arc();
+            self.interpreter
+                .set_env(crate::env::Env::scoped_child(parent_overlay));
+        }
+
         // Always push a routine frame so that &?ROUTINE works inside anonymous
         // subs too. Use "<anon>" as a sentinel name when fn_name is empty.
         let routine_push_name = if fn_name.is_empty() {
@@ -1501,7 +1512,8 @@ impl VM {
             self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
             let frame = self.pop_call_frame();
-            drop(frame);
+            // Drop the scoped overlay, restoring the caller env.
+            self.interpreter.set_env(frame.saved_env);
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
