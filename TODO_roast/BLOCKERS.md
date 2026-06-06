@@ -384,10 +384,38 @@ located relative to CWD) — `run-roast-test.sh` now runs them with CWD=roast.
 
 ## Subset Types / Where Clauses (2 tests)
 
-Subset types with complex where clauses, and their interaction with type checking, hang or fail.
+Subset types with complex where clauses, and their interaction with type checking.
 
-- roast/S12-subset/subtypes.t (timeout)
-- roast/S02-names/is_default.t
+- roast/S12-subset/subtypes.t (no longer times out; 90/92 run, 13 failing as of
+  the inline-`where`/`++` fixes below). Inline `where` constraints on `my`
+  variables (`my $x where * > 0`, `my Int $n where { $_ %% 2 }`,
+  `my $v where &predicate`) are now desugared into anonymous subsets so they are
+  enforced on initialization AND on assignment, and `++`/`--` on a subset-typed
+  scalar re-checks the constraint (`my Even $x = 2; $x++` throws
+  X::TypeCheck::Assignment and preserves the value). Local test:
+  t/where-constraint-var.t. **Remaining failures are NOT where-clause bugs:**
+  the dominant one is closure writeback from a block/Whatever-code predicate
+  stored in a `&`-variable — `my &pm = { $wanted = $^got; True }; 42 ~~ PS`
+  updates `$wanted` the first time but a second invocation of the same captured
+  block (e.g. via a later `my $x where &pm = 42`) re-runs the body yet its write
+  to the captured `$wanted` is lost. This is the first-class container-identity /
+  closure-capture limitation (lever C, in progress), not subset-specific. The
+  same root cause blocks the signature `where &codevar` `neg arg`/`pos arg`
+  subtests (the predicate's write to the outer `$wanted` does not propagate).
+  Other independent failures: `fail()` inside a subset predicate (test 25),
+  Junction-of-types in `where` (87), read-only enforcement of the `where` topic
+  (34), and `where &var` enforcement on `|c`/slurpy params (85). Tests 91-92 also
+  fail in reference rakudo here.
+- roast/S02-names/is_default.t — **unpassable as written**: reference rakudo
+  (2022.12) fails to compile it (`===SORRY===` at line 527, `has $.v is
+  default(T)` inside a generic role). mutsu actually runs further (141/146) than
+  the reference. Its remaining real failures are the `is default(...)` trait on
+  **hashes** when the defaulted hash is stored in an array and re-bound via a
+  `for` signature (`%a is raw`): the container-keyed default (keyed by the Arc
+  pointer of the hash map) is lost across the copy/rebind, so `%a<o>` and
+  `%a.VAR.default` return `(Any)` instead of the default. Blocked on first-class
+  container identity (same root limitation), and unwhitelist­able regardless
+  because of the line-527 generic-role compile failure.
 
 ## Binding / Container Semantics (4 tests)
 
