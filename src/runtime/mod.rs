@@ -640,6 +640,21 @@ struct RegexToken {
     ratchet: bool,
     /// Frugal (non-greedy) quantifier modifier: `*?`, `+?`, `??`
     frugal: bool,
+    /// Separator for `%` / `%%` quantifiers, e.g. `<thing> +% ','`. When present,
+    /// the quantified atom is matched with `separator.atom` interleaved between
+    /// iterations. `allow_trailing` is true for `%%` (an optional trailing
+    /// separator is permitted). The separator's own captures are appended as
+    /// positional/named captures after the main atom's, matching Raku semantics.
+    separator: Option<Box<RegexSeparatorSpec>>,
+}
+
+#[derive(Clone)]
+struct RegexSeparatorSpec {
+    /// The separator sub-pattern (matched between iterations). Holding a full
+    /// pattern preserves named captures, quantifiers, and other structure of
+    /// complex separators such as `$<delim>=<[a..z]>*`.
+    pattern: RegexPattern,
+    allow_trailing: bool,
 }
 
 #[derive(Clone)]

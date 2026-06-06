@@ -126,6 +126,7 @@ fn rewrite_tilde_tokens(
                     secondary_named_capture: None,
                     ratchet: false,
                     frugal: false,
+                    separator: None,
                 };
                 inner_tokens.push(ws_tok.clone());
                 inner_tokens.push(inner_token);
@@ -152,6 +153,7 @@ fn rewrite_tilde_tokens(
                 secondary_named_capture: None,
                 ratchet: false,
                 frugal: false,
+                separator: None,
             });
             // Skip past the inner token and any trailing ws-like tokens
             i = k + 1;
@@ -277,6 +279,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 secondary_named_capture: None,
                 ratchet: false,
                 frugal: false,
+                separator: None,
             })
             .collect();
         RegexAtom::Group(RegexPattern {
@@ -883,6 +886,42 @@ impl Interpreter {
     /// Split a compact regex string into the first atom and the remainder.
     /// Returns (first_atom, rest). Used to extract the single-atom separator
     /// for `%` / `%%` operators (Raku's `%` only takes a single atom).
+    /// Extract a full separator atom from the start of `s`, including an optional
+    /// `$<name>=` / `$name=` / `%<name>=` / `@<name>=` capture-alias prefix and a
+    /// trailing quantifier. Returns the matched prefix (the part to consume).
+    fn split_separator_atom(s: &str) -> String {
+        let chars: Vec<char> = s.chars().collect();
+        let mut prefix_len = 0usize;
+        // Optional sigil-alias prefix: `$<name>=`, `$name=`, `%<name>=`, `@<name>=`.
+        if let Some(&first) = chars.first()
+            && matches!(first, '$' | '%' | '@')
+        {
+            let mut j = 1;
+            if chars.get(j) == Some(&'<') {
+                // `<name>` — scan to closing '>'
+                while j < chars.len() && chars[j] != '>' {
+                    j += 1;
+                }
+                if j < chars.len() {
+                    j += 1; // consume '>'
+                }
+            } else {
+                // bare `name`
+                while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                    j += 1;
+                }
+            }
+            // Require a trailing `=` to treat this as an alias prefix.
+            if j > 1 && chars.get(j) == Some(&'=') {
+                prefix_len = j + 1;
+            }
+        }
+        let rest: String = chars[prefix_len..].iter().collect();
+        let (atom, _) = Self::split_first_atom(&rest);
+        let prefix: String = chars[..prefix_len].iter().collect();
+        format!("{prefix}{atom}")
+    }
+
     fn split_first_atom(s: &str) -> (String, String) {
         if s.is_empty() {
             return (String::new(), String::new());
@@ -985,7 +1024,16 @@ impl Interpreter {
                 None
             };
             let is_single_atom = Self::is_single_regex_atom(atom);
-            if is_single_atom {
+            // The string-based LTM expansion (which duplicates the atom text and
+            // wraps alternations in `(...)`) renumbers captures and introduces
+            // spurious positional groups. It is only needed for the separator
+            // form `**N..M %sep`. For a plain `**N..M` whose atom contains a
+            // capture (positional `(...)` or named `<name>`), defer to the
+            // normal parser, which produces a proper `Repeat` quantifier with
+            // capture folding that preserves the Match structure.
+            let atom_has_capture =
+                Self::atom_contains_capture(atom) || Self::atom_contains_named_capture(atom);
+            if is_single_atom && (sep_mode.is_some() || !atom_has_capture) {
                 // Detect empty range (e.g. 2..1) before LTM expansion
                 let (parsed_min, parsed_max) = Self::parse_quantifier_range(count_spec);
                 if let Some(max_val) = parsed_max
@@ -1023,6 +1071,35 @@ impl Interpreter {
             // `%` takes only a single atom as separator; split off the remainder.
             let (sep_atom, sep_rest) = Self::split_first_atom(full_sep);
             let sep = Some(sep_atom.as_str());
+            // When the quantified atom or the separator contains a capture, the
+            // string-based expansion (`atom[sep atom]*`) would renumber captures
+            // and break the Match structure. Leave the `%`/`%%` text in place so
+            // the per-token parser builds a proper separator-quantifier instead.
+            //
+            // Under sigspace (`:s`), however, the string expansion correctly
+            // inserts `<ws>` matchers around the separator, which the native
+            // separator-quantifier path does not yet handle. So only defer to the
+            // native path when sigspace is NOT active.
+            //
+            // The native path also uses a greedy chain without full backtracking
+            // coordination, so it cannot correctly handle separators/atoms that
+            // require backtracking against an outer anchor — namely sequential
+            // alternation (`||`) or frugal quantifiers (`+?`/`*?`/`??`). For those
+            // we keep the string expansion (which backtracks correctly, at the
+            // cost of capture renumbering).
+            let needs_backtracking = |s: &str| -> bool {
+                s.contains("||") || s.contains("+?") || s.contains("*?") || s.contains("??")
+            };
+            if !sigspace
+                && !needs_backtracking(&atom)
+                && !needs_backtracking(&sep_atom)
+                && (Self::atom_contains_capture(&atom)
+                    || Self::atom_contains_named_capture(&atom)
+                    || Self::atom_contains_capture(&sep_atom)
+                    || Self::atom_contains_named_capture(&sep_atom))
+            {
+                return pattern.to_string();
+            }
             let use_spaced = sigspace && pattern.len() != compact.len();
             let build_with_rest = |expanded: String| -> String {
                 if sep_rest.is_empty() {
@@ -1062,6 +1139,67 @@ impl Interpreter {
             return build_with_rest(expand(&atom, "1..*", sep_mode, sep));
         }
         pattern.to_string()
+    }
+
+    /// Check whether an atom string contains a positional capture group `(...)`.
+    /// Used to guard LTM string-expansion of `**N..M`, which duplicates the atom
+    /// text and would otherwise renumber captures.
+    fn atom_contains_capture(atom: &str) -> bool {
+        let mut escaped = false;
+        let mut in_single = false;
+        let mut in_double = false;
+        for ch in atom.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '\'' if !in_double => in_single = !in_single,
+                '"' if !in_single => in_double = !in_double,
+                '(' if !in_single && !in_double => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Check whether an atom string contains a named subrule capture `<name>`
+    /// that would contribute a named entry to the Match (i.e. not a `<.foo>`,
+    /// `<?...>`, `<!...>`, character class `<[...]>`/`<+...>`/`<-...>`, or
+    /// modifier `<:...>`). Used alongside `atom_contains_capture` to guard
+    /// LTM string-expansion of `**N..M`.
+    fn atom_contains_named_capture(atom: &str) -> bool {
+        let bytes: Vec<char> = atom.chars().collect();
+        let mut i = 0;
+        let mut escaped = false;
+        let mut in_single = false;
+        let mut in_double = false;
+        while i < bytes.len() {
+            let ch = bytes[i];
+            if escaped {
+                escaped = false;
+                i += 1;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '\'' if !in_double => in_single = !in_single,
+                '"' if !in_single => in_double = !in_double,
+                '<' if !in_single && !in_double => {
+                    if let Some(&next) = bytes.get(i + 1) {
+                        // Capturing named subrules begin with a letter, digit,
+                        // underscore, or `&` (e.g. `<&rule>`, `<name=...>`).
+                        if next.is_alphanumeric() || next == '_' || next == '&' {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        false
     }
 
     /// Check if a string represents a single regex atom (used to guard LTM expansion).
@@ -1426,6 +1564,7 @@ impl Interpreter {
                         secondary_named_capture: None,
                         ratchet: false,
                         frugal: false,
+                        separator: None,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -1467,6 +1606,7 @@ impl Interpreter {
                         secondary_named_capture: None,
                         ratchet: false,
                         frugal: false,
+                        separator: None,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -1506,6 +1646,7 @@ impl Interpreter {
                                 secondary_named_capture: None,
                                 ratchet,
                                 frugal: false,
+                                separator: None,
                             });
                         }
                     } else {
@@ -1532,6 +1673,7 @@ impl Interpreter {
                             secondary_named_capture: None,
                             ratchet,
                             frugal: false,
+                            separator: None,
                         });
                     }
                 }
@@ -1558,6 +1700,7 @@ impl Interpreter {
                         secondary_named_capture: None,
                         ratchet,
                         frugal: false,
+                        separator: None,
                     });
                     continue;
                 } else if tokens.is_empty() {
@@ -1576,6 +1719,7 @@ impl Interpreter {
                     secondary_named_capture: None,
                     ratchet,
                     frugal: false,
+                    separator: None,
                 });
                 continue;
             }
@@ -1598,6 +1742,7 @@ impl Interpreter {
                         secondary_named_capture: None,
                         ratchet,
                         frugal: false,
+                        separator: None,
                     });
                     continue;
                 }
@@ -1633,6 +1778,7 @@ impl Interpreter {
                     secondary_named_capture: None,
                     ratchet,
                     frugal: false,
+                    separator: None,
                 });
                 continue;
             }
@@ -1711,6 +1857,7 @@ impl Interpreter {
                         secondary_named_capture: None,
                         ratchet,
                         frugal: false,
+                        separator: None,
                     });
                     continue;
                 }
@@ -1943,6 +2090,7 @@ impl Interpreter {
                                         secondary_named_capture: None,
                                         ratchet: false,
                                         frugal: false,
+                                        separator: None,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -2216,6 +2364,7 @@ impl Interpreter {
                                         secondary_named_capture: None,
                                         ratchet: false,
                                         frugal: false,
+                                        separator: None,
                                     }],
                                     anchor_start: false,
                                     anchor_end: false,
@@ -2469,6 +2618,7 @@ impl Interpreter {
                                                     secondary_named_capture: None,
                                                     ratchet: false,
                                                     frugal: false,
+                                                    separator: None,
                                                 })
                                                 .collect();
                                             RegexPattern {
@@ -2592,6 +2742,7 @@ impl Interpreter {
                                                             secondary_named_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
+                                                            separator: None,
                                                         },
                                                         RegexToken {
                                                             atom: RegexAtom::CharClass(CharClass {
@@ -2608,6 +2759,7 @@ impl Interpreter {
                                                             secondary_named_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
+                                                            separator: None,
                                                         },
                                                     ],
                                                     anchor_start: false,
@@ -2632,6 +2784,7 @@ impl Interpreter {
                                                     secondary_named_capture: None,
                                                     ratchet: false,
                                                     frugal: false,
+                                                    separator: None,
                                                 }],
                                                 anchor_start: false,
                                                 anchor_end: false,
@@ -2870,6 +3023,7 @@ impl Interpreter {
                                                             secondary_named_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
+                                                            separator: None,
                                                         },
                                                         RegexToken {
                                                             atom: RegexAtom::CharClass(CharClass {
@@ -2886,6 +3040,7 @@ impl Interpreter {
                                                             secondary_named_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
+                                                            separator: None,
                                                         },
                                                     ],
                                                     anchor_start: false,
@@ -3092,6 +3247,7 @@ impl Interpreter {
                                     secondary_named_capture: None,
                                     ratchet: false,
                                     frugal: false,
+                                    separator: None,
                                 }],
                                 anchor_start: false,
                                 anchor_end: false,
@@ -3398,6 +3554,86 @@ impl Interpreter {
             } else {
                 ratchet // inherit from pattern-level :ratchet flag
             };
+            // Handle `%` / `%%` separator quantifier modifier, e.g.
+            // `<thing>+ % ','`. Only meaningful for repeating quantifiers. The
+            // separator is a single atom (the next atom in the stream); the rest
+            // of the line is matched after the quantified group. `%%` permits an
+            // optional trailing separator.
+            let token_separator: Option<Box<RegexSeparatorSpec>> =
+                if !matches!(quant, RegexQuant::One | RegexQuant::ZeroOrOne) {
+                    // Skip whitespace before the `%`.
+                    let mut lookahead = chars.clone();
+                    while lookahead.peek().is_some_and(|c| c.is_whitespace()) {
+                        lookahead.next();
+                    }
+                    // A `%` that begins a hash-alias capture for the FOLLOWING atom
+                    // (`%<name>=...` or `%name=...`) is NOT a separator. Detect that
+                    // shape and skip separator handling so the alias parses normally.
+                    let is_hash_alias = {
+                        let mut la = lookahead.clone();
+                        if la.peek() == Some(&'%') {
+                            la.next();
+                            // Reject `%%` (always a separator marker, never an alias).
+                            if la.peek() == Some(&'%') {
+                                false
+                            } else if la.peek() == Some(&'<') {
+                                // `%<...>=` — scan to `>` then require `=`.
+                                la.next();
+                                while la.peek().is_some_and(|&c| c != '>') {
+                                    la.next();
+                                }
+                                la.next(); // '>'
+                                la.peek() == Some(&'=')
+                            } else if la.peek().is_some_and(|&c| c.is_alphabetic() || c == '_') {
+                                // `%name=` — scan identifier then require `=`.
+                                while la.peek().is_some_and(|&c| c.is_alphanumeric() || c == '_') {
+                                    la.next();
+                                }
+                                la.peek() == Some(&'=')
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    };
+                    if lookahead.peek() == Some(&'%') && !is_hash_alias {
+                        // Commit: consume up to and including the `%`/`%%`.
+                        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+                            chars.next();
+                        }
+                        chars.next(); // first '%'
+                        let allow_trailing = if chars.peek() == Some(&'%') {
+                            chars.next();
+                            true
+                        } else {
+                            false
+                        };
+                        // Skip whitespace before the separator atom.
+                        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+                            chars.next();
+                        }
+                        // Collect the separator atom text (a single atom, which may
+                        // carry a `$<name>=` / `%<name>=` / `@<name>=` alias prefix
+                        // and/or a trailing quantifier).
+                        let remaining: String = chars.clone().collect();
+                        let sep_atom_str = Self::split_separator_atom(&remaining);
+                        // Advance the main iterator past the separator atom.
+                        for _ in 0..sep_atom_str.chars().count() {
+                            chars.next();
+                        }
+                        Self::parse_regex(self, sep_atom_str.trim()).map(|pattern| {
+                            Box::new(RegexSeparatorSpec {
+                                pattern,
+                                allow_trailing,
+                            })
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
             // When both a user alias ($<name>=) and a builtin class name are pending,
             // the alias becomes the primary capture and the builtin name becomes secondary.
             let primary_named = pending_named_capture.take();
@@ -3416,6 +3652,7 @@ impl Interpreter {
                 secondary_named_capture: secondary_named,
                 ratchet: token_ratchet,
                 frugal: token_frugal,
+                separator: token_separator,
             });
         }
         let tokens = match rewrite_tilde_tokens(tokens, ignore_case, ignore_mark) {

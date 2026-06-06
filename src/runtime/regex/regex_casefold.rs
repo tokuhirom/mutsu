@@ -84,6 +84,16 @@ pub(super) fn casefold_pattern(pattern: &RegexPattern) -> RegexPattern {
     }
 }
 
+/// Case-fold the sub-pattern of a `%` / `%%` quantifier separator, if present.
+fn casefold_separator(sep: &Option<Box<RegexSeparatorSpec>>) -> Option<Box<RegexSeparatorSpec>> {
+    sep.as_ref().map(|s| {
+        Box::new(RegexSeparatorSpec {
+            pattern: casefold_pattern(&s.pattern),
+            allow_trailing: s.allow_trailing,
+        })
+    })
+}
+
 fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
     let folded_atom = casefold_atom(&token.atom);
     match folded_atom {
@@ -95,6 +105,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
             hash_capture: token.hash_capture.clone(),
             ratchet: token.ratchet,
             frugal: token.frugal,
+            separator: casefold_separator(&token.separator),
         }],
         CasefoldedAtom::Multiple(chars) => {
             // A literal that expanded to multiple chars (e.g., 'ß' -> 's','s').
@@ -109,6 +120,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
                     hash_capture: None,
                     ratchet: token.ratchet,
                     frugal: false,
+                    separator: None,
                 })
                 .collect();
             let group = RegexPattern {
@@ -126,6 +138,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
                 hash_capture: token.hash_capture.clone(),
                 ratchet: token.ratchet,
                 frugal: token.frugal,
+                separator: casefold_separator(&token.separator),
             }]
         }
     }

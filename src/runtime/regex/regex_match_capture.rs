@@ -102,37 +102,23 @@ impl Interpreter {
                 }
                 return best;
             }
-            RegexAtom::Conjunction(branches) => {
-                // ALL branches must match from the same position.
-                // The result is the longest match among the branches.
-                let mut longest_end = 0usize;
-                let mut longest_caps = current_caps.clone();
-                for branch in branches {
-                    if let Some((next, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(branch, chars, pos, pkg)
-                    {
-                        if next >= longest_end {
-                            longest_end = next;
-                            longest_caps = inner_caps;
-                        }
-                    } else {
-                        // If any branch fails, the whole conjunction fails
-                        return None;
-                    }
-                }
-                let mut new_caps = current_caps.clone();
-                for (k, v) in longest_caps.named {
-                    new_caps.named.entry(k).or_default().extend(v);
-                }
-                new_caps.positional.append(&mut longest_caps.positional);
-                new_caps
-                    .positional_subcaps
-                    .append(&mut longest_caps.positional_subcaps);
-                new_caps
-                    .positional_quantified
-                    .append(&mut longest_caps.positional_quantified);
-                new_caps.code_blocks.append(&mut longest_caps.code_blocks);
-                return Some((longest_end, new_caps));
+            RegexAtom::Conjunction(_) => {
+                // ALL branches must match the SAME substring (end at the same
+                // position). Captures from EVERY branch are merged (Raku keeps
+                // all captures from each side of `&` / `&&`), in written order.
+                // Delegate to the multi-end variant and take the highest-priority
+                // (longest) result.
+                return self
+                    .regex_match_atom_all_with_capture_in_pkg(
+                        atom,
+                        chars,
+                        pos,
+                        current_caps,
+                        pkg,
+                        ignore_case,
+                    )
+                    .into_iter()
+                    .next_back();
             }
             RegexAtom::SequentialAlternation(alternatives) => {
                 for alt in alternatives {
@@ -204,24 +190,11 @@ impl Interpreter {
                 {
                     let captured: String = chars[pos..end].iter().collect();
                     let mut new_caps = current_caps.clone();
-                    // Merge inner named captures into parent
-                    for (k, v) in &inner_caps.named {
-                        new_caps
-                            .named
-                            .entry(k.clone())
-                            .or_default()
-                            .extend(v.clone());
-                    }
-                    for (k, v) in &inner_caps.named_subcaps {
-                        new_caps
-                            .named_subcaps
-                            .entry(k.clone())
-                            .or_default()
-                            .extend(v.clone());
-                    }
-                    new_caps
-                        .named_quantified
-                        .extend(inner_caps.named_quantified.iter().cloned());
+                    // Named captures appearing inside a positional capture group
+                    // belong to that group's sub-Match (`$/[0]<name>`), NOT to the
+                    // parent Match's top-level named captures (`$/<name>`). They are
+                    // therefore preserved only in `positional_subcaps` below, and
+                    // are intentionally NOT merged into the parent `named` map.
                     // Store inner captures as subcaptures of this group
                     let mut subcap = inner_caps.clone();
                     subcap.matched = captured.clone();

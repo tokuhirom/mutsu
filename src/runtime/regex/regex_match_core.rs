@@ -51,6 +51,212 @@ impl Interpreter {
         Self::collect_named_captures_in_atom(&token.atom, &mut names);
         names
     }
+    /// Match a separator quantifier (`atom +% sep`, `atom **N..M %% sep`, ...).
+    /// The atom is matched repeatedly with `sep` interleaved between iterations.
+    /// Each side's captures are accumulated into its own folded group: the atom's
+    /// positional captures occupy the first `atom_stride` indices and the
+    /// separator's the next `sep_stride` indices, matching Raku's Match layout.
+    ///
+    /// Returns `(end, caps)` pairs in LOWEST-priority-first order (for the LIFO
+    /// matching stack): shortest match first, longest (greedy) last.
+    fn match_separated_quantifier(
+        &self,
+        token: &RegexToken,
+        chars: &[char],
+        start: usize,
+        base_caps: &RegexCaptures,
+        pkg: &str,
+        pattern: &RegexPattern,
+    ) -> Vec<(usize, RegexCaptures)> {
+        let sep = token.separator.as_ref().expect("separator present");
+        let (min, max) = match &token.quant {
+            RegexQuant::OneOrMore => (1usize, None),
+            RegexQuant::ZeroOrMore => (0usize, None),
+            RegexQuant::Repeat(lo, hi) => (*lo, *hi),
+            // `?` / exact-one don't form a separator list; treat as one.
+            _ => (1usize, Some(1usize)),
+        };
+        let atom_stride = count_capture_groups(&token.atom);
+        let sep_stride: usize = sep
+            .pattern
+            .tokens
+            .iter()
+            .map(|t| count_capture_groups(&t.atom))
+            .sum();
+        let names = Self::collect_quantified_names_for_token(token);
+
+        // Build the greedy chain of iterations. Each iteration records the atom
+        // match end and the captures produced by the atom (and, for iterations
+        // after the first, the preceding separator's captures).
+        // `atom_ends[i]` = end position after the i-th atom (0-indexed).
+        let mut atom_caps: Vec<RegexCaptures> = Vec::new();
+        let mut sep_caps: Vec<RegexCaptures> = Vec::new();
+        let mut atom_ends: Vec<usize> = Vec::new();
+
+        let empty = RegexCaptures::default();
+        // First atom.
+        let mut cur = start;
+        if let Some((end, caps)) = self.regex_match_atom_with_capture_in_pkg(
+            &token.atom,
+            chars,
+            cur,
+            &empty,
+            pkg,
+            pattern.ignore_case,
+        ) && end != cur
+        {
+            atom_caps.push(caps);
+            atom_ends.push(end);
+            cur = end;
+            // Subsequent: sep then atom.
+            loop {
+                if let Some(m) = max
+                    && atom_ends.len() >= m
+                {
+                    break;
+                }
+                let Some((sep_end, scaps)) =
+                    self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, cur, pkg)
+                else {
+                    break;
+                };
+                let Some((atom_end, acaps)) = self.regex_match_atom_with_capture_in_pkg(
+                    &token.atom,
+                    chars,
+                    sep_end,
+                    &empty,
+                    pkg,
+                    pattern.ignore_case,
+                ) else {
+                    break;
+                };
+                if atom_end == cur {
+                    break; // zero-width progress guard
+                }
+                sep_caps.push(scaps);
+                atom_caps.push(acaps);
+                atom_ends.push(atom_end);
+                cur = atom_end;
+            }
+        }
+
+        // Produce results for each valid iteration count (>= min, <= max),
+        // shortest first. Count 0 (when min==0) ends at `start`.
+        let mut results: Vec<(usize, RegexCaptures)> = Vec::new();
+        if min == 0 {
+            results.push((start, base_caps.clone()));
+        }
+        for count in 1..=atom_ends.len() {
+            if count < min {
+                continue;
+            }
+            if let Some(m) = max
+                && count > m
+            {
+                break;
+            }
+            let mut end = atom_ends[count - 1];
+            let mut caps = base_caps.clone();
+            // Optional trailing separator for `%%`. A zero-width trailing
+            // separator (e.g. `delim*` matching empty) is still a valid trailing
+            // match, so accept `sep_end >= end`.
+            let mut trailing_sep: Option<RegexCaptures> = None;
+            if sep.allow_trailing
+                && let Some((sep_end, scaps)) =
+                    self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, end, pkg)
+                && sep_end >= end
+            {
+                trailing_sep = Some(scaps);
+                end = sep_end;
+            }
+            // Assemble folded captures: atom groups first, then sep groups.
+            caps.named_quantified.extend(names.iter().cloned());
+            Self::append_separated_captures(
+                &mut caps,
+                &atom_caps[..count],
+                &sep_caps[..count.saturating_sub(1)],
+                trailing_sep.as_ref(),
+                atom_stride,
+                sep_stride,
+            );
+            results.push((end, caps));
+        }
+        results
+    }
+
+    /// Append captures from a separated quantifier into `caps`, folding each
+    /// side into its own positional/named group lists.
+    fn append_separated_captures(
+        caps: &mut RegexCaptures,
+        atom_caps: &[RegexCaptures],
+        sep_caps: &[RegexCaptures],
+        trailing_sep: Option<&RegexCaptures>,
+        atom_stride: usize,
+        sep_stride: usize,
+    ) {
+        // Positional captures: atom groups occupy the first `atom_stride` slots,
+        // separator groups the next `sep_stride`.
+        for g in 0..atom_stride {
+            let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
+            let mut last_text = String::new();
+            let mut last_sub: Option<RegexCaptures> = None;
+            for ac in atom_caps {
+                if let Some(text) = ac.positional.get(g) {
+                    let (from, to) = ac.positional_offsets.get(g).copied().unwrap_or((0, 0));
+                    let sub = ac.positional_subcaps.get(g).cloned().flatten();
+                    list.push((text.clone(), from, to, sub.clone()));
+                    last_text = text.clone();
+                    last_sub = sub;
+                }
+            }
+            caps.positional.push(last_text);
+            caps.positional_subcaps.push(last_sub);
+            caps.positional_quantified.push(Some(list));
+            caps.positional_offsets.push((0, 0));
+        }
+        let mut all_sep: Vec<&RegexCaptures> = sep_caps.iter().collect();
+        if let Some(ts) = trailing_sep {
+            all_sep.push(ts);
+        }
+        for g in 0..sep_stride {
+            let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
+            let mut last_text = String::new();
+            let mut last_sub: Option<RegexCaptures> = None;
+            for sc in &all_sep {
+                if let Some(text) = sc.positional.get(g) {
+                    let (from, to) = sc.positional_offsets.get(g).copied().unwrap_or((0, 0));
+                    let sub = sc.positional_subcaps.get(g).cloned().flatten();
+                    list.push((text.clone(), from, to, sub.clone()));
+                    last_text = text.clone();
+                    last_sub = sub;
+                }
+            }
+            caps.positional.push(last_text);
+            caps.positional_subcaps.push(last_sub);
+            caps.positional_quantified.push(Some(list));
+            caps.positional_offsets.push((0, 0));
+        }
+        // Named captures: merge every iteration's named captures (as arrays).
+        for src in atom_caps.iter().chain(all_sep.iter().copied()) {
+            for (k, v) in &src.named {
+                caps.named.entry(k.clone()).or_default().extend(v.clone());
+                caps.named_quantified.insert(k.clone());
+            }
+            for (k, v) in &src.named_subcaps {
+                caps.named_subcaps
+                    .entry(k.clone())
+                    .or_default()
+                    .extend(v.clone());
+            }
+            for (k, v) in &src.hash_captures {
+                caps.hash_captures
+                    .entry(k.clone())
+                    .or_default()
+                    .extend(v.clone());
+            }
+        }
+    }
+
     pub(super) fn regex_match_end_from_caps_in_pkg(
         &self,
         pattern: &RegexPattern,
@@ -180,6 +386,21 @@ impl Interpreter {
             }
             let token = &pattern.tokens[idx];
             let pos_base = caps.positional.len();
+            // Separator quantifiers (`atom +% sep`, `atom **N..M %% sep`, ...):
+            // match the atom with the separator interleaved between iterations,
+            // accumulating each side's captures into its own (folded) group.
+            if token.separator.is_some() {
+                for (next, new_caps) in
+                    self.match_separated_quantifier(token, chars, pos, &caps, pkg, pattern)
+                {
+                    stack.push((
+                        idx + 1,
+                        next,
+                        apply_named_capture(token, pos, next, new_caps),
+                    ));
+                }
+                continue;
+            }
             match token.quant {
                 RegexQuant::One => {
                     let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(

@@ -127,6 +127,12 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
         hash_capture: token.hash_capture.clone(),
         ratchet: token.ratchet,
         frugal: token.frugal,
+        separator: token.separator.as_ref().map(|s| {
+            Box::new(RegexSeparatorSpec {
+                pattern: strip_marks_pattern(&s.pattern),
+                allow_trailing: s.allow_trailing,
+            })
+        }),
     }
 }
 
@@ -367,7 +373,11 @@ pub(super) fn merge_regex_captures(
     dst.positional_subcaps.append(&mut src.positional_subcaps);
     dst.positional_quantified
         .append(&mut src.positional_quantified);
+    dst.positional_offsets.append(&mut src.positional_offsets);
     dst.code_blocks.append(&mut src.code_blocks);
+    for (k, v) in src.hash_captures.drain() {
+        dst.hash_captures.entry(k).or_default().extend(v);
+    }
     dst
 }
 
@@ -405,7 +415,15 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
     }
     let new_entries = caps.positional.len() - base_len;
     if new_entries <= stride {
-        // Only one iteration or fewer — nothing to fold
+        // Only one iteration or fewer — nothing to fold.
+        //
+        // NOTE: a zero-iteration `*`/`+` quantified capture group should ideally
+        // reserve an empty-list slot (Raku: `(z)*` matching 0 times yields `[]`),
+        // but mutsu does not yet reserve index-stable positional capture slots
+        // for unmatched optional captures, so emitting an empty slot here would
+        // misalign indices when an earlier `(...)?` also matched zero times.
+        // TODO: reserve index-stable positional slots for all capture groups so
+        // both `(y)?`→Nil and `(z)*`→[] can coexist.
         return;
     }
     let iterations = new_entries / stride;
