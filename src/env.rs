@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -101,6 +101,16 @@ pub struct Env {
     /// `clone_for_thread`) flattens it first via [`Env::flattened`]. See
     /// docs/vm-dual-store.md (Slice 6).
     parent: Option<Arc<HashMap<Symbol, Value>>>,
+    /// Tombstones: keys `remove`d in this scoped overlay that still exist in the
+    /// `parent`/base tier. Because the overlay can only *add* shadowing entries,
+    /// a plain overlay `remove` cannot hide a parent key; a tombstone records
+    /// "this key is deleted in this scope" so `get`/`contains_key` stop falling
+    /// through to the parent. This is what makes "clear inherited state" idioms
+    /// (e.g. `my $x` clearing an outer `\x`'s `__mutsu_sigilless_readonly::x`)
+    /// behave correctly under a scoped overlay. `None` for flat envs (no scope to
+    /// shadow). Tombstones are dropped with the overlay on return and are never
+    /// merged back (a callee-local removal must not delete the caller's key).
+    tombstones: Option<HashSet<Symbol>>,
 }
 
 impl Env {
@@ -108,6 +118,7 @@ impl Env {
         Self {
             inner: Arc::new(HashMap::new()),
             parent: None,
+            tombstones: None,
         }
     }
 
@@ -119,7 +130,14 @@ impl Env {
         Self {
             inner: Arc::new(HashMap::new()),
             parent: Some(parent_overlay),
+            tombstones: None,
         }
+    }
+
+    /// True if `key` is tombstoned (removed) in this scoped overlay.
+    #[inline(always)]
+    fn is_tombstoned(&self, key: Symbol) -> bool {
+        self.tombstones.as_ref().is_some_and(|t| t.contains(&key))
     }
 
     /// True if this env has a parent tier (i.e. it is a scoped child).
@@ -145,12 +163,20 @@ impl Env {
             None => self.clone(),
             Some(parent) => {
                 let mut merged: HashMap<Symbol, Value> = (**parent).clone();
+                // Apply tombstones: a key removed in this scope must not survive
+                // into the flattened (flat) env.
+                if let Some(tomb) = &self.tombstones {
+                    for k in tomb {
+                        merged.remove(k);
+                    }
+                }
                 for (k, v) in self.inner.iter() {
                     merged.insert(*k, v.clone());
                 }
                 Self {
                     inner: Arc::new(merged),
                     parent: None,
+                    tombstones: None,
                 }
             }
         }
@@ -182,6 +208,11 @@ impl Env {
         if let Some(v) = self.inner.get(&key) {
             return Some(v);
         }
+        // A tombstoned key is deleted in this scope: do not fall through to the
+        // parent/base tier.
+        if self.is_tombstoned(key) {
+            return None;
+        }
         if let Some(parent) = &self.parent
             && let Some(v) = parent.get(&key)
         {
@@ -197,8 +228,13 @@ impl Env {
 
     #[inline]
     pub fn contains_key_sym(&self, key: Symbol) -> bool {
-        self.inner.contains_key(&key)
-            || self.parent.as_ref().is_some_and(|p| p.contains_key(&key))
+        if self.inner.contains_key(&key) {
+            return true;
+        }
+        if self.is_tombstoned(key) {
+            return false;
+        }
+        self.parent.as_ref().is_some_and(|p| p.contains_key(&key))
             || global_base().is_some_and(|b| b.contains_key(&key))
     }
 
@@ -214,25 +250,51 @@ impl Env {
         Arc::make_mut(&mut self.inner)
     }
 
+    /// Clear a tombstone for `key` (it is being re-inserted, so it is no longer
+    /// deleted in this scope). No-op for flat envs / un-tombstoned keys.
+    #[inline(always)]
+    fn untombstone(&mut self, key: Symbol) {
+        if let Some(t) = &mut self.tombstones {
+            t.remove(&key);
+        }
+    }
+
     #[inline]
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
         note_closure_meta_key(&key);
         let sym = Symbol::intern(&key);
+        self.untombstone(sym);
         self.cow_mut().insert(sym, value)
     }
 
     #[inline]
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
+        self.untombstone(key);
         self.cow_mut().insert(key, value)
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Value> {
-        let sym = Symbol::intern(key);
-        self.cow_mut().remove(&sym)
+        self.remove_sym(Symbol::intern(key))
     }
 
     pub fn remove_sym(&mut self, key: Symbol) -> Option<Value> {
-        self.cow_mut().remove(&key)
+        let from_overlay = self.cow_mut().remove(&key);
+        // Scoped env: if the key still exists in the parent/base tier, record a
+        // tombstone so it stops shadowing through. The visible value before
+        // removal is the overlay value if present, else the parent/base value.
+        if self.parent.is_some() {
+            let parent_val = self
+                .parent
+                .as_ref()
+                .and_then(|p| p.get(&key))
+                .or_else(|| global_base().and_then(|b| b.get(&key)));
+            if parent_val.is_some() {
+                let visible = from_overlay.or_else(|| parent_val.cloned());
+                self.tombstones.get_or_insert_with(HashSet::new).insert(key);
+                return visible;
+            }
+        }
+        from_overlay
     }
 
     pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
@@ -243,8 +305,12 @@ impl Env {
         // Promote a parent-tier or base-only key into the overlay before handing
         // out a mutable reference, so a write to a caller lexical (scoped env) or
         // a built-in constant lands in this frame's overlay and is not silently
-        // lost. Common case (overlay hit, or absent) pays nothing extra.
+        // lost. Common case (overlay hit, or absent) pays nothing extra. A
+        // tombstoned key is deleted in this scope, so it is not promoted.
         if !self.inner.contains_key(&key) {
+            if self.is_tombstoned(key) {
+                return None;
+            }
             let promote = self
                 .parent
                 .as_ref()
@@ -252,6 +318,7 @@ impl Env {
                 .or_else(|| global_base().and_then(|b| b.get(&key)))
                 .cloned();
             if let Some(v) = promote {
+                self.untombstone(key);
                 self.cow_mut().insert(key, v);
             }
         }
@@ -359,6 +426,7 @@ impl From<HashMap<String, Value>> for Env {
         Self {
             inner: Arc::new(sym_map),
             parent: None,
+            tombstones: None,
         }
     }
 }
@@ -368,6 +436,7 @@ impl From<HashMap<Symbol, Value>> for Env {
         Self {
             inner: Arc::new(map),
             parent: None,
+            tombstones: None,
         }
     }
 }

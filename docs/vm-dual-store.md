@@ -630,6 +630,41 @@ Reaching that requires, roughly in order:
         S02/S03/S04/S05/S06/S12/S14/S17/S32 + integration roast files green. New
         pin `t/scoped-overlay-method.t`.
 
+        **More paths + the `Env` tombstone fix.** Converted
+        `call_compiled_function_positional_light` and
+        `call_compiled_function_light` (replacing their name-keyed param/local
+        save-restore juggling — `saved_param_env`/`saved_env_locals`/
+        `modified_env_keys` — with overlay-only merge), `call_compiled_method`
+        (the non-fast method path), and finally `call_compiled_function_named`
+        (the heavy path: install the overlay after `sub_val`/`push_caller_env`
+        captured the flat caller, merge overlay-only on return, restore the caller
+        env on the `empty_sig` early exit). The function-path merges skip
+        `_`/`@_`/`%_`/`__mutsu_callable_id` and `?`-prefixed contextual vars
+        (`?LINE`/`?FILE`) — per-frame state must not propagate to the caller, and
+        propagating `?LINE` also caused spurious `env_dirty` churn per recursive
+        call.
+
+        The named path surfaced a **general overlay flaw**: `Env::remove` is
+        overlay-only, so it cannot *shadow* a key that lives in the parent tier.
+        Many "clear inherited state" idioms rely on `env.remove()` — e.g.
+        `my $result` clears an enclosing sigilless `\result`'s
+        `__mutsu_sigilless_readonly::result` so a later `$result := ...` is
+        allowed (vm_var_assign_ops.rs ~4154). Under a scoped overlay that `remove`
+        was a no-op (the key was in the parent), so `$result :=` hit the inherited
+        readonly mark and died with "Cannot modify an immutable value"
+        (`for @t -> \d,\seed,\endpoint,\result { ts(...) }` calling a raw-param sub
+        that does `$result := list.List`; caught by `roast/S03-sequence/
+        exhaustive.t`). Fix: `Env` gains **tombstones** — `remove_sym` on a scoped
+        env, when the key exists in the parent/base, records the key in a
+        `tombstones` set so `get`/`contains_key`/`get_mut` stop falling through to
+        the parent; `insert` clears the tombstone; `flattened` applies then drops
+        them; they are never merged back (a callee-local removal must not delete
+        the caller's key). `parent=None` (flat) envs never tombstone, so flat
+        behavior is byte-identical. New pin `t/scoped-overlay-named.t`. make test
+        green; ~830 whitelisted roast files green (the only fails were the
+        cwd-dependent encoding tests and the stale-temp-file `spurt.t`, both
+        environmental).
+
   - [ ] **Slice 5 (original design notes — superseded by the step above).**
 
       **The waste, measured.** `bench-fib` does **0 % function/method fallback**
