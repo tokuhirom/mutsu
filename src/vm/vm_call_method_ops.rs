@@ -217,6 +217,29 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // `.so` / `.not` on a value whose type defines a user `Bool` method must
+        // dispatch through that method (Mu.so / Mu.not are defined in terms of
+        // .Bool) rather than the native truthiness fast path, which is unaware of
+        // user-defined Bool.
+        if matches!(method, "so" | "not") && args.is_empty() {
+            let user_bool_owner = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = user_bool_owner
+                && self
+                    .interpreter
+                    .resolve_method_with_owner(&cn, "Bool", &[])
+                    .is_some()
+            {
+                let t = self.eval_truthy(&target);
+                self.stack
+                    .push(Value::Bool(if method == "not" { !t } else { t }));
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
         // Full method dispatch from here on may capture the env into a Sub /
         // closure or run an interpreter fallback that iterates it; collapse a
         // transient scoped overlay env to a flat env first so the full lexical
@@ -817,6 +840,16 @@ impl VM {
                         | "isa" | "does" | "can" | "^name" | "^mro" | "^pun" | "new" | "bless"
                         | "clone" | "item" | "self" | "sink" | "pending" => {
                             // Fall through to normal dispatch
+                        }
+                        // Numeric coercion on Nil (an undefined value) warns and
+                        // yields the corresponding numeric type object, e.g.
+                        // `Nil.Rat` is `(Rat)` which numifies to 0.
+                        "Rat" | "FatRat" | "Int" | "Num" | "Complex" if args.is_empty() => {
+                            let msg = "Use of Nil in numeric context".to_string();
+                            return Err(RuntimeError::warn_signal_with_resume(
+                                msg,
+                                Value::Package(Symbol::intern(method)),
+                            ));
                         }
                         _ => {
                             self.stack.push(Value::Nil);

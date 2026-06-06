@@ -1107,6 +1107,7 @@ roast/S32-num/polar.t
 roast/S32-num/polymod.t
 roast/S32-num/power.t
 roast/S32-num/rand.t
+roast/S32-num/rat.t
 roast/S32-num/real-bridge.t
 roast/S32-num/roots.t
 roast/S32-num/rounders.t
