@@ -711,5 +711,66 @@ Reaching that requires, roughly in order:
       `S02-names/caller.t`, dynamic-scope) + full CI roast, and report the
       `env_flush` count drop per slice.
 
+  - [x] **Slice 6.1 — kill the redundant per-call `env_dirty`/`locals_dirty`
+      churn on the compiled fast paths.** With every call path now scoped-overlay
+      isolated (Slice 6), the per-call dual-store sync that compiled calls
+      performed turned out to be *pure overhead doing zero useful work*. Measured
+      on `bench-fib` (fib 27) with `MUTSU_VM_STATS=1`:
+
+      | counter | before | after |
+      |---|---|---|
+      | `env_flushes` | 317810 | **0** |
+      | `slots_flushed` | 0 | 0 |
+      | `locals_pulls` | 317811 | **0** |
+
+      Two root causes, both removed:
+        1. **Bind-time mark-all-params-dirty** in
+           `call_compiled_function_positional_light`: every param slot was
+           `mark_local_dirty`'d after binding, flipping the global `locals_dirty`
+           flag and forcing a guaranteed-no-op `ensure_env_synced` flush on every
+           call. A slot-only param (read via `GetLocal`, e.g. `fib`'s `$n`) is
+           never named-read, so `ensure_env_synced` already skipped it (its
+           `needs_env_sync[i]` is false) — the mark only created churn. Params a
+           name-reader *can* observe are already written into the born-owned
+           overlay at bind time, so no dirty mark is needed for them either; any
+           later reassignment marks its own slot via `SetLocal`.
+        2. **Blanket `env_dirty = true` after a compiled call.** `exec_call_func_op`
+           set `env_dirty = true` unconditionally after *every* dispatch (the
+           ultra-fast positional_light / light caches, the OTF cache, and the
+           `dispatch_func_call_inner` tail). That forced the caller to
+           `sync_locals_from_env` on its next env-dirty barrier even when the
+           callee was pure. The compiled fast paths (`positional_light` / `light`)
+           already signal `env_dirty` *precisely* via their scoped-overlay merge
+           (which sets it iff a captured-outer write actually merged back), so the
+           blanket set is redundant for them and is removed. The interpreter /
+           native fallback branches of `dispatch_func_call_inner` set `env_dirty`
+           themselves (they mutate env by name through the tree-walking bridge).
+
+      **Why the named (heavy) path keeps `env_dirty = true`.** `is rw` / `is raw`
+      params write back into a *caller-named* variable; the param is a
+      callee-local name, so the scoped-overlay merge (which skips local names)
+      does not capture that writeback. Such functions are excluded from
+      `positional_light`/`light` and route through `call_compiled_function_named`,
+      which conservatively marks env dirty. This is not the hot recursion path
+      (simple positional calls use `positional_light`), so it costs nothing
+      measurable. Regression-pinned by `t/is-rw-traits.t`,
+      `t/scoped-overlay-named.t`, and `t/scoped-overlay-env-dirty.t` (12 cases
+      covering captured scalar/array/hash/named/nested/interleaved + pure calls).
+
+  - [ ] **Slice 6.2+ — full removal of the dirty flags (the remaining payoff).**
+      Two independent halves, both larger and staged separately:
+        - **`locals_dirty` → write-through.** Make every slot write that a
+          name-reader can observe (a `needs_env_sync` slot) mirror to env *eagerly*
+          instead of via the lazy `ensure_env_synced` flush, then delete
+          `locals_dirty` / `locals_dirty_slots` / `ensure_env_synced`. Blocked on
+          auditing the ~82 direct `self.locals[idx] = …` writes scattered across 12
+          VM files (today they rely on the lazy flush to reach env) plus the ~24
+          `mark_local_dirty` sites — each must either write-through or be proven
+          slot-only.
+        - **`env_dirty` → bridge elimination.** `env_dirty` exists to re-sync
+          slots after the *tree-walking interpreter* mutates env by name. It cannot
+          be removed cleanly while any VM op falls back to the interpreter; it is
+          gated on finishing the broader VM-decoupling (no interpreter bridge).
+
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
