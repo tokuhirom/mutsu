@@ -1034,6 +1034,20 @@ impl VM {
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.interpreter.readonly_vars().contains("_");
 
+        // Save the single named loop param (`for ... -> $x`) prior binding so it
+        // does not leak past the loop into the enclosing scope. Without this, a
+        // closure created in the body and called *after* the loop would read the
+        // leaked final value from the call-site env (which shadows its correctly
+        // frozen captured value via the don't-overwrite merge) instead of its own
+        // per-iteration binding. Mirrors `exec_for_loop_body`'s `saved_param`:
+        // restored after the loop's LAST/post phasers via the `RestoreForParam`
+        // opcode (the compiler emits it for any single non-@/% named param), so
+        // the push below must balance that pop on normal completion.
+        let saved_param: Option<(String, Option<Value>)> = param_name
+            .as_ref()
+            .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
+            .map(|name| (name.clone(), self.interpreter.env().get(name).cloned()));
+
         self.env_dirty = true;
         // When resuming a gather coroutine, start from the saved position.
         let mut i = if let Some(crate::value::ForLoopResumeState::IntRange { current, .. }) =
@@ -1227,6 +1241,14 @@ impl VM {
                     self.interpreter.env_mut().remove("_");
                 }
             }
+        }
+        // Defer restoring the named loop param's prior binding to the paired
+        // `RestoreForParam` opcode (after the post/LAST phasers), matching
+        // `exec_for_loop_body`. Only reached on normal completion / `last` /
+        // `leave` (the early `return Err(...)` paths above skip this, so the
+        // push/pop stay balanced as the frame unwinds past `RestoreForParam`).
+        if let Some(entry) = saved_param {
+            self.for_param_restore_stack.push(entry);
         }
         Ok(())
     }
