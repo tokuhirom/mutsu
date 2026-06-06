@@ -127,9 +127,6 @@ impl VM {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
-        if self.locals_dirty {
-            self.ensure_env_synced(code);
-        }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.interpreter
             .set_pending_call_arg_sources(arg_sources.clone());

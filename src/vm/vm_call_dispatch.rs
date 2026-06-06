@@ -482,12 +482,9 @@ impl VM {
             None
         };
         let saved_locals = std::mem::take(&mut self.locals);
-        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
         let saved_stack_depth = self.stack.len();
         let saved_env_dirty = self.env_dirty;
-        let saved_locals_dirty = self.locals_dirty;
         self.env_dirty = false;
-        self.locals_dirty = false;
 
         // Raku: routines get their own $_ initialized to (Any).
         let saved_topic = if cf.code.is_routine {
@@ -505,8 +502,6 @@ impl VM {
         let num_locals = cf.code.locals.len();
         self.locals.clear();
         self.locals.resize(num_locals, Value::Nil);
-        self.locals_dirty_slots.clear();
-        self.locals_dirty_slots.resize(num_locals, false);
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -586,13 +581,10 @@ impl VM {
         // Flush any dirty locals to env before restoring, so that captured
         // outer variable modifications (e.g. $a++ where $a is from outer scope)
         // are visible in env for the merge step below.
-        self.ensure_env_synced(&cf.code);
 
         // Restore state
         self.locals = saved_locals;
-        self.locals_dirty_slots = saved_locals_dirty_slots;
         self.env_dirty = saved_env_dirty;
-        self.locals_dirty = saved_locals_dirty;
 
         // Restore env: if env was mutated, merge non-local changes back.
         // When has_locals is false, saved_env is None and no restore is needed
@@ -809,10 +801,7 @@ impl VM {
         }
 
         let saved_locals = std::mem::take(&mut self.locals);
-        let saved_locals_dirty = self.locals_dirty;
-        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
         let saved_env_dirty = self.env_dirty;
-        self.locals_dirty = false;
         self.env_dirty = false;
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
@@ -831,7 +820,6 @@ impl VM {
         let num_locals = cf.code.locals.len();
         self.locals.clear();
         self.locals.resize(num_locals, Value::Nil);
-        self.locals_dirty_slots = vec![false; num_locals];
 
         // Read-through to the caller (parent tier) for the initial value of a
         // local that shadows a same-named caller variable, matching the prior
@@ -859,8 +847,6 @@ impl VM {
                     self.interpreter.restore_readonly_vars(saved_readonly);
                     self.interpreter.set_env(caller_env);
                     self.locals = saved_locals;
-                    self.locals_dirty = saved_locals_dirty;
-                    self.locals_dirty_slots = saved_locals_dirty_slots;
                     self.env_dirty = saved_env_dirty;
                     {
                         let param_name = &cf.param_defs[param_idx].name;
@@ -891,11 +877,9 @@ impl VM {
         // Bind-time param values that a name-based reader can observe were
         // already written into the (born-owned) overlay env above when
         // `needs_env` held. A slot-only param (read solely via GetLocal) never
-        // reaches env, so marking it dirty here only flips the global
-        // `locals_dirty` flag and forces a guaranteed-no-op `ensure_env_synced`
-        // flush on every call (e.g. once per recursive `fib` call). The bind
-        // value is already coherent, so no dirty mark is needed; any later
-        // reassignment in the body marks its own slot via the SetLocal path.
+        // reaches env, so no env mirror is needed here. The bind value is already
+        // coherent; any later reassignment in the body writes through to env via
+        // the SetLocal path (`flush_local_to_env`).
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.interpreter.let_saves_len();
@@ -950,8 +934,6 @@ impl VM {
         self.stack.truncate(saved_stack_depth);
 
         self.locals = saved_locals;
-        self.locals_dirty = saved_locals_dirty;
-        self.locals_dirty_slots = saved_locals_dirty_slots;
         self.env_dirty = saved_env_dirty;
         self.interpreter.restore_readonly_vars(saved_readonly);
 
@@ -1070,10 +1052,7 @@ impl VM {
         self.record_cf_deprecation(cf);
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
-        let saved_locals_dirty = self.locals_dirty;
-        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
         let saved_env_dirty = self.env_dirty;
-        self.locals_dirty = false;
         self.env_dirty = false;
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
@@ -1089,7 +1068,6 @@ impl VM {
 
         let num_locals = cf.code.locals.len();
         self.locals = vec![Value::Nil; num_locals];
-        self.locals_dirty_slots = vec![false; num_locals];
 
         // Bind parameters directly to locals slots and the overlay env.
         let mut positional_idx = 0usize;
@@ -1184,8 +1162,6 @@ impl VM {
                 } else if pd.required {
                     self.interpreter.set_env(caller_env);
                     self.locals = saved_locals;
-                    self.locals_dirty = saved_locals_dirty;
-                    self.locals_dirty_slots = saved_locals_dirty_slots;
                     self.env_dirty = saved_env_dirty;
                     return Err(RuntimeError::new(format!(
                         "Required named parameter '{}' not passed",
@@ -1210,8 +1186,6 @@ impl VM {
                 } else if pd.required {
                     self.interpreter.set_env(caller_env);
                     self.locals = saved_locals;
-                    self.locals_dirty = saved_locals_dirty;
-                    self.locals_dirty_slots = saved_locals_dirty_slots;
                     self.env_dirty = saved_env_dirty;
                     return Err(RuntimeError::new(format!(
                         "Too few positionals passed; expected {} arguments but got {}",
@@ -1365,8 +1339,6 @@ impl VM {
 
         // Restore locals
         self.locals = saved_locals;
-        self.locals_dirty = saved_locals_dirty;
-        self.locals_dirty_slots = saved_locals_dirty_slots;
         self.env_dirty = saved_env_dirty;
 
         // Restore readonly vars
@@ -1603,7 +1575,6 @@ impl VM {
         }
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
-        self.locals_dirty_slots = vec![false; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
                 self.locals[i] = val.clone();
