@@ -5209,6 +5209,11 @@ impl VM {
         if let Some(set) = self.block_declared_vars.last_mut() {
             set.insert(name.to_string());
         }
+        // Track loop-body declarations so a closure created in the body can mark
+        // this name as a per-iteration `owned_capture` (see VM::loop_local_vars).
+        if let Some(set) = self.loop_local_vars.last_mut() {
+            set.insert(name.to_string());
+        }
     }
 
     pub(super) fn exec_assign_expr_local_op(

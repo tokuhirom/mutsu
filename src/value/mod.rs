@@ -633,6 +633,13 @@ pub struct SubData {
     pub(crate) source_line: Option<u32>,
     /// Source file path where this block/sub was defined.
     pub(crate) source_file: Option<String>,
+    /// Free variables that were declared in an enclosing *loop body* when this
+    /// closure was created (see `VM::loop_local_vars`). Each loop iteration is a
+    /// fresh binding, so at call time these names are read from this closure's own
+    /// frozen captured `env` (overwriting the caller's current value) rather than
+    /// the shared lexical name — Raku's per-iteration closure capture. Empty for
+    /// non-loop closures and named subs.
+    pub(crate) owned_captures: Vec<Symbol>,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -2475,6 +2482,7 @@ impl Value {
             deprecated_message: None,
             source_line: None,
             source_file: None,
+            owned_captures: Vec::new(),
         }))
     }
 
@@ -2508,6 +2516,7 @@ impl Value {
             deprecated_message: None,
             source_line: None,
             source_file: None,
+            owned_captures: Vec::new(),
         }))
     }
 

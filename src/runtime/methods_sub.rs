@@ -60,6 +60,7 @@ impl Interpreter {
                 deprecated_message: None,
                 source_line: None,
                 source_file: None,
+                owned_captures: Vec::new(),
             };
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(

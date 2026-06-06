@@ -185,6 +185,17 @@ pub(crate) struct VM {
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
     block_declared_vars: Vec<std::collections::HashSet<String>>,
+    /// Stack of sets tracking variable names declared (via SetVarDynamic) within
+    /// each active loop body. A loop body is re-entered per iteration, so a `my`
+    /// declared in it is a *fresh binding each iteration* — a closure created in
+    /// the body must capture that iteration's value, not the shared lexical name
+    /// (Raku per-iteration binding). When a closure is created, free variables
+    /// found in this stack are recorded as its `owned_captures`, and at call time
+    /// the closure reads them from its own frozen captured env (overwriting the
+    /// caller's current value) — immune to the dual-store slot re-injection that
+    /// otherwise leaks the loop's final value into every closure. See
+    /// docs/vm-dual-store.md / PLAN.md lever C.
+    loop_local_vars: Vec<std::collections::HashSet<String>>,
     /// Stack of saved locals snapshots for each active BlockScope.
     /// Used by GetOuterVar to access variables from enclosing lexical scopes.
     outer_scope_locals: Vec<Vec<Value>>,
@@ -391,6 +402,7 @@ impl VM {
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
             block_declared_vars: Vec::new(),
+            loop_local_vars: Vec::new(),
             outer_scope_locals: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),

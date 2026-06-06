@@ -227,6 +227,21 @@ impl VM {
                 .env_mut()
                 .entry_or_insert_sym(*k, v.clone());
         }
+        // Per-iteration loop captures (Raku fresh-binding semantics): these free
+        // variables were declared in an enclosing loop body when this closure was
+        // created, so each iteration's closure froze a distinct value in its
+        // captured `data.env` (copy-on-write). Overwrite the caller's current
+        // value with this closure's own captured value, so calling the closure
+        // *after* the loop reads its iteration's value rather than the loop's
+        // final value (which the don't-overwrite merge + dual-store slot
+        // re-injection would otherwise leak in). Applied *before* the
+        // per-instance-state override below so a mutating loop closure's
+        // accumulated state still wins on later calls. See PLAN.md lever C.
+        for sym in &data.owned_captures {
+            if let Some(val) = data.env.get_sym(*sym).cloned() {
+                self.interpreter.env_mut().insert_sym(*sym, val);
+            }
+        }
         // Override with persisted per-closure-instance captured variable state.
         // This ensures that each closure instance maintains independent mutable
         // state across calls (e.g. two closures from the same factory each get
@@ -271,6 +286,7 @@ impl VM {
             deprecated_message: data.deprecated_message.clone(),
             source_line: data.source_line,
             source_file: data.source_file.clone(),
+            owned_captures: data.owned_captures.clone(),
         });
         self.interpreter.env_mut().insert(
             "&?BLOCK".to_string(),

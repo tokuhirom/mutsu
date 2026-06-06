@@ -5901,6 +5901,7 @@ mod tests {
             deprecated_message: None,
             source_line: None,
             source_file: None,
+            owned_captures: Vec::new(),
         });
 
         let mut interp = Interpreter::new();
