@@ -83,6 +83,9 @@ impl VM {
             // (it is resolved to a Package by the `has_type` branch below).
             // `Inf`/`NaN` are numeric literals and are not shadowable.
             Value::Slip(std::sync::Arc::new(vec![]))
+        } else if name == "GLOBALish" {
+            // GLOBALish is the per-compunit alias for the GLOBAL package.
+            Value::Package(Symbol::intern("GLOBAL"))
         } else if Self::is_pseudo_package_bare(name) {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.

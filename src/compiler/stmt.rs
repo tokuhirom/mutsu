@@ -1267,6 +1267,17 @@ impl Compiler {
                 for s in &post_stmts {
                     self.compile_stmt(s);
                 }
+                // Restore the single named loop param after the post (LAST)
+                // phasers ran. The ForLoop opcode deferred this restore (pushing
+                // its saved binding) so the phasers could still see the param at
+                // its final value. Emit only when a single non-@/% named param
+                // exists, mirroring the VM's save condition so push/pop balance.
+                if param
+                    .as_ref()
+                    .is_some_and(|p| !p.starts_with('@') && !p.starts_with('%'))
+                {
+                    self.code.emit(OpCode::RestoreForParam);
+                }
             }
             // C-style loop (non-repeat, no phasers)
             Stmt::Loop {

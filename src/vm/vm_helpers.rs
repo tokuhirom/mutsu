@@ -361,16 +361,14 @@ impl VM {
             _ => return self.interpreter.force_lazy_list_bridge(list),
         };
 
-        // Save current VM state.
-        // Flush any pending locals→env writes so env is consistent.
-        // We do a manual sync rather than ensure_env_synced since we don't
-        // have the outer code here -- we'll restore locals directly.
+        // Save current VM state. Locals are kept coherent with env by
+        // write-through (`flush_local_to_env`), so no explicit flush is needed
+        // here; we restore locals directly on return.
         crate::vm::vm_stats::record_clone_env();
         let saved_env = self.interpreter.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_env_dirty = self.env_dirty;
-        let saved_locals_dirty = self.locals_dirty;
 
         // Set up the lazy list's environment as a scoped overlay's parent: the
         // gather body reads its captured lexicals through to `list.env` and its
@@ -387,14 +385,12 @@ impl VM {
 
         // Initialize locals for the compiled code
         self.locals = vec![Value::Nil; cc.locals.len()];
-        self.locals_dirty_slots = vec![false; cc.locals.len()];
         for (i, name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
             }
         }
         self.env_dirty = false;
-        self.locals_dirty = false;
         self.stack = Vec::new();
 
         // Run the compiled code using the lazy list's own compiled_fns.
@@ -493,7 +489,6 @@ impl VM {
         } else {
             saved_env_dirty
         };
-        self.locals_dirty = saved_locals_dirty;
 
         // Check for errors
         run_result?;
@@ -553,8 +548,6 @@ impl VM {
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_env_dirty = self.env_dirty;
-        let saved_locals_dirty = self.locals_dirty;
-        let saved_locals_dirty_slots = std::mem::take(&mut self.locals_dirty_slots);
 
         // Determine starting IP and locals from coroutine state or fresh start
         let mut ip;
@@ -566,7 +559,6 @@ impl VM {
                 // Resume from saved state
                 ip = coro.ip;
                 self.locals = coro.locals.clone();
-                self.locals_dirty_slots = coro.locals_dirty_slots.clone();
                 self.stack = coro.stack.clone();
                 *self.interpreter.env_mut() = coro.env.clone();
                 self.gather_for_loop_resume = coro.for_loop_resume.clone();
@@ -581,7 +573,6 @@ impl VM {
                 *self.interpreter.env_mut() =
                     crate::env::Env::scoped_child(list.env.flattened().overlay_arc());
                 self.locals = vec![Value::Nil; cc.locals.len()];
-                self.locals_dirty_slots = vec![false; cc.locals.len()];
                 for (i, name) in cc.locals.iter().enumerate() {
                     if let Some(val) = self.interpreter.env().get(name) {
                         self.locals[i] = val.clone();
@@ -596,7 +587,6 @@ impl VM {
             *self.interpreter.env_mut() =
                 crate::env::Env::scoped_child(list.env.flattened().overlay_arc());
             self.locals = vec![Value::Nil; cc.locals.len()];
-            self.locals_dirty_slots = vec![false; cc.locals.len()];
             for (i, name) in cc.locals.iter().enumerate() {
                 if let Some(val) = self.interpreter.env().get(name) {
                     self.locals[i] = val.clone();
@@ -607,7 +597,6 @@ impl VM {
         }
 
         self.env_dirty = false;
-        self.locals_dirty = false;
 
         // Push gather items collector with the take limit
         let saved_gather_len = self.interpreter.gather_items_len();
@@ -693,7 +682,6 @@ impl VM {
             let coro_state = GatherCoroutineState {
                 ip,
                 locals: self.locals.clone(),
-                locals_dirty_slots: self.locals_dirty_slots.clone(),
                 stack: self.stack.clone(),
                 env: self.interpreter.env().clone(),
                 finished: false,
@@ -744,8 +732,6 @@ impl VM {
         } else {
             saved_env_dirty
         };
-        self.locals_dirty = saved_locals_dirty;
-        self.locals_dirty_slots = saved_locals_dirty_slots;
 
         run_result?;
 

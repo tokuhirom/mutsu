@@ -10,7 +10,6 @@ impl VM {
         modifier_idx: Option<u32>,
         quoted: bool,
     ) -> Result<(), RuntimeError> {
-        self.ensure_env_synced(code);
         let method_raw = Self::const_str(code, name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
@@ -495,7 +494,6 @@ impl VM {
         arity: u32,
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.ensure_env_synced(code);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {

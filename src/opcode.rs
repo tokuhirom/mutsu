@@ -622,6 +622,11 @@ pub(crate) enum OpCode {
         /// Used to temporarily clear sigilless readonly flags before binding.
         multi_param_names: Vec<String>,
     },
+    /// Restore the single named for-loop param's prior binding, deferred until
+    /// after the loop's LAST/post phasers have run (which must still see the
+    /// param bound to its final iteration value). Pairs with the push the
+    /// ForLoop opcode performs on normal completion. No-op if nothing pending.
+    RestoreForParam,
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
     /// step at [step_start..body_end).
