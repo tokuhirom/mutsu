@@ -140,6 +140,20 @@ impl VM {
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
 
+        // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
+        // born-owned overlay over the caller (gated on no inner closures) so the
+        // method's `self`/`?CLASS`/param/attr/local env setup writes land in a
+        // fresh map instead of forking the caller env. `frame.saved_env` holds the
+        // flat caller for restoration; the can_skip_merge path drops the overlay
+        // via set_env(saved_env) and the merge path's `merge_method_env` iterates
+        // it overlay-only (the method's own writes). No closure/thread body runs
+        // under the overlay.
+        if cc.closure_compiled_codes.is_empty() {
+            let parent_overlay = self.interpreter.env().overlay_arc();
+            self.interpreter
+                .set_env(crate::env::Env::scoped_child(parent_overlay));
+        }
+
         // Clear var_bindings so attribute aliases from outer interpreter-level
         // method calls don't leak into compiled method locals (e.g. `x → !x`
         // from run_instance_method_resolved shadowing a local parameter `x`).
