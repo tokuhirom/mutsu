@@ -781,6 +781,18 @@ pub(crate) struct RoutineFrame {
     pub is_block: bool,
 }
 
+/// CompUnit::Repository::Installation runtime state. Boxed inside `Interpreter`
+/// (see the `cur_repo` field) to keep it off the inline struct that is moved by
+/// value into nested on-stack VMs.
+#[derive(Default, Clone)]
+pub(crate) struct CurRepoState {
+    /// `$*REPO.loaded` units, keyed by repository prefix.
+    loaded: HashMap<String, Vec<Value>>,
+    /// Symbols loaded by `$*REPO.need(...)` but not yet published into GLOBAL.
+    /// `::('Foo')` treats these as unknown until `merge-symbols` un-hides them.
+    pending_global_symbols: HashSet<String>,
+}
+
 pub struct Interpreter {
     env: Env,
     output: String,
@@ -889,6 +901,13 @@ pub struct Interpreter {
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
     need_hidden_classes: HashSet<String>,
+    /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
+    /// pulled in by `.need` but not yet merged into GLOBAL).
+    ///
+    /// Boxed: the whole `Interpreter` is moved by value into a `VM` that lives on
+    /// the stack (see `run_block_raw`), and nested module loads stack full copies,
+    /// so keeping rarely-used state off the inline struct preserves stack budget.
+    cur_repo: Box<CurRepoState>,
     /// Classes/roles hidden from package stash lookups (e.g. `Example2::.keys`).
     /// Populated when a `use X::Y` loads modules whose dependency chain neither
     /// declares a class matching the module name nor includes a `package X {}`
@@ -3045,6 +3064,7 @@ impl Interpreter {
             chroot_root: None,
             loaded_modules: HashSet::new(),
             need_hidden_classes: HashSet::new(),
+            cur_repo: Box::new(CurRepoState::default()),
             package_stash_hidden: HashSet::new(),
             chain_declared_packages: HashSet::new(),
             module_packages: HashMap::new(),
@@ -5159,6 +5179,7 @@ impl Interpreter {
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
+            cur_repo: self.cur_repo.clone(),
             package_stash_hidden: self.package_stash_hidden.clone(),
             chain_declared_packages: self.chain_declared_packages.clone(),
             module_packages: self.module_packages.clone(),
@@ -5788,25 +5809,36 @@ mod tests {
 
     #[test]
     fn circular_module_dependency_is_reported() {
-        let mut interp = Interpreter::new();
-        let uniq = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+        // Needs a larger stack: nested module loading runs each module body in a
+        // fresh on-stack VM that owns a full `Interpreter` by value (see
+        // `run_block_raw`), so the recursive A->B->A load chain is stack-heavy in
+        // debug builds. Same precedent as `is_run_honors_compiler_include_paths`.
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let mut interp = Interpreter::new();
+                let uniq = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                let dir = std::env::temp_dir().join(format!("mutsu-circularmod-{}", uniq));
+                fs::create_dir_all(&dir).unwrap();
+                let a_path = dir.join("A.rakumod");
+                let b_path = dir.join("B.rakumod");
+                fs::write(&a_path, "unit class A; use B").unwrap();
+                fs::write(&b_path, "unit class B; use A").unwrap();
+
+                let program = format!("use lib '{}'; use A;", dir.to_string_lossy());
+                let err = interp.run(&program).unwrap_err();
+                assert!(err.message.to_lowercase().contains("circular"));
+
+                let _ = fs::remove_file(a_path);
+                let _ = fs::remove_file(b_path);
+                let _ = fs::remove_dir(dir);
+            })
             .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("mutsu-circularmod-{}", uniq));
-        fs::create_dir_all(&dir).unwrap();
-        let a_path = dir.join("A.rakumod");
-        let b_path = dir.join("B.rakumod");
-        fs::write(&a_path, "unit class A; use B").unwrap();
-        fs::write(&b_path, "unit class B; use A").unwrap();
-
-        let program = format!("use lib '{}'; use A;", dir.to_string_lossy());
-        let err = interp.run(&program).unwrap_err();
-        assert!(err.message.to_lowercase().contains("circular"));
-
-        let _ = fs::remove_file(a_path);
-        let _ = fs::remove_file(b_path);
-        let _ = fs::remove_dir(dir);
+            .join()
+            .unwrap();
     }
 
     #[test]

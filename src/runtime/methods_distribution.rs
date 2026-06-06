@@ -355,6 +355,33 @@ impl Interpreter {
             }
             _ => return Ok(Value::Bool(false)),
         };
+        // Reject re-installing an identical distribution (same name/ver/auth/api).
+        let new_identity = dist_identity(&meta);
+        if dist_dir.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&dist_dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Ok(json_str) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let Ok(existing_meta) = self.parse_json_to_value(&json_str) else {
+                    continue;
+                };
+                if dist_identity(&existing_meta) == new_identity {
+                    let name = meta
+                        .hash_get_str("name")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    return Err(RuntimeError::new(format!(
+                        "Distribution {name} is already installed"
+                    )));
+                }
+            }
+        }
         static DIST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let counter = DIST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dist_id = format!(
@@ -515,6 +542,161 @@ impl Interpreter {
         Ok(Value::array(results))
     }
 
+    /// Build the "globalish package" object exposed by a CompUnit handle. It
+    /// carries the list of symbol names the CompUnit loaded so that a later
+    /// `GLOBALish.WHO.merge-symbols(...)` can publish them into GLOBAL.
+    pub(crate) fn make_globalish_package(&self, symbols: Option<&Value>) -> Value {
+        // File-system repositories load symbols straight into GLOBAL, so there is
+        // nothing to merge later: hand back the live GLOBAL package so stash
+        // navigation (`.globalish-package<Pkg>.WHO<...>`) resolves as before.
+        // Only the Installation repository carries `globalish-symbols` (kept
+        // hidden until `merge-symbols`), which needs the dedicated Stash object.
+        let Some(symbols) = symbols else {
+            return Value::Package(crate::symbol::Symbol::intern("GLOBAL"));
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::str_from("GLOBALish"));
+        attrs.insert("globalish-symbols".to_string(), symbols.clone());
+        Value::make_instance(crate::symbol::Symbol::intern("Stash"), attrs)
+    }
+
+    /// Publish symbols carried by a globalish-package into GLOBAL, making them
+    /// resolvable through `::('Name')`. Used by `GLOBALish.WHO.merge-symbols`.
+    pub(crate) fn merge_global_symbols(&mut self, pkg: &Value) -> Value {
+        let symbols = match pkg {
+            Value::Instance { attributes, .. } => attributes.get("globalish-symbols").cloned(),
+            _ => pkg.hash_get_str("globalish-symbols"),
+        };
+        if let Some(Value::Array(syms, _)) = symbols {
+            for sym in syms.iter() {
+                let name = sym.to_string_value();
+                self.cur_repo.pending_global_symbols.remove(&name);
+                if let Some((_, short)) = name.rsplit_once("::") {
+                    self.cur_repo.pending_global_symbols.remove(short);
+                }
+            }
+        }
+        Value::Nil
+    }
+
+    /// Resolve a dependency spec against an installation repository and load it,
+    /// returning a `CompUnit`. The loaded symbols are kept hidden from `::('Foo')`
+    /// until `GLOBALish.WHO.merge-symbols($cu.handle.globalish-package)` is run.
+    pub(crate) fn cur_inst_need(
+        &mut self,
+        prefix: &str,
+        depspec: Option<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let depspec = depspec.unwrap_or(Value::Nil);
+        let (short_name, ..) = self.extract_depspec_fields(&depspec);
+        if short_name.is_empty() {
+            return Err(RuntimeError::new(
+                "Could not find a CompUnit for the given dependency specification",
+            ));
+        }
+        // Find candidates and pick the highest matching version.
+        let candidates = match self.cur_inst_candidates(prefix, &depspec)? {
+            Value::Array(arr, _) => arr,
+            _ => Arc::new(Vec::new()),
+        };
+        let dist_meta = |dist: &Value| -> Value {
+            match dist {
+                Value::Instance { attributes, .. } => {
+                    attributes.get("meta").cloned().unwrap_or(Value::Nil)
+                }
+                _ => Value::Nil,
+            }
+        };
+        let best = candidates
+            .iter()
+            .max_by(|a, b| {
+                let va = dist_meta(a)
+                    .hash_get_str("ver")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let vb = dist_meta(b)
+                    .hash_get_str("ver")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                va.cmp(&vb)
+            })
+            .cloned();
+        let Some(dist) = best else {
+            return Err(RuntimeError::new(format!(
+                "Could not find {short_name} in the installation repository"
+            )));
+        };
+        let meta = dist_meta(&dist);
+        let version_str = meta
+            .hash_get_str("ver")
+            .or_else(|| meta.hash_get_str("version"))
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        // Locate the installed source file for the requested module.
+        let source_id = meta
+            .hash_get_str("provides")
+            .and_then(|p| p.hash_get_str(&short_name))
+            .map(|entry| match &entry {
+                Value::Hash(map) => map
+                    .get("file")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default(),
+                other => other.to_string_value(),
+            })
+            .unwrap_or_default();
+        let source_path = std::path::Path::new(prefix)
+            .join("sources")
+            .join(&source_id);
+
+        // Load the module source in isolation: capture the classes/roles it
+        // registers so we can keep them invisible to `::()` until merged.
+        let class_before: std::collections::HashSet<String> =
+            self.classes.keys().cloned().collect();
+        let role_before: std::collections::HashSet<String> = self.roles.keys().cloned().collect();
+        if source_path.exists() {
+            let saved = self.precomp_enabled;
+            self.precomp_enabled = false;
+            let parsed = self.parse_module_source(&short_name, &source_path);
+            self.precomp_enabled = saved;
+            if let Ok((stmts, _)) = parsed {
+                self.run_block(&stmts)?;
+            }
+        }
+        let mut new_symbols: Vec<String> = Vec::new();
+        for k in self.classes.keys() {
+            if !class_before.contains(k) {
+                new_symbols.push(k.clone());
+            }
+        }
+        for k in self.roles.keys() {
+            if !role_before.contains(k) {
+                new_symbols.push(k.clone());
+            }
+        }
+        // Keep the freshly-loaded symbols hidden from indirect lookup until merge.
+        for s in &new_symbols {
+            self.cur_repo.pending_global_symbols.insert(s.clone());
+        }
+
+        // Build the CompUnit returned to the caller.
+        let version = Self::parse_version_string(&version_str);
+        let mut attrs = HashMap::new();
+        attrs.insert("short-name".to_string(), Value::str(short_name.clone()));
+        attrs.insert("version".to_string(), version);
+        attrs.insert("from".to_string(), Value::str_from("Raku"));
+        attrs.insert(
+            "globalish-symbols".to_string(),
+            Value::array(new_symbols.into_iter().map(Value::str).collect()),
+        );
+        let compunit = Value::make_instance(crate::symbol::Symbol::intern("CompUnit"), attrs);
+        self.cur_repo
+            .loaded
+            .entry(prefix.to_string())
+            .or_default()
+            .push(compunit.clone());
+        Ok(compunit)
+    }
+
     /// Distribution method dispatch.
     pub(crate) fn dispatch_distribution_method(
         &self,
@@ -599,6 +781,26 @@ impl Interpreter {
             }
             "installed" => Some(self.cur_inst_installed(&prefix)),
             "path-spec" => Some(Ok(Value::str(format!("inst#{prefix}")))),
+            "short-id" => Some(Ok(Value::str_from("inst"))),
+            "id" => {
+                // A stable, non-empty identifier derived from the repo prefix.
+                Some(Ok(Value::str(format!("{:X}", hash_strings(&[&prefix])))))
+            }
+            "loaded" => {
+                let loaded = self
+                    .cur_repo
+                    .loaded
+                    .get(&prefix)
+                    .cloned()
+                    .unwrap_or_default();
+                Some(Ok(Value::array(loaded)))
+            }
+            "next-repo" => Some(Ok(attributes
+                .get("next-repo")
+                .cloned()
+                .unwrap_or(Value::Nil))),
+            "prefix" => Some(Ok(self.make_io_path_instance(&prefix))),
+            "need" => Some(self.cur_inst_need(&prefix, args.first().cloned())),
             "resolve" => {
                 let depspec = args.first().cloned().unwrap_or(Value::Nil);
                 match self.cur_inst_candidates(&prefix, &depspec) {
@@ -827,6 +1029,23 @@ fn value_to_json_string(val: &Value) -> String {
         Value::Nil => "null".to_string(),
         _ => format!("{:?}", val.to_string_value()),
     }
+}
+
+/// Identity tuple of a distribution, used to detect duplicate installs.
+/// Two distributions are "the same" when name/version/auth/api all match.
+fn dist_identity(meta: &Value) -> (String, String, String, String) {
+    let field = |key: &str, alt: Option<&str>| {
+        meta.hash_get_str(key)
+            .or_else(|| alt.and_then(|a| meta.hash_get_str(a)))
+            .map(|v| v.to_string_value())
+            .unwrap_or_default()
+    };
+    (
+        field("name", None),
+        field("ver", Some("version")),
+        field("auth", None),
+        field("api", None),
+    )
 }
 
 fn platform_library_name(name: &str) -> String {

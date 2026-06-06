@@ -522,6 +522,15 @@ impl VM {
                 (name.clone(), val, was_readonly, sigilless_ro)
             })
             .collect();
+        // Save the single named loop param (`for ... -> $x`) too, so a loop in a
+        // called sub that reuses the same variable name does not clobber an outer
+        // loop's binding of that name (the env keys these by bare name). Skip
+        // `@`/`%` sigils, which bind a shared mutable container the body may
+        // legitimately reassign, and skip the rw case (handled via writeback).
+        let saved_param: Option<(String, Option<Value>)> = param_name
+            .as_ref()
+            .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
+            .map(|name| (name.clone(), self.interpreter.env().get(name).cloned()));
         // Determine if the implicit topic ($_) should be read-only.
         // Only mark $_ readonly when iterating over a known immutable collection
         // (Mix, Set, Bag). This blocks `.value = ...` mutations on pairs from
@@ -959,6 +968,18 @@ impl VM {
             } else {
                 self.interpreter.env_mut().remove(&sigilless_key);
             }
+        }
+        // Defer restoring the single named loop param's prior binding until
+        // after the loop's LAST/post phasers have run — they must still observe
+        // the param at its final iteration value (e.g.
+        // `for 1,2 -> $x { LAST { say $x } }` must see 2). The paired
+        // `RestoreForParam` opcode (emitted right after the post phasers) pops
+        // this and applies it. Only pushed here on normal completion, which
+        // keeps it balanced with that opcode; an early return/exception from the
+        // body exits before this point, so no entry is pushed and the matching
+        // opcode is likewise skipped as the frame unwinds.
+        if let Some(entry) = saved_param {
+            self.for_param_restore_stack.push(entry);
         }
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind.clone();

@@ -872,6 +872,8 @@ impl Interpreter {
                 ]),
                 "CompUnit::Repository::Installation" => Some(vec![
                     "CompUnit::Repository::Installation",
+                    "CompUnit::Repository::Installable",
+                    "CompUnit::Repository::Locally",
                     "CompUnit::Repository",
                     "Any",
                     "Mu",

@@ -1577,6 +1577,11 @@ impl Interpreter {
         if name.is_empty() {
             return Self::no_such_symbol_failure(name);
         }
+        // Symbols loaded via `$*REPO.need(...)` stay invisible to `::('Name')`
+        // until they are merged into GLOBAL with `merge-symbols`.
+        if self.cur_repo.pending_global_symbols.contains(name) {
+            return Self::no_such_symbol_failure(name);
+        }
         // Pseudo-package names like MY, CORE, OUTER, CALLER, etc. should
         // resolve to Package values so that .WHO can produce the stash.
         if Self::is_pseudo_package_name(name) {
