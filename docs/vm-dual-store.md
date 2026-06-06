@@ -601,6 +601,35 @@ Reaching that requires, roughly in order:
         dance. Next slices: the named path merge, then method/closure/gather, then
         drop dirty tracking.
 
+        **Extension — the compiled-method fast path.** `call_compiled_method_fast`
+        installs a born-owned scoped overlay over the caller (gated on
+        `cc.closure_compiled_codes.is_empty()`) so the per-call `self` / `?CLASS` /
+        param / attr env setup writes land in a fresh empty map (`strong_count`
+        1) instead of `make_mut`-forking the inherited caller env — this removes
+        the per-method-call env deep copy the doc flagged in Slices 1/2/4c as the
+        residual bench-class cost. On return, `set_env(saved_env)`
+        (`can_skip_merge`) drops the overlay; `merge_method_env` already iterates
+        `current.iter()` (overlay-only), so it now sees exactly the method's own
+        writes (cheaper and semantically identical — the `saved.contains_key`
+        gate already restricted merges to caller-existing keys).
+
+        **The flatten placement matters (measured).** The universal
+        `flatten_scoped_env` safety guard was initially at the *top* of the
+        method-call opcodes, which collapsed the method's own overlay on the
+        first `$.attr` accessor read (a nested `CallMethodMut`) — making an
+        attribute-heavy method *slower* (~+3%) despite halving its deep copies,
+        because `flattened()` materializes the ~30-entry parent map per accessor.
+        Fix: the accessor fast path (`try_fast_accessor_read`) is a pure read that
+        touches no env, so the `flatten_scoped_env` call now sits **after** it in
+        both `exec_call_method_op` and `exec_call_method_mut_op`. An `$.attr` read
+        no longer collapses the overlay; only a genuine nested dispatch (which
+        would capture/iterate the env) flattens. Result: a 500k-iteration
+        `$obj.calc()` (`{ $.n * 2 + 1 }`) bench went **9.66s -> 7.42s (~23%)**;
+        `env_deep_copies` for a `{ 42 }` method dropped to ~0 (10001 -> 1 over
+        5000 calls). Validated: `make test` green; ~780 whitelisted
+        S02/S03/S04/S05/S06/S12/S14/S17/S32 + integration roast files green. New
+        pin `t/scoped-overlay-method.t`.
+
   - [ ] **Slice 5 (original design notes — superseded by the step above).**
 
       **The waste, measured.** `bench-fib` does **0 % function/method fallback**
