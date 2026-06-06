@@ -2308,7 +2308,7 @@ impl Interpreter {
                             let mut brace_depth: usize = 0;
                             let mut quote: Option<char> = None;
                             let mut escaped = false;
-                            for ch in chars.by_ref() {
+                            while let Some(ch) = chars.next() {
                                 if let Some(q) = quote {
                                     name.push(ch);
                                     if escaped {
@@ -2333,7 +2333,23 @@ impl Interpreter {
                                     name.push(ch);
                                     continue;
                                 }
+                                // An apostrophe that sits between two identifier
+                                // characters is part of a Raku long identifier
+                                // (e.g. `with'hyphen`), not the start of a quoted
+                                // literal. Only treat `'` as a quote opener when it
+                                // is not flanked by word characters.
+                                let apostrophe_in_ident = ch == '\''
+                                    && name
+                                        .chars()
+                                        .last()
+                                        .is_some_and(|p| p.is_alphanumeric() || p == '_')
+                                    && chars
+                                        .peek()
+                                        .is_some_and(|n| n.is_alphanumeric() || *n == '_');
                                 match ch {
+                                    '\'' if apostrophe_in_ident => {
+                                        name.push(ch);
+                                    }
                                     '\'' | '"' if bracket_depth == 0 => {
                                         quote = Some(ch);
                                         name.push(ch);
@@ -2383,8 +2399,11 @@ impl Interpreter {
                                 }
                             }
                             // Check for word alternation: < word1 word2 ... >
-                            // Starts with a space and contains space-separated words
-                            if name.starts_with(' ') && name.ends_with(' ') {
+                            // In Raku, when the first character after `<` is
+                            // whitespace (space or tab), the contents are treated
+                            // as a list of quoted alternatives rather than a method
+                            // call. (`<a aa>` with no leading whitespace is a call.)
+                            if name.starts_with(|c: char| c.is_whitespace()) {
                                 let words: Vec<&str> = name.split_whitespace().collect();
                                 if !words.is_empty() {
                                     let alternatives: Vec<RegexPattern> = words
@@ -2431,6 +2450,44 @@ impl Interpreter {
                                     RegexAtom::ZeroWidth
                                 }
                             } else {
+                                // Handle aliasing of a char-class / Unicode-property
+                                // assertion to a named capture, e.g. `<foo=[bao]>`,
+                                // `<bar=-[bao]>`, `<foo=:Letter>`, `<bar=:!Letter>`,
+                                // `<baz=-:Letter>`. The general `<name=subrule>` aliasing
+                                // (for named rules) is resolved at match time via
+                                // parse_named_regex_lookup_spec, but char classes and
+                                // Unicode properties are parsed into dedicated atoms here,
+                                // so we strip the `ident=` prefix and record the alias as
+                                // the pending named capture before dispatching on the RHS.
+                                {
+                                    let t = name.trim();
+                                    if let Some(eq_pos) = t.find('=') {
+                                        let lhs = t[..eq_pos].trim();
+                                        let rhs = t[eq_pos + 1..].trim();
+                                        let lhs_is_ident = !lhs.is_empty()
+                                            && lhs
+                                                .chars()
+                                                .next()
+                                                .is_some_and(|c| c.is_alphabetic() || c == '_')
+                                            && lhs.chars().all(|c| {
+                                                c.is_alphanumeric()
+                                                    || c == '_'
+                                                    || c == '-'
+                                                    || c == '\''
+                                            });
+                                        let rhs_is_class_or_prop = rhs.starts_with('[')
+                                            || rhs.starts_with("-[")
+                                            || rhs.starts_with("+[")
+                                            || rhs.starts_with(':')
+                                            || rhs.starts_with("-:")
+                                            || rhs.starts_with(":!")
+                                            || rhs.starts_with("!:");
+                                        if lhs_is_ident && rhs_is_class_or_prop {
+                                            pending_named_capture = Some(lhs.to_string());
+                                            name = rhs.to_string();
+                                        }
+                                    }
+                                }
                                 // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
                                 // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>
                                 let trimmed = name.trim();
@@ -2556,6 +2613,12 @@ impl Interpreter {
                                             RegexAtom::Named(name)
                                         }
                                     } // close else (non-empty negated_name)
+                                } else if trimmed.starts_with("::") {
+                                    // <::($expr)> — symbolic indirect subrule. The
+                                    // double colon distinguishes it from a `<:PropName>`
+                                    // Unicode-property assertion; keep it as a Named atom
+                                    // so the dynamic name is resolved at match time.
+                                    RegexAtom::Named(name)
                                 } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
                                     // <:!PropName> or <-:PropName> — negated Unicode property
                                     let prop_name = &trimmed[2..];
@@ -2817,6 +2880,21 @@ impl Interpreter {
                                                     PENDING_REGEX_ERROR.with(|e| {
                                                         *e.borrow_mut() =
                                                             Some(Self::make_longname_alias_error());
+                                                    });
+                                                    return None;
+                                                }
+                                                // No other characters are allowed after the
+                                                // initial identifier of a subrule assertion
+                                                // (S05). e.g. `<test*>`, `<test|>`, `<test&>`
+                                                // are malformed and must be rejected at compile
+                                                // time. Validate that the leading identifier is
+                                                // followed only by an allowed continuation
+                                                // (whitespace, `=`, `:`, `(`) or end of name.
+                                                if let Some(err) =
+                                                    Self::check_subrule_name_tail(class_name)
+                                                {
+                                                    PENDING_REGEX_ERROR.with(|e| {
+                                                        *e.borrow_mut() = Some(err);
                                                     });
                                                     return None;
                                                 }
@@ -3966,6 +4044,46 @@ impl Interpreter {
             return true;
         }
         false
+    }
+
+    /// Validate the tail of a subrule-assertion name. Per S05, no characters
+    /// other than the recognised continuations may follow the initial
+    /// identifier of a `<ident...>` subrule. Returns a malformed-regex error
+    /// when, for example, a bare regex metacharacter (`*`, `|`, `&`, ...)
+    /// immediately follows the identifier (e.g. `<test*>`).
+    pub(super) fn check_subrule_name_tail(name: &str) -> Option<RuntimeError> {
+        let mut chars = name.chars().peekable();
+        // The leading identifier must start with an alphabetic char or `_`.
+        match chars.peek() {
+            Some(c) if c.is_alphabetic() || *c == '_' => {}
+            _ => return None,
+        }
+        // Consume the (possibly long) identifier: word characters plus the
+        // intra-identifier connectors `-`, `'`, and `::` package separators.
+        while let Some(&c) = chars.peek() {
+            if c.is_alphanumeric() || c == '_' || c == '-' || c == '\'' || c == ':' {
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        // Whatever remains is the tail. An empty tail or a tail beginning with
+        // an allowed continuation is fine; anything else is malformed.
+        match chars.peek() {
+            // End of name, argument list, alias, method-args, or a passed regex.
+            None | Some('(') | Some('=') => None,
+            Some(c) if c.is_whitespace() => None,
+            Some(_) => {
+                let msg = "Unable to parse regex; couldn't find delimiter";
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                let ex =
+                    Value::make_instance(Symbol::intern("X::Syntax::Regex::Unterminated"), attrs);
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(ex));
+                Some(err)
+            }
+        }
     }
 
     /// Create an X::Syntax::Regex::Alias::LongName error.

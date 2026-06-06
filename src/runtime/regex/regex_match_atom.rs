@@ -279,6 +279,26 @@ impl Interpreter {
             out
         } else if let RegexAtom::Named(name) = atom {
             let spec = Self::parse_named_regex_lookup_spec(name);
+            // Symbolic indirect subrule `<::(EXPR)>`: evaluate EXPR to obtain
+            // the rule name dynamically, then dispatch as if it were `<NAME>`.
+            // This must resolve through the same path as a literal subrule so
+            // that builtin character classes (e.g. `alpha`) and user-defined
+            // tokens both work.
+            if spec.lookup_name == "::" && spec.arg_exprs.len() == 1 {
+                let Some(val) = self.eval_regex_expr_value(&spec.arg_exprs[0], current_caps) else {
+                    return Vec::new();
+                };
+                let dyn_name = val.to_string_value();
+                let dyn_atom = RegexAtom::Named(dyn_name);
+                return self.regex_match_atom_all_with_capture_in_pkg(
+                    &dyn_atom,
+                    chars,
+                    pos,
+                    current_caps,
+                    pkg,
+                    ignore_case,
+                );
+            }
             let arg_values = if spec.arg_exprs.is_empty() {
                 Vec::new()
             } else {
