@@ -10,7 +10,6 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -91,7 +90,6 @@ impl VM {
         name_idx: u32,
         arity: u32,
     ) -> Result<(), RuntimeError> {
-        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -135,7 +133,6 @@ impl VM {
         _arg_sources_idx: Option<u32>,
         slip_pos: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let total = regular_arity as usize + 1; // +1 for the slip value
         if self.stack.len() < total {

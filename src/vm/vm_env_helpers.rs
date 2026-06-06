@@ -8,7 +8,6 @@ impl VM {
         if self.env_dirty {
             // Flush locals→env first so env has the latest simple-local values
             // before we pull env→locals (which may overwrite them with stale data).
-            self.ensure_env_synced(code);
             self.sync_locals_from_env(code);
             self.env_dirty = false;
         }
@@ -41,12 +40,9 @@ impl VM {
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
-            saved_locals_dirty: self.locals_dirty,
-            saved_locals_dirty_slots: std::mem::take(&mut self.locals_dirty_slots),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
         self.env_dirty = false;
-        self.locals_dirty = false;
         self.call_frames.push(frame);
     }
 
@@ -61,12 +57,9 @@ impl VM {
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
-            saved_locals_dirty: self.locals_dirty,
-            saved_locals_dirty_slots: std::mem::take(&mut self.locals_dirty_slots),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
         self.env_dirty = false;
-        self.locals_dirty = false;
         self.call_frames.push(frame);
     }
 
@@ -78,13 +71,11 @@ impl VM {
             .pop()
             .expect("pop_call_frame: no frame to pop");
         self.locals = std::mem::take(&mut frame.saved_locals);
-        self.locals_dirty_slots = std::mem::take(&mut frame.saved_locals_dirty_slots);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
             self.interpreter.restore_readonly_vars(readonly);
         }
         self.env_dirty = frame.saved_env_dirty;
-        self.locals_dirty = frame.saved_locals_dirty;
         frame
     }
 
@@ -364,52 +355,6 @@ impl VM {
         }
     }
 
-    /// Sync dirty locals to env. Flushes simple-scalar locals (whose SetLocal
-    /// fast path skips env writes) AND bare-name function parameters that were
-    /// bound directly to locals by `exec_direct_compiled_call`.
-    /// Only runs when locals_dirty is set.
-    pub(super) fn ensure_env_synced(&mut self, code: &CompiledCode) {
-        if self.locals_dirty {
-            let mut flushed_slots: u64 = 0;
-            for (i, name) in code.locals.iter().enumerate() {
-                // Only flush slots that have actually been written to.
-                // This prevents uninitialized locals (from later code that
-                // hasn't executed yet) from clobbering env values set by
-                // other mechanisms (e.g. for-loop parameter binding).
-                if i < self.locals_dirty_slots.len() && !self.locals_dirty_slots[i] {
-                    continue;
-                }
-                // Dual-store collapse (Slice 5): only mirror locals a name-based
-                // reader can actually observe -- those referenced via a
-                // GetGlobal-family op or captured by a nested closure
-                // (`needs_env_sync[i]`, computed in compute_needs_env_sync). A
-                // slot-only local (read via GetLocal) need never reach env, so the
-                // per-call flush is skipped for it (e.g. `fib`'s `$n`).
-                if i < code.needs_env_sync.len() && !code.needs_env_sync[i] {
-                    continue;
-                }
-                // Flush simple locals ($ vars that use the SetLocal fast path)
-                // AND bare-name params (no sigil, set by exec_direct_compiled_call).
-                // Skip topic (_), attributes (.x, !x), dynamic vars ($*x), and
-                // package-qualified names (Foo::bar) to avoid corrupting outer scope.
-                if code.simple_locals[i] || Self::is_bare_param_name(name) {
-                    let sym = if i < code.locals_sym.len() {
-                        Some(code.locals_sym[i])
-                    } else {
-                        None
-                    };
-                    self.set_env_with_main_alias_sym(name, sym, self.locals[i].clone());
-                    flushed_slots += 1;
-                }
-            }
-            crate::vm::vm_stats::record_env_flush(flushed_slots);
-            self.locals_dirty = false;
-            for slot in self.locals_dirty_slots.iter_mut() {
-                *slot = false;
-            }
-        }
-    }
-
     /// Check if a local name looks like a bare function parameter (no sigil).
     /// These are stored by the compiler for function params like `$n` → `n`.
     fn is_bare_param_name(name: &str) -> bool {
@@ -426,12 +371,32 @@ impl VM {
             && !name.starts_with("__mutsu_")
     }
 
-    /// Mark a specific local slot as dirty so ensure_env_synced will flush it.
-    #[inline(always)]
-    pub(super) fn mark_local_dirty(&mut self, idx: usize) {
-        self.locals_dirty = true;
-        if idx < self.locals_dirty_slots.len() {
-            self.locals_dirty_slots[idx] = true;
+    /// Write-through mirror of a single local slot into the interpreter env.
+    ///
+    /// Replaces the lazy `ensure_env_synced` batch flush (Slice 6.2): instead of
+    /// marking the slot dirty and flushing all dirty slots at the next barrier, a
+    /// local write mirrors to env *immediately*, so a name-based reader
+    /// (GetGlobal-family op, closure capture, interpreter bridge) always observes
+    /// the current value with no stale window. Only mirrors slots that such a
+    /// reader can actually name (`needs_env_sync`) and that the old flush would
+    /// have mirrored (simple-scalar locals + bare-name params); a slot-only local
+    /// (read via GetLocal, e.g. `fib`'s `$n`) never reaches env.
+    #[inline]
+    pub(super) fn flush_local_to_env(&mut self, code: &CompiledCode, idx: usize) {
+        // Slot-only locals (no name-based reader) never need to reach env.
+        if !code.needs_env_sync.get(idx).copied().unwrap_or(true) {
+            return;
+        }
+        let Some(name) = code.locals.get(idx) else {
+            return;
+        };
+        // Mirror simple scalar locals (the SetLocal fast path) and bare-name
+        // params. Skip topic (_), attributes (.x, !x), dynamic vars ($*x), and
+        // package-qualified names to avoid corrupting outer scope.
+        if code.simple_locals.get(idx).copied().unwrap_or(false) || Self::is_bare_param_name(name) {
+            let sym = code.locals_sym.get(idx).copied();
+            crate::vm::vm_stats::record_env_flush(1);
+            self.set_env_with_main_alias_sym(name, sym, self.locals[idx].clone());
         }
     }
 

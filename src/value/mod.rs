@@ -1172,7 +1172,6 @@ pub(crate) enum ForLoopResumeState {
 pub(crate) struct GatherCoroutineState {
     pub(crate) ip: usize,
     pub(crate) locals: Vec<Value>,
-    pub(crate) locals_dirty_slots: Vec<bool>,
     pub(crate) stack: Vec<Value>,
     pub(crate) env: Env,
     pub(crate) finished: bool,

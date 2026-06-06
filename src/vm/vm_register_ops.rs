@@ -26,7 +26,6 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
-            self.ensure_env_synced(code);
             let mut env = self.interpreter.env().clone();
             env.insert(
                 "__mutsu_lazylist_from_gather".to_string(),
@@ -47,7 +46,6 @@ impl VM {
                 coroutine: Some(std::sync::Mutex::new(crate::value::GatherCoroutineState {
                     ip: 0,
                     locals: Vec::new(),
-                    locals_dirty_slots: Vec::new(),
                     stack: Vec::new(),
                     env: crate::env::Env::new(),
                     finished: false,
@@ -78,7 +76,6 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
-            self.ensure_env_synced(code);
             let params = crate::ast::collect_placeholders_shallow(body);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let cc_source_line = compiled_code
@@ -130,7 +127,6 @@ impl VM {
             ..
         } = stmt
         {
-            self.ensure_env_synced(code);
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
@@ -191,7 +187,6 @@ impl VM {
             ..
         } = stmt
         {
-            self.ensure_env_synced(code);
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
@@ -242,7 +237,6 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
-            self.ensure_env_synced(code);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let cc_source_line = compiled_code
                 .as_ref()
@@ -280,7 +274,6 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        self.ensure_env_synced(code);
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,

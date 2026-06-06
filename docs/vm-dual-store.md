@@ -757,20 +757,35 @@ Reaching that requires, roughly in order:
       `t/scoped-overlay-named.t`, and `t/scoped-overlay-env-dirty.t` (12 cases
       covering captured scalar/array/hash/named/nested/interleaved + pure calls).
 
-  - [ ] **Slice 6.2+ — full removal of the dirty flags (the remaining payoff).**
-      Two independent halves, both larger and staged separately:
-        - **`locals_dirty` → write-through.** Make every slot write that a
-          name-reader can observe (a `needs_env_sync` slot) mirror to env *eagerly*
-          instead of via the lazy `ensure_env_synced` flush, then delete
-          `locals_dirty` / `locals_dirty_slots` / `ensure_env_synced`. Blocked on
-          auditing the ~82 direct `self.locals[idx] = …` writes scattered across 12
-          VM files (today they rely on the lazy flush to reach env) plus the ~24
-          `mark_local_dirty` sites — each must either write-through or be proven
-          slot-only.
-        - **`env_dirty` → bridge elimination.** `env_dirty` exists to re-sync
-          slots after the *tree-walking interpreter* mutates env by name. It cannot
-          be removed cleanly while any VM op falls back to the interpreter; it is
-          gated on finishing the broader VM-decoupling (no interpreter bridge).
+  - [x] **Slice 6.2 — `locals_dirty` → write-through; dirty-flag machinery deleted.**
+      Every slot write that a name-reader can observe (a `needs_env_sync` slot)
+      now mirrors to env *eagerly* via `flush_local_to_env` at the write site,
+      instead of marking the slot dirty for a lazy `ensure_env_synced` batch flush
+      at the next barrier. Env is therefore always coherent with locals — there is
+      no stale window between a slot write and the next flush — so the pre-read
+      flush barriers and the dirty-tracking state are gone:
+        - `ensure_env_synced` function + all ~30 call sites
+        - `mark_local_dirty` (replaced by `flush_local_to_env` at its 22 write sites)
+        - `locals_dirty`, `locals_dirty_slots` VM fields + all save/restore/resize
+        - `saved_locals_dirty`, `saved_locals_dirty_slots` `VmCallFrame` fields
+        - `GatherCoroutineState::locals_dirty_slots` + its save/restore
+
+      **The audit was smaller than feared.** `ensure_env_synced` only ever flushed
+      slots that had been `mark_local_dirty`'d (the `locals_dirty_slots` gate), so
+      the ~82 direct `self.locals[idx] = …` writes that never marked dirty were
+      never flushed and are unaffected by the removal — only the 22 `mark_local_dirty`
+      sites needed conversion. Net **-135 lines**. `fib` still does zero dual-store
+      sync (slot-only `$n`); the perf-sanity bench (fib 30 + a 200k `$acc += $i`
+      loop + 50k `.map`) shows `env_flushes=0` — write-through fires only for
+      genuine free-var / closure-captured slot writes, not top-level or slot-only
+      locals, so there is no hot-loop env-write regression. Validated by `make test`
+      + S17 atomic/CAS/thread (5491 tests) + S03 metaops + S04/S06 closures roast.
+
+  - [ ] **Slice 6.3 — `env_dirty` → bridge elimination (the last flag).**
+      `env_dirty` exists to re-sync slots after the *tree-walking interpreter*
+      mutates env by name (`sync_locals_from_env`). It cannot be removed cleanly
+      while any VM op falls back to the interpreter; it is gated on finishing the
+      broader VM-decoupling (no interpreter bridge).
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.

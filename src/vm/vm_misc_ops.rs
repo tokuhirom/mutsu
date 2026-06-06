@@ -877,7 +877,7 @@ impl VM {
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.increment_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
-            self.mark_local_dirty(slot);
+            self.flush_local_to_env(code, slot);
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
@@ -942,7 +942,7 @@ impl VM {
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.decrement_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
-            self.mark_local_dirty(slot);
+            self.flush_local_to_env(code, slot);
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
@@ -2307,13 +2307,11 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let body_end = body_end as usize;
         let saved = self.interpreter.current_package().to_string();
-        self.ensure_env_synced(code);
         let saved_env = self.interpreter.env().clone();
         let saved_locals = self.locals.clone();
         self.interpreter.set_current_package(name);
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.interpreter.set_current_package(saved);
-        self.ensure_env_synced(code);
         let current_env = self.interpreter.env().clone();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env.iter() {
@@ -2658,7 +2656,6 @@ impl VM {
         let post_start = post_start as usize;
         let end = end as usize;
         let routine_snapshot = self.interpreter.snapshot_routine_registry();
-        self.ensure_env_synced(code);
         let saved_env = self.interpreter.env().clone();
         let saved_locals = self.locals.clone();
         let once_scope = self.interpreter.next_once_scope_id();
@@ -2705,7 +2702,6 @@ impl VM {
                 exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
                 Value::make_instance(crate::symbol::Symbol::intern("Exception"), exc_attrs)
             };
-            self.ensure_env_synced(code);
             self.interpreter
                 .env_mut()
                 .insert("!".to_string(), err_val.clone());
@@ -2742,7 +2738,6 @@ impl VM {
                 Ok(()) => self.last_topic_value.clone().unwrap_or(Value::Nil),
                 Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
             };
-            self.ensure_env_synced(code);
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), post_topic.clone());
@@ -2785,7 +2780,6 @@ impl VM {
         // Pop the outer scope locals snapshot.
         self.outer_scope_locals.pop();
 
-        self.ensure_env_synced(code);
         // Update captured envs of END phasers registered during this block
         // so they see the final values of block-scoped variables (which will
         // be removed from env when the block scope is restored below).
@@ -3151,7 +3145,6 @@ impl VM {
         index_mode: bool,
         is_temp: bool,
     ) {
-        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         if index_mode {
             let _idx_val = self.stack.pop().unwrap_or(Value::Int(0));

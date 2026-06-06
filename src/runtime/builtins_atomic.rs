@@ -603,9 +603,9 @@ impl Interpreter {
         if did_swap && let Ok(mut dirty) = self.shared_vars_dirty.write() {
             dirty.insert(arr_name.clone());
         }
-        // Note: don't update env["@values"] here — it would be overwritten
-        // by ensure_env_synced with stale locals. Instead, GetLocal checks
-        // the atomic shared key directly.
+        // Note: don't update env["@values"] here — a later locals restore could
+        // overwrite it with a stale value. Instead, GetLocal checks the atomic
+        // shared key directly.
         Ok(current)
     }
 

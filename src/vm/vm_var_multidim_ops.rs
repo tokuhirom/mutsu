@@ -307,7 +307,7 @@ impl VM {
             }
         }
         // Also sync the updated container into the VM locals slot (if any)
-        // so that a later `ensure_env_synced` does not restore the stale
+        // so that a later locals write-through does not restore the stale
         // pre-assignment copy from locals into env. Without this, shaped
         // array element writes like `@a[i;j] = v` can be silently lost
         // before a closure captures the env (e.g. `start { ... }`).

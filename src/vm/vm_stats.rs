@@ -112,8 +112,8 @@ pub(crate) fn record_env_deep_copy() {
     }
 }
 
-/// Record an `ensure_env_synced` flush of dirty locals into env, along with how
-/// many slots were actually written.
+/// Record a write-through mirror of a local slot into env (`flush_local_to_env`).
+/// Each call mirrors one name-observable slot, so `slots` is 1 per call.
 #[inline]
 pub(crate) fn record_env_flush(slots: u64) {
     if enabled() {

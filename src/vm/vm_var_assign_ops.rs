@@ -1320,7 +1320,7 @@ impl VM {
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.increment_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
-            self.mark_local_dirty(slot);
+            self.flush_local_to_env(code, slot);
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
@@ -1457,7 +1457,7 @@ impl VM {
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.decrement_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
-            self.mark_local_dirty(slot);
+            self.flush_local_to_env(code, slot);
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
@@ -4191,7 +4191,7 @@ impl VM {
                     val = Self::normalize_scalar_assignment_value(val);
                 }
                 arc.lock().unwrap().clone_from(&val);
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
                 return Ok(());
             }
             // If the current value is a Proxy, invoke STORE instead of overwriting
@@ -4206,21 +4206,21 @@ impl VM {
             // (unless rebinding, which replaces the ref with a new value).
             if !is_rebind && let Value::HashSlotRef { .. } = &self.locals[idx] {
                 self.locals[idx].hash_slot_write(val);
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
                 return Ok(());
             }
             // If the current value is a DeferredHashAccess (from lazy binding),
             // autovivify the path and write the value.
             if !is_rebind && let Value::DeferredHashAccess { .. } = &self.locals[idx] {
                 self.locals[idx].deferred_hash_write(val);
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
                 return Ok(());
             }
             // If the current value is an ArraySlotRef, write back to the parent array
             // (unless rebinding, which replaces the ref with a new value).
             if !is_rebind && let Value::ArraySlotRef { .. } = &self.locals[idx] {
                 self.locals[idx].array_slot_write(val);
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
                 return Ok(());
             }
             if !name.starts_with('@') && !name.starts_with('%') {
@@ -4280,12 +4280,12 @@ impl VM {
             {
                 return Err(err);
             }
-            // Update env when shared_vars is active; otherwise defer via locals_dirty.
+            // Update env when shared_vars is active; otherwise write through to env.
             if self.interpreter.shared_vars_active {
                 self.interpreter
                     .set_shared_var(name, self.locals[idx].clone());
             } else {
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
             }
             // When rebinding (`$x := expr`), remove old bind pairs and reverse aliases.
             if is_rebind {
@@ -4335,7 +4335,7 @@ impl VM {
                     self.locals[idx].clone(),
                 );
             }
-            self.mark_local_dirty(idx);
+            self.flush_local_to_env(code, idx);
             return Ok(());
         }
 
@@ -4874,15 +4874,15 @@ impl VM {
                 // Update source in locals if present
                 if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
                     self.locals[source_idx] = container.clone();
-                    self.mark_local_dirty(source_idx);
+                    self.flush_local_to_env(code, source_idx);
                 }
                 // Update source in env
                 self.interpreter
                     .env_mut()
                     .insert(resolved_source.clone(), container.clone());
                 // Propagate ContainerRef to all saved call frame envs AND locals
-                // so the binding survives method returns (env restore) and
-                // ensure_env_synced doesn't overwrite with stale values.
+                // so the binding survives method returns (env restore) and a
+                // later restore doesn't overwrite with stale values.
                 for frame in self.call_frames.iter_mut().rev() {
                     if frame.saved_env.contains_key(&resolved_source) {
                         frame
@@ -4904,7 +4904,7 @@ impl VM {
                         code.locals.iter().rposition(|n| n == alias_target.as_str())
                 {
                     self.locals[alias_idx] = container.clone();
-                    self.mark_local_dirty(alias_idx);
+                    self.flush_local_to_env(code, alias_idx);
                 }
                 self.set_env_with_main_alias(name, container.clone());
                 // For `our` variables, persist ContainerRef in our_vars so that
@@ -4917,7 +4917,7 @@ impl VM {
                             .set_our_var(name.to_string(), container.clone());
                     }
                 }
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
                 return Ok(());
             }
         }
@@ -4950,7 +4950,7 @@ impl VM {
                 val = Self::normalize_scalar_assignment_value(val);
             }
             arc.lock().unwrap().clone_from(&val);
-            self.mark_local_dirty(idx);
+            self.flush_local_to_env(code, idx);
             return Ok(());
         }
         // If the current value is a Proxy, invoke STORE instead of overwriting
@@ -4968,7 +4968,7 @@ impl VM {
             && let Value::HashSlotRef { .. } = &self.locals[idx]
         {
             self.locals[idx].hash_slot_write(val);
-            self.mark_local_dirty(idx);
+            self.flush_local_to_env(code, idx);
             return Ok(());
         }
         // If the current value is a DeferredHashAccess (from lazy binding),
@@ -4978,7 +4978,7 @@ impl VM {
             && let Value::DeferredHashAccess { .. } = &self.locals[idx]
         {
             self.locals[idx].deferred_hash_write(val);
-            self.mark_local_dirty(idx);
+            self.flush_local_to_env(code, idx);
             return Ok(());
         }
         // If the current value is an ArraySlotRef, write back to the parent array
@@ -4988,7 +4988,7 @@ impl VM {
             && let Value::ArraySlotRef { .. } = &self.locals[idx]
         {
             self.locals[idx].array_slot_write(val);
-            self.mark_local_dirty(idx);
+            self.flush_local_to_env(code, idx);
             return Ok(());
         }
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs
@@ -5255,7 +5255,7 @@ impl VM {
                 }
                 arc.lock().unwrap().clone_from(&val);
                 self.stack.push(val);
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
                 return Ok(());
             }
             if !name.starts_with('@') && !name.starts_with('%') {
@@ -5303,12 +5303,12 @@ impl VM {
             {
                 return Err(err);
             }
-            // Update env when shared_vars is active; otherwise defer via locals_dirty.
+            // Update env when shared_vars is active; otherwise write through to env.
             if self.interpreter.shared_vars_active {
                 self.interpreter
                     .set_shared_var(name, self.locals[idx].clone());
             } else {
-                self.mark_local_dirty(idx);
+                self.flush_local_to_env(code, idx);
             }
             // Track topic mutations for map rw writeback
             if name == "_" {
@@ -5317,7 +5317,7 @@ impl VM {
                     self.locals[idx].clone(),
                 );
             }
-            self.mark_local_dirty(idx);
+            self.flush_local_to_env(code, idx);
             return Ok(());
         }
 

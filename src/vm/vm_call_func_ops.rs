@@ -181,9 +181,6 @@ impl VM {
         // slot (e.g. from a `&foo` parameter binding) or in the env — it
         // shadows package-level subs. Skip the fast path and dispatch via
         // the lexical callable below.
-        if self.locals_dirty {
-            self.ensure_env_synced(code);
-        }
         let lexical_override: Option<Value> = {
             let name_str = Self::const_str(code, name_idx);
             // Only look for a lexical override when there is actually a
@@ -238,19 +235,16 @@ impl VM {
                         self.interpreter.set_pending_callsite_line(cl);
                     }
                 }
-                self.ensure_env_synced(code);
                 let result = self.call_compiled_function_fast(cf, compiled_fns)?;
                 self.stack.push(result);
-                // Mark env as dirty so locals get re-synced from env on next
-                // GetLocal. Clear locals_dirty so stale caller locals don't
-                // overwrite the function's env modifications during the sync.
+                // Conservatively mark env dirty so the caller re-syncs its locals
+                // from env on the next env-dirty barrier (the zero-arg fast path
+                // does not use the scoped-overlay merge that the positional_light /
+                // light paths rely on to signal env_dirty precisely).
                 self.env_dirty = true;
-                self.locals_dirty = false;
-                self.locals_dirty_slots.fill(false);
                 return Ok(());
             }
         }
-        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -381,7 +375,6 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
-        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let total = regular_arity as usize + 1; // +1 for the slip value
         if self.stack.len() < total {
@@ -451,7 +444,6 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
-        self.ensure_env_synced(code);
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallOnValue"));
@@ -513,7 +505,6 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
-        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
