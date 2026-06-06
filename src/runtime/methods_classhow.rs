@@ -2174,6 +2174,7 @@ impl Interpreter {
                     deprecated_message: None,
                     source_line: None,
                     source_file: None,
+                    owned_captures: Vec::new(),
                 };
                 meta.insert(
                     "build".to_string(),

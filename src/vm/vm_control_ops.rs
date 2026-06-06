@@ -103,6 +103,20 @@ impl VM {
         Some(Value::make_instance(Symbol::intern(class_name), attrs))
     }
 
+    /// Push a fresh loop-body declaration scope so `my` declarations inside the
+    /// body register as loop-local (see `VM::loop_local_vars`). A closure created
+    /// in the body marks such free variables as `owned_captures`, giving Raku's
+    /// per-iteration binding semantics. Must be balanced by `pop_loop_local_scope`
+    /// on every exit path.
+    pub(super) fn push_loop_local_scope(&mut self) {
+        self.loop_local_vars.push(std::collections::HashSet::new());
+    }
+
+    /// Pop the loop-body declaration scope pushed by `push_loop_local_scope`.
+    pub(super) fn pop_loop_local_scope(&mut self) {
+        self.loop_local_vars.pop();
+    }
+
     pub(super) fn exec_while_loop_op(
         &mut self,
         code: &CompiledCode,
@@ -120,8 +134,16 @@ impl VM {
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
+        // Track loop-body declarations for per-iteration closure capture
+        // (owned_captures, incl. `while my $x = ...` condition declarations).
+        // Balanced by pop on every exit path.
+        self.push_loop_local_scope();
+
         'while_loop: loop {
-            self.run_range(code, cond_start, body_start, compiled_fns)?;
+            if let Err(e) = self.run_range(code, cond_start, body_start, compiled_fns) {
+                self.pop_loop_local_scope();
+                return Err(e);
+            }
             let cond_val = self.stack.pop().unwrap();
             if !cond_val.truthy() {
                 break;
@@ -155,7 +177,10 @@ impl VM {
                         }
                         // Process pending DESTROY submethods at loop iteration boundaries,
                         // mimicking GC-like behavior so DESTROY fires during execution.
-                        self.interpreter.run_pending_instance_destroys()?;
+                        if let Err(e) = self.interpreter.run_pending_instance_destroys() {
+                            self.pop_loop_local_scope();
+                            return Err(e);
+                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed => {
@@ -206,13 +231,17 @@ impl VM {
                         }
                         break 'body_redo;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        self.pop_loop_local_scope();
+                        return Err(e);
+                    }
                 }
             }
             if self.interpreter.is_halted() {
                 break;
             }
         }
+        self.pop_loop_local_scope();
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
@@ -531,6 +560,9 @@ impl VM {
             .as_ref()
             .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
             .map(|name| (name.clone(), self.interpreter.env().get(name).cloned()));
+        // Track loop-body declarations for per-iteration closure capture
+        // (owned_captures). Balanced by pop on every exit.
+        self.push_loop_local_scope();
         // Determine if the implicit topic ($_) should be read-only.
         // Only mark $_ readonly when iterating over a known immutable collection
         // (Mix, Set, Bag). This blocks `.value = ...` mutations on pairs from
@@ -885,6 +917,7 @@ impl VM {
                                 }
                             }
                         }
+                        self.pop_loop_local_scope();
                         return Err(e);
                     }
                     Err(e) => {
@@ -910,6 +943,7 @@ impl VM {
                                 }
                             }
                         }
+                        self.pop_loop_local_scope();
                         return Err(e);
                     }
                 }
@@ -981,6 +1015,7 @@ impl VM {
         if let Some(entry) = saved_param {
             self.for_param_restore_stack.push(entry);
         }
+        self.pop_loop_local_scope();
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind.clone();
         if spec.restore_topic {
@@ -1047,6 +1082,10 @@ impl VM {
             .as_ref()
             .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
             .map(|name| (name.clone(), self.interpreter.env().get(name).cloned()));
+
+        // Track loop-body declarations so closures created in the body capture
+        // them per-iteration (owned_captures). Balanced by pop on every exit.
+        self.push_loop_local_scope();
 
         self.env_dirty = true;
         // When resuming a gather coroutine, start from the saved position.
@@ -1188,6 +1227,8 @@ impl VM {
                                 }
                             }
                         }
+                        // Gather suspend: pop (body resumes and re-pushes).
+                        self.pop_loop_local_scope();
                         return Err(e);
                     }
                     Err(e) => {
@@ -1209,6 +1250,7 @@ impl VM {
                                 }
                             }
                         }
+                        self.pop_loop_local_scope();
                         return Err(e);
                     }
                 }
@@ -1250,6 +1292,7 @@ impl VM {
         if let Some(entry) = saved_param {
             self.for_param_restore_stack.push(entry);
         }
+        self.pop_loop_local_scope();
         Ok(())
     }
 
@@ -1895,8 +1938,15 @@ impl VM {
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
+        // Track loop-body declarations for per-iteration closure capture
+        // (owned_captures). Balanced by pop on every exit path.
+        self.push_loop_local_scope();
+
         'c_loop: loop {
-            self.run_range(code, cond_start, body_start, compiled_fns)?;
+            if let Err(e) = self.run_range(code, cond_start, body_start, compiled_fns) {
+                self.pop_loop_local_scope();
+                return Err(e);
+            }
             let cond_val = self.stack.pop().unwrap();
             if !cond_val.truthy() {
                 break;
@@ -1943,14 +1993,21 @@ impl VM {
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        self.pop_loop_local_scope();
+                        return Err(e);
+                    }
                 }
             }
             if self.interpreter.is_halted() {
                 break;
             }
-            self.run_range(code, step_begin, loop_end, compiled_fns)?;
+            if let Err(e) = self.run_range(code, step_begin, loop_end, compiled_fns) {
+                self.pop_loop_local_scope();
+                return Err(e);
+            }
         }
+        self.pop_loop_local_scope();
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
@@ -2210,10 +2267,17 @@ impl VM {
         let cond_start = cond_end as usize;
         let loop_end = body_end as usize;
 
+        // Track loop-body declarations for per-iteration closure capture
+        // (owned_captures). Balanced by pop on every exit path.
+        self.push_loop_local_scope();
+
         let mut first = true;
         'repeat_loop: loop {
             if !first {
-                self.run_range(code, cond_start, loop_end, compiled_fns)?;
+                if let Err(e) = self.run_range(code, cond_start, loop_end, compiled_fns) {
+                    self.pop_loop_local_scope();
+                    return Err(e);
+                }
                 let cond_val = self.stack.pop().unwrap();
                 if !cond_val.truthy() {
                     break;
@@ -2248,13 +2312,17 @@ impl VM {
                     Err(e) if e.is_next && Self::label_matches(&e.label, label) => {
                         break 'body_redo;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        self.pop_loop_local_scope();
+                        return Err(e);
+                    }
                 }
             }
             if self.interpreter.is_halted() {
                 break;
             }
         }
+        self.pop_loop_local_scope();
         *ip = loop_end;
         Ok(())
     }

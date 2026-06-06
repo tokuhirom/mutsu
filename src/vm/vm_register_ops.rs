@@ -97,6 +97,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
                 is_bare_block: is_block,
+                owned_captures: self.compute_owned_captures(&compiled_code),
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -157,6 +158,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
+                owned_captures: self.compute_owned_captures(&compiled_code),
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -167,6 +169,28 @@ impl VM {
         } else {
             Err(RuntimeError::new("MakeAnonSubParams expects SubDecl"))
         }
+    }
+
+    /// Free variables of a closure being created that were declared in an
+    /// enclosing loop body (see `VM::loop_local_vars`). These become the
+    /// closure's `owned_captures`: read at call time from its own frozen captured
+    /// env so each loop iteration's closure sees its own value (Raku
+    /// per-iteration binding), immune to the dual-store slot re-injection.
+    fn compute_owned_captures(
+        &self,
+        compiled_code: &Option<std::sync::Arc<CompiledCode>>,
+    ) -> Vec<Symbol> {
+        if self.loop_local_vars.is_empty() {
+            return Vec::new();
+        }
+        let Some(cc) = compiled_code else {
+            return Vec::new();
+        };
+        cc.free_var_syms
+            .iter()
+            .filter(|sym| sym.with_str(|s| self.loop_local_vars.iter().any(|set| set.contains(s))))
+            .copied()
+            .collect()
     }
 
     pub(super) fn exec_make_lambda_op(
@@ -217,6 +241,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
+                owned_captures: self.compute_owned_captures(&compiled_code),
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -257,6 +282,7 @@ impl VM {
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
                 is_bare_block: true,
+                owned_captures: self.compute_owned_captures(&compiled_code),
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
