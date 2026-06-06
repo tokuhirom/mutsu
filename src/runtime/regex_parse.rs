@@ -8,6 +8,24 @@ thread_local! {
     /// Thread-local storage for regex security errors that need to propagate
     /// from inside `parse_regex` (which takes `&self`) to callers that can throw.
     pub(super) static PENDING_REGEX_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
+
+    /// Memoization cache for parsing *static* regex patterns (patterns whose
+    /// parse result does not depend on runtime state). Parsing a pattern is a
+    /// recursive-descent operation that is pure for patterns containing no
+    /// scalar/array/hash interpolation sigils (`$`, `@`, `%`); for such patterns
+    /// the parsed `RegexPattern` is a deterministic function of the source string,
+    /// so it is safe to cache and reuse across calls. This avoids re-parsing the
+    /// same (potentially large) pattern on every step of a match — e.g. a token
+    /// with dozens of alternations called once per input character.
+    static REGEX_PARSE_CACHE: RefCell<HashMap<String, RegexPattern>> = RefCell::new(HashMap::new());
+}
+
+/// A pattern is cacheable iff parsing it does not depend on runtime variable
+/// state. Interpolation (`interpolate_regex_scalars`) only substitutes when the
+/// pattern contains a `$`, `@`, or `%` sigil, so a pattern free of those parses
+/// deterministically.
+fn regex_pattern_is_static(pattern: &str) -> bool {
+    !pattern.contains(['$', '@', '%'])
 }
 
 fn single_token_pattern(token: RegexToken, ignore_case: bool, ignore_mark: bool) -> RegexPattern {
@@ -1185,6 +1203,23 @@ impl Interpreter {
     }
 
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
+        // Fast path: reuse a previously-parsed result for static patterns.
+        if regex_pattern_is_static(pattern) {
+            if let Some(cached) = REGEX_PARSE_CACHE.with(|c| c.borrow().get(pattern).cloned()) {
+                return Some(cached);
+            }
+            let parsed = self.parse_regex_uncached(pattern);
+            if let Some(ref p) = parsed {
+                REGEX_PARSE_CACHE.with(|c| {
+                    c.borrow_mut().insert(pattern.to_string(), p.clone());
+                });
+            }
+            return parsed;
+        }
+        self.parse_regex_uncached(pattern)
+    }
+
+    fn parse_regex_uncached(&self, pattern: &str) -> Option<RegexPattern> {
         fn named_lookup_is_ws(name: &str) -> bool {
             let mut raw = name.trim();
             if let Some(stripped) = raw.strip_prefix('.') {
