@@ -546,12 +546,17 @@ impl Interpreter {
     /// carries the list of symbol names the CompUnit loaded so that a later
     /// `GLOBALish.WHO.merge-symbols(...)` can publish them into GLOBAL.
     pub(crate) fn make_globalish_package(&self, symbols: Option<&Value>) -> Value {
+        // File-system repositories load symbols straight into GLOBAL, so there is
+        // nothing to merge later: hand back the live GLOBAL package so stash
+        // navigation (`.globalish-package<Pkg>.WHO<...>`) resolves as before.
+        // Only the Installation repository carries `globalish-symbols` (kept
+        // hidden until `merge-symbols`), which needs the dedicated Stash object.
+        let Some(symbols) = symbols else {
+            return Value::Package(crate::symbol::Symbol::intern("GLOBAL"));
+        };
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str_from("GLOBALish"));
-        attrs.insert(
-            "globalish-symbols".to_string(),
-            symbols.cloned().unwrap_or_else(|| Value::array(Vec::new())),
-        );
+        attrs.insert("globalish-symbols".to_string(), symbols.clone());
         Value::make_instance(crate::symbol::Symbol::intern("Stash"), attrs)
     }
 
