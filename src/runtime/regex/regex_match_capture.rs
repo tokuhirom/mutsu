@@ -388,6 +388,24 @@ impl Interpreter {
         }
         if let RegexAtom::Named(name) = atom {
             let spec = Self::parse_named_regex_lookup_spec(name);
+            // Symbolic indirect subrule `<::(EXPR)>`: evaluate EXPR to obtain the
+            // dynamic rule name, then dispatch as if it were `<NAME>` so that
+            // builtin character classes and user-defined tokens both resolve.
+            if spec.lookup_name == "::" && spec.arg_exprs.len() == 1 {
+                let val = self.eval_regex_expr_value(&spec.arg_exprs[0], current_caps)?;
+                let dyn_atom = RegexAtom::Named(val.to_string_value());
+                return self
+                    .regex_match_atom_all_with_capture_in_pkg(
+                        &dyn_atom,
+                        chars,
+                        pos,
+                        current_caps,
+                        pkg,
+                        ignore_case,
+                    )
+                    .into_iter()
+                    .last();
+            }
             let arg_values = if spec.arg_exprs.is_empty() {
                 Vec::new()
             } else {
@@ -655,18 +673,42 @@ impl Interpreter {
             // Named rule not found — report error for valid identifier names.
             // Skip error for names containing special chars (likely parser
             // artifacts from character class syntax like `<[...]>`).
-            if !spec.silent
-                && !spec.lookup_name.is_empty()
-                && spec
-                    .lookup_name
+            //
+            // When the first character after the identifier is whitespace, the
+            // remainder is a regex argument (`<test hat>`), so the method name is
+            // just the leading identifier. Validate and report against that name.
+            let method_name = spec
+                .lookup_name
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            let is_plain_ident = !method_name.is_empty()
+                && method_name
                     .chars()
-                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':' || c == '.')
-            {
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':' || c == '.');
+            // If the leading identifier resolves to a known rule/token (e.g. the
+            // space form `<lit 'a'>` passes `'a'` as an argument to the defined
+            // `lit` token), it is not an unknown-method error — just a subrule
+            // call form we do not fully support yet, so fall through.
+            let leading_resolves = is_plain_ident
+                && !self
+                    .resolve_token_patterns_static_in_pkg(&method_name, pkg)
+                    .is_empty();
+            if !spec.silent && is_plain_ident && !leading_resolves {
                 super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
-                    *e.borrow_mut() = Some(RuntimeError::new(format!(
+                    let msg = format!(
                         "No such method '{}' for invocant of type 'Match'",
-                        spec.lookup_name
-                    )));
+                        method_name
+                    );
+                    let mut err = RuntimeError::new(msg.clone());
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg));
+                    attrs.insert("method".to_string(), Value::str(method_name.clone()));
+                    attrs.insert("typename".to_string(), Value::str("Match".to_string()));
+                    let ex = Value::make_instance(Symbol::intern("X::Method::NotFound"), attrs);
+                    err.exception = Some(Box::new(ex));
+                    *e.borrow_mut() = Some(err);
                 });
                 return None;
             }
