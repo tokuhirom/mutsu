@@ -1903,20 +1903,24 @@ impl VM {
                 return;
             };
             // If the source variable holds a Pair, update only the pair's value
-            // (this handles `for $pair.value -> $v is rw { ... }`)
-            let writeback_val = if let Some(existing) = self.get_env_with_main_alias(source) {
-                match existing {
-                    Value::Pair(key, _) => Value::Pair(key, Box::new(current_val.clone())),
-                    Value::ValuePair(key, _) => {
-                        Value::ValuePair(key, Box::new(current_val.clone()))
-                    }
-                    _ => current_val.clone(),
+            // (this handles `for $pair.value -> $v is rw { ... }`). The source may
+            // be a `ContainerRef` (a closure-captured / `:=`-bound `$pair`); deref
+            // it to inspect the Pair and write back THROUGH the shared container so
+            // we don't clobber `$pair` itself with a bare scalar.
+            let raw_source = self.get_env_with_main_alias(source);
+            let writeback_val = match raw_source.as_ref().map(|v| v.deref_container()) {
+                Some(Value::Pair(key, _)) => Value::Pair(key, Box::new(current_val.clone())),
+                Some(Value::ValuePair(key, _)) => {
+                    Value::ValuePair(key, Box::new(current_val.clone()))
                 }
-            } else {
-                current_val.clone()
+                _ => current_val.clone(),
             };
-            self.set_env_with_main_alias(source, writeback_val.clone());
-            self.update_local_if_exists(code, source, &writeback_val);
+            if let Some(Value::ContainerRef(arc)) = &raw_source {
+                arc.lock().unwrap().clone_from(&writeback_val);
+            } else {
+                self.set_env_with_main_alias(source, writeback_val.clone());
+                self.update_local_if_exists(code, source, &writeback_val);
+            }
         }
     }
 

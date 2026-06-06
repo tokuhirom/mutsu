@@ -910,6 +910,17 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
+        // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
+        // closures over this lexical observe the change and the smart string/Int
+        // increment semantics are preserved (the slot holds the same Arc).
+        if let Value::ContainerRef(ref arc) = val {
+            let inner = arc.lock().unwrap().clone();
+            let v = self.normalize_incdec_source_with_type(name, inner);
+            let new_val = self.increment_value_smart(&v)?;
+            arc.lock().unwrap().clone_from(&new_val);
+            self.stack.push(new_val);
+            return Ok(());
+        }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.increment_value_smart(&val)?;
         self.set_env_with_main_alias(name, new_val.clone());
@@ -975,6 +986,17 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
+        // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
+        // closures over this lexical observe the change and the smart string/Int
+        // decrement semantics are preserved (the slot holds the same Arc).
+        if let Value::ContainerRef(ref arc) = val {
+            let inner = arc.lock().unwrap().clone();
+            let v = self.normalize_incdec_source_with_type(name, inner);
+            let new_val = self.decrement_value_smart(&v)?;
+            arc.lock().unwrap().clone_from(&new_val);
+            self.stack.push(new_val);
+            return Ok(());
+        }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.decrement_value_smart(&val)?;
         self.set_env_with_main_alias(name, new_val.clone());
