@@ -197,32 +197,52 @@ impl VM {
             .collect()
     }
 
-    /// Box-on-capture (lever C Slice 2): a closure captures the *container* of
-    /// each closed-over lexical scalar, not its value. Before snapshotting the
-    /// env into the new closure's `data.env`, replace each free-variable scalar
-    /// that lives in the *current* scope (has a slot in `code.locals`) with a
-    /// shared `ContainerRef` in BOTH the slot and the env. The env snapshot then
-    /// shares the same `Arc`, so:
+    /// Box-on-capture (lever C Slice 2): for a closure created inside a loop body,
+    /// each closed-over *loop-body-local* scalar is captured as a *container*, not
+    /// a frozen value. Before snapshotting the env into the new closure's
+    /// `data.env`, replace such a free variable (one tracked in
+    /// `VM::loop_local_vars` and holding a slot in `code.locals`) with a shared
+    /// `ContainerRef` in BOTH the slot and the env. The env snapshot then shares
+    /// the same `Arc`, so:
     ///
     /// - mutation of the lexical *after* capture is visible to the closure
-    ///   (`my $x=1; my $c={$x}; $x=2; $c()` -> 2), and
-    /// - sibling closures over the same lexical share one cell
-    ///   (`my $g={$v}; my $s=->$n{$v=$n}; $s(42); $g()` -> 42).
+    ///   (`for 1 { my $x=1; my $c={$x}; $x=2; $c() }` -> 2), and
+    /// - sibling closures created in the *same iteration* share one cell
+    ///   (`for 1 { my $v=0; my $g={$v}; my $s=->$n{$v=$n}; $s(42); $g() }` -> 42).
     ///
-    /// Per-iteration freshness for loop-body `my` is preserved because the `my`
+    /// Per-iteration freshness is preserved because the loop-body `my`
     /// redeclaration resets the stale ContainerRef in the slot+env each iteration
     /// (see exec_set_local_op vardecl handling), so the next closure boxes a fresh
-    /// cell. Arrays/hashes/subs/type-objects are reference-shared already and are
-    /// left untouched.
+    /// cell. Scope is intentionally limited to loop-body locals: boxing *every*
+    /// captured scalar (e.g. non-loop sibling closures, Test's `lives-ok {...}`
+    /// over a surrounding `$obj`/type object) is too broad and trips the many
+    /// code paths that don't yet deref a ContainerRef — that general "capture the
+    /// container" semantics is a separate, larger audit (deferred). Arrays /
+    /// hashes / subs / type objects are reference-shared already and untouched.
     fn box_captured_lexicals(
         &mut self,
         code: &CompiledCode,
         cc: &Option<std::sync::Arc<CompiledCode>>,
     ) {
         let Some(cc) = cc else { return };
+        // Scope to loop-body-local declarations only (the same set owned_captures
+        // considers). Boxing *every* captured scalar is too broad: pervasive
+        // non-loop captures (e.g. Test's `lives-ok {...}` closing over the
+        // surrounding `$obj`/`$pair`/type object) would be hidden behind a
+        // ContainerRef and trip the many code paths that don't yet deref one
+        // (immutability checks, type-object dispatch, `.kv` rw writeback, ...).
+        // Loop-body locals are where per-iteration container identity actually
+        // matters; general "capture the container" for non-loop siblings is a
+        // larger, separate audit (deferred).
+        if self.loop_local_vars.is_empty() {
+            return;
+        }
         for sym in &cc.free_var_syms {
             let Some(idx) = sym.with_str(|s| {
                 if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
+                    return None;
+                }
+                if !self.loop_local_vars.iter().any(|set| set.contains(s)) {
                     return None;
                 }
                 code.locals.iter().rposition(|n| n == s)
