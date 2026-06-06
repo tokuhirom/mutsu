@@ -923,6 +923,7 @@ impl VM {
         }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.increment_value_smart(&val)?;
+        self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -999,6 +1000,7 @@ impl VM {
         }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.decrement_value_smart(&val)?;
+        self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);

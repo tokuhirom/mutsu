@@ -589,8 +589,37 @@ impl Compiler {
                 is_export,
                 export_tags,
                 custom_traits,
-                where_constraint: _,
+                where_constraint,
             } => {
+                // An inline `where` constraint on a scalar/sigilless variable
+                // (e.g. `my $x where * > 0`, `my Int $n where { $_ %% 2 }`,
+                // `my $v where &predicate`) is desugared into an anonymous subset
+                // whose base is the declared type (or `Any`) and whose predicate is
+                // the `where` expression. Reusing the subset machinery means the
+                // existing type-constraint enforcement (TypeCheck on init and on
+                // every assignment) checks the predicate for free. Collection
+                // variables (`@`/`%`) are left untouched: a `where` there applies
+                // to the whole container, which we do not yet model this way.
+                let owned_type_constraint: Option<String> = match where_constraint {
+                    Some(wc) if !name.starts_with('@') && !name.starts_with('%') => {
+                        let anon = format!("__mutsu_anon_subset_{}", self.tmp_counter);
+                        self.tmp_counter += 1;
+                        let base = type_constraint.clone().unwrap_or_else(|| "Any".to_string());
+                        let subset_stmt = Stmt::SubsetDecl {
+                            name: Symbol::intern(&anon),
+                            base,
+                            predicate: Some((**wc).clone()),
+                            version: String::new(),
+                            is_export: false,
+                            export_tags: Vec::new(),
+                        };
+                        let idx = self.code.add_stmt(subset_stmt);
+                        self.code.emit(OpCode::RegisterSubset(idx));
+                        Some(anon)
+                    }
+                    _ => type_constraint.clone(),
+                };
+                let type_constraint = &owned_type_constraint;
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
                     self.emit_dynamic_package_error(name);

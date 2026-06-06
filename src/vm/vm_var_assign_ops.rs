@@ -1272,6 +1272,44 @@ impl VM {
         Ok(Self::increment_value(val))
     }
 
+    /// Enforce a scalar variable's declared type/subset constraint on the result
+    /// of an in-place `++`/`--`. Raku re-checks the constraint after the
+    /// mutation, so `my Even $x = 2; $x++` must throw X::TypeCheck::Assignment
+    /// (3 is not Even) and leave the variable untouched. Native int/num/str
+    /// variables wrap instead of erroring, so they are skipped, as are
+    /// container (`@`/`%`/`&`) variables whose constraint applies to elements.
+    pub(super) fn check_incdec_type_constraint(
+        &mut self,
+        name: &str,
+        new_val: &Value,
+    ) -> Result<(), RuntimeError> {
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            return Ok(());
+        }
+        if let Some(constraint) = self.interpreter.var_type_constraint(name) {
+            if crate::runtime::native_types::is_native_int_type(&constraint)
+                || matches!(constraint.as_str(), "num" | "num32" | "num64" | "str")
+            {
+                return Ok(());
+            }
+            if !matches!(new_val, Value::Nil)
+                && !self.interpreter.type_matches_value(&constraint, new_val)
+            {
+                let display = if name.starts_with('$') {
+                    name.to_string()
+                } else {
+                    format!("${}", name)
+                };
+                return Err(runtime::utils::type_check_assignment_typed_error(
+                    &display,
+                    &constraint,
+                    new_val,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Decrement a value, calling .pred() on Instance values with custom methods.
     pub(super) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         if let Value::Instance { .. } = val
@@ -1376,6 +1414,7 @@ impl VM {
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.increment_value_smart(&val)?;
         let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
+        self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -1502,6 +1541,7 @@ impl VM {
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.decrement_value_smart(&val)?;
         let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
+        self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
