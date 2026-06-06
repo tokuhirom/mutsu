@@ -1,7 +1,51 @@
 use super::*;
 use crate::ast::Stmt;
 
+/// Source for builtin parametric roles that are not yet representable as native
+/// `RoleDef`s. These are parsed once and prepended to programs that reference
+/// them, so they register through the ordinary RoleDecl path.
+const RATIONAL_ROLE_PRELUDE: &str = r#"
+role Rational[::NuT = Int, ::DeT = Int] does Real {
+    has NuT $.numerator = 0;
+    has DeT $.denominator = 1;
+    method new(NuT \nu = 0, DeT \de = 1) {
+        my $gcd = (nu gcd de) || 1;
+        my $n = nu div $gcd;
+        my $d = de div $gcd;
+        if $d < 0 { $n = -$n; $d = -$d; }
+        self.bless(numerator => NuT.new($n), denominator => DeT.new($d));
+    }
+    method nude { self.numerator, self.denominator }
+    method Bool { self.numerator != 0 }
+}
+"#;
+
 impl Interpreter {
+    /// Prepend builtin prelude role definitions to `stmts` when the source
+    /// references them. Currently this provides the parametric `Rational` role
+    /// for user classes written as `does Rational[...]`. The prelude is parsed
+    /// once and cached.
+    fn inject_prelude_roles(source: &str, stmts: &mut Vec<Stmt>) {
+        // Only inject when the program mentions `Rational` and does not declare
+        // its own role of that name (which would conflict).
+        if !source.contains("Rational") || source.contains("role Rational") {
+            return;
+        }
+        use std::sync::OnceLock;
+        static RATIONAL_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = RATIONAL_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(RATIONAL_ROLE_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
     fn source_has_no_precompilation(code: &str) -> bool {
         code.lines().any(|line| {
             let trimmed = line.trim();
@@ -692,10 +736,14 @@ impl Interpreter {
         for warning in crate::parser::take_parse_warnings() {
             self.write_warn_to_stderr(&warning);
         }
-        let (stmts, finish_content) = parse_result?;
+        let (mut stmts, finish_content) = parse_result?;
         if let Some(content) = finish_content {
             self.env.insert("=finish".to_string(), Value::str(content));
         }
+        // Inject builtin prelude role definitions (e.g. the parametric `Rational`
+        // role) when the program references them. These are registered through the
+        // normal RoleDecl/VM path by prepending their statements to the body.
+        Self::inject_prelude_roles(&preprocessed, &mut stmts);
         let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run

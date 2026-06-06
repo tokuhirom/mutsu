@@ -544,6 +544,127 @@ Reaching that requires, roughly in order:
       callee's writes never pollute the caller's `env` and the bidirectional sync
       disappears. That is the larger structural change these steps set up.
 
+  - [~] **Slice 6 — scoped/overlay `Env` primitive + fast-path pilot (collapse proper).**
+        In progress.
+
+        **The structural debt.** Every compiled call still saves the caller env
+        (`clone_env`, an Arc bump), lets the callee mutate `self.env` *in place*,
+        then on return runs an **O(full-env) merge loop** that re-inserts every
+        non-declared-local key back into the caller (e.g.
+        `call_compiled_function_fast` vm_call_dispatch.rs ~594, the named path
+        ~1746). The flat single-tier env means callee-local writes and
+        caller-escaping writes are indistinguishable structurally, so the merge
+        must scan the whole env and filter by name.
+
+        **The design — a third overlay tier on `Env`.** `Env` gains
+        `parent: Option<Arc<HashMap<Symbol,Value>>>` (a read-through snapshot of the
+        caller's overlay), giving a 3-tier lookup: **overlay → parent →
+        GLOBAL_BASE**. `parent=None` is byte-identical to today, so all ~80 env
+        iteration consumers and every non-converted dispatch path are untouched
+        (zero blast radius). Invariants:
+        - `insert` / `remove` / `get_mut` target the **overlay only** (callee scope).
+          `get_mut` promotes a parent/base key into the overlay before handing out
+          `&mut` (COW), so a write to a caller lexical lands in the overlay.
+        - `get` / `contains_key` fall through overlay → parent → base.
+        - `iter` / `keys` / `values` / `len` stay **overlay-only** — they now yield
+          exactly the callee's own writes, which is precisely what the merge wants.
+
+        With this, a scoped call frame installs an *empty* overlay over the caller's
+        Arc (no `make_mut` of the inherited ~30 entries), the callee's writes
+        accumulate in the overlay, and on return the merge iterates the **overlay
+        only** (O(callee-writes), not O(full-env)); callee-local writes are dropped
+        for free by discarding the overlay. Escaping writes (to a caller lexical)
+        were promoted into the overlay on first write, so the merge sees and
+        propagates them. The chain composes across nested calls: a write to a
+        grandparent lexical is promoted into the current overlay, propagated one
+        level on return, and so on.
+
+        **Safety invariant — scoped env is transient.** A `parent=Some` env is only
+        ever the live `self.env` during the converted frame's *own* opcode execution
+        between calls. Anything that **captures or clones** the env across a
+        boundary — `clone_env()` (nested call / block entry / frame save) and
+        `clone_for_thread` (which iterates the env overlay-only to seed
+        `shared_vars`) — flattens the scoped env into a flat (`parent=None`) env
+        first, so no full-view iteration consumer can be starved of parent
+        lexicals. The converted frame's own direct execution never iterates the env
+        for a full lexical view (the merge wants overlay-only), and the pilot path
+        is gated to exclude reflective/iterating bodies.
+
+        **Pilot (this slice): `call_compiled_function_fast`.** The zero-arg
+        compiled-helper path (`is_fast_call_eligible`: no params/param_defs/return
+        type) currently does the `clone_env` + O(full-env) merge when it has locals.
+        Convert it to install a scoped overlay and merge overlay-only, gated on
+        `!cf.has_inner_subs && !reflective_name_access_possible()` so no
+        closure/thread/EVAL/symbolic-deref body runs under the scoped env. The
+        caller's `$_` / `@_` / `%_` and `__mutsu_callable_id` are skipped by the
+        merge (the caller env retains them), replacing the explicit `saved_topic`
+        dance. Next slices: the named path merge, then method/closure/gather, then
+        drop dirty tracking.
+
+        **Extension — the compiled-method fast path.** `call_compiled_method_fast`
+        installs a born-owned scoped overlay over the caller (gated on
+        `cc.closure_compiled_codes.is_empty()`) so the per-call `self` / `?CLASS` /
+        param / attr env setup writes land in a fresh empty map (`strong_count`
+        1) instead of `make_mut`-forking the inherited caller env — this removes
+        the per-method-call env deep copy the doc flagged in Slices 1/2/4c as the
+        residual bench-class cost. On return, `set_env(saved_env)`
+        (`can_skip_merge`) drops the overlay; `merge_method_env` already iterates
+        `current.iter()` (overlay-only), so it now sees exactly the method's own
+        writes (cheaper and semantically identical — the `saved.contains_key`
+        gate already restricted merges to caller-existing keys).
+
+        **The flatten placement matters (measured).** The universal
+        `flatten_scoped_env` safety guard was initially at the *top* of the
+        method-call opcodes, which collapsed the method's own overlay on the
+        first `$.attr` accessor read (a nested `CallMethodMut`) — making an
+        attribute-heavy method *slower* (~+3%) despite halving its deep copies,
+        because `flattened()` materializes the ~30-entry parent map per accessor.
+        Fix: the accessor fast path (`try_fast_accessor_read`) is a pure read that
+        touches no env, so the `flatten_scoped_env` call now sits **after** it in
+        both `exec_call_method_op` and `exec_call_method_mut_op`. An `$.attr` read
+        no longer collapses the overlay; only a genuine nested dispatch (which
+        would capture/iterate the env) flattens. Result: a 500k-iteration
+        `$obj.calc()` (`{ $.n * 2 + 1 }`) bench went **9.66s -> 7.42s (~23%)**;
+        `env_deep_copies` for a `{ 42 }` method dropped to ~0 (10001 -> 1 over
+        5000 calls). Validated: `make test` green; ~780 whitelisted
+        S02/S03/S04/S05/S06/S12/S14/S17/S32 + integration roast files green. New
+        pin `t/scoped-overlay-method.t`.
+
+        **More paths + the `Env` tombstone fix.** Converted
+        `call_compiled_function_positional_light` and
+        `call_compiled_function_light` (replacing their name-keyed param/local
+        save-restore juggling — `saved_param_env`/`saved_env_locals`/
+        `modified_env_keys` — with overlay-only merge), `call_compiled_method`
+        (the non-fast method path), and finally `call_compiled_function_named`
+        (the heavy path: install the overlay after `sub_val`/`push_caller_env`
+        captured the flat caller, merge overlay-only on return, restore the caller
+        env on the `empty_sig` early exit). The function-path merges skip
+        `_`/`@_`/`%_`/`__mutsu_callable_id` and `?`-prefixed contextual vars
+        (`?LINE`/`?FILE`) — per-frame state must not propagate to the caller, and
+        propagating `?LINE` also caused spurious `env_dirty` churn per recursive
+        call.
+
+        The named path surfaced a **general overlay flaw**: `Env::remove` is
+        overlay-only, so it cannot *shadow* a key that lives in the parent tier.
+        Many "clear inherited state" idioms rely on `env.remove()` — e.g.
+        `my $result` clears an enclosing sigilless `\result`'s
+        `__mutsu_sigilless_readonly::result` so a later `$result := ...` is
+        allowed (vm_var_assign_ops.rs ~4154). Under a scoped overlay that `remove`
+        was a no-op (the key was in the parent), so `$result :=` hit the inherited
+        readonly mark and died with "Cannot modify an immutable value"
+        (`for @t -> \d,\seed,\endpoint,\result { ts(...) }` calling a raw-param sub
+        that does `$result := list.List`; caught by `roast/S03-sequence/
+        exhaustive.t`). Fix: `Env` gains **tombstones** — `remove_sym` on a scoped
+        env, when the key exists in the parent/base, records the key in a
+        `tombstones` set so `get`/`contains_key`/`get_mut` stop falling through to
+        the parent; `insert` clears the tombstone; `flattened` applies then drops
+        them; they are never merged back (a callee-local removal must not delete
+        the caller's key). `parent=None` (flat) envs never tombstone, so flat
+        behavior is byte-identical. New pin `t/scoped-overlay-named.t`. make test
+        green; ~830 whitelisted roast files green (the only fails were the
+        cwd-dependent encoding tests and the stale-temp-file `spurt.t`, both
+        environmental).
+
   - [ ] **Slice 5 (original design notes — superseded by the step above).**
 
       **The waste, measured.** `bench-fib` does **0 % function/method fallback**
@@ -589,6 +710,67 @@ Reaching that requires, roughly in order:
       reflective roast tests (`EVAL`, `S02-names/symbolic-deref.t`,
       `S02-names/caller.t`, dynamic-scope) + full CI roast, and report the
       `env_flush` count drop per slice.
+
+  - [x] **Slice 6.1 — kill the redundant per-call `env_dirty`/`locals_dirty`
+      churn on the compiled fast paths.** With every call path now scoped-overlay
+      isolated (Slice 6), the per-call dual-store sync that compiled calls
+      performed turned out to be *pure overhead doing zero useful work*. Measured
+      on `bench-fib` (fib 27) with `MUTSU_VM_STATS=1`:
+
+      | counter | before | after |
+      |---|---|---|
+      | `env_flushes` | 317810 | **0** |
+      | `slots_flushed` | 0 | 0 |
+      | `locals_pulls` | 317811 | **0** |
+
+      Two root causes, both removed:
+        1. **Bind-time mark-all-params-dirty** in
+           `call_compiled_function_positional_light`: every param slot was
+           `mark_local_dirty`'d after binding, flipping the global `locals_dirty`
+           flag and forcing a guaranteed-no-op `ensure_env_synced` flush on every
+           call. A slot-only param (read via `GetLocal`, e.g. `fib`'s `$n`) is
+           never named-read, so `ensure_env_synced` already skipped it (its
+           `needs_env_sync[i]` is false) — the mark only created churn. Params a
+           name-reader *can* observe are already written into the born-owned
+           overlay at bind time, so no dirty mark is needed for them either; any
+           later reassignment marks its own slot via `SetLocal`.
+        2. **Blanket `env_dirty = true` after a compiled call.** `exec_call_func_op`
+           set `env_dirty = true` unconditionally after *every* dispatch (the
+           ultra-fast positional_light / light caches, the OTF cache, and the
+           `dispatch_func_call_inner` tail). That forced the caller to
+           `sync_locals_from_env` on its next env-dirty barrier even when the
+           callee was pure. The compiled fast paths (`positional_light` / `light`)
+           already signal `env_dirty` *precisely* via their scoped-overlay merge
+           (which sets it iff a captured-outer write actually merged back), so the
+           blanket set is redundant for them and is removed. The interpreter /
+           native fallback branches of `dispatch_func_call_inner` set `env_dirty`
+           themselves (they mutate env by name through the tree-walking bridge).
+
+      **Why the named (heavy) path keeps `env_dirty = true`.** `is rw` / `is raw`
+      params write back into a *caller-named* variable; the param is a
+      callee-local name, so the scoped-overlay merge (which skips local names)
+      does not capture that writeback. Such functions are excluded from
+      `positional_light`/`light` and route through `call_compiled_function_named`,
+      which conservatively marks env dirty. This is not the hot recursion path
+      (simple positional calls use `positional_light`), so it costs nothing
+      measurable. Regression-pinned by `t/is-rw-traits.t`,
+      `t/scoped-overlay-named.t`, and `t/scoped-overlay-env-dirty.t` (12 cases
+      covering captured scalar/array/hash/named/nested/interleaved + pure calls).
+
+  - [ ] **Slice 6.2+ — full removal of the dirty flags (the remaining payoff).**
+      Two independent halves, both larger and staged separately:
+        - **`locals_dirty` → write-through.** Make every slot write that a
+          name-reader can observe (a `needs_env_sync` slot) mirror to env *eagerly*
+          instead of via the lazy `ensure_env_synced` flush, then delete
+          `locals_dirty` / `locals_dirty_slots` / `ensure_env_synced`. Blocked on
+          auditing the ~82 direct `self.locals[idx] = …` writes scattered across 12
+          VM files (today they rely on the lazy flush to reach env) plus the ~24
+          `mark_local_dirty` sites — each must either write-through or be proven
+          slot-only.
+        - **`env_dirty` → bridge elimination.** `env_dirty` exists to re-sync
+          slots after the *tree-walking interpreter* mutates env by name. It cannot
+          be removed cleanly while any VM op falls back to the interpreter; it is
+          gated on finishing the broader VM-decoupling (no interpreter bridge).
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.

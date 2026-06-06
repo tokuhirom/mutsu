@@ -1087,6 +1087,16 @@ impl Interpreter {
                 // @-sigiled values are list-like internally, but augmenting Array methods
                 // should still apply to them.
                 Some("Array")
+            } else if matches!(
+                target,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            ) {
+                // Callables follow the MRO Sub -> Routine -> Block -> Code -> Callable.
+                // A method augmented onto any ancestor (e.g. `augment class Block`)
+                // must still be found when invoked on a concrete Sub/Block value.
+                ["Routine", "Block", "Code", "Callable"]
+                    .into_iter()
+                    .find(|ancestor| self.has_user_method(ancestor, method))
             } else {
                 None
             };

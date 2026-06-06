@@ -510,7 +510,7 @@ impl VM {
             _ => {
                 // Boolifying a Failure marks it as handled
                 val.mark_failure_handled();
-                Value::Bool(val.truthy())
+                Value::Bool(self.eval_truthy(&val))
             }
         };
         self.stack.push(out);

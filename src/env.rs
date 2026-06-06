@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -88,16 +88,111 @@ fn note_closure_meta_key(key: &str) {
 #[derive(Clone)]
 pub struct Env {
     inner: Arc<HashMap<Symbol, Value>>,
+    /// Optional read-through "parent" tier: a snapshot of an enclosing call
+    /// frame's overlay. When present (a *scoped* env), name lookups fall through
+    /// overlay -> parent -> [`GLOBAL_BASE`], but `insert`/`remove`/`get_mut` and
+    /// iteration (`iter`/`keys`/`values`/`len`) operate on the overlay only.
+    ///
+    /// `parent=None` is the flat env: byte-identical to the pre-scoped behavior,
+    /// so every non-converted dispatch path and the ~80 env-iteration consumers
+    /// are unaffected. A scoped env is transient -- it is only ever the live
+    /// `self.env` during a converted call frame's own opcode execution; anything
+    /// that captures/clones the env across a boundary (`clone_env`,
+    /// `clone_for_thread`) flattens it first via [`Env::flattened`]. See
+    /// docs/vm-dual-store.md (Slice 6).
+    parent: Option<Arc<HashMap<Symbol, Value>>>,
+    /// Tombstones: keys `remove`d in this scoped overlay that still exist in the
+    /// `parent`/base tier. Because the overlay can only *add* shadowing entries,
+    /// a plain overlay `remove` cannot hide a parent key; a tombstone records
+    /// "this key is deleted in this scope" so `get`/`contains_key` stop falling
+    /// through to the parent. This is what makes "clear inherited state" idioms
+    /// (e.g. `my $x` clearing an outer `\x`'s `__mutsu_sigilless_readonly::x`)
+    /// behave correctly under a scoped overlay. `None` for flat envs (no scope to
+    /// shadow). Tombstones are dropped with the overlay on return and are never
+    /// merged back (a callee-local removal must not delete the caller's key).
+    tombstones: Option<HashSet<Symbol>>,
 }
 
 impl Env {
     pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(HashMap::new()),
+            parent: None,
+            tombstones: None,
         }
     }
 
-    /// Check whether two `Env` values point to the same underlying HashMap.
+    /// Create a *scoped child* env: an empty overlay that reads through to
+    /// `parent_overlay` (the caller frame's overlay snapshot) and then to
+    /// [`GLOBAL_BASE`]. Writes land in the (initially empty) overlay, so the
+    /// inherited entries are never `make_mut`-deep-copied. See docs/vm-dual-store.md.
+    pub(crate) fn scoped_child(parent_overlay: Arc<HashMap<Symbol, Value>>) -> Self {
+        Self {
+            inner: Arc::new(HashMap::new()),
+            parent: Some(parent_overlay),
+            tombstones: None,
+        }
+    }
+
+    /// True if `key` is tombstoned (removed) in this scoped overlay.
+    #[inline(always)]
+    fn is_tombstoned(&self, key: Symbol) -> bool {
+        self.tombstones.as_ref().is_some_and(|t| t.contains(&key))
+    }
+
+    /// True if this env has a parent tier (i.e. it is a scoped child).
+    #[inline(always)]
+    pub(crate) fn is_scoped(&self) -> bool {
+        self.parent.is_some()
+    }
+
+    /// O(1) handle to the overlay Arc, for installing a scoped child over it.
+    #[inline(always)]
+    pub(crate) fn overlay_arc(&self) -> Arc<HashMap<Symbol, Value>> {
+        Arc::clone(&self.inner)
+    }
+
+    /// Collapse a scoped env into a flat (`parent=None`) env. For a flat env
+    /// this is the O(1) `Arc` clone; for a scoped env it materializes
+    /// `parent` merged under `overlay` (overlay shadows parent) into a fresh flat
+    /// overlay. The base tier is never materialized (it stays shared). Used at
+    /// every boundary that captures/clones the env so no full-view iteration
+    /// consumer is starved of parent lexicals.
+    pub(crate) fn flattened(&self) -> Self {
+        match &self.parent {
+            None => self.clone(),
+            Some(parent) => {
+                let mut merged: HashMap<Symbol, Value> = (**parent).clone();
+                // Apply tombstones: a key removed in this scope must not survive
+                // into the flattened (flat) env.
+                if let Some(tomb) = &self.tombstones {
+                    for k in tomb {
+                        merged.remove(k);
+                    }
+                }
+                for (k, v) in self.inner.iter() {
+                    merged.insert(*k, v.clone());
+                }
+                Self {
+                    inner: Arc::new(merged),
+                    parent: None,
+                    tombstones: None,
+                }
+            }
+        }
+    }
+
+    /// Overlay-only iterator: yields exactly this frame's own writes (the
+    /// callee's overlay), excluding parent and base tiers. This is what a
+    /// merge-back wants -- the keys the callee actually wrote.
+    pub(crate) fn overlay_iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
+        self.inner.iter()
+    }
+
+    /// Check whether two `Env` values point to the same underlying overlay map.
+    /// Note: this compares the overlay only; two scoped envs sharing an overlay
+    /// but differing in parent would compare equal (callers that rely on ptr_eq
+    /// to detect "no writes happened" only ever use it on flat envs).
     #[allow(dead_code)]
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
@@ -113,6 +208,16 @@ impl Env {
         if let Some(v) = self.inner.get(&key) {
             return Some(v);
         }
+        // A tombstoned key is deleted in this scope: do not fall through to the
+        // parent/base tier.
+        if self.is_tombstoned(key) {
+            return None;
+        }
+        if let Some(parent) = &self.parent
+            && let Some(v) = parent.get(&key)
+        {
+            return Some(v);
+        }
         global_base().and_then(|b| b.get(&key))
     }
 
@@ -123,7 +228,14 @@ impl Env {
 
     #[inline]
     pub fn contains_key_sym(&self, key: Symbol) -> bool {
-        self.inner.contains_key(&key) || global_base().is_some_and(|b| b.contains_key(&key))
+        if self.inner.contains_key(&key) {
+            return true;
+        }
+        if self.is_tombstoned(key) {
+            return false;
+        }
+        self.parent.as_ref().is_some_and(|p| p.contains_key(&key))
+            || global_base().is_some_and(|b| b.contains_key(&key))
     }
 
     /// Copy-on-write access to the inner map for mutation. Equivalent to
@@ -138,25 +250,51 @@ impl Env {
         Arc::make_mut(&mut self.inner)
     }
 
+    /// Clear a tombstone for `key` (it is being re-inserted, so it is no longer
+    /// deleted in this scope). No-op for flat envs / un-tombstoned keys.
+    #[inline(always)]
+    fn untombstone(&mut self, key: Symbol) {
+        if let Some(t) = &mut self.tombstones {
+            t.remove(&key);
+        }
+    }
+
     #[inline]
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
         note_closure_meta_key(&key);
         let sym = Symbol::intern(&key);
+        self.untombstone(sym);
         self.cow_mut().insert(sym, value)
     }
 
     #[inline]
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
+        self.untombstone(key);
         self.cow_mut().insert(key, value)
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Value> {
-        let sym = Symbol::intern(key);
-        self.cow_mut().remove(&sym)
+        self.remove_sym(Symbol::intern(key))
     }
 
     pub fn remove_sym(&mut self, key: Symbol) -> Option<Value> {
-        self.cow_mut().remove(&key)
+        let from_overlay = self.cow_mut().remove(&key);
+        // Scoped env: if the key still exists in the parent/base tier, record a
+        // tombstone so it stops shadowing through. The visible value before
+        // removal is the overlay value if present, else the parent/base value.
+        if self.parent.is_some() {
+            let parent_val = self
+                .parent
+                .as_ref()
+                .and_then(|p| p.get(&key))
+                .or_else(|| global_base().and_then(|b| b.get(&key)));
+            if parent_val.is_some() {
+                let visible = from_overlay.or_else(|| parent_val.cloned());
+                self.tombstones.get_or_insert_with(HashSet::new).insert(key);
+                return visible;
+            }
+        }
+        from_overlay
     }
 
     pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
@@ -164,14 +302,25 @@ impl Env {
     }
 
     pub fn get_mut_sym(&mut self, key: Symbol) -> Option<&mut Value> {
-        // Promote a base-only key into the overlay before handing out a mutable
-        // reference, so in-place mutation of a built-in constant (rare) is not
-        // silently lost. Common case (overlay hit, or absent) pays nothing extra.
-        if !self.inner.contains_key(&key)
-            && let Some(v) = global_base().and_then(|b| b.get(&key))
-        {
-            let v = v.clone();
-            self.cow_mut().insert(key, v);
+        // Promote a parent-tier or base-only key into the overlay before handing
+        // out a mutable reference, so a write to a caller lexical (scoped env) or
+        // a built-in constant lands in this frame's overlay and is not silently
+        // lost. Common case (overlay hit, or absent) pays nothing extra. A
+        // tombstoned key is deleted in this scope, so it is not promoted.
+        if !self.inner.contains_key(&key) {
+            if self.is_tombstoned(key) {
+                return None;
+            }
+            let promote = self
+                .parent
+                .as_ref()
+                .and_then(|p| p.get(&key))
+                .or_else(|| global_base().and_then(|b| b.get(&key)))
+                .cloned();
+            if let Some(v) = promote {
+                self.untombstone(key);
+                self.cow_mut().insert(key, v);
+            }
         }
         self.cow_mut().get_mut(&key)
     }
@@ -207,6 +356,11 @@ impl Env {
         let mut out: HashMap<String, Value> = global_base()
             .map(|b| b.iter().map(|(k, v)| (k.resolve(), v.clone())).collect())
             .unwrap_or_default();
+        if let Some(parent) = &self.parent {
+            for (k, v) in parent.iter() {
+                out.insert(k.resolve(), v.clone());
+            }
+        }
         for (k, v) in self.inner.iter() {
             out.insert(k.resolve(), v.clone());
         }
@@ -271,6 +425,8 @@ impl From<HashMap<String, Value>> for Env {
             .collect();
         Self {
             inner: Arc::new(sym_map),
+            parent: None,
+            tombstones: None,
         }
     }
 }
@@ -279,6 +435,8 @@ impl From<HashMap<Symbol, Value>> for Env {
     fn from(map: HashMap<Symbol, Value>) -> Self {
         Self {
             inner: Arc::new(map),
+            parent: None,
+            tombstones: None,
         }
     }
 }

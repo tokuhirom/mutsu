@@ -3071,6 +3071,14 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Instance { attributes, .. } => {
             attributes.get("__mutsu_int_value").and_then(to_float_value)
         }
+        // A numeric type object (e.g. `Rat`, `FatRat`, `Int`) numifies to 0 in
+        // numeric context (Raku warns "Use of uninitialized value"). This makes
+        // `(Rat) == 0` true, matching Rakudo.
+        Value::Package(name) => match name.resolve().as_str() {
+            "Int" | "UInt" | "Rat" | "FatRat" | "Num" | "Rational" | "Complex" | "Numeric"
+            | "Real" | "IntStr" | "RatStr" | "NumStr" | "ComplexStr" => Some(0.0),
+            _ => None,
+        },
         _ => None,
     }
 }

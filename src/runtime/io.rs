@@ -3250,7 +3250,16 @@ impl Interpreter {
         self.doc_comment_list.clear();
         let mut pending_leading: Option<String> = None;
         // The last declaration that can receive trailing #= comments
-        let mut last_declarant: Option<(String, super::DocDeclKind, u32)> = None;
+        // (doc_key, kind, decl_line, callable_type_override, is_proto, return_type)
+        #[allow(clippy::type_complexity)]
+        let mut last_declarant: Option<(
+            String,
+            super::DocDeclKind,
+            u32,
+            Option<&'static str>,
+            bool,
+            Option<String>,
+        )> = None;
         // Track the current class scope for method doc keys
         let mut current_class: Option<String> = None;
         // Stack of class scopes for nested classes
@@ -3860,7 +3869,14 @@ impl Interpreter {
             // Trailing doc comment (#=) on its own line
             if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#=") {
                 if !text.is_empty()
-                    && let Some((ref name, ref kind, decl_line)) = last_declarant
+                    && let Some((
+                        ref name,
+                        ref kind,
+                        decl_line,
+                        callable_type_ovr,
+                        is_proto,
+                        ref return_type,
+                    )) = last_declarant
                 {
                     let entry =
                         self.doc_comments
@@ -3871,6 +3887,22 @@ impl Interpreter {
                                 ..Default::default()
                             });
                     entry.trailing = append_doc_text(entry.trailing.take(), &text);
+                    // Carry the declaration's callable type / proto / return type
+                    // so a standalone trailing #= produces the correct WHEREFORE
+                    // type in $=pod (e.g. Method/Submethod/Routine, not Sub).
+                    if entry.callable_type_override.is_none()
+                        && let Some(ct) = callable_type_ovr
+                    {
+                        entry.callable_type_override = Some(ct.to_string());
+                    }
+                    if is_proto {
+                        entry.is_proto = true;
+                    }
+                    if entry.return_type.is_none()
+                        && let Some(rt) = return_type
+                    {
+                        entry.return_type = Some(rt.clone());
+                    }
                     // Ensure source_line is set so proximity matching works
                     if entry.source_line.is_none() {
                         entry.source_line = Some(decl_line);
@@ -4039,6 +4071,24 @@ impl Interpreter {
                 let leading = pending_leading.take();
                 let has_leading = leading.is_some();
                 let has_inline_trailing = inline_trailing.is_some();
+                // Extract return type for "anon Type sub {}" patterns. Computed
+                // unconditionally so a standalone trailing #= (which attaches via
+                // last_declarant) can carry the return type into $=pod.
+                let return_type_ovr: Option<String> = if name == "&<anon>" {
+                    check_line.find("anon ").and_then(|anon_pos| {
+                        let after_anon = &check_line[anon_pos + 5..];
+                        after_anon.find("sub").and_then(|sub_pos| {
+                            let type_part = after_anon[..sub_pos].trim();
+                            if type_part.is_empty() {
+                                None
+                            } else {
+                                Some(type_part.to_string())
+                            }
+                        })
+                    })
+                } else {
+                    None
+                };
                 // Only create doc_comments entry if there's actual doc content
                 if has_leading || has_inline_trailing {
                     let entry =
@@ -4062,21 +4112,21 @@ impl Interpreter {
                     if let Some(ref trail) = inline_trailing {
                         entry.trailing = append_doc_text(entry.trailing.take(), trail);
                     }
-                    // Extract return type for "anon Type sub {}" patterns
-                    if name == "&<anon>"
-                        && let Some(anon_pos) = check_line.find("anon ")
+                    if entry.return_type.is_none()
+                        && let Some(ref rt) = return_type_ovr
                     {
-                        let after_anon = &check_line[anon_pos + 5..];
-                        if let Some(sub_pos) = after_anon.find("sub") {
-                            let type_part = after_anon[..sub_pos].trim();
-                            if !type_part.is_empty() {
-                                entry.return_type = Some(type_part.to_string());
-                            }
-                        }
+                        entry.return_type = Some(rt.clone());
                     }
                 }
                 // Always set last_declarant so trailing #= on the next line can attach
-                last_declarant = Some((doc_key, kind.clone(), (idx + 1) as u32));
+                last_declarant = Some((
+                    doc_key,
+                    kind.clone(),
+                    (idx + 1) as u32,
+                    callable_type_ovr,
+                    dispatch == DispatchPrefix::Proto,
+                    return_type_ovr,
+                ));
                 // Track the current function for parameter scoping
                 if kind == super::DocDeclKind::Sub {
                     current_sub = Some(name.clone());
@@ -4143,7 +4193,14 @@ impl Interpreter {
                     }
                 }
                 // Set last_declarant so trailing #= on the next line can attach
-                last_declarant = Some((param_key, super::DocDeclKind::Param, (idx + 1) as u32));
+                last_declarant = Some((
+                    param_key,
+                    super::DocDeclKind::Param,
+                    (idx + 1) as u32,
+                    None,
+                    false,
+                    None,
+                ));
             } else {
                 // Not a recognized declaration — discard pending leading
                 pending_leading = None;

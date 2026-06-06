@@ -41,6 +41,7 @@ roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 roast/S02-lexical-conventions/sub-block-parsing.t
 roast/S02-lexical-conventions/unicode-whitespace.t
 roast/S02-lexical-conventions/unicode.t
+roast/S02-lexical-conventions/unspace.t
 roast/S02-lists/indexing.t
 roast/S02-lists/tree.t
 roast/S02-literals/adverbs.t
@@ -90,7 +91,6 @@ roast/S02-magicals/subname.t
 roast/S02-names-vars/contextual.t
 roast/S02-names-vars/fmt.t
 roast/S02-names-vars/list_array_perl.t
-roast/S02-names-vars/perl.t
 roast/S02-names-vars/signature.t
 roast/S02-names-vars/varnames.t
 roast/S02-names/SETTING-6e.t
@@ -935,12 +935,14 @@ roast/S26-documentation/14-defn.t
 roast/S26-documentation/15-numbered-alias.t
 roast/S26-documentation/block-leading-user-format.t
 roast/S26-documentation/block-leading.t
+roast/S26-documentation/block-trailing.t
 roast/S26-documentation/module-comment.t
 roast/S26-documentation/multiline-leading.t
 roast/S26-documentation/multiline-trailing.t
 roast/S26-documentation/wacky.t
 roast/S26-documentation/why-both.t
 roast/S26-documentation/why-leading.t
+roast/S26-documentation/why-trailing.t
 roast/S28-named-variables/cwd.t
 roast/S28-named-variables/init-instant.t
 roast/S28-named-variables/slangs.t
@@ -1106,6 +1108,7 @@ roast/S32-num/polar.t
 roast/S32-num/polymod.t
 roast/S32-num/power.t
 roast/S32-num/rand.t
+roast/S32-num/rat.t
 roast/S32-num/real-bridge.t
 roast/S32-num/roots.t
 roast/S32-num/rounders.t

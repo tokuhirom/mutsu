@@ -2948,6 +2948,14 @@ impl Value {
             } if class_name == "Instant" || class_name == "Duration" => {
                 attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0)
             }
+            // A subclass of native Int (e.g. `class Foo is Int`) carries its
+            // integer payload in the reserved `__mutsu_int_value` attribute.
+            Value::Instance { attributes, .. } if attributes.contains_key("__mutsu_int_value") => {
+                attributes
+                    .get("__mutsu_int_value")
+                    .map(|v| v.to_f64())
+                    .unwrap_or(0.0)
+            }
             // Match coerces to Numeric via its matched string
             Value::Instance {
                 class_name,
@@ -2984,6 +2992,13 @@ impl Value {
             Value::Str(s) => s
                 .parse::<NumBigInt>()
                 .unwrap_or_else(|_| NumBigInt::from(0)),
+            // A subclass of native Int (e.g. `class Foo is Int`) carries its
+            // integer payload in the reserved `__mutsu_int_value` attribute.
+            Value::Instance { attributes, .. } => attributes
+                .get("__mutsu_int_value")
+                .map(|v| v.to_bigint())
+                .unwrap_or_else(|| NumBigInt::from(0)),
+            Value::Mixin(inner, _) => inner.to_bigint(),
             _ => NumBigInt::from(0),
         }
     }
