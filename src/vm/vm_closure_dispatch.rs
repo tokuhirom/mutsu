@@ -207,6 +207,19 @@ impl VM {
 
         self.interpreter.inject_pending_callsite_line();
 
+        // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
+        // born-owned overlay over the (flat) caller so the captured-env merge,
+        // per-instance state, &?BLOCK / callable_id setup, param binding and the
+        // body's writes all land in a fresh map instead of forking the caller env.
+        // `frame.saved_env` holds the flat caller for restoration; the exit
+        // writeback iterates this overlay (overlay-only) = exactly the closure's
+        // own mutations, which is what it must propagate back to the caller.
+        {
+            let parent_overlay = self.interpreter.env().overlay_arc();
+            self.interpreter
+                .set_env(crate::env::Env::scoped_child(parent_overlay));
+        }
+
         // Merge captured environment into current env (or_insert = don't overwrite existing).
         // Key directly by the captured Symbol to avoid a resolve()+re-intern per entry.
         for (k, v) in data.env.iter() {
