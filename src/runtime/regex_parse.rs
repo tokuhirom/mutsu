@@ -2924,7 +2924,14 @@ impl Interpreter {
                     let needs_capture_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
-                        for alt in alternatives {
+                        for (alt_idx, alt) in alternatives.iter().enumerate() {
+                            // A leading null alternative is ignored in Raku: `( || X )`
+                            // and `( | X )` behave like `( X )`. Skip a whitespace-only
+                            // first alternative so it does not contribute a spurious
+                            // empty-matching (and, under ratchet, empty-winning) branch.
+                            if alt_idx == 0 && alt.trim().is_empty() {
+                                continue;
+                            }
                             let parsed_alt = if needs_capture_scope {
                                 let mut scoped = String::new();
                                 if ignore_case {
@@ -2940,40 +2947,46 @@ impl Interpreter {
                                     scoped.push_str(":m ");
                                 }
                                 if sigspace {
-                                    scoped.push_str(&alt);
+                                    scoped.push_str(alt);
                                 } else {
                                     scoped.push_str(alt.trim_end());
                                 }
                                 self.parse_regex(&scoped)
                             } else {
-                                self.parse_regex(&alt)
+                                self.parse_regex(alt)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
                             }
                         }
-                        let group_atom = if cap_is_sequential {
-                            RegexAtom::SequentialAlternation(alt_patterns)
+                        if alt_patterns.len() == 1 {
+                            // Only one real alternative remained after dropping the
+                            // leading null: treat it as a plain (capturing) group.
+                            RegexAtom::CaptureGroup(alt_patterns.into_iter().next().unwrap())
                         } else {
-                            try_collapse_alternation_to_charclass(&alt_patterns)
-                                .unwrap_or(RegexAtom::Alternation(alt_patterns))
-                        };
-                        let group_pat = RegexPattern {
-                            tokens: vec![RegexToken {
-                                atom: group_atom,
-                                quant: RegexQuant::One,
-                                named_capture: None,
-                                hash_capture: None,
-                                secondary_named_capture: None,
-                                ratchet: false,
-                                frugal: false,
-                            }],
-                            anchor_start: false,
-                            anchor_end: false,
-                            ignore_case,
-                            ignore_mark,
-                        };
-                        RegexAtom::CaptureGroup(group_pat)
+                            let group_atom = if cap_is_sequential {
+                                RegexAtom::SequentialAlternation(alt_patterns)
+                            } else {
+                                try_collapse_alternation_to_charclass(&alt_patterns)
+                                    .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                            };
+                            let group_pat = RegexPattern {
+                                tokens: vec![RegexToken {
+                                    atom: group_atom,
+                                    quant: RegexQuant::One,
+                                    named_capture: None,
+                                    hash_capture: None,
+                                    secondary_named_capture: None,
+                                    ratchet: false,
+                                    frugal: false,
+                                }],
+                                anchor_start: false,
+                                anchor_end: false,
+                                ignore_case,
+                                ignore_mark,
+                            };
+                            RegexAtom::CaptureGroup(group_pat)
+                        }
                     } else {
                         let parsed_group = if needs_capture_scope {
                             let mut scoped = String::new();
@@ -3030,7 +3043,14 @@ impl Interpreter {
                     let needs_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
-                        for alt in alternatives {
+                        for (alt_idx, alt) in alternatives.iter().enumerate() {
+                            // A leading null alternative is ignored in Raku: `[ || X ]`
+                            // and `[ | X ]` behave like `[ X ]`. Skip a whitespace-only
+                            // first alternative so it does not contribute a spurious
+                            // empty-matching (and, under ratchet, empty-winning) branch.
+                            if alt_idx == 0 && alt.trim().is_empty() {
+                                continue;
+                            }
                             let parsed_alt = if needs_scope {
                                 let mut scoped = String::new();
                                 if ignore_case {
@@ -3048,19 +3068,23 @@ impl Interpreter {
                                 // In sigspace mode, preserve trailing whitespace so it
                                 // becomes \s* — needed for quantified groups.
                                 if sigspace {
-                                    scoped.push_str(&alt);
+                                    scoped.push_str(alt);
                                 } else {
                                     scoped.push_str(alt.trim_end());
                                 }
                                 self.parse_regex(&scoped)
                             } else {
-                                self.parse_regex(&alt)
+                                self.parse_regex(alt)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
                             }
                         }
-                        if bracket_is_sequential {
+                        if alt_patterns.len() == 1 {
+                            // Only one real alternative remained after dropping the
+                            // leading null: treat it as a plain non-capturing group.
+                            RegexAtom::Group(alt_patterns.into_iter().next().unwrap())
+                        } else if bracket_is_sequential {
                             RegexAtom::SequentialAlternation(alt_patterns)
                         } else {
                             try_collapse_alternation_to_charclass(&alt_patterns)
