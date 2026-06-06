@@ -1046,6 +1046,20 @@ pub(crate) struct CompiledCode {
     /// the entire (~100-entry) captured env. Empty until `compute_free_vars`
     /// runs (during `compute_needs_env_sync`).
     pub(crate) free_var_syms: Vec<Symbol>,
+    /// Free variables (names not in this code's own locals) that this code or a
+    /// nested closure *writes* (assign / inc-dec / bind). Folded up from nested
+    /// closures so an enclosing scope can tell which of *its* locals are mutated
+    /// from inside a closure. Used to compute `captured_mutated_locals`.
+    pub(crate) free_var_writes: Vec<Symbol>,
+    /// Own locals that are BOTH captured by a nested closure AND mutated after
+    /// their declaration (reassigned/inc-dec in this scope, or written from
+    /// inside a nested closure). Such a local must be a shared container so the
+    /// closure observes the mutation and sibling closures share one cell (Raku
+    /// "a closure captures the container"). The VM boxes these into a
+    /// `ContainerRef` at closure-capture time (see `box_captured_lexicals`).
+    /// Declaration-only / read-only captures are excluded on purpose: boxing
+    /// them is unnecessary and trips ContainerRef-unaware paths.
+    pub(crate) captured_mutated_locals: Vec<Symbol>,
     /// True if this code contains any call opcode (function/method/closure
     /// invocation). Set during `emit()`. The closure exit-writeback skip uses
     /// this as the "is this a leaf closure" test: a non-leaf closure may have a
@@ -1087,6 +1101,8 @@ impl CompiledCode {
             attr_slots: Vec::new(),
             needs_env_sync: Vec::new(),
             free_var_syms: Vec::new(),
+            free_var_writes: Vec::new(),
+            captured_mutated_locals: Vec::new(),
             has_calls: false,
         }
     }
@@ -1303,6 +1319,25 @@ impl CompiledCode {
         }
     }
 
+    /// The constant-pool index naming the variable an op *writes* by name
+    /// (assignment / increment / decrement). Subset of `op_name_const_idx` that
+    /// excludes pure reads. Used to compute `free_var_writes` /
+    /// `captured_mutated_locals`. NOTE: declaration (`SetLocal` after
+    /// `MarkVarDeclContext`) and own-local reassignment (`AssignExprLocal`) are
+    /// slot-based and handled separately by the caller.
+    fn op_name_write_const_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::SetGlobal(idx)
+            | OpCode::SetGlobalRaw(idx)
+            | OpCode::PostIncrement(idx)
+            | OpCode::PostDecrement(idx)
+            | OpCode::PreIncrement(idx)
+            | OpCode::PreDecrement(idx)
+            | OpCode::AssignExpr(idx) => Some(*idx),
+            _ => None,
+        }
+    }
+
     /// Compute `free_var_syms`: the names this code references from an enclosing
     /// scope (GetGlobal-family ops whose name is not one of this code's own
     /// locals), unioned with the free variables of nested closures that are not
@@ -1312,22 +1347,82 @@ impl CompiledCode {
     pub(crate) fn compute_free_vars(&mut self) {
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        // Free variables this code (or a nested closure) *writes*.
+        let mut free_writes: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        // Own locals that are mutated *after* declaration within this code
+        // (reassigned, or inc/dec by name). Both a `my $x = e` declaration and a
+        // plain `$x = e` reassignment compile to `SetLocal(slot)`; the ONLY
+        // distinguisher is a preceding `MarkVarDeclContext` (declaration). A
+        // `SetLocal` without a pending decl marker is a mutation.
+        let mut self_mutated: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        let mut pending_decl = false;
         for op in &self.ops {
+            // Read+write free-var set (names referenced from an enclosing scope).
             if let Some(idx) = Self::op_name_const_idx(op)
                 && let Some(Value::Str(name)) = self.constants.get(idx as usize)
                 && !own.contains(name.as_str())
             {
                 free.insert(Symbol::intern(name));
             }
+            // Name-based writes: either a free-var write or an own-local mutation.
+            if let Some(idx) = Self::op_name_write_const_idx(op)
+                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+            {
+                if own.contains(name.as_str()) {
+                    self_mutated.insert(Symbol::intern(name));
+                } else {
+                    free_writes.insert(Symbol::intern(name));
+                }
+            }
+            match op {
+                OpCode::MarkVarDeclContext => pending_decl = true,
+                OpCode::SetLocal(slot) => {
+                    if !pending_decl && let Some(name) = self.locals.get(*slot as usize) {
+                        // Reassignment of an own local (declaration consumes the
+                        // pending marker instead).
+                        self_mutated.insert(Symbol::intern(name));
+                    }
+                    pending_decl = false;
+                }
+                OpCode::AssignExprLocal(slot) => {
+                    if let Some(name) = self.locals.get(*slot as usize) {
+                        self_mutated.insert(Symbol::intern(name));
+                    }
+                    pending_decl = false;
+                }
+                _ => {}
+            }
         }
+        // Fold nested closures: their free vars are ours unless we declare them;
+        // their free-var *writes* of one of our locals make that local mutated.
         for nested in &self.closure_compiled_codes {
             for sym in &nested.free_var_syms {
                 if !sym.with_str(|s| own.contains(s)) {
                     free.insert(*sym);
                 }
             }
+            for sym in &nested.free_var_writes {
+                if sym.with_str(|s| own.contains(s)) {
+                    self_mutated.insert(*sym);
+                } else {
+                    free_writes.insert(*sym);
+                }
+            }
+        }
+        // Own locals captured by a nested closure AND mutated -> must be boxed
+        // into a shared container at capture time.
+        let mut captured_mutated: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
+        for nested in &self.closure_compiled_codes {
+            for sym in &nested.free_var_syms {
+                if sym.with_str(|s| own.contains(s)) && self_mutated.contains(sym) {
+                    captured_mutated.insert(*sym);
+                }
+            }
         }
         self.free_var_syms = free.into_iter().collect();
+        self.free_var_writes = free_writes.into_iter().collect();
+        self.captured_mutated_locals = captured_mutated.into_iter().collect();
     }
 
     /// Store a compiled closure body and return its index.

@@ -222,10 +222,19 @@ impl VM {
 
         // Merge captured environment into current env (or_insert = don't overwrite existing).
         // Key directly by the captured Symbol to avoid a resolve()+re-intern per entry.
+        // EXCEPTION: a `ContainerRef` captured value is a *shared container cell*
+        // (box-on-capture, lever C Slice 2). It is the single source of truth for
+        // that lexical, so it must OVERWRITE any stale plain value the caller env
+        // currently holds (e.g. a later loop iteration's slot re-injection) — the
+        // don't-overwrite default would otherwise hide this closure's own cell.
         for (k, v) in data.env.iter() {
-            self.interpreter
-                .env_mut()
-                .entry_or_insert_sym(*k, v.clone());
+            if matches!(v, Value::ContainerRef(_)) {
+                self.interpreter.env_mut().insert_sym(*k, v.clone());
+            } else {
+                self.interpreter
+                    .env_mut()
+                    .entry_or_insert_sym(*k, v.clone());
+            }
         }
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
         // variables were declared in an enclosing loop body when this closure was
@@ -255,6 +264,12 @@ impl VM {
             .free_var_syms
             .iter()
             .filter_map(|k| {
+                // Skip box-on-capture cells: a ContainerRef-captured lexical is a
+                // shared container, not per-instance frozen state, so the stale
+                // closure_captured_state value must not clobber the live Arc.
+                if matches!(data.env.get_sym(*k), Some(Value::ContainerRef(_))) {
+                    return None;
+                }
                 self.interpreter
                     .get_closure_captured_state(data.id, *k)
                     .map(|val| (*k, val.clone()))
