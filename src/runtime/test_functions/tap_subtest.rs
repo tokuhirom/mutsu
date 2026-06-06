@@ -39,9 +39,7 @@ impl Interpreter {
         };
         let ctx = self.begin_subtest();
         // Override the default (true) set by begin_subtest
-        if let Some(last) = self.subtest_callable_is_sub.last_mut() {
-            *last = callable_is_sub;
-        }
+        self.tap.set_subtest_callable_is_sub_last(callable_is_sub);
         let saved_env = self.env.clone();
         let saved_functions = self.functions.clone();
         let saved_proto_functions = self.proto_functions.clone();
@@ -61,11 +59,10 @@ impl Interpreter {
             && e.message.starts_with("Must give `subtest`")
         {
             // Restore state before propagating
-            self.test_state = ctx.parent_test_state;
+            self.tap.set_state(ctx.parent_test_state);
             self.output = ctx.parent_output;
             self.halted = ctx.parent_halted;
-            self.subtest_depth = self.subtest_depth.saturating_sub(1);
-            self.subtest_callable_is_sub.pop();
+            self.tap.end_subtest();
             self.env = saved_env;
             self.functions = saved_functions;
             self.proto_functions = saved_proto_functions;

@@ -980,10 +980,10 @@ impl Interpreter {
             self.stderr_output.push_str(&report);
             self.stderr_output.push('\n');
         }
-        if self.bailed_out {
+        if self.tap.bailed_out() {
             return Ok(());
         }
-        if let Some(state) = &self.test_state {
+        if let Some(state) = self.tap.state() {
             let plan_mismatch = matches!(state.planned, Some(planned) if planned != state.ran);
             if state.failed > 0 {
                 self.emit_test_summary_diag(state.planned, state.ran, state.failed);

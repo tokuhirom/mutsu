@@ -219,7 +219,7 @@ impl Interpreter {
 
         let ctx = self.begin_subtest();
         let total = 2 + named_checks.len();
-        let state = self.test_state.get_or_insert_with(TestState::new);
+        let state = self.tap.ensure_state();
         state.planned = Some(total);
         self.emit_output(&format!("1..{}\n", total));
         self.test_ok(result.is_err(), "code dies", false)?;
@@ -433,7 +433,7 @@ impl Interpreter {
         let type_display = type_names.join(", ");
 
         let ctx = self.begin_subtest();
-        let state = self.test_state.get_or_insert_with(TestState::new);
+        let state = self.tap.ensure_state();
         state.planned = Some(2);
         self.emit_output("1..2\n");
         self.test_ok(result.is_err(), "code dies", false)?;

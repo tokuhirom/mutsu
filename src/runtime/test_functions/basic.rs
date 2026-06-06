@@ -142,8 +142,8 @@ impl Interpreter {
             // In Raku, `plan skip-all` inside a subtest uses `return` to exit the
             // callable. `return` only works in a Sub or Method, not a Block.
             // If we're inside a subtest with a Block callable, die with an error.
-            if self.subtest_depth > 0
-                && let Some(&false) = self.subtest_callable_is_sub.last()
+            if self.tap.subtest_depth() > 0
+                && self.tap.subtest_callable_is_sub_last() == Some(false)
             {
                 let msg = "Must give `subtest` a (Sub) or a (Method) to be able to use \
                            `skip-all` plan inside, but you gave a (Block)";
@@ -153,7 +153,7 @@ impl Interpreter {
                 self.halted = true;
                 return Err(RuntimeError::new(msg));
             }
-            self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
+            self.tap.ensure_state().planned = Some(0);
             let reason_str = reason.to_string_value();
             if reason_str.is_empty() || reason_str == "True" {
                 self.emit_output("1..0 # Skipped: no reason given\n");
@@ -178,7 +178,7 @@ impl Interpreter {
                 Value::FatRat(n, d) if *d != 0 && *n >= 0 && *n % *d == 0 => (*n / *d) as usize,
                 _ => return Err(RuntimeError::new("plan expects Int")),
             };
-            self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);
+            self.tap.ensure_state().planned = Some(planned);
             self.emit_output(&format!("1..{}\n", planned));
         }
         Ok(Value::Nil)
@@ -186,19 +186,19 @@ impl Interpreter {
 
     pub(crate) fn test_fn_done_testing(&mut self) -> Result<Value, RuntimeError> {
         let already_planned = {
-            let state = self.test_state.get_or_insert_with(TestState::new);
+            let state = self.tap.ensure_state();
             state.planned.is_some()
         };
         if !already_planned {
             let ran = {
-                let state = self.test_state.get_or_insert_with(TestState::new);
+                let state = self.tap.ensure_state();
                 state.planned = Some(state.ran);
                 state.ran
             };
             self.emit_output(&format!("1..{}\n", ran));
         }
         // Return True if all tests passed and plan matches, False otherwise
-        let state = self.test_state.as_ref().unwrap();
+        let state = self.tap.state().unwrap();
         let plan_matches = match state.planned {
             Some(planned) => planned == state.ran,
             None => true,
@@ -216,7 +216,7 @@ impl Interpreter {
         // Raku TAP format: `ok N - # SKIP reason` with `#` in reason escaped as ` \#`
         let escaped_desc = desc.replace('#', " \\#");
         let mut lines = Vec::with_capacity(count);
-        let state = self.test_state.get_or_insert_with(TestState::new);
+        let state = self.tap.ensure_state();
         for _ in 0..count {
             state.next_ran();
             if escaped_desc.is_empty() {
@@ -236,7 +236,7 @@ impl Interpreter {
         let escaped_desc = desc.replace('#', " \\#");
         let mut lines = Vec::new();
         {
-            let state = self.test_state.get_or_insert_with(TestState::new);
+            let state = self.tap.ensure_state();
             if let Some(planned) = state.planned {
                 while state.ran < planned {
                     state.next_ran();
@@ -263,7 +263,7 @@ impl Interpreter {
             self.emit_output(&format!("Bail out! {}\n", desc));
         }
         self.halted = true;
-        self.bailed_out = true;
+        self.tap.set_bailed_out();
         Ok(Value::Nil)
     }
 
@@ -273,7 +273,7 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(1);
-        let state = self.test_state.get_or_insert_with(TestState::new);
+        let state = self.tap.ensure_state();
         let start = state.ran + 1;
         let end = start + count - 1;
         state.force_todo.push(TodoRange { start, end, reason });

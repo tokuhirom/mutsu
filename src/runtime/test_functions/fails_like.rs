@@ -132,16 +132,16 @@ impl Interpreter {
                 let fail_msg = format!("expected code to fail but it threw {} instead", ex_class);
                 // Emit as a single failing subtest
                 let ctx = self.begin_subtest();
-                let state = self.test_state.get_or_insert_with(TestState::new);
+                let state = self.tap.ensure_state();
                 state.planned = Some(2);
                 self.emit_output("1..2\n");
                 self.test_ok(false, &fail_msg, false)?;
                 // Skip the second test since the first failed
                 {
-                    let state = self.test_state.get_or_insert_with(TestState::new);
+                    let state = self.tap.ensure_state();
                     state.next_ran();
                 }
-                let ran = self.test_state.as_ref().map(|s| s.ran).unwrap_or(0);
+                let ran = self.tap.state().map(|s| s.ran).unwrap_or(0);
                 self.emit_output(&format!("ok {} - # SKIP {}\n", ran, fail_msg));
                 self.finish_subtest(ctx, &label, Err(RuntimeError::new("")))?;
                 return Ok(Value::Bool(false));
@@ -156,7 +156,7 @@ impl Interpreter {
 
         // Outer subtest: "code returned a Failure" + inner "Failure threw when sunk"
         let outer_ctx = self.begin_subtest();
-        let state = self.test_state.get_or_insert_with(TestState::new);
+        let state = self.tap.ensure_state();
         state.planned = Some(2);
         self.emit_output("1..2\n");
 
@@ -223,7 +223,7 @@ impl Interpreter {
         };
 
         let inner_total = 2 + named_checks.len();
-        let state = self.test_state.get_or_insert_with(TestState::new);
+        let state = self.tap.ensure_state();
         state.planned = Some(inner_total);
         self.emit_output(&format!("1..{}\n", inner_total));
 
@@ -232,10 +232,10 @@ impl Interpreter {
         if !code_died {
             // Skip remaining tests
             {
-                let state = self.test_state.get_or_insert_with(TestState::new);
+                let state = self.tap.ensure_state();
                 state.next_ran();
             }
-            let ran = self.test_state.as_ref().map(|s| s.ran).unwrap_or(0);
+            let ran = self.tap.state().map(|s| s.ran).unwrap_or(0);
             self.emit_output(&format!(
                 "ok {} - # SKIP Code did not die, can not check exception\n",
                 ran

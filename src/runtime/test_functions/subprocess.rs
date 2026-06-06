@@ -331,7 +331,7 @@ impl Interpreter {
         let stderr_content = nested.stderr_output.clone();
         match result {
             Ok(output) => {
-                let s = if nested.bailed_out {
+                let s = if nested.tap.bailed_out() {
                     255i64
                 } else {
                     nested.exit_code
