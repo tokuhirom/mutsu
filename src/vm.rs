@@ -105,6 +105,11 @@ pub(crate) struct VM {
     container_ref_reversed: bool,
     /// Source variable name for topic binding in for loops
     topic_source_var: Option<String>,
+    /// rw aggregate view writeback for `for @a.grep(...) { $_++ }`: when the
+    /// for-loop iterable is a grep result with a registered grep-view binding,
+    /// this holds (source array Arc, per-filtered-index source indices, kind)
+    /// so the loop can write modified topics back to the original array slots.
+    for_grep_view: Option<(Arc<Vec<Value>>, Vec<usize>, crate::value::ArrayKind)>,
     /// Names of multi-param for-loop bindings (`-> %a, %b`) whose `%`/`@` params
     /// must preserve a QuantHash (Set/Bag/Mix) value rather than coercing it to
     /// a plain Hash, matching Raku's parameter-binding semantics.
@@ -362,6 +367,7 @@ impl VM {
             container_ref_var: None,
             container_ref_reversed: false,
             topic_source_var: None,
+            for_grep_view: None,
             quanthash_bind_params: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
