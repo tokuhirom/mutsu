@@ -170,7 +170,7 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::Stderr => {
-                if self.subtest_depth == 0 && self.immediate_stdout {
+                if self.tap.subtest_depth() == 0 && self.immediate_stdout {
                     use std::io::Write;
                     let _ = std::io::stderr().write_all(payload.as_bytes());
                     let _ = std::io::stderr().flush();
@@ -267,7 +267,7 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::Stderr => {
-                if self.subtest_depth == 0 && self.immediate_stdout {
+                if self.tap.subtest_depth() == 0 && self.immediate_stdout {
                     use std::io::Write;
                     let _ = std::io::stderr().write_all(bytes);
                     let _ = std::io::stderr().flush();

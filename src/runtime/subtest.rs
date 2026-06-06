@@ -49,14 +49,12 @@ impl Interpreter {
     }
 
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
-        let parent_test_state = self.test_state.take();
         let parent_output = std::mem::take(&mut self.output);
         let parent_halted = self.halted;
-        self.test_state = Some(TestState::new());
+        // Stash the parent TAP state, install a fresh one, and push the subtest
+        // stack (defaulting the callable kind to Sub; callers override after).
+        let parent_test_state = self.tap.begin_subtest();
         self.halted = false;
-        self.subtest_depth += 1;
-        // Default to true (Sub); callers like test_fn_subtest override after.
-        self.subtest_callable_is_sub.push(true);
         SubtestContext {
             parent_test_state,
             parent_output,
@@ -71,17 +69,16 @@ impl Interpreter {
         run_result: Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let mut subtest_output = std::mem::take(&mut self.output);
-        let subtest_state = self.test_state.take();
+        let subtest_state = self.tap.take_state();
         let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
         let subtest_ran = subtest_state.as_ref().map(|s| s.ran).unwrap_or(0);
         let has_plan = subtest_state.as_ref().and_then(|s| s.planned).is_some();
 
-        self.test_state = ctx.parent_test_state;
+        self.tap.set_state(ctx.parent_test_state);
         self.output = ctx.parent_output;
         self.halted = ctx.parent_halted;
-        self.subtest_depth = self.subtest_depth.saturating_sub(1);
-        self.subtest_callable_is_sub.pop();
-        let parent_forced_todo_reason = self.test_state.as_ref().and_then(|state| {
+        self.tap.end_subtest();
+        let parent_forced_todo_reason = self.tap.state().and_then(|state| {
             let next = state.ran + 1;
             state
                 .force_todo
@@ -114,7 +111,7 @@ impl Interpreter {
         let subtest_had_not_ok = rendered_lines
             .iter()
             .any(|line| line.trim_start().starts_with("not ok "));
-        let parent_historical_todo_reason = self.test_state.as_ref().and_then(|state| {
+        let parent_historical_todo_reason = self.tap.state().and_then(|state| {
             state
                 .force_todo
                 .iter()

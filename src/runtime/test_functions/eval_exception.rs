@@ -162,7 +162,7 @@ impl Interpreter {
                 _ => {}
             }
         }
-        let state = self.test_state.get_or_insert_with(TestState::new);
+        let state = self.tap.ensure_state();
         state.force_todo.extend(ranges);
         Ok(Value::Nil)
     }
@@ -358,7 +358,7 @@ impl Interpreter {
             desc
         };
         let ctx = self.begin_subtest();
-        let test_state = self.test_state.as_mut().unwrap();
+        let test_state = self.tap.state_mut().unwrap();
         test_state.planned = Some(2);
         self.emit_output("1..2\n");
         // Test 1: code threw a warning

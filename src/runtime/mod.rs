@@ -213,12 +213,14 @@ mod sprintf_validate;
 pub(crate) mod str_numeric;
 mod subtest;
 mod system;
+mod tap_state;
 mod test_functions;
 pub(crate) mod types;
 mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) use self::registration_class::ClassDeclModifiers;
+pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
 
 pub(crate) use utils::*;
 
@@ -787,11 +789,10 @@ pub struct Interpreter {
     stderr_output: String,
     warn_output: String,
     warn_suppression_depth: usize,
-    test_state: Option<TestState>,
-    subtest_depth: usize,
-    /// Stack tracking whether each nested subtest callable is a Sub (true) or Block (false).
-    /// Used by `plan skip-all` to reject Block callables.
-    subtest_callable_is_sub: Vec<bool>,
+    /// All TAP / `Test` module runtime state (counter, subtest stack, bail-out).
+    /// See [`TapState`] — extracted out of this struct so its ownership can later
+    /// move (lever B). Access only through `self.tap`'s methods.
+    tap: TapState,
     halted: bool,
     exit_code: i64,
     /// When true, `exit` sets the `halted` flag instead of calling
@@ -803,7 +804,6 @@ pub struct Interpreter {
     /// Tracks whether any output was emitted (useful when immediate_stdout
     /// skips the buffer).
     output_emitted: bool,
-    bailed_out: bool,
     functions: HashMap<Symbol, FunctionDef>,
     /// Functions declared with `our` scope that should persist across block boundaries.
     our_scoped_functions: HashMap<Symbol, FunctionDef>,
@@ -2809,15 +2809,12 @@ impl Interpreter {
             stderr_output: String::new(),
             warn_output: String::new(),
             warn_suppression_depth: 0,
-            test_state: None,
-            subtest_depth: 0,
-            subtest_callable_is_sub: Vec::new(),
+            tap: TapState::default(),
             halted: false,
             exit_code: 0,
             nested_mode: false,
             immediate_stdout: false,
             output_emitted: false,
-            bailed_out: false,
             functions: HashMap::new(),
             our_scoped_functions: HashMap::new(),
             operator_assoc: HashMap::new(),
@@ -4110,7 +4107,7 @@ impl Interpreter {
         {
             stdout_handle.bytes_written += byte_count;
         }
-        if self.subtest_depth == 0 && self.immediate_stdout {
+        if self.tap.subtest_depth() == 0 && self.immediate_stdout {
             use std::io::Write;
             let _ = std::io::stdout().write_all(text.as_bytes());
             let _ = std::io::stdout().flush();
@@ -5074,31 +5071,12 @@ impl Interpreter {
             stderr_output: String::new(),
             warn_output: String::new(),
             warn_suppression_depth: 0,
-            test_state: {
-                // Share the test counter with the parent so TAP numbering
-                // stays consistent across threads (e.g. pass/flunk inside
-                // Promise.start).
-                if let Some(ref mut parent_state) = self.test_state {
-                    let shared = parent_state.ensure_shared_ran();
-                    Some(TestState {
-                        planned: None,
-                        ran: parent_state.ran,
-                        shared_ran: Some(shared),
-                        failed: 0,
-                        force_todo: parent_state.force_todo.clone(),
-                    })
-                } else {
-                    None
-                }
-            },
-            subtest_depth: 0,
-            subtest_callable_is_sub: Vec::new(),
+            tap: self.tap.clone_for_thread(),
             halted: false,
             exit_code: 0,
             nested_mode: self.nested_mode,
             immediate_stdout: false,
             output_emitted: false,
-            bailed_out: false,
             functions: self.functions.clone(),
             our_scoped_functions: self.our_scoped_functions.clone(),
             operator_assoc: self.operator_assoc.clone(),
@@ -5623,59 +5601,6 @@ impl Interpreter {
     }
 }
 
-#[derive(Debug, Default)]
-struct TestState {
-    planned: Option<usize>,
-    ran: usize,
-    /// Shared atomic counter for test numbering across threads.
-    /// When set, `ran` is derived from this counter instead of the local field.
-    shared_ran: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
-    failed: usize,
-    force_todo: Vec<TodoRange>,
-}
-
-#[derive(Debug, Clone)]
-struct TodoRange {
-    start: usize,
-    end: usize,
-    reason: String,
-}
-
-impl TestState {
-    fn new() -> Self {
-        Self {
-            planned: None,
-            ran: 0,
-            shared_ran: None,
-            failed: 0,
-            force_todo: Vec::new(),
-        }
-    }
-
-    /// Increment and return the next test number.
-    /// Uses the shared atomic counter if available, otherwise the local field.
-    fn next_ran(&mut self) -> usize {
-        if let Some(ref counter) = self.shared_ran {
-            let n = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-            self.ran = n;
-            n
-        } else {
-            self.ran += 1;
-            self.ran
-        }
-    }
-
-    /// Get an Arc to the shared counter, creating one if needed.
-    fn ensure_shared_ran(&mut self) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
-        if let Some(ref counter) = self.shared_ran {
-            counter.clone()
-        } else {
-            let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.ran));
-            self.shared_ran = Some(counter.clone());
-            counter
-        }
-    }
-}
 
 impl Interpreter {
     /// Flush all open file handle buffers. Call before process exit.

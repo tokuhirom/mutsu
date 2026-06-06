@@ -58,7 +58,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut line = String::new();
         let (record_failure, effective_todo) = {
-            let state = self.test_state.get_or_insert_with(TestState::new);
+            let state = self.tap.ensure_state();
             state.next_ran();
             let forced_reason = state
                 .force_todo
@@ -110,9 +110,12 @@ impl Interpreter {
         };
         self.emit_output(&line);
         if record_failure {
-            let to_stderr = !effective_todo && self.subtest_depth == 0;
+            let to_stderr = !effective_todo && self.tap.subtest_depth() == 0;
             self.emit_test_failure_diag(desc, to_stderr);
-            if !effective_todo && self.subtest_depth == 0 && self.raku_test_die_on_fail_enabled() {
+            if !effective_todo
+                && self.tap.subtest_depth() == 0
+                && self.raku_test_die_on_fail_enabled()
+            {
                 self.stderr_output
                     .push_str("Stopping test suite because of RAKU_TEST_DIE_ON_FAIL\n");
                 self.exit_code = 255;
