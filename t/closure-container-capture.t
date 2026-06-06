@@ -5,13 +5,20 @@ use Test;
 # closures over the same lexical share one cell, while loop-body `my` stays
 # per-iteration fresh.
 
-plan 14;
+plan 15;
 
 # --- intra-iteration mutation after capture (was: frozen value) ---
 {
     my @c;
     for 1 { my $x = 1; my $cl = { $x }; $x = 2; @c.push($cl) }
     is @c[0](), 2, 'mutation after capture is visible to the closure';
+}
+
+# --- repeated mutation of a loop-body local is observed through the cell ---
+{
+    my @r;
+    for 1 { my $x = 1; my $cl = { $x }; $x = 2; @r.push($cl()); $x = 5; @r.push($cl()) }
+    is @r.join(','), '2,5', 'closure observes successive mutations of the shared cell';
 }
 
 # --- sibling closures over a *non-loop* (sub-body) local share one container.
