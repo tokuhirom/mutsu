@@ -45,6 +45,23 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         register_term_symbol_from_decl_name(&n);
         (r, n)
     };
+    // Record the source sigil so the compiler can distinguish a scalar
+    // `constant $x` from a sigilless `constant x` for X::Redeclaration purposes
+    // (the VarDecl `name` strips the `$`, so both would otherwise collide).
+    let sigil_marker = match sigil {
+        b'$' => "$",
+        b'@' => "@",
+        b'%' => "%",
+        b'&' => "&",
+        _ => "",
+    };
+    let constant_traits = vec![
+        ("__constant".to_string(), None),
+        (
+            "__constant_sigil".to_string(),
+            Some(Expr::Literal(Value::str(sigil_marker.to_string()))),
+        ),
+    ];
     let (mut rest, _) = ws(rest)?;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
@@ -116,7 +133,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: vec![("__constant".to_string(), None)],
+                custom_traits: constant_traits.clone(),
                 where_constraint: None,
             },
         ));
@@ -148,7 +165,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: vec![("__constant".to_string(), None)],
+                custom_traits: constant_traits.clone(),
                 where_constraint: None,
             },
         ));
@@ -165,7 +182,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export,
             export_tags,
-            custom_traits: vec![("__constant".to_string(), None)],
+            custom_traits: constant_traits.clone(),
             where_constraint: None,
         },
     ))

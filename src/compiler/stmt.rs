@@ -646,10 +646,24 @@ impl Compiler {
                 // them in `for` loops (constants have no Scalar container).
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
                 if is_constant_decl {
-                    // X::Redeclaration: declaring the same constant twice in the
-                    // same lexical block is an error (shadowing in an inner block
-                    // is fine — see constant_vars_current_scope reset on entry).
-                    if !self.constant_vars_current_scope.insert(name.clone()) {
+                    // X::Redeclaration on a duplicate same-scope `constant` is only
+                    // fired when the *sigil* matches. mutsu's AST strips the `$`
+                    // from a scalar constant name, so `constant sym` (sigilless)
+                    // and `constant $sym` (scalar) both arrive here as "sym"; firing
+                    // on the bare name alone would wrongly reject that legal pair
+                    // (see roast S06-operator-overloading/sub.t). Key the
+                    // duplicate-detection set by the source sigil so only true
+                    // same-sigil redeclarations are caught.
+                    let constant_sigil = custom_traits
+                        .iter()
+                        .find(|(t, _)| t == "__constant_sigil")
+                        .and_then(|(_, e)| match e {
+                            Some(Expr::Literal(Value::Str(s))) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let redecl_key = format!("{}{}", constant_sigil, name);
+                    if !self.constant_vars_current_scope.insert(redecl_key) {
                         let sym = name.trim_start_matches(['$', '@', '%', '&']).to_string();
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("symbol".to_string(), Value::str(sym));
