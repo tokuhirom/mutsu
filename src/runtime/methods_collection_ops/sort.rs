@@ -120,6 +120,288 @@ fn detect_method_cmp_block(data: &crate::value::SubData) -> Option<(String, bool
     }
 }
 
+/// Engine-agnostic callback interface for the shared sort orchestration.
+///
+/// `.sort` orchestration (arity detection, merge sort, Schwartzian transform,
+/// simple-comparator inlining, `:k` index mode) lives once in
+/// [`sort_items_generic`] / [`sort_indices_generic`]. The two engines — the
+/// tree-walking `Interpreter` and the bytecode `VM` — only differ in *how they
+/// invoke a user callable / method*, which they supply through this trait. This
+/// is what lets the VM run `@a.sort({ $^a.foo <=> $^b.foo })` natively (via
+/// `vm_call_on_value`) instead of falling back to the interpreter, while keeping
+/// a single sort implementation (no duplicate orchestration).
+pub(crate) trait SortCaller {
+    /// Call a callable (Sub / Routine / WhateverCode) with positional `args`.
+    fn call_callable(&mut self, callable: &Value, args: Vec<Value>) -> Value;
+    /// Call the 0-arg method `name` on `recv` (Schwartzian key extraction).
+    fn call_method(&mut self, recv: Value, name: &str) -> Value;
+}
+
+/// [`SortCaller`] backed by the tree-walking interpreter.
+pub(crate) struct InterpCaller<'a>(pub(crate) &'a mut Interpreter);
+
+impl SortCaller for InterpCaller<'_> {
+    fn call_callable(&mut self, callable: &Value, args: Vec<Value>) -> Value {
+        // Hash iteration yields `Value::Pair` elements; bind them positionally so
+        // a comparator/mapper block sees `$^a`/`$_` (not a named argument that
+        // leaves the block with zero positionals). See `pair_as_positional`.
+        let args = args
+            .iter()
+            .map(crate::runtime::utils::pair_as_positional)
+            .collect();
+        self.0
+            .eval_call_on_value(callable.clone(), args)
+            .unwrap_or(Value::Nil)
+    }
+
+    fn call_method(&mut self, recv: Value, name: &str) -> Value {
+        self.0
+            .call_method_with_values(recv, name, vec![])
+            .unwrap_or(Value::Nil)
+    }
+}
+
+/// Stable merge sort that always calls the comparator with (left, right)
+/// ordering, matching Raku's requirement that the comparator sees elements in
+/// their relative position order.
+pub(crate) fn merge_sort_with_cmp<F>(items: &mut [Value], cmp: &mut F)
+where
+    F: FnMut(&Value, &Value) -> std::cmp::Ordering,
+{
+    let len = items.len();
+    if len <= 1 {
+        return;
+    }
+    let mid = len / 2;
+    merge_sort_with_cmp(&mut items[..mid], cmp);
+    merge_sort_with_cmp(&mut items[mid..], cmp);
+    let left = items[..mid].to_vec();
+    let right = items[mid..].to_vec();
+    let (mut i, mut j, mut k) = (0, 0, 0);
+    while i < left.len() && j < right.len() {
+        if cmp(&left[i], &right[j]) != std::cmp::Ordering::Greater {
+            items[k] = left[i].clone();
+            i += 1;
+        } else {
+            items[k] = right[j].clone();
+            j += 1;
+        }
+        k += 1;
+    }
+    while i < left.len() {
+        items[k] = left[i].clone();
+        i += 1;
+        k += 1;
+    }
+    while j < right.len() {
+        items[k] = right[j].clone();
+        j += 1;
+        k += 1;
+    }
+}
+
+/// Map a comparator block's return value to an `Ordering`.
+pub(crate) fn sort_result_to_ordering(result: &Value) -> std::cmp::Ordering {
+    match result {
+        Value::Int(n) => n.cmp(&0),
+        // Bool comparators: True means "swap" (a > b), False means "don't swap".
+        Value::Bool(true) => std::cmp::Ordering::Greater,
+        Value::Bool(false) => std::cmp::Ordering::Less,
+        Value::Enum {
+            enum_type, value, ..
+        } if enum_type == "Order" => value.as_i64().cmp(&0),
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
+/// Reorder `items` in place by `keys` (Schwartzian transform), preserving
+/// stability via an index sort.
+fn schwartzian_by_keys(items: &mut [Value], keys: &[Value]) {
+    let mut indices: Vec<usize> = (0..items.len()).collect();
+    indices.sort_by(|&i, &j| compare_values(&keys[i], &keys[j]).cmp(&0));
+    let sorted: Vec<Value> = indices.iter().map(|&i| items[i].clone()).collect();
+    items.clone_from_slice(&sorted);
+}
+
+/// Shared `.sort` orchestration. `arity` is the resolved callable arity (0 = no
+/// callable, 1 = mapper, >=2 = comparator). User callables / methods are invoked
+/// through `caller`, so the same logic runs under both engines.
+pub(crate) fn sort_items_generic(
+    caller: &mut dyn SortCaller,
+    items: &mut [Value],
+    callable: Option<&Value>,
+    arity: usize,
+) {
+    match callable {
+        Some(c) if arity >= 2 => {
+            if let Value::Sub(data) = c {
+                // `{ $^a <=> $^b }` and friends: compare inline, no call at all.
+                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
+                    merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
+                        let (l, r) = if reverse { (b, a) } else { (a, b) };
+                        if is_string_cmp {
+                            l.to_str_context().cmp(&r.to_str_context())
+                        } else {
+                            inline_numeric_cmp(l, r)
+                        }
+                    });
+                    return;
+                }
+                // `{ $^a.method <=> $^b.method }`: Schwartzian over the keys.
+                if let Some((method_name, reverse, is_string_cmp)) = detect_method_cmp_block(data) {
+                    let keys: Vec<Value> = items
+                        .iter()
+                        .map(|item| caller.call_method(item.clone(), &method_name))
+                        .collect();
+                    let mut indices: Vec<usize> = (0..items.len()).collect();
+                    indices.sort_by(|&i, &j| {
+                        let (l, r) = if reverse { (j, i) } else { (i, j) };
+                        if is_string_cmp {
+                            keys[l].to_str_context().cmp(&keys[r].to_str_context())
+                        } else {
+                            inline_numeric_cmp(&keys[l], &keys[r])
+                        }
+                    });
+                    let sorted: Vec<Value> = indices.iter().map(|&i| items[i].clone()).collect();
+                    items.clone_from_slice(&sorted);
+                    return;
+                }
+            }
+            // General comparator (Sub / Routine): merge sort calling it per pair.
+            let c = c.clone();
+            merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
+                let result = caller.call_callable(&c, vec![a.clone(), b.clone()]);
+                sort_result_to_ordering(&result)
+            });
+        }
+        Some(c) => {
+            // arity <= 1: mapper. `{ .method }` is a Schwartzian over a 0-arg
+            // method; any other 1-arity callable is a Schwartzian over the block.
+            if let Value::Sub(data) = c
+                && let Some(method_name) = detect_simple_mapper_block(data)
+            {
+                let keys: Vec<Value> = items
+                    .iter()
+                    .map(|item| caller.call_method(item.clone(), &method_name))
+                    .collect();
+                schwartzian_by_keys(items, &keys);
+                return;
+            }
+            let c = c.clone();
+            let keys: Vec<Value> = items
+                .iter()
+                .map(|item| caller.call_callable(&c, vec![item.clone()]))
+                .collect();
+            schwartzian_by_keys(items, &keys);
+        }
+        None => items.sort_by(|a, b| compare_values(a, b).cmp(&0)),
+    }
+}
+
+/// Like [`sort_items_generic`] but returns the original indices in sorted order
+/// (the `:k` adverb).
+pub(crate) fn sort_indices_generic(
+    caller: &mut dyn SortCaller,
+    items: &[Value],
+    callable: Option<&Value>,
+    arity: usize,
+) -> Vec<Value> {
+    let mut perm: Vec<usize> = (0..items.len()).collect();
+    match callable {
+        Some(c) if arity >= 2 => {
+            if let Value::Sub(data) = c {
+                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
+                    merge_sort_indices(&mut perm, items, &mut |a, b| {
+                        let (l, r) = if reverse { (b, a) } else { (a, b) };
+                        if is_string_cmp {
+                            l.to_str_context().cmp(&r.to_str_context())
+                        } else {
+                            inline_numeric_cmp(l, r)
+                        }
+                    });
+                    return perm.into_iter().map(|i| Value::Int(i as i64)).collect();
+                }
+                if let Some((method_name, reverse, is_string_cmp)) = detect_method_cmp_block(data) {
+                    let keys: Vec<Value> = items
+                        .iter()
+                        .map(|item| caller.call_method(item.clone(), &method_name))
+                        .collect();
+                    perm.sort_by(|&i, &j| {
+                        let (l, r) = if reverse { (j, i) } else { (i, j) };
+                        if is_string_cmp {
+                            keys[l].to_str_context().cmp(&keys[r].to_str_context())
+                        } else {
+                            inline_numeric_cmp(&keys[l], &keys[r])
+                        }
+                    });
+                    return perm.into_iter().map(|i| Value::Int(i as i64)).collect();
+                }
+            }
+            let c = c.clone();
+            merge_sort_indices(&mut perm, items, &mut |a, b| {
+                let result = caller.call_callable(&c, vec![a.clone(), b.clone()]);
+                sort_result_to_ordering(&result)
+            });
+        }
+        Some(c) => {
+            let keys: Vec<Value> = if let Value::Sub(data) = c
+                && let Some(method_name) = detect_simple_mapper_block(data)
+            {
+                items
+                    .iter()
+                    .map(|item| caller.call_method(item.clone(), &method_name))
+                    .collect()
+            } else {
+                let c = c.clone();
+                items
+                    .iter()
+                    .map(|item| caller.call_callable(&c, vec![item.clone()]))
+                    .collect()
+            };
+            perm.sort_by(|&i, &j| compare_values(&keys[i], &keys[j]).cmp(&0));
+        }
+        None => perm.sort_by(|&i, &j| compare_values(&items[i], &items[j]).cmp(&0)),
+    }
+    perm.into_iter().map(|i| Value::Int(i as i64)).collect()
+}
+
+/// Stable merge sort over a permutation array, comparing the underlying values.
+fn merge_sort_indices<F>(perm: &mut [usize], items: &[Value], cmp: &mut F)
+where
+    F: FnMut(&Value, &Value) -> std::cmp::Ordering,
+{
+    let len = perm.len();
+    if len <= 1 {
+        return;
+    }
+    let mid = len / 2;
+    merge_sort_indices(&mut perm[..mid], items, cmp);
+    merge_sort_indices(&mut perm[mid..], items, cmp);
+    let left = perm[..mid].to_vec();
+    let right = perm[mid..].to_vec();
+    let (mut i, mut j, mut k) = (0, 0, 0);
+    while i < left.len() && j < right.len() {
+        if cmp(&items[left[i]], &items[right[j]]) != std::cmp::Ordering::Greater {
+            perm[k] = left[i];
+            i += 1;
+        } else {
+            perm[k] = right[j];
+            j += 1;
+        }
+        k += 1;
+    }
+    while i < left.len() {
+        perm[k] = left[i];
+        i += 1;
+        k += 1;
+    }
+    while j < right.len() {
+        perm[k] = right[j];
+        j += 1;
+        k += 1;
+    }
+}
+
 pub(crate) fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(bool, bool)> {
     if data.params.len() < 2 {
         return None;
@@ -158,6 +440,42 @@ pub(crate) fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(b
 }
 
 impl Interpreter {
+    /// Resolve the arity of a `.sort` callable: 0 = none, 1 = mapper, >=2 =
+    /// comparator. Rejects explicitly 0-arity named subs. Shared by both engines
+    /// (the VM calls it via `self.interpreter`).
+    pub(crate) fn sort_callable_arity(
+        &self,
+        callable: Option<&Value>,
+    ) -> Result<usize, RuntimeError> {
+        let Some(c) = callable else { return Ok(0) };
+        match c {
+            Value::Sub(data) => {
+                if data.empty_sig {
+                    // Reject explicitly 0-arity named subs (e.g., `sub foo () { ... }`)
+                    return Err(RuntimeError::new(
+                        "sort requires a callable with at least 1 parameter".to_string(),
+                    ));
+                }
+                // For blocks/closures, 0 params means implicit $_ (1-arity mapper).
+                Ok(if data.params.is_empty() {
+                    1
+                } else {
+                    data.params.len()
+                })
+            }
+            Value::Routine { .. } => {
+                let (params, _) = self.callable_signature(c);
+                if params.is_empty() {
+                    return Err(RuntimeError::new(
+                        "sort requires a callable with at least 1 parameter".to_string(),
+                    ));
+                }
+                Ok(params.len())
+            }
+            _ => Ok(1),
+        }
+    }
+
     pub(crate) fn dispatch_sort(
         &mut self,
         target: Value,
@@ -180,281 +498,13 @@ impl Interpreter {
             }
         }
 
-        // Determine callable arity
-        let callable_arity = if let Some(ref c) = callable {
-            match c {
-                Value::Sub(data) => {
-                    if data.empty_sig {
-                        // Reject explicitly 0-arity named subs (e.g., `sub foo () { ... }`)
-                        return Err(RuntimeError::new(
-                            "sort requires a callable with at least 1 parameter".to_string(),
-                        ));
-                    }
-                    // For blocks/closures, 0 params means implicit $_ (treat as 1-arity mapper)
-                    if data.params.is_empty() {
-                        1
-                    } else {
-                        data.params.len()
-                    }
-                }
-                Value::Routine { .. } => {
-                    let (params, _) = self.callable_signature(c);
-                    if params.is_empty() {
-                        // Reject explicitly 0-arity named subs
-                        return Err(RuntimeError::new(
-                            "sort requires a callable with at least 1 parameter".to_string(),
-                        ));
-                    }
-                    params.len()
-                }
-                _ => 1,
-            }
-        } else {
-            0
-        };
+        let callable_arity = self.sort_callable_arity(callable.as_ref())?;
 
         let callable_args = if let Some(c) = callable {
             vec![c]
         } else {
             vec![]
         };
-
-        /// Stable merge sort that always calls the comparator with (left, right) ordering.
-        /// This ensures consistent semantics with Raku where the comparator receives
-        /// elements in their relative position order.
-        fn merge_sort_with_cmp<F>(items: &mut [Value], cmp: &mut F)
-        where
-            F: FnMut(&Value, &Value) -> std::cmp::Ordering,
-        {
-            let len = items.len();
-            if len <= 1 {
-                return;
-            }
-            let mid = len / 2;
-            merge_sort_with_cmp(&mut items[..mid], cmp);
-            merge_sort_with_cmp(&mut items[mid..], cmp);
-            // Merge
-            let left = items[..mid].to_vec();
-            let right = items[mid..].to_vec();
-            let (mut i, mut j, mut k) = (0, 0, 0);
-            while i < left.len() && j < right.len() {
-                // Always compare (left, right) to maintain Raku semantics
-                if cmp(&left[i], &right[j]) != std::cmp::Ordering::Greater {
-                    items[k] = left[i].clone();
-                    i += 1;
-                } else {
-                    items[k] = right[j].clone();
-                    j += 1;
-                }
-                k += 1;
-            }
-            while i < left.len() {
-                items[k] = left[i].clone();
-                i += 1;
-                k += 1;
-            }
-            while j < right.len() {
-                items[k] = right[j].clone();
-                j += 1;
-                k += 1;
-            }
-        }
-
-        fn sort_items(
-            interp: &mut Interpreter,
-            items: &mut [Value],
-            callable: Option<&Value>,
-            arity: usize,
-        ) {
-            match callable {
-                Some(Value::Sub(data)) if arity >= 2 => {
-                    // Fast path: detect simple { $^a <=> $^b } or { $^b <=> $^a } patterns
-                    if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
-                        if is_string_cmp {
-                            merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
-                                let (l, r) = if reverse { (b, a) } else { (a, b) };
-                                l.to_str_context().cmp(&r.to_str_context())
-                            });
-                        } else {
-                            merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
-                                let (l, r) = if reverse { (b, a) } else { (a, b) };
-                                inline_numeric_cmp(l, r)
-                            });
-                        }
-                        return;
-                    }
-                    // Fast path: detect { $^a.method <=> $^b.method } pattern
-                    // Uses Schwartzian transform: pre-compute keys, then sort by keys
-                    if let Some((method_name, reverse, is_string_cmp)) =
-                        detect_method_cmp_block(data)
-                    {
-                        let keys: Vec<Value> = items
-                            .iter()
-                            .map(|item| {
-                                interp
-                                    .call_method_with_values(item.clone(), &method_name, vec![])
-                                    .unwrap_or(Value::Nil)
-                            })
-                            .collect();
-                        let mut indices: Vec<usize> = (0..items.len()).collect();
-                        indices.sort_by(|&i, &j| {
-                            let (l, r) = if reverse { (j, i) } else { (i, j) };
-                            if is_string_cmp {
-                                keys[l].to_str_context().cmp(&keys[r].to_str_context())
-                            } else {
-                                inline_numeric_cmp(&keys[l], &keys[r])
-                            }
-                        });
-                        let sorted: Vec<Value> =
-                            indices.iter().map(|&i| items[i].clone()).collect();
-                        items.clone_from_slice(&sorted);
-                        return;
-                    }
-                    // Sub comparator: use merge sort for correct (left, right) ordering
-                    let data = data.clone();
-                    // Pre-collect keys we'll modify to avoid full env clone
-                    let touched_keys: Vec<String> = {
-                        let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
-                        if data.params.len() >= 2 {
-                            keys.push(data.params[0].clone());
-                            keys.push(data.params[1].clone());
-                        }
-                        keys.push("_".to_string());
-                        keys.sort();
-                        keys.dedup();
-                        keys
-                    };
-                    merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
-                        // Save only touched keys
-                        let saved: Vec<(String, Option<Value>)> = touched_keys
-                            .iter()
-                            .map(|k| (k.clone(), interp.env.get(k).cloned()))
-                            .collect();
-                        for (k, v) in &data.env {
-                            interp.env.insert_sym(*k, v.clone());
-                        }
-                        if data.params.len() >= 2 {
-                            interp.env.insert(data.params[0].clone(), a.clone());
-                            interp.env.insert(data.params[1].clone(), b.clone());
-                        }
-                        interp.env.insert("_".to_string(), a.clone());
-                        let result = interp.eval_block_value(&data.body).unwrap_or(Value::Int(0));
-                        // Restore only touched keys
-                        for (k, v) in saved {
-                            if let Some(val) = v {
-                                interp.env.insert(k, val);
-                            } else {
-                                interp.env.remove(&k);
-                            }
-                        }
-                        sort_result_to_ordering(&result)
-                    });
-                }
-                Some(Value::Sub(data)) if arity <= 1 => {
-                    // Fast path: detect { .method } pattern and use Schwartzian transform
-                    if let Some(method_name) = detect_simple_mapper_block(data) {
-                        // Pre-compute keys (N calls instead of N*log(N))
-                        let keys: Vec<Value> = items
-                            .iter()
-                            .map(|item| {
-                                interp
-                                    .call_method_with_values(item.clone(), &method_name, vec![])
-                                    .unwrap_or(Value::Nil)
-                            })
-                            .collect();
-                        // Build index array and sort by pre-computed keys
-                        let mut indices: Vec<usize> = (0..items.len()).collect();
-                        indices.sort_by(|&i, &j| compare_values(&keys[i], &keys[j]).cmp(&0));
-                        // Rearrange items in-place by sorted indices
-                        let sorted: Vec<Value> =
-                            indices.iter().map(|&i| items[i].clone()).collect();
-                        items.clone_from_slice(&sorted);
-                        return;
-                    }
-                    // Sub mapper: save/restore only touched keys
-                    let touched_keys: Vec<String> = {
-                        let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
-                        if let Some(p) = data.params.first() {
-                            keys.push(p.clone());
-                        }
-                        keys.push("_".to_string());
-                        keys.sort();
-                        keys.dedup();
-                        keys
-                    };
-                    let data = data.clone();
-                    items.sort_by(|a, b| {
-                        let saved: Vec<(String, Option<Value>)> = touched_keys
-                            .iter()
-                            .map(|k| (k.clone(), interp.env.get(k).cloned()))
-                            .collect();
-                        for (k, v) in &data.env {
-                            interp.env.insert_sym(*k, v.clone());
-                        }
-                        if let Some(p) = data.params.first() {
-                            interp.env.insert(p.clone(), a.clone());
-                        }
-                        interp.env.insert("_".to_string(), a.clone());
-                        let key_a = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                        for (k, v) in &data.env {
-                            interp.env.insert_sym(*k, v.clone());
-                        }
-                        if let Some(p) = data.params.first() {
-                            interp.env.insert(p.clone(), b.clone());
-                        }
-                        interp.env.insert("_".to_string(), b.clone());
-                        let key_b = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                        for (k, v) in &saved {
-                            if let Some(val) = v {
-                                interp.env.insert(k.clone(), val.clone());
-                            } else {
-                                interp.env.remove(k);
-                            }
-                        }
-                        compare_values(&key_a, &key_b).cmp(&0)
-                    });
-                }
-                Some(c) if arity >= 2 => {
-                    // Routine comparator: use merge sort for correct (left, right) ordering
-                    let c = c.clone();
-                    merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
-                        let call_args = vec![a.clone(), b.clone()];
-                        match interp.eval_call_on_value(c.clone(), call_args) {
-                            Ok(result) => sort_result_to_ordering(&result),
-                            Err(_) => std::cmp::Ordering::Equal,
-                        }
-                    });
-                }
-                Some(c) if arity == 1 => {
-                    // Routine mapper: call with 1 arg
-                    items.sort_by(|a, b| {
-                        let key_a = interp
-                            .eval_call_on_value(c.clone(), vec![a.clone()])
-                            .unwrap_or(Value::Nil);
-                        let key_b = interp
-                            .eval_call_on_value(c.clone(), vec![b.clone()])
-                            .unwrap_or(Value::Nil);
-                        compare_values(&key_a, &key_b).cmp(&0)
-                    });
-                }
-                _ => {
-                    items.sort_by(|a, b| compare_values(a, b).cmp(&0));
-                }
-            }
-        }
-
-        fn sort_result_to_ordering(result: &Value) -> std::cmp::Ordering {
-            match result {
-                Value::Int(n) => n.cmp(&0),
-                // Bool comparators: True means "swap" (a > b), False means "don't swap" (a <= b)
-                Value::Bool(true) => std::cmp::Ordering::Greater,
-                Value::Bool(false) => std::cmp::Ordering::Less,
-                Value::Enum {
-                    enum_type, value, ..
-                } if enum_type == "Order" => value.as_i64().cmp(&0),
-                _ => std::cmp::Ordering::Equal,
-            }
-        }
 
         let callable_ref = callable_args.first();
 
@@ -465,11 +515,17 @@ impl Interpreter {
                     && items_arc.iter().any(|v| matches!(v, Value::Array(..)));
                 if use_leaves {
                     let mut leaves = crate::runtime::utils::shaped_array_leaves(&target);
+                    let mut caller = InterpCaller(self);
                     if return_indices {
-                        let indices = sort_indices(self, &leaves, callable_ref, callable_arity);
+                        let indices = sort_indices_generic(
+                            &mut caller,
+                            &leaves,
+                            callable_ref,
+                            callable_arity,
+                        );
                         Ok(Value::array(indices))
                     } else {
-                        sort_items(self, &mut leaves, callable_ref, callable_arity);
+                        sort_items_generic(&mut caller, &mut leaves, callable_ref, callable_arity);
                         Ok(Value::Seq(Arc::new(leaves)))
                     }
                 } else {
@@ -477,22 +533,30 @@ impl Interpreter {
                         unreachable!()
                     };
                     let items_mut = Arc::make_mut(&mut items);
+                    let mut caller = InterpCaller(self);
                     if return_indices {
-                        let indices = sort_indices(self, items_mut, callable_ref, callable_arity);
+                        let indices = sort_indices_generic(
+                            &mut caller,
+                            items_mut,
+                            callable_ref,
+                            callable_arity,
+                        );
                         Ok(Value::array(indices))
                     } else {
-                        sort_items(self, items_mut, callable_ref, callable_arity);
+                        sort_items_generic(&mut caller, items_mut, callable_ref, callable_arity);
                         Ok(Value::Seq(Arc::new(items_mut.to_vec())))
                     }
                 }
             }
             Value::Seq(items) | Value::Slip(items) => {
                 let mut sorted = items.as_ref().clone();
+                let mut caller = InterpCaller(self);
                 if return_indices {
-                    let indices = sort_indices(self, &sorted, callable_ref, callable_arity);
+                    let indices =
+                        sort_indices_generic(&mut caller, &sorted, callable_ref, callable_arity);
                     Ok(Value::array(indices))
                 } else {
-                    sort_items(self, &mut sorted, callable_ref, callable_arity);
+                    sort_items_generic(&mut caller, &mut sorted, callable_ref, callable_arity);
                     Ok(Value::Seq(Arc::new(sorted)))
                 }
             }
@@ -502,11 +566,13 @@ impl Interpreter {
             | Value::RangeExclBoth(..)
             | Value::GenericRange { .. } => {
                 let mut sorted = Self::value_to_list(&target);
+                let mut caller = InterpCaller(self);
                 if return_indices {
-                    let indices = sort_indices(self, &sorted, callable_ref, callable_arity);
+                    let indices =
+                        sort_indices_generic(&mut caller, &sorted, callable_ref, callable_arity);
                     Ok(Value::array(indices))
                 } else {
-                    sort_items(self, &mut sorted, callable_ref, callable_arity);
+                    sort_items_generic(&mut caller, &mut sorted, callable_ref, callable_arity);
                     Ok(Value::Seq(Arc::new(sorted)))
                 }
             }
@@ -520,135 +586,4 @@ impl Interpreter {
             other => Ok(other),
         }
     }
-}
-
-/// Sort items and return the original indices in sorted order.
-fn sort_indices(
-    interp: &mut Interpreter,
-    items: &[Value],
-    callable: Option<&Value>,
-    arity: usize,
-) -> Vec<Value> {
-    use crate::runtime::utils::compare_values;
-    let mut indexed: Vec<(usize, &Value)> = items.iter().enumerate().collect();
-
-    fn idx_sort_result(result: &Value) -> std::cmp::Ordering {
-        match result {
-            Value::Int(n) => n.cmp(&0),
-            Value::Bool(true) => std::cmp::Ordering::Greater,
-            Value::Bool(false) => std::cmp::Ordering::Less,
-            Value::Enum {
-                enum_type, value, ..
-            } if enum_type == "Order" => value.as_i64().cmp(&0),
-            _ => std::cmp::Ordering::Equal,
-        }
-    }
-
-    match callable {
-        Some(Value::Sub(data)) if arity >= 2 => {
-            let touched_keys: Vec<String> = {
-                let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
-                if data.params.len() >= 2 {
-                    keys.push(data.params[0].clone());
-                    keys.push(data.params[1].clone());
-                }
-                keys.push("_".to_string());
-                keys.sort();
-                keys.dedup();
-                keys
-            };
-            indexed.sort_by(|(_, a), (_, b)| {
-                let saved: Vec<(String, Option<Value>)> = touched_keys
-                    .iter()
-                    .map(|k| (k.clone(), interp.env.get(k).cloned()))
-                    .collect();
-                for (k, v) in &data.env {
-                    interp.env.insert_sym(*k, v.clone());
-                }
-                if data.params.len() >= 2 {
-                    interp.env.insert(data.params[0].clone(), (*a).clone());
-                    interp.env.insert(data.params[1].clone(), (*b).clone());
-                }
-                interp.env.insert("_".to_string(), (*a).clone());
-                let result = interp.eval_block_value(&data.body).unwrap_or(Value::Int(0));
-                for (k, v) in saved {
-                    if let Some(val) = v {
-                        interp.env.insert(k, val);
-                    } else {
-                        interp.env.remove(&k);
-                    }
-                }
-                idx_sort_result(&result)
-            });
-        }
-        Some(Value::Sub(data)) if arity <= 1 => {
-            let touched_keys: Vec<String> = {
-                let mut keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
-                if let Some(p) = data.params.first() {
-                    keys.push(p.clone());
-                }
-                keys.push("_".to_string());
-                keys.sort();
-                keys.dedup();
-                keys
-            };
-            indexed.sort_by(|(_, a), (_, b)| {
-                let saved: Vec<(String, Option<Value>)> = touched_keys
-                    .iter()
-                    .map(|k| (k.clone(), interp.env.get(k).cloned()))
-                    .collect();
-                for (k, v) in &data.env {
-                    interp.env.insert_sym(*k, v.clone());
-                }
-                if let Some(p) = data.params.first() {
-                    interp.env.insert(p.clone(), (*a).clone());
-                }
-                interp.env.insert("_".to_string(), (*a).clone());
-                let key_a = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                for (k, v) in &data.env {
-                    interp.env.insert_sym(*k, v.clone());
-                }
-                if let Some(p) = data.params.first() {
-                    interp.env.insert(p.clone(), (*b).clone());
-                }
-                interp.env.insert("_".to_string(), (*b).clone());
-                let key_b = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                for (k, v) in &saved {
-                    if let Some(val) = v {
-                        interp.env.insert(k.clone(), val.clone());
-                    } else {
-                        interp.env.remove(k);
-                    }
-                }
-                compare_values(&key_a, &key_b).cmp(&0)
-            });
-        }
-        Some(c) if arity >= 2 => {
-            indexed.sort_by(|(_, a), (_, b)| {
-                let call_args = vec![(*a).clone(), (*b).clone()];
-                match interp.eval_call_on_value(c.clone(), call_args) {
-                    Ok(result) => idx_sort_result(&result),
-                    Err(_) => std::cmp::Ordering::Equal,
-                }
-            });
-        }
-        Some(c) if arity == 1 => {
-            indexed.sort_by(|(_, a), (_, b)| {
-                let key_a = interp
-                    .eval_call_on_value(c.clone(), vec![(*a).clone()])
-                    .unwrap_or(Value::Nil);
-                let key_b = interp
-                    .eval_call_on_value(c.clone(), vec![(*b).clone()])
-                    .unwrap_or(Value::Nil);
-                compare_values(&key_a, &key_b).cmp(&0)
-            });
-        }
-        _ => {
-            indexed.sort_by(|(_, a), (_, b)| compare_values(a, b).cmp(&0));
-        }
-    }
-    indexed
-        .into_iter()
-        .map(|(i, _)| Value::Int(i as i64))
-        .collect()
 }
