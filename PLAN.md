@@ -74,11 +74,26 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
         `chrs` を `native_function_variadic` へ全 arity ルーティング（+ `value_to_list` で Range/Seq 平坦化）、
         `unival`/`univals` を `native_function_1arg` から `.unival`/`.univals` メソッド実装へ委譲。
         VM/EVAL 両経路で raku 一致を確認。**純粋値 builtin の重複はゼロ**。`words`（IO 版で別物）は非対象。
-- [ ] **Category B — genuine fork（native に難ケースを足してから削除）**: `min`/`max`/`minmax`/`sort`/`join`/
+- [~] **Category B — genuine fork（native に難ケースを足してから削除）**: `min`/`max`/`minmax`/`sort`/`join`/
       `first`/`flat`/`elems`/`index`/`rindex` 等。native/pure 層は comparator ブロック・lazy・junction で bail し
       Interpreter に落ちる。**比較子ブロックは VM 層で `vm_call_on_value`（`.map`/`.grep` と同じクロージャ
-      dispatch）で呼べる**ので、VM 層に完全実装を置いて Interpreter コピー（`dispatch_sort` / `builtin_min/max`
-      等）を削除する。
+      dispatch）で呼べる**ので、VM 層に完全実装を置いて Interpreter コピーを削除する。
+  - **ブロック系 fork（comparator/mapper/matcher ブロック）= 完了**。共通パターン: オーケストレーション
+    （fold/sort/scan 本体）を engine 非依存の単一実装に抽出し、**ブロック呼び出しだけ**を VM
+    (`vm_call_on_value`) / interpreter (`call_sub_value` / `eval_call_on_value`) のクロージャ（trait）で差し替え。
+    VM がインタープリタにフォールバックしなくなり（`interpreter_fallbacks=0` 実測）、重複オーケストレーションが消える。
+    - [x] **sort (#2727)**: `sort_items_generic`/`sort_indices_generic` + `SortCaller` 抽出。VM が comparator/
+          mapper/`:k`/Hash sort を完全 native 化。`dispatch_sort` は interpreter carrier 用の薄いアダプタに縮小。
+    - [x] **min/max (#2728)**: `extrema_from_values_generic` 抽出。VM が `.min`/`.max`（`:by` ブロック・
+          `:k`/`:v`/`:kv`/`:p` adverb 込み）を native 化。
+    - [x] **minmax (#2730)**: `minmax_from_values_generic` 抽出。VM が `.minmax`（`:by` 込み）を native 化。
+    - [x] **first (#2731)**: `find_first_match_generic` + `FirstMatcher` trait 抽出。VM が `.first`（block/regex/
+          smartmatch matcher、Hash 要素は `pair_as_positional`）を native 化。adverb/Bool-matcher は fallback。
+  - **残: lazy-fork（`join`/`flat`/`elems`/`reverse`）**。これらは comparator ブロックではなく **lazy 強制が
+    native にできない**のが fork 原因。native 版と interpreter 版が itemized array / Stash / variadic で
+    **微妙に drift**（dedup doc 警告の実例）しているため、単純な「lazy 強制 → native 委譲」では挙動が変わる。
+    drift を 1 件ずつ reconcile（どちらが raku 正かを確認）してから委譲する慎重な per-item 作業が必要。
+  - **対象外**: `index`/`rindex` は interpreter コピーが存在せず既に native のみ。
   - ✅ **sort 移行の落とし穴 — 根本原因が判明（2026-06-07, #2725）**: 「`%h.sort({block})` → expected 2 got 0」
     の正体は **`Value::Pair` vs `Value::ValuePair` の束縛差**。mutsu は呼び出し側の名前付き引数を `Value::Pair`
     （dispatch 全体で positional arity から除外）、positional な pair 値を `Value::ValuePair` として **Value
@@ -120,10 +135,10 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
       env を任意の名前で書く唯一の存在（interpreter ブリッジ）が消えるので `env_dirty`/`ensure_locals_synced`/
       `sync_locals_from_env`/`saved_env_dirty` の dual-store 機構も削除できる（レバー B 完遂）。
 - **残フォールバック**には `// TODO: compile to bytecode` を付け負債を可視化。
-- **次の着手候補（優先順）**: Category A は**完了**（純粋値 builtin の重複ゼロ）。次は Category B の `%`-chain
-  block-dispatch は **根本原因解決済み（#2725, `pair_as_positional`）** なので min/max/sort の native 移行 +
-  `dispatch_sort`/`builtin_min/max` 削除に着手可能 → Category C Phase 3 の残（comb/substr/split 折込）→
-  🟣第2優先「第一級コンテナ」（レバー C 本丸 + Q2 の Arc-pointer flaky を吸収）。
+- **次の着手候補（優先順）**: Category A 完了（純粋値 builtin の重複ゼロ）。Category B の**ブロック系 fork
+  （sort/min/max/minmax/first）は完了**（#2727/#2728/#2730/#2731、上記参照）。次は Category B の残り
+  **lazy-fork（join/flat/elems/reverse）の drift reconcile → 委譲** → Category C Phase 3 の残（comb/substr/split
+  折込）→ 🟣第2優先「第一級コンテナ」（レバー C 本丸 + Q2 の Arc-pointer flaky を吸収）。
   - 教訓: 「重複削除」を始めると**潜在バグが芋づる式に出る**（`[%] 2**70` 精度・`[~]` NFC・`[minmax]` ネスト・
     `%h.first` の named 束縛は全て dedup 作業中に発見・修正）。重複は drift してバグの温床になる実例。
 
