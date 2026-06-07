@@ -74,24 +74,39 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
       Interpreter に落ちる。**比較子ブロックは VM 層で `vm_call_on_value`（`.map`/`.grep` と同じクロージャ
       dispatch）で呼べる**ので、VM 層に完全実装を置いて Interpreter コピー（`dispatch_sort` / `builtin_min/max`
       等）を削除する。
-  - ⚠️ **sort 移行の落とし穴（2026-06-07 に判明、要対処）**: VM sort を書いて function/method を流す試みは、
-    `@a.sort`/`@a.sort:{...}`/`sort &c,@a`/Range/Seq/List/`:k`/mapper まで動いたが、**`%h.sort({block})` /
-    `%h.list.sort({block})`（`%`-sigil 始まりのメソッドチェーン + trailing block）が "expected 2 got 0" で回帰**
-    （`@x.list.sort({block})` は動く）。`%`-rooted チェーンの trailing block が sort の比較子に届く前に 0-arg で
-    呼ばれる別経路があり、旧 `dispatch_sort` はそれを吸収していた。**この `%`-chain block-dispatch の差を解決
-    してから** sort を移行・`dispatch_sort` 削除すること（make roast 必須）。今回は回帰回避のため移行を revert 済み。
+  - ✅ **sort 移行の落とし穴 — 根本原因が判明（2026-06-07, #2725）**: 「`%h.sort({block})` → expected 2 got 0」
+    の正体は **`Value::Pair` vs `Value::ValuePair` の束縛差**。mutsu は呼び出し側の名前付き引数を `Value::Pair`
+    （dispatch 全体で positional arity から除外）、positional な pair 値を `Value::ValuePair` として **Value
+    variant で区別**している。**Hash の反復（`value_to_list`）は `Value::Pair` を生成**するため、要素をそのまま
+    comparator/matcher ブロックに渡すと**名前付き引数として束縛され positional が 0 個**になる（→ "got 0"）。
+    リストリテラル `(a=>3),(b=>1)` は `ValuePair` を生成するので `@x.list.sort({block})` は動いていた。これは
+    sort 固有ではなく、同根の live バグ `%h.first({block})`（→ "expected 1 got 0" / `.value on Any`）でも再現。
+    - 対処: 汎用ヘルパ `runtime::utils::pair_as_positional`（`Pair`→`ValuePair`）を追加し、要素をブロックに
+      positional 束縛させる。`find_first_match_over_items`（`.first` 駆動）に適用済み（#2725）。
+    - **sort 移行の解禁**: native/VM sort を書く際、comparator にペア要素を渡す箇所で `pair_as_positional` を
+      使えば旧 `dispatch_sort` の暗黙処理を吸収できる → `dispatch_sort` 削除が可能になる（make roast 必須）。
+    - 別根・未対処: pointy `-> $p {...}` / `*.value` matcher は `find_first_match_over_items` の `Value::Sub`
+      呼び出し分岐ではなく `smart_match` 経路に行き topic 未束縛（リテラル配列でも失敗）。別 PR。
 - [ ] **Category C — メソッド / 演算子・arith・coercion の重複**: native fast path（`src/builtins/methods_*`,
       `vm_arith_ops`）と Interpreter slow path（`src/runtime/methods*.rs`）の重複。段階導入・手動監査
       （手順・対象マップ・進捗は [docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)）。
-  - [x] **Phase 1a**: arith `%`/`mod` の `runtime/ops.rs::apply_reduction_op` ローカル再実装を削除し
+  - [x] **Phase 1a (#2719)**: arith `%`/`mod` の `runtime/ops.rs::apply_reduction_op` ローカル再実装を削除し
         native `arith_mod` へ委譲（重複2 arm 削除、`[%] 2**70,3` / `[%] 5,0` の正しさも改善）。
-  - [x] **Phase 1b**: Instance→numeric bridge の重複統合。VM `coerce_numeric_bridge_value` を
+  - [x] **Phase 1b (#2719)**: Instance→numeric bridge の重複統合。VM `coerce_numeric_bridge_value` を
         interpreter `coerce_infix_operand_numeric`（単一 authoritative 実装）へ委譲（重複1削除）。
-  - [~] **Phase 2**: 手動監査の結果、単純値メソッドの interpreter コピーは既に削除済みと判明（残るのは
-        生きた Instance/Buf/comparator fork）。真の残重複は演算子本体の再実装 → `apply_reduction_op` の
-        `~`（concat）を VM `concat_values`（state-free 化）へ委譲（重複1削除＋非ASCII NFC/Buf の潜在バグ修正）。
-        残: `minmax`/比較/論理短絡の本体統合。
-  - [ ] **Phase 3**: genuine-fork メソッドの native 折込（Category B の `%`-chain ブロッカーと連動）。
+        `utils::coerce_numeric`/`coerce_to_numeric` は既に単一実装の共有なので非対象。
+  - [x] **Phase 2 (#2719, #2723)**: 手動監査の結果、**単純値メソッドの interpreter コピーは既に削除済み**と
+        判明（残るのは生きた Instance/Buf/Failure/comparator fork。`dispatch_method_by_name_*` に harvest なし）。
+        真の残重複は `apply_reduction_op` の演算子本体の再実装で、VM がそこへ委譲しているので authoritative:
+        - `~`（concat）を VM `concat_values`（state-free 化）へ委譲（重複1削除＋非ASCII NFC/Buf の潜在バグ修正）。
+        - `[minmax]` を共有 `vm_misc_ops::minmax_bounds_of_value`（再帰版）へ委譲（重複1削除＋ネストの bug 修正）。
+        - 論理短絡 `&&`/`||`/`//` は reduction 専用実装（VM は infix をジャンプにコンパイル）で重複ではない。
+          比較は共有 `runtime::compare_values` 使用済み。→ `apply_reduction_op` の operator-body dedup は完了。
+  - [~] **Phase 3 groundwork (#2725)**: genuine-fork メソッドの native 折込。`%`-chain ブロッカーの根本原因を
+        特定（上の Category B 参照 = `Value::Pair` の named 束縛）し `pair_as_positional` を追加・`.first` を修正。
+        **残（大作業・未着手）**: ① native/VM sort 移行 + `dispatch_sort` 削除（`pair_as_positional` で解禁済み・
+        高 blast-radius）、② `comb`(正規表現 matcher)/`substr`/`split`(named args) の native 折込、
+        ③ pointy/`*.code` matcher の `.first`（smart_match 経路 topic 未束縛、別根）。
 - [ ] **正規表現の validator/matcher 二重実装の統合**（[ANALYSIS.md](ANALYSIS.md) §3.1。重複の一種）。
 
 ### 最終ゴール
@@ -101,8 +116,11 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
       `sync_locals_from_env`/`saved_env_dirty` の dual-store 機構も削除できる（レバー B 完遂）。
 - **残フォールバック**には `// TODO: compile to bytecode` を付け負債を可視化。
 - **次の着手候補（優先順）**: Category A の残り（低リスク・delete & fallthrough）→ Category B の `%`-chain
-  block-dispatch を解決して min/max/sort 移行 → Category C → 🟣第2優先「第一級コンテナ」（レバー C 本丸 +
-  Q2 の Arc-pointer flaky を吸収）。
+  block-dispatch は **根本原因解決済み（#2725, `pair_as_positional`）** なので min/max/sort の native 移行 +
+  `dispatch_sort`/`builtin_min/max` 削除に着手可能 → Category C Phase 3 の残（comb/substr/split 折込）→
+  🟣第2優先「第一級コンテナ」（レバー C 本丸 + Q2 の Arc-pointer flaky を吸収）。
+  - 教訓: 「重複削除」を始めると**潜在バグが芋づる式に出る**（`[%] 2**70` 精度・`[~]` NFC・`[minmax]` ネスト・
+    `%h.first` の named 束縛は全て dedup 作業中に発見・修正）。重複は drift してバグの温床になる実例。
 
 ---
 
