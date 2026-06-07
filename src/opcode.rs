@@ -192,6 +192,9 @@ pub(crate) enum OpCode {
         /// True when RHS was originally `m//` (MatchRegex), which affects
         /// failure return value: `m//` failure returns False, bare `//` returns Nil.
         rhs_is_match_regex: bool,
+        /// True when the LHS is a literal (non-lvalue). A destructive `s///`/`tr///`
+        /// that matches against a literal must throw X::Assignment::RO.
+        lhs_is_literal: bool,
     },
     /// Scalarize a multi-match regex result: Nil -> 0, Positional -> elems, Match -> 1.
     ScalarizeRegexMatchResult,

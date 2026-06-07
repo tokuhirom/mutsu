@@ -1189,6 +1189,7 @@ impl VM {
         negate: bool,
         lhs_var: &Option<String>,
         rhs_is_match_regex: bool,
+        lhs_is_literal: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let left = self.stack.pop().unwrap();
@@ -1218,6 +1219,19 @@ impl VM {
         self.substitution_in_smartmatch = false;
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::Nil);
+        // A destructive `s///`/`tr///` that actually matched against a string
+        // literal has no writable container to update, so Raku throws
+        // X::Assignment::RO (e.g. `'abc' ~~ s/b/g/`). A non-matching attempt is
+        // a no-op and does not throw.
+        if lhs_is_literal && (was_substitution || was_transliterate) && right.truthy() {
+            // Restore the topic before propagating the error.
+            if let Some(v) = saved_topic {
+                self.interpreter.env_mut().insert("_".to_string(), v);
+            } else {
+                self.interpreter.env_mut().remove("_");
+            }
+            return Err(RuntimeError::assignment_ro(Some("Str")));
+        }
         if let Some(var_name) = lhs_var {
             let modified_topic = self
                 .interpreter
