@@ -92,6 +92,42 @@ impl Interpreter {
         false
     }
 
+    /// Validate `package EXPORTHOW { ... }` directive members. An EXPORTHOW
+    /// member named `<directive>::<declarator>` must use a recognized directive
+    /// (DECLARE, SUPERSEDE, or COMPOSE); anything else is X::EXPORTHOW::InvalidDirective.
+    /// A bare member name (no `::`) is shorthand for installing a package type and
+    /// is always allowed.
+    fn validate_exporthow_directives(stmts: &[crate::ast::Stmt]) -> Result<(), RuntimeError> {
+        use crate::ast::Stmt;
+        const VALID: [&str; 3] = ["DECLARE", "SUPERSEDE", "COMPOSE"];
+        for stmt in stmts {
+            let Stmt::Package { name, body, .. } = stmt else {
+                continue;
+            };
+            if name.resolve() != "EXPORTHOW" {
+                continue;
+            }
+            for member in body {
+                let member_name = match member {
+                    Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => name.resolve(),
+                    _ => continue,
+                };
+                if let Some((directive, _)) = member_name.split_once("::")
+                    && !VALID.contains(&directive)
+                {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("directive".to_string(), Value::str(directive.to_string()));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!("EXPORTHOW directive '{}' is unknown", directive)),
+                    );
+                    return Err(RuntimeError::typed("X::EXPORTHOW::InvalidDirective", attrs));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn should_skip_runtime_for_use_only_module(stmts: &[crate::ast::Stmt]) -> bool {
         if stmts.is_empty()
             || !stmts
@@ -1408,6 +1444,10 @@ impl Interpreter {
         // into the caller's language version.
         let saved_language_version = crate::parser::current_language_version();
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
+        // Validate any `package EXPORTHOW { ... }` directives before running the
+        // module: a member named `<directive>::<declarator>` must use a known
+        // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
+        Self::validate_exporthow_directives(&stmts)?;
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
             // Module files should be compiled in a fresh GLOBAL scope, not
             // inheriting the caller's current_package.  Otherwise the compiler
