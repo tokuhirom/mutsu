@@ -1563,6 +1563,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             .to_string(),
                     ));
                 }
+                // Perl 5 string concatenation: `$a . $b`, `"a" . "b"`, `1 . 3`.
+                // A method call may have whitespace before its name (`$x . uc`),
+                // but only when the name is an identifier. When the dot is
+                // followed by whitespace and then a *term* that can never be a
+                // method name -- a string literal, a number, or a sigiled
+                // variable -- it is the obsolete Perl 5 `.` concatenation
+                // operator. (Indirect method calls like `$x.$name` have no space
+                // after the dot, so they are unaffected.)
+                if trimmed.starts_with(['"', '\'', '$', '@', '%'])
+                    || trimmed.starts_with(|c: char| c.is_ascii_digit())
+                {
+                    return Err(PError::fatal(
+                        "X::Obsolete: Unsupported use of . to concatenate strings; \
+                         in Raku please use ~"
+                            .to_string(),
+                    ));
+                }
             }
             expr = auto_invoke_bareword_method_target(expr);
             let r = &rest[1..];
