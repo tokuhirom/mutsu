@@ -69,6 +69,15 @@ impl Compiler {
                             self.emit_nil_value();
                         }
                     }
+                    // A `given` in branch-final position must yield its value
+                    // (the Given statement leaves it on the stack), just like in
+                    // a `do {}` block (see `compile_block_inline`). This keeps
+                    // `if $c { given $v { ... } }` and statement-form `with $v {
+                    // ... }` (lowered to `if { given }`) value-producing instead
+                    // of falling through to Nil.
+                    Stmt::Given { .. } => {
+                        self.compile_stmt(stmt);
+                    }
                     _ => {
                         self.compile_stmt(stmt);
                         self.emit_nil_value();
