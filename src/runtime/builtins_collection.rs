@@ -341,18 +341,9 @@ impl Interpreter {
             .unwrap_or_else(|| Ok(Value::array(Vec::new())))
     }
 
-    pub(super) fn builtin_abs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Int(i)) => Value::Int(i.abs()),
-            Some(Value::BigInt(n)) => Value::bigint(n.as_ref().abs()),
-            Some(Value::Num(f)) => Value::Num(f.abs()),
-            Some(Value::Rat(n, d)) => Value::Rat(n.abs(), d),
-            Some(Value::Complex(r, i)) => Value::Num((r * r + i * i).sqrt()),
-            Some(v) => Value::Num(v.to_f64().abs()),
-            None => Value::Int(0),
-        })
-    }
+    // builtin_abs removed (Slice 6.3 dedup): native `abs` in
+    // src/builtins/functions.rs is authoritative (reached via
+    // call_function_fallback -> native_function).
 
     pub(super) fn builtin_sign(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args

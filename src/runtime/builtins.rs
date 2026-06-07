@@ -448,7 +448,6 @@ impl Interpreter {
             "values" => self.builtin_values(&args),
             "kv" => self.builtin_kv(&args),
             "pairs" => self.builtin_pairs(&args),
-            "abs" => self.builtin_abs(&args),
             "sign" => self.builtin_sign(&args),
             "val" => Ok(super::builtins_collection::builtin_val(&args)),
             "min" => self.builtin_min(&args),
@@ -651,17 +650,9 @@ impl Interpreter {
                 self.call_method_with_values(target, "rindex", method_args)
             }
             "chrs" => self.builtin_chrs(&args),
-            "chr" => self.builtin_chr(&args),
-            "ord" => self.builtin_ord(&args),
             "ords" => self.builtin_ords(&args),
             "unival" => self.builtin_unival(&args),
             "univals" => self.builtin_univals(&args),
-            "flip" => self.builtin_flip(&args),
-            "lc" => self.builtin_lc(&args),
-            "uc" => self.builtin_uc(&args),
-            "tc" => self.builtin_tc(&args),
-            "trim" => self.builtin_trim(&args),
-            "chars" => self.builtin_chars(&args),
             "sprintf" | "zprintf" => {
                 // If the first arg is a Junction, thread through it:
                 // call .Str on each element and concatenate.

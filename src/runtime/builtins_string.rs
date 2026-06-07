@@ -2,6 +2,12 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    // chr / ord removed (Slice 6.3 dedup): native implementations in
+    // src/builtins/functions.rs are authoritative (reached via
+    // call_function_fallback -> native_function). chrs / ords are KEPT: their
+    // native arms are not reachable through the interpreter's
+    // call_function_fallback -> native_function path (multi-arg / array-returning
+    // dispatch differs from the single-arg fallback table).
     pub(super) fn builtin_chrs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut result = String::new();
         for arg in args {
@@ -18,52 +24,6 @@ impl Interpreter {
             }
         }
         Ok(Value::str(result))
-    }
-
-    pub(super) fn builtin_chr(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let Some(arg) = args.first() else {
-            return Ok(Value::str(String::new()));
-        };
-        let (code, display) = match arg {
-            Value::Int(i) => (*i, format!("{}", i)),
-            Value::BigInt(n) => {
-                let hex = format!("{:X}", &**n);
-                return Err(RuntimeError::new(format!(
-                    "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                    n, hex
-                )));
-            }
-            Value::Num(f) => (*f as i64, format!("{}", *f as i64)),
-            _ => {
-                let s = arg.to_string_value();
-                let i = s.parse::<i64>().unwrap_or(0);
-                (i, format!("{}", i))
-            }
-        };
-        if !(0..=0x10FFFF).contains(&code) {
-            let hex = format!("{:X}", code);
-            return Err(RuntimeError::new(format!(
-                "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                display, hex
-            )));
-        }
-        if let Some(ch) = std::char::from_u32(code as u32) {
-            Ok(Value::str(ch.to_string()))
-        } else {
-            Err(RuntimeError::new(format!(
-                "Codepoint {} (0x{:X}) is out of bounds in 'chr'",
-                display, code
-            )))
-        }
-    }
-
-    pub(super) fn builtin_ord(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(val) = args.first()
-            && let Some(ch) = val.to_string_value().chars().next()
-        {
-            return Ok(Value::Int(ch as u32 as i64));
-        }
-        Ok(Value::Nil)
     }
 
     pub(super) fn builtin_ords(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -140,59 +100,8 @@ impl Interpreter {
         Ok(Value::Num(f64::NAN))
     }
 
-    pub(super) fn builtin_flip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        use unicode_normalization::UnicodeNormalization;
-        use unicode_segmentation::UnicodeSegmentation;
-        let val = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        // Flip by grapheme clusters, then normalize to NFC so combining sequences
-        // are emitted in canonical composed form when possible.
-        let reversed = val.graphemes(true).rev().collect::<String>();
-        Ok(Value::str(reversed.nfc().collect::<String>()))
-    }
-
-    pub(super) fn builtin_lc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned().unwrap_or(Value::Nil);
-        Ok(Value::str(crate::builtins::unicode::grapheme_lowercase(
-            &val.to_string_value(),
-        )))
-    }
-
-    pub(super) fn builtin_uc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned().unwrap_or(Value::Nil);
-        Ok(Value::str(crate::builtins::unicode::grapheme_uppercase(
-            &val.to_string_value(),
-        )))
-    }
-
-    pub(super) fn builtin_tc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        Ok(Value::str(crate::builtins::unicode::titlecase_string(&val)))
-    }
-
-    pub(super) fn builtin_trim(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        Ok(Value::str(val.trim().to_string()))
-    }
-
-    pub(super) fn builtin_chars(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        use unicode_segmentation::UnicodeSegmentation;
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Str(s)) => Value::Int(s.graphemes(true).count() as i64),
-            Some(v) => Value::Int(v.to_string_value().graphemes(true).count() as i64),
-            _ => Value::Int(0),
-        })
-    }
-
+    // flip / lc / uc / tc / trim / chars removed (Slice 6.3 dedup): native
+    // implementations in src/builtins/functions.rs are authoritative.
     pub(super) fn builtin_sprintf(
         &self,
         args: &[Value],
