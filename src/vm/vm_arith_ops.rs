@@ -528,7 +528,7 @@ impl VM {
             self.stack.push(result);
             return;
         }
-        let result = self.concat_values(left, right);
+        let result = Self::concat_values(left, right);
         self.stack.push(result);
     }
 
@@ -582,7 +582,7 @@ impl VM {
                 .collect();
             return Value::junction(kind, results);
         }
-        self.concat_values(left, right)
+        Self::concat_values(left, right)
     }
 
     fn swap_junction_kinds(
@@ -607,7 +607,11 @@ impl VM {
         }
     }
 
-    fn concat_values(&self, left: Value, right: Value) -> Value {
+    /// String/Buf concatenation (`~`). This is the single authoritative impl,
+    /// shared by the VM's `~` op and the interpreter's reduction-operator path
+    /// (`apply_reduction_op` delegates here). It uses no VM state, so it is a
+    /// plain associated function callable as `crate::vm::VM::concat_values(...)`.
+    pub(crate) fn concat_values(left: Value, right: Value) -> Value {
         // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
             let result_class = if let Value::Instance { class_name, .. } = &left {

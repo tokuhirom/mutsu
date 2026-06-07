@@ -155,55 +155,17 @@ impl VM {
         }
     }
 
+    /// Coerce an Instance operand to a numeric value via its `Numeric`/`Bridge`
+    /// method. Delegates to the single authoritative implementation on the
+    /// interpreter (`Interpreter::coerce_infix_operand_numeric`) so the
+    /// Instance->numeric bridge logic is not duplicated between the VM and the
+    /// interpreter. Non-Instance values (the hot Int/Num/Rat path) return early
+    /// inside the helper without any method dispatch.
     pub(super) fn coerce_numeric_bridge_value(
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        if !matches!(value, Value::Instance { .. }) {
-            return Ok(value);
-        }
-        // Unhandled Failure: throw the stored exception
-        if let Some(err) = self
-            .interpreter
-            .failure_to_runtime_error_if_unhandled(&value)
-        {
-            return Err(err);
-        }
-        // Match coerces to Numeric via its matched string
-        if let Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } = &value
-            && class_name == "Match"
-            && let Some(str_val) = attributes.get("str")
-        {
-            let s = str_val.to_string_value();
-            let s = s.trim();
-            if let Ok(i) = s.parse::<i64>() {
-                return Ok(Value::Int(i));
-            }
-            if let Ok(f) = s.parse::<f64>() {
-                return Ok(Value::Num(f));
-            }
-            return Ok(Value::Int(0));
-        }
-        // Check if type is known to be Real/Numeric, OR if the class has a
-        // user-defined Numeric method (for classes like `class Blue { method Numeric { 3 } }`)
-        let known_numeric = self.interpreter.type_matches_value("Real", &value)
-            || self.interpreter.type_matches_value("Numeric", &value);
-        let has_numeric_method = if let Value::Instance { ref class_name, .. } = value {
-            let cn = class_name.to_string();
-            self.interpreter.has_user_method(&cn, "Numeric")
-        } else {
-            false
-        };
-        if !known_numeric && !has_numeric_method {
-            return Ok(value);
-        }
-        self.try_compiled_method_or_interpret(value.clone(), "Numeric", vec![])
-            .or_else(|_| self.try_compiled_method_or_interpret(value.clone(), "Bridge", vec![]))
-            .or(Ok(value))
+        self.interpreter.coerce_infix_operand_numeric(value)
     }
 
     pub(super) fn coerce_numeric_bridge_pair(

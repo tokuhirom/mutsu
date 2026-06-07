@@ -103,3 +103,48 @@ deleted entirely (PLAN.md final goal); the `env_dirty` dual-store flag then fall
 out because the only remaining by-name arbitrary writer (the interpreter bridge)
 is gone. Until then, prefer **deleting a confirmed-redundant interpreter copy**
 over adding a third place to keep in sync.
+
+## Category C progress — arith / operator / coercion (2026-06-07)
+
+Phased, low-risk-first (user-approved); detection by **manual audit** of
+`should_bypass_native_fastpath` (`methods_native_bypass.rs:105`) + native
+coverage, each change gated on EVAL equivalence + `make roast`.
+
+### Phase 1a — reduction `%`/`mod` → native `arith_mod`
+`runtime/ops.rs::apply_reduction_op` reimplemented `%`/`mod` locally (Int + f64
+only, soft divide-by-zero `Failure`), duplicating `builtins::arith_mod`. Replaced
+the two local arms with a delegation. **2 duplicate arms removed**; also a
+correctness fix — `[%] 2**70, 3` was lossy via `to_int` (now exact), and
+`[%] 5, 0` now throws like `raku` / the `%` operator instead of a soft Failure.
+
+### Phase 1b — unify Instance→numeric bridge coercion
+Of 4 numeric-coercion helpers, two were duplicates of the *Instance→numeric
+bridge*: VM `coerce_numeric_bridge_value` (full: Failure throw, Match, has_user_method,
+~25 arith/comparison call sites) and interpreter `coerce_infix_operand_numeric`
+(simplified copy, 2 callers). Made `coerce_infix_operand_numeric` the single
+authoritative impl (expanded; dispatch via `call_method_with_values`); the VM
+helper delegates to it. **1 duplicate removed.** `utils::coerce_numeric(l,r)` and
+`coerce_to_numeric(v)` are already single-impl (shared by VM + native) — not
+duplicates, left as-is.
+
+### Phase 2 — dead method copies + operator-body dedup
+**Audit finding**: the "dead simple-value method copy" harvest is **largely
+already done** — simple 0-arg value methods (`flip`/`fc`/`succ`/`pred`/`abs`/
+`sign`/`sqrt`/`floor`/`ceiling`/`round`/…) have **no** interpreter dispatch copy.
+What remains in `dispatch_method_by_name_{1,2,3}` is **live** (Instance-only forks
+that coerce + re-dispatch e.g. `dispatch_trig_instance_method`; Buf/Blob
+`X::Buf::AsStr` special-cases; Failure-explosion exclusion lists; Promise/Supply/
+Match methods; Category-B comparator/lazy forks). So Phase 2's real remaining
+duplication is **operator-body reimplementation** in `apply_reduction_op` (which
+is itself authoritative — the VM delegates to it via `vm_dispatch_helpers.rs:115/453`
+etc.).
+- [x] **`~` (concat)**: `apply_reduction_op`'s `~` arm reimplemented Buf~Buf +
+      a `format!` fallback lacking the VM's Buf~non-Buf decode and non-ASCII NFC
+      normalization. Made `VM::concat_values` a state-free `pub(crate)` assoc fn
+      and delegated both the VM `~` op and the reduction `~` arm to it. **1
+      duplicate removed**; fixes a latent bug (`[~]` now NFC-normalizes like `~`).
+- [ ] Remaining `apply_reduction_op` bodies that reimplement vs delegate
+      (`minmax`, logic short-circuit; comparisons already use shared
+      `runtime::compare_values`).
+- [ ] Genuine-fork methods → fold into native (Category B style; depends on the
+      `%`-chain block-dispatch blocker noted under Category B in PLAN.md).

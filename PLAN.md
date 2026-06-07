@@ -81,7 +81,17 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
     呼ばれる別経路があり、旧 `dispatch_sort` はそれを吸収していた。**この `%`-chain block-dispatch の差を解決
     してから** sort を移行・`dispatch_sort` 削除すること（make roast 必須）。今回は回帰回避のため移行を revert 済み。
 - [ ] **Category C — メソッド / 演算子・arith・coercion の重複**: native fast path（`src/builtins/methods_*`,
-      `vm_arith_ops`）と Interpreter slow path（`src/runtime/methods*.rs`）の重複。Category A/B の後。
+      `vm_arith_ops`）と Interpreter slow path（`src/runtime/methods*.rs`）の重複。段階導入・手動監査
+      （手順・対象マップ・進捗は [docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)）。
+  - [x] **Phase 1a**: arith `%`/`mod` の `runtime/ops.rs::apply_reduction_op` ローカル再実装を削除し
+        native `arith_mod` へ委譲（重複2 arm 削除、`[%] 2**70,3` / `[%] 5,0` の正しさも改善）。
+  - [x] **Phase 1b**: Instance→numeric bridge の重複統合。VM `coerce_numeric_bridge_value` を
+        interpreter `coerce_infix_operand_numeric`（単一 authoritative 実装）へ委譲（重複1削除）。
+  - [~] **Phase 2**: 手動監査の結果、単純値メソッドの interpreter コピーは既に削除済みと判明（残るのは
+        生きた Instance/Buf/comparator fork）。真の残重複は演算子本体の再実装 → `apply_reduction_op` の
+        `~`（concat）を VM `concat_values`（state-free 化）へ委譲（重複1削除＋非ASCII NFC/Buf の潜在バグ修正）。
+        残: `minmax`/比較/論理短絡の本体統合。
+  - [ ] **Phase 3**: genuine-fork メソッドの native 折込（Category B の `%`-chain ブロッカーと連動）。
 - [ ] **正規表現の validator/matcher 二重実装の統合**（[ANALYSIS.md](ANALYSIS.md) §3.1。重複の一種）。
 
 ### 最終ゴール

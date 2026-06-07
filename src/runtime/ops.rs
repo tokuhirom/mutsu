@@ -1044,8 +1044,6 @@ impl Interpreter {
                 _ => 0,
             }
         };
-        let is_fractional =
-            |v: &Value| matches!(v, Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _));
         // Handle R (reverse) meta-prefix: swap operands and recurse with inner op
         if let Some(inner_op) = op.strip_prefix('R')
             && !inner_op.is_empty()
@@ -1106,61 +1104,9 @@ impl Interpreter {
                 }
                 Ok(Value::Int(to_int(left).div_euclid(divisor)))
             }
-            "%" | "mod" => {
-                if is_fractional(left) || is_fractional(right) {
-                    let l = to_num(left);
-                    let r = to_num(right);
-                    if r == 0.0 {
-                        return Ok(RuntimeError::divide_by_zero_failure(
-                            Some(Value::Num(l)),
-                            Some("%"),
-                        ));
-                    }
-                    // Raku uses floored-division modulo (sign follows divisor)
-                    Ok(Value::Num(l - (l / r).floor() * r))
-                } else {
-                    let l = to_int(left);
-                    let r = to_int(right);
-                    if r == 0 {
-                        return Ok(RuntimeError::divide_by_zero_failure(
-                            Some(Value::Int(l)),
-                            Some("%"),
-                        ));
-                    }
-                    // Raku uses floored-division modulo (sign follows divisor)
-                    // a - floor(a/b) * b
-                    let rem = l % r;
-                    let result = if rem != 0 && (rem ^ r) < 0 {
-                        rem + r
-                    } else {
-                        rem
-                    };
-                    Ok(Value::Int(result))
-                }
-            }
+            "%" | "mod" => crate::builtins::arith_mod(left.clone(), right.clone()),
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
-            "~" => {
-                // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
-                if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
-                    let result_class = if let Value::Instance { class_name, .. } = left {
-                        *class_name
-                    } else {
-                        crate::symbol::Symbol::intern("Buf")
-                    };
-                    let mut bytes = crate::vm::VM::extract_buf_bytes(left);
-                    bytes.extend(crate::vm::VM::extract_buf_bytes(right));
-                    let byte_vals: Vec<Value> =
-                        bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(result_class, attrs));
-                }
-                Ok(Value::str(format!(
-                    "{}{}",
-                    crate::runtime::utils::coerce_to_str(left),
-                    crate::runtime::utils::coerce_to_str(right)
-                )))
-            }
+            "~" => Ok(crate::vm::VM::concat_values(left.clone(), right.clone())),
             "&&" | "and" => {
                 if !left.truthy() {
                     Ok(left.clone())
