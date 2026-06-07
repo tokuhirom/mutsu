@@ -1155,41 +1155,11 @@ impl Interpreter {
                 }
             }
             "minmax" => {
-                // Helper to extract (lo, hi) from a value:
-                // - Range variants → (start, end)
-                // - Array/Seq → (min_element, max_element)
-                // - Scalar → (value, value)
-                let range_bounds = |v: &Value| -> (Value, Value) {
-                    match v {
-                        Value::Range(a, b)
-                        | Value::RangeExcl(a, b)
-                        | Value::RangeExclStart(a, b)
-                        | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
-                        Value::GenericRange { start, end, .. } => {
-                            ((**start).clone(), (**end).clone())
-                        }
-                        Value::Array(items, _) | Value::Seq(items) => {
-                            if items.is_empty() {
-                                (Value::Nil, Value::Nil)
-                            } else {
-                                let mut lo = items[0].clone();
-                                let mut hi = items[0].clone();
-                                for item in items.iter().skip(1) {
-                                    if crate::runtime::compare_values(item, &lo) < 0 {
-                                        lo = item.clone();
-                                    }
-                                    if crate::runtime::compare_values(item, &hi) > 0 {
-                                        hi = item.clone();
-                                    }
-                                }
-                                (lo, hi)
-                            }
-                        }
-                        _ => (v.clone(), v.clone()),
-                    }
-                };
-                let (left_lo, left_hi) = range_bounds(left);
-                let (right_lo, right_hi) = range_bounds(right);
+                // Extract (lo, hi) bounds from each operand via the single shared
+                // helper (handles Range / Array-Seq / scalar, recursing into
+                // elements) so this logic is not duplicated with the VM.
+                let (left_lo, left_hi) = crate::vm::vm_misc_ops::minmax_bounds_of_value(left);
+                let (right_lo, right_hi) = crate::vm::vm_misc_ops::minmax_bounds_of_value(right);
                 let lo = if crate::runtime::compare_values(&left_lo, &right_lo) <= 0 {
                     left_lo
                 } else {
