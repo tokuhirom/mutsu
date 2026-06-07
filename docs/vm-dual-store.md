@@ -897,81 +897,66 @@ Reaching that requires, roughly in order:
       `env_dirty` survives only as the rare interpreter-bridge safety net; the hot
       per-call pull — the actual lever-B cost — is eliminated.
 
-### Remaining method-call dual-store costs (measured 2026-06-07)
+      **NEXT SESSION — resume map (surveyed 2026-06-07, post #2689/#2692).** Build
+      debug (`cargo build`, counters are opt-level-independent) and measure
+      `benchmarks/*.raku` (NOT just synthetic mb_* — those missed accessor reads /
+      loop-local `.new`). Current per-bench `locals_pulls` / `env_deep_copies`:
 
-`MUTSU_VM_STATS=1` on the method/OOP benches isolates the two costs that survive
-after the overlay conversion (Slices 6.0–6.2). Both are structural, not
-quick-fixable in isolation:
+      | bench               | locals_pulls | env_deep_copies | residual cause |
+      |---------------------|-------------:|----------------:|----------------|
+      | method-call         |            1 |               1 | done |
+      | bench-class         |            2 |               2 | done |
+      | bench-fib / fib     |            0–1 |             0 | done (Slice 6.1) |
+      | hash/string-concat/int |         1 |               0 | done |
+      | **bench-string**    |     **5003** |               0 | **regex `~~` (NEXT, step 2)** |
+      | **bench-array**     |            4 |       **10005** | `.map`/`.grep`/`.sort` closures — **lever C, not B** |
+      | array-ops           |          101 |             200 | closures (lever C) |
 
-1. **Per-method-call `locals_pulls` (= the `env_dirty` flag, Slice 6.3). — FIXED
-   (Slice 6.3 stage 1).** `tmp/mb_method.raku` (`$p.g()` in a 10k loop) →
-   `locals_pulls` dropped from **10000 → 1**; `mb_nested` and `@a.elems` on a var
-   likewise 10001 → 1. The method-call opcode used to set `env_dirty=true`
-   unconditionally after dispatch (e.g. `vm_call_method_mut_ops.rs` ~line 1305),
-   forcing an O(caller-locals) `sync_locals_from_env` on the caller's next
-   `GetLocal`, every call.
+      - **NEXT lever-B target = the regex/smartmatch pull (bench-string, 1 pull per
+        `~~`).** Root: `exec_smartmatch_*` in `src/vm/vm_comparison_ops.rs:~1261`
+        unconditionally sets `self.env_dirty = true` after the match (and pulls at
+        ~1205 when already dirty). The match writes env by name — topic `_`
+        (1198/1233), `var_name` for `$x ~~ ...` (1228), and the regex engine writes
+        `$/`/`$0..`/`$<name>`. This is the canonical **step 2 (reverse
+        write-through)**: when one of those names has a slot in `code.locals`, also
+        write `self.locals[slot]` (mirror of Slice 6.2's `flush_local_to_env`) and
+        DROP the blanket `env_dirty = true`. `$/`/`$0`/`$<…>` are almost never
+        `code.locals` (like `?LINE` — candidates for `could_name_caller_local`-style
+        skip); `_` and `var_name` can be locals → need the slot write. Repro:
+        `MUTSU_VM_STATS=1 cargo run -- -e 'my $c=0; for ^5000 { if "x 42 y" ~~ /\d+/ { $c++ } }; say $c'` → `locals_pulls=5001`, target 1.
+      - **Then the rest of step 2** — the by-name var/control setters
+        (`vm_var_get_ops`, `vm_register_ops` `&sub`/type-name writes, `vm_control_ops`,
+        `vm_data_ops`): same reverse-write-through pattern. Verify with a roast pass
+        over `S02-magicals` / `S05-match` / dynamic-scope.
+      - **Step 3 (I/O Say/Put/Print/Note round-trip + EVAL/atomic carriers)** stays
+        gated on interpreter-bridge removal (lever A finish / Q2). The Say/Put/Print/
+        Note `ensure_locals_synced`+`sync_env_from_locals` round-trip (vm.rs
+        ~2648-2669) is independently droppable once `.gist`/`.Str` no longer reads
+        env by name.
+      - **NOT lever B:** `bench-array`/`array-ops` `env_deep_copies` is the
+        per-element **closure** overlay deep-copy (`.map`/`.grep`/`.sort` blocks),
+        i.e. lever C (first-class container identity / per-iteration capture), not
+        the `env_dirty` flag. Track it there, not here.
 
-   **Earlier attempt that FAILED (instructive, do not repeat):** snapshot the
-   caller env overlay `Arc` before dispatch and only set `env_dirty` when it
-   changed. It backfired — the extra `Arc` ref held across the call raised the
-   overlay refcount and *induced* a `make_mut` deep copy every call
-   (`env_deep_copies` 1→10001), and the caller env Arc changes on every call
-   anyway (overlay merge/restore allocates a new Arc), so `env_changed` was always
-   true and `locals_pulls` did not drop.
+### Engineering lessons (Slices 6.0–6.3 stage 1, for reference)
 
-   **What worked:** do not snapshot/compare the whole env. Instead let the
-   compiled-method paths *report* purity through a `method_dispatch_pure` VM flag
-   (default `false`, so the opcode falls back to the conservative mark), and make
-   `merge_method_env` compute a *precise* changed-flag with O(1) per-key checks
-   (`cheaply_unchanged` Arc-ptr/scalar equality + `could_name_caller_local` name
-   filter) so the nested-call overlay flatten and the per-line `?LINE` churn no
-   longer trip it. No held `Arc`, no induced deep copy (`env_deep_copies` stays
-   1). See PLAN.md lever C / the Slice 6.3 stage-1 entry above.
+Both per-call costs that survived the overlay conversion are now fixed (details in
+news/2026-06.md; remaining work in the resume map above):
 
-2. **Per-*nested*-method-call O(env) deep copy. — FIXED (multi-tier overlay).**
-   `tmp/mb_nested.raku` (`method f() { self.d() }`) → `env_deep_copies` dropped
-   from **10001 → 1** (a non-nested method already stayed at 1). Two coupled
-   changes:
-   - **Multi-tier overlay chain.** `Env::parent` changed from
-     `Option<Arc<HashMap<Symbol,Value>>>` (a single flattened overlay) to
-     `Option<Arc<Env>>` (the whole parent env, itself possibly scoped).
-     `scoped_child` now chains over the *whole* caller env, so a method already
-     under a scoped overlay calling another method just adds a tier — no
-     `flattened()` collapse per nested call. `get`/`contains`/`get_mut`/`remove`
-     walk the chain (base tier consulted once at the flat tail); `iter`/`keys`/
-     `values`/`overlay_iter` stay overlay-only (so merge-back still sees exactly
-     the callee's own writes). `push_call_frame` no longer flattens; `saved_env`
-     is an O(1) clone. Long-lived captures (closures stored in `Value::Sub`, the
-     `make_sub` return value, the callframe-introspection sub, END phasers,
-     `clone_for_thread`) flatten via `clone_env()` at the capture site, so an
-     overlay-only consumer of a captured env is never starved of parent-chain
-     lexicals.
-   - **In-place merge-back (no `saved.clone()` deep copy).** With the parent now
-     an `Arc<Env>` that *shares the caller's overlay map*, the old
-     `merge_method_env`'s `let mut merged = saved.clone(); merged.insert(...)`
-     hit `Arc::make_mut` (refcount ≥ 2) on every nested return — the deep copy
-     just moved here from the flatten. `merge_method_env` now takes `saved` and
-     `current` **by value**, collects the callee's caller-visible overlay writes
-     into a small `Vec`, **drops `current`** (releasing its parent-chain `Arc`
-     that shares `saved`'s overlay), then mutates the sole-owner `saved` in place.
-   Pin: `t/multitier-overlay-env.t`, plus the existing `t/scoped-overlay-*.t`.
-   Merged as PR #2684.
+- **Per-nested-call O(env) deep copy** → multi-tier overlay (`Env::parent:
+  Option<Arc<Env>>` chains the whole caller env; `merge_method_env` takes both envs
+  by value, drops `current`, mutates sole-owner `saved` in place). PR #2684.
+  `mb_nested` env_deep_copies 10001→1. Wall-clock verified no regression
+  (method-call ~0.55s, bench-class ~0.6–0.7s under load).
+- **Per-method-call `locals_pulls`** → `method_dispatch_pure` flag + precise
+  `merge_method_env` changed-flag (Slice 6.3 stage 1/1b, #2689/#2692).
 
-   **⚠️ Wall-clock follow-up (unresolved — verify on a quiet machine):** the
-   `env_deep_copies` win is unambiguous, but the eliminated copies were of *small*
-   envs (cheap), while the multi-tier adds a per-call cost (an extra `Arc<Env>`
-   allocation for the chained parent, a chain-walk branch in `get`, and a `Vec`
-   in `merge_method_env`). A quick `benchmarks/{method-call,bench-fib,bench-class}`
-   comparison vs the pre-merge commit (5f4501ea) was **inconclusive** because the
-   box was under heavy load (load avg ~4-14; single runs swung 0.55-1.08s on
-   method-call, 0.66-1.40s on bench-class). Min-of-8 on `main`+pre gave
-   method-call 0.55 / bench-fib 3.32 / bench-class 0.66; the branch min-of-8 did
-   not complete. **Next session: re-measure with `hyperfine` (or min-of-N idle)
-   comparing `git checkout 5f4501ea` vs `9419784f` release builds. If method-call/
-   bench-fib regressed, the likely culprit is the extra `Arc<Env>` alloc per
-   scoped call — consider storing the flat-parent overlay Arc inline (skip the
-   `Arc<Env>` wrapper) when the parent is flat (depth 0), chaining only when the
-   parent is itself scoped.**
+**The trap, do not repeat:** detecting "did the call change caller env?" by
+snapshotting/comparing the caller env `Arc` across the call FAILS — holding the
+extra `Arc` ref raises the refcount and *induces* an `Arc::make_mut` deep copy
+every call, and the overlay Arc changes every call anyway. The fix is to have the
+dispatch *report* purity (a flag) and compute the changed-signal with O(1) per-key
+checks (Arc-ptr/scalar equality, name-shape filter) — never hold/compare the env.
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
