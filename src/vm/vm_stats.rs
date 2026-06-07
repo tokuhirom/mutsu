@@ -18,6 +18,14 @@ static METHOD_TOTAL: AtomicU64 = AtomicU64::new(0);
 static METHOD_FALLBACK: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_FALLBACK: AtomicU64 = AtomicU64::new(0);
+/// Dispatches that enter the interpreter purely as a *carrier*, not as a
+/// tree-walk fallback. `EVAL`/`EVALFILE` compile the supplied source to
+/// bytecode and run it on a sub-VM (`run_compiled_block`); pseudo-package reads
+/// (`CALLER::`/`OUTER::`/`SETTING::`/`DYNAMIC::`) are reflective env lookups.
+/// Neither tree-walks user code, so counting them as fallbacks overstates the
+/// real decoupling gap. They are tracked separately here (lever A). See
+/// docs/vm-decoupling.md.
+static FUNCTION_CARRIER: AtomicU64 = AtomicU64::new(0);
 
 /// Per-name function-fallback histogram (only populated when stats are on).
 /// Tells us *which* builtins/subs still route through the interpreter, so
@@ -31,6 +39,14 @@ fn function_fallback_by_name() -> &'static Mutex<HashMap<String, u64>> {
 /// Per-name method-fallback histogram (only populated when stats are on). Same
 /// purpose as [`function_fallback_by_name`] but for `.method(...)` dispatch.
 fn method_fallback_by_name() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Per-name carrier-dispatch histogram (only populated when stats are on).
+/// Same purpose as the fallback histograms, but for interpreter-as-carrier
+/// dispatch ([`record_function_carrier`]) that does not tree-walk user code.
+fn function_carrier_by_name() -> &'static Mutex<HashMap<String, u64>> {
     static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -85,6 +101,19 @@ pub(crate) fn record_function_fallback(name: &str) {
     if enabled() {
         FUNCTION_FALLBACK.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = function_fallback_by_name().lock() {
+            *map.entry(name.to_string()).or_insert(0) += 1;
+        }
+    }
+}
+
+/// Record a dispatch that enters the interpreter as a *carrier* rather than a
+/// tree-walk fallback (`EVAL`/`EVALFILE`, pseudo-package reads). Counted in its
+/// own bucket so the fallback metric reflects only genuine tree-walk delegation.
+#[inline]
+pub(crate) fn record_function_carrier(name: &str) {
+    if enabled() {
+        FUNCTION_CARRIER.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = function_carrier_by_name().lock() {
             *map.entry(name.to_string()).or_insert(0) += 1;
         }
     }
@@ -162,8 +191,9 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] method-call opcodes={m_total} interpreter_fallbacks={m_fallback} ({m_pct:.1}% of opcodes)"
     );
+    let f_carrier = FUNCTION_CARRIER.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] function-call opcodes={f_total} interpreter_fallbacks={f_fallback} ({f_pct:.1}% of opcodes)"
+        "[mutsu vm-stats] function-call opcodes={f_total} interpreter_fallbacks={f_fallback} ({f_pct:.1}% of opcodes) interpreter_carrier={f_carrier} (EVAL/pseudo-package, not tree-walk)"
     );
     let clone_env = CLONE_ENV.load(Ordering::Relaxed);
     let deep_copy = ENV_DEEP_COPY.load(Ordering::Relaxed);
@@ -201,6 +231,22 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] method-fallback by name (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = function_carrier_by_name().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] function-carrier by name (top {}): {}",
             top.len(),
             top.join(" ")
         );

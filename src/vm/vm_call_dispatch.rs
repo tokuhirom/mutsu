@@ -69,7 +69,11 @@ impl VM {
         if let Some(result) = self.try_native_test_function(name, &args) {
             return result;
         }
-        crate::vm::vm_stats::record_function_fallback(name);
+        if Self::is_interpreter_carrier_function(name) {
+            crate::vm::vm_stats::record_function_carrier(name);
+        } else {
+            crate::vm::vm_stats::record_function_fallback(name);
+        }
         self.interpreter.call_function(name, args)
     }
 
@@ -198,6 +202,23 @@ impl VM {
             return true;
         }
         false
+    }
+
+    /// Whether a name that reaches the interpreter does so as a *carrier* rather
+    /// than as a tree-walk fallback. `EVAL`/`EVALFILE` compile their source to
+    /// bytecode and run it on a sub-VM (`eval_block_value` -> `run_compiled_block`);
+    /// pseudo-package reads (`CALLER::`/`OUTER::`/`SETTING::`/`DYNAMIC::`) are
+    /// reflective env lookups. Neither tree-walks user code, so they are counted
+    /// in a separate stats bucket (lever A). The remaining coupling — that the
+    /// shared env/classes/roles registries are owned by the `Interpreter` struct
+    /// — is a lever B (state ownership) concern, not a dispatch fallback.
+    pub(super) fn is_interpreter_carrier_function(name: &str) -> bool {
+        name == "EVAL"
+            || name == "EVALFILE"
+            || name.contains("SETTING::")
+            || name.contains("OUTER::")
+            || name.contains("CALLER::")
+            || name.contains("DYNAMIC::")
     }
 
     pub(super) fn find_compiled_function<'a>(
@@ -1781,5 +1802,29 @@ impl VM {
             }
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn carrier_functions_are_not_tree_walk_fallbacks() {
+        // EVAL/EVALFILE compile to bytecode and run on a sub-VM; pseudo-package
+        // reads are reflective env lookups. Both enter the interpreter as a
+        // carrier, so they are classified out of the tree-walk fallback metric.
+        assert!(VM::is_interpreter_carrier_function("EVAL"));
+        assert!(VM::is_interpreter_carrier_function("EVALFILE"));
+        assert!(VM::is_interpreter_carrier_function("Foo::CALLER::bar"));
+        assert!(VM::is_interpreter_carrier_function("OUTER::x"));
+        assert!(VM::is_interpreter_carrier_function("SETTING::y"));
+        assert!(VM::is_interpreter_carrier_function("DYNAMIC::z"));
+
+        // Genuine user/builtin subs are real fallbacks when they reach the
+        // interpreter, not carriers.
+        assert!(!VM::is_interpreter_carrier_function("say"));
+        assert!(!VM::is_interpreter_carrier_function("my-sub"));
+        assert!(!VM::is_interpreter_carrier_function("evaluate"));
     }
 }
