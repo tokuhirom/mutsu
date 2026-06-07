@@ -662,6 +662,18 @@ impl VM {
                 // by the function (e.g. $a++ where $a is from the caller's scope).
                 self.env_dirty = true;
             }
+        } else {
+            // Slice 6.3 step 2: the no-merge case — a 0-local function (no overlay,
+            // no env clone). Its body wrote directly to the live caller env, so we
+            // can't detect a captured-outer write by a merge. Gate on the
+            // compile-time `has_env_writes` flag instead of the old blanket
+            // post-call mark: a body that performs NO env write (`sub f { 42 }`,
+            // no assign / increment / nested call / registration) cannot dirty a
+            // caller slot — the dispatch's routine `_` is restored above — so it
+            // needs no pull. Only a body that can write env forces the re-sync.
+            if cf.code.has_env_writes {
+                self.env_dirty = true;
+            }
         }
 
         // Restore caller's $_ after routine call. In the scoped path the caller

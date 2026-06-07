@@ -237,11 +237,12 @@ impl VM {
                 }
                 let result = self.call_compiled_function_fast(cf, compiled_fns)?;
                 self.stack.push(result);
-                // Conservatively mark env dirty so the caller re-syncs its locals
-                // from env on the next env-dirty barrier (the zero-arg fast path
-                // does not use the scoped-overlay merge that the positional_light /
-                // light paths rely on to signal env_dirty precisely).
-                self.env_dirty = true;
+                // Slice 6.3 step 2: no blanket env_dirty here. call_compiled_function_fast
+                // now signals env_dirty precisely: for a function WITH locals via its
+                // scoped-overlay / clone merge (captured-outer write only), and for a
+                // 0-local function via the compile-time `has_env_writes` gate. A pure
+                // 0-arg call (`sub f { 42 }`) no longer forces a per-call
+                // O(caller-locals) locals pull.
                 return Ok(());
             }
         }

@@ -925,10 +925,45 @@ Reaching that requires, roughly in order:
         S05-capture / S05-substitution / given-when roast green (the 2 fails in
         S05-capture/hash.t + S05-substitution/subst.t are pre-existing, non-whitelisted,
         identical count with/without the change).
-      - **NEXT: the rest of step 2** — the by-name var/control setters
-        (`vm_var_get_ops`, `vm_register_ops` `&sub`/type-name writes, `vm_control_ops`,
-        `vm_data_ops`): same reverse-write-through pattern. Verify with a roast pass
-        over `S02-magicals` / `S05-match` / dynamic-scope.
+      - **DONE: 0-arg compiled-function fast path (step 2, second target).** The
+        `CallFunc` 0-arg fast path (`exec_call_func_op`, `vm_call_func_ops.rs` ~244)
+        used to set a blanket `self.env_dirty = true` after every
+        `call_compiled_function_fast`, so even a pure `sub f { 42 }` forced an
+        O(caller-locals) pull per call (`for ^5000 { $c += f() }` → locals_pulls
+        5001). Fix: `call_compiled_function_fast` (`vm_call_dispatch.rs`) now signals
+        env_dirty *precisely* — for a function WITH locals via its scoped-overlay /
+        clone merge (already did, captured-outer write only), and for a **0-local**
+        function (no overlay/no clone, so no merge) via the compile-time
+        `cf.code.has_env_writes` gate: a body that performs no env write (no
+        assign/increment/nested call/registration) cannot dirty a caller slot — the
+        dispatch's routine `_` is restored — so it needs no pull. **locals_pulls
+        5001 → 2; env_deep_copies unchanged (1); fib unchanged.** **KEY GOTCHA (cost
+        a build):** do NOT instead extend `use_scoped` to 0-local functions — installing
+        a scoped overlay so the merge can detect the write *regresses* env_deep_copies
+        1 → 5000 (the routine-`_` insert into the freshly-chained overlay forces a
+        make_mut). The compile-time `has_env_writes` gate is zero runtime cost and
+        avoids the overlay entirely. Pinned by `t/zeroarg-env-dirty.t` (16).
+      - **NEXT: the rest of step 2** — the remaining setters split into THREE kinds
+        (the resume map originally lumped them as "by-name var/control ops"; they are
+        not uniform):
+        1. **post-call conservative marks on alternate dispatch paths** — `vm_var_get_ops`
+           (bareword-term-as-call, 10), `vm_register_ops` trait/`call_function` sites
+           (1138/1171/1349/1474/1569): these mark dirty after an interpreter/named
+           call. Making them precise needs the *function-dispatch purity signal*
+           extended to `call_compiled_function_named` (it currently does the merge but
+           does not report a changed-flag like the method path's `method_dispatch_pure`).
+        2. **genuine by-name writes — clean reverse-write-through / redundant drops**:
+           `vm_data_ops:418` (push fast path already restores the local slot at
+           ~413-415 → the mark is redundant, drop it), `vm_register_ops:824/908`
+           (already call `locals_set_by_name` → redundant), `vm_var_assign_ops:4018/4042`
+           (`:=` element SlotRef bind → `update_local_if_exists`). Safe, low-risk, but
+           cold paths (no benchmark movement).
+        3. **loop/control env round-trips** — `vm_control_ops` (7, for/while/given setup
+           + topic restore) and `vm_misc_ops` (let/temp restore): conservative marks
+           for the loop bodies' by-name env juggling; need per-case analysis, higher
+           risk. Defer.
+        Verify any of these with a roast pass over `S02-magicals` / `S05-match` /
+        dynamic-scope.
       - **Step 3 (I/O Say/Put/Print/Note round-trip + EVAL/atomic carriers)** stays
         gated on interpreter-bridge removal (lever A finish / Q2). The Say/Put/Print/
         Note `ensure_locals_synced`+`sync_env_from_locals` round-trip (vm.rs
