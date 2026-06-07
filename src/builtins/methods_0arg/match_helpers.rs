@@ -99,7 +99,7 @@ pub(super) fn match_value_to(val: &Value) -> i64 {
 /// Positional captures use `ValuePair(Int => Match)` and named captures use
 /// `Pair(Str => Match)` to preserve the Raku-visible key types.
 pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
-    let mut pairs: Vec<(i64, Value)> = Vec::new();
+    let mut pairs: Vec<(i64, i64, Value)> = Vec::new();
 
     // Collect named capture positions to filter out shadowed positional captures
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
@@ -123,6 +123,7 @@ pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
                 if !shadowed {
                     pairs.push((
                         from,
+                        to,
                         Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(item.clone())),
                     ));
                 }
@@ -135,15 +136,18 @@ pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
         for (key, val) in named.iter() {
             for item in expand_capture_items(val) {
                 let from = match_value_from(item);
-                pairs.push((from, Value::Pair(key.clone(), Box::new(item.clone()))));
+                let to = match_value_to(item);
+                pairs.push((from, to, Value::Pair(key.clone(), Box::new(item.clone()))));
             }
         }
     }
 
-    // Sort by position
-    pairs.sort_by_key(|(from, _)| *from);
+    // Sort by position. Tie-break on the end offset so a zero-width capture
+    // (e.g. an empty `%%` separator) sorts before a capture that starts at the
+    // same offset but spans further, matching Raku's match order.
+    pairs.sort_by_key(|(from, to, _)| (*from, *to));
 
-    Value::array(pairs.into_iter().map(|(_, pair)| pair).collect())
+    Value::array(pairs.into_iter().map(|(_, _, pair)| pair).collect())
 }
 
 /// Expand a capture value: if it's an Array of Matches (from quantified captures),
@@ -201,8 +205,9 @@ pub(super) fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
         }
     }
 
-    // Sort by position
-    captures.sort_by_key(|(from, _, _)| *from);
+    // Sort by position; tie-break on end offset so a zero-width capture sorts
+    // before a longer capture starting at the same offset (Raku match order).
+    captures.sort_by_key(|(from, to, _)| (*from, *to));
 
     let match_from = match attributes.get("from") {
         Some(Value::Int(n)) => *n,
