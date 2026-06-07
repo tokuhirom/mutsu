@@ -150,10 +150,9 @@ impl VM {
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = def.package.resolve();
-                let result =
-                    self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
-                self.env_dirty = true;
-                result
+                // Slice 6.3 step 2: call_compiled_function_named signals env_dirty
+                // precisely via its return merge; no blanket mark needed.
+                self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?
             } else {
                 let result = self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?;
                 self.env_dirty = true;
@@ -197,10 +196,8 @@ impl VM {
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.interpreter.current_package().to_string();
-                let result =
-                    self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
-                self.env_dirty = true;
-                result
+                // Slice 6.3 step 2: precise env_dirty from the named-call merge.
+                self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?
             } else if let Some(native_result) =
                 self.try_native_function(crate::symbol::Symbol::intern(name), &[])
             {

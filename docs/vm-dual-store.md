@@ -908,26 +908,53 @@ Reaching that requires, roughly in order:
       | bench-class         |            2 |               2 | done |
       | bench-fib / fib     |            0–1 |             0 | done (Slice 6.1) |
       | hash/string-concat/int |         1 |               0 | done |
-      | **bench-string**    |     **5003** |               0 | **regex `~~` (NEXT, step 2)** |
+      | **bench-string**    |     **5003** |               0 | **regex `~~` — DEFERRED (unsafe, below)** |
       | **bench-array**     |            4 |       **10005** | `.map`/`.grep`/`.sort` closures — **lever C, not B** |
       | array-ops           |          101 |             200 | closures (lever C) |
 
-      - **NEXT lever-B target = the regex/smartmatch pull (bench-string, 1 pull per
-        `~~`).** Root: `exec_smartmatch_*` in `src/vm/vm_comparison_ops.rs:~1261`
-        unconditionally sets `self.env_dirty = true` after the match (and pulls at
-        ~1205 when already dirty). The match writes env by name — topic `_`
-        (1198/1233), `var_name` for `$x ~~ ...` (1228), and the regex engine writes
-        `$/`/`$0..`/`$<name>`. This is the canonical **step 2 (reverse
-        write-through)**: when one of those names has a slot in `code.locals`, also
-        write `self.locals[slot]` (mirror of Slice 6.2's `flush_local_to_env`) and
-        DROP the blanket `env_dirty = true`. `$/`/`$0`/`$<…>` are almost never
-        `code.locals` (like `?LINE` — candidates for `could_name_caller_local`-style
-        skip); `_` and `var_name` can be locals → need the slot write. Repro:
-        `MUTSU_VM_STATS=1 cargo run -- -e 'my $c=0; for ^5000 { if "x 42 y" ~~ /\d+/ { $c++ } }; say $c'` → `locals_pulls=5001`, target 1.
-      - **Then the rest of step 2** — the by-name var/control setters
-        (`vm_var_get_ops`, `vm_register_ops` `&sub`/type-name writes, `vm_control_ops`,
-        `vm_data_ops`): same reverse-write-through pattern. Verify with a roast pass
-        over `S02-magicals` / `S05-match` / dynamic-scope.
+      - **DONE — step 2 dispatch fast paths (per-call pull → ~1).** Three precise-
+        signal conversions landed together:
+        1. **0-arg fast path** (`call_compiled_function_fast`): a 0-local function has
+           no overlay/clone merge, so the old caller-side blanket mark covered it.
+           Gate on the compile-time `cf.code.has_env_writes` flag instead — a body
+           with no env write can't dirty a caller slot (the dispatch's routine `_` is
+           restored). `for ^5000 { $c += f() }` 5001 → 2. **GOTCHA:** extending
+           `use_scoped` to 0-local functions to detect the write via merge REGRESSES
+           env_deep_copies 1 → 5000 (the routine-`_` insert into the freshly-chained
+           overlay forces make_mut). The compile-time gate is the right fix.
+        2. **heavy named path** (`call_compiled_function_named`, complex signatures —
+           default/return-type/where/typed/multi): now signals precisely from its
+           return merge (`env_dirty = saved || changed`; changed = real plain-lexical
+           writeback, non-empty `is rw`, or `is raw` return; dynamic-var writeback has
+           no slot). Blanket marks removed at the hot call sites (vm_call_func_ops
+           heavy/OTF/cached named, vm_var_get_ops bareword named). EVAL/carrier callers
+           (vm_call_exec_ops) keep marks — step 3. `for ^5000 { $c += g(2) }` 5001 → 1.
+        3. **native `@a.push`** (vm_data_ops): the fast path already restores the
+           result into the target's local slot, so the blanket mark was redundant —
+           dropped. `for ^5000 { @a.push($_) }` 5001 → 2. Fallback push branches
+           (shared/shaped/non-simple) keep their mark.
+        Pinned by `t/zeroarg-env-dirty.t`(16) / `t/named-call-env-dirty.t`(16) /
+        `t/push-env-dirty.t`(13).
+      - **DEFERRED (unsafe) — the regex/smartmatch pull (bench-string 5003).** Dropping
+        the blanket `env_dirty = true` in `exec_smart_match_expr_op` was tried and
+        REVERTED: it regressed whitelisted `S02-magicals/sub.t` (`regex foo { a { $var
+        = &?ROUTINE } }` — an embedded regex code block writes the caller local `$var`
+        by name) and `S05-modifier/pos.t` (`:pos` continued match writes match-position
+        state). The root assumption — "a smartmatch only writes `$/`/`_`/`var_name`,
+        and `$/`-family never alias a caller local" — is FALSE: a regex RHS runs
+        embedded `{ }` blocks and pos/adverb bookkeeping through the **interpreter regex
+        engine**, which writes arbitrary caller locals by name WITHOUT going through a
+        VM op (so nothing sets env_dirty). A simple regex (`/\d+/`) has no such side
+        effects, but the smartmatch op cannot currently tell a simple match from one
+        with embedded blocks / pos. **To revive:** give the regex op a precise
+        side-effect signal (e.g. a `has_code_blocks` / uses-pos flag on the compiled
+        Regex) and only skip env_dirty for the provably-pure simple-match case.
+      - **NEXT (remaining step 2)** — genuinely cold, zero-benefit setters (do only
+        when deleting env_dirty holistically): `vm_register_ops` declaration-time trait
+        handlers, `vm_var_assign_ops:4018/4042` (`:=` element SlotRef — needs `code`
+        threaded into `exec_index_assign_generic_op`). Plus the loop/control env
+        round-trips (`vm_control_ops`, `vm_misc_ops` let/temp) — risky, defer. Verify
+        with a roast pass over `S02-magicals` / `S05-match` / dynamic-scope.
       - **Step 3 (I/O Say/Put/Print/Note round-trip + EVAL/atomic carriers)** stays
         gated on interpreter-bridge removal (lever A finish / Q2). The Say/Put/Print/
         Note `ensure_locals_synced`+`sync_env_from_locals` round-trip (vm.rs
