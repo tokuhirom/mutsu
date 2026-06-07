@@ -962,13 +962,26 @@ Reaching that requires, roughly in order:
         default/return-type/where/typed coherence, captured-outer + is-rw + dynamic
         writeback propagation, nested calls, RMW). The EVAL/carrier callers
         (`vm_call_exec_ops`) keep their conservative marks — that's step 3.
-      - **NEXT: the rest of step 2** — the remaining setters:
-        2. **genuine by-name writes — clean reverse-write-through / redundant drops**:
-           `vm_data_ops:418` (push fast path already restores the local slot at
-           ~413-415 → the mark is redundant, drop it), `vm_register_ops:824/908`
-           (already call `locals_set_by_name` → redundant), `vm_var_assign_ops:4018/4042`
-           (`:=` element SlotRef bind → `update_local_if_exists`). Safe, low-risk, but
-           cold paths (no benchmark movement).
+      - **DONE: native `@a.push` fast path (step 2, fourth target).** `vm_data_ops`
+        push fast path set a blanket env_dirty after every push, but it mutates only
+        the target array in env and already reverse-write-throughs the result into
+        the target's local slot (~413-415) — so the mark was redundant. Dropped it.
+        This is NOT a cold path: `@a.push($_)` in a loop is extremely common.
+        **`for ^5000 { @a.push($_) }` locals_pulls 5001 → 2.** The interpreter-fallback
+        push branches (shared/shaped/non-simple-array targets) keep their conservative
+        mark. Pinned by `t/push-env-dirty.t` (13). (Pre-existing, baseline-identical,
+        out of scope: `@g := @f; @f.push(3)` does not update `@g` — `:=` array-alias
+        is first-class-container territory, lever C / §2; the old blanket mark did not
+        fix it either.)
+      - **NEXT: the rest of step 2** — genuinely cold, zero-benefit setters (do only
+        when tackling env_dirty deletion holistically, not for perf):
+        2. **declaration-time trait handlers** `vm_register_ops:824/908/932/1079/1095`
+           (`is default` / `is Buf` / typed container / subset / enum). 824/908 already
+           call `locals_set_by_name` (redundant) but 908 also runs a constructor method
+           whose side effects need per-case checking; all run once per declaration =
+           zero benefit. And `vm_var_assign_ops:4018/4042` (`:=` element SlotRef) needs
+           `code` threaded into `exec_index_assign_generic_op` (which takes no `code`)
+           for an `update_local_if_exists` — not worth it for a cold `:=` element bind.
         3. **loop/control env round-trips** — `vm_control_ops` (7, for/while/given setup
            + topic restore) and `vm_misc_ops` (let/temp restore): conservative marks
            for the loop bodies' by-name env juggling; need per-case analysis, higher

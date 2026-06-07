@@ -415,7 +415,11 @@ impl VM {
         }
 
         self.stack.push(result);
-        self.env_dirty = true;
+        // Slice 6.3 step 2: no env_dirty mark. This native push path mutates only
+        // `target_name` in env and has already reverse-write-through'd the result
+        // into its local slot just above, so the caller's slot is coherent — a
+        // pull would be redundant. (The interpreter-fallback push branches above,
+        // for shared/shaped/non-simple-array targets, keep their conservative mark.)
         Ok(())
     }
 }
