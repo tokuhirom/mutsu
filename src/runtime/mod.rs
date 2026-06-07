@@ -202,7 +202,7 @@ mod regex_parse;
 mod registration;
 mod registration_class;
 mod registration_sub;
-mod resolution;
+pub(crate) mod resolution;
 mod run;
 mod seq_helpers;
 mod sequence;

@@ -2674,32 +2674,65 @@ impl Interpreter {
         list_items: &[Value],
         from_end: bool,
     ) -> Result<Option<(usize, Value)>, RuntimeError> {
-        if list_items.is_empty() {
-            return Ok(None);
-        }
-        let matcher = func;
-        let len = list_items.len();
-        for idx in 0..len {
-            let actual_idx = if from_end { len - 1 - idx } else { idx };
-            let item = list_items[actual_idx].clone();
-            let matched = if let Some(pattern) = &matcher {
-                if matches!(pattern, Value::Sub(_)) {
-                    // Pass the element positionally: a Hash-sourced `Value::Pair`
-                    // would otherwise bind as a named arg, leaving the block with
-                    // zero positionals (`%h.first({ .value > 1 })`).
-                    let call_item = crate::runtime::utils::pair_as_positional(&item);
-                    self.call_sub_value(pattern.clone(), vec![call_item], true)?
-                        .truthy()
-                } else {
-                    self.smart_match(&item, pattern)
-                }
-            } else {
-                true
-            };
-            if matched {
-                return Ok(Some((actual_idx, item)));
-            }
-        }
-        Ok(None)
+        let mut matcher = InterpFirstMatcher(self);
+        find_first_match_generic(&mut matcher, func.as_ref(), list_items, from_end)
     }
+}
+
+/// Engine-agnostic matcher for `.first` / `first`: decides whether a single
+/// element matches the pattern. The only engine-specific part is invoking a
+/// `Sub` matcher block (the genuine Category-B fork); `smart_match` for non-block
+/// patterns is the interpreter's single shared implementation. Implemented for
+/// both the interpreter ([`InterpFirstMatcher`]) and the VM (`VmFirstMatcher`),
+/// so the iteration / `:end` / `pair_as_positional` logic lives once in
+/// [`find_first_match_generic`].
+pub(crate) trait FirstMatcher {
+    fn item_matches(&mut self, pattern: &Value, item: &Value) -> Result<bool, RuntimeError>;
+}
+
+/// [`FirstMatcher`] backed by the tree-walking interpreter.
+pub(crate) struct InterpFirstMatcher<'a>(pub(crate) &'a mut Interpreter);
+
+impl FirstMatcher for InterpFirstMatcher<'_> {
+    fn item_matches(&mut self, pattern: &Value, item: &Value) -> Result<bool, RuntimeError> {
+        if matches!(pattern, Value::Sub(_)) {
+            // Pass the element positionally: a Hash-sourced `Value::Pair` would
+            // otherwise bind as a named arg, leaving the block with zero
+            // positionals (`%h.first({ .value > 1 })`).
+            let call_item = crate::runtime::utils::pair_as_positional(item);
+            Ok(self
+                .0
+                .call_sub_value(pattern.clone(), vec![call_item], true)?
+                .truthy())
+        } else {
+            Ok(self.0.smart_match(item, pattern))
+        }
+    }
+}
+
+/// Shared `.first` / `first` scan: return the first (or, with `from_end`, last)
+/// `(index, value)` whose element matches `pattern` (or any element when
+/// `pattern` is `None`). Engines supply matching through `matcher`.
+pub(crate) fn find_first_match_generic(
+    matcher: &mut dyn FirstMatcher,
+    pattern: Option<&Value>,
+    list_items: &[Value],
+    from_end: bool,
+) -> Result<Option<(usize, Value)>, RuntimeError> {
+    if list_items.is_empty() {
+        return Ok(None);
+    }
+    let len = list_items.len();
+    for idx in 0..len {
+        let actual_idx = if from_end { len - 1 - idx } else { idx };
+        let item = list_items[actual_idx].clone();
+        let matched = match pattern {
+            Some(p) => matcher.item_matches(p, &item)?,
+            None => true,
+        };
+        if matched {
+            return Ok(Some((actual_idx, item)));
+        }
+    }
+    Ok(None)
 }

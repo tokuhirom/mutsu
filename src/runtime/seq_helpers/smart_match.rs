@@ -33,7 +33,7 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
+    pub(crate) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, Value::Whatever) => true,

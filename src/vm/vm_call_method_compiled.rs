@@ -392,6 +392,10 @@ impl VM {
         if let Some(result) = self.try_native_minmax(&target, method, &args) {
             return result;
         }
+        // Native `.first` over a plain list (no-adverb forms), including blocks.
+        if let Some(result) = self.try_native_first(&target, method, &args) {
+            return result;
+        }
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
@@ -811,6 +815,10 @@ impl VM {
         }
         // Native `.minmax` over a plain list, including `:by` blocks.
         if let Some(result) = self.try_native_minmax(&target, method, &args) {
+            return result;
+        }
+        // Native `.first` over a plain list (no-adverb forms), including blocks.
+        if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
         crate::vm::vm_stats::record_method_fallback(method);
