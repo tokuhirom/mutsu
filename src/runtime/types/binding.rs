@@ -414,6 +414,29 @@ impl Interpreter {
                         self.bind_param_value(&key, Value::real_array(items));
                         self.set_var_type_constraint(&key, pd.type_constraint.clone());
                     }
+                } else if !pd.name.starts_with('@') {
+                    // *$x -- slurpy scalar: captures what would otherwise be the
+                    // next element of the variadic array (S06 "List parameters").
+                    // It consumes a single positional argument; named (Pair) args
+                    // are skipped so they fall through to a *%_ slurpy. With no
+                    // positional left it binds an undefined value (slurpy is
+                    // always optional).
+                    let mut value = Value::Nil;
+                    while positional_idx < args.len() {
+                        let raw_arg = args[positional_idx].clone();
+                        positional_idx += 1;
+                        let arg = unwrap_varref_value(raw_arg);
+                        if matches!(&arg, Value::Pair(..)) {
+                            // Named arg -- leave for *%_ slurpy; keep scanning.
+                            continue;
+                        }
+                        value = arg;
+                        break;
+                    }
+                    if !pd.name.is_empty() {
+                        self.bind_param_value(&pd.name, value.clone());
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                    }
                 } else {
                     let mut items = Vec::new();
                     let is_raw_slurpy = pd.traits.iter().any(|t| t == "raw");
