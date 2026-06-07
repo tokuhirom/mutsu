@@ -65,11 +65,18 @@ cold):
    absoluteness semantics (`is_cygwin_spec` + `io_path_parts_spec` in
    `runtime/native_io.rs`; cygwin branches in absolute/relative).
 2. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests; needs
-   128-bit `read-int128`/`write-int128`/`-uint128` across NativeEndian/Little/Big
-   plus the existing 8/16/32/64 widths. `Value` has `BigInt`; wire the `write-int*`
-   /`read-int*` Buf methods (incl. 128-bit via i128/BigInt) as callables. The
-   earlier "Callable expected" was a stale build; basic widths already work — the
-   real work is 128-bit + the full endianness matrix.
+   2530 tests. **Reclassified — the blockers are Whatever-currying, not 128-bit.**
+   128-bit `read-int128`/`write-int128`/`-uint128` and dynamic interpolated method
+   names (`."read-int{8*$_}"(...)`) already work across all endiannesses
+   (verified: `blob8.new(1..16).read-int128(0,BigEndian)` returns the right value).
+   The test aborts in *setup* (before `plan`) on two Whatever-composition bugs:
+   - `1 +< (*-1) - 1` throws "Callable expected" — a WhateverCode `(*-1)` does not
+     curry through an enclosing `1 +< … - 1` into a new WhateverCode.
+   - `(^*).roll` evaluates to the un-rolled Range `0..^N` instead of a
+     WhateverCode `{ (^$_).roll }` — `.roll` (and method calls generally) on a
+     `^*` Whatever-range is not deferred into the curried closure.
+   Fix the Whatever-currying of chained infix ops and trailing method calls
+   first (broad impact, well beyond this file); the Buf widths are already done.
 
 **Defer — needs deep/crate-level work (file fully passes only after a big lift):**
 - S32-io/io-path.t — 6 *independent* failures; one (test 31 `.gist`) depends on a
