@@ -416,6 +416,18 @@ pub(crate) enum OpCode {
         post_start: u32,
         end: u32,
     },
+    /// Lightweight block scope for an `if`/`unless`/`else` branch body that
+    /// declares a block-local `my`. Unlike `BlockScope` (which does a full
+    /// env+locals save/restore and would revert `:=` bindings the branch makes
+    /// to *outer* variables), this only applies the loop bodies' *shadow-only*
+    /// restore: a body-local `my $x` that shadows an enclosing same-named
+    /// binding is recorded at declaration and the outer value is restored on
+    /// exit. Names bound with `:=` to an outer var (not `my`-declared in the
+    /// branch) are never recorded, so they survive. Runs the body in
+    /// `ip+1 .. body_end`.
+    BlockLocalScope {
+        body_end: u32,
+    },
     /// Check the top-of-stack value; if falsy, throw X::Phaser::PrePost.
     /// `is_pre` distinguishes PRE (true) from POST (false).
     CheckPhaser {
@@ -1226,7 +1238,10 @@ impl CompiledCode {
         let captures_env_by_name = self.ops.iter().any(|op| {
             matches!(
                 op,
-                OpCode::ForLoop { .. } | OpCode::BlockScope { .. } | OpCode::MakeGather(_)
+                OpCode::ForLoop { .. }
+                    | OpCode::BlockScope { .. }
+                    | OpCode::BlockLocalScope { .. }
+                    | OpCode::MakeGather(_)
             )
         });
         if captures_env_by_name {
@@ -1497,6 +1512,7 @@ impl CompiledCode {
                     | OpCode::HyperMethodCall { .. }
                     | OpCode::HyperMethodCallDynamic { .. }
                     | OpCode::BlockScope { .. }
+                    | OpCode::BlockLocalScope { .. }
                     | OpCode::RegisterSub(_)
                     | OpCode::RegisterClass(_)
                     | OpCode::RegisterRole(_)
@@ -1555,6 +1571,14 @@ impl CompiledCode {
             OpCode::RepeatLoop { body_end, .. } => *body_end = target,
             OpCode::BlockScope { end, .. } => *end = target,
             _ => panic!("patch_loop_end on non-loop opcode"),
+        }
+    }
+
+    pub(crate) fn patch_block_local_body_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::BlockLocalScope { body_end } => *body_end = target,
+            _ => panic!("patch_block_local_body_end on non-BlockLocalScope opcode"),
         }
     }
 

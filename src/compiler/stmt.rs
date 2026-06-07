@@ -1126,6 +1126,8 @@ impl Compiler {
                 }
                 if Self::body_mutates_topic(then_branch) {
                     self.compile_stmt(&Stmt::Block(then_branch.clone()));
+                } else if Self::branch_declares_block_local(then_branch) {
+                    self.compile_block_local_branch(then_branch);
                 } else {
                     self.compile_body_with_implicit_try(then_branch);
                 }
@@ -1146,6 +1148,8 @@ impl Compiler {
                         self.compile_stmt(&else_branch[0]);
                     } else if Self::body_mutates_topic(else_branch) {
                         self.compile_stmt(&Stmt::Block(else_branch.clone()));
+                    } else if Self::branch_declares_block_local(else_branch) {
+                        self.compile_block_local_branch(else_branch);
                     } else {
                         self.compile_body_with_implicit_try(else_branch);
                     }
