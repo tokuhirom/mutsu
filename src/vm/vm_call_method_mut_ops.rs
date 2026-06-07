@@ -1260,6 +1260,9 @@ impl VM {
                 // (should be Any), so absorbing here would break methods like
                 // .end, .elems, etc. on uninitialized containers.
                 // The CallMethod path has the Nil absorber for direct Nil.method calls.
+                // Slice 6.3: assume the dispatch dirties the caller env; only a
+                // proven-pure compiled method path clears this.
+                self.method_dispatch_pure = false;
                 let call_result = if !skip_native {
                     // Resolve hash sentinel entries (bound variable refs, self-refs)
                     // before passing to native methods that iterate hash values.
@@ -1276,6 +1279,12 @@ impl VM {
                     if let Some(native_result) =
                         self.try_native_method(dispatch_target, Symbol::intern(&method), &args)
                     {
+                        // A native method reaching this tail returns a value and
+                        // does not write the receiver back into env (mutating
+                        // array/hash natives are handled by the dedicated
+                        // writeback branches above and return early). So it is
+                        // env-pure w.r.t. the caller -> no per-call locals pull.
+                        self.method_dispatch_pure = true;
                         native_result
                     } else {
                         self.try_compiled_method_mut_or_interpret(
@@ -1288,21 +1297,30 @@ impl VM {
                 } else {
                     self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
                 };
+                // Slice 6.3: mark env dirty only when the dispatch was not a
+                // proven-pure compiled method call.
+                let mark_dirty = !self.method_dispatch_pure;
                 match modifier {
                     Some("?") => match call_result {
                         Ok(val) => {
                             self.stack.push(val);
-                            self.env_dirty = true;
+                            if mark_dirty {
+                                self.env_dirty = true;
+                            }
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
                             self.stack.push(Value::Nil);
-                            self.env_dirty = true;
+                            if mark_dirty {
+                                self.env_dirty = true;
+                            }
                         }
                         Err(e) => return Err(e),
                     },
                     _ => {
                         self.stack.push(call_result?);
-                        self.env_dirty = true;
+                        if mark_dirty {
+                            self.env_dirty = true;
+                        }
                     }
                 }
             }

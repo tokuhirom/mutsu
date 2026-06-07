@@ -294,6 +294,10 @@ Running the entire roast suite locally is wasteful and slow — **let CI run the
 - CI runs `make test` and `make roast` on a clean machine with the **release build** (`cargo build --release`, `MUTSU_BIN=target/release/mutsu`). Local debug builds are much slower, so a local timeout on a heavy test does not necessarily indicate a real failure — confirm with a release build (`target/release/mutsu`) before assuming a regression, and otherwise trust CI's verdict.
 - Push the branch and rely on CI for the comprehensive roast result rather than running the whole suite locally.
 
+### Use the DEBUG build to iterate on `MUTSU_VM_STATS` counters — release is for wall-clock only
+
+The `MUTSU_VM_STATS=1` dual-store counters (`locals_pulls`, `env_flushes`, `env_deep_copies`, `clone_env`, ...) are **deterministic and independent of the optimization level** — they count VM events, not time. So when tuning a perf/decoupling change against those counters, **iterate with the debug build** (`cargo build`, ~30-70s) and read the counters off `target/debug/mutsu`; the numbers are identical to release. Reserve the slow `cargo build --release` (which here also emits debuginfo and can take 10-15 min) for the **final wall-clock measurement** only. Do NOT default to release just because the task is perf-related — that wastes ~10× the build time per iteration for byte-identical counter output.
+
 ## Checking `make test` / `make roast` results
 
 `make test` and `make roast` automatically save their full output to log files via `tee`:

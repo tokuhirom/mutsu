@@ -664,7 +664,15 @@ impl VM {
             // mutate the caller env in place without a deep copy.
             let frame = self.pop_call_frame();
             let current_env = self.interpreter.take_env();
-            let mut merged_env = merge_method_env(frame.saved_env, current_env, &method_local_keys);
+            let (mut merged_env, wrote_caller) =
+                merge_method_env(frame.saved_env, current_env, &method_local_keys);
+            // Precise dirty signal (Slice 6.3): the caller only needs an
+            // env->locals re-sync when this method actually merged a
+            // caller-visible write (captured-outer var, global, &sub) or wrote
+            // back an `is rw` param. A method that merged nothing leaves the
+            // caller's slots coherent -> stays "pure" so the opcode skips the
+            // env_dirty mark (no per-call locals pull).
+            self.method_dispatch_pure = !wrote_caller && rw_writeback.is_empty();
 
             for (source_name, val) in &rw_writeback {
                 merged_env.insert(source_name.clone(), val.clone());
@@ -684,6 +692,8 @@ impl VM {
         }
 
         if can_skip_merge {
+            // No env writes possible -> the caller's slots stay coherent (pure).
+            self.method_dispatch_pure = true;
             self.interpreter.set_current_package(saved_package);
             let frame = self.pop_call_frame();
             *self.interpreter.env_mut() = frame.saved_env;
@@ -1114,7 +1124,9 @@ impl VM {
         self.interpreter.set_current_package(saved_package);
 
         if can_skip_merge {
-            // No env writes possible — just restore saved env
+            // No env writes possible — just restore saved env (pure: caller
+            // slots stay coherent, opcode skips the env_dirty mark).
+            self.method_dispatch_pure = true;
             let frame = self.pop_call_frame();
             self.interpreter.set_env(frame.saved_env);
         } else {
@@ -1123,6 +1135,8 @@ impl VM {
             // into the saved env before restoring.
             let frame = self.pop_call_frame();
             if self.interpreter.env().ptr_eq(&frame.saved_env) {
+                // Env object unchanged -> nothing merged back (pure).
+                self.method_dispatch_pure = true;
                 self.interpreter.set_env(frame.saved_env);
             } else {
                 // Build method_local_keys set (keys that should NOT leak to caller)
@@ -1155,7 +1169,11 @@ impl VM {
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.interpreter.take_env();
-                let merged = merge_method_env(frame.saved_env, current_env, &method_local_keys);
+                let (merged, wrote_caller) =
+                    merge_method_env(frame.saved_env, current_env, &method_local_keys);
+                // Precise dirty signal (Slice 6.3): re-sync the caller's locals
+                // only when the method merged a caller-visible write.
+                self.method_dispatch_pure = !wrote_caller;
                 self.interpreter.set_env(merged);
             }
         }
@@ -1414,11 +1432,49 @@ fn writeback_attributes(env: &Env, attributes: &mut HashMap<String, Value>) {
     }
 }
 
-/// Merge method env back into the saved (caller) env.
-///
-/// Carries forward values for keys that existed in the saved env, plus any
-/// dynamic/global keys (`&`-prefixed, `__mutsu_method_value::`-prefixed).
-/// Merge the method frame's caller-visible writes back into the caller env.
+/// True if `name` could be the name of a caller compiled-local slot (and so a
+/// change to it could make a caller slot stale). Excludes names that are never
+/// stored as a local slot — compile-time/location vars (`?...`), pod (`=...`),
+/// dynamic and pseudo-global names (anything containing `*`, e.g. `$*OUT`,
+/// `*PERL`), and `__mutsu_` internal plumbing. Used by `merge_method_env` to keep
+/// the env_dirty signal precise. Conservative: an ordinary lexical (`$x`, `@y`,
+/// bare param, `!attr`) returns true so it is always re-synced when it changes.
+fn could_name_caller_local(name: &str) -> bool {
+    !(name.starts_with('?')
+        || name.starts_with('=')
+        || name.contains('*')
+        || name.starts_with("__mutsu_"))
+}
+
+/// O(1), conservative "is this value provably unchanged?" check used by
+/// `merge_method_env` to avoid flipping `env_dirty` for value-identical copies
+/// (e.g. globals pulled in by a nested call's overlay flatten). Returns `true`
+/// only when equality is cheap to prove: Arc-pointer identity for the heap
+/// container/string types, value compare for the immutable scalars, and id
+/// compare for instances. Any case it cannot cheaply prove returns `false`, so
+/// the caller treats it as a possible change (a redundant pull at worst).
+fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
+    match (old, new) {
+        (Value::Int(a), Value::Int(b)) => a == b,
+        (Value::Num(a), Value::Num(b)) => a.to_bits() == b.to_bits(),
+        (Value::Bool(a), Value::Bool(b)) => a == b,
+        (Value::Rat(an, ad), Value::Rat(bn, bd)) => an == bn && ad == bd,
+        (Value::Package(a), Value::Package(b)) => a == b,
+        (Value::Nil, Value::Nil) => true,
+        (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b),
+        (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
+        (Value::Hash(a), Value::Hash(b)) => Arc::ptr_eq(a, b),
+        (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+        _ => false,
+    }
+}
+
+/// Merge the callee method frame's caller-visible overlay writes back into the
+/// saved caller env. Returns the merged env and a flag that is `true` iff the
+/// merge changed a value that could alias a caller compiled-local slot — the
+/// precise signal (Slice 6.3) that the caller must re-sync its locals. A method
+/// whose merge changed no such value leaves the caller's slots coherent, so no
+/// env->locals pull is needed.
 ///
 /// Takes ownership of both `saved` (the caller env) and `current` (the callee's
 /// scoped overlay env). The callee's overlay is collected into a small `writes`
@@ -1429,7 +1485,11 @@ fn writeback_attributes(env: &Env, attributes: &mut HashMap<String, Value>) {
 /// per-nested-call O(env) cost measured in PR #2683. `saved` is consumed (the
 /// caller discards it in favor of the returned env), so mutating it directly is
 /// safe and avoids the extra `saved.clone()`.
-fn merge_method_env(mut saved: Env, current: Env, method_local_keys: &HashSet<String>) -> Env {
+fn merge_method_env(
+    mut saved: Env,
+    current: Env,
+    method_local_keys: &HashSet<String>,
+) -> (Env, bool) {
     let writes: Vec<(Symbol, Value)> = current
         .overlay_iter()
         .filter_map(|(k, v)| {
@@ -1447,8 +1507,34 @@ fn merge_method_env(mut saved: Env, current: Env, method_local_keys: &HashSet<St
         })
         .collect();
     drop(current);
+    // Precise dirty signal (Slice 6.3): a merged write only obliges the caller to
+    // re-pull its local slots if it actually *changes* a value the caller can see.
+    // A nested method call flattens the scoped overlay, which copies every parent
+    // lexical/global (`@*ARGS`, `%*ENV`, `?LINE`, type names, ...) into the callee
+    // overlay; those copies are kept by the merge but are value-identical to the
+    // caller's, so they must not flip env_dirty. `cheaply_unchanged` proves
+    // equality in O(1) (Arc-ptr identity for containers/Str, scalar compare for
+    // immutables); anything it cannot prove unchanged counts as dirty
+    // (conservative -> at worst a redundant pull, never a stale read).
+    let wrote = writes.iter().any(|(k, v)| {
+        // Only a key that can name a caller compiled-local slot obliges a pull:
+        // `sync_locals_from_env` iterates exactly `code.locals`. Compile-time
+        // location vars (`?LINE`/`?FILE`/`?CLASS`...), pod (`=...`), dynamic /
+        // global names (`$*...`, `*PERL`, ...) and `__mutsu_` plumbing are never
+        // local slots, so a change to them never makes a caller slot stale. This
+        // matters because `?LINE` legitimately differs between the caller line
+        // and the method-body line, which would otherwise flip env_dirty on every
+        // multi-line nested method call.
+        if !k.with_str(could_name_caller_local) {
+            return false;
+        }
+        match saved.get_sym(*k) {
+            Some(old) => !cheaply_unchanged(old, v),
+            None => true,
+        }
+    });
     for (k, v) in writes {
         saved.insert_sym(k, v);
     }
-    saved
+    (saved, wrote)
 }
