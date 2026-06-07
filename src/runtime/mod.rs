@@ -1606,7 +1606,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: [
                     "exitcode", "signal", "command", "pid", "err", "out", "in", "Numeric", "Int",
-                    "Bool", "Str", "gist",
+                    "Bool", "Str", "gist", "spawn", "shell", "run",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -3754,6 +3754,54 @@ impl Interpreter {
                 .collect();
             for k in non_exported_op_globals {
                 self.functions.remove(&k);
+            }
+
+            // Remove GLOBAL:: sub aliases that were leaked by sub hoisting during
+            // this module load, are NOT exported, and shadow a core builtin.
+            // A `unit module X` declares `our sub foo` under `X::foo`, but mutsu's
+            // hoist pre-pass registers the body under `GLOBAL::foo` (the runtime
+            // package is not switched by the compile-time `unit` declaration). For
+            // a non-exported sub whose name matches a core builtin, that GLOBAL
+            // alias wrongly masks the builtin in the caller's scope (e.g.
+            // Test::Util's non-exported `our sub run` was hiding the core `run`
+            // Proc spawner). Such a sub is reachable from the caller only as a bare
+            // name — which Raku does not allow for a non-exported `our sub` — so we
+            // drop the leaked alias. Gating on builtin collision keeps the change
+            // safe: non-colliding helpers stay in GLOBAL so the module's own
+            // (GLOBAL-package) bodies can still call them.
+            {
+                let mut exported_names: HashSet<String> = HashSet::new();
+                for source in ["GLOBAL", module] {
+                    if let Some(subs) = self.exported_subs.get(source) {
+                        for name in subs.keys() {
+                            exported_names.insert(name.clone());
+                        }
+                    }
+                }
+                if let Some(subs) = self.unit_module_exported_subs.get(module) {
+                    for name in subs.keys() {
+                        exported_names.insert(name.clone());
+                    }
+                }
+                let leaked_globals: Vec<Symbol> = self
+                    .functions
+                    .keys()
+                    .filter(|k| {
+                        if func_keys_before.contains(k) {
+                            return false;
+                        }
+                        let ks = k.resolve();
+                        let Some(name) = ks.strip_prefix("GLOBAL::") else {
+                            return false;
+                        };
+                        let base = name.split('/').next().unwrap_or(name);
+                        !exported_names.contains(base) && Self::is_builtin_function(base)
+                    })
+                    .copied()
+                    .collect();
+                for k in leaked_globals {
+                    self.functions.remove(&k);
+                }
             }
 
             self.loaded_modules.insert(module.to_string());

@@ -2721,10 +2721,10 @@ impl Interpreter {
         }
 
         // Comprehensive split handler
-        // Skip for Supply (handled by Supply pipeline) and IO::Handle
-        // (handled by native_io_handle which slurps the file first).
+        // Skip for Supply (handled by Supply pipeline) and IO::Handle/IO::Pipe
+        // (handled by native IO dispatch which reads the content first).
         if method == "split"
-            && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle")
+            && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe")
             && !matches!(&target, Value::Package(name) if name.resolve().starts_with("IO::Spec"))
         {
             return self.handle_split_method(target, args);
