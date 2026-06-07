@@ -43,9 +43,10 @@ touches these.
    S32-io/lock.t
    (S16-io/words.t — DONE, whitelisted: lazy word iterator + close-on-exhaust +
    `IO::ArgFiles.new`.)
-2. **Regex / Match** (Medium): S05-capture/alias.t, S05-mass/rx.t,
-   S05-match/capturing-contexts.t, S05-metasyntax/angle-brackets.t,
-   S05-nonstrings/basic.t
+2. **Regex / Match** (Medium): S05-mass/rx.t,
+   S05-match/capturing-contexts.t, S05-metasyntax/angle-brackets.t
+   (S05-capture/alias.t — DONE, whitelisted. S05-nonstrings/basic.t — unpassable:
+   reference rakudo fails to compile it, `No such symbol 'Antelope'`.)
 3. **Buf / OS** (Medium): S03-buf/write-int.t, S29-os/system.t
 4. **Unicode** (Hard but self-contained — crate-level work): S32-str/CollationTest…,
    S15-nfg/GraphemeBreakTest-3.t
@@ -205,13 +206,11 @@ rather than empty, and `.grep`/`.values`/`.pairs` see stale pre-mutation values.
 
 ## Regex / Match Advanced Features
 
-- roast/S05-capture/alias.t — **Medium**. Down to 1 real failure (tests 11-13 are
-  `# TODO`). Numbered scalar capture aliases (`$N=<atom>`, reverse `$1=..$0=..`,
-  arbitrary-start `$42=` with auto-numbering continuing) and `:s` sigspace
-  propagation into alternation branches are now implemented. Remaining: test 20
-  `$/<family><ident>` — a named capture alias on a group containing a subrule
-  (`$<family>=(<ident>)`) must preserve the inner `<ident>` as a nested subcap of
-  `$<family>` (capture-merge surgery; the inner named capture is dropped today).
+- roast/S05-capture/alias.t — **DONE** (whitelisted; tests 11-13 are `# TODO`).
+  Numbered scalar capture aliases (`$N=<atom>`, reverse, arbitrary-start with
+  auto-numbering), `:s` sigspace propagation into alternation branches, and
+  preserving an aliased group's inner subrule capture as a nested subcap
+  (`$<family>=(<ident>)` -> `$<family><ident>`).
 - roast/S05-capture/array-alias.t — **Hard**. 30/37 fail then aborts: named/
   sequential array captures (`@<foo>=...`) are largely unimplemented.
 - roast/S05-capture/hash.t — **Hard**. 30/99 fail then aborts at line 134: package/
@@ -225,8 +224,10 @@ rather than empty, and `.grep`/`.values`/`.pairs` see stale pre-mutation values.
   a regex as a method from `<&foo()>` / `<.foo>` angle-bracket assertions (NYI).
 - roast/S05-metasyntax/longest-alternative.t — **Hard**. Timeout — LTM (longest
   token matching) over many alternatives is not implemented efficiently.
-- roast/S05-nonstrings/basic.t — **Medium**. Aborts before test 1 (ran 0/5):
-  matching a regex against a non-Str (matching coerces the subject) throws early.
+- roast/S05-nonstrings/basic.t — **unpassable as written**. Reference rakudo on
+  this box fails to compile it: `No such symbol 'Antelope'` (`<.isa(::Antelope)>`)
+  plus "Useless declaration of a has-scoped method in mainline" for the
+  mainline `regex monster {...}` declarations. Do NOT attempt.
 - roast/S05-substitution/subst.t — see Exception Types above (same file).
 
 ## Pseudo-packages / Symbol Lookup — **Hard**
