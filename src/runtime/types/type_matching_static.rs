@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(in crate::runtime) fn type_matches(constraint: &str, value_type: &str) -> bool {
+    pub(crate) fn type_matches(constraint: &str, value_type: &str) -> bool {
         if constraint == "Mu" {
             return true;
         }
