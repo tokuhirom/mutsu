@@ -6,111 +6,103 @@
 起動 25 倍速い強みを活かし、CLI ツール・スクリプティング用途をメインターゲットとする。
 最終的には **mutsu でウェブブログが作れる** レベルのライブラリ互換性を実現する。
 
+### 🚫 鉄則: インタープリタの重複実装を決して許さない（ユーザー方針 2026-06-07）
+
+mutsu には**2つのエンジン**がある — バイトコード VM（`src/vm/` ＋ pure native `src/builtins/`）と、
+レガシーな tree-walking Interpreter（`src/runtime/`）。同じ Raku 操作（builtin 関数・メソッド・演算子・
+coercion）が**両方に二重実装されている**ことが最大のメンテナンス負債である。実害は perf ではなく:
+**AI/人が調査時にどちらが正かわからず惑わされる・間違った方を直す・片方だけ直してもう片方を放置して
+drift する**。
+
+したがって本プロジェクトの第一原理は **「1 操作 = 1 実装」**:
+
+1. **新規実装・修正は VM/native 層に 1 回だけ書く。** 同じ処理を Interpreter 側に二度書かない。
+2. **Interpreter が同じ処理を必要とする経路**（EVAL / 正規表現の埋め込み `{}` ブロック / carrier）は、
+   単一の native 実装に**委譲**する（`Interpreter::call_function` の catch-all →
+   `call_function_fallback` → `crate::builtins::native_function`、または共有ヘルパ）。**再実装しない。**
+3. **重複が見つかったら native を authoritative にして Interpreter 側のコピーを削除する。**
+   手順・優先マップ・落とし穴は [docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)。
+4. レビュー観点: PR が `src/runtime/` に既存 native と重なるロジックを足していないか必ず確認する。
+
+これは下の「🔴 最優先: VM decoupling」と同じ目標の**言い換え**（decoupling = 重複の解消）であり、
+測り方を「フォールバック率」ではなく「**残っている重複実装の数**」に置く。
+
 過去の実装状況は [news/](news/) を参照。
 パフォーマンス詳細は [PERFORMANCE.md](PERFORMANCE.md) を参照。
 roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) を参照。
 
 ---
 
-## 🔴 最優先: バイトコード VM をちゃんと治す
+## 🔴 最優先: 重複実装を消す（＝ tree-walking Interpreter の廃止 = VM decoupling）
 
-**roast テストを1件ずつ潰すより、VM アーキテクチャの根本改修を最優先する** (ユーザー方針 2026-06-03)。
+**roast を1件ずつ潰すより、上記「鉄則: 1 操作 = 1 実装」を達成すること（＝ Interpreter の重複実装を
+全廃し VM/native を唯一の実装にすること）を最優先する**（ユーザー方針 2026-06-03 / 重複削減として再定義 2026-06-07）。
 
-mutsu の「バイトコード VM」は実態として tree-walking Interpreter の薄いフロントエンドであり、
-VM は Interpreter を共有実行状態コンテナ + フォールバック先として使っている
-([ANALYSIS.md](ANALYSIS.md) §1)。これを **strangler-fig 方式**で段階的に切り離す:
-古いフォールバックを残したまま計測し、毎 PR で「フォールバック率 X%→Y%」を可視化しながら縮める。
-進捗台帳は [docs/vm-decoupling.md](docs/vm-decoupling.md)（dispatch）と
-[docs/vm-dual-store.md](docs/vm-dual-store.md)（locals↔env）。
-
-**これはアーキテクチャ改善 = 結合削減が目的であり、パフォーマンス改善ではない**（perf は副次的、
-fib が速くなるかでは判断しない。ユーザー方針 2026-06-04）。CI（`make test` + 包括的 `make roast`）が
-全マージをゲートするので、本質的リファクタは小さく刻みすぎず**大胆に**やり、CI を安全網にする
+VM は今も Interpreter を共有実行状態 + フォールバック先として使う（[ANALYSIS.md](ANALYSIS.md) §1）。
+**strangler-fig** で段階的に剥がす。進捗台帳: [docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)（重複解消の手順・マップ）、
+[docs/vm-decoupling.md](docs/vm-decoupling.md)（dispatch）、[docs/vm-dual-store.md](docs/vm-dual-store.md)（locals↔env）。
+CI（`make test` + 包括的 `make roast`）が全マージをゲートするので大胆にやり CI を安全網にする
 （CLAUDE.md「Refactor boldly」）。
 
-### 計測（done）
-- [x] メソッド/関数ディスパッチのフォールバック率計測 + **関数名・メソッド名別 histogram**
-      (`MUTSU_VM_STATS=1`、PR #2571/#2601/#2604)。どの builtin/method がフォールバックしているかを
-      推測でなくデータで特定できる。
+### 地ならし（完了。詳細は news/2026-06.md）
+重複削除を安全にするための土台は完了済み:
+- **レバー A（ディスパッチ native 化、実質完了）**: sprintf/accessor/.new/.map/.grep/.subst/.sort（method）/
+  Test ディスパッチ層を native 化、TAP 状態を `TapState` 化 (#2659)、EVAL/pseudo-package を carrier 分類。
+  普通のコードでの interpreter フォールバックは実測ほぼ 0%。
+- **レバー B（locals↔env 二重ストア解消、実質完了）**: 全パスを scoped/overlay env に変換し dirty 機構を撤廃、
+  dispatch 4経路 + smartmatch の per-call pull を撲滅。`env_dirty` フラグは**残るが「interpreter ブリッジの
+  安全網」専用**に縮小済み — ブリッジ（＝ Interpreter 実行パス）を消せばフラグも自然消滅する（下記）。
+- **レバー C（クロージャ upvalue 化）**: 境界の明確なスライス 1/2/2b/3/3b 完了。残るは非ループ一般コンテナ
+  捕捉 1 件で、これは🟣第2優先「第一級コンテナ」Phase 1 に吸収（下記）。
 
-### レバー A: ディスパッチのフォールバックを native 化（フォールバック率を下げる）
-**実質完了**（native 化: sprintf/accessor/.new/.map/.grep/.subst/.sort/Test ディスパッチ層、
-TAP 状態の `TapState` カプセル化 #2659、EVAL/pseudo-package を carrier 分類）。詳細は news/2026-06.md。残:
-- [ ] **（低優先・deferred 負債）コアに焼き込まれた Test 専用ディスパッチの撤去**。Test *だけ*がコアに名前を
-      知られている（`is_test_function_name()` の ~50 関数名ハードコード + VM ディスパッチ4ファイルの Test 固有分岐）。
-      消す道は2つ（最終ゴールは Test を本質的例外と許容）: ①generic native-module table 化（`use` 時に関数名を
-      汎用テーブル登録、コアから Test 知識撤去・安い）/②Test-as-Raku-module（`Test.rakumod` を mutsu 上で eval・
-      純粋だが大事業）。当面着手しない。
-- 既知 pre-existing バグ（別途）: `@a.grep(...)[i] = v` の lvalue index 代入 / `my @g=@a.grep(...); @g>>++` の
-  `=` 後 hyper writeback が元を更新（Arc-pointer keyed binding が `=` を跨いで残存）。完全な rw aggregate
-  binding（配列要素の共有コンテナ化）が要る。
+### 本丸: 重複実装を消す（進行中・主作業）
 
-### レバー B: `locals`↔`env` 二重ストアの解消（共有状態結合の本丸, §1.2）
-完了分（Slice 1〜6.2 = scoped/overlay env への全パス変換 + dirty フラグ機構撤廃、multi-tier overlay #2684、
-Slice 6.3 stage 1/1b = メソッド dispatch 毎回の pull 撲滅 #2689/#2692）は news/2026-06.md 参照。残タスク:
+**測り方 = 残っている重複実装の数**（フォールバック率ではない）。手順・落とし穴・優先マップは
+[docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)。安全削除の必須手順:
+native_function に arm がある（必要条件）だけでは不十分 — **EVAL 経路で同値確認**
+（`mutsu -e 'say EVAL(q{f(...)})'` が raku と一致）してから削除し、`make roast` で確認する。VM の
+`try_native_function` と interpreter fallback の `native_function` は**カバレッジが違う**（例: `chrs`/`ords`
+は native arm があるのに fallback 未到達 → 残す）。
 
-- [ ] **Slice 6.3 残り（= `env_dirty` フラグ削除 = レバー B 完遂）**。フラグはまだ存在し、稀な
-      interpreter-bridge 用の安全網として残る。**詳細な再開マップは docs/vm-dual-store.md「NEXT SESSION —
-      resume map」**（debug ビルドで `MUTSU_VM_STATS=1` + benchmarks/*.raku 実測）。順序:
-      - (A) **dispatch fast path の per-call pull 撲滅 — 完了**（3経路、いずれも `locals_pulls` 5001→1〜2）:
-        ①0-arg fast path（`call_compiled_function_fast` を 0-local もコンパイル時 `has_env_writes` ゲートで精密化）、
-        ②heavy named path（`call_compiled_function_named` を return merge から `env_dirty = saved || changed` で精密化、
-        changed＝plain-lexical/`is rw` writeback の実変化 or `is raw` return）、③native `@a.push`（既に slot 復元済みの
-        冗長マーク撤去）。pin `t/zeroarg-env-dirty.t`(16)/`t/named-call-env-dirty.t`(16)/`t/push-env-dirty.t`(13)。
-      - (A') **regex/smartmatch の pull — 完了**（bench-string per-match 5001→1）。`exec_smart_match_expr_op` が
-        env_dirty を精密化。skip するのは全条件成立時のみ: ①compile-time `rhs_pure_regex`（plain `Value::Regex`
-        リテラル＝RegexWithAdverbs/`:pos`/named/Sub/value-smartmatch を除外、`OpCode::SmartMatchExpr` の新フィールド）、
-        ②runtime で埋め込み `{}` ブロックが caller var を書いていない（エンジンが `Interpreter::pending_local_updates`
-        に記録、op が match 前にクリア・後でチェック）、③subst/translit でない、④`$/` がローカルスロットでない
-        （`my $/` の継続マッチ対策）。lhs alias は slot へ reverse-write-through。当初の naive な無条件撤去は
-        `S02-magicals/sub.t`（埋め込みブロックが caller local 書き込み）と `S05-modifier/pos.t`（`my $/`+`:pos`）を
-        回帰させた。pin `t/smartmatch-env-dirty.t`（18）。
-      - (B) 残り step2（真に cold・zero-benefit）: vm_register_ops の declaration-time trait handler、
-        vm_var_assign_ops:4018/4042（`:=` 要素 SlotRef、`exec_index_assign_generic_op` に `code` 引き回しが必要）。
-      - (C) step3: I/O(Say/Put/Print/Note round-trip) + EVAL/atomic carrier。interpreter bridge 撤去（lever A / Q2）に gated。
-      - ③ループ/control の env 往復（vm_control_ops 7 / vm_misc_ops let-temp）— 要個別分析、リスク高、後回し。
-      - 全 setter 消滅後に `env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty` を削除。
-      - ※ bench-array/array-ops の `env_deep_copies` は `.map`/`.grep`/`.sort` クロージャの per-element overlay
-        deep-copy＝**レバー C 領域**（env_dirty ではない）、ここでは扱わない。
-
-### レバー C: クロージャ upvalue 化（§1.3）
-完了分（Slice 4a / scoped-overlay によるサブゴール#2 / for ループ変数 per-iteration 捕捉 / upvalue Slice 1・2・2b
-= loop-body-local の per-iteration 捕捉と box-on-capture / Slice 3 = loop body-local `my` clobber 修正）は
-news/2026-06.md 参照。残タスク:
-- [ ] **残（延期・大）: 非ループの一般コンテナ捕捉**（`my ($g,$s)=make(); $s(42); $g()` → raku `42`、
-      `my $x=1; my $c={$x}; $x=2; $c()` top-level → `2`）。コンパイラ解析（`captured_mutated_locals`）は非ループも
-      検出できるが、**非ループ被捕捉スカラを box すると ContainerRef 未対応の多数経路を踏む**（型付き `my A $a`
-      の `.=`、isa-ok、subset 型オブジェクト代入、submethod state、Mix 不変性 — 「値検査サイトに ContainerRef が
-      漏れる」共通根）。全 lvalue/型/dispatch 経路の deref 監査が要る＝専用の複数 PR。`t/closure-container-capture.t`
-      の非ループ兄弟 2 ケースは `todo`。
-- [x] **Slice 3b: `if`/`unless`/`else` ボディローカル `my` の clobber**（`my $x=99; if c { my $x=5 }; say $x` が
-      raku `99`、mutsu は `5`）を根治。新 opcode **`BlockLocalScope { body_end }`** を追加し、block-local `my` を
-      直接宣言するブランチをこれでラップ。VM ハンドラ（`exec_block_local_scope_op`）はループ本体と同じ
-      `push_loop_local_scope`/`pop_loop_local_scope`（**shadow-only 復元**）でボディを 1 回実行する。当初試した
-      BlockScope（完全 env 復元）案は**ブランチ内から外側変数への `:=` 束縛を巻き戻す**回帰を生むため不採用
-      （shadow-only は `my` 宣言した shadow 名のみ復元し `:=` は触らない）。コンパイラは
-      `branch_declares_block_local`（直下 + `SyntheticBlock` の `my`、state/our/dynamic を除外）で判定。
-      ループ本体扱いになるので if-branch-local のクロージャ捕捉（owned_captures/box）も正しくなる
-      （`if True { my $cx=5; $c={$cx} }` → `$c()`=5, 外側 `$cx`=1）。pin `t/block-local-my-scope.t`（24件）。詳細は news/2026-06.md。
+- [ ] **Category A — 純粋値 builtin（delete & fallthrough）**: native が authoritative。Interpreter の
+      `builtin_*` arm + 本体を削除し、catch-all → fallback → native_function に委譲。
+  - [x] **第1バッチ (#2714, in flight)**: `abs`/`lc`/`uc`/`tc`/`trim`/`flip`/`chr`/`ord`/`chars` の Interpreter
+        コピー削除。`chrs`/`ords`（fallback 未到達）と `words`（IO 版で別物）は対象外として残す。
+  - [ ] 残りの純粋値 builtin（docs の Category A 一覧）を同手順で。
+- [ ] **Category B — genuine fork（native に難ケースを足してから削除）**: `min`/`max`/`minmax`/`sort`/`join`/
+      `first`/`flat`/`elems`/`index`/`rindex` 等。native/pure 層は comparator ブロック・lazy・junction で bail し
+      Interpreter に落ちる。**比較子ブロックは VM 層で `vm_call_on_value`（`.map`/`.grep` と同じクロージャ
+      dispatch）で呼べる**ので、VM 層に完全実装を置いて Interpreter コピー（`dispatch_sort` / `builtin_min/max`
+      等）を削除する。
+  - ⚠️ **sort 移行の落とし穴（2026-06-07 に判明、要対処）**: VM sort を書いて function/method を流す試みは、
+    `@a.sort`/`@a.sort:{...}`/`sort &c,@a`/Range/Seq/List/`:k`/mapper まで動いたが、**`%h.sort({block})` /
+    `%h.list.sort({block})`（`%`-sigil 始まりのメソッドチェーン + trailing block）が "expected 2 got 0" で回帰**
+    （`@x.list.sort({block})` は動く）。`%`-rooted チェーンの trailing block が sort の比較子に届く前に 0-arg で
+    呼ばれる別経路があり、旧 `dispatch_sort` はそれを吸収していた。**この `%`-chain block-dispatch の差を解決
+    してから** sort を移行・`dispatch_sort` 削除すること（make roast 必須）。今回は回帰回避のため移行を revert 済み。
+- [ ] **Category C — メソッド / 演算子・arith・coercion の重複**: native fast path（`src/builtins/methods_*`,
+      `vm_arith_ops`）と Interpreter slow path（`src/runtime/methods*.rs`）の重複。Category A/B の後。
+- [ ] **正規表現の validator/matcher 二重実装の統合**（[ANALYSIS.md](ANALYSIS.md) §3.1。重複の一種）。
 
 ### 最終ゴール
-- [ ] メソッド/関数フォールバック率を 0%（Test/EVAL 等の本質的例外を除く）にし、Interpreter のメソッド/関数
-      実行パスを削除。残フォールバックには `// TODO: compile to bytecode` を付け負債を可視化。
-
-**レバー A は終着**（全項目 `[x]`）。**レバー C も境界の明確なスライス（1/2/2b/3/3b）は全て完了**し、残るのは
-**非ループ一般コンテナ捕捉**（上の延期項目）のみ ＝ これは素朴な box では deref 未対応経路を広く踏むため、
-🟣第2優先「第一級コンテナ」**Phase 1（スカラーの第一級コンテナ化）に吸収**して解く（PLAN 末尾参照）。
-**次の着手候補（優先順）:** B の Slice 6.3 残り（regex `~~` pull は完了 → 残 by-name op → carrier、最後に
-`env_dirty` 削除）→ 🟣第2優先「第一級コンテナ」Phase 0（decont チョークポイント整備）→ Phase 1（= レバー C 本丸を内包）。
+- [ ] **Interpreter のメソッド/関数実行パス（`call_function`/`call_method_with_values`/`dispatch_*` の
+      重複実装）を削除**し、フォールバック率 0%（Test/EVAL 等の本質的例外を除く）にする。これが完了すると、
+      env を任意の名前で書く唯一の存在（interpreter ブリッジ）が消えるので `env_dirty`/`ensure_locals_synced`/
+      `sync_locals_from_env`/`saved_env_dirty` の dual-store 機構も削除できる（レバー B 完遂）。
+- **残フォールバック**には `// TODO: compile to bytecode` を付け負債を可視化。
+- **次の着手候補（優先順）**: Category A の残り（低リスク・delete & fallthrough）→ Category B の `%`-chain
+  block-dispatch を解決して min/max/sort 移行 → Category C → 🟣第2優先「第一級コンテナ」（レバー C 本丸 +
+  Q2 の Arc-pointer flaky を吸収）。
 
 ---
 
 ## 🟣 第2優先（インタープリタ廃止の次）: 第一級コンテナ (container identity) への移行
 
-**優先順位**: 上の「🔴 最優先 = バイトコード VM をちゃんと治す（tree-walking Interpreter 廃止）」を
-**第1優先**、本セクションを**第2優先**とする（ユーザー方針 2026-06-06）。両者は独立ではなく地続き
-（レバー B/C の本丸が本移行の前提・一部）なので、インタープリタ廃止の完了を待ってから本格着手しつつ、
-その尾部（レバー C upvalue 等）と自然に接続する。
+**優先順位**: 上の「🔴 最優先 = 重複実装を消す（tree-walking Interpreter 廃止）」を**第1優先**、
+本セクションを**第2優先**とする（ユーザー方針 2026-06-06）。両者は独立ではなく地続き（レバー B/C の本丸が
+本移行の前提・一部）なので、インタープリタ廃止の完了を待ってから本格着手しつつ、その尾部
+（レバー C upvalue 等）と自然に接続する。なお第一級コンテナ移行は dual-store・Arc-pointer 副テーブル・
+ad-hoc itemization フラグ等の**重複/特例を 1 概念で置換する**点で、上の鉄則「重複を許さない」と同じ方向。
 
 実装台帳: [docs/container-identity.md](docs/container-identity.md)（現状の地図・段階スライス・進捗ログ）。
 
