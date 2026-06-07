@@ -68,7 +68,14 @@ jobs:
           git checkout -- roast/
 
       - name: Roast tests (make roast)
-        run: prove -e 'scripts/run-roast-test.sh' $(cat roast-whitelist.txt)
+        # -j4 matches the GitHub ubuntu-latest core count. The roast suite is
+        # dominated by sleep/timer-bound S17 concurrency tests that leave the
+        # CPU idle; running them in parallel overlaps that idle time with the
+        # CPU-bound tests and cuts wall-clock roughly 3x (~7.5min -> ~2.5min).
+        # Do not oversubscribe past the core count: the S17 scheduler/promise
+        # tests assert on real wall-clock scheduling and flake under CPU
+        # starvation.
+        run: prove -j4 -e 'scripts/run-roast-test.sh' $(cat roast-whitelist.txt)
         env:
           MUTSU_BIN: target/release/mutsu
 
