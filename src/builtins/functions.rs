@@ -774,21 +774,12 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 })))
             }
         }
-        "elems" => match arg {
-            Value::Array(items, ..) => Some(Ok(Value::Int(items.len() as i64))),
-            Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64))),
-            Value::Str(s) => Some(Ok(Value::Int(s.chars().count() as i64))),
-            Value::LazyList(_) => None,
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Stash" => match attributes.get("symbols") {
-                Some(Value::Hash(map)) => Some(Ok(Value::Int(map.len() as i64))),
-                _ => Some(Ok(Value::Int(0))),
-            },
-            _ => Some(Ok(Value::Int(1))),
-        },
+        // `elems($x)` is defined as `$x.elems`; delegate to the single `.elems`
+        // method impl instead of a drifting second copy. The inline version here
+        // wrongly counted Str chars (raku: a Str is 1 element) and missed Seq.
+        // `native_method_0arg` returns `None` for the cases the method leaves to
+        // the interpreter (e.g. gather-sourced lazy lists), which fall through.
+        "elems" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("elems")),
         "reverse" => {
             // LazyIoLines needs the interpreter to materialize — fall through
             if matches!(arg, Value::LazyIoLines { .. }) {
