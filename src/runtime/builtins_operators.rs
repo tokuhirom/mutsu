@@ -1543,15 +1543,52 @@ impl Interpreter {
         )
     }
 
-    pub(super) fn coerce_infix_operand_numeric(
+    /// Coerce an Instance operand to a numeric value via its `Numeric`/`Bridge`
+    /// method. This is the single authoritative implementation shared by both the
+    /// interpreter's infix-routine path (`call_infix_routine`) and the VM's arith/
+    /// comparison ops (`VM::coerce_numeric_bridge_value` delegates here), so the
+    /// "1 operation = 1 implementation" rule holds for Instance->numeric bridging.
+    /// Non-Instance values (the hot Int/Num/Rat path) return early untouched.
+    pub(crate) fn coerce_infix_operand_numeric(
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
         if !matches!(value, Value::Instance { .. }) {
             return Ok(value);
         }
-        if !(self.type_matches_value("Real", &value) || self.type_matches_value("Numeric", &value))
+        // Unhandled Failure: throw the stored exception.
+        if let Some(err) = self.failure_to_runtime_error_if_unhandled(&value) {
+            return Err(err);
+        }
+        // Match coerces to Numeric via its matched string.
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && class_name == "Match"
+            && let Some(str_val) = attributes.get("str")
         {
+            let s = str_val.to_string_value();
+            let s = s.trim();
+            if let Ok(i) = s.parse::<i64>() {
+                return Ok(Value::Int(i));
+            }
+            if let Ok(f) = s.parse::<f64>() {
+                return Ok(Value::Num(f));
+            }
+            return Ok(Value::Int(0));
+        }
+        // Coerce when the type is known Real/Numeric OR the class defines a
+        // user `Numeric` method (e.g. `class Blue { method Numeric { 3 } }`).
+        let known_numeric =
+            self.type_matches_value("Real", &value) || self.type_matches_value("Numeric", &value);
+        let has_numeric_method = if let Value::Instance { ref class_name, .. } = value {
+            self.has_user_method(&class_name.to_string(), "Numeric")
+        } else {
+            false
+        };
+        if !known_numeric && !has_numeric_method {
             return Ok(value);
         }
         self.call_method_with_values(value.clone(), "Numeric", vec![])
