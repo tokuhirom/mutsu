@@ -908,23 +908,24 @@ Reaching that requires, roughly in order:
       | bench-class         |            2 |               2 | done |
       | bench-fib / fib     |            0–1 |             0 | done (Slice 6.1) |
       | hash/string-concat/int |         1 |               0 | done |
-      | **bench-string**    |     **5003** |               0 | **regex `~~` (NEXT, step 2)** |
+      | **bench-string**    |  **5003 → 3** |             0 | **regex `~~` — DONE (step 2, below)** |
       | **bench-array**     |            4 |       **10005** | `.map`/`.grep`/`.sort` closures — **lever C, not B** |
       | array-ops           |          101 |             200 | closures (lever C) |
 
-      - **NEXT lever-B target = the regex/smartmatch pull (bench-string, 1 pull per
-        `~~`).** Root: `exec_smartmatch_*` in `src/vm/vm_comparison_ops.rs:~1261`
-        unconditionally sets `self.env_dirty = true` after the match (and pulls at
-        ~1205 when already dirty). The match writes env by name — topic `_`
-        (1198/1233), `var_name` for `$x ~~ ...` (1228), and the regex engine writes
-        `$/`/`$0..`/`$<name>`. This is the canonical **step 2 (reverse
-        write-through)**: when one of those names has a slot in `code.locals`, also
-        write `self.locals[slot]` (mirror of Slice 6.2's `flush_local_to_env`) and
-        DROP the blanket `env_dirty = true`. `$/`/`$0`/`$<…>` are almost never
-        `code.locals` (like `?LINE` — candidates for `could_name_caller_local`-style
-        skip); `_` and `var_name` can be locals → need the slot write. Repro:
-        `MUTSU_VM_STATS=1 cargo run -- -e 'my $c=0; for ^5000 { if "x 42 y" ~~ /\d+/ { $c++ } }; say $c'` → `locals_pulls=5001`, target 1.
-      - **Then the rest of step 2** — the by-name var/control setters
+      - **DONE: regex/smartmatch pull (step 2, first target).** `exec_smart_match_expr_op`
+        (`src/vm/vm_comparison_ops.rs`) no longer sets a blanket `self.env_dirty = true`
+        after the match. The only by-name env writes it makes that can alias a caller
+        local are topic `_` (restored to its pre-match value → already consistent with
+        its slot) and `var_name` for `$x ~~ ...` (now mirrored into its slot via
+        `update_local_if_exists`, the reverse-write-through). The regex engine's
+        `$/`/`$0..`/`$<name>` are special-cased and never a caller local slot (the skip
+        list in `sync_regex_interpolation_env_from_locals`). bench-string
+        `locals_pulls` 5003 → 3; the `for ^5000 { … ~~ /…/ }` repro 5001 → 1. Pinned by
+        `t/smartmatch-env-dirty.t` (14). make test PASS (5143), S03-smartmatch /
+        S05-capture / S05-substitution / given-when roast green (the 2 fails in
+        S05-capture/hash.t + S05-substitution/subst.t are pre-existing, non-whitelisted,
+        identical count with/without the change).
+      - **NEXT: the rest of step 2** — the by-name var/control setters
         (`vm_var_get_ops`, `vm_register_ops` `&sub`/type-name writes, `vm_control_ops`,
         `vm_data_ops`): same reverse-write-through pattern. Verify with a roast pass
         over `S02-magicals` / `S05-match` / dynamic-scope.

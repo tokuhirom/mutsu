@@ -1227,7 +1227,12 @@ impl VM {
                 .unwrap_or(Value::Nil);
             self.interpreter
                 .env_mut()
-                .insert(var_name.clone(), modified_topic);
+                .insert(var_name.clone(), modified_topic.clone());
+            // Reverse write-through (Slice 6.3 step 2): if the lhs alias names a
+            // compiled local slot, mirror the modified topic into it directly so
+            // the caller's next `GetLocal` sees it without an O(locals)
+            // `sync_locals_from_env` pull.
+            self.update_local_if_exists(code, var_name, &modified_topic);
         }
         if let Some(v) = saved_topic {
             self.interpreter.env_mut().insert("_".to_string(), v);
@@ -1258,7 +1263,15 @@ impl VM {
             self.eval_smartmatch_with_junctions_ex(left, right, false, rhs_is_match_regex)?
         };
         self.stack.push(out);
-        self.env_dirty = true;
+        // Slice 6.3 step 2: no blanket `env_dirty = true`. The only by-name env
+        // writes this op makes that can alias a caller local slot are `$_`
+        // (restored above to its pre-match value, so already consistent with its
+        // slot) and the lhs alias `var_name` (mirrored into its slot via
+        // `update_local_if_exists` above). The regex match variables `$/` / `$0` /
+        // `$<...>` are special-cased and never name a caller local slot (see the
+        // skip list in `sync_regex_interpolation_env_from_locals`), so they
+        // oblige no pull. Any user code the RHS *runs* (e.g. a sub call) signals
+        // its own caller-aliasing writes precisely through dispatch.
         *ip = rhs_end;
         Ok(())
     }
