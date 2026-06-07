@@ -9,9 +9,10 @@ impact. Each entry carries a **fix difficulty** estimate:
   identity, real lazy infinite sequences, threading primitives, RakuAST,
   object-hash `%{Mu}` keys) or a large pile of disparate sub-features.
 
-Last refreshed: 2026-06-07 (stale/passing entries removed, counts re-measured,
-difficulty ratings added; end-of-Tier-1 → Tier-2 implementation plan refined with
-per-file approaches, not-whitelistable flags, and a recommended pickup order).
+Last refreshed: 2026-06-07 (Tier-2 first pass landed — typed exceptions across
+constant/lexical-subs/exporthow/adverbs/subst/misc2; Tier-2 section now records
+what shipped, the next misc2.t clusters, and the cross-cutting main-engineer
+blockers. Earlier: stale entries removed, counts re-measured, difficulty ratings).
 
 ---
 
@@ -106,36 +107,66 @@ must touch `value.rs` for a new `RuntimeError`, it is the `RuntimeError` area, f
 from the `Value` enum the main engineer reworks — but coordinate before editing
 `value.rs`.)
 
-**Reality check (verified this round):** the "Medium" label on these is optimistic
-for the whole-file pass. `S32-exceptions/misc2.t` needs ~50 *distinct* exception
-types thrown at the right place (reference rakudo fails only 1 of 265) — that is
-**Hard**, a long multi-PR grind, not a single pickup. Pick the *bounded* ones first.
+**Reality check (verified):** the "Medium" label was optimistic for the whole-file
+pass. Several of these files are **not whitelistable** (reference rakudo itself
+fails them), and the rest are blocked on deep features (container identity, regex
+internals). So Tier 2's real value is the **reusable typed exceptions** each file
+motivates — those carry across files (`X::Redeclaration` / `X::Undeclared::Symbols`
+are also misc2.t prerequisites) — not the per-file whitelist.
 
-**Recommended order:**
+**First pass — DONE (2026-06-07, PRs #2698/#2700/#2701/#2702/#2704/#2706).** Each
+landed a typed exception or feature; details in the per-synopsis TODO file.
 
-1. **S04-declarations/constant.t** — *Medium, most bounded.* 63/68 pass; aborts at
-   line 331 on `constant` with complex RHS (list / typed / sigilless). Fix the
-   `constant` declaration handling (compiler/runtime const path) for those RHS
-   shapes so the file reaches its plan. Smallest reachable Tier-2 whitelist.
-2. **S06-advanced/lexical-subs.t** — *Medium.* 5/13 then aborts at line 66: needs
-   `X::Undeclared::Symbols` for a forward-referenced lexical `my sub`. Bounded:
-   one exception type + one detection site (forward-ref of a not-yet-declared
-   `my sub` inside the same scope).
-3. **S12-meta/exporthow.t** — *Medium.* `X::EXPORTHOW::InvalidDirective` plus
-   minimal `EXPORTHOW` plumbing (recognize the package, validate directive names).
-   Self-contained in the module/exports handler.
-4. **S32-hash/adverbs.t** — *Medium.* `X::Adverb` edge cases on hash subscripts
-   (the adverb-on-subscript parse + throw path; `X::Adverb` already exists).
-5. **S05-substitution/subst.t** — *Medium, regex-adjacent.* 23/191: missing
-   Exception throws on illegal substitution forms + `.subst` adverb edge cases.
-   Touches `runtime/regex*` + subst handling, so sequence it AFTER any open regex
-   PR has merged (avoid self-conflict).
-6. **S32-exceptions/misc2.t** — *Hard (reclassified).* ~50 distinct compile-time
-   exception types (`X::Attribute::Undeclared`, `X::Signature::Placeholder`,
-   `X::Obsolete`, `X::Placeholder::*`, `X::Parameter::*`, `X::Redeclaration`,
-   `X::Method::Private::*`, `X::Bind`, …). Treat as a long campaign: land the
-   common ones (`X::Redeclaration`, `X::Placeholder::*`) across several PRs; do not
-   expect a single-PR whitelist.
+1. **S04-declarations/constant.t** — `X::Redeclaration` on a same-scope `constant`
+   redeclaration (compile-time, `.symbol`); inner-block shadowing still allowed.
+   NOT whitelistable (lazy-seq `fib[100]`, `G::c` qualified name via constant
+   alias, multi-candidate sharing, ExportConstant module). See S04.md.
+2. **S06-advanced/lexical-subs.t** — unknown `foo()` now throws a *typed*
+   `X::Undeclared::Symbols`. Remaining: bareword-undeclared detection, `&foo`
+   parameter precedence (**VM call cache — main engineer**), inner-block
+   lexical-sub leak, identical-empty-sub redeclaration. See S06.md.
+3. **S12-meta/exporthow.t** — `X::EXPORTHOW::InvalidDirective` (validate EXPORTHOW
+   `<directive>::<decl>` members on `use`); test 1 passes. NOT whitelistable:
+   rakudo itself dies at test 2 on EXPORTHOW SUPERSEDE of a custom meta-type HOW.
+   See S12.md.
+4. **S32-hash/adverbs.t** — *big win, 823→1069/1128.* Zen-slice adverbs
+   (`%h{}:k/:v/:kv/:p`), `X::Adverb` (unknown + conflicting, with
+   `.what`/`.source`/`.nogo`/`.unexpected`), `%h.name`/`@a.name`, Range-key
+   slices. Remaining 59: typed-hash value-type default surviving rebinding
+   (**first-class container identity — main engineer**). See S32.md.
+5. **S05-substitution/subst.t** — `X::Assignment::RO` for `s///`/`tr///` on a
+   *matching* string literal. NOT whitelistable: rakudo itself fails tests 157,
+   170. Remaining is regex-internal (`:mm`/samemark, `:samecase`,
+   `X::Syntax::Regex::NullRegex`, non-constant `:i` → `X::Value::Dynamic`). See S05.md.
+6. **S32-exceptions/misc2.t** — *Hard campaign, started.* `X::Parameter::WrongOrder`
+   (`.misplaced`/`.after` for required/optional after optional/named/variadic).
+   134→131 failing of 241 run.
+
+**Next pickups (bounded, one small PR each — continue the misc2.t campaign):**
+
+1. **S32-exceptions/misc2.t, cluster by cluster** (highest count first):
+   `X::Obsolete` (`qr//`, `.`-concat, `foreach`, C-style `for`, `undef`, `<>`) →
+   `X::Syntax::Perl5Var` (`$#foo`, `$\`, `$&`) → `X::Placeholder::Mainline`
+   (`$^x`/`@_` at mainline) → `X::Redeclaration` of subs/methods (reuse the
+   constant work) → then the abort at test 241 (`X::Multi::NoMatch` /
+   `X::Syntax::Adverb` throws-like). Each cluster ≈ one PR. Full list in S32.md.
+2. **S05-substitution/subst.t regex-internal pieces** — sequence AFTER any open
+   regex PR: `X::Syntax::Regex::NullRegex` (empty `s///`), `:samecase`/`:samemark`
+   application in `.subst`.
+
+**Cross-cutting blockers = main-engineer territory** (do NOT patch from a
+sub-engineer branch):
+- **First-class container identity** — adverbs.t typed-hash missing-key default
+  surviving variable rebinding; needs value-carried type metadata.
+- **VM call cache** — lexical `&foo`/`&infix` parameter precedence over a
+  same-named package sub (`pos_light_call_cache`/`light_call_cache` are name-keyed
+  and ignore a lexical `&name`).
+- **`if { given { } }` value propagation** (pre-existing) — a trailing `given` in
+  an `if`/`with`-value position returns Nil (e.g. `sub f { with $v { ... } }` when
+  `$v` is a var). This blocks io-handle.t test 22's nested-`with`/`given`
+  topic-source isolation; fix the value-propagation bug first, then re-isolate the
+  topic source (the naive Given-wrap of the `with` body broadly regresses
+  `with`-as-value — see PR #2696's reverted first attempt).
 
 ### Tier 3 — self-contained semantic fixes (off the VM core)
 
