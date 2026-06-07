@@ -646,6 +646,34 @@ impl Compiler {
                 // them in `for` loops (constants have no Scalar container).
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
                 if is_constant_decl {
+                    // X::Redeclaration on a duplicate same-scope `constant` is only
+                    // fired when the *sigil* matches. mutsu's AST strips the `$`
+                    // from a scalar constant name, so `constant sym` (sigilless)
+                    // and `constant $sym` (scalar) both arrive here as "sym"; firing
+                    // on the bare name alone would wrongly reject that legal pair
+                    // (see roast S06-operator-overloading/sub.t). Key the
+                    // duplicate-detection set by the source sigil so only true
+                    // same-sigil redeclarations are caught.
+                    let constant_sigil = custom_traits
+                        .iter()
+                        .find(|(t, _)| t == "__constant_sigil")
+                        .and_then(|(_, e)| match e {
+                            Some(Expr::Literal(Value::Str(s))) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let redecl_key = format!("{}{}", constant_sigil, name);
+                    if !self.constant_vars_current_scope.insert(redecl_key) {
+                        let sym = name.trim_start_matches(['$', '@', '%', '&']).to_string();
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("symbol".to_string(), Value::str(sym));
+                        attrs.insert("what".to_string(), Value::str_from("symbol"));
+                        let err = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+                        let idx = self.code.add_constant(err);
+                        self.code.emit(OpCode::LoadConst(idx));
+                        self.code.emit(OpCode::Die);
+                        return;
+                    }
                     self.constant_vars.insert(name.clone());
                     self.constant_vars_in_scope.insert(name.clone());
                 }
