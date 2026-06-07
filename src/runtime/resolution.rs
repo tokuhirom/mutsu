@@ -1012,30 +1012,48 @@ impl Interpreter {
     }
 
     /// Force a `LazyIoLines` value into an eager array by reading all remaining
-    /// lines from the file handle.
-    pub(crate) fn force_lazy_io_lines(&mut self, handle: &Value) -> Result<Value, RuntimeError> {
-        let mut lines = Vec::new();
-        while let Some(line) = self.read_line_from_handle_value(handle)? {
-            lines.push(Value::str(line));
+    /// records from the file handle. When `words` is true the records are
+    /// whitespace-delimited words; otherwise they are lines.
+    pub(crate) fn force_lazy_io_lines(
+        &mut self,
+        handle: &Value,
+        words: bool,
+    ) -> Result<Value, RuntimeError> {
+        let mut items = Vec::new();
+        if words {
+            while let Some(word) = self.read_word_from_handle_value(handle)? {
+                items.push(Value::str(word));
+            }
+        } else {
+            while let Some(line) = self.read_line_from_handle_value(handle)? {
+                items.push(Value::str(line));
+            }
         }
-        Ok(Value::array(lines))
+        Ok(Value::array(items))
     }
 
     /// Force a `LazyIoLines` value into an eager array by reading at most `n`
-    /// lines from the file handle, leaving the rest available for subsequent reads.
+    /// records from the file handle, leaving the rest available for subsequent
+    /// reads. When `words` is true the records are words; otherwise lines.
     pub(crate) fn force_lazy_io_lines_n(
         &mut self,
         handle: &Value,
         n: usize,
+        words: bool,
     ) -> Result<Value, RuntimeError> {
-        let mut lines = Vec::new();
-        while lines.len() < n {
-            match self.read_line_from_handle_value(handle)? {
-                Some(line) => lines.push(Value::str(line)),
+        let mut items = Vec::new();
+        while items.len() < n {
+            let next = if words {
+                self.read_word_from_handle_value(handle)?
+            } else {
+                self.read_line_from_handle_value(handle)?
+            };
+            match next {
+                Some(rec) => items.push(Value::str(rec)),
                 None => break,
             }
         }
-        Ok(Value::array(lines))
+        Ok(Value::array(items))
     }
 
     pub(super) fn split_block_phasers(&self, stmts: &[Stmt]) -> SplitPhasers {

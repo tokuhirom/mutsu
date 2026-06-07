@@ -556,6 +556,15 @@ pub(crate) struct IoHandleState {
     argfiles_index: usize,
     /// For ArgFiles: currently open file reader (buffered)
     argfiles_reader: Option<std::io::BufReader<fs::File>>,
+    /// For ArgFiles created via `IO::ArgFiles.new(@files)`: the explicit file
+    /// list to read from, overriding the global `@*ARGS`. None = use `@*ARGS`.
+    argfiles_paths: Option<Vec<String>>,
+    /// Buffered words not yet yielded by `read_word_from_handle_value`. A single
+    /// line read can produce many words; the leftovers live here until consumed.
+    pending_words: std::collections::VecDeque<String>,
+    /// When set, the handle is closed automatically the moment word iteration
+    /// reaches EOF (Raku's `words($fh, :close)` close-on-exhaust semantics).
+    close_on_word_exhaust: bool,
 }
 
 #[derive(Clone)]
@@ -5154,6 +5163,9 @@ impl Interpreter {
                 utf16_detected_be: handle.utf16_detected_be,
                 argfiles_index: handle.argfiles_index,
                 argfiles_reader: None, // Cannot clone BufReader; will reopen if needed
+                argfiles_paths: handle.argfiles_paths.clone(),
+                pending_words: handle.pending_words.clone(),
+                close_on_word_exhaust: handle.close_on_word_exhaust,
             };
             cloned_handles.insert(*id, cloned);
         }

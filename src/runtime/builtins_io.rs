@@ -1142,6 +1142,7 @@ impl Interpreter {
                 return Ok(Value::LazyIoLines {
                     handle: Box::new(handle),
                     kv: false,
+                    words: false,
                 });
             }
             let mut lines = Vec::new();
@@ -1172,7 +1173,7 @@ impl Interpreter {
         if let Some(handle) = handle {
             let mut limit: Option<usize> = None;
             let mut close_after = false;
-            for arg in &args[1..] {
+            for arg in args.get(1..).unwrap_or(&[]) {
                 match arg {
                     Value::Pair(k, v) if k == "close" => {
                         close_after = v.truthy();
@@ -1189,15 +1190,26 @@ impl Interpreter {
                     _ => {}
                 }
             }
+            if limit.is_none() {
+                // No limit: return a lazy word iterator so a partial consumer
+                // (e.g. `words($fh, :close)[1,2]`) leaves the handle open, while a
+                // full consumer triggers close-on-exhaust when `:close` was given.
+                if close_after {
+                    self.handle_state_mut(&handle)?.close_on_word_exhaust = true;
+                }
+                return Ok(Value::LazyIoLines {
+                    handle: Box::new(handle),
+                    kv: false,
+                    words: true,
+                });
+            }
             let mut words = Vec::new();
-            'outer: while let Some(line) = self.read_line_from_handle_value(&handle)? {
-                for token in line.split_whitespace() {
-                    words.push(Value::str(token.to_string()));
-                    if let Some(n) = limit
-                        && words.len() >= n
-                    {
-                        break 'outer;
-                    }
+            'outer: while let Some(word) = self.read_word_from_handle_value(&handle)? {
+                words.push(Value::str(word));
+                if let Some(n) = limit
+                    && words.len() >= n
+                {
+                    break 'outer;
                 }
             }
             if close_after {

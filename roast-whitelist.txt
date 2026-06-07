@@ -806,6 +806,7 @@ roast/S16-io/split.t
 roast/S16-io/supply.t
 roast/S16-io/tmpdir.t
 roast/S16-io/watch.t
+roast/S16-io/words.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/basic.t

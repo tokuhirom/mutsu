@@ -40,7 +40,9 @@ unicode (`builtins/unicode.rs`), and Buf/OS builtins. The main engineer never
 touches these.
 
 1. **IO** (Medium): S32-io/io-handle.t, S32-io/io-path.t, S32-io/io-path-cygwin.t,
-   S32-io/lock.t, S16-io/words.t
+   S32-io/lock.t
+   (S16-io/words.t — DONE, whitelisted: lazy word iterator + close-on-exhaust +
+   `IO::ArgFiles.new`.)
 2. **Regex / Match** (Medium): S05-capture/alias.t, S05-mass/rx.t,
    S05-match/capturing-contexts.t, S05-metasyntax/angle-brackets.t,
    S05-nonstrings/basic.t
@@ -292,8 +294,8 @@ cases. `pipe.t`, `spurt.t`, `indir.t`, `child-secure.t` now pass.
   10 failing.
 - roast/S32-io/lock.t — **Medium**. `.lock`/`.unlock` throw X::Method::NotFound (file
   locking not implemented).
-- roast/S16-io/words.t — **Medium**. 8/11. Remaining: lazy close-on-exhaust for
-  `words($fh, :close)` partial slices, and `IO::ArgFiles.new`.
+- roast/S16-io/words.t — **DONE** (whitelisted). Lazy word iterator with
+  close-on-exhaust + `IO::ArgFiles.new(@files)`.
 
 ## gather/take Laziness — **Hard**
 
