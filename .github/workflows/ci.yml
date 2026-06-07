@@ -11,7 +11,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The job does two full cargo builds (debug for `prove t/`, release for
+    # roast) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the
+    # job was hitting the limit and getting canceled even when every test
+    # passed (roast printing "Result: PASS" immediately before cancellation).
+    # 25 min gives headroom for a cold/partial cargo cache.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
