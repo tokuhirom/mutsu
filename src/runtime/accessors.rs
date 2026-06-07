@@ -566,8 +566,8 @@ impl Interpreter {
                 return self.eval_call_on_value(callable, args);
             }
         }
-        Err(RuntimeError::new(format!(
-            "X::Undeclared::Symbols: Unknown function: {}",
+        Err(RuntimeError::undeclared_symbols(format!(
+            "Unknown function: {}",
             full_name
         )))
     }
