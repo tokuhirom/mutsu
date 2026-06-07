@@ -126,6 +126,9 @@ impl VM {
                 .interpreter
                 .try_native_default_construct(*class_name, &args)
         {
+            // Native construction is pure data assembly: it returns a fresh
+            // instance and writes nothing to the caller env (Slice 6.3).
+            self.method_dispatch_pure = true;
             return result;
         }
         if let Value::Instance { class_name, .. } = &target {
@@ -575,6 +578,8 @@ impl VM {
                 .interpreter
                 .try_native_default_construct(*class_name, &args)
         {
+            // Pure construction: fresh instance, no caller-env write (Slice 6.3).
+            self.method_dispatch_pure = true;
             return result;
         }
         if let Value::Instance { class_name, .. } = &target {

@@ -7,7 +7,7 @@ use Test;
 # reads, or that routes through the interpreter bridge must still keep the
 # caller's locals coherent. See docs/vm-dual-store.md (Slice 6.3).
 
-plan 20;
+plan 24;
 
 # --- read-only method, caller interleaves reads of its own locals ---
 class P { has $.x; method g() { return $!x + 1 } }
@@ -124,3 +124,39 @@ for 1..6 -> $i {
 }
 is @acc-arr.join(','), '1,2,3,4,5,6', 'native .push mutation visible across loop';
 is $count, 6, 'caller local intact alongside native push mutation';
+
+# --- attribute accessor read ($obj.attr) interleaved with a caller-local
+#     mutation across a loop (the fast-accessor-read pure path) ---
+class Pt { has $.v }
+my $pt = Pt.new(v => 7);
+my $accum = 0;
+my $loops = 0;
+for ^50 {
+    $accum += $pt.v;   # pure accessor read
+    $loops += 1;       # caller-local mutation must survive the read
+}
+is $accum, 350, 'accessor read value correct across loop';
+is $loops, 50, 'caller local intact alongside accessor reads';
+
+# --- `.new` constructing a fresh instance each iteration, then immediately
+#     calling a method on a *different* receiver and summing into a caller local
+#     (the native-construct pure path; mirrors benchmarks/method-call.raku) ---
+class Box { has $.n; method twice() { $!n * 2 } }
+my $base = Box.new(n => 10);
+my $total2 = 0;
+for 1..20 -> $i {
+    my $b = Box.new(n => $i);   # pure construction
+    $total2 += $base.twice() + $b.n;
+}
+is $total2, 20 * 20 + (1 + 20) * 20 / 2, 'new-in-loop + method + accessor sum correct';
+
+# --- accessor read whose result must reflect a prior same-loop mutation
+#     (ensures removing the accessor env_dirty mark did not hide a real update) ---
+class Cell { has $.val is rw }
+my $cell = Cell.new(val => 0);
+my $seen-last = -1;
+for 1..10 -> $i {
+    $cell.val = $i;        # mutate attribute
+    $seen-last = $cell.val; # accessor read must see the just-written value
+}
+is $seen-last, 10, 'accessor read reflects same-loop attribute mutation';
