@@ -73,6 +73,10 @@ pub(crate) struct Compiler {
     /// declaring block has exited, their stale local slot must not be reused —
     /// such bare-word accesses fall back to GetBareWord (package/global lookup).
     constant_vars_in_scope: std::collections::HashSet<String>,
+    /// Constants declared in the *current* lexical block only (reset on block
+    /// entry). Declaring the same constant twice in one block is an
+    /// X::Redeclaration; a shadowing declaration in an inner block is allowed.
+    constant_vars_current_scope: std::collections::HashSet<String>,
     /// Local names that are sigilless bindings (declared with `my \Foo = ...`
     /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
     /// for names in this set; `$`-sigiled variables must not shadow type names.
@@ -108,6 +112,7 @@ impl Compiler {
             scalar_bind_autovivify: false,
             constant_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
+            constant_vars_current_scope: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),

@@ -7,6 +7,7 @@ pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
     constant_vars_in_scope: std::collections::HashSet<String>,
+    constant_vars_current_scope: std::collections::HashSet<String>,
 }
 
 impl Compiler {
@@ -15,10 +16,14 @@ impl Compiler {
     }
 
     pub(super) fn push_dynamic_scope_lexical(&mut self) -> LexicalScopeSnapshot {
+        // `std::mem::take` resets the current-scope constant set: the entered
+        // block starts with no constants of its own, so an inner `constant X`
+        // may legitimately shadow an outer one without being a redeclaration.
         LexicalScopeSnapshot {
             dynamic_scope_all: self.dynamic_scope_all,
             dynamic_scope_names: self.dynamic_scope_names.clone(),
             constant_vars_in_scope: self.constant_vars_in_scope.clone(),
+            constant_vars_current_scope: std::mem::take(&mut self.constant_vars_current_scope),
         }
     }
 
@@ -30,6 +35,7 @@ impl Compiler {
         // valid, so drop them from the in-scope set. Subsequent bare-word access
         // then resolves them via GetBareWord (package/global lookup).
         self.constant_vars_in_scope = saved.constant_vars_in_scope;
+        self.constant_vars_current_scope = saved.constant_vars_current_scope;
     }
 
     pub(super) fn apply_dynamic_scope_pragma(&mut self, arg: Option<&Expr>) {

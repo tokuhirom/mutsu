@@ -646,6 +646,20 @@ impl Compiler {
                 // them in `for` loops (constants have no Scalar container).
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
                 if is_constant_decl {
+                    // X::Redeclaration: declaring the same constant twice in the
+                    // same lexical block is an error (shadowing in an inner block
+                    // is fine — see constant_vars_current_scope reset on entry).
+                    if !self.constant_vars_current_scope.insert(name.clone()) {
+                        let sym = name.trim_start_matches(['$', '@', '%', '&']).to_string();
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("symbol".to_string(), Value::str(sym));
+                        attrs.insert("what".to_string(), Value::str_from("symbol"));
+                        let err = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+                        let idx = self.code.add_constant(err);
+                        self.code.emit(OpCode::LoadConst(idx));
+                        self.code.emit(OpCode::Die);
+                        return;
+                    }
                     self.constant_vars.insert(name.clone());
                     self.constant_vars_in_scope.insert(name.clone());
                 }
