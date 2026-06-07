@@ -4,7 +4,7 @@ use Test;
 # An inner `my $x` shadowing an outer `$x` must NOT clobber the outer slot,
 # and the name must not leak out of the block (Slice 3 of lever C / PLAN.md).
 
-plan 15;
+plan 19;
 
 # --- for loop body: shadow must not clobber outer ---
 {
@@ -102,4 +102,30 @@ plan 15;
     for 1..3 -> $i { my $x = $i; @c.push({ $x }) }
     is @c.map(*.()).join(','), '1,2,3', 'per-iteration my captured correctly';
     is $x, 99, 'closure-capturing loop does not clobber outer $x';
+}
+
+# --- statement-modifier `my` is enclosing-scoped and must survive the loop ---
+# (regression guard: the loop-body-local restore must NOT wipe these, since a
+# statement modifier introduces no block. See roast S04-statement-modifiers/for.t.)
+{
+    (my @a).push: $_ for ^3;
+    is @a.join(','), '0,1,2', 'stmt-modifier my @a accumulates and survives the loop';
+}
+{
+    my $s;
+    $s = $_ for 1..3;
+    is $s, 3, 'stmt-modifier my $s survives the loop';
+}
+# A prior sibling block declaring the same name must not make the restore fire
+# (its slot lingers frame-wide but is incoherent with the fresh declaration).
+{
+    { my @a = (5, 7, 9); }
+    (my @a).push: $_ for ^3;
+    is @a.join(','), '0,1,2', 'stmt-modifier my @a unaffected by a popped sibling-block @a';
+}
+# Genuine outer shadow still restores even with a later statement modifier.
+{
+    my @a = 1, 2, 3;
+    for 1..2 { my @a = 7, 8 }
+    is @a.join(','), '1,2,3', 'genuine outer @a restored after block-body shadow';
 }
