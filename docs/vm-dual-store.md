@@ -787,5 +787,38 @@ Reaching that requires, roughly in order:
       while any VM op falls back to the interpreter; it is gated on finishing the
       broader VM-decoupling (no interpreter bridge).
 
+### Remaining method-call dual-store costs (measured 2026-06-07)
+
+`MUTSU_VM_STATS=1` on the method/OOP benches isolates the two costs that survive
+after the overlay conversion (Slices 6.0–6.2). Both are structural, not
+quick-fixable in isolation:
+
+1. **Per-method-call `locals_pulls` (= the `env_dirty` flag, Slice 6.3).**
+   `tmp/mb_method.raku` (`$p.g()` in a 10k loop) → `locals_pulls=10000`. The
+   method-call opcode unconditionally sets `env_dirty=true` after dispatch (e.g.
+   `vm_call_method_mut_ops.rs` ~line 1305), forcing an O(caller-locals)
+   `sync_locals_from_env` every call. **Attempted fix that FAILED (reverted):**
+   snapshot the caller env overlay Arc before dispatch and only set `env_dirty`
+   when it changed (mirroring the function-side Slice 6.1). It backfired — the
+   extra `Arc` ref held across the call raised the overlay refcount and *induced*
+   a `make_mut` deep copy every call (`env_deep_copies` 1→10001) while the
+   caller env Arc changes on every call anyway (overlay merge/restore allocates a
+   new Arc), so `env_changed` was always true and `locals_pulls` did not drop.
+   Conclusion: this is genuinely Slice 6.3 / interpreter-decoupling territory,
+   not a localized opcode tweak.
+
+2. **Per-*nested*-method-call O(env) flatten + deep copy.** `tmp/mb_nested.raku`
+   (`method f() { self.d() }`) → `env_deep_copies=10000` (one per outer call);
+   a non-nested method (`mb_method`) stays at `env_deep_copies=1`. Root cause:
+   the scoped overlay is **single-tier** (`Env::scoped_child` takes one
+   `parent_overlay` Arc). When a method (already running under a scoped overlay)
+   calls another method, the inner dispatch's `flatten_scoped_env()` /
+   `clone_env()` (= `env.flattened()`) must collapse the caller's 2-tier scoped
+   env into a flat map (an O(env) `HashMap` clone) so the inner `scoped_child`
+   doesn't lose the caller's parent lexicals. This is the bench-class cost
+   (`full-info` → `describe`). Fixing it requires a **multi-tier overlay** (a
+   chain of overlay Arcs instead of one), so nesting never flattens — a larger
+   change that converges with the first-class-container migration (PLAN 🟣).
+
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
