@@ -448,7 +448,8 @@ impl Interpreter {
             "values" => self.builtin_values(&args),
             "kv" => self.builtin_kv(&args),
             "pairs" => self.builtin_pairs(&args),
-            "sign" => self.builtin_sign(&args),
+            // sign removed (Category A dedup): native_function_1arg "sign"
+            // (src/builtins/functions.rs) is authoritative via call_function_fallback.
             "val" => Ok(super::builtins_collection::builtin_val(&args)),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
@@ -649,10 +650,10 @@ impl Interpreter {
                 let method_args = args[1..].to_vec();
                 self.call_method_with_values(target, "rindex", method_args)
             }
-            "chrs" => self.builtin_chrs(&args),
-            "ords" => self.builtin_ords(&args),
-            "unival" => self.builtin_unival(&args),
-            "univals" => self.builtin_univals(&args),
+            // chrs / ords / unival / univals removed (Category A dedup): native
+            // implementations in src/builtins/functions.rs are authoritative
+            // (chrs routed through native_function_variadic; ords/unival/univals
+            // via native_function_1arg) and reached via call_function_fallback.
             "sprintf" | "zprintf" => {
                 // If the first arg is a Junction, thread through it:
                 // call .Str on each element and concatenate.

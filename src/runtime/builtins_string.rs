@@ -2,106 +2,13 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    // chr / ord removed (Slice 6.3 dedup): native implementations in
-    // src/builtins/functions.rs are authoritative (reached via
-    // call_function_fallback -> native_function). chrs / ords are KEPT: their
-    // native arms are not reachable through the interpreter's
-    // call_function_fallback -> native_function path (multi-arg / array-returning
-    // dispatch differs from the single-arg fallback table).
-    pub(super) fn builtin_chrs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let mut result = String::new();
-        for arg in args {
-            for item in Self::value_to_list(arg) {
-                if let Value::Int(i) = item
-                    && i >= 0
-                    && (i as u64) <= 0x10ffff
-                    && let Some(ch) = std::char::from_u32(i as u32)
-                {
-                    result.push(ch);
-                    continue;
-                }
-                result.push_str(&item.to_string_value());
-            }
-        }
-        Ok(Value::str(result))
-    }
-
-    pub(super) fn builtin_ords(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(val) = args.first() {
-            let codes = val
-                .to_string_value()
-                .chars()
-                .map(|ch| Value::Int(ch as u32 as i64))
-                .collect();
-            return Ok(Value::array(codes));
-        }
-        Ok(Value::array(Vec::new()))
-    }
-
-    pub(super) fn builtin_unival(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let Some(arg) = args.first() else {
-            return Ok(Value::Nil);
-        };
-        // Type objects should throw an error
-        if matches!(arg, Value::Package(_) | Value::CustomType { .. }) {
-            return Err(RuntimeError::new(
-                "Cannot call unival on a type object".to_string(),
-            ));
-        }
-        let ch = match arg {
-            Value::Int(i) if *i >= 0 => {
-                let Some(ch) = char::from_u32(*i as u32) else {
-                    return Ok(Value::Num(f64::NAN));
-                };
-                ch
-            }
-            _ => {
-                let s = arg.to_string_value();
-                let Some(ch) = s.chars().next() else {
-                    return Ok(Value::Nil);
-                };
-                ch
-            }
-        };
-        Self::unival_for_char(ch)
-    }
-
-    pub(super) fn builtin_univals(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let Some(arg) = args.first() else {
-            return Ok(Value::array(Vec::new()));
-        };
-        // Type objects should throw an error
-        if matches!(arg, Value::Package(_) | Value::CustomType { .. }) {
-            return Err(RuntimeError::new(
-                "Cannot call univals on a type object".to_string(),
-            ));
-        }
-        let s = arg.to_string_value();
-        if s.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-        let mut result = Vec::new();
-        for ch in s.chars() {
-            result.push(Self::unival_for_char(ch)?);
-        }
-        Ok(Value::array(result))
-    }
-
-    fn unival_for_char(ch: char) -> Result<Value, RuntimeError> {
-        if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
-            return Ok(crate::value::make_rat(n, d));
-        }
-        if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
-            return Ok(Value::Int(n));
-        }
-        if let Some(n) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
-            return Ok(Value::Int(n as i64));
-        }
-        Ok(Value::Num(f64::NAN))
-    }
-
-    // flip / lc / uc / tc / trim / chars removed (Slice 6.3 dedup): native
-    // implementations in src/builtins/functions.rs are authoritative.
+    // chr / ord / chrs / ords / unival / univals removed (Slice 6.3 / Category A
+    // dedup): native implementations in src/builtins/functions.rs are
+    // authoritative (reached via call_function_fallback -> native_function).
+    // chrs is routed through native_function_variadic; ords/unival/univals are in
+    // native_function_1arg (unival/univals delegate to the .unival/.univals
+    // method, the single source of truth in methods_0arg/dispatch_core_unicode).
+    // flip / lc / uc / tc / trim / chars removed (Slice 6.3 dedup) — same.
     pub(super) fn builtin_sprintf(
         &self,
         args: &[Value],

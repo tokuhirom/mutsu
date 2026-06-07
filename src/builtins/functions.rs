@@ -163,6 +163,11 @@ pub(crate) fn native_function(
     if name == "sum" {
         return native_function_variadic(name, args);
     }
+    // chrs(*@codes) is variadic; route every arity through the variadic arm so
+    // chrs(72,105) etc. are reachable (not just the 4+ arg path).
+    if name == "chrs" {
+        return native_function_variadic(name, args);
+    }
     if name == "zip" {
         if args
             .iter()
@@ -481,6 +486,10 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         }
         "is-prime" => Some(super::methods_0arg::coercion::value_is_prime(arg)),
+        // unival/univals delegate to the .unival/.univals method implementation
+        // (dispatch_core_unicode) — single source of truth, no separate copy.
+        "unival" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("unival")),
+        "univals" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("univals")),
         "lsb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("lsb")),
         "msb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("msb")),
         "sign" => {
@@ -1557,13 +1566,10 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                 }
             };
             for arg in args {
-                match arg {
-                    Value::Array(items, ..) => {
-                        for item in items.iter() {
-                            push_chr(&mut result, item);
-                        }
-                    }
-                    _ => push_chr(&mut result, arg),
+                // Flatten Array/Range/Seq/Slip just like the slurpy `*@codes`
+                // signature so chrs(72..74) / chrs((72,73,74)) work.
+                for item in crate::runtime::utils::value_to_list(arg) {
+                    push_chr(&mut result, &item);
                 }
             }
             Some(Ok(Value::str(result)))

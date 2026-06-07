@@ -341,25 +341,9 @@ impl Interpreter {
             .unwrap_or_else(|| Ok(Value::array(Vec::new())))
     }
 
-    // builtin_abs removed (Slice 6.3 dedup): native `abs` in
-    // src/builtins/functions.rs is authoritative (reached via
+    // builtin_abs / builtin_sign removed (Slice 6.3 / Category A dedup): native
+    // `abs` / `sign` in src/builtins/functions.rs are authoritative (reached via
     // call_function_fallback -> native_function).
-
-    pub(super) fn builtin_sign(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args
-            .first()
-            .ok_or_else(|| RuntimeError::new("sign requires an argument"))?;
-        // Delegate to the .sign method via the native_method_0arg path
-        match crate::builtins::methods_0arg::native_method_0arg(
-            val,
-            crate::symbol::Symbol::intern("sign"),
-        ) {
-            Some(result) => result,
-            None => Err(RuntimeError::new(
-                "Cannot call sign on this value".to_string(),
-            )),
-        }
-    }
 }
 
 /// Raku `val()` builtin: convert a string into an allomorphic type.
