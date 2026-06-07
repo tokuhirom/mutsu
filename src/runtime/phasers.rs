@@ -177,7 +177,16 @@ fn lift_phasers_from_stmt(
     match stmt {
         // Transparent blocks: extract BEGIN/INIT/CHECK phasers
         Stmt::Block(body) => {
-            let has_var_decls = body.iter().any(|s| matches!(s, Stmt::VarDecl { .. }));
+            // A block counts as "transparent" only when it declares no
+            // variables. `will <phaser>` traits wrap their declaration in a
+            // `SyntheticBlock([VarDecl, Phaser])` (see wrap_with_will_leave),
+            // so a direct-child scan for `VarDecl` would miss them and wrongly
+            // treat the block as transparent — which lifts the block's CHECK
+            // phasers out (running them forward and before the block's BEGINs)
+            // while leaving the `will`-trait phasers nested. Detect VarDecls
+            // nested in SyntheticBlocks too so such blocks are reordered in
+            // place (BEGIN forward, CHECK reverse) instead of being lifted.
+            let has_var_decls = body.iter().any(stmt_declares_var);
             if !has_var_decls {
                 // Extract BEGIN/INIT/CHECK from this block
                 extract_phasers_from_stmts(body, begin, check, init);
@@ -790,6 +799,16 @@ fn reorder_at_level(
     }
     stmts.extend(extra_init);
     stmts.extend(rest);
+}
+
+/// True if a statement declares a variable, either directly (`VarDecl`) or
+/// nested inside a `SyntheticBlock` (as produced by `will <phaser>` traits).
+fn stmt_declares_var(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::VarDecl { .. } => true,
+        Stmt::SyntheticBlock(inner) => inner.iter().any(stmt_declares_var),
+        _ => false,
+    }
 }
 
 fn stmt_has_phaser_expr(stmt: &Stmt) -> bool {
