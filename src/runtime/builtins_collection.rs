@@ -1166,41 +1166,18 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_flat(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `flat(a, b, c)` flattens the argument *list*, so wrap the args in a
+        // `List` and run the single shared `flat` helper (the same one the pure
+        // `native_function("flat", ..)` path uses). The previous `flat_into`
+        // copy unconditionally flattened nested `[...]`, which over-flattened
+        // `flat(1, [2, [3, 4]], (5, 6))` (raku keeps the inner `[3 4]`).
+        let list = Value::Array(
+            std::sync::Arc::new(args.to_vec()),
+            crate::value::ArrayKind::List,
+        );
         let mut result = Vec::new();
-        for arg in args {
-            Self::flat_into(arg, &mut result);
-        }
+        crate::builtins::flat_val(&list, &mut result, true);
         Ok(Value::Seq(std::sync::Arc::new(result)))
-    }
-
-    pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
-        match val {
-            Value::Array(items, kind) if kind.is_itemized() => {
-                out.push(Value::Array(std::sync::Arc::clone(items), *kind))
-            }
-            Value::Array(items, ..) | Value::Slip(items) | Value::Seq(items) => {
-                for item in items.iter() {
-                    Self::flat_into(item, out);
-                }
-            }
-            Value::LazyList(ll) => {
-                if let Some(cached) = ll.cache.lock().unwrap().clone() {
-                    for item in &cached {
-                        Self::flat_into(item, out);
-                    }
-                } else {
-                    out.push(val.clone());
-                }
-            }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
-                out.extend(Self::value_to_list(val));
-            }
-            other => out.push(other.clone()),
-        }
     }
 
     pub(super) fn builtin_slip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
