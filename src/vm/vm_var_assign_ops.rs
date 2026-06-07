@@ -5279,6 +5279,60 @@ impl VM {
         if name.starts_with('@') {
             self.interpreter.clear_atomic_array_state(name);
         }
+        // Before this loop-body-local declaration overwrites the env entry for
+        // `name`, record the outer value it shadows so the enclosing same-named
+        // binding can be restored when the loop exits. Conditions are excluded
+        // (`loop_cond_active`): a `my` in a `while`/`until`/`loop` condition is
+        // enclosing-scoped and often read after the loop. Only record names that
+        // already had a binding (a genuine shadow — there is nothing to clobber
+        // otherwise), and only the first time in this loop scope so the saved
+        // value is the pre-loop one. See VM::loop_local_saved_env.
+        //
+        // Crucially, only record names the compiler scoped to the loop body — i.e.
+        // names with a local slot in `code.locals`. A `my` in a *statement
+        // modifier* loop (`(my @a).push: $_ for ^3`) introduces no block, so the
+        // compiler scopes it to the *enclosing* unit as an env-only var with no
+        // local slot; it is enclosing-scoped (read after the loop) and must NOT be
+        // restored. Restoring it would wipe an accumulated `0,1,2` back to its
+        // first-iteration value. Genuine body-local shadows (`for {...{ my @a }}`)
+        // always get a slot, so this distinguishes the two reliably.
+        if !self.loop_cond_active
+            && let Some(prev) = self.interpreter.env().get(name).cloned()
+        {
+            // Only record a *genuine, live* enclosing binding for restoration.
+            // The restore writes back both env and the local slot, so the value
+            // being shadowed must be a real outer binding that is backed by a
+            // local slot whose value is coherent with env. A leaked or freshly
+            // hoisted env entry is NOT: e.g. a statement-modifier `(my @a)` whose
+            // name collides in the frame-wide `code.locals` with a *popped* sibling
+            // block's slot (`{ my @a=... } { (my @a).push: $_ for ^3 }`) leaves
+            // env=[] but that slot reset to Nil — env and slot disagree. Recording
+            // it would wipe the accumulated `0,1,2` back to the hoisted empty value
+            // at loop exit. Requiring slot==env restores only true shadows
+            // (`my @a=1,2,3; for { my @a=7,8 }` keeps the outer `1,2,3`) and leaves
+            // enclosing-scoped statement-modifier declarations alone.
+            // Also skip names this loop already declared in a prior iteration
+            // (`loop_local_vars`, populated below). After iteration 1 of an
+            // accumulating statement-modifier loop, env and slot agree on the
+            // partial result, which would spuriously look coherent; that value is
+            // the loop's own, not an enclosing binding.
+            let already_loop_local = self
+                .loop_local_vars
+                .last()
+                .is_some_and(|s| s.contains(name));
+            let has_coherent_slot = !already_loop_local
+                && code
+                    .locals
+                    .iter()
+                    .enumerate()
+                    .any(|(i, n)| n.as_str() == name && self.locals.get(i) == Some(&prev));
+            if has_coherent_slot
+                && let Some(saved) = self.loop_local_saved_env.last_mut()
+                && !saved.contains_key(name)
+            {
+                saved.insert(name.to_string(), prev);
+            }
+        }
         // Pre-initialize the variable in the env with a default value so that
         // closures created during the RHS expression can capture it.
         // This enables capture-by-reference patterns like:
