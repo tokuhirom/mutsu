@@ -360,9 +360,15 @@ impl Interpreter {
             // A named NON-capturing group `$<x>=[...]` leaves its inner captures'
             // positional numbers intact (its atom is not a CaptureGroup), so this
             // truncation correctly does not fire for it.
+            // When aliasing a capturing group, preserve the group's own inner
+            // captures (named subrules etc.) so e.g. `$<family>=(<ident>)` keeps
+            // `$<family><ident>` accessible — otherwise truncating the group's
+            // positional entry would discard its nested subcapture.
+            let mut group_subcap: Option<RegexCaptures> = None;
             if matches!(token.atom, RegexAtom::CaptureGroup(_))
                 && updated.positional.len() > pos_base
             {
+                group_subcap = updated.positional_subcaps.get(pos_base).cloned().flatten();
                 updated.positional.truncate(pos_base);
                 updated.positional_subcaps.truncate(pos_base);
                 updated.positional_quantified.truncate(pos_base);
@@ -382,13 +388,23 @@ impl Interpreter {
             let name_count = updated.named.get(name).map(Vec::len).unwrap_or(0);
             let subcaps = updated.named_subcaps.entry(name.clone()).or_default();
             if subcaps.len() < name_count {
-                subcaps.push(RegexCaptures {
-                    from,
-                    to,
-                    matched: captured.clone(),
-                    match_from: from,
-                    ..Default::default()
-                });
+                if let Some(mut gs) = group_subcap.take() {
+                    // Keep the group's nested captures, but pin the span/text to
+                    // the aliased group's extent.
+                    gs.from = from;
+                    gs.to = to;
+                    gs.match_from = from;
+                    gs.matched = captured.clone();
+                    subcaps.push(gs);
+                } else {
+                    subcaps.push(RegexCaptures {
+                        from,
+                        to,
+                        matched: captured.clone(),
+                        match_from: from,
+                        ..Default::default()
+                    });
+                }
             }
             // Also capture under the secondary name (e.g., original builtin class name
             // when using `$<alias>=<builtin_class>` syntax).
