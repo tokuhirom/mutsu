@@ -97,9 +97,12 @@ fn is_parameterized_core_type(name: &str) -> bool {
 
 /// Compute the (lo, hi) bounds of a value for use in `minmax` reduction.
 /// For scalars: returns (v, v).
-/// For arrays/lists: returns (min_element, max_element).
+/// For arrays/lists: returns (min_element, max_element), recursing into elements.
 /// For ranges: returns (start, end).
-fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
+///
+/// Single authoritative impl shared by the VM's `minmax` reduction and the
+/// interpreter's `apply_reduction_op` `minmax` arm (which delegates here).
+pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
     match v {
         Value::Range(a, b)
         | Value::RangeExcl(a, b)

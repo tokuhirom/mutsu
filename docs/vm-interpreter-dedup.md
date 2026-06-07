@@ -143,8 +143,15 @@ etc.).
       normalization. Made `VM::concat_values` a state-free `pub(crate)` assoc fn
       and delegated both the VM `~` op and the reduction `~` arm to it. **1
       duplicate removed**; fixes a latent bug (`[~]` now NFC-normalizes like `~`).
-- [ ] Remaining `apply_reduction_op` bodies that reimplement vs delegate
-      (`minmax`, logic short-circuit; comparisons already use shared
-      `runtime::compare_values`).
+- [x] **`minmax`**: `apply_reduction_op`'s `minmax` arm had its own `range_bounds`
+      closure that (unlike the VM's `minmax_bounds_of_value`) did **not** recurse
+      into elements, so `[minmax] (1,5),(2,8)` etc. computed wrong bounds. Made
+      `vm_misc_ops::minmax_bounds_of_value` a `pub(crate)` fn (module exposed
+      `pub(crate)`) and delegated the arm to it. **1 duplicate removed** + bug fix
+      (`[minmax]` over nested arrays/ranges now matches raku, e.g. `0..8`, `1..9`).
+- [ ] Remaining `apply_reduction_op` bodies: logic short-circuit `&&`/`||`/`//`
+      are the reduction-only impl (the VM compiles infix short-circuit to jumps, so
+      not VM-op duplicates); comparisons already use shared `runtime::compare_values`.
+      Likely little left here.
 - [ ] Genuine-fork methods → fold into native (Category B style; depends on the
       `%`-chain block-dispatch blocker noted under Category B in PLAN.md).
