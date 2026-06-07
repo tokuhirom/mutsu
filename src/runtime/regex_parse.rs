@@ -3644,16 +3644,60 @@ impl Interpreter {
                 None
             };
             let primary_named = primary_named.or_else(|| pending_builtin_named_capture.take());
-            tokens.push(RegexToken {
-                atom,
-                quant,
-                named_capture: primary_named,
-                hash_capture: pending_hash_capture.take(),
-                secondary_named_capture: secondary_named,
-                ratchet: token_ratchet,
-                frugal: token_frugal,
-                separator: token_separator,
-            });
+            let hash_capture = pending_hash_capture.take();
+            // A named capture on a *quantified* atom (`$<x>=<[a..z]>*`, `$<x>=\w+`)
+            // captures the WHOLE quantified span as a single Match (e.g. "abc"),
+            // and a zero-width match still produces an (empty) capture — matching
+            // Raku. mutsu's quantifier loop otherwise applies the named capture
+            // per-iteration (yielding `[a, b, c]`) and drops the zero-match case.
+            // Wrap the quantified atom in a non-capturing group so the named
+            // capture sits on a `quant: One` token spanning the entire run.
+            let wrap_named_quant = primary_named.is_some()
+                && hash_capture.is_none()
+                && token_separator.is_none()
+                && matches!(
+                    quant,
+                    RegexQuant::ZeroOrMore | RegexQuant::OneOrMore | RegexQuant::Repeat(..)
+                );
+            if wrap_named_quant {
+                let inner = RegexToken {
+                    atom,
+                    quant,
+                    named_capture: None,
+                    hash_capture: None,
+                    secondary_named_capture: None,
+                    ratchet: token_ratchet,
+                    frugal: token_frugal,
+                    separator: None,
+                };
+                tokens.push(RegexToken {
+                    atom: RegexAtom::Group(RegexPattern {
+                        tokens: vec![inner],
+                        anchor_start: false,
+                        anchor_end: false,
+                        ignore_case,
+                        ignore_mark,
+                    }),
+                    quant: RegexQuant::One,
+                    named_capture: primary_named,
+                    hash_capture: None,
+                    secondary_named_capture: secondary_named,
+                    ratchet: token_ratchet,
+                    frugal: token_frugal,
+                    separator: None,
+                });
+            } else {
+                tokens.push(RegexToken {
+                    atom,
+                    quant,
+                    named_capture: primary_named,
+                    hash_capture,
+                    secondary_named_capture: secondary_named,
+                    ratchet: token_ratchet,
+                    frugal: token_frugal,
+                    separator: token_separator,
+                });
+            }
         }
         let tokens = match rewrite_tilde_tokens(tokens, ignore_case, ignore_mark) {
             Ok(tokens) => tokens,

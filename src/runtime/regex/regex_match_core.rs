@@ -329,6 +329,24 @@ impl Interpreter {
                 .entry(name.clone())
                 .or_default()
                 .push(captured.clone());
+            // Record a minimal sub-capture carrying the exact (from, to) span so
+            // the Match object gets the right offsets even for a zero-width match
+            // (e.g. `$<delim>=<[a..z]>*` matching empty). Without this the Match
+            // builder falls back to searching for the captured text, which yields
+            // offset 0 for an empty string and breaks `.caps`/`.chunks` ordering.
+            // Only do this when no richer sub-capture already aligns with this
+            // entry, so subrule-aliased captures keep their nested structure.
+            let name_count = updated.named.get(name).map(Vec::len).unwrap_or(0);
+            let subcaps = updated.named_subcaps.entry(name.clone()).or_default();
+            if subcaps.len() < name_count {
+                subcaps.push(RegexCaptures {
+                    from,
+                    to,
+                    matched: captured.clone(),
+                    match_from: from,
+                    ..Default::default()
+                });
+            }
             // Also capture under the secondary name (e.g., original builtin class name
             // when using `$<alias>=<builtin_class>` syntax).
             if let Some(secondary) = token.secondary_named_capture.as_ref() {
