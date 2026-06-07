@@ -143,6 +143,19 @@ impl Interpreter {
         }
     }
 
+    /// Strict ASCII decode: every byte must be <= 0x7F, otherwise Raku throws
+    /// `X::Str::Encode`-style "Will not decode invalid ASCII" rather than
+    /// silently substituting a replacement character.
+    fn decode_ascii_strict(bytes: &[u8]) -> Result<String, RuntimeError> {
+        if let Some(b) = bytes.iter().find(|b| **b > 0x7F) {
+            return Err(RuntimeError::new(format!(
+                "Will not decode invalid ASCII (code point ({}) > 127 found)",
+                b
+            )));
+        }
+        Ok(bytes.iter().map(|b| *b as char).collect())
+    }
+
     pub(super) fn decode_with_encoding(
         &self,
         bytes: &[u8],
@@ -156,10 +169,7 @@ impl Interpreter {
 
         match encoding.as_str() {
             "utf8-c8" => Ok(super::utf8_c8::decode_utf8_c8(bytes)),
-            "ascii" => Ok(bytes
-                .iter()
-                .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
-                .collect()),
+            "ascii" => Self::decode_ascii_strict(bytes),
             "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
             "utf-16" | "utf16" => {
                 let (data, be) = if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
@@ -264,10 +274,19 @@ impl Interpreter {
 
         match encoding.as_str() {
             "utf8-c8" => Ok(super::utf8_c8::decode_utf8_c8(bytes)),
-            "ascii" => Ok(bytes
-                .iter()
-                .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
-                .collect()),
+            "ascii" => match replacement {
+                Some(repl) => Ok(bytes
+                    .iter()
+                    .map(|b| {
+                        if *b <= 0x7F {
+                            (*b as char).to_string()
+                        } else {
+                            repl.to_string()
+                        }
+                    })
+                    .collect()),
+                None => Self::decode_ascii_strict(bytes),
+            },
             "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
             "utf-16" | "utf16" => {
                 let (data, be) = if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {

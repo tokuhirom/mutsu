@@ -59,18 +59,12 @@ do NOT spend time here, the file cannot reach a clean pass as written.
 contained feature; estimate + concrete approach given so the next worker can start
 cold):
 
-1. **S32-io/io-handle.t** — *Medium, best next pickup.* Remaining failures are
-   `nl-out` / `IO::Handle.gist` edge cases (the "iterator-producing read methods"
-   subtest already passes after the words.t lazy fixes). Approach: align
-   `IO::Handle.gist`/`.Str` and the `:nl-out` write path with rakudo's output; all
-   in `runtime/handle.rs` + `runtime/native_io.rs`. Re-measure failing subtests
-   first (`prove` the file) — the count is small.
-2. **S32-io/io-path-cygwin.t** — *Medium.* 10 failing: IO::Path::Cygwin path
+1. **S32-io/io-path-cygwin.t** — *Medium, best next pickup.* 10 failing: IO::Path::Cygwin path
    canonicalization (UNC `//server/share`, drive letters `A:`, backslash separators
    in volume/dirname/basename/is-absolute). Self-contained in the Cygwin SPEC
    (`runtime/native_io.rs` path-split helpers). No Rakudo quirk — purely a
    string-splitting spec to implement to match `IO::Spec::Cygwin`.
-3. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests; needs
+2. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests; needs
    128-bit `read-int128`/`write-int128`/`-uint128` across NativeEndian/Little/Big
    plus the existing 8/16/32/64 widths. `Value` has `BigInt`; wire the `write-int*`
    /`read-int*` Buf methods (incl. 128-bit via i128/BigInt) as callables. The
@@ -379,8 +373,13 @@ cases. `pipe.t`, `spurt.t`, `indir.t`, `child-secure.t` now pass.
 - roast/S32-io/io-cathandle.t — **Hard**. IO::CatHandle not implemented (note: raku
   itself fails test 31 "Cannot .elems a lazy list", so the file may be unpassable
   as written).
-- roast/S32-io/io-handle.t — **Medium**. nl-out / `IO::Handle` gist edge cases and
-  internal chunking (subtest 2 nl-in fixed in #2618).
+- roast/S32-io/io-handle.t — **Hard now** (27/30). Easy wins landed: `.say` of a
+  collection now honors per-element custom `.gist` (incl. type objects), nested
+  `with`/`given` no longer clobbers the outer topic source var, and strict ASCII
+  decode throws. The remaining 3 subtests (23 `.print-nl` reuse + `.nl-out=`,
+  29 `.WRITE`, 30 `.EOF/.WRITE`) all require a **user-subclassable IO::Handle with
+  polymorphic READ/WRITE/EOF** so the high-level read/write methods dispatch into
+  user-overridden `method READ/WRITE/EOF`. Substantial feature, not an edge case.
 - roast/S32-io/io-path.t — **Medium per-fix, low-ROI overall**. 6 independent
   top-level failures. Test 31 `.gist` depends on a **Rakudo internal caching quirk**:
   Win32 `.gist` renders the backslash form only *after* `.absolute` has been called
