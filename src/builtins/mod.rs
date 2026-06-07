@@ -187,10 +187,17 @@ fn decode_bytes_with_builtin_encoding(
 ) -> Result<String, RuntimeError> {
     match encoding_name {
         "utf8-c8" => Ok(crate::runtime::utf8_c8::decode_utf8_c8(bytes)),
-        "ascii" => Ok(bytes
-            .iter()
-            .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
-            .collect()),
+        "ascii" => {
+            // Strict ASCII decode: Raku throws on any byte > 127 rather than
+            // substituting a replacement character.
+            if let Some(b) = bytes.iter().find(|b| **b > 0x7F) {
+                return Err(RuntimeError::new(format!(
+                    "Will not decode invalid ASCII (code point ({}) > 127 found)",
+                    b
+                )));
+            }
+            Ok(bytes.iter().map(|b| *b as char).collect())
+        }
         "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
         "utf-16" => {
             if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {

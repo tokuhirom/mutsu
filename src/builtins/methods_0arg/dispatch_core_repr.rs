@@ -5,12 +5,53 @@ use crate::value::{RuntimeError, Value};
 use super::raku_repr::raku_value;
 use super::{format_temporal_num, gist_array_wrap, range_gist_string};
 
+/// A collection whose gist embeds an element's gist must defer to the runtime
+/// slow path when any element may carry a user-defined `method gist` (an
+/// instance, custom type, or type object). The pure fast path here cannot
+/// dispatch user methods, so it would render the default form. (Mixin is
+/// excluded: a Mixin wrapping a List/Array renders via its inner value, so the
+/// pure path is correct and dispatching `.gist` would add a spurious paren.)
+fn gist_needs_method_dispatch(v: &Value) -> bool {
+    match v {
+        Value::Instance { .. }
+        | Value::CustomType { .. }
+        | Value::CustomTypeInstance { .. }
+        | Value::Package(..) => true,
+        Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+            items.iter().any(gist_needs_method_dispatch)
+        }
+        Value::Hash(map) => map.values().any(gist_needs_method_dispatch),
+        Value::Pair(_, val) => gist_needs_method_dispatch(val),
+        Value::ValuePair(k, val) => {
+            gist_needs_method_dispatch(k) || gist_needs_method_dispatch(val)
+        }
+        _ => false,
+    }
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     if !matches!(method, "gist" | "raku" | "perl") {
         return None;
+    }
+    // Defer collection gist to the runtime slow path when an element may have a
+    // custom `method gist`, so per-element gist dispatch is honored. `Match`
+    // instances are excluded: their list gist is handled purely below.
+    if method == "gist"
+        && matches!(
+            target,
+            Value::Array(..)
+                | Value::Seq(..)
+                | Value::Slip(..)
+                | Value::Hash(..)
+                | Value::Pair(..)
+                | Value::ValuePair(..)
+        )
+        && gist_needs_method_dispatch(target)
+    {
+        return Some(None);
     }
     Some(match target {
         Value::Bool(b) => {

@@ -2111,6 +2111,9 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // exactly as in `given`. The `.defined` condition is still evaluated
     // separately via `$tmp`.
     let use_given_alias = param_name.is_none() && matches!(&cond_expr, Expr::Var(_));
+    // Topicalize `$_` for the body. For a literal, wrap it in a Mixin marked
+    // read-only so in-place mutation of `$_` throws X::Assignment::RO. Otherwise
+    // reuse the `$tmp` holding the (once-evaluated) condition value.
     let topic_assign = if let Expr::Literal(lit) = &cond_expr {
         let mut overrides = std::collections::HashMap::new();
         overrides.insert("__mutsu_topic_ro__".to_string(), Value::Bool(true));
@@ -2130,8 +2133,19 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     // If a named parameter was given (-> $param), also assign it
     if let Some(ref pname) = param_name {
-        // Check if this is a sub-signature destructuring (e.g. -> ($x) or -> (Int() $x is copy))
-        if let Some(ref pdef) = param_def {
+        // Attributive parameter (`-> $!foo` / `-> $.foo`): bind the value to
+        // self's attribute via an attribute assignment. This must be checked
+        // first (an attributive param never has a sub-signature), and it must be
+        // an Assign (not a VarDecl) so it writes through to the attribute even
+        // when the body runs inside a nested `given` topic scope.
+        if pname.starts_with('!') || pname.starts_with('.') {
+            let attr_name = &pname[1..];
+            with_body.push(Stmt::Assign {
+                name: format!("!{}", attr_name),
+                expr: tmp_var.clone(),
+                op: crate::ast::AssignOp::Assign,
+            });
+        } else if let Some(ref pdef) = param_def {
             if let Some(ref sub_params) = pdef.sub_signature {
                 // Declare the unpack variable holding the condition value
                 with_body.push(Stmt::VarDecl {
@@ -2214,16 +2228,6 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                     where_constraint: None,
                 });
             }
-        } else if pname.starts_with('!') || pname.starts_with('.') {
-            // Attributive parameter: bind the value to self's attribute.
-            // $!foo → set attribute "foo" on self.
-            let attr_name = &pname[1..];
-            // Emit: $!attr = tmp_var (attribute assignment)
-            with_body.push(Stmt::Assign {
-                name: format!("!{}", attr_name),
-                expr: tmp_var.clone(),
-                op: crate::ast::AssignOp::Assign,
-            });
         } else {
             with_body.push(Stmt::VarDecl {
                 name: pname.clone(),

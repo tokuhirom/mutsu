@@ -5,15 +5,57 @@ use crate::value::RuntimeError;
 /// requires interpreter method dispatch.  For all other (primitive) types
 /// we can use the fast `gist_value()` / `to_string_value()` paths directly.
 fn needs_method_dispatch(v: &Value) -> bool {
-    matches!(
-        v,
+    match v {
         Value::Instance { .. }
-            | Value::CustomType { .. }
-            | Value::CustomTypeInstance { .. }
-            | Value::Mixin(..)
-            | Value::Proxy { .. }
-            | Value::Junction { .. }
-    )
+        | Value::CustomType { .. }
+        | Value::CustomTypeInstance { .. }
+        | Value::Mixin(..)
+        | Value::Proxy { .. }
+        | Value::Junction { .. } => true,
+        // Type objects may carry a user-defined `method gist`/`method Str`
+        // (callable on the type object itself), so route them through method
+        // dispatch; `render_gist_value`/`render_str_value` fall back to the
+        // default `(TypeName)` rendering when no such method exists.
+        Value::Package(..) => true,
+        // A collection whose gist embeds an element's gist must be rendered via
+        // method dispatch when any element needs it (e.g. an instance/type-object
+        // with a custom `method gist`), so the per-element gist is honored.
+        Value::Array(items, _)
+        | Value::Seq(items)
+        | Value::HyperSeq(items)
+        | Value::RaceSeq(items)
+        | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        Value::Hash(map) => map.values().any(element_needs_method_dispatch),
+        Value::Pair(_, val) => element_needs_method_dispatch(val),
+        Value::ValuePair(k, val) => {
+            element_needs_method_dispatch(k) || element_needs_method_dispatch(val)
+        }
+        _ => false,
+    }
+}
+
+/// Whether a *collection element* must be rendered via method dispatch. Unlike
+/// the top-level check, a Mixin element is excluded: a Mixin wrapping a
+/// List/Array renders via its inner value, and dispatching `.gist` on it would
+/// add a spurious paren layer (regressing e.g. `(@list but Role).gist`).
+fn element_needs_method_dispatch(v: &Value) -> bool {
+    match v {
+        Value::Instance { .. }
+        | Value::CustomType { .. }
+        | Value::CustomTypeInstance { .. }
+        | Value::Package(..) => true,
+        Value::Array(items, _)
+        | Value::Seq(items)
+        | Value::HyperSeq(items)
+        | Value::RaceSeq(items)
+        | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        Value::Hash(map) => map.values().any(element_needs_method_dispatch),
+        Value::Pair(_, val) => element_needs_method_dispatch(val),
+        Value::ValuePair(k, val) => {
+            element_needs_method_dispatch(k) || element_needs_method_dispatch(val)
+        }
+        _ => false,
+    }
 }
 
 /// Check if a value is a Rat/FatRat/BigRat with zero denominator and throw

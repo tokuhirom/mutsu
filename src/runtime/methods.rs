@@ -2042,20 +2042,51 @@ impl Interpreter {
         if method == "gist" && args.is_empty() {
             fn collection_contains_instance(value: &Value) -> bool {
                 match value {
-                    Value::Instance { .. } => true,
+                    // Values that may carry a user-defined `method gist`
+                    // (instances, custom types, and type objects) must be rendered
+                    // via method dispatch rather than the pure `gist_value` fast
+                    // path. (Mixin is intentionally excluded: a Mixin wrapping a
+                    // List/Array renders via its inner value, and routing it
+                    // through `.gist` would add a spurious paren layer.)
+                    Value::Instance { .. }
+                    | Value::CustomType { .. }
+                    | Value::CustomTypeInstance { .. }
+                    | Value::Package(..) => true,
                     _ if value.as_list_items().is_some() => value
                         .as_list_items()
                         .unwrap()
                         .iter()
                         .any(collection_contains_instance),
                     Value::Hash(map) => map.values().any(collection_contains_instance),
+                    Value::Pair(_, v) => collection_contains_instance(v),
+                    Value::ValuePair(k, v) => {
+                        collection_contains_instance(k) || collection_contains_instance(v)
+                    }
                     _ => false,
                 }
             }
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
+                use crate::value::ArrayKind;
+                // Subtrees with no dispatch-needing element render via the pure,
+                // bracket-correct fast path.
+                if !collection_contains_instance(value) {
+                    return crate::runtime::gist_value(value);
+                }
                 match value {
                     Value::Nil => "Nil".to_string(),
+                    Value::Array(items, kind) => {
+                        let inner = items
+                            .iter()
+                            .map(|item| gist_item(interp, item))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        match kind {
+                            ArrayKind::List | ArrayKind::ItemList => format!("({inner})"),
+                            _ => format!("[{inner}]"),
+                        }
+                    }
                     _ if value.as_list_items().is_some() => {
+                        // Seq / Slip / HyperSeq / RaceSeq render parenthesized.
                         let inner = value
                             .as_list_items()
                             .unwrap()
@@ -2065,22 +2096,41 @@ impl Interpreter {
                             .join(" ");
                         format!("({inner})")
                     }
+                    Value::Hash(map) => {
+                        let mut keys: Vec<&String> = map.keys().collect();
+                        keys.sort();
+                        let parts: Vec<String> = keys
+                            .iter()
+                            .map(|k| format!("{} => {}", k, gist_item(interp, &map[*k])))
+                            .collect();
+                        format!("{{{}}}", parts.join(", "))
+                    }
+                    Value::Pair(k, v) => format!("{} => {}", k, gist_item(interp, v)),
+                    Value::ValuePair(k, v) => {
+                        format!("{} => {}", gist_item(interp, k), gist_item(interp, v))
+                    }
                     other => match interp.call_method_with_values(other.clone(), "gist", vec![]) {
                         Ok(Value::Str(s)) => s.to_string(),
                         Ok(v) => v.to_string_value(),
-                        Err(_) => other.to_string_value(),
+                        Err(_) => crate::runtime::gist_value(other),
                     },
                 }
             }
-            if let Some(items) = target.as_list_items()
-                && items.iter().any(collection_contains_instance)
+            // Render a collection that embeds a value with a custom gist via
+            // method dispatch, preserving each container's bracket style.
+            if matches!(
+                target,
+                Value::Array(..)
+                    | Value::Seq(..)
+                    | Value::HyperSeq(..)
+                    | Value::RaceSeq(..)
+                    | Value::Slip(..)
+                    | Value::Hash(..)
+                    | Value::Pair(..)
+                    | Value::ValuePair(..)
+            ) && collection_contains_instance(&target)
             {
-                let inner = items
-                    .iter()
-                    .map(|item| gist_item(self, item))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                return Ok(Value::str(format!("({inner})")));
+                return Ok(Value::str(gist_item(self, &target)));
             }
         }
         // Supply type-object method error
