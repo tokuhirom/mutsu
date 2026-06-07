@@ -203,8 +203,13 @@ rather than empty, and `.grep`/`.values`/`.pairs` see stale pre-mutation values.
 
 ## Regex / Match Advanced Features
 
-- roast/S05-capture/alias.t — **Medium**. 14/32 fail: reverse capture (`$1` before
-  `$0` textually) and mixed named/positional capture aliases yield empty strings.
+- roast/S05-capture/alias.t — **Medium**. Down to 1 real failure (tests 11-13 are
+  `# TODO`). Numbered scalar capture aliases (`$N=<atom>`, reverse `$1=..$0=..`,
+  arbitrary-start `$42=` with auto-numbering continuing) and `:s` sigspace
+  propagation into alternation branches are now implemented. Remaining: test 20
+  `$/<family><ident>` — a named capture alias on a group containing a subrule
+  (`$<family>=(<ident>)`) must preserve the inner `<ident>` as a nested subcap of
+  `$<family>` (capture-merge surgery; the inner named capture is dropped today).
 - roast/S05-capture/array-alias.t — **Hard**. 30/37 fail then aborts: named/
   sequential array captures (`@<foo>=...`) are largely unimplemented.
 - roast/S05-capture/hash.t — **Hard**. 30/99 fail then aborts at line 134: package/

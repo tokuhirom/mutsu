@@ -307,6 +307,49 @@ impl Interpreter {
             let Some(name) = token.named_capture.as_ref() else {
                 return caps;
             };
+            // Numbered scalar capture alias `$N=<atom>`: the alias name is all
+            // digits, so route the capture to positional index N (padding lower
+            // indices) and let subsequent groups continue numbering from N+1.
+            // (Named captures always start with a letter/underscore, so an
+            // all-digit name can only come from `$N=`.)
+            if let Ok(forced_idx) = name.parse::<usize>() {
+                let mut updated = caps;
+                let captured: String = chars[from..to].iter().collect();
+                // Drop the auto-positional entry a capturing group atom produced;
+                // the alias decides this capture's index explicitly.
+                if matches!(token.atom, RegexAtom::CaptureGroup(_))
+                    && updated.positional.len() > pos_base
+                {
+                    updated.positional.truncate(pos_base);
+                    updated.positional_subcaps.truncate(pos_base);
+                    updated.positional_quantified.truncate(pos_base);
+                    updated.positional_offsets.truncate(pos_base);
+                }
+                while updated.positional.len() < forced_idx {
+                    updated.positional.push(String::new());
+                    updated.positional_subcaps.push(None);
+                    updated.positional_quantified.push(None);
+                    updated.positional_offsets.push((0, 0));
+                }
+                if updated.positional.len() == forced_idx {
+                    updated.positional.push(captured);
+                    updated.positional_subcaps.push(None);
+                    updated.positional_quantified.push(None);
+                    updated.positional_offsets.push((from, to));
+                } else {
+                    updated.positional[forced_idx] = captured;
+                    if forced_idx < updated.positional_offsets.len() {
+                        updated.positional_offsets[forced_idx] = (from, to);
+                    }
+                    if forced_idx < updated.positional_subcaps.len() {
+                        updated.positional_subcaps[forced_idx] = None;
+                    }
+                    if forced_idx < updated.positional_quantified.len() {
+                        updated.positional_quantified[forced_idx] = None;
+                    }
+                }
+                return updated;
+            }
             let mut updated = caps;
             let captured: String = chars[from..to].iter().collect();
             // A named capture group `$<x>=(...)` aliases the group to the name and
