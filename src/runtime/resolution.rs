@@ -2684,7 +2684,11 @@ impl Interpreter {
             let item = list_items[actual_idx].clone();
             let matched = if let Some(pattern) = &matcher {
                 if matches!(pattern, Value::Sub(_)) {
-                    self.call_sub_value(pattern.clone(), vec![item.clone()], true)?
+                    // Pass the element positionally: a Hash-sourced `Value::Pair`
+                    // would otherwise bind as a named arg, leaving the block with
+                    // zero positionals (`%h.first({ .value > 1 })`).
+                    let call_item = crate::runtime::utils::pair_as_positional(&item);
+                    self.call_sub_value(pattern.clone(), vec![call_item], true)?
                         .truthy()
                 } else {
                     self.smart_match(&item, pattern)
