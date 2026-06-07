@@ -63,21 +63,45 @@ the name through that fallback.
 5. `make test` + `make roast` — the interpreter copies are exercised by EVAL /
    regex / carrier paths across the suite, so the full roast run is the net.
 
-### Gotcha found in practice (`chrs` / `ords`)
+### Gotcha found in practice (`chrs` / `ords`) — and how it was resolved
 
-`chrs` and `ords` have native arms in `functions.rs`, but they are **not reached
-through `call_function_fallback`'s `native_function` call** (multi-arg /
-array-returning dispatch differs from the single-`arg` fallback table). Deleting
-their interpreter arms made `EVAL(q{chrs(72,105)})` fail with *"Unknown function:
-chrs"*. They were **kept**. Lesson: step 3 (EVAL-path verification) is mandatory;
-a native arm existing is necessary but not sufficient.
+`chrs` originally had a native arm only in `native_function_variadic` (the 4+ arg
+path), so `chrs(72,105)` (2 args) routed to `native_function_2arg`, found nothing,
+and `EVAL(q{chrs(72,105)})` failed with *"Unknown function: chrs"*. The first batch
+**kept** the interpreter copy. The right fix (Category A second batch) was **not**
+to keep the duplicate but to **make native reachable at the call's arity**: route
+`chrs` through `native_function_variadic` for all arities. `ords`, despite being
+grouped with `chrs`, was actually already reachable — it has a `native_function_1arg`
+arm and Raku's `ords` is 1-arg only — so it just needed deleting.
+
+Lesson: step 3 (EVAL-path verification) is mandatory — a native arm existing is
+necessary but not sufficient; check the **arity** the fallback will dispatch to.
+When a native arm exists at the wrong arity, prefer adding/rerouting the native arm
+(one impl) over keeping the interpreter duplicate.
 
 ## Progress
 
 - **Done (Slice 6.3 dedup, first batch)** — deleted the interpreter copies of 9
   pure value builtins, all verified equivalent through the EVAL fallback path and
   `make roast`: `abs`, `lc`, `uc`, `tc`, `trim`, `flip`, `chr`, `ord`, `chars`.
-  Kept `chrs`/`ords` (fallback-unreachable native, see gotcha).
+- **Done (Category A complete, second batch)** — the remaining pure value builtin
+  duplicates were deleted, finishing Category A. `sign` and `ords` were pure
+  deletions (native `native_function_1arg` already covered them; `ords` is 1-arg
+  only in Raku, so the single-arg fallback fully reaches it). The three that the
+  first batch had **kept** as "fallback-unreachable" were made reachable instead
+  of left duplicated:
+  - `chrs` — routed through `native_function_variadic` for *every* arity (a guard
+    at the top of `native_function`, like `sum`/`zip`), and its variadic arm now
+    flattens via `crate::runtime::utils::value_to_list` so `chrs(72..74)` /
+    `chrs((72,73,74))` keep working. Interpreter `builtin_chrs` deleted.
+  - `unival` / `univals` — added `native_function_1arg` arms that delegate to the
+    `.unival` / `.univals` method impl (`methods_0arg/dispatch_core_unicode.rs`),
+    the single source of truth. Interpreter `builtin_unival` / `builtin_univals`
+    (and the `unival_for_char` helper) deleted.
+  All verified equal through both the VM and EVAL paths against `raku`, plus the
+  whitelisted `S32-num/sign.t`, `S32-str/ords.t`, `S15-unicode-information/unival.t`,
+  `S29-conversions/ord_and_chr.t`. **No pure-value builtin duplicate remains** —
+  the next dedup work is Category B (genuine forks) / Category C (methods/arith).
 
 ## Remaining duplication (prioritized)
 

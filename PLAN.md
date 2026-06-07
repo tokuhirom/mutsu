@@ -64,11 +64,16 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
 `try_native_function` と interpreter fallback の `native_function` は**カバレッジが違う**（例: `chrs`/`ords`
 は native arm があるのに fallback 未到達 → 残す）。
 
-- [ ] **Category A — 純粋値 builtin（delete & fallthrough）**: native が authoritative。Interpreter の
+- [x] **Category A — 純粋値 builtin（delete & fallthrough）完了**: native が authoritative。Interpreter の
       `builtin_*` arm + 本体を削除し、catch-all → fallback → native_function に委譲。
-  - [x] **第1バッチ (#2714, in flight)**: `abs`/`lc`/`uc`/`tc`/`trim`/`flip`/`chr`/`ord`/`chars` の Interpreter
-        コピー削除。`chrs`/`ords`（fallback 未到達）と `words`（IO 版で別物）は対象外として残す。
-  - [ ] 残りの純粋値 builtin（docs の Category A 一覧）を同手順で。
+  - [x] **第1バッチ (#2714)**: `abs`/`lc`/`uc`/`tc`/`trim`/`flip`/`chr`/`ord`/`chars` の Interpreter
+        コピー削除。
+  - [x] **第2バッチ（Category A 完了）**: 残りの純粋値重複 `sign`/`ords`/`chrs`/`unival`/`univals` を削除。
+        `sign`/`ords` は native 1-arg が既にカバー（純粋削除）。第1バッチで「fallback 未到達」として
+        残していた `chrs`/`unival`/`univals` は、重複維持ではなく **native を到達可能化** して削除:
+        `chrs` を `native_function_variadic` へ全 arity ルーティング（+ `value_to_list` で Range/Seq 平坦化）、
+        `unival`/`univals` を `native_function_1arg` から `.unival`/`.univals` メソッド実装へ委譲。
+        VM/EVAL 両経路で raku 一致を確認。**純粋値 builtin の重複はゼロ**。`words`（IO 版で別物）は非対象。
 - [ ] **Category B — genuine fork（native に難ケースを足してから削除）**: `min`/`max`/`minmax`/`sort`/`join`/
       `first`/`flat`/`elems`/`index`/`rindex` 等。native/pure 層は comparator ブロック・lazy・junction で bail し
       Interpreter に落ちる。**比較子ブロックは VM 層で `vm_call_on_value`（`.map`/`.grep` と同じクロージャ
@@ -115,7 +120,7 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
       env を任意の名前で書く唯一の存在（interpreter ブリッジ）が消えるので `env_dirty`/`ensure_locals_synced`/
       `sync_locals_from_env`/`saved_env_dirty` の dual-store 機構も削除できる（レバー B 完遂）。
 - **残フォールバック**には `// TODO: compile to bytecode` を付け負債を可視化。
-- **次の着手候補（優先順）**: Category A の残り（低リスク・delete & fallthrough）→ Category B の `%`-chain
+- **次の着手候補（優先順）**: Category A は**完了**（純粋値 builtin の重複ゼロ）。次は Category B の `%`-chain
   block-dispatch は **根本原因解決済み（#2725, `pair_as_positional`）** なので min/max/sort の native 移行 +
   `dispatch_sort`/`builtin_min/max` 削除に着手可能 → Category C Phase 3 の残（comb/substr/split 折込）→
   🟣第2優先「第一級コンテナ」（レバー C 本丸 + Q2 の Arc-pointer flaky を吸収）。
