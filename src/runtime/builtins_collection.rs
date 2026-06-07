@@ -880,10 +880,32 @@ impl Interpreter {
             .cloned()
             .collect();
 
+        // Resolve by-block arity before borrowing self mutably for the closure.
+        let by_arity = by.as_ref().map(|b| self.extrema_callable_arity(b));
+        Self::minmax_from_values_generic(&positional, by.as_ref(), by_arity, |c, a| {
+            self.call_sub_value(c.clone(), a, true)
+        })
+    }
+
+    /// Engine-agnostic `minmax` over a list: collect candidates, fold the min and
+    /// the max (using the `:by` block — the genuine Category-B fork — through
+    /// `call`), and build the inclusive `min..max` range. Shared by the
+    /// interpreter (`builtin_minmax`) and the VM (`try_native_minmax`) so the
+    /// candidate / fold / range-build logic exists once. `by_arity` is the
+    /// resolved arity of `by` (1 = sort-key mapper, otherwise a comparator).
+    pub(crate) fn minmax_from_values_generic<F>(
+        positional: &[Value],
+        by: Option<&Value>,
+        by_arity: Option<usize>,
+        mut call: F,
+    ) -> Result<Value, RuntimeError>
+    where
+        F: FnMut(&Value, Vec<Value>) -> Result<Value, RuntimeError>,
+    {
         let mut candidates = Vec::new();
         if by.is_some() {
             // When a comparator is provided, enumerate ranges fully
-            for arg in &positional {
+            for arg in positional {
                 match arg {
                     Value::Range(..)
                     | Value::RangeExcl(..)
@@ -900,7 +922,7 @@ impl Interpreter {
                 }
             }
         } else {
-            for arg in &positional {
+            for arg in positional {
                 Self::collect_minmax_candidates(arg, &mut candidates);
             }
         }
@@ -912,35 +934,25 @@ impl Interpreter {
             ));
         }
 
-        if let Some(by_block) = &by {
-            let by_arity = self.extrema_callable_arity(by_block);
+        if let Some(by_block) = by {
+            let by_arity = by_arity.unwrap_or(2);
             let mut min_value = candidates[0].clone();
             let mut max_value = candidates[0].clone();
             for value in candidates.iter().skip(1) {
                 let cmp_min = if by_arity == 1 {
-                    let key_a = self.call_sub_value(by_block.clone(), vec![value.clone()], true)?;
-                    let key_b =
-                        self.call_sub_value(by_block.clone(), vec![min_value.clone()], true)?;
+                    let key_a = call(by_block, vec![value.clone()])?;
+                    let key_b = call(by_block, vec![min_value.clone()])?;
                     crate::runtime::compare_values(&key_a, &key_b)
                 } else {
-                    let result = self.call_sub_value(
-                        by_block.clone(),
-                        vec![value.clone(), min_value.clone()],
-                        true,
-                    )?;
+                    let result = call(by_block, vec![value.clone(), min_value.clone()])?;
                     Self::order_to_int(&result)
                 };
                 let cmp_max = if by_arity == 1 {
-                    let key_a = self.call_sub_value(by_block.clone(), vec![value.clone()], true)?;
-                    let key_b =
-                        self.call_sub_value(by_block.clone(), vec![max_value.clone()], true)?;
+                    let key_a = call(by_block, vec![value.clone()])?;
+                    let key_b = call(by_block, vec![max_value.clone()])?;
                     crate::runtime::compare_values(&key_a, &key_b)
                 } else {
-                    let result = self.call_sub_value(
-                        by_block.clone(),
-                        vec![value.clone(), max_value.clone()],
-                        true,
-                    )?;
+                    let result = call(by_block, vec![value.clone(), max_value.clone()])?;
                     Self::order_to_int(&result)
                 };
                 if cmp_min < 0 {
