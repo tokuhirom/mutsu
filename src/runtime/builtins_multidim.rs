@@ -678,7 +678,7 @@ impl Interpreter {
                 "__mutsu_subscript_adverb_error: missing arguments",
             ));
         }
-        let what = args[0].to_string_value();
+        let mut what = args[0].to_string_value();
         let source = args[1].to_string_value();
         let mut nogo: Vec<String> = Vec::new();
         let mut unexpected: Vec<String> = Vec::new();
@@ -690,12 +690,15 @@ impl Interpreter {
                 unexpected.push(name.to_string());
             }
         }
-        if nogo.is_empty() && !unexpected.is_empty() {
-            return Err(RuntimeError::new(format!(
-                "Unexpected adverb(s) on subscript: {}",
-                unexpected.join(", ")
-            )));
+        // A conflicting (nogo) combination is reported by the slice candidate as
+        // plain "slice"; the bracket-specific "{} slice"/"[] slice" descriptor is
+        // only used for a pure unknown-adverb error on a zen slice.
+        if !nogo.is_empty() && (what == "{} slice" || what == "[] slice") {
+            what = "slice".to_string();
         }
+        // Both the conflicting-adverb (`nogo`) and unknown-adverb (`unexpected`)
+        // cases must surface as a typed X::Adverb so `throws-like X::Adverb` and
+        // attribute matching (.what/.source/.nogo/.unexpected) work.
         Err(RuntimeError::x_adverb(&what, &source, &nogo, &unexpected))
     }
 
@@ -764,6 +767,9 @@ impl Interpreter {
 
         let mut indices = match index {
             Value::Array(items, ..) => items.to_vec(),
+            // A Range subscript on a hash is a multi-key slice (`%h{"b".."c"}:kv`),
+            // so expand it to its element keys.
+            ref r if r.is_range() => crate::runtime::utils::value_to_list(r),
             other => vec![other],
         };
         if matches!(indices.first(), Some(Value::Whatever))
@@ -828,10 +834,25 @@ impl Interpreter {
                 }
             }
             Value::Hash(map) => {
-                let default_type = var_name
-                    .as_ref()
-                    .and_then(|name| self.var_type_constraint(name))
-                    .unwrap_or_else(|| "Any".to_string());
+                // The missing-key default comes from the Hash's *value type* — read
+                // it from the container value itself (via container metadata /
+                // `is default`) so it survives rebinding (e.g. `for %i -> %h {...}`
+                // where the loop variable has no type constraint). Fall back to the
+                // declared variable's type constraint, then Any.
+                let missing_default = self
+                    .container_default(&target)
+                    .cloned()
+                    .or_else(|| {
+                        self.container_type_metadata(&target)
+                            .map(|info| Value::Package(Symbol::intern(&info.value_type)))
+                    })
+                    .or_else(|| {
+                        var_name
+                            .as_ref()
+                            .and_then(|name| self.var_type_constraint(name))
+                            .map(|t| Value::Package(Symbol::intern(&t)))
+                    })
+                    .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
                 for idx in &indices {
                     let key_str = idx.to_string_value();
                     let key =
@@ -840,7 +861,7 @@ impl Interpreter {
                     let value = map
                         .get(&key_str)
                         .cloned()
-                        .unwrap_or_else(|| Value::Package(Symbol::intern(&default_type)));
+                        .unwrap_or_else(|| missing_default.clone());
                     rows.push((key, value, exists));
                 }
             }
