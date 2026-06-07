@@ -69,14 +69,12 @@ impl Interpreter {
             err.exception = Some(Box::new(ex));
             return Err(err);
         }
-        let val = &args[0];
-        Ok(match val {
-            Value::Array(items, ..) => Value::Int(items.len() as i64),
-            Value::LazyList(list) => Value::Int(self.force_lazy_list(list)?.len() as i64),
-            Value::Hash(items) => Value::Int(items.len() as i64),
-            Value::Str(s) => Value::Int(s.chars().count() as i64),
-            _ => Value::Int(1),
-        })
+        // `elems($x)` is defined as `$x.elems`; delegate to the single `.elems`
+        // method impl rather than keep a second copy that drifted (it counted Str
+        // chars instead of 1, missed Seq, and force-counted lazy lists that raku
+        // rejects with X::Cannot::Lazy). The method dispatch still forces
+        // gather-sourced lazy lists via its interpreter slow path.
+        self.call_method_with_values(args[0].clone(), "elems", vec![])
     }
 
     pub(super) fn builtin_set(&self, args: &[Value]) -> Result<Value, RuntimeError> {
