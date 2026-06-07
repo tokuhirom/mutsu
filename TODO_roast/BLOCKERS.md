@@ -60,11 +60,10 @@ do NOT spend time here, the file cannot reach a clean pass as written.
 contained feature; estimate + concrete approach given so the next worker can start
 cold):
 
-1. **S32-io/io-path-cygwin.t** — *Medium, best next pickup.* 10 failing: IO::Path::Cygwin path
-   canonicalization (UNC `//server/share`, drive letters `A:`, backslash separators
-   in volume/dirname/basename/is-absolute). Self-contained in the Cygwin SPEC
-   (`runtime/native_io.rs` path-split helpers). No Rakudo quirk — purely a
-   string-splitting spec to implement to match `IO::Spec::Cygwin`.
+1. **S32-io/io-path-cygwin.t** — **DONE** (whitelisted). IO::Path::Cygwin now
+   normalizes backslashes to forward slashes and uses Win32-style volume /
+   absoluteness semantics (`is_cygwin_spec` + `io_path_parts_spec` in
+   `runtime/native_io.rs`; cygwin branches in absolute/relative).
 2. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests; needs
    128-bit `read-int128`/`write-int128`/`-uint128` across NativeEndian/Little/Big
    plus the existing 8/16/32/64 widths. `Value` has `BigInt`; wire the `write-int*`
@@ -420,9 +419,9 @@ cases. `pipe.t`, `spurt.t`, `indir.t`, `child-secure.t` now pass.
   on `.SPEC=`/`.CWD=` + `temp $*SPEC`/`temp $*CWD` (34, 35), `.path`
   indir-independence (36), `.Numeric` Cool chain (37 — most tractable: IO::Path is
   Cool, numify via `.Str`).
-- roast/S32-io/io-path-cygwin.t — **Medium**. IO::Path::Cygwin: UNC `//server/share`,
-  drive letters `A:`, backslash separators in volume/dirname/basename/is-absolute;
-  10 failing.
+- roast/S32-io/io-path-cygwin.t — **DONE** (whitelisted). IO::Path::Cygwin: UNC
+  `//server/share`, drive letters `A:`, backslash separators in
+  volume/dirname/basename/is-absolute, plus cygwin absolute/relative.
 - roast/S32-io/lock.t — **Hard**. `.lock`/`.unlock` throw X::Method::NotFound.
   Needs **fcntl POSIX record locks** (`F_SETLK`/`F_SETLKW`, `F_RDLCK`/`F_WRLCK`),
   NOT `flock(2)` — rakudo rejects an exclusive lock on a read-only fd via fcntl

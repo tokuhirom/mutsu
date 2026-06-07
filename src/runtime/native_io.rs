@@ -225,11 +225,11 @@ impl Interpreter {
                 Ok(Value::Package(Symbol::intern(&spec_name)))
             }
             "basename" => {
-                let (_, _, bname) = Self::io_path_parts(&p);
+                let (_, _, bname) = Self::io_path_parts_spec(&p, attributes);
                 Ok(Value::str(bname))
             }
             "dirname" => {
-                let (_, dname, _) = Self::io_path_parts(&p);
+                let (_, dname, _) = Self::io_path_parts_spec(&p, attributes);
                 Ok(Value::str(dname))
             }
             "cleanup" => {
@@ -241,7 +241,7 @@ impl Interpreter {
                 Ok(Self::clone_io_path_with_path(attributes, normalized))
             }
             "parts" => {
-                let (volume, dirname, basename) = Self::io_path_parts(&p);
+                let (volume, dirname, basename) = Self::io_path_parts_spec(&p, attributes);
                 let mut parts = HashMap::new();
                 parts.insert("volume".to_string(), Value::str(volume));
                 parts.insert("dirname".to_string(), Value::str(dirname));
@@ -265,7 +265,11 @@ impl Interpreter {
                     ));
                 }
                 let sep = Self::io_path_sep(attributes);
-                let mut path = p.clone();
+                let mut path = if Self::is_cygwin_spec(attributes) {
+                    p.replace('\\', "/")
+                } else {
+                    p.clone()
+                };
                 for _ in 0..levels {
                     if path == "." {
                         path = "..".to_string();
@@ -449,6 +453,24 @@ impl Interpreter {
                     // Canonicalize the result
                     let cleaned = Self::canonpath_win32(&abs, false);
                     Ok(Value::str(cleaned))
+                } else if Self::is_cygwin_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    let pn = p.replace('\\', "/");
+                    let abs = if Self::io_path_is_absolute_win32(&pn) {
+                        pn
+                    } else {
+                        let bn = base.replace('\\', "/");
+                        if bn.ends_with('/') {
+                            format!("{}{}", bn, pn)
+                        } else {
+                            format!("{}/{}", bn, pn)
+                        }
+                    };
+                    Ok(Value::str(Self::canonpath_cygwin(&abs, false)))
                 } else {
                     let base = args.first().map(|v| v.to_string_value());
                     if let Some(base) = base {
@@ -477,6 +499,20 @@ impl Interpreter {
                     let rel = norm_p
                         .strip_prefix(&norm_base)
                         .and_then(|r| r.strip_prefix('\\'))
+                        .unwrap_or(&norm_p);
+                    Ok(Value::str(rel.to_string()))
+                } else if Self::is_cygwin_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    // Normalize separators for comparison (Cygwin uses forward slashes).
+                    let norm_p = p.replace('\\', "/");
+                    let norm_base = base.replace('\\', "/");
+                    let rel = norm_p
+                        .strip_prefix(&norm_base)
+                        .and_then(|r| r.strip_prefix('/'))
                         .unwrap_or(&norm_p);
                     Ok(Value::str(rel.to_string()))
                 } else {
@@ -517,12 +553,14 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
             }
             "volume" => {
-                let (volume, _, _) = Self::io_path_parts(&p);
+                let (volume, _, _) = Self::io_path_parts_spec(&p, attributes);
                 Ok(Value::str(volume))
             }
             "is-absolute" => {
                 let abs = if Self::is_win32_spec(attributes) {
                     Self::io_path_is_absolute_win32(&p)
+                } else if Self::is_cygwin_spec(attributes) {
+                    Self::io_path_is_absolute_win32(&p.replace('\\', "/"))
                 } else {
                     original.is_absolute()
                 };
@@ -531,6 +569,8 @@ impl Interpreter {
             "is-relative" => {
                 let abs = if Self::is_win32_spec(attributes) {
                     Self::io_path_is_absolute_win32(&p)
+                } else if Self::is_cygwin_spec(attributes) {
+                    Self::io_path_is_absolute_win32(&p.replace('\\', "/"))
                 } else {
                     original.is_absolute()
                 };
@@ -1227,6 +1267,37 @@ impl Interpreter {
                 name == "IO::Spec::Win32" || name.ends_with("Win32")
             })
             .unwrap_or(false)
+    }
+
+    /// Whether the path's SPEC is `IO::Spec::Cygwin`. Cygwin uses Win32-style
+    /// volume/absoluteness semantics (UNC, drive letters) but normalizes all
+    /// backslashes to forward slashes in its output.
+    fn is_cygwin_spec(attributes: &HashMap<String, Value>) -> bool {
+        attributes
+            .get("SPEC")
+            .map(|s| {
+                let name = match s {
+                    Value::Package(n) => n.resolve().to_string(),
+                    Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                    _ => String::new(),
+                };
+                name == "IO::Spec::Cygwin" || name.ends_with("Cygwin")
+            })
+            .unwrap_or(false)
+    }
+
+    /// Split a path into (volume, dirname, basename), honoring the Cygwin SPEC
+    /// by first converting backslashes to forward slashes (Cygwin treats `\`
+    /// and `/` interchangeably and emits forward slashes).
+    fn io_path_parts_spec(
+        path: &str,
+        attributes: &HashMap<String, Value>,
+    ) -> (String, String, String) {
+        if Self::is_cygwin_spec(attributes) {
+            Self::io_path_parts(&path.replace('\\', "/"))
+        } else {
+            Self::io_path_parts(path)
+        }
     }
 
     /// Get the directory separator based on the SPEC attribute.
