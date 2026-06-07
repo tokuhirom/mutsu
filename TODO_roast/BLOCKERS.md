@@ -12,6 +12,101 @@ impact. Each entry carries a **fix difficulty** estimate:
 Last refreshed: 2026-06-07 (stale/passing entries removed, counts re-measured,
 difficulty ratings added).
 
+---
+
+## Sub-engineer work order (conflict-minimizing)
+
+The **main engineer** owns the bytecode-VM architecture (PLAN.md "🔴 最優先":
+lever B/C, the `env↔locals` dual store, closure capture, dispatch) and the
+**first-class container** migration (PLAN.md "🟣 第2優先": `Value` variant
+signatures, scalar/element/attribute containers). Those changes churn `src/vm/*`,
+`src/compiler/*`, the env machinery, and eventually `value.rs`.
+
+**Sub-engineers must stay out of those files.** Pick roast work from the tiers
+below **in order** — earlier tiers live in subsystems the main engineer does not
+touch, so they almost never conflict. Within a tier, order is free; **one file
+per PR, small short-lived branches** to keep the conflict window tiny. Enable
+auto-merge and move to the next file (do not babysit CI).
+
+If a chosen test turns out to be blocked on container identity / closure capture
+/ dual-store / lazy infinite sequences / VM dispatch (you'll hit it mid-fix),
+**stop and switch** to a Tier-1/2 file — do not start patching VM internals; that
+will collide with the main engineer.
+
+### Tier 1 — fully isolated subsystems (start here; near-zero conflict)
+
+Live in the regex engine (`runtime/regex*.rs`), IO (`runtime/io*`, IO builtins),
+unicode (`builtins/unicode.rs`), and Buf/OS builtins. The main engineer never
+touches these.
+
+1. **IO** (Medium): S32-io/io-handle.t, S32-io/io-path.t, S32-io/io-path-cygwin.t,
+   S32-io/lock.t, S16-io/words.t
+2. **Regex / Match** (Medium): S05-capture/alias.t, S05-mass/rx.t,
+   S05-match/capturing-contexts.t, S05-metasyntax/angle-brackets.t,
+   S05-nonstrings/basic.t
+3. **Buf / OS** (Medium): S03-buf/write-int.t, S29-os/system.t
+4. **Unicode** (Hard but self-contained — crate-level work): S32-str/CollationTest…,
+   S15-nfg/GraphemeBreakTest-3.t
+
+### Tier 2 — additive exception types & module plumbing (low conflict)
+
+Mostly **additive**: new `X::` types + throw sites + parse-time checks. Lives in
+exception/parser-error code and module handlers, not the VM hot path. (If you
+must touch `value.rs` for a new `RuntimeError`, it is the `RuntimeError` area, far
+from the `Value` enum the main engineer reworks — but coordinate before editing
+`value.rs`.)
+
+- S05-substitution/subst.t (subst Exception throws + `.subst` adverbs)
+- S06-advanced/lexical-subs.t (X::Undeclared::Symbols for fwd-ref `my sub`)
+- S12-meta/exporthow.t (X::EXPORTHOW::InvalidDirective + EXPORTHOW plumbing)
+- S32-hash/adverbs.t (X::Adverb edge cases on hash subscripts)
+- S32-exceptions/misc2.t (exception attribute matching)
+- S04-declarations/constant.t (constant with complex RHS)
+
+### Tier 3 — self-contained semantic fixes (off the VM core)
+
+Touch specific builtins / method handlers / type coercion, not env or dispatch.
+
+- S32-array/splice.t (snapshot replacement args before mutating — self-referential splice)
+- S32-hash/perl.t (typed-hash `.perl`/`.raku` decont rules)
+- S02-types/nil.t, S02-types/pair.t (Nil-in-`for` / Pair `.value` edge cases)
+- S12-methods/qualified.t (callsame in punned roles)
+- S12-introspection/walk.t (`.WALK` + `WalkList` — large but self-contained)
+- S06-signature/slurpy-params.t, S06-signature/slurpy-blocks.t (slurpy parsing)
+
+### Tier 4 — coordinate first (overlaps VM control / parser / compiler)
+
+These touch `vm/vm_control_ops.rs`, return handling, or the parser/compiler the
+main engineer also edits. **Ping the main engineer before starting**, or defer
+until their current PR lands.
+
+- S04-statements/for.t (loop-var binding — VM control ops)
+- S06-advanced/return_function.t, S06-advanced/return-prioritization.t (return/LEAVE)
+- Parser operators: `ff`/`fff` flipflop, `==>`/`<==` feed precedence, hyper
+  assignment, generalized negation meta (parser + compiler)
+- S32-array/multislice-6e.t, S32-hash/multislice-6e.t (subscript-lvalue path)
+
+### Do NOT pick — blocked on the main engineer's in-flight work
+
+These are facets of first-class container identity, closure capture, the dual
+store, real lazy infinite sequences, or threading shared-state. They will be
+solved (or unblocked) by the main engineer's lever B/C and container work; a
+sub-engineer starting here both collides and duplicates effort.
+
+- **Container identity / closure capture**: S02-types/capture.t,
+  S02-names-vars/variables-and-packages.t, S04-statements/gather.t (take-rw),
+  S14-traits/attributes.t, S12-methods/accessors.t, S03-binding/attributes.t,
+  S03-binding/nested.t, S12-subset/subtypes.t, S02-names/is_default.t,
+  S04-blocks-and-statements/temp.t, S06-advanced/wrap.t, S02-types/whatever.t
+- **Object-hash `%{Mu}`**: S32-list/classify.t, S09-hashes/objecthash.t
+- **Lazy infinite sequences**: S03-operators/eqv.t, S09-subscript/slice.t,
+  S32-list/skip.t
+- **Typed-array type-metadata** (Arc-pointer keying — folded into container
+  identity): S09-typed-arrays/native-shape1-*.t, S09-typed-arrays/arrays.t
+- **Threading / concurrency**: the entire S17 section below.
+
+---
+
 ## Threading / Concurrency / Async — **Hard**
 
 S17 tests that still hang or fail need real threading primitives (Semaphore,
