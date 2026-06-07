@@ -217,6 +217,40 @@ Behavior verified identical to the interpreter: `make test` (only pre-existing
 `t/grep-regressions.t` + `t/pair-positional-arg.t` pass, and a combined ~325-file
 whitelist sweep is green.
 
+## Lever A finish — carrier vs tree-walk fallback (2026-06)
+
+The last open lever A item (`EVAL` / symbolic deref / `CALLER::`) is *not* a
+tree-walk fallback to eliminate. `EVAL`/`EVALFILE` already compile their source
+to bytecode and run it on a sub-VM (`builtin_eval` -> `eval_eval_string` ->
+`eval_block_value` -> `compiler.compile` -> `run_compiled_block`/`VM::new`); the
+eval'd body is never tree-walked. Pseudo-package reads (`CALLER::`/`OUTER::`/
+`SETTING::`/`DYNAMIC::`) are reflective env lookups, not AST execution. In both
+cases the interpreter is used purely as a **carrier** (it owns the env / classes
+/ roles registries the compile-and-run needs), so counting these dispatches as
+tree-walk fallbacks overstated the real decoupling gap.
+
+The fallback instrumentation now classifies them separately:
+
+```
+[mutsu vm-stats] function-call opcodes=2 interpreter_fallbacks=0 (0.0% of opcodes) interpreter_carrier=2 (EVAL/pseudo-package, not tree-walk)
+[mutsu vm-stats] function-carrier by name (top 1): EVAL=2
+```
+
+`VM::is_interpreter_carrier_function` is the single predicate; the two generic
+interpreter-entry sites (`call_function_compiled_first` and the final else in
+`dispatch_func_call_inner`) route carrier names to
+`vm_stats::record_function_carrier` instead of `record_function_fallback`.
+
+Effect on the `t/` aggregate: function tree-walk-fallback 18.8% -> 18.6% (the 54
+`EVAL` dispatches moved to the carrier bucket). The remaining function fallbacks
+are dominated by `__mutsu_atomic_post_inc_var` (atomic `$x⚛++`) — concurrency /
+shared-state, i.e. **lever B (state ownership)** territory, not lever A.
+
+This closes lever A: every remaining interpreter entry from the VM is either a
+genuine fallback tracked for lever B / container-identity work, or a carrier that
+runs compiled bytecode. The residual coupling for `EVAL` (shared env/registries
+owned by the `Interpreter` struct) is explicitly a lever B concern.
+
 ## Next steps (candidate strangler targets)
 
 1. `.grep` / `sort` comparator / `.subst` block: same idea but each needs extra

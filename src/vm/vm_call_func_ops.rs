@@ -737,7 +737,14 @@ impl VM {
                     if name == "start" {
                         self.sync_env_from_locals(code);
                     }
-                    crate::vm::vm_stats::record_function_fallback(name);
+                    // EVAL/EVALFILE compile to bytecode and run on a sub-VM, and
+                    // pseudo-package reads are reflective env lookups: the
+                    // interpreter is a carrier here, not a tree-walk fallback.
+                    if Self::is_interpreter_carrier_function(name) {
+                        crate::vm::vm_stats::record_function_carrier(name);
+                    } else {
+                        crate::vm::vm_stats::record_function_fallback(name);
+                    }
                     self.interpreter.set_pending_call_arg_sources(arg_sources);
                     let result = self.interpreter.call_function(name, args);
                     self.interpreter.set_pending_call_arg_sources(None);
