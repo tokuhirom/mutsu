@@ -793,8 +793,8 @@ impl Interpreter {
             return self.call_function(short_name, args.to_vec());
         }
 
-        Err(RuntimeError::new(format!(
-            "X::Undeclared::Symbols: Unknown function: {}",
+        Err(RuntimeError::undeclared_symbols(format!(
+            "Unknown function: {}",
             name
         )))
     }
