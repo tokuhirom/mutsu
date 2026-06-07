@@ -10,7 +10,8 @@ impact. Each entry carries a **fix difficulty** estimate:
   object-hash `%{Mu}` keys) or a large pile of disparate sub-features.
 
 Last refreshed: 2026-06-07 (stale/passing entries removed, counts re-measured,
-difficulty ratings added).
+difficulty ratings added; end-of-Tier-1 → Tier-2 implementation plan refined with
+per-file approaches, not-whitelistable flags, and a recommended pickup order).
 
 ---
 
@@ -39,17 +40,69 @@ Live in the regex engine (`runtime/regex*.rs`), IO (`runtime/io*`, IO builtins),
 unicode (`builtins/unicode.rs`), and Buf/OS builtins. The main engineer never
 touches these.
 
-1. **IO** (Medium): S32-io/io-handle.t, S32-io/io-path.t, S32-io/io-path-cygwin.t,
-   S32-io/lock.t
-   (S16-io/words.t — DONE, whitelisted: lazy word iterator + close-on-exhaust +
-   `IO::ArgFiles.new`.)
-2. **Regex / Match** (Medium): S05-mass/rx.t,
-   S05-match/capturing-contexts.t, S05-metasyntax/angle-brackets.t
-   (S05-capture/alias.t — DONE, whitelisted. S05-nonstrings/basic.t — unpassable:
-   reference rakudo fails to compile it, `No such symbol 'Antelope'`.)
-3. **Buf / OS** (Medium): S03-buf/write-int.t, S29-os/system.t
-4. **Unicode** (Hard but self-contained — crate-level work): S32-str/CollationTest…,
-   S15-nfg/GraphemeBreakTest-3.t
+**Done this round (whitelisted):** S16-io/words.t (lazy word iterator +
+close-on-exhaust + `IO::ArgFiles.new`); S05-capture/alias.t (numbered aliases +
+`:s`-into-alternation + aliased-group nested subcap); S29-os/system.t (already
+passing — verified, was a stale entry).
+
+**Skip — not whitelistable (reference rakudo also fails, or environment quirk):**
+do NOT spend time here, the file cannot reach a clean pass as written.
+- S05-nonstrings/basic.t — rakudo fails to compile it (`No such symbol 'Antelope'`).
+- S05-mass/rx.t — rakudo can't compile it either (`::` backtracking-control NYI,
+  dies at line 38). mutsu also needs `<commit>` cut semantics; even fixed, upstream
+  is unpassable.
+- S05-metasyntax/angle-brackets.t — aborts at test 52 on `<$subrule>` compiling a
+  `{...}`-code string as a regex; real rakudo dies there too (no MONKEY-SEE-NO-EVAL).
+  Not reachable to `plan 95` without code-string subrules.
+
+**Recommended order for the genuinely-achievable remainder** (each is a self-
+contained feature; estimate + concrete approach given so the next worker can start
+cold):
+
+1. **S32-io/io-handle.t** — *Medium, best next pickup.* Remaining failures are
+   `nl-out` / `IO::Handle.gist` edge cases (the "iterator-producing read methods"
+   subtest already passes after the words.t lazy fixes). Approach: align
+   `IO::Handle.gist`/`.Str` and the `:nl-out` write path with rakudo's output; all
+   in `runtime/handle.rs` + `runtime/native_io.rs`. Re-measure failing subtests
+   first (`prove` the file) — the count is small.
+2. **S32-io/io-path-cygwin.t** — *Medium.* 10 failing: IO::Path::Cygwin path
+   canonicalization (UNC `//server/share`, drive letters `A:`, backslash separators
+   in volume/dirname/basename/is-absolute). Self-contained in the Cygwin SPEC
+   (`runtime/native_io.rs` path-split helpers). No Rakudo quirk — purely a
+   string-splitting spec to implement to match `IO::Spec::Cygwin`.
+3. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests; needs
+   128-bit `read-int128`/`write-int128`/`-uint128` across NativeEndian/Little/Big
+   plus the existing 8/16/32/64 widths. `Value` has `BigInt`; wire the `write-int*`
+   /`read-int*` Buf methods (incl. 128-bit via i128/BigInt) as callables. The
+   earlier "Callable expected" was a stale build; basic widths already work — the
+   real work is 128-bit + the full endianness matrix.
+
+**Defer — needs deep/crate-level work (file fully passes only after a big lift):**
+- S32-io/io-path.t — 6 *independent* failures; one (test 31 `.gist`) depends on a
+  **Rakudo internal caching quirk**: Win32 `.gist` renders the backslash form only
+  *after* `.absolute` has been called on that object (the test calls `.absolute`
+  then `.gist`). Do NOT replicate the mutate-on-`.absolute` behavior. The other 5
+  (`.parts` Win32 split 33, X::Assignment::RO on `.SPEC=`/`.CWD=` + `temp` 34/35,
+  `.path` indir-independence 36, `.Numeric` Cool chain 37) are each doable —
+  `.Numeric` (37) is the most tractable (IO::Path is Cool → numify via `.Str`) —
+  but the whole file can't whitelist while 31 needs the quirk, so it's low-ROI.
+- S32-io/lock.t — needs **fcntl POSIX record locks** (`F_SETLK`/`F_SETLKW` with
+  `F_RDLCK`/`F_WRLCK`), NOT `flock(2)`: rakudo rejects an exclusive lock on a
+  read-only fd via fcntl `EBADF`, which `flock` would allow. Also tests cross-process
+  blocking via subprocess `is_run`, `IO::CatHandle`, and fd-reuse (`native-descriptor`).
+  Genuinely Hard; timing-sensitive.
+- S05-match/capturing-contexts.t — 8 *disparate* failures: binding `$/`
+  (`my $/ := 42`), index-stable positional slots so `(y)?`→Nil and `(z)*`→empty-list
+  coexist, `%%` separator backtracking against an outer anchor, capture markers
+  `<(`/`)>`. Each is its own mini-feature; no single-PR whitelist.
+- S32-str/CollationTest_NON_IGNORABLE-3.t — 2 noncharacter cases. ICU4X treats
+  noncharacters (U+FFFE/U+FFFF/…) as primary-ignorable; UCA-17 gives them implicit
+  primary weights by codepoint. No substitute codepoint exists near U+FFF0
+  (U+FFF9–FFFD are assigned), so the fix needs sort-key-level weight injection
+  (`icu_collator` exposes `write_sort_key_to`) or a partial UCA reimplementation.
+  Hard; 2-test payoff.
+- S15-nfg/GraphemeBreakTest-3.t — GB9c (Indic conjunct) / GB11 (emoji-ZWJ) need a
+  `unicode-segmentation` upgrade or UAX-29 post-processing. Hard.
 
 ### Tier 2 — additive exception types & module plumbing (low conflict)
 
@@ -59,12 +112,36 @@ must touch `value.rs` for a new `RuntimeError`, it is the `RuntimeError` area, f
 from the `Value` enum the main engineer reworks — but coordinate before editing
 `value.rs`.)
 
-- S05-substitution/subst.t (subst Exception throws + `.subst` adverbs)
-- S06-advanced/lexical-subs.t (X::Undeclared::Symbols for fwd-ref `my sub`)
-- S12-meta/exporthow.t (X::EXPORTHOW::InvalidDirective + EXPORTHOW plumbing)
-- S32-hash/adverbs.t (X::Adverb edge cases on hash subscripts)
-- S32-exceptions/misc2.t (exception attribute matching)
-- S04-declarations/constant.t (constant with complex RHS)
+**Reality check (verified this round):** the "Medium" label on these is optimistic
+for the whole-file pass. `S32-exceptions/misc2.t` needs ~50 *distinct* exception
+types thrown at the right place (reference rakudo fails only 1 of 265) — that is
+**Hard**, a long multi-PR grind, not a single pickup. Pick the *bounded* ones first.
+
+**Recommended order:**
+
+1. **S04-declarations/constant.t** — *Medium, most bounded.* 63/68 pass; aborts at
+   line 331 on `constant` with complex RHS (list / typed / sigilless). Fix the
+   `constant` declaration handling (compiler/runtime const path) for those RHS
+   shapes so the file reaches its plan. Smallest reachable Tier-2 whitelist.
+2. **S06-advanced/lexical-subs.t** — *Medium.* 5/13 then aborts at line 66: needs
+   `X::Undeclared::Symbols` for a forward-referenced lexical `my sub`. Bounded:
+   one exception type + one detection site (forward-ref of a not-yet-declared
+   `my sub` inside the same scope).
+3. **S12-meta/exporthow.t** — *Medium.* `X::EXPORTHOW::InvalidDirective` plus
+   minimal `EXPORTHOW` plumbing (recognize the package, validate directive names).
+   Self-contained in the module/exports handler.
+4. **S32-hash/adverbs.t** — *Medium.* `X::Adverb` edge cases on hash subscripts
+   (the adverb-on-subscript parse + throw path; `X::Adverb` already exists).
+5. **S05-substitution/subst.t** — *Medium, regex-adjacent.* 23/191: missing
+   Exception throws on illegal substitution forms + `.subst` adverb edge cases.
+   Touches `runtime/regex*` + subst handling, so sequence it AFTER any open regex
+   PR has merged (avoid self-conflict).
+6. **S32-exceptions/misc2.t** — *Hard (reclassified).* ~50 distinct compile-time
+   exception types (`X::Attribute::Undeclared`, `X::Signature::Placeholder`,
+   `X::Obsolete`, `X::Placeholder::*`, `X::Parameter::*`, `X::Redeclaration`,
+   `X::Method::Private::*`, `X::Bind`, …). Treat as a long campaign: land the
+   common ones (`X::Redeclaration`, `X::Placeholder::*`) across several PRs; do not
+   expect a single-PR whitelist.
 
 ### Tier 3 — self-contained semantic fixes (off the VM core)
 
@@ -188,7 +265,12 @@ right place*, plus compile-time undeclared-symbol checking.
   X::NotParametric, X::Syntax::Extension::SpecialForm, X::Redeclaration of
   subs/methods, X::Bind, sink-context "Useless use" warnings, ~30 one-off types.
   See TODO_roast/S32.md.
-- roast/S32-exceptions/misc2.t — **Medium**. Exception attribute matching.
+- roast/S32-exceptions/misc2.t — **Hard** (reclassified). 134/265. Needs ~50
+  *distinct* compile-time exception types thrown at the right place
+  (`X::Attribute::Undeclared`, `X::Signature::Placeholder`, `X::Obsolete`,
+  `X::Placeholder::*`, `X::Parameter::*`, `X::Redeclaration`,
+  `X::Method::Private::*`, `X::Bind`, …); reference rakudo fails only 1 of 265.
+  A multi-PR campaign, not a single pickup.
 
 ## Native Typed Arrays — shaped only — **Hard**
 
@@ -215,13 +297,20 @@ rather than empty, and `.grep`/`.values`/`.pairs` see stale pre-mutation values.
   sequential array captures (`@<foo>=...`) are largely unimplemented.
 - roast/S05-capture/hash.t — **Hard**. 30/99 fail then aborts at line 134: package/
   hash captures (`%<foo>=...`) unimplemented.
-- roast/S05-mass/rx.t — **Medium**. Aborts at test 19/756 on a no-backtrack-into-
-  group case that throws instead of failing the match; one un-thrown error halts
-  the whole 756-test file, so the fix unblocks a large count.
-- roast/S05-match/capturing-contexts.t — **Medium**. 8/64 fail: quantifier `*`
-  with 0 matches and subrule capture in list context produce wrong capture shape.
-- roast/S05-metasyntax/angle-brackets.t — **Medium**. Aborts at test 51/95: calling
-  a regex as a method from `<&foo()>` / `<.foo>` angle-bracket assertions (NYI).
+- roast/S05-mass/rx.t — **not whitelistable**. Reference rakudo can't compile this
+  file (`::` backtracking-control NYI, dies at line 38). mutsu additionally aborts
+  at test 20 on `<commit>` (cut semantics, NYI), and later subtests want
+  compile-time regex exception types. Even with those, upstream is unpassable — do
+  NOT target a whitelist; only land general backtracking-control improvements.
+- roast/S05-match/capturing-contexts.t — **Medium (multi-feature)**. 56/64. 8
+  *disparate* failures: binding `$/` (`my $/ := 42`), index-stable positional slots
+  so `(y)?`→Nil and `(z)*`→empty-list coexist, `%%` separator backtracking vs an
+  outer anchor, capture markers `<(`/`)>`. No single-PR whitelist.
+- roast/S05-metasyntax/angle-brackets.t — **not whitelistable as written**. 51/51
+  runnable subtests pass, but the run aborts at test 52: `<$subrule>` compiles a
+  string containing a `{...}` code block as a regex, which needs MONKEY-SEE-NO-EVAL.
+  Real rakudo dies at the same point (no MONKEY-SEE-NO-EVAL), so `plan 95` is
+  unreachable. (Earlier "test 51 `<&foo()>`" was a `#?rakudo skip`, not the blocker.)
 - roast/S05-metasyntax/longest-alternative.t — **Hard**. Timeout — LTM (longest
   token matching) over many alternatives is not implemented efficiently.
 - roast/S05-nonstrings/basic.t — **unpassable as written**. Reference rakudo on
@@ -292,14 +381,24 @@ cases. `pipe.t`, `spurt.t`, `indir.t`, `child-secure.t` now pass.
   as written).
 - roast/S32-io/io-handle.t — **Medium**. nl-out / `IO::Handle` gist edge cases and
   internal chunking (subtest 2 nl-in fixed in #2618).
-- roast/S32-io/io-path.t — **Medium**. 39/43. Remaining: Win32 `.gist`/`.parts`
-  canonicalization (31, 33), X::Assignment::RO on `.SPEC=`/`.CWD=` + `temp $*SPEC`/
-  `temp $*CWD` (34, 35), `.path` indir-independence (36), `.Numeric` Cool chain (37).
+- roast/S32-io/io-path.t — **Medium per-fix, low-ROI overall**. 6 independent
+  top-level failures. Test 31 `.gist` depends on a **Rakudo internal caching quirk**:
+  Win32 `.gist` renders the backslash form only *after* `.absolute` has been called
+  on that object (the test does `.absolute` then `like .gist, /$abs/`). Do NOT
+  replicate mutate-on-`.absolute`. Others are each doable but the file can't
+  whitelist while 31 needs the quirk: `.parts` Win32 split (33), X::Assignment::RO
+  on `.SPEC=`/`.CWD=` + `temp $*SPEC`/`temp $*CWD` (34, 35), `.path`
+  indir-independence (36), `.Numeric` Cool chain (37 — most tractable: IO::Path is
+  Cool, numify via `.Str`).
 - roast/S32-io/io-path-cygwin.t — **Medium**. IO::Path::Cygwin: UNC `//server/share`,
   drive letters `A:`, backslash separators in volume/dirname/basename/is-absolute;
   10 failing.
-- roast/S32-io/lock.t — **Medium**. `.lock`/`.unlock` throw X::Method::NotFound (file
-  locking not implemented).
+- roast/S32-io/lock.t — **Hard**. `.lock`/`.unlock` throw X::Method::NotFound.
+  Needs **fcntl POSIX record locks** (`F_SETLK`/`F_SETLKW`, `F_RDLCK`/`F_WRLCK`),
+  NOT `flock(2)` — rakudo rejects an exclusive lock on a read-only fd via fcntl
+  `EBADF` (which `flock` would allow). Also tests cross-process blocking via
+  subprocess `is_run`, `IO::CatHandle`, and fd-reuse (`native-descriptor`).
+  Timing-sensitive.
 - roast/S16-io/words.t — **DONE** (whitelisted). Lazy word iterator with
   close-on-exhaust + `IO::ArgFiles.new(@files)`.
 
@@ -448,8 +547,11 @@ no per-slot `Scalar` container (first-class container identity).
   `for` loop and Nil assignment to a subset-typed var.
 - roast/S02-types/pair.t — **Medium**. 4/180 fail then aborts (planned 182): Pair
   `.value` mutation and enum-derived Pair behavior.
-- roast/S03-buf/write-int.t — **Medium**. "Callable expected" runtime error — the
-  `write-int*` family of Buf methods aren't wired as callables.
+- roast/S03-buf/write-int.t — **Hard (large but mechanical)**. 2530 tests. Basic
+  `write-int8/16/32/64` + `read-int*` already work (the old "Callable expected" was
+  a stale build). The real work is **128-bit** `read-int128`/`write-int128`/`-uint128`
+  across the full NativeEndian/LittleEndian/BigEndian matrix (`Value::BigInt` exists;
+  wire the 128-bit Buf methods). Big but no architectural blocker.
 - roast/S04-blocks-and-statements/temp.t — **Medium**. 30/37 (7 remaining): `temp`
   restoration interacting with hash/array element containers (container identity).
 - roast/S04-declarations/constant.t — **Medium**. 63/68 pass, 5 fail then aborts at
