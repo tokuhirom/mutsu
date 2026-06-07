@@ -1084,6 +1084,10 @@ pub enum Value {
     LazyIoLines {
         handle: Box<Value>,
         kv: bool,
+        /// When true, the lazy iterator yields whitespace-delimited *words*
+        /// (via `read_word_from_handle_value`) rather than lines. Used by
+        /// `words($fh)` so a partial consumer leaves the handle open.
+        words: bool,
     },
     /// A reference to a hash slot, used for autovivification in `is raw` contexts.
     /// Reading this value returns the current value at the key (or Any).

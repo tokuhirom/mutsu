@@ -355,7 +355,12 @@ impl VM {
 
         // Handle lazy IO lines: iterate by pulling one line at a time
         // so that $fh.tell reflects the current read position.
-        if let Value::LazyIoLines { ref handle, kv } = iterable {
+        if let Value::LazyIoLines {
+            ref handle,
+            kv,
+            words,
+        } = iterable
+        {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
             self.exec_for_loop_lazy_io_lines(
@@ -363,6 +368,7 @@ impl VM {
                 spec,
                 handle,
                 kv,
+                words,
                 body_start,
                 loop_end,
                 compiled_fns,
@@ -1552,6 +1558,7 @@ impl VM {
         spec: &ForLoopSpec,
         handle: &Value,
         kv: bool,
+        words: bool,
         body_start: usize,
         loop_end: usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
@@ -1582,8 +1589,12 @@ impl VM {
         let mut line_index: i64 = 0;
 
         'for_loop: loop {
-            // Read the next line from the handle
-            let line = self.interpreter.read_line_from_handle_value(handle)?;
+            // Read the next record (word or line) from the handle
+            let line = if words {
+                self.interpreter.read_word_from_handle_value(handle)?
+            } else {
+                self.interpreter.read_line_from_handle_value(handle)?
+            };
             let Some(line_str) = line else {
                 break 'for_loop; // EOF
             };

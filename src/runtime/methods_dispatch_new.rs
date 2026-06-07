@@ -11,6 +11,30 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
+            "new" if matches!(target, Value::Package(name) if name == "IO::ArgFiles") => {
+                // IO::ArgFiles.new(@files): an $*ARGFILES-like handle that reads
+                // from an explicit file list rather than the global @*ARGS.
+                let paths: Vec<String> = args
+                    .iter()
+                    .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                    .flat_map(|a| match a {
+                        Value::Array(items, ..) | Value::Seq(items) => items
+                            .iter()
+                            .map(|v| v.to_string_value())
+                            .collect::<Vec<_>>(),
+                        other => vec![other.to_string_value()],
+                    })
+                    .collect();
+                let handle = self.create_handle(
+                    crate::runtime::IoHandleTarget::ArgFiles,
+                    crate::runtime::IoHandleMode::Read,
+                    None,
+                );
+                if let Ok(state) = self.handle_state_mut(&handle) {
+                    state.argfiles_paths = Some(paths);
+                }
+                Some(Ok(handle))
+            }
             "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>
             {
                 let class_name = if let Value::Package(n) = target {

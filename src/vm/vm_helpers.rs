@@ -246,8 +246,13 @@ impl VM {
     /// If the value is a `LazyIoLines`, force it into an eager array by reading
     /// all remaining lines from the file handle. Otherwise return the value as-is.
     pub(super) fn force_if_lazy_io_lines(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        if let Value::LazyIoLines { ref handle, kv } = val {
-            let forced = self.interpreter.force_lazy_io_lines(handle)?;
+        if let Value::LazyIoLines {
+            ref handle,
+            kv,
+            words,
+        } = val
+        {
+            let forced = self.interpreter.force_lazy_io_lines(handle, words)?;
             if kv {
                 // Apply .kv transformation on the forced array
                 let items = crate::runtime::utils::value_to_list(&forced);

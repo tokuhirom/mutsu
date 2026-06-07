@@ -2542,11 +2542,11 @@ impl VM {
                             self.force_lazy_list_vm(list)?;
                             self.env_dirty = true;
                         }
-                        Value::LazyIoLines { handle, .. } => {
+                        Value::LazyIoLines { handle, words, .. } => {
                             // Sinking a lazy IO lines iterator must drain the
                             // underlying handle so that side effects (read
                             // position, .eof) are observable.
-                            self.interpreter.force_lazy_io_lines(handle)?;
+                            self.interpreter.force_lazy_io_lines(handle, *words)?;
                             self.env_dirty = true;
                         }
                         _ => {

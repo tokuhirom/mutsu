@@ -710,6 +710,13 @@ impl VM {
             self.stack.push(result);
             return Ok(());
         }
+        // Force a lazy IO words/lines iterator so numeric coercion counts its
+        // elements (e.g. `+$fh.words` / `+$fh.lines`) rather than yielding 0.
+        let val = if matches!(&val, Value::LazyIoLines { .. }) {
+            self.force_if_lazy_io_lines(val)?
+        } else {
+            val
+        };
         // Force LazyList before numeric coercion so we can count elements.
         // If the lazy list has a known element count (e.g. n! for permutations),
         // use that directly without materializing.

@@ -525,12 +525,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     value.to_value(),
                 ])))),
                 Value::Package(_) => None, // let runtime handle (may be enum type)
-                Value::LazyIoLines { handle, .. } => {
+                Value::LazyIoLines { handle, words, .. } => {
                     // Wrap the lazy IO lines with kv flag so the for-loop can
                     // iterate lazily producing index-value pairs.
                     Some(Ok(Value::LazyIoLines {
                         handle: handle.clone(),
                         kv: true,
+                        words: *words,
                     }))
                 }
                 v if v.is_range() => Some(Ok(Value::array(positional_kv(

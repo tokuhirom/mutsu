@@ -413,21 +413,27 @@ impl Interpreter {
             IoHandleTarget::ArgFiles => {
                 let seps = state.line_separators.clone();
                 let chomp = state.line_chomp;
-                if argfiles_list.is_empty() {
+                // An `IO::ArgFiles.new(@files)` handle carries its own file list;
+                // a plain `$*ARGFILES` handle falls back to the global `@*ARGS`.
+                let effective_list = match &state.argfiles_paths {
+                    Some(paths) => paths.clone(),
+                    None => argfiles_list,
+                };
+                if effective_list.is_empty() {
                     // No file args — read from stdin, using $*IN's nl-in if available
                     let (effective_seps, effective_chomp) =
                         stdin_seps.clone().unwrap_or((seps.clone(), chomp));
                     let mut stdin = std::io::stdin().lock();
                     Self::read_record_with_separators(&mut stdin, &effective_seps, effective_chomp)
                 } else {
-                    // Read from files listed in @*ARGS sequentially
+                    // Read from files listed in the effective list sequentially
                     loop {
-                        if state.argfiles_index >= argfiles_list.len() {
+                        if state.argfiles_index >= effective_list.len() {
                             return Ok(None);
                         }
                         // Open the next file if we don't have a reader
                         if state.argfiles_reader.is_none() {
-                            let path = &argfiles_list[state.argfiles_index];
+                            let path = &effective_list[state.argfiles_index];
                             if path == "-" {
                                 // `-` means read from stdin
                                 let mut stdin = std::io::stdin().lock();
@@ -485,6 +491,46 @@ impl Interpreter {
         }
     }
 
+    /// Read the next whitespace-delimited word from a handle, buffering the
+    /// leftover words of each line in `pending_words`. Returns `None` at EOF,
+    /// auto-closing the handle if `close_on_word_exhaust` was requested
+    /// (Raku's `words($fh, :close)` close-on-exhaust semantics). Because the
+    /// handle only closes when iteration actually reaches EOF, a partial
+    /// consumer (e.g. `words($fh, :close)[1,2]`) leaves the handle open.
+    pub(crate) fn read_word_from_handle_value(
+        &mut self,
+        handle_value: &Value,
+    ) -> Result<Option<String>, RuntimeError> {
+        loop {
+            if let Some(word) = self
+                .handle_state_mut(handle_value)?
+                .pending_words
+                .pop_front()
+            {
+                return Ok(Some(word));
+            }
+            match self.read_line_from_handle_value(handle_value)? {
+                Some(line) => {
+                    let words: Vec<String> =
+                        line.split_whitespace().map(|s| s.to_string()).collect();
+                    if words.is_empty() {
+                        continue;
+                    }
+                    let state = self.handle_state_mut(handle_value)?;
+                    state.pending_words.extend(words);
+                }
+                None => {
+                    let state = self.handle_state_mut(handle_value)?;
+                    let should_close = state.close_on_word_exhaust && !state.closed;
+                    if should_close {
+                        let _ = self.close_handle_value(handle_value);
+                    }
+                    return Ok(None);
+                }
+            }
+        }
+    }
+
     pub(super) fn read_bytes_from_handle_value(
         &mut self,
         handle_value: &Value,
@@ -510,18 +556,23 @@ impl Interpreter {
                 Ok(buffer)
             }
             IoHandleTarget::ArgFiles => {
-                // Read bytes from files listed in @*ARGS sequentially
-                let argfiles_list: Vec<String> = self
-                    .env
-                    .get("@*ARGS")
-                    .and_then(|v| {
-                        if let Value::Array(items, ..) = v {
-                            Some(items.iter().map(|v| v.to_string_value()).collect())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
+                // Read bytes from files listed in @*ARGS sequentially, unless the
+                // handle carries its own explicit list (`IO::ArgFiles.new(@files)`).
+                let argfiles_list: Vec<String> =
+                    match self.handle_state_mut(handle_value)?.argfiles_paths.clone() {
+                        Some(paths) => paths,
+                        None => self
+                            .env
+                            .get("@*ARGS")
+                            .and_then(|v| {
+                                if let Value::Array(items, ..) = v {
+                                    Some(items.iter().map(|v| v.to_string_value()).collect())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default(),
+                    };
                 if argfiles_list.is_empty() {
                     // No file args — read from stdin
                     use std::io::Read;
@@ -1125,6 +1176,9 @@ impl Interpreter {
             utf16_detected_be: None,
             argfiles_index: 0,
             argfiles_reader: None,
+            argfiles_paths: None,
+            pending_words: std::collections::VecDeque::new(),
+            close_on_word_exhaust: false,
         };
         // For utf16 encoding in write/append mode, write BOM at start
         let enc_lower = state.encoding.to_lowercase();

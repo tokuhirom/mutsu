@@ -289,6 +289,19 @@ impl Interpreter {
     }
 
     /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.
+    /// Drain a lazy IO words/lines iterator into an eager `Seq` so it compares
+    /// by contents (matching what `words($fh)`/`lines($fh)` conceptually yield).
+    /// Non-lazy values pass through unchanged.
+    fn force_lazy_io_to_seq(&mut self, v: Value) -> Value {
+        if let Value::LazyIoLines { handle, words, .. } = &v
+            && let Ok(forced) = self.force_lazy_io_lines(handle, *words)
+        {
+            let items = crate::runtime::utils::value_to_list(&forced);
+            return Value::Seq(std::sync::Arc::new(items));
+        }
+        v
+    }
+
     fn seq_to_list(&mut self, v: &Value) -> Value {
         match v {
             Value::Seq(items) => Value::Array(items.clone(), ArrayKind::List),
@@ -296,6 +309,17 @@ impl Interpreter {
                 Ok(items) => Value::Array(std::sync::Arc::new(items), ArrayKind::List),
                 Err(_) => v.clone(),
             },
+            // A lazy IO words/lines iterator must be drained before comparison so
+            // it compares as its contents rather than the opaque "(...)".
+            Value::LazyIoLines { handle, words, .. } => {
+                match self.force_lazy_io_lines(handle, *words) {
+                    Ok(forced) => {
+                        let items = crate::runtime::utils::value_to_list(&forced);
+                        Value::Array(std::sync::Arc::new(items), ArrayKind::List)
+                    }
+                    Err(_) => v.clone(),
+                }
+            }
             _ => v.clone(),
         }
     }
@@ -495,9 +519,11 @@ impl Interpreter {
         let got = Self::positional_value(args, 0)
             .cloned()
             .unwrap_or(Value::Nil);
+        let got = self.force_lazy_io_to_seq(got);
         let expected = Self::positional_value(args, 1)
             .cloned()
             .unwrap_or(Value::Nil);
+        let expected = self.force_lazy_io_to_seq(expected);
         let desc = Self::positional_string(args, 2);
         let ok = got.eqv(&expected);
         self.test_ok(ok, &desc, false)?;

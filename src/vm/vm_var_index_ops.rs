@@ -272,7 +272,12 @@ impl VM {
             self.stack.push(target);
             return Ok(());
         }
-        if let Value::LazyIoLines { ref handle, kv } = target {
+        if let Value::LazyIoLines {
+            ref handle,
+            kv,
+            words,
+        } = target
+        {
             // Determine the maximum index requested so we only read the
             // minimum number of lines from the handle, leaving the rest
             // available for subsequent reads.
@@ -303,7 +308,7 @@ impl VM {
             };
             target = match needed {
                 Some(n) => {
-                    let forced = self.interpreter.force_lazy_io_lines_n(handle, n)?;
+                    let forced = self.interpreter.force_lazy_io_lines_n(handle, n, words)?;
                     if kv {
                         let items = crate::runtime::utils::value_to_list(&forced);
                         let mut kv_items = Vec::with_capacity(items.len() * 2);

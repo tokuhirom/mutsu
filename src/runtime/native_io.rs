@@ -2408,6 +2408,7 @@ impl Interpreter {
                     Ok(Value::LazyIoLines {
                         handle: Box::new(target_val.clone()),
                         kv: false,
+                        words: false,
                     })
                 }
             }
@@ -2431,15 +2432,26 @@ impl Interpreter {
                         _ => {}
                     }
                 }
+                if limit.is_none() {
+                    // No limit: return a lazy word iterator so a partial consumer
+                    // (e.g. `$fh.words[1,2]`) leaves the handle open, while a full
+                    // consumer triggers close-on-exhaust when `:close` was given.
+                    if close_after {
+                        self.handle_state_mut(&target_val)?.close_on_word_exhaust = true;
+                    }
+                    return Ok(Value::LazyIoLines {
+                        handle: Box::new(target_val.clone()),
+                        kv: false,
+                        words: true,
+                    });
+                }
                 let mut words = Vec::new();
-                'outer: while let Some(line) = self.read_line_from_handle_value(&target_val)? {
-                    for token in line.split_whitespace() {
-                        words.push(Value::str(token.to_string()));
-                        if let Some(n) = limit
-                            && words.len() >= n
-                        {
-                            break 'outer;
-                        }
+                'outer: while let Some(word) = self.read_word_from_handle_value(&target_val)? {
+                    words.push(Value::str(word));
+                    if let Some(n) = limit
+                        && words.len() >= n
+                    {
+                        break 'outer;
                     }
                 }
                 if close_after {

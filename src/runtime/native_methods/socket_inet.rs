@@ -95,6 +95,9 @@ impl Interpreter {
                     utf16_detected_be: None,
                     argfiles_index: 0,
                     argfiles_reader: None,
+                    argfiles_paths: None,
+                    pending_words: std::collections::VecDeque::new(),
+                    close_on_word_exhaust: false,
                 };
                 self.handles.insert(new_id, state);
                 let mut attrs = HashMap::new();
