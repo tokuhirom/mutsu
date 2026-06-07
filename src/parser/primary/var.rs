@@ -1188,6 +1188,43 @@ pub(crate) fn detect_perl5_scalar_var(input: &str) -> Option<String> {
             );
         }
     }
+    // $& — Perl 5 match variable; in Raku use $/ or $<>.
+    // `$&foo` is a code-object deref (handled later), so only flag when the
+    // `&` is not the start of a routine name.
+    if let Some(after) = input.strip_prefix('&')
+        && !after.chars().next().is_some_and(is_raku_identifier_start)
+    {
+        return Some(
+            "X::Syntax::Perl5Var: Unsupported use of $& variable; in Raku please use $<>"
+                .to_string(),
+        );
+    }
+    // $` — Perl 5 prematch; in Raku use $/.prematch. A backtick never starts a
+    // valid Raku variable.
+    if input.starts_with('`') {
+        return Some(
+            "X::Syntax::Perl5Var: Unsupported use of $` variable; in Raku please use $/.prematch"
+                .to_string(),
+        );
+    }
+    // $| — Perl 5 autoflush; in Raku use the filehandle's .out-buffer attribute.
+    if input.starts_with('|') {
+        return Some(
+            "X::Syntax::Perl5Var: Unsupported use of $| variable; in Raku please use the filehandle's .out-buffer attribute"
+                .to_string(),
+        );
+    }
+    // $? — Perl 5 child error. `$?FILE`/`$?LINE`/`$?PACKAGE` etc. are valid Raku
+    // compile-time variables (a `?`-twigil before an identifier), so only flag a
+    // bare `$?`.
+    if let Some(after) = input.strip_prefix('?')
+        && !after.chars().next().is_some_and(is_raku_identifier_start)
+    {
+        return Some(
+            "X::Syntax::Perl5Var: Unsupported use of $? variable; in Raku please use $! for handling child errors also"
+                .to_string(),
+        );
+    }
     // $# followed by identifier — Perl 5 last index; in Raku use @array.end
     if let Some(after) = input.strip_prefix('#')
         && !after.is_empty()
