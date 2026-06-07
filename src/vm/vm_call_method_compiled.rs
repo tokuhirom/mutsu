@@ -384,6 +384,10 @@ impl VM {
         if let Some(result) = self.try_native_sort(&target, method, &args) {
             return result;
         }
+        // Native `.min` / `.max` over a plain list, including `:by` blocks.
+        if let Some(result) = self.try_native_extrema(&target, method, &args) {
+            return result;
+        }
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
@@ -795,6 +799,10 @@ impl VM {
         }
         // Native `.sort` over a plain array with no/simple comparator (lever A).
         if let Some(result) = self.try_native_sort(&target, method, &args) {
+            return result;
+        }
+        // Native `.min` / `.max` over a plain list, including `:by` blocks.
+        if let Some(result) = self.try_native_extrema(&target, method, &args) {
             return result;
         }
         crate::vm::vm_stats::record_method_fallback(method);

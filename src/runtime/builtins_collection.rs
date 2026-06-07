@@ -422,7 +422,7 @@ impl Interpreter {
 
     /// Determine the arity of a callable for min/max/minmax by-block dispatch.
     /// Returns 1 for sort-key extractors, 2 for comparators.
-    fn extrema_callable_arity(&self, callable: &Value) -> usize {
+    pub(crate) fn extrema_callable_arity(&self, callable: &Value) -> usize {
         match callable {
             Value::Sub(data) => {
                 if data.params.is_empty() {
@@ -465,6 +465,30 @@ impl Interpreter {
         want_max: bool,
         by: Option<&Value>,
     ) -> Result<Value, RuntimeError> {
+        // Determine if by-block is arity-1 (sort key) or arity-2 (comparator)
+        // before borrowing self mutably for the block-call closure.
+        let by_arity = by.map(|b| self.extrema_callable_arity(b));
+        Self::extrema_from_values_generic(args, want_max, by, by_arity, |c, a| {
+            self.call_sub_value(c.clone(), a, true)
+        })
+    }
+
+    /// Engine-agnostic min/max fold over a flat list of values (the genuine
+    /// Category-B fork is the `:by` block, which each engine supplies through
+    /// `call`). Shared by the interpreter (`extrema_from_values_by`) and the VM
+    /// (`try_native_extrema`) so the flatten / failure / `Any`-filter / fold
+    /// logic exists once. `by_arity` is the resolved arity of `by`
+    /// (`extrema_callable_arity`); 1 = sort-key mapper, otherwise a comparator.
+    pub(crate) fn extrema_from_values_generic<F>(
+        args: &[Value],
+        want_max: bool,
+        by: Option<&Value>,
+        by_arity: Option<usize>,
+        mut call: F,
+    ) -> Result<Value, RuntimeError>
+    where
+        F: FnMut(&Value, Vec<Value>) -> Result<Value, RuntimeError>,
+    {
         if args.is_empty() {
             return Ok(Value::Nil);
         }
@@ -514,24 +538,17 @@ impl Interpreter {
             return Ok(args[0].clone());
         }
 
-        // Determine if by-block is arity-1 (sort key) or arity-2 (comparator)
-        let by_arity = by.map(|b| self.extrema_callable_arity(b));
-
         let mut best = filtered.remove(0);
         for value in filtered {
             let cmp = if let Some(by_block) = by {
                 if by_arity == Some(1) {
                     // Arity-1: use as sort key extractor
-                    let key_a = self.call_sub_value(by_block.clone(), vec![value.clone()], true)?;
-                    let key_b = self.call_sub_value(by_block.clone(), vec![best.clone()], true)?;
+                    let key_a = call(by_block, vec![value.clone()])?;
+                    let key_b = call(by_block, vec![best.clone()])?;
                     crate::runtime::compare_values(&key_a, &key_b)
                 } else {
                     // Arity-2: use as comparator ($^a, $^b) => Order
-                    let result = self.call_sub_value(
-                        by_block.clone(),
-                        vec![value.clone(), best.clone()],
-                        true,
-                    )?;
+                    let result = call(by_block, vec![value.clone(), best.clone()])?;
                     Self::order_to_int(&result)
                 }
             } else {
@@ -580,7 +597,7 @@ impl Interpreter {
     }
 
     /// Extract named adverbs (:k, :v, :kv, :p) from args for min/max.
-    fn extract_extrema_adverbs(args: &[Value]) -> (Option<String>, Vec<Value>) {
+    pub(crate) fn extract_extrema_adverbs(args: &[Value]) -> (Option<String>, Vec<Value>) {
         let mut adverb = None;
         let mut positional = Vec::new();
         let mut by_found = false;
@@ -690,7 +707,7 @@ impl Interpreter {
 
     /// Apply :k, :v, :kv, :p adverbs to min/max result.
     /// These return index/value/both/pair information about the extremum.
-    fn apply_extrema_adverb(
+    pub(crate) fn apply_extrema_adverb(
         &self,
         args: &[Value],
         result: Value,
