@@ -109,6 +109,7 @@ impl Compiler {
                         name,
                         expr,
                         is_dynamic: ast_is_dynamic,
+                        type_constraint,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
@@ -118,6 +119,15 @@ impl Compiler {
                             name_idx,
                             dynamic: is_dynamic,
                         });
+                        // Register the declared type constraint (e.g. `my Int %h`)
+                        // so element type-checks and `:=` bind type-checks see it,
+                        // mirroring the non-final VarDecl path. Without this a
+                        // block-final typed declaration silently loses its type.
+                        if let Some(tc) = type_constraint {
+                            let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                            self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                            self.local_types.insert(name.clone(), tc.clone());
+                        }
                         if has_mark_bind && (name.starts_with('@') || name.starts_with('%')) {
                             // Bind context for @/% variables (e.g. `my %h := :{ }`):
                             // use SetLocal with MarkBindContext and MarkVarDeclContext

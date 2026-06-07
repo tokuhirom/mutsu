@@ -460,6 +460,89 @@ impl VM {
         }
     }
 
+    /// Type-check a `:=` bind to a typed-hash variable.
+    ///
+    /// Binding (unlike assignment) does not coerce — it aliases the RHS
+    /// container directly. Raku therefore requires the RHS to *be* an
+    /// `Associative[T]` matching the variable's declared value type `T`:
+    ///
+    /// ```text
+    /// my Int %a; my Int  %b := %a;            # ok   (Int does Int)
+    /// my Int %a; my Cool %b := %a;            # ok   (Int does Cool)
+    /// my Int %h := :42foo.Set.Hash;           # dies (Hash[Any,Any])
+    /// ```
+    ///
+    /// mutsu tracks a hash's element type via `container_type_metadata`; a
+    /// plain/coerced hash has no metadata, so its value type defaults to `Mu`,
+    /// which only conforms to an `Any`/`Mu`-typed target.
+    fn check_hash_bind_value_type(
+        &mut self,
+        name: &str,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        if !name.starts_with('%') {
+            return Ok(());
+        }
+        let Some(constraint) = self.interpreter.var_type_constraint(name) else {
+            return Ok(());
+        };
+        // Only enforce for a plain value-type constraint (`my Int %h`). Skip
+        // container-trait declarations (`is Set`/`is Bag`/`is Map`/...), key-typed
+        // forms (`%h{Int}`), and the trivial Any/Mu types.
+        if constraint.contains('{')
+            || matches!(constraint.as_str(), "" | "Any" | "Mu")
+            || Self::quant_hash_trait_from_constraint(&constraint).is_some()
+            || matches!(
+                constraint.split('[').next().unwrap_or(&constraint),
+                "Set"
+                    | "SetHash"
+                    | "Bag"
+                    | "BagHash"
+                    | "Mix"
+                    | "MixHash"
+                    | "Map"
+                    | "Hash"
+                    | "Associative"
+                    | "QuantHash"
+            )
+        {
+            return Ok(());
+        }
+        // The bound container's element type (defaults to Mu when untyped).
+        let rhs_value_type = self
+            .interpreter
+            .container_type_metadata(value)
+            .map(|info| info.value_type)
+            .filter(|vt| !vt.is_empty())
+            .unwrap_or_else(|| "Mu".to_string());
+        if crate::runtime::Interpreter::type_matches(&constraint, &rhs_value_type) {
+            return Ok(());
+        }
+        let got = crate::runtime::utils::value_type_name(value);
+        let message = format!(
+            "Type check failed in binding; expected Associative[{}] but got {}",
+            constraint, got
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("got".to_string(), value.clone());
+        attrs.insert(
+            "expected".to_string(),
+            Value::Package(crate::symbol::Symbol::intern(&format!(
+                "Associative[{}]",
+                constraint
+            ))),
+        );
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(
+            crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
+            attrs,
+        );
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        Err(err)
+    }
+
     pub(super) fn coerce_hash_var_value(
         &mut self,
         name: &str,
@@ -4488,7 +4571,11 @@ impl VM {
                 ));
             }
             if is_bind {
-                // `:=` binding preserves containers — skip coercion.
+                // `:=` binding preserves containers — skip coercion. But the
+                // bound container must conform to a typed-hash variable's
+                // declared value type: `my Int %h := <untyped hash>` dies
+                // because the RHS is `Hash[Any,Any]`, not `Associative[Int]`.
+                self.check_hash_bind_value_type(name, &raw_popped)?;
                 raw_popped
             } else if is_constant {
                 // `constant %x` preserves Associative containers (Hash, Bag, Set, Mix, Pair).

@@ -47,12 +47,22 @@ or aborts mid-file at the first un-thrown error. `.message` methods for 17
 exception types landed in #2532; what remains is *throwing the right type in the
 right place*, plus compile-time undeclared-symbol checking.
 
-- roast/S02-types/capture.t — **Easy**. 2/33 fail then aborts (planned 46). Needs
-  X::Cannot::Lazy from `Capture` lazy ops; an un-thrown error aborts the rest.
-- roast/S02-types/set.t — **Easy**. 1/246 fail (test 226): typechecking on a
-  Hashified `Set` iterator (`my %s := Set(...)` must reject bad-typed assignment).
-- roast/S02-types/bag.t — **Easy**. 2/255 fail: X::TypeCheck::Binding on Bag
-  coercion.
+- roast/S02-types/capture.t — **Hard**. 2/33 fail then aborts (planned 46). The
+  two failures (28-29) are NOT exception types: `$c[0]++` / `$c<a>++` on a
+  Capture built from `\($a)` must write *through* to the original scalar
+  container — first-class container identity (lever C). The later abort needs
+  X::Cannot::Lazy from `Capture` lazy ops.
+- roast/S02-types/set.t — **Hard** (remaining). Test 226 (typed-hash bind
+  type-check) is FIXED: `my Int %h := <untyped hash>` now throws
+  X::TypeCheck::Binding. The only remaining failures are the 2 not-reached tests
+  "coercion of object Hash to Set 1/2" (`:{ }.Set`), which need full object-hash
+  (`%{Mu}`) semantics — same blocker as classify/objecthash below.
+- roast/S02-types/bag.t — **Hard**. 2/255 fail. NOT exception types: test 215
+  needs Bag weights to hold values larger than i64 (`200000000000000000019`) —
+  mutsu stores `BagData` counts as `i64`, so big weights collapse to 1; a faithful
+  fix needs BigInt-capable bag weights across all set/bag/mix ops. Test 252 needs
+  Bag-union to preserve a `my class Foo is Bag` subclass type (Bag is a `Value`,
+  not a subclassable Instance).
 - roast/S02-types/baghash.t — **Medium**. 7 fail then aborts at test 270/344
   (X::TypeCheck::Binding on BagHash iterator/coercion).
 - roast/S02-types/mixhash.t — **Medium**. 4 fail then aborts at 216/295
@@ -98,9 +108,6 @@ rather than empty, and `.grep`/`.values`/`.pairs` see stale pre-mutation values.
 
 ## Regex / Match Advanced Features
 
-- roast/S05-capture/caps.t — **Easy**. 1/43 fail (test 43): `.caps`/`.chunks` drops
-  the zero-width `%`-separator captures, so the delimiter slots that should appear
-  between matches are missing (`0 0 0` instead of `0 delim 0 delim 0 delim`).
 - roast/S05-capture/alias.t — **Medium**. 14/32 fail: reverse capture (`$1` before
   `$0` textually) and mixed named/positional capture aliases yield empty strings.
 - roast/S05-capture/array-alias.t — **Hard**. 30/37 fail then aborts: named/
@@ -326,8 +333,14 @@ no per-slot `Scalar` container (first-class container identity).
   typed/object-hash edge cases; overlaps the object-hash `%{Mu}` blocker.
 - roast/S09-subscript/slice.t — **Hard**. 9/39 fail then aborts at line 310 — slices
   with infinite sequences (`@a[0..*]`); blocked on real lazy infinite sequences.
-- roast/S02-literals/allomorphic.t — **Easy**. 1/119 fail: `.ACCEPTS` on an allomorph
-  (e.g. `<42>` IntStr) doesn't smartmatch correctly.
+- roast/S02-literals/allomorphic.t — **Medium/Hard**. 1/119 fail (test 107
+  `.ACCEPTS`). Root cause is NOT ACCEPTS (that works) but same-named lexical-class
+  redeclaration: the test declares `my class IntFoo` in two separate `gather`
+  blocks; mutsu keys classes by name in a single global `self.classes` map, so the
+  second registration clobbers the first, and instances created from the first
+  dispatch `.Numeric` to the wrong (second) class. A proper fix needs per-decl
+  class identity (mirroring the existing `role_id`/`role_candidates` machinery for
+  roles), touching class storage + dispatch + `.^name` display.
 - roast/S02-types/nil.t — **Medium**. 12/65 fail then aborts (planned 67): Nil in a
   `for` loop and Nil assignment to a subset-typed var.
 - roast/S02-types/pair.t — **Medium**. 4/180 fail then aborts (planned 182): Pair
