@@ -123,6 +123,15 @@ pub(crate) struct VM {
     /// When true, locals may be stale relative to env (interpreter bridge modified env).
     /// Cleared after sync_locals_from_env or pop_call_frame.
     env_dirty: bool,
+    /// Set by a compiled method dispatch to report whether it left the caller's
+    /// local slots coherent (Slice 6.3). `true` means the call provably wrote
+    /// nothing the caller can observe in its slots (a read-only / no-merge method
+    /// or a merge that propagated nothing), so the CallMethod/CallMethodMut
+    /// opcode skips its env_dirty mark and the caller avoids a per-call env->locals
+    /// pull. Defaults to `false` (conservative) for every non-compiled path
+    /// (native fallback, interpreter bridge, blocks) so a missed signal can only
+    /// cost a redundant pull, never a stale read.
+    method_dispatch_pure: bool,
     /// The instruction pointer to resume at after a .resume call in a CATCH block.
     /// Set when Die/Fail creates an exception, used by exec_try_catch_op.
     resume_ip: Option<usize>,
@@ -404,6 +413,7 @@ impl VM {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
+            method_dispatch_pure: false,
             resume_ip: None,
             bind_context: false,
             scalar_bind_context: false,

@@ -904,10 +904,16 @@ impl VM {
                 // any variable. This handles cases like [1,2,3].shift where there
                 // is no variable to mutate. The CallMethodMut path handles variable
                 // targets separately.
+                // Slice 6.3: assume the dispatch dirties the caller env; only a
+                // proven-pure compiled method path clears this (sets it true),
+                // letting the opcode tail skip the env_dirty mark + per-call pull.
+                self.method_dispatch_pure = false;
                 let call_result = if matches!(method, "shift" | "pop")
                     && args.is_empty()
                     && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
                 {
+                    // Native array read on a by-value target: env-pure.
+                    self.method_dispatch_pure = true;
                     if let Value::Array(_, kind) = &target
                         && kind.is_lazy()
                     {
@@ -965,10 +971,14 @@ impl VM {
                                     }
                                 })
                                 .collect();
+                            // Pure array transform: env-pure.
+                            self.method_dispatch_pure = true;
                             Ok(Value::Slip(std::sync::Arc::new(converted)))
                         } else if let Some(native_result) =
                             self.try_native_method(&target, Symbol::intern(method), &args)
                         {
+                            // Native method on a by-value (read) target: env-pure.
+                            self.method_dispatch_pure = true;
                             native_result
                         } else {
                             self.try_compiled_method_or_interpret(target, method, args)
@@ -976,6 +986,8 @@ impl VM {
                     } else if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(method), &args)
                     {
+                        // Native method on a by-value (read) target: env-pure.
+                        self.method_dispatch_pure = true;
                         native_result
                     } else {
                         self.try_compiled_method_or_interpret(target, method, args)
@@ -983,21 +995,30 @@ impl VM {
                 } else {
                     self.try_compiled_method_or_interpret(target, method, args)
                 };
+                // Slice 6.3: mark env dirty only when the dispatch was not a
+                // proven-pure compiled method call.
+                let mark_dirty = !self.method_dispatch_pure;
                 match modifier {
                     Some("?") => match call_result {
                         Ok(val) => {
                             self.stack.push(val);
-                            self.env_dirty = true;
+                            if mark_dirty {
+                                self.env_dirty = true;
+                            }
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
                             self.stack.push(Value::Nil);
-                            self.env_dirty = true;
+                            if mark_dirty {
+                                self.env_dirty = true;
+                            }
                         }
                         Err(e) => return Err(e),
                     },
                     _ => {
                         self.stack.push(call_result?);
-                        self.env_dirty = true;
+                        if mark_dirty {
+                            self.env_dirty = true;
+                        }
                     }
                 }
                 // Wrap map/grep results back into HyperSeq/RaceSeq

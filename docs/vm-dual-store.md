@@ -845,25 +845,71 @@ Reaching that requires, roughly in order:
         and the `saved_env_dirty` frame field. Metric: `MUTSU_VM_STATS=1`
         `locals_pulls` → 0 on `mb_method`/`mb_nested` with output unchanged.
 
+      **Stage 1 — DONE (the per-method-call pull is gone).** The method-dispatch
+      half of step (1) is implemented: the blanket post-dispatch `env_dirty = true`
+      in the `CallMethod` / `CallMethodMut` opcodes is replaced by a precise
+      `method_dispatch_pure` flag (VM field, default `false` = conservative). The
+      opcode marks env dirty only when the dispatch was *not* proven pure, so a
+      missed signal can only cost a redundant pull, never a stale read. Purity is
+      reported by the compiled-method paths (skip-merge / unchanged-env = pure;
+      merge = pure iff it actually changed a caller-observable value) and by the
+      native dispatch tail (a native method returns a value without writing the
+      receiver back → env-pure). `merge_method_env` now returns a *precise*
+      changed-flag using two O(1) refinements so a nested call's overlay flatten
+      (which copies every parent lexical/global into the callee overlay) no longer
+      trips it: `cheaply_unchanged` (Arc-ptr / scalar equality skips value-identical
+      copies like `%*ENV`) and `could_name_caller_local` (a key that can never be a
+      caller local slot — `?LINE`/`?FILE`, pod `=...`, `*`-dynamics, `__mutsu_`
+      plumbing — never obliges a pull; `?LINE` differs between caller and
+      method-body lines and used to re-dirty env on every multi-line nested call).
+
+      Measured (`MUTSU_VM_STATS=1`, counters are opt-level-independent — iterate on
+      the debug build):
+
+      | bench (10k loop)        | `locals_pulls` before | after |
+      |-------------------------|----------------------:|------:|
+      | `mb_method` (`$p.g()`)  |                 10001 |     1 |
+      | `mb_nested` (`self.d()`)|                 10001 |     1 |
+      | `@a.elems` on a var     |                 10001 |     1 |
+
+      `make test` PASS (5093); method/OOP/closure/dynamic-var roast green. Pinned
+      by `t/method-env-dirty.t`. The flag is NOT yet deleted: the function-dispatch
+      half of step (1) is already precise (Slice 6.1), but steps (2) the ~36 by-name
+      var/control setters and (3) the ~21 I/O + interpreter-carrier setters remain
+      — (3) is gated on the interpreter-bridge removal (lever A finish / Q2). So
+      `env_dirty` survives only as the rare interpreter-bridge safety net; the hot
+      per-call pull — the actual lever-B cost — is eliminated.
+
 ### Remaining method-call dual-store costs (measured 2026-06-07)
 
 `MUTSU_VM_STATS=1` on the method/OOP benches isolates the two costs that survive
 after the overlay conversion (Slices 6.0–6.2). Both are structural, not
 quick-fixable in isolation:
 
-1. **Per-method-call `locals_pulls` (= the `env_dirty` flag, Slice 6.3).**
-   `tmp/mb_method.raku` (`$p.g()` in a 10k loop) → `locals_pulls=10000`. The
-   method-call opcode unconditionally sets `env_dirty=true` after dispatch (e.g.
-   `vm_call_method_mut_ops.rs` ~line 1305), forcing an O(caller-locals)
-   `sync_locals_from_env` every call. **Attempted fix that FAILED (reverted):**
-   snapshot the caller env overlay Arc before dispatch and only set `env_dirty`
-   when it changed (mirroring the function-side Slice 6.1). It backfired — the
-   extra `Arc` ref held across the call raised the overlay refcount and *induced*
-   a `make_mut` deep copy every call (`env_deep_copies` 1→10001) while the
-   caller env Arc changes on every call anyway (overlay merge/restore allocates a
-   new Arc), so `env_changed` was always true and `locals_pulls` did not drop.
-   Conclusion: this is genuinely Slice 6.3 / interpreter-decoupling territory,
-   not a localized opcode tweak.
+1. **Per-method-call `locals_pulls` (= the `env_dirty` flag, Slice 6.3). — FIXED
+   (Slice 6.3 stage 1).** `tmp/mb_method.raku` (`$p.g()` in a 10k loop) →
+   `locals_pulls` dropped from **10000 → 1**; `mb_nested` and `@a.elems` on a var
+   likewise 10001 → 1. The method-call opcode used to set `env_dirty=true`
+   unconditionally after dispatch (e.g. `vm_call_method_mut_ops.rs` ~line 1305),
+   forcing an O(caller-locals) `sync_locals_from_env` on the caller's next
+   `GetLocal`, every call.
+
+   **Earlier attempt that FAILED (instructive, do not repeat):** snapshot the
+   caller env overlay `Arc` before dispatch and only set `env_dirty` when it
+   changed. It backfired — the extra `Arc` ref held across the call raised the
+   overlay refcount and *induced* a `make_mut` deep copy every call
+   (`env_deep_copies` 1→10001), and the caller env Arc changes on every call
+   anyway (overlay merge/restore allocates a new Arc), so `env_changed` was always
+   true and `locals_pulls` did not drop.
+
+   **What worked:** do not snapshot/compare the whole env. Instead let the
+   compiled-method paths *report* purity through a `method_dispatch_pure` VM flag
+   (default `false`, so the opcode falls back to the conservative mark), and make
+   `merge_method_env` compute a *precise* changed-flag with O(1) per-key checks
+   (`cheaply_unchanged` Arc-ptr/scalar equality + `could_name_caller_local` name
+   filter) so the nested-call overlay flatten and the per-line `?LINE` churn no
+   longer trip it. No held `Arc`, no induced deep copy (`env_deep_copies` stays
+   1). See PLAN.md lever C / the Slice 6.3 stage-1 entry above.
 
 2. **Per-*nested*-method-call O(env) deep copy. — FIXED (multi-tier overlay).**
    `tmp/mb_nested.raku` (`method f() { self.d() }`) → `env_deep_copies` dropped
