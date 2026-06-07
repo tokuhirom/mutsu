@@ -781,11 +781,69 @@ Reaching that requires, roughly in order:
       locals, so there is no hot-loop env-write regression. Validated by `make test`
       + S17 atomic/CAS/thread (5491 tests) + S03 metaops + S04/S06 closures roast.
 
-  - [ ] **Slice 6.3 — `env_dirty` → bridge elimination (the last flag).**
-      `env_dirty` exists to re-sync slots after the *tree-walking interpreter*
-      mutates env by name (`sync_locals_from_env`). It cannot be removed cleanly
-      while any VM op falls back to the interpreter; it is gated on finishing the
-      broader VM-decoupling (no interpreter bridge).
+  - [ ] **Slice 6.3 — `env_dirty` → bridge elimination (the last flag, lever B finish).**
+      `env_dirty` exists to re-sync slots after a *by-name* env write (the
+      tree-walking interpreter, or a by-name VM var op) mutates a name that aliases
+      a compiled local slot. Consumer: `ensure_locals_synced` (gated on
+      `env_dirty`) → `sync_locals_from_env` (an O(locals) env→locals pull). It
+      cannot be removed cleanly while any VM op writes env by name in a way the
+      slot store doesn't already see; gated on finishing the broader VM-decoupling
+      (no interpreter bridge). Slice 6.2 made the *forward* direction
+      (locals→env) write-through; 6.3 is the *reverse* (env→locals).
+
+      **Prep / actionable map (surveyed 2026-06-07, to resume here):**
+      - **Consumer call sites (small, the leverage point):** `ensure_locals_synced`
+        is called before local-aliasing reads in `vm.rs` I/O ops (Say/Put/Print/
+        Note at ~2648-2669, which *also* do a full `sync_env_from_locals` round-trip
+        for interpreter `.gist`/`.Str` formatting), plus `vm_register_ops.rs:1611`,
+        `vm_var_assign_ops.rs` (4102/4113/5736/5782), and the direct
+        `sync_locals_from_env` in `vm_arith_ops.rs` (1138/1160, atomic ops),
+        `vm_closure_dispatch.rs:634`, `vm_comparison_ops.rs:1205`. **Removing
+        `env_dirty` = proving every one of these consumers either (a) no longer has
+        a by-name writer that beats the slot store, or (b) the writer updates the
+        slot directly (reverse write-through).**
+      - **Setter sites (164× `env_dirty = true`), grouped by blocker:**
+        1. **Post-dispatch conservative marks (~92): `vm_call_method_mut_ops` (47),
+           `vm_call_method_ops` (32), `vm_call_func_ops` (13).** Set after a
+           method/function call because the *callee* may have mutated a captured
+           outer name via the interpreter bridge or a by-name op. **Blocker:
+           interpreter fallback in dispatch + by-name captured-outer writes.** The
+           multi-tier merge (#2684) already signals captured-outer writes precisely
+           via the overlay merge-back `self.env_dirty = true` (see the `changed`
+           flag in `call_compiled_function_fast` and `merge_method_env`'s caller),
+           so the *blanket* post-call set is the redundant part to attack first —
+           gate each on "did the callee actually use the interpreter bridge / write
+           a caller-aliasing name?".
+        2. **By-name var/control ops (~36): `vm_var_get_ops` (10), `vm_control_ops`
+           (7), `vm_register_ops` (17 — sub/class/role registration writes `&name`/
+           type names by name), `vm_data_ops` (4), `vm_var_assign_ops` (2),
+           `vm_misc_ops` (2).** These write env by name (our-vars, dynamic `$*x`,
+           symbolic deref, `&sub` registration). **Blocker:** none of these go
+           through the slot store, so they need *reverse write-through*: when the
+           by-name write targets a name that has a local slot in the current
+           `code.locals`, also write `self.locals[slot]` (mirror of Slice 6.2's
+           `flush_local_to_env`).
+        3. **I/O + carrier ops (~21): `vm.rs` Say/Put/Print/Note (10),
+           `vm_call_exec_ops` (9 — EVAL/carrier), `vm_call_dispatch` (4),
+           `vm_hyper_method_ops` (3), `vm_arith_ops` (1 atomic),
+           `vm_call_autothread` (1), `vm_comparison_ops` (1),
+           `vm_call_method_compiled` (1).** Conservative marks around the
+           interpreter carrier (EVAL/format/atomic). **Blocker: interpreter
+           bridge.** The Say/Put/Print/Note full round-trip is independently
+           wasteful — the printed values are already on the stack (decont); only
+           interpreter `.gist` needs env. A focused win: drop the
+           `ensure_locals_synced`+`sync_env_from_locals` from I/O ops once
+           formatting no longer reads env by name.
+      - **Staged removal plan:** (1) gate the ~92 post-dispatch marks on an
+        actual by-name/interp signal (the overlay merge already computes it) →
+        biggest `locals_pulls` drop, measurable via `MUTSU_VM_STATS=1`
+        `tmp/mb_method.raku` (`locals_pulls=10000` today). (2) reverse
+        write-through for the ~36 by-name var ops. (3) the I/O + carrier marks fall
+        out as the interpreter bridge for EVAL/format/atomic is removed (overlaps
+        lever-A-finish carriers + Q2 atomic/concurrency). When all setters are
+        gone, delete `env_dirty`, `ensure_locals_synced`, `sync_locals_from_env`,
+        and the `saved_env_dirty` frame field. Metric: `MUTSU_VM_STATS=1`
+        `locals_pulls` → 0 on `mb_method`/`mb_nested` with output unchanged.
 
 ### Remaining method-call dual-store costs (measured 2026-06-07)
 
@@ -834,6 +892,23 @@ quick-fixable in isolation:
      into a small `Vec`, **drops `current`** (releasing its parent-chain `Arc`
      that shares `saved`'s overlay), then mutates the sole-owner `saved` in place.
    Pin: `t/multitier-overlay-env.t`, plus the existing `t/scoped-overlay-*.t`.
+   Merged as PR #2684.
+
+   **⚠️ Wall-clock follow-up (unresolved — verify on a quiet machine):** the
+   `env_deep_copies` win is unambiguous, but the eliminated copies were of *small*
+   envs (cheap), while the multi-tier adds a per-call cost (an extra `Arc<Env>`
+   allocation for the chained parent, a chain-walk branch in `get`, and a `Vec`
+   in `merge_method_env`). A quick `benchmarks/{method-call,bench-fib,bench-class}`
+   comparison vs the pre-merge commit (5f4501ea) was **inconclusive** because the
+   box was under heavy load (load avg ~4-14; single runs swung 0.55-1.08s on
+   method-call, 0.66-1.40s on bench-class). Min-of-8 on `main`+pre gave
+   method-call 0.55 / bench-fib 3.32 / bench-class 0.66; the branch min-of-8 did
+   not complete. **Next session: re-measure with `hyperfine` (or min-of-N idle)
+   comparing `git checkout 5f4501ea` vs `9419784f` release builds. If method-call/
+   bench-fib regressed, the likely culprit is the extra `Arc<Env>` alloc per
+   scoped call — consider storing the flat-parent overlay Arc inline (skip the
+   `Arc<Env>` wrapper) when the parent is flat (depth 0), chaining only when the
+   parent is itself scoped.**
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.
