@@ -763,6 +763,41 @@ impl VM {
         })
     }
 
+    /// Track whether a scalar variable is bound (`:=`) to a Positional value.
+    /// A bound scalar is NOT a Scalar container, so `@a = $bound` must flatten
+    /// rather than itemize. The `ItemizeVar` opcode reads this marker. Plain
+    /// assignment to a scalar clears any stale marker (guarded by
+    /// `bound_decont_active` so the common no-bind case stays cheap).
+    pub(super) fn update_bound_decont_marker(&mut self, name: &str, is_bind: bool, val: &Value) {
+        // Scalar local names carry no sigil (e.g. "y"); `@`/`%`/`&` vars do.
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            return;
+        }
+        if is_bind {
+            let is_positional = match val {
+                Value::Array(_, k) => !k.is_itemized(),
+                Value::Seq(_)
+                | Value::Slip(_)
+                | Value::LazyList(_)
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..) => true,
+                _ => false,
+            };
+            if is_positional {
+                let key = format!("__mutsu_bound_decont::{}", name);
+                self.interpreter.env_mut().insert(key, Value::Bool(true));
+                self.bound_decont_active = true;
+                return;
+            }
+        }
+        if self.bound_decont_active {
+            let key = format!("__mutsu_bound_decont::{}", name);
+            self.interpreter.env_mut().remove(&key);
+        }
+    }
+
     pub(super) fn normalize_scalar_assignment_value(val: Value) -> Value {
         let is_nilish = |v: &Value| match v {
             Value::Nil => true,
@@ -4166,11 +4201,22 @@ impl VM {
         let is_constant = self.constant_context;
         let has_explicit_initializer = self.explicit_initializer_context;
         let is_vardecl = self.vardecl_context;
+        let scalar_bind = self.scalar_bind_context;
         self.bind_context = false;
+        self.scalar_bind_context = false;
         self.rebind_context = false;
         self.constant_context = false;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
+        // Record/clear the decontainerize marker for `$` scalars. A scalar bound
+        // (`:=`) to a Positional is not a Scalar container, so `@a = $bound` must
+        // flatten (the `ItemizeVar` opcode reads this marker). Plain assignment
+        // re-containerizes, clearing any stale marker. Done before the fast/slow
+        // split so both paths are covered. `raw_popped` is only borrowed.
+        {
+            let name = &code.locals[idx];
+            self.update_bound_decont_marker(name, scalar_bind || is_bind, &raw_popped);
+        }
         // A redeclaration (`my @a` in a new scope) must not inherit the
         // `is default(...)` trait from an earlier same-named variable,
         // since var_defaults is keyed only by name. Drop any stale entry;

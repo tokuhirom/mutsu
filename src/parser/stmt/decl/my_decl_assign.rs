@@ -552,6 +552,17 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         !s.is_array && !bound_name.starts_with('%') && super::scalar_binding_rhs_is_readonly(&expr);
     let bind_to_var = matches!(expr, Expr::Var(_));
     let bind_to_index = matches!(expr, Expr::Index { .. });
+    // A `$` scalar bound (`:=`) to a value is NOT a Scalar container, so
+    // `@a = $bound` must flatten a Positional value rather than itemize it.
+    // Mark the VarDecl with an internal trait the compiler reads to emit
+    // MarkScalarBindContext (instead of wrapping in a SyntheticBlock, which
+    // would change the value when the bind is used as an expression).
+    let is_scalar_bind =
+        !s.is_array && !bound_name.starts_with('%') && !bound_name.starts_with('&');
+    let mut custom_traits = s.custom_traits.clone();
+    if is_scalar_bind {
+        custom_traits.push(("__scalar_bind".to_string(), None));
+    }
     let stmt = Stmt::VarDecl {
         name: s.name,
         expr,
@@ -561,7 +572,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_dynamic: s.has_dynamic_trait,
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
-        custom_traits: s.custom_traits.clone(),
+        custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = if s.is_array || bound_name.starts_with('%') {

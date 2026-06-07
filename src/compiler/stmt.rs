@@ -241,9 +241,14 @@ impl Compiler {
         }
         // When assigning a `$` scalar variable to an `@` target, itemize
         // the value so it is treated as a single item (not flattened).
-        // Sigilless variables (BareWord) are not itemized.
-        if name.starts_with('@') && matches!(expr, Expr::Var(_)) {
-            self.code.emit(OpCode::Itemize);
+        // Sigilless variables (BareWord) are not itemized. A scalar bound
+        // (`:=`) to a Positional is NOT a container, so use the var-aware
+        // opcode which skips itemization for bound scalars.
+        if name.starts_with('@')
+            && let Expr::Var(var_name) = expr
+        {
+            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::ItemizeVar(name_idx));
         }
     }
 
@@ -710,6 +715,12 @@ impl Compiler {
                 // resetting to Nil. This makes `our $x = 3; ... our $x`
                 // preserve the value 3 in the redeclaration.
                 let is_our_redecl_nil = *is_our && matches!(expr, Expr::Literal(Value::Nil));
+                // A scalar `:=` bind to a Positional makes the scalar a
+                // non-container alias; record it so SetLocal can mark it
+                // decontainerized (so `@a = $bound` flattens, not itemizes).
+                // The parser tags such binds with the internal `__scalar_bind`
+                // trait.
+                let scalar_bind_decont = custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
                 if is_our_redecl_nil {
                     let qualified = self.qualify_variable_name(name);
                     let idx = self.code.add_constant(Value::str(qualified));
@@ -822,6 +833,9 @@ impl Compiler {
                         });
                     if has_quant_hash_trait {
                         self.code.emit(OpCode::MarkBindContext);
+                    }
+                    if scalar_bind_decont {
+                        self.code.emit(OpCode::MarkScalarBindContext);
                     }
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {

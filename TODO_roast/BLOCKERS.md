@@ -211,13 +211,12 @@ Coroutine-based lazy gather/take implemented (#2511). range-iterator.t now passe
   take inside m:g, and take on lists already pass.)
 - roast/S32-list/seq.t (48/50 pass — .raku.EVAL roundtrip, methods on cached Seqs)
 
-## Hyper/Meta Operators (5 tests)
+## Hyper/Meta Operators (4 tests)
 
-Hyper operators (>>op<<) with assignment forms, reduce operator edge cases ([,], [min], [^^]), and hyper method dispatch on complex structures.
+Hyper operators (>>op<<) with assignment forms and hyper method dispatch on complex structures.
 
 - roast/S03-metaops/hyper.t (timeout - >>op<< with assignment)
 - roast/S03-metaops/infix.t (>>~=<< assignment forms)
-- roast/S03-metaops/reduce.t ([=:=], [,], [min], [^^])
 - roast/S03-operators/inplace.t (.= on class instantiation)
 - roast/S03-operators/assign.t (assignment as function, list assignment)
 
