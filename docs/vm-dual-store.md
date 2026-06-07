@@ -807,18 +807,33 @@ quick-fixable in isolation:
    Conclusion: this is genuinely Slice 6.3 / interpreter-decoupling territory,
    not a localized opcode tweak.
 
-2. **Per-*nested*-method-call O(env) flatten + deep copy.** `tmp/mb_nested.raku`
-   (`method f() { self.d() }`) → `env_deep_copies=10000` (one per outer call);
-   a non-nested method (`mb_method`) stays at `env_deep_copies=1`. Root cause:
-   the scoped overlay is **single-tier** (`Env::scoped_child` takes one
-   `parent_overlay` Arc). When a method (already running under a scoped overlay)
-   calls another method, the inner dispatch's `flatten_scoped_env()` /
-   `clone_env()` (= `env.flattened()`) must collapse the caller's 2-tier scoped
-   env into a flat map (an O(env) `HashMap` clone) so the inner `scoped_child`
-   doesn't lose the caller's parent lexicals. This is the bench-class cost
-   (`full-info` → `describe`). Fixing it requires a **multi-tier overlay** (a
-   chain of overlay Arcs instead of one), so nesting never flattens — a larger
-   change that converges with the first-class-container migration (PLAN 🟣).
+2. **Per-*nested*-method-call O(env) deep copy. — FIXED (multi-tier overlay).**
+   `tmp/mb_nested.raku` (`method f() { self.d() }`) → `env_deep_copies` dropped
+   from **10001 → 1** (a non-nested method already stayed at 1). Two coupled
+   changes:
+   - **Multi-tier overlay chain.** `Env::parent` changed from
+     `Option<Arc<HashMap<Symbol,Value>>>` (a single flattened overlay) to
+     `Option<Arc<Env>>` (the whole parent env, itself possibly scoped).
+     `scoped_child` now chains over the *whole* caller env, so a method already
+     under a scoped overlay calling another method just adds a tier — no
+     `flattened()` collapse per nested call. `get`/`contains`/`get_mut`/`remove`
+     walk the chain (base tier consulted once at the flat tail); `iter`/`keys`/
+     `values`/`overlay_iter` stay overlay-only (so merge-back still sees exactly
+     the callee's own writes). `push_call_frame` no longer flattens; `saved_env`
+     is an O(1) clone. Long-lived captures (closures stored in `Value::Sub`, the
+     `make_sub` return value, the callframe-introspection sub, END phasers,
+     `clone_for_thread`) flatten via `clone_env()` at the capture site, so an
+     overlay-only consumer of a captured env is never starved of parent-chain
+     lexicals.
+   - **In-place merge-back (no `saved.clone()` deep copy).** With the parent now
+     an `Arc<Env>` that *shares the caller's overlay map*, the old
+     `merge_method_env`'s `let mut merged = saved.clone(); merged.insert(...)`
+     hit `Arc::make_mut` (refcount ≥ 2) on every nested return — the deep copy
+     just moved here from the flatten. `merge_method_env` now takes `saved` and
+     `current` **by value**, collects the callee's caller-visible overlay writes
+     into a small `Vec`, **drops `current`** (releasing its parent-chain `Arc`
+     that shares `saved`'s overlay), then mutates the sole-owner `saved` in place.
+   Pin: `t/multitier-overlay-env.t`, plus the existing `t/scoped-overlay-*.t`.
 
 Each slice must keep `make test` + `make roast` green and report perf
 (`method-call`, `bench-class`, `bench-fib`) before/after.

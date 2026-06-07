@@ -215,9 +215,9 @@ impl VM {
         // writeback iterates this overlay (overlay-only) = exactly the closure's
         // own mutations, which is what it must propagate back to the caller.
         {
-            let parent_overlay = self.interpreter.env().overlay_arc();
+            let parent = self.interpreter.env().clone();
             self.interpreter
-                .set_env(crate::env::Env::scoped_child(parent_overlay));
+                .set_env(crate::env::Env::scoped_child(parent));
         }
 
         // Merge captured environment into current env (or_insert = don't overwrite existing).
@@ -851,7 +851,9 @@ impl VM {
             let captured_strs: Vec<String> = data.env.keys().map(|s| s.resolve()).collect();
             let captured_names: std::collections::HashSet<&str> =
                 captured_strs.iter().map(|s| s.as_str()).collect();
-            let current = self.interpreter.env().clone();
+            // Flatten: END phasers run at program exit with this captured env;
+            // it must hold the full lexical view, not a transient scoped overlay.
+            let current = self.interpreter.clone_env();
             self.interpreter
                 .update_end_phaser_envs_for_keys(&captured_names, &current);
         }

@@ -88,19 +88,29 @@ fn note_closure_meta_key(key: &str) {
 #[derive(Clone)]
 pub struct Env {
     inner: Arc<HashMap<Symbol, Value>>,
-    /// Optional read-through "parent" tier: a snapshot of an enclosing call
-    /// frame's overlay. When present (a *scoped* env), name lookups fall through
-    /// overlay -> parent -> [`GLOBAL_BASE`], but `insert`/`remove`/`get_mut` and
-    /// iteration (`iter`/`keys`/`values`/`len`) operate on the overlay only.
+    /// Optional read-through "parent" tier: the enclosing call frame's whole env
+    /// (itself possibly scoped, forming a *chain*). When present (a *scoped* env),
+    /// name lookups fall through overlay -> parent-chain -> [`GLOBAL_BASE`], but
+    /// `insert`/`remove`/`get_mut` and iteration (`iter`/`keys`/`values`/`len`)
+    /// operate on this frame's overlay only.
     ///
     /// `parent=None` is the flat env: byte-identical to the pre-scoped behavior,
     /// so every non-converted dispatch path and the ~80 env-iteration consumers
-    /// are unaffected. A scoped env is transient -- it is only ever the live
-    /// `self.env` during a converted call frame's own opcode execution; anything
-    /// that captures/clones the env across a boundary (`clone_env`,
-    /// `clone_for_thread`) flattens it first via [`Env::flattened`]. See
-    /// docs/vm-dual-store.md (Slice 6).
-    parent: Option<Arc<HashMap<Symbol, Value>>>,
+    /// are unaffected. Holding the *whole* parent `Env` (not just its overlay
+    /// `HashMap`) is what makes nesting free: a method already under a scoped
+    /// overlay that calls another method just chains a new child over it, instead
+    /// of `flattened()`-merging the 2-tier env into a flat map per nested call
+    /// (the O(env) cost measured in PR #2683 / docs/vm-dual-store.md). The chain
+    /// always bottoms out at a flat (`parent=None`) env, so [`GLOBAL_BASE`] is
+    /// consulted exactly once at the chain's tail.
+    ///
+    /// A scoped env is transient -- it is only ever the live `self.env` during a
+    /// converted call frame's own opcode execution and the `saved_env` slots that
+    /// restore it. Anything that captures the env into a long-lived structure
+    /// (a `Value::Sub` closure, an END phaser, a thread) flattens it first via
+    /// [`Env::flattened`] / `clone_env`, so an overlay-only iteration consumer is
+    /// never starved of parent-chain lexicals. See docs/vm-dual-store.md (Slice 6).
+    parent: Option<Arc<Env>>,
     /// Tombstones: keys `remove`d in this scoped overlay that still exist in the
     /// `parent`/base tier. Because the overlay can only *add* shadowing entries,
     /// a plain overlay `remove` cannot hide a parent key; a tombstone records
@@ -111,7 +121,20 @@ pub struct Env {
     /// shadow). Tombstones are dropped with the overlay on return and are never
     /// merged back (a callee-local removal must not delete the caller's key).
     tombstones: Option<HashSet<Symbol>>,
+    /// Number of parent tiers below this env (0 for a flat env). Used to bound
+    /// the chain length: a recursive function would otherwise grow the chain one
+    /// tier per call, making `get`/`Drop`/`flattened` recurse to the recursion
+    /// depth. [`scoped_child`] flattens the parent once the chain reaches
+    /// [`MAX_OVERLAY_DEPTH`], so the chain length (hence lookup cost and `Drop`
+    /// recursion) stays O(1) while shallow nesting (methods, ~2-5 deep) pays no
+    /// flatten.
+    depth: u16,
 }
+
+/// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
+/// Typical method/function nesting is a handful of tiers, well under this; only
+/// deep recursion ever hits it, paying one O(env) flatten per this many frames.
+const MAX_OVERLAY_DEPTH: u16 = 16;
 
 impl Env {
     pub(crate) fn new() -> Self {
@@ -119,17 +142,29 @@ impl Env {
             inner: Arc::new(HashMap::new()),
             parent: None,
             tombstones: None,
+            depth: 0,
         }
     }
 
     /// Create a *scoped child* env: an empty overlay that reads through to
-    /// `parent_overlay` (the caller frame's overlay snapshot) and then to
+    /// `parent` (the whole caller-frame env, itself possibly scoped) and then to
     /// [`GLOBAL_BASE`]. Writes land in the (initially empty) overlay, so the
-    /// inherited entries are never `make_mut`-deep-copied. See docs/vm-dual-store.md.
-    pub(crate) fn scoped_child(parent_overlay: Arc<HashMap<Symbol, Value>>) -> Self {
+    /// inherited entries are never `make_mut`-deep-copied, and -- because the
+    /// parent is the *whole* env rather than a flattened overlay -- chaining over
+    /// an already-scoped env is O(1) (no per-nested-call flatten). To keep the
+    /// chain from growing unbounded under deep recursion, the parent is flattened
+    /// to a single tier once it reaches [`MAX_OVERLAY_DEPTH`]. See
+    /// docs/vm-dual-store.md.
+    pub(crate) fn scoped_child(parent: Env) -> Self {
+        let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
+            parent.flattened()
+        } else {
+            parent
+        };
         Self {
             inner: Arc::new(HashMap::new()),
-            parent: Some(parent_overlay),
+            depth: parent.depth + 1,
+            parent: Some(Arc::new(parent)),
             tombstones: None,
         }
     }
@@ -146,12 +181,6 @@ impl Env {
         self.parent.is_some()
     }
 
-    /// O(1) handle to the overlay Arc, for installing a scoped child over it.
-    #[inline(always)]
-    pub(crate) fn overlay_arc(&self) -> Arc<HashMap<Symbol, Value>> {
-        Arc::clone(&self.inner)
-    }
-
     /// Collapse a scoped env into a flat (`parent=None`) env. For a flat env
     /// this is the O(1) `Arc` clone; for a scoped env it materializes
     /// `parent` merged under `overlay` (overlay shadows parent) into a fresh flat
@@ -162,7 +191,11 @@ impl Env {
         match &self.parent {
             None => self.clone(),
             Some(parent) => {
-                let mut merged: HashMap<Symbol, Value> = (**parent).clone();
+                // Recursively collapse the parent chain to a flat overlay first
+                // (the base tier stays shared, never materialized), then layer
+                // this frame's tombstones and overlay on top.
+                let parent_flat = parent.flattened();
+                let mut merged: HashMap<Symbol, Value> = (*parent_flat.inner).clone();
                 // Apply tombstones: a key removed in this scope must not survive
                 // into the flattened (flat) env.
                 if let Some(tomb) = &self.tombstones {
@@ -177,6 +210,7 @@ impl Env {
                     inner: Arc::new(merged),
                     parent: None,
                     tombstones: None,
+                    depth: 0,
                 }
             }
         }
@@ -203,7 +237,7 @@ impl Env {
         self.get_sym(Symbol::intern(key))
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn get_sym(&self, key: Symbol) -> Option<&Value> {
         if let Some(v) = self.inner.get(&key) {
             return Some(v);
@@ -213,10 +247,11 @@ impl Env {
         if self.is_tombstoned(key) {
             return None;
         }
-        if let Some(parent) = &self.parent
-            && let Some(v) = parent.get(&key)
-        {
-            return Some(v);
+        // Walk the parent chain (each tier may itself be scoped). The chain
+        // bottoms out at a flat env, which consults GLOBAL_BASE; intermediate
+        // tiers do not, so the base is checked exactly once.
+        if let Some(parent) = &self.parent {
+            return parent.get_sym(key);
         }
         global_base().and_then(|b| b.get(&key))
     }
@@ -234,8 +269,10 @@ impl Env {
         if self.is_tombstoned(key) {
             return false;
         }
-        self.parent.as_ref().is_some_and(|p| p.contains_key(&key))
-            || global_base().is_some_and(|b| b.contains_key(&key))
+        if let Some(parent) = &self.parent {
+            return parent.contains_key_sym(key);
+        }
+        global_base().is_some_and(|b| b.contains_key(&key))
     }
 
     /// Copy-on-write access to the inner map for mutation. Equivalent to
@@ -283,13 +320,15 @@ impl Env {
         // tombstone so it stops shadowing through. The visible value before
         // removal is the overlay value if present, else the parent/base value.
         if self.parent.is_some() {
+            // Chain-aware lookup (covers the base tier at the chain tail).
             let parent_val = self
                 .parent
                 .as_ref()
-                .and_then(|p| p.get(&key))
-                .or_else(|| global_base().and_then(|b| b.get(&key)));
+                .and_then(|p| p.get_sym(key))
+                .or_else(|| global_base().and_then(|b| b.get(&key)))
+                .cloned();
             if parent_val.is_some() {
-                let visible = from_overlay.or_else(|| parent_val.cloned());
+                let visible = from_overlay.or(parent_val);
                 self.tombstones.get_or_insert_with(HashSet::new).insert(key);
                 return visible;
             }
@@ -311,10 +350,13 @@ impl Env {
             if self.is_tombstoned(key) {
                 return None;
             }
+            // Promote from the parent chain (chain-aware get_sym already covers
+            // the base tier at the chain tail) so a write to a caller lexical
+            // lands in this frame's overlay and is not silently lost.
             let promote = self
                 .parent
                 .as_ref()
-                .and_then(|p| p.get(&key))
+                .and_then(|p| p.get_sym(key))
                 .or_else(|| global_base().and_then(|b| b.get(&key)))
                 .cloned();
             if let Some(v) = promote {
@@ -353,12 +395,17 @@ impl Env {
     /// reachable name is required (serialization / cross-context copy), unlike
     /// `iter`/`keys`/`values`, which expose only the mutable overlay.
     pub fn flatten(&self) -> HashMap<String, Value> {
-        let mut out: HashMap<String, Value> = global_base()
-            .map(|b| b.iter().map(|(k, v)| (k.resolve(), v.clone())).collect())
-            .unwrap_or_default();
-        if let Some(parent) = &self.parent {
-            for (k, v) in parent.iter() {
-                out.insert(k.resolve(), v.clone());
+        // Build the parent view first (the chain tail seeds GLOBAL_BASE), then
+        // layer this frame's tombstones and overlay on top.
+        let mut out: HashMap<String, Value> = match &self.parent {
+            Some(parent) => parent.flatten(),
+            None => global_base()
+                .map(|b| b.iter().map(|(k, v)| (k.resolve(), v.clone())).collect())
+                .unwrap_or_default(),
+        };
+        if let Some(tomb) = &self.tombstones {
+            for k in tomb {
+                out.remove(&k.resolve());
             }
         }
         for (k, v) in self.inner.iter() {
@@ -427,6 +474,7 @@ impl From<HashMap<String, Value>> for Env {
             inner: Arc::new(sym_map),
             parent: None,
             tombstones: None,
+            depth: 0,
         }
     }
 }
@@ -437,6 +485,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             inner: Arc::new(map),
             parent: None,
             tombstones: None,
+            depth: 0,
         }
     }
 }
@@ -464,5 +513,108 @@ impl IntoIterator for Env {
         Arc::try_unwrap(self.inner)
             .unwrap_or_else(|arc| (*arc).clone())
             .into_iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(name: &str) -> Symbol {
+        Symbol::intern(name)
+    }
+
+    fn scoped_with(parent: Env, writes: &[(&str, i64)]) -> Env {
+        let mut e = Env::scoped_child(parent);
+        for (k, v) in writes {
+            e.insert(k.to_string(), Value::Int(*v));
+        }
+        e
+    }
+
+    #[test]
+    fn chain_lookup_reads_through_all_tiers() {
+        let mut root = Env::new();
+        root.insert("a".into(), Value::Int(1));
+        let mid = scoped_with(root, &[("b", 2)]);
+        let leaf = scoped_with(mid, &[("c", 3)]);
+        // Each tier's key is visible from the leaf.
+        assert_eq!(leaf.get_sym(s("a")), Some(&Value::Int(1)));
+        assert_eq!(leaf.get_sym(s("b")), Some(&Value::Int(2)));
+        assert_eq!(leaf.get_sym(s("c")), Some(&Value::Int(3)));
+        assert!(leaf.get_sym(s("missing")).is_none());
+        assert!(leaf.contains_key_sym(s("a")));
+        assert!(!leaf.contains_key_sym(s("missing")));
+    }
+
+    #[test]
+    fn overlay_shadows_parent() {
+        let mut root = Env::new();
+        root.insert("x".into(), Value::Int(1));
+        let leaf = scoped_with(root, &[("x", 99)]);
+        assert_eq!(leaf.get_sym(s("x")), Some(&Value::Int(99)));
+    }
+
+    #[test]
+    fn iter_is_overlay_only() {
+        let mut root = Env::new();
+        root.insert("a".into(), Value::Int(1));
+        let leaf = scoped_with(root, &[("b", 2)]);
+        let keys: Vec<String> = leaf.iter().map(|(k, _)| k.resolve()).collect();
+        // Only the leaf's own write, not the parent's `a`.
+        assert_eq!(keys, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn tombstone_hides_parent_key_through_chain() {
+        let mut root = Env::new();
+        root.insert("a".into(), Value::Int(1));
+        let mut leaf = Env::scoped_child(root);
+        let removed = leaf.remove("a");
+        assert_eq!(removed, Some(Value::Int(1)));
+        // Hidden in this scope, but not deleted from the parent tier.
+        assert!(leaf.get_sym(s("a")).is_none());
+        assert!(!leaf.contains_key_sym(s("a")));
+        // Re-inserting clears the tombstone.
+        leaf.insert("a".into(), Value::Int(5));
+        assert_eq!(leaf.get_sym(s("a")), Some(&Value::Int(5)));
+    }
+
+    #[test]
+    fn flattened_preserves_full_view_and_tombstones() {
+        let mut root = Env::new();
+        root.insert("a".into(), Value::Int(1));
+        root.insert("gone".into(), Value::Int(7));
+        let mid = scoped_with(root, &[("b", 2)]);
+        let mut leaf = mid;
+        leaf.insert("c".into(), Value::Int(3));
+        leaf.remove("gone");
+        let flat = leaf.flattened();
+        assert!(!flat.is_scoped());
+        assert_eq!(flat.depth, 0);
+        assert_eq!(flat.get_sym(s("a")), Some(&Value::Int(1)));
+        assert_eq!(flat.get_sym(s("b")), Some(&Value::Int(2)));
+        assert_eq!(flat.get_sym(s("c")), Some(&Value::Int(3)));
+        assert!(flat.get_sym(s("gone")).is_none());
+    }
+
+    #[test]
+    fn depth_is_bounded_under_deep_nesting() {
+        // Chaining far past MAX_OVERLAY_DEPTH must keep the chain length bounded
+        // (scoped_child flattens the parent at the limit) while still reading the
+        // deepest lexical correctly.
+        let mut env = Env::new();
+        env.insert("root".into(), Value::Int(42));
+        for i in 0..(MAX_OVERLAY_DEPTH as i64 * 4) {
+            env = scoped_with(env, &[("tmp", i)]);
+            assert!(
+                env.depth <= MAX_OVERLAY_DEPTH,
+                "depth {} exceeded bound {}",
+                env.depth,
+                MAX_OVERLAY_DEPTH
+            );
+        }
+        // The original root lexical is still reachable through the flattened tiers.
+        assert_eq!(env.get_sym(s("root")), Some(&Value::Int(42)));
     }
 }

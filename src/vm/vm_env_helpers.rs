@@ -29,13 +29,13 @@ impl VM {
     /// into a new call frame. Resets env_dirty to false for the new frame.
     pub(super) fn push_call_frame(&mut self) {
         crate::vm::vm_stats::record_clone_env();
-        // A scoped (overlay-over-parent) env must not survive into the callee's
-        // execution: the callee may capture it into a Sub / iterate it
-        // overlay-only, which would miss the parent tier. Collapse it to a flat
-        // env here so every non-converted call runs against the full lexical view.
-        self.flatten_scoped_env();
+        // Save the caller env by an O(1) clone (an Arc bump, even when scoped):
+        // it is only restored on return, so it need not be flattened. The callee
+        // chains a fresh overlay over it (multi-tier), so nested calls no longer
+        // pay the per-call O(env) flatten. Long-lived captures (Sub closures, END
+        // phasers, threads) still flatten via `clone_env` at the capture site.
         let frame = VmCallFrame {
-            saved_env: self.interpreter.clone_env(),
+            saved_env: self.interpreter.env().clone(),
             saved_readonly: Some(self.interpreter.save_readonly_vars()),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
@@ -50,9 +50,8 @@ impl VM {
     /// since simple methods don't use `:=` binding.
     pub(super) fn push_light_call_frame(&mut self) {
         crate::vm::vm_stats::record_clone_env();
-        self.flatten_scoped_env();
         let frame = VmCallFrame {
-            saved_env: self.interpreter.clone_env(),
+            saved_env: self.interpreter.env().clone(),
             saved_readonly: None,
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),

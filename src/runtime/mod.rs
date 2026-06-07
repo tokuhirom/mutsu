@@ -5037,6 +5037,12 @@ impl Interpreter {
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
     /// so that mutations are visible across threads.
     pub(crate) fn clone_for_thread(&mut self) -> Self {
+        // Collapse a scoped (multi-tier overlay) env to a flat one first: the
+        // shared-var seeding and the child's env clone below iterate the env
+        // overlay-only, which would miss parent-chain lexicals on a scoped env.
+        if self.env.is_scoped() {
+            self.env = self.env.flattened();
+        }
         // Copy user variables into shared_vars so both parent and child see mutations.
         // The compiler stores locals with bare names (no sigil), so we share everything
         // except internal/special variables that should remain thread-local.
