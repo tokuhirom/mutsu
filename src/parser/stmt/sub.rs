@@ -146,6 +146,8 @@ fn default_type_matches_constraint(
 
 pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PError> {
     let mut saw_optional_positional = false;
+    let mut saw_named = false;
+    let mut saw_variadic = false;
     for pd in params {
         // Reject $? twigil parameters (compile-time variables like $?VERSION, $?FILE)
         // but allow $! (error variable / attribute twigil) since $! is a valid param name
@@ -183,15 +185,64 @@ pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
                 default_type, constraint
             )));
         }
-        if pd.named || pd.slurpy {
+        // Parameter ordering: a positional parameter may not appear after an
+        // optional positional, a named, or a variadic (slurpy) parameter.
+        // X::Parameter::WrongOrder reports which kind is `misplaced` and the kind
+        // it was placed `after`.
+        if pd.named {
+            saw_named = true;
+            continue;
+        }
+        if pd.slurpy || pd.double_slurpy || pd.onearg {
+            saw_variadic = true;
             continue;
         }
         let is_optional_positional = pd.optional_marker || pd.default.is_some();
-        if saw_optional_positional && !is_optional_positional {
-            return Err(PError::fatal(
-                "X::Parameter::WrongOrder: required positional parameters must come before optional positional parameters"
-                    .to_string(),
-            ));
+        // The `after` kind: most restrictive preceding blocker wins.
+        let after = if saw_variadic {
+            Some("variadic")
+        } else if saw_named {
+            Some("named")
+        } else if !is_optional_positional && saw_optional_positional {
+            Some("optional")
+        } else {
+            None
+        };
+        // An optional positional is only misplaced after a named/variadic param
+        // (two optionals in a row are fine).
+        let blocked = if is_optional_positional {
+            saw_variadic || saw_named
+        } else {
+            after.is_some()
+        };
+        if blocked {
+            let after = after.unwrap_or("optional");
+            let misplaced = if is_optional_positional {
+                "optional positional"
+            } else {
+                "required"
+            };
+            let display = format!("${}", pd.name);
+            let msg = format!(
+                "Cannot put {} parameter {} after {} parameters",
+                misplaced, display, after
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "misplaced".to_string(),
+                crate::value::Value::str(misplaced.to_string()),
+            );
+            attrs.insert(
+                "after".to_string(),
+                crate::value::Value::str(after.to_string()),
+            );
+            attrs.insert("parameter".to_string(), crate::value::Value::str(display));
+            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Parameter::WrongOrder"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
         }
         if is_optional_positional {
             saw_optional_positional = true;
