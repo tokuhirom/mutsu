@@ -662,6 +662,18 @@ impl VM {
                 // by the function (e.g. $a++ where $a is from the caller's scope).
                 self.env_dirty = true;
             }
+        } else {
+            // Slice 6.3 step 2: the no-merge case — a 0-local function (no overlay,
+            // no env clone). Its body wrote directly to the live caller env, so we
+            // can't detect a captured-outer write by a merge. Gate on the
+            // compile-time `has_env_writes` flag instead of the old blanket
+            // post-call mark: a body that performs NO env write (`sub f { 42 }`,
+            // no assign / increment / nested call / registration) cannot dirty a
+            // caller slot — the dispatch's routine `_` is restored above — so it
+            // needs no pull. Only a body that can write env forces the re-sync.
+            if cf.code.has_env_writes {
+                self.env_dirty = true;
+            }
         }
 
         // Restore caller's $_ after routine call. In the scoped path the caller
@@ -1415,6 +1427,13 @@ impl VM {
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
+        // Slice 6.3 step 2: signal env_dirty *precisely* (like
+        // call_compiled_function_fast) instead of relying on a blanket post-call
+        // mark at the call site. Save the caller's incoming dirtiness; the body's
+        // own nested-call dirtiness is about the callee env (subsumed by the merge
+        // below), so it is reset before the body and recomputed from what the
+        // merge actually wrote back to the caller env.
+        let saved_env_dirty = self.env_dirty;
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         if callsite_line.is_some() {
             self.interpreter.set_pending_callsite_line(callsite_line);
@@ -1611,6 +1630,10 @@ impl VM {
         }
 
         let let_mark = self.interpreter.let_saves_len();
+        // Body-internal env_dirty (from nested calls) concerns the callee env,
+        // which the return merge reconciles; reset so the post-merge value
+        // reflects only what was actually written back to the caller.
+        self.env_dirty = false;
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1747,6 +1770,13 @@ impl VM {
 
         let frame = self.pop_call_frame();
         let restored_env = frame.saved_env;
+        // Slice 6.3 step 2: track whether the merge actually wrote a *caller-slot-
+        // aliasing* value back, so env_dirty (a caller locals re-sync) is set only
+        // when needed. A plain-lexical writeback (captured-outer mutation) or an
+        // `is rw` param writeback can alias a caller local slot; dynamic-var
+        // writeback (pop_caller_env_with_writeback) targets `$*x` names that have
+        // no compiled slot, so it never obliges a pull.
+        let mut changed = false;
         // Fast path: if the env wasn't mutated during the call (Arc still shared),
         // we can skip the expensive env merge and just restore directly.
         if restored_env.ptr_eq(self.interpreter.env()) {
@@ -1757,6 +1787,11 @@ impl VM {
                 .pop_caller_env_with_writeback(&mut restored_env);
             self.interpreter
                 .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+            // An `is rw` param writeback aliases the caller's argument container,
+            // which may be a caller local slot -> force a re-sync.
+            if !rw_bindings.is_empty() {
+                changed = true;
+            }
             let rw_sources: std::collections::HashSet<String> = rw_bindings
                 .iter()
                 .map(|(_, source)| source.clone())
@@ -1784,11 +1819,22 @@ impl VM {
                     && !k.with_str(|s| local_names.contains(s))
                     && !k.with_str(|s| rw_sources.contains(s))
                 {
+                    // Only a genuine value change (vs what the caller already had)
+                    // can leave a caller local slot stale.
+                    if restored_env.get_sym(*k) != Some(v) {
+                        changed = true;
+                    }
                     restored_env.insert_sym(*k, v.clone());
                 }
             }
             *self.interpreter.env_mut() = restored_env;
         }
+        // A raw/Proxy return aliases a caller container in a way the value merge
+        // above does not see; keep the conservative mark for those.
+        if cf.is_raw {
+            changed = true;
+        }
+        self.env_dirty = saved_env_dirty || changed;
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
