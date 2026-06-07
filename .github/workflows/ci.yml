@@ -57,7 +57,13 @@ jobs:
         run: prove -e 'timeout 30 target/debug/mutsu' t/ || echo "TAP tests had failures (non-fatal; roast is authoritative)"
 
       - name: Build (release, for roast)
+        # The repo sets `[profile.release] debug = true` for local perf
+        # profiling. CI never profiles, and full debug info bloats the binary
+        # (~250MB -> ~27MB) and slows codegen/linking by ~70s. Override it to
+        # off for CI only; Cargo.toml stays debug=true for local use.
         run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "false"
 
       - name: Roast whitelist is sorted
         run: make check-roast-whitelist
