@@ -247,29 +247,7 @@ impl Interpreter {
                         String::new()
                     }
                 });
-            let matched = match expected_val {
-                Value::Whatever => true, // * matches anything
-                Value::Regex(pattern) => self
-                    .regex_match_with_captures(pattern, &actual_str)
-                    .is_some(),
-                Value::Sub(_) | Value::Routine { .. } => {
-                    // Smart-match: call the block with the actual value as topic
-                    let call_arg = actual_val.clone().unwrap_or(Value::Nil);
-                    match self.call_sub_value(expected_val.clone(), vec![call_arg], false) {
-                        Ok(result_val) => result_val.truthy(),
-                        Err(_) => false,
-                    }
-                }
-                Value::Package(type_name) => {
-                    // Type object matcher: check if actual_val isa the type
-                    if let Some(ref actual) = actual_val {
-                        crate::value::types::what_type_name(actual) == type_name.resolve()
-                    } else {
-                        false
-                    }
-                }
-                _ => actual_str == expected_val.to_string_value(),
-            };
+            let matched = self.matcher_accepts(expected_val, &actual_str, actual_val.as_ref());
             let expected_display = match expected_val {
                 Value::Regex(pattern) => format!("/{}/", pattern),
                 Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
@@ -297,6 +275,45 @@ impl Interpreter {
             },
         )?;
         Ok(Value::Bool(type_ok))
+    }
+
+    /// Smart-match a `throws-like` attribute matcher against the actual value.
+    /// Handles Whatever, Regex, Callable, type-object and Junction matchers
+    /// (e.g. `message => /"a"/ & /"b"/`), falling back to string equality.
+    fn matcher_accepts(
+        &mut self,
+        matcher: &Value,
+        actual_str: &str,
+        actual_val: Option<&Value>,
+    ) -> bool {
+        match matcher {
+            Value::Whatever => true,
+            Value::Regex(pattern) => self
+                .regex_match_with_captures(pattern, actual_str)
+                .is_some(),
+            Value::Sub(_) | Value::Routine { .. } => {
+                let call_arg = actual_val.cloned().unwrap_or(Value::Nil);
+                match self.call_sub_value(matcher.clone(), vec![call_arg], false) {
+                    Ok(result_val) => result_val.truthy(),
+                    Err(_) => false,
+                }
+            }
+            Value::Package(type_name) => actual_val.is_some_and(|actual| {
+                crate::value::types::what_type_name(actual) == type_name.resolve()
+            }),
+            Value::Junction { kind, values } => {
+                let mut matches = values
+                    .iter()
+                    .map(|v| self.matcher_accepts(v, actual_str, actual_val));
+                match kind {
+                    crate::value::JunctionKind::All => matches.all(|m| m),
+                    crate::value::JunctionKind::Any => matches.any(|m| m),
+                    crate::value::JunctionKind::None => !matches.any(|m| m),
+                    crate::value::JunctionKind::One => matches.filter(|m| *m).count() == 1,
+                }
+            }
+            _ => actual_str == matcher.to_string_value(),
+        }
     }
 
     /// `throws-like-any($code, @ex_type, $reason?, *%matcher)`

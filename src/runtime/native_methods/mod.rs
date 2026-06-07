@@ -259,6 +259,7 @@ impl Interpreter {
                 | "Channel"
                 | "Supply"
                 | "Supplier"
+                | "Proc"
                 | "Proc::Async"
                 | "Encoding::Decoder"
                 | "ThreadPoolScheduler"
@@ -273,6 +274,7 @@ impl Interpreter {
                         | "Channel"
                         | "Supply"
                         | "Supplier"
+                        | "Proc"
                         | "Proc::Async"
                         | "Encoding::Decoder"
                         | "ThreadPoolScheduler"
@@ -281,6 +283,7 @@ impl Interpreter {
             })
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
+            "Proc" => self.native_proc_mut(attributes, method, args),
             "Promise" => self.native_promise_mut(attributes, method, args),
             "Channel" => self.native_channel_mut(attributes, method, args),
             "Supply" => self.native_supply_mut(attributes, method, args),

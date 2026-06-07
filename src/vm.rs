@@ -2568,7 +2568,12 @@ impl VM {
                                     Some(Value::Int(i)) => *i,
                                     _ => 0,
                                 };
-                                if exitcode != 0 {
+                                // A still-"live" Proc (from `run(:in, ...)`)
+                                // carries a placeholder exitcode of -1 until it
+                                // is finalized; sinking it must not throw.
+                                let is_live =
+                                    matches!(attributes.get("live"), Some(Value::Bool(true)));
+                                if exitcode != 0 && !is_live {
                                     let signal = match attributes.get("signal") {
                                         Some(Value::Int(i)) => *i,
                                         _ => 0,
@@ -2577,10 +2582,23 @@ impl VM {
                                         .get("command")
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
-                                    let msg = format!(
-                                        "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {})",
-                                        command, exitcode, signal
-                                    );
+                                    // When the command could not be spawned at all
+                                    // (exit code -1), rakudo reports the underlying
+                                    // OS error in the message.
+                                    let os_error = attributes
+                                        .get("os-error")
+                                        .map(|v| v.to_string_value())
+                                        .filter(|s| !s.is_empty());
+                                    let msg = match &os_error {
+                                        Some(oe) => format!(
+                                            "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {}, OS error = {})",
+                                            command, exitcode, signal, oe
+                                        ),
+                                        None => format!(
+                                            "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {})",
+                                            command, exitcode, signal
+                                        ),
+                                    };
                                     let mut ex_attrs = std::collections::HashMap::new();
                                     ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
                                     ex_attrs.insert("proc".to_string(), val);

@@ -170,7 +170,7 @@ impl Interpreter {
                 | "throws-like-any"
                 | "fails-like"
                 | "is_run"
-                | "run"
+                | "Test::Util::run"
                 | "get_out"
                 | "use-ok"
                 | "does-ok"
@@ -233,7 +233,7 @@ impl Interpreter {
             "throws-like-any" => self.test_fn_throws_like_any(args).map(Some),
             "fails-like" => self.test_fn_fails_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
-            "run" | "Test::Util::run" => self.test_fn_run(args).map(Some),
+            "Test::Util::run" => self.test_fn_run(args).map(Some),
             "get_out" => self.test_fn_get_out(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
             "does-ok" => self.test_fn_does_ok(args).map(Some),

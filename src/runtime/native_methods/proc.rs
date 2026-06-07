@@ -4,6 +4,62 @@ use crate::symbol::Symbol;
 use super::state::proc_stdin_map;
 
 impl Interpreter {
+    /// Mutating Proc methods (`.spawn`, `.run`, `.shell`) re-run a command and
+    /// update the Proc's state in place. They return Bool (success) — never the
+    /// Proc itself — so using them in sink context does not throw
+    /// X::Proc::Unsuccessful. Per rakudo, a failed *spawn* (could not start the
+    /// program at all) leaves the previous `.pid` untouched, whereas `shell`
+    /// always starts a shell, so its `.pid` updates even for a missing command.
+    pub(in crate::runtime) fn native_proc_mut(
+        &mut self,
+        attributes: HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        let new_proc = match method {
+            "spawn" | "run" => self.builtin_run(&args)?,
+            "shell" => self.builtin_shell(&args)?,
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "No native mutable method '{}' on 'Proc'",
+                    method
+                )));
+            }
+        };
+        let Value::Instance {
+            attributes: new_attrs,
+            ..
+        } = &new_proc
+        else {
+            return Ok((Value::Bool(false), attributes));
+        };
+        let new_pid = match new_attrs.get("pid") {
+            Some(Value::Int(p)) => *p,
+            _ => 0,
+        };
+        let exitcode = match new_attrs.get("exitcode") {
+            Some(Value::Int(c)) => *c,
+            _ => -1,
+        };
+        let mut updated = attributes;
+        // A pid of 0 means the program could not be spawned at all; keep the
+        // previous pid in that case (matches rakudo's `.spawn` semantics).
+        if new_pid != 0 {
+            for key in ["pid", "command", "out", "err"] {
+                if let Some(v) = new_attrs.get(key) {
+                    updated.insert(key.to_string(), v.clone());
+                }
+            }
+        }
+        if let Some(v) = new_attrs.get("exitcode") {
+            updated.insert("exitcode".to_string(), v.clone());
+        }
+        if let Some(v) = new_attrs.get("signal") {
+            updated.insert("signal".to_string(), v.clone());
+        }
+        Ok((Value::Bool(exitcode == 0), updated))
+    }
+
     // --- Proc::Async immutable ---
 
     pub(in crate::runtime) fn native_proc_async(

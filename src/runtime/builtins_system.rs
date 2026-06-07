@@ -75,6 +75,16 @@ pub(crate) fn pipe_proc_map() -> &'static PipeProcMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// Maps a child PID to the owning Proc instance, so that `.in`/`.out`/`.err`
+/// pipes (which carry the PID, not a pipe-id) can return the exact parent Proc
+/// from `.close` — preserving object identity for `$p.out.close === $p`.
+type ProcByPidMap = std::sync::Mutex<HashMap<i64, Value>>;
+
+pub(crate) fn proc_by_pid_map() -> &'static ProcByPidMap {
+    static MAP: OnceLock<ProcByPidMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 /// Options extracted from named arguments for run/shell.
 struct ProcOptions {
     cwd: Option<String>,
@@ -806,6 +816,13 @@ impl Interpreter {
             if let Value::Pair(key, inner) = value {
                 match key.as_str() {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
+                    "env" => {
+                        if let Value::Hash(env_map) = inner.as_ref() {
+                            for (ek, ev) in env_map.iter() {
+                                opts.env.insert(ek.clone(), ev.to_string_value());
+                            }
+                        }
+                    }
                     "err" => opts.capture_err = inner.truthy(),
                     "out" => Self::extract_out_option(inner, &mut opts),
                     "in" => Self::extract_in_option(inner, &mut opts),
@@ -958,7 +975,12 @@ impl Interpreter {
 
         // Build the command tuple for .command attribute
         let command_val = Value::array(positional.iter().map(|s| Value::str(s.clone())).collect());
-        let opts_cwd = opts.cwd.clone();
+        // run() defaults the child's working directory to the dynamic $*CWD
+        // (set by `indir`), not the interpreter process's actual cwd.
+        let opts_cwd = opts
+            .cwd
+            .clone()
+            .or_else(|| self.get_dynamic_string("$*CWD"));
         let opts_env = opts.env.clone();
 
         let mut cmd = Command::new(program);
@@ -1075,7 +1097,11 @@ impl Interpreter {
                     if opts.bin {
                         attrs.insert("bin".to_string(), Value::Bool(true));
                     }
-                    return Ok(Value::make_instance(Symbol::intern("Proc"), attrs));
+                    let proc = Value::make_instance(Symbol::intern("Proc"), attrs);
+                    if let Ok(mut map) = proc_by_pid_map().lock() {
+                        map.insert(pid, proc.clone());
+                    }
+                    return Ok(proc);
                 }
 
                 let captured_out = if opts.capture_out {
@@ -1129,7 +1155,8 @@ impl Interpreter {
                     )),
                 }
             }
-            Err(_err) => {
+            Err(err) => {
+                let os_error = err.to_string();
                 // Fallback for cases where $*EXECUTABLE is passed as an IO::Path-ish value
                 // that stringifies ambiguously. Retry with current_exe.
                 if first_arg_io_path || program == "$*EXECUTABLE" || program.ends_with("mutsu") {
@@ -1210,15 +1237,27 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok(Self::make_proc_instance(
+                let mut proc = Self::make_proc_instance(
                     -1,
                     0,
                     0,
                     command_val,
                     opts.capture_err.then(String::new),
                     opts.capture_out.then(String::new),
-                ))
+                );
+                Self::attach_proc_os_error(&mut proc, &os_error);
+                Ok(proc)
             }
+        }
+    }
+
+    /// Record the OS-level spawn error on a failed Proc so that
+    /// `X::Proc::Unsuccessful.message` can report it (e.g. command-not-found
+    /// produces "exit code: -1, ... OS error = No such file or directory").
+    fn attach_proc_os_error(proc: &mut Value, os_error: &str) {
+        if let Value::Instance { attributes, .. } = proc {
+            let attrs = std::sync::Arc::make_mut(attributes);
+            attrs.insert("os-error".to_string(), Value::str(os_error.to_string()));
         }
     }
 
@@ -1263,7 +1302,13 @@ impl Interpreter {
             command.stderr(std::process::Stdio::null());
         }
 
-        if let Some(cwd) = opts.cwd {
+        // shell() defaults the child's working directory to the dynamic $*CWD
+        // (set by `indir`), matching run().
+        if let Some(cwd) = opts
+            .cwd
+            .clone()
+            .or_else(|| self.get_dynamic_string("$*CWD"))
+        {
             command.current_dir(cwd);
         }
         for (k, v) in opts.env {

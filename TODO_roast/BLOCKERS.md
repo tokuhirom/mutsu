@@ -364,5 +364,3 @@ no per-slot `Scalar` container (first-class container identity).
   slurpy params in block signatures throw at setup.
 - roast/S32-list/skip.t — **Medium**. Plan mismatch: planned 55, ran 206 (the file
   loops more than planned, so subtest counting/laziness is off); 29 fail.
-- roast/S29-os/system.t — **Medium**. Aborts at test 3 (planned 41): `shell`/`run`
-  exit-code -1 (command-not-found) handling.

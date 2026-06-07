@@ -2990,6 +2990,12 @@ impl Interpreter {
                     {
                         *guard = None; // Drop the ChildStdin
                     }
+                    // `.close` on a Proc pipe returns the owning Proc.
+                    if let Ok(map) = super::builtins_system::proc_by_pid_map().lock()
+                        && let Some(proc) = map.get(pid)
+                    {
+                        return Ok(proc.clone());
+                    }
                     return Ok(Value::Bool(true));
                 }
                 _ => {}
@@ -3096,6 +3102,12 @@ impl Interpreter {
                 }
                 "close" => {
                     let _ = finalize_and_get_content();
+                    // `.close` on a Proc pipe returns the owning Proc.
+                    if let Ok(map) = super::builtins_system::proc_by_pid_map().lock()
+                        && let Some(proc) = map.get(live_pid)
+                    {
+                        return Ok(proc.clone());
+                    }
                     return Ok(Value::Bool(true));
                 }
                 "encoding" => return Ok(Value::str("utf8".to_string())),
