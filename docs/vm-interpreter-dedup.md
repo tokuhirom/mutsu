@@ -155,3 +155,26 @@ etc.).
       Likely little left here.
 - [ ] Genuine-fork methods → fold into native (Category B style; depends on the
       `%`-chain block-dispatch blocker noted under Category B in PLAN.md).
+
+### Phase 3 groundwork — root cause of the `%`-chain block-dispatch blocker
+
+The Category B "`%h.sort({block})` → expected 2 got 0" regression has the same
+root cause as a live bug in `%h.first({block})`: **mutsu uses the `Value` variant
+to distinguish a call-site named arg (`Value::Pair`, excluded from positional
+arity everywhere in dispatch) from a positional pair value (`Value::ValuePair`).
+Iterating a Hash yields `Value::Pair` elements**, so passing one straight to a
+matcher/comparator block binds it as a *named* argument, leaving the block with
+zero positionals (`first`'s `$p` / sort's `$^a,$^b`). Array literals
+(`(a=>3),(b=>1)`) yield `ValuePair`, which is why `@a.first({...})` worked but
+`%h.first({...})` did not.
+
+- Added `runtime::utils::pair_as_positional(&Value)` (maps `Pair`→`ValuePair`)
+  as the single helper for "bind this element positionally to a block".
+- Fixed `find_first_match_over_items` (drives `.first`) to use it. `%h.first({...})`
+  and `%h.first(&sub)` now bind the pair positionally. Test: `t/hash-first-positional.t`.
+- This is the helper the eventual native-sort migration needs to absorb what the
+  legacy `dispatch_sort` was implicitly handling, unblocking deletion of
+  `dispatch_sort` (Category B). Separately pre-existing & out of scope: pointy
+  `-> $p {...}` / `*.value` matchers on `.first` go through the `smart_match` path
+  (not the `Value::Sub` call branch) and leave `$_`/`$p` unbound — fails even for
+  literal arrays; a distinct fix.

@@ -1750,6 +1750,23 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
     text.len()
 }
 
+/// Coerce a list element to a form that binds *positionally* when passed as the
+/// topic/argument of a matcher or comparator block.
+///
+/// mutsu uses the `Value` variant to distinguish a call-site named argument
+/// (`Value::Pair`, excluded from positional arity everywhere in dispatch) from a
+/// positional pair *value* (`Value::ValuePair`). Iterating a Hash yields
+/// `Value::Pair` elements, so passing such an element straight to a block (e.g.
+/// `%h.first({ .value > 1 })` / `%h.sort({ ... })`) would bind it as a *named*
+/// argument, leaving the block with zero positionals ("expected N got 0"). Map
+/// `Value::Pair` to `Value::ValuePair` so the element binds as `$_`/`$^a`.
+pub(crate) fn pair_as_positional(val: &Value) -> Value {
+    match val {
+        Value::Pair(k, v) => Value::ValuePair(Box::new(Value::str(k.clone())), v.clone()),
+        other => other.clone(),
+    }
+}
+
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
         Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
