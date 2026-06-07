@@ -145,6 +145,34 @@ impl VM {
         }
     }
 
+    /// Run an `if`/`unless`/`else` branch body that declares a block-local `my`
+    /// under the loop bodies' shadow-only restore (see `push_loop_local_scope` /
+    /// `pop_loop_local_scope`). This fixes the body-local `my` *clobber*
+    /// (`my $x=99; if c { my $x=5 }; say $x` must print `99`, not `5`) without
+    /// the full env restore of `BlockScope` — which would also revert a `:=`
+    /// binding the branch makes to an *outer* variable (the regression that sent
+    /// the if/else case to Slice 3b). The branch runs once, so reusing the
+    /// per-iteration `owned_captures`/box-on-capture machinery is harmless and
+    /// keeps closure capture of the branch-local correct.
+    pub(super) fn exec_block_local_scope_op(
+        &mut self,
+        code: &CompiledCode,
+        body_end: u32,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let body_start = *ip + 1;
+        let body_end = body_end as usize;
+        self.push_loop_local_scope();
+        let res = self.run_range(code, body_start, body_end, compiled_fns);
+        // Restore shadowed outer bindings on every exit path (including errors
+        // such as `next`/`last`/`return`/exceptions) so the scope stays balanced.
+        self.pop_loop_local_scope(code);
+        res?;
+        *ip = body_end;
+        Ok(())
+    }
+
     pub(super) fn exec_while_loop_op(
         &mut self,
         code: &CompiledCode,

@@ -4,7 +4,7 @@ use Test;
 # An inner `my $x` shadowing an outer `$x` must NOT clobber the outer slot,
 # and the name must not leak out of the block (Slice 3 of lever C / PLAN.md).
 
-plan 19;
+plan 24;
 
 # --- for loop body: shadow must not clobber outer ---
 {
@@ -29,14 +29,13 @@ plan 19;
 }
 
 # --- if body: shadow must not clobber outer ---
-# NOTE: `if`/`else` bodies are compiled inline without a runtime loop scope, so
-# the loop_local_saved_env restore does not apply. Fixing the if-body clobber
-# needs a dedicated block-local-scope mechanism (a BlockScope wrap reverts `:=`
-# bindings to outer vars made inside the branch). Deferred — tracked as todo.
+# `if`/`unless`/`else` branches that declare a block-local `my` are wrapped in a
+# BlockLocalScope opcode (Slice 3b): the loop bodies' shadow-only restore
+# re-exposes the outer binding on exit, without the full env restore of a
+# BlockScope (which would revert `:=` bindings made to outer vars in the branch).
 {
     my $x = 99;
     if True { my $x = 5 }
-    todo 'if-body my clobber needs a block-local-scope mechanism (see PLAN.md)';
     is $x, 99, 'if-body my does not clobber outer $x';
 }
 
@@ -44,8 +43,37 @@ plan 19;
 {
     my $x = 99;
     if False { } else { my $x = 5 }
-    todo 'else-body my clobber needs a block-local-scope mechanism (see PLAN.md)';
     is $x, 99, 'else-body my does not clobber outer $x';
+}
+
+# --- unless body: shadow must not clobber outer ---
+{
+    my $x = 99;
+    unless False { my $x = 5 }
+    is $x, 99, 'unless-body my does not clobber outer $x';
+}
+
+# --- if/else both branches declare a shadow ---
+{
+    my $x = 99;
+    if True { my $x = 1 } else { my $x = 2 }
+    is $x, 99, 'if/else both-branch my does not clobber outer $x';
+}
+
+# --- a `:=` binding to an outer var inside an if-branch must survive ---
+{
+    my $r;
+    if True { my @rr = 10, 20, 30; $r := @rr[0] }
+    is $r, 10, 'if-branch := binding to outer var survives BlockLocalScope';
+}
+
+# --- closure capturing an if-branch-local must see its frozen value ---
+{
+    my $cx = 1;
+    my $c;
+    if True { my $cx = 5; $c = { $cx } }
+    is $c.(), 5, 'closure captures if-branch-local value';
+    is $cx, 1, 'if-branch-local does not clobber outer captured name';
 }
 
 # --- nested blocks ---

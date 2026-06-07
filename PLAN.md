@@ -73,17 +73,25 @@ news/2026-06.md 参照。残タスク:
       の `.=`、isa-ok、subset 型オブジェクト代入、submethod state、Mix 不変性 — 「値検査サイトに ContainerRef が
       漏れる」共通根）。全 lvalue/型/dispatch 経路の deref 監査が要る＝専用の複数 PR。`t/closure-container-capture.t`
       の非ループ兄弟 2 ケースは `todo`。
-- [ ] **Slice 3b（残）: `if`/`else` ボディローカル `my` の clobber**（`my $x=99; if c { my $x=5 }; say $x` が
-      raku `99`、mutsu は `5`）。`if`/`else` を BlockScope（全 env 復元）でラップする案は**ブランチ内からの `:=`
-      束縛を巻き戻す**回帰（`roast/S03-sequence/exhaustive.t` 27 subtest 失敗）を生む。正解＝loop と同じ
-      shadow-only 復元を `if` ブランチにも効かせる軽量機構（`Push/PopBlockLocalScope` opcode で
-      `loop_local_saved_env` を流用、全 env 復元はしない）。`t/block-local-my-scope.t` の if/else は todo。別 PR。
+- [x] **Slice 3b: `if`/`unless`/`else` ボディローカル `my` の clobber**（`my $x=99; if c { my $x=5 }; say $x` が
+      raku `99`、mutsu は `5`）を根治。新 opcode **`BlockLocalScope { body_end }`** を追加し、block-local `my` を
+      直接宣言するブランチをこれでラップ。VM ハンドラ（`exec_block_local_scope_op`）はループ本体と同じ
+      `push_loop_local_scope`/`pop_loop_local_scope`（**shadow-only 復元**）でボディを 1 回実行する。当初試した
+      BlockScope（完全 env 復元）案は**ブランチ内から外側変数への `:=` 束縛を巻き戻す**回帰を生むため不採用
+      （shadow-only は `my` 宣言した shadow 名のみ復元し `:=` は触らない）。コンパイラは
+      `branch_declares_block_local`（直下 + `SyntheticBlock` の `my`、state/our/dynamic を除外）で判定。
+      ループ本体扱いになるので if-branch-local のクロージャ捕捉（owned_captures/box）も正しくなる
+      （`if True { my $cx=5; $c={$cx} }` → `$c()`=5, 外側 `$cx`=1）。pin `t/block-local-my-scope.t`（24件）。詳細は news/2026-06.md。
 
 ### 最終ゴール
 - [ ] メソッド/関数フォールバック率を 0%（Test/EVAL 等の本質的例外を除く）にし、Interpreter のメソッド/関数
       実行パスを削除。残フォールバックには `// TODO: compile to bytecode` を付け負債を可視化。
-- **次の着手候補（優先順）**: B の Slice 6.3 残り（regex pull → 残 by-name op → carrier、最後に `env_dirty` 削除）
-  → C の非ループ一般コンテナ捕捉 ／ if-else body-local `my`（Slice 3b）→ 🟣第2優先「第一級コンテナ」Phase 0。
+
+**レバー A は終着**（全項目 `[x]`）。**レバー C も境界の明確なスライス（1/2/2b/3/3b）は全て完了**し、残るのは
+**非ループ一般コンテナ捕捉**（上の延期項目）のみ ＝ これは素朴な box では deref 未対応経路を広く踏むため、
+🟣第2優先「第一級コンテナ」**Phase 1（スカラーの第一級コンテナ化）に吸収**して解く（PLAN 末尾参照）。
+**次の着手候補（優先順）:** B の Slice 6.3 残り（regex `~~` pull は完了 → 残 by-name op → carrier、最後に
+`env_dirty` 削除）→ 🟣第2優先「第一級コンテナ」Phase 0（decont チョークポイント整備）→ Phase 1（= レバー C 本丸を内包）。
 
 ---
 

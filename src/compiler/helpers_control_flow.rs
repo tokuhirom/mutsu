@@ -198,6 +198,42 @@ impl Compiler {
         stmts.iter().any(stmt_rebinds_topic)
     }
 
+    /// Returns true if a branch body declares a block-local `my` variable
+    /// directly in its top-level statement list. Such a declaration shadows an
+    /// enclosing same-named binding and, without scoping, would *clobber* it
+    /// (`my $x=99; if c { my $x=5 }; say $x` would wrongly print `5`). When true,
+    /// the `if`/`unless`/`else` branch is wrapped in a `BlockLocalScope` so the
+    /// loop bodies' shadow-only restore re-exposes the outer binding on exit.
+    ///
+    /// Descends into `SyntheticBlock` (the parser's inlined wrapper for
+    /// destructuring `my ($a, $b) = ...`, which is NOT a separate scope) but not
+    /// into nested `Block`/`if`/loops/subs, which introduce their own scopes.
+    /// `state`/`our`/dynamic declarations are excluded: they are not plain
+    /// lexical shadows and have their own scoping/restore rules.
+    pub(super) fn branch_declares_block_local(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            Stmt::VarDecl {
+                is_state,
+                is_our,
+                is_dynamic,
+                ..
+            } => !*is_state && !*is_our && !*is_dynamic,
+            Stmt::SyntheticBlock(inner) => Self::branch_declares_block_local(inner),
+            _ => false,
+        })
+    }
+
+    /// Compile an `if`/`unless`/`else` branch body wrapped in a `BlockLocalScope`
+    /// opcode (see `branch_declares_block_local`). The opcode runs the body once
+    /// under the loop bodies' shadow-only restore, fixing the body-local `my`
+    /// clobber without the full env restore of `BlockScope` (which would revert a
+    /// `:=` binding the branch makes to an outer variable).
+    pub(super) fn compile_block_local_branch(&mut self, stmts: &[Stmt]) {
+        let idx = self.code.emit(OpCode::BlockLocalScope { body_end: 0 });
+        self.compile_body_with_implicit_try(stmts);
+        self.code.patch_block_local_body_end(idx);
+    }
+
     /// Compile a block body, automatically wrapping in implicit try if it contains
     /// CATCH or CONTROL blocks. This should be used for any block context (bare blocks,
     /// if branches, loop bodies, sub bodies) to ensure CATCH/CONTROL are not silently ignored.
