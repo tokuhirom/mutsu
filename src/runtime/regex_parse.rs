@@ -1538,12 +1538,17 @@ impl Interpreter {
                 if alt_src.is_empty() {
                     continue;
                 }
-                // Re-apply inline adverbs for each alternative
-                let alt_pat = if ignore_case && !alt_src.starts_with(":i") {
-                    format!(":i {}", alt_src)
-                } else {
-                    alt_src.to_string()
-                };
+                // Re-apply inline adverbs for each alternative. Both `:i`
+                // (ignore-case) and `:s` (sigspace) must propagate to the
+                // re-parsed sub-pattern, otherwise an alternative like `(a) (b)`
+                // loses its sigspace whitespace matchers and fails to match.
+                let mut alt_pat = alt_src.to_string();
+                if ignore_case && !alt_src.starts_with(":i") {
+                    alt_pat = format!(":i {}", alt_pat);
+                }
+                if sigspace {
+                    alt_pat = format!(":s {}", alt_pat);
+                }
                 if let Some(p) = self.parse_regex(&alt_pat) {
                     alt_patterns.push(p);
                 }
@@ -1727,11 +1732,31 @@ impl Interpreter {
                 anchor_end = true;
                 break;
             }
-            // $0, $1, ... — backreference to positional capture group
+            // $0, $1, ... — either a numbered scalar capture alias (`$0=(...)`)
+            // or a backreference to a positional capture group (`$0`).
             if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                 let mut digits = String::new();
                 while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                     digits.push(chars.next().unwrap());
+                }
+                // A trailing `=` (after optional whitespace) makes this a numbered
+                // capture alias: `$N=<atom>` stores the atom's capture at index N
+                // and continues auto-numbering from N+1. We reuse the
+                // `named_capture` channel with an all-digit "name", which
+                // `apply_named_capture` recognizes and routes to the positional
+                // slot instead of the named hash.
+                let mut lookahead = chars.clone();
+                while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+                    lookahead.next();
+                }
+                if lookahead.peek() == Some(&'=') {
+                    chars = lookahead;
+                    chars.next(); // consume '='
+                    while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                        chars.next();
+                    }
+                    pending_named_capture = Some(digits);
+                    continue;
                 }
                 if let Ok(idx) = digits.parse::<usize>() {
                     tokens.push(RegexToken {
