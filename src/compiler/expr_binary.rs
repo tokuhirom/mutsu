@@ -264,7 +264,18 @@ impl Compiler {
                     _ => None,
                 };
                 let rhs_is_match_regex = matches!(right, Expr::MatchRegex(_));
-                let lhs_is_literal = matches!(left, Expr::Literal(_));
+                // Only a *destructive* `s///` / `tr///` against a literal LHS is an
+                // X::Assignment::RO. Non-destructive `S///` / `TR///` return a copy
+                // and never write back, so `1 ~~ TR/\#//` must not throw.
+                let rhs_is_destructive = matches!(right, Expr::Subst { .. })
+                    || matches!(
+                        right,
+                        Expr::Transliterate {
+                            non_destructive: false,
+                            ..
+                        }
+                    );
+                let lhs_is_literal = rhs_is_destructive && matches!(left, Expr::Literal(_));
                 self.compile_expr(left);
                 let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                     rhs_end: 0,
