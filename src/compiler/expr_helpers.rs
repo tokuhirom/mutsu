@@ -512,6 +512,10 @@ impl Compiler {
             .add_constant(Value::str(self.qualify_variable_name("_")));
         self.code.emit(OpCode::GetGlobal(name_idx));
         // SmartMatchExpr will set $_ to LHS, run RHS, then smartmatch
+        // Plain Value::Regex literal: compile-time half of the Slice 6.3 step 2
+        // gate (the runtime half — pending_local_updates / `$/`-as-local — is in
+        // the smartmatch op).
+        let rhs_pure_regex = matches!(v, Value::Regex(_));
         let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
             rhs_end: 0,
             negate: false,
@@ -521,6 +525,7 @@ impl Compiler {
             rhs_is_match_regex: false,
             // LHS here is `$_`, a writable container.
             lhs_is_literal: false,
+            rhs_pure_regex,
         });
         // RHS: load the regex constant
         let idx = self.code.add_constant(v.clone());

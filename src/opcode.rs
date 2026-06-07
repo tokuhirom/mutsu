@@ -195,6 +195,12 @@ pub(crate) enum OpCode {
         /// True when the LHS is a literal (non-lvalue). A destructive `s///`/`tr///`
         /// that matches against a literal must throw X::Assignment::RO.
         lhs_is_literal: bool,
+        /// True when the RHS is a plain `Value::Regex` literal. Compile-time half
+        /// of the Slice 6.3 step 2 gate that lets the smartmatch op skip its
+        /// conservative post-match `env_dirty` re-sync (the runtime half checks
+        /// `pending_local_updates` / `$/`-as-local). Excludes RegexWithAdverbs,
+        /// named/Sub regex, substitution, transliteration, value smartmatch.
+        rhs_pure_regex: bool,
     },
     /// Scalarize a multi-match regex result: Nil -> 0, Positional -> elems, Match -> 1.
     ScalarizeRegexMatchResult,
