@@ -519,6 +519,8 @@ impl Compiler {
             // Standalone m// (not in ~~ context) returns Nil on failure, not False.
             // Setting this to false makes smart_match_op return $/ (Nil) on failure.
             rhs_is_match_regex: false,
+            // LHS here is `$_`, a writable container.
+            lhs_is_literal: false,
         });
         // RHS: load the regex constant
         let idx = self.code.add_constant(v.clone());

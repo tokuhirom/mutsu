@@ -264,12 +264,14 @@ impl Compiler {
                     _ => None,
                 };
                 let rhs_is_match_regex = matches!(right, Expr::MatchRegex(_));
+                let lhs_is_literal = matches!(left, Expr::Literal(_));
                 self.compile_expr(left);
                 let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                     rhs_end: 0,
                     negate: matches!(op, TokenKind::BangTilde),
                     lhs_var,
                     rhs_is_match_regex,
+                    lhs_is_literal,
                 });
                 // When RHS is m/regex/, unwrap to the regex value since
                 // SmartMatchExpr already handles the matching against LHS
