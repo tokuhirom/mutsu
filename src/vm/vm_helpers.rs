@@ -375,8 +375,7 @@ impl VM {
         // own writes land in a fresh born-owned overlay (no fork of `list.env`).
         // The merge below iterates the overlay (overlay-only) = the body's writes.
         // See docs/vm-dual-store.md (Slice 6).
-        *self.interpreter.env_mut() =
-            crate::env::Env::scoped_child(list.env.flattened().overlay_arc());
+        *self.interpreter.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
 
         // Push gather items collector
         let saved_gather_len = self.interpreter.gather_items_len();
@@ -570,8 +569,7 @@ impl VM {
                 // preserves overlay+parent+tombstones), so the body's writes
                 // accumulate across takes without forking `list.env`.
                 ip = 0;
-                *self.interpreter.env_mut() =
-                    crate::env::Env::scoped_child(list.env.flattened().overlay_arc());
+                *self.interpreter.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
                 self.locals = vec![Value::Nil; cc.locals.len()];
                 for (i, name) in cc.locals.iter().enumerate() {
                     if let Some(val) = self.interpreter.env().get(name) {
@@ -584,8 +582,7 @@ impl VM {
         } else {
             // Fresh start (no coroutine slot yet)
             ip = 0;
-            *self.interpreter.env_mut() =
-                crate::env::Env::scoped_child(list.env.flattened().overlay_arc());
+            *self.interpreter.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
             self.locals = vec![Value::Nil; cc.locals.len()];
             for (i, name) in cc.locals.iter().enumerate() {
                 if let Some(val) = self.interpreter.env().get(name) {

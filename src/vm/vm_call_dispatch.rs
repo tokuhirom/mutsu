@@ -488,10 +488,10 @@ impl VM {
         let use_scoped =
             has_locals && !cf.has_inner_subs && !crate::opcode::reflective_name_access_possible();
         let caller_env: Option<Env> = if use_scoped {
-            // Flatten first so the parent tier holds the full lexical view even
-            // when the caller is itself a scoped frame (nested fast calls).
-            let parent_overlay = self.interpreter.env().flattened().overlay_arc();
-            let scoped = crate::env::Env::scoped_child(parent_overlay);
+            // Chain a child over the whole caller env (itself possibly scoped):
+            // no flatten, so nested fast calls don't pay the O(env) merge.
+            let parent = self.interpreter.env().clone();
+            let scoped = crate::env::Env::scoped_child(parent);
             Some(std::mem::replace(self.interpreter.env_mut(), scoped))
         } else {
             None
@@ -832,10 +832,10 @@ impl VM {
         // This replaces the previous name-keyed save/restore juggling
         // (saved_env_locals / saved_param_env) with a single O(callee-writes)
         // merge -- the function's own params/locals never pollute the caller env.
-        let parent_overlay = self.interpreter.env().flattened().overlay_arc();
+        let parent = self.interpreter.env().clone();
         let caller_env = std::mem::replace(
             self.interpreter.env_mut(),
-            crate::env::Env::scoped_child(parent_overlay),
+            crate::env::Env::scoped_child(parent),
         );
 
         let num_locals = cf.code.locals.len();
@@ -1081,10 +1081,10 @@ impl VM {
         // land in a fresh map and are discarded by dropping the overlay on return
         // (callee-local names) or merged overlay-only (captured-outer writes),
         // replacing the per-key save/restore the `modified_env_keys` list did.
-        let parent_overlay = self.interpreter.env().flattened().overlay_arc();
+        let parent = self.interpreter.env().clone();
         let caller_env = std::mem::replace(
             self.interpreter.env_mut(),
-            crate::env::Env::scoped_child(parent_overlay),
+            crate::env::Env::scoped_child(parent),
         );
 
         let num_locals = cf.code.locals.len();
@@ -1439,7 +1439,9 @@ impl VM {
             cf.param_defs.clone(),
             vec![],
             false,
-            self.interpreter.env().clone(),
+            // Flatten: this Sub is pushed for callframe().code introspection and
+            // must expose the full lexical view, not a scoped overlay.
+            self.interpreter.clone_env(),
         );
         self.interpreter.push_block(sub_val);
 
@@ -1449,9 +1451,9 @@ impl VM {
         // overlay; on return the merge iterates it overlay-only into the restored
         // caller env. frame.saved_env holds the flat caller for restoration.
         {
-            let parent_overlay = self.interpreter.env().overlay_arc();
+            let parent = self.interpreter.env().clone();
             self.interpreter
-                .set_env(crate::env::Env::scoped_child(parent_overlay));
+                .set_env(crate::env::Env::scoped_child(parent));
         }
 
         // Always push a routine frame so that &?ROUTINE works inside anonymous
@@ -1713,7 +1715,8 @@ impl VM {
                 param_defs.clone(),
                 body.clone(),
                 *is_rw,
-                self.interpreter.env().clone(),
+                // Flatten: a Sub returned as a value is dispatched cross-scope.
+                self.interpreter.clone_env(),
             );
         }
 

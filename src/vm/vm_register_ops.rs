@@ -93,7 +93,11 @@ impl VM {
                 body: body.clone(),
                 is_rw: false,
                 is_raw: false,
-                env: self.interpreter.env().clone(),
+                // Flatten: a closure stored in a Value::Sub is dispatched later,
+                // possibly from a different scope, and its captured env is seeded
+                // overlay-only at dispatch -- so it must hold the full lexical view
+                // now, not a scoped overlay whose parent tier would be lost.
+                env: self.interpreter.clone_env(),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
@@ -133,7 +137,9 @@ impl VM {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
-            let mut env = self.interpreter.env().clone();
+            // Flatten: closure env captured into a Value::Sub for later (possibly
+            // cross-scope) dispatch must hold the full lexical view (see above).
+            let mut env = self.interpreter.clone_env();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -305,7 +311,9 @@ impl VM {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
-            let mut env = self.interpreter.env().clone();
+            // Flatten: closure env captured into a Value::Sub for later (possibly
+            // cross-scope) dispatch must hold the full lexical view (see above).
+            let mut env = self.interpreter.clone_env();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -371,7 +379,8 @@ impl VM {
                 body: body.clone(),
                 is_rw: false,
                 is_raw: false,
-                env: self.interpreter.env().clone(),
+                // Flatten: long-lived closure capture (see above).
+                env: self.interpreter.clone_env(),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
@@ -568,7 +577,7 @@ impl VM {
                         param_defs.clone(),
                         body.clone(),
                         false,
-                        self.interpreter.env().clone(),
+                        self.interpreter.clone_env(),
                     );
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
                     let result = self

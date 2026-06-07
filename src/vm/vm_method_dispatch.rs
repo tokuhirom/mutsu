@@ -149,9 +149,9 @@ impl VM {
         // it overlay-only (the method's own writes). No closure/thread body runs
         // under the overlay.
         if cc.closure_compiled_codes.is_empty() {
-            let parent_overlay = self.interpreter.env().overlay_arc();
+            let parent = self.interpreter.env().clone();
             self.interpreter
-                .set_env(crate::env::Env::scoped_child(parent_overlay));
+                .set_env(crate::env::Env::scoped_child(parent));
         }
 
         // Clear var_bindings so attribute aliases from outer interpreter-level
@@ -659,11 +659,12 @@ impl VM {
                 })
                 .collect();
 
-            let mut merged_env = merge_method_env(
-                &self.call_frames.last().unwrap().saved_env,
-                self.interpreter.env(),
-                &method_local_keys,
-            );
+            // Take sole ownership of caller + callee envs (pop the frame for the
+            // saved caller env, take the live callee env) so merge_method_env can
+            // mutate the caller env in place without a deep copy.
+            let frame = self.pop_call_frame();
+            let current_env = self.interpreter.take_env();
+            let mut merged_env = merge_method_env(frame.saved_env, current_env, &method_local_keys);
 
             for (source_name, val) in &rw_writeback {
                 merged_env.insert(source_name.clone(), val.clone());
@@ -679,7 +680,6 @@ impl VM {
             self.interpreter.pop_routine();
             self.interpreter.pop_method_class();
             self.interpreter.set_current_package(saved_package.clone());
-            let _frame = self.pop_call_frame();
             *self.interpreter.env_mut() = merged_env;
         }
 
@@ -768,8 +768,8 @@ impl VM {
         // iterates the scoped env for a full lexical view.
         let use_scoped = cc.closure_compiled_codes.is_empty();
         if use_scoped {
-            let parent_overlay = self.interpreter.env().overlay_arc();
-            let scoped = crate::env::Env::scoped_child(parent_overlay);
+            let parent = self.interpreter.env().clone();
+            let scoped = crate::env::Env::scoped_child(parent);
             self.interpreter.set_env(scoped);
         }
         let saved_var_bindings = self.interpreter.take_var_bindings();
@@ -1152,8 +1152,10 @@ impl VM {
                         method_local_keys.insert(local_name.clone());
                     }
                 }
-                let merged =
-                    merge_method_env(&frame.saved_env, self.interpreter.env(), &method_local_keys);
+                // Own both envs (frame already popped above; take the live callee
+                // env) so the merge mutates the caller env in place, no deep copy.
+                let current_env = self.interpreter.take_env();
+                let merged = merge_method_env(frame.saved_env, current_env, &method_local_keys);
                 self.interpreter.set_env(merged);
             }
         }
@@ -1416,24 +1418,37 @@ fn writeback_attributes(env: &Env, attributes: &mut HashMap<String, Value>) {
 ///
 /// Carries forward values for keys that existed in the saved env, plus any
 /// dynamic/global keys (`&`-prefixed, `__mutsu_method_value::`-prefixed).
-fn merge_method_env(saved: &Env, current: &Env, method_local_keys: &HashSet<String>) -> Env {
-    let mut merged = saved.clone();
-    for (k, v) in current.iter() {
-        // Skip keys that were introduced by the method frame (params, self,
-        // attributes, locals) — these must not leak back into the caller.
-        if k.with_str(|s| method_local_keys.contains(s)) {
-            continue;
-        }
-        if saved.contains_key_sym(*k) {
-            merged.insert_sym(*k, v.clone());
-        }
-        if (k.starts_with("&") && !k.starts_with("&?"))
-            || k.starts_with("__mutsu_method_value::")
-            || k.starts_with("__mutsu_sigilless_alias::!")
-            || k.starts_with("__mutsu_predictive_seq_iter::")
-        {
-            merged.insert_sym(*k, v.clone());
-        }
+/// Merge the method frame's caller-visible writes back into the caller env.
+///
+/// Takes ownership of both `saved` (the caller env) and `current` (the callee's
+/// scoped overlay env). The callee's overlay is collected into a small `writes`
+/// list, then `current` is dropped: this releases the callee's parent-chain
+/// `Arc<Env>`, which (under the multi-tier overlay) shares `saved`'s overlay map.
+/// With that reference gone, `saved` is the sole owner of its overlay, so the
+/// in-place inserts mutate it without an `Arc::make_mut` deep copy -- the
+/// per-nested-call O(env) cost measured in PR #2683. `saved` is consumed (the
+/// caller discards it in favor of the returned env), so mutating it directly is
+/// safe and avoids the extra `saved.clone()`.
+fn merge_method_env(mut saved: Env, current: Env, method_local_keys: &HashSet<String>) -> Env {
+    let writes: Vec<(Symbol, Value)> = current
+        .overlay_iter()
+        .filter_map(|(k, v)| {
+            // Skip keys introduced by the method frame (params, self, attributes,
+            // locals) -- these must not leak back into the caller.
+            if k.with_str(|s| method_local_keys.contains(s)) {
+                return None;
+            }
+            let keep = saved.contains_key_sym(*k)
+                || (k.starts_with("&") && !k.starts_with("&?"))
+                || k.starts_with("__mutsu_method_value::")
+                || k.starts_with("__mutsu_sigilless_alias::!")
+                || k.starts_with("__mutsu_predictive_seq_iter::");
+            keep.then(|| (*k, v.clone()))
+        })
+        .collect();
+    drop(current);
+    for (k, v) in writes {
+        saved.insert_sym(k, v);
     }
-    merged
+    saved
 }
