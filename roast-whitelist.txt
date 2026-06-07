@@ -283,6 +283,7 @@ roast/S04-declarations/multiple.t
 roast/S04-declarations/our.t
 roast/S04-declarations/smiley.t
 roast/S04-declarations/state.t
+roast/S04-declarations/will.t
 roast/S04-exception-handlers/catch.t
 roast/S04-exception-handlers/control.t
 roast/S04-exception-handlers/top-level.t

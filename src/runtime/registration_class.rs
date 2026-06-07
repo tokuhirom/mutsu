@@ -1422,8 +1422,19 @@ impl Interpreter {
         }
         let saved_functions_keys: HashSet<String> =
             self.functions.keys().map(|k| k.resolve()).collect();
+        // LEAVE phasers declared at class-body scope (e.g. via
+        // `my $x will leave { ... }`) must fire when the class body is left,
+        // i.e. once all body statements have been processed. Collect them here
+        // and run them (LIFO) after the loop instead of executing them inline.
+        let mut class_leave_phasers: Vec<Vec<Stmt>> = Vec::new();
         for stmt in flattened_body {
             match stmt {
+                Stmt::Phaser {
+                    kind: PhaserKind::Leave,
+                    body,
+                } => {
+                    class_leave_phasers.push(body.clone());
+                }
                 Stmt::HasDecl {
                     name: attr_name,
                     is_public,
@@ -2220,6 +2231,20 @@ impl Interpreter {
                 }
             }
             self.classes.insert(name.to_string(), class_def.clone());
+        }
+        // Fire class-body LEAVE phasers in LIFO order now that the body scope
+        // is being left. They run while the class package/env are still active
+        // so their bodies can see body-scoped variables; writes to outer
+        // variables persist because the class-body env is not rolled back on
+        // the success path.
+        for body in class_leave_phasers.iter().rev() {
+            self.run_block_raw(body)?;
+            for outer_name in saved_env.keys() {
+                let class_scoped_name = format!("{}::{}", name, outer_name);
+                if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                    self.env.insert_sym(*outer_name, updated);
+                }
+            }
         }
         self.current_package = saved_package;
         if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
