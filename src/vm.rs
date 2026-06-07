@@ -2063,6 +2063,7 @@ impl VM {
                 lhs_var,
                 rhs_is_match_regex,
                 lhs_is_literal,
+                rhs_pure_regex,
             } => {
                 self.exec_smart_match_expr_op(
                     code,
@@ -2072,6 +2073,7 @@ impl VM {
                     lhs_var,
                     *rhs_is_match_regex,
                     *lhs_is_literal,
+                    *rhs_pure_regex,
                     compiled_fns,
                 )?;
             }

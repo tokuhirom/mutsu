@@ -1190,11 +1190,17 @@ impl VM {
         lhs_var: &Option<String>,
         rhs_is_match_regex: bool,
         lhs_is_literal: bool,
+        rhs_pure_regex: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let left = self.stack.pop().unwrap();
         let rhs_start = *ip + 1;
         let rhs_end = rhs_end as usize;
+        // Slice 6.3 step 2: clear the regex engine's caller-variable write log so
+        // that, after the match, a non-empty `pending_local_updates` reliably means
+        // *this* match's embedded `{ }` code blocks wrote a caller variable by name
+        // (the engine records them there but nothing consumes the log otherwise).
+        self.interpreter.pending_local_updates.clear();
         let saved_topic = self.interpreter.env().get("_").cloned();
         self.interpreter
             .env_mut()
@@ -1241,7 +1247,11 @@ impl VM {
                 .unwrap_or(Value::Nil);
             self.interpreter
                 .env_mut()
-                .insert(var_name.clone(), modified_topic);
+                .insert(var_name.clone(), modified_topic.clone());
+            // Reverse write-through: if the lhs alias names a compiled local slot,
+            // mirror the (possibly substitution-modified) topic into it so the
+            // caller sees it without an O(locals) sync_locals_from_env pull.
+            self.update_local_if_exists(code, var_name, &modified_topic);
         }
         if let Some(v) = saved_topic {
             self.interpreter.env_mut().insert("_".to_string(), v);
@@ -1272,7 +1282,29 @@ impl VM {
             self.eval_smartmatch_with_junctions_ex(left, right, false, rhs_is_match_regex)?
         };
         self.stack.push(out);
-        self.env_dirty = true;
+        // Slice 6.3 step 2 — precise env_dirty for smartmatch. Skip the
+        // O(caller-locals) re-sync only when this was a side-effect-free match:
+        //   * a plain `Value::Regex` literal (rhs_pure_regex) — excludes
+        //     RegexWithAdverbs (`:pos`/`:g` carry state), named/Sub regexes, and
+        //     value smartmatch, all of which can write caller state by name;
+        //   * not a substitution / transliteration (those mutate the topic alias);
+        //   * the match ran no embedded `{ }` code block that wrote a caller
+        //     variable (the regex engine logs those in `pending_local_updates`);
+        //   * `$/` is not itself a compiled local slot here (`my $/` — e.g.
+        //     continued matching reads it back across calls).
+        // A plain regex match otherwise only writes `$/`/captures, which are
+        // special vars read by name, never a caller local slot, so no pull.
+        let wrote_caller_via_code = !self.interpreter.pending_local_updates.is_empty();
+        let match_var_is_local = code.locals.iter().any(|n| n == "/");
+        let pure = rhs_pure_regex
+            && !was_substitution
+            && !was_transliterate
+            && !wrote_caller_via_code
+            && !match_var_is_local;
+        self.interpreter.pending_local_updates.clear();
+        if !pure {
+            self.env_dirty = true;
+        }
         *ip = rhs_end;
         Ok(())
     }

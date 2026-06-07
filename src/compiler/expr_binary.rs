@@ -1,6 +1,23 @@
 use super::*;
 
 impl Compiler {
+    /// Whether a smartmatch RHS is a plain `Value::Regex` literal (a bare `/…/`
+    /// or adverb-less `m/…/`). This is the *compile-time* half of the Slice 6.3
+    /// step 2 gate that lets the smartmatch op skip its conservative post-match
+    /// `env_dirty` re-sync: a plain regex match writes only `$/`/captures, never
+    /// an arbitrary caller variable — UNLESS the pattern runs an embedded `{ }`
+    /// code block (which the *runtime* half catches precisely via
+    /// `Interpreter::pending_local_updates`). Excludes `RegexWithAdverbs`
+    /// (`:pos`/`:g`/… carry match state across calls), named/Sub regexes,
+    /// substitution, transliteration, and non-regex smartmatch — all of which
+    /// keep the conservative mark.
+    pub(super) fn rhs_is_plain_regex_literal(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Literal(Value::Regex(_)) | Expr::MatchRegex(Value::Regex(_))
+        )
+    }
+
     pub(super) fn compile_expr_binary(
         &mut self,
         expr: &Expr,
@@ -276,6 +293,7 @@ impl Compiler {
                         }
                     );
                 let lhs_is_literal = rhs_is_destructive && matches!(left, Expr::Literal(_));
+                let rhs_pure_regex = Self::rhs_is_plain_regex_literal(right);
                 self.compile_expr(left);
                 let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                     rhs_end: 0,
@@ -283,6 +301,7 @@ impl Compiler {
                     lhs_var,
                     rhs_is_match_regex,
                     lhs_is_literal,
+                    rhs_pure_regex,
                 });
                 // When RHS is m/regex/, unwrap to the regex value since
                 // SmartMatchExpr already handles the matching against LHS

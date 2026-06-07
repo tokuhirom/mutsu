@@ -908,7 +908,7 @@ Reaching that requires, roughly in order:
       | bench-class         |            2 |               2 | done |
       | bench-fib / fib     |            0–1 |             0 | done (Slice 6.1) |
       | hash/string-concat/int |         1 |               0 | done |
-      | **bench-string**    |     **5003** |               0 | **regex `~~` — DEFERRED (unsafe, below)** |
+      | **bench-string**    |  **5003 → 3** |             0 | regex `~~` — DONE (below) |
       | **bench-array**     |            4 |       **10005** | `.map`/`.grep`/`.sort` closures — **lever C, not B** |
       | array-ops           |          101 |             200 | closures (lever C) |
 
@@ -935,20 +935,30 @@ Reaching that requires, roughly in order:
            (shared/shaped/non-simple) keep their mark.
         Pinned by `t/zeroarg-env-dirty.t`(16) / `t/named-call-env-dirty.t`(16) /
         `t/push-env-dirty.t`(13).
-      - **DEFERRED (unsafe) — the regex/smartmatch pull (bench-string 5003).** Dropping
-        the blanket `env_dirty = true` in `exec_smart_match_expr_op` was tried and
-        REVERTED: it regressed whitelisted `S02-magicals/sub.t` (`regex foo { a { $var
-        = &?ROUTINE } }` — an embedded regex code block writes the caller local `$var`
-        by name) and `S05-modifier/pos.t` (`:pos` continued match writes match-position
-        state). The root assumption — "a smartmatch only writes `$/`/`_`/`var_name`,
-        and `$/`-family never alias a caller local" — is FALSE: a regex RHS runs
-        embedded `{ }` blocks and pos/adverb bookkeeping through the **interpreter regex
-        engine**, which writes arbitrary caller locals by name WITHOUT going through a
-        VM op (so nothing sets env_dirty). A simple regex (`/\d+/`) has no such side
-        effects, but the smartmatch op cannot currently tell a simple match from one
-        with embedded blocks / pos. **To revive:** give the regex op a precise
-        side-effect signal (e.g. a `has_code_blocks` / uses-pos flag on the compiled
-        Regex) and only skip env_dirty for the provably-pure simple-match case.
+      - **DONE — the regex/smartmatch pull (bench-string 5003 → 1 per-match).**
+        `exec_smart_match_expr_op` now signals env_dirty precisely. The first naive
+        attempt (drop the blanket mark unconditionally) regressed whitelisted
+        `S02-magicals/sub.t` (`regex foo { a { $var = &?ROUTINE } }` — an embedded
+        regex code block writes a caller local) and `S05-modifier/pos.t` (`my $/;`
+        with `:pos` continued matching — `$/` is a real local read back across
+        matches). The root insight: a regex RHS runs embedded `{ }` blocks through
+        the **interpreter regex engine**, which writes arbitrary caller locals by
+        name without going through a VM op. The precise gate skips env_dirty only
+        when ALL hold:
+        * **compile-time** `rhs_pure_regex` — the RHS is a plain `Value::Regex`
+          literal (a new field on `OpCode::SmartMatchExpr`, via
+          `rhs_is_plain_regex_literal`). Excludes `RegexWithAdverbs` (`:pos`/`:g`
+          carry state), named/Sub regexes, and value smartmatch.
+        * **runtime** the engine ran no embedded code that wrote a caller var — the
+          engine already logs those in `Interpreter::pending_local_updates`
+          (`execute_regex_code_blocks`); the op clears it before the match and
+          checks it after (precise for `/ a { $x=99 } /`, `&foo` with a block, etc.).
+        * not a substitution / transliteration (those mutate the topic alias).
+        * `$/` is not itself a compiled local slot (`code.locals` has no `/` — the
+          `my $/` case).
+        Plus the lhs alias (`$x ~~ …`) is reverse-write-through'd into its slot. The
+        engine's `pending_local_updates` (previously never consumed — an unbounded
+        leak) is now drained each match. Pinned by `t/smartmatch-env-dirty.t` (18).
       - **NEXT (remaining step 2)** — genuinely cold, zero-benefit setters (do only
         when deleting env_dirty holistically): `vm_register_ops` declaration-time trait
         handlers, `vm_var_assign_ops:4018/4042` (`:=` element SlotRef — needs `code`
