@@ -379,8 +379,9 @@ impl VM {
         if let Some(val) =
             self.try_fast_accessor_read(&target, &method, &args, modifier.is_some(), quoted)
         {
+            // Pure attribute read: does not mutate the invocant (see comment
+            // above), so it does not dirty the caller's locals (Slice 6.3).
             self.stack.push(val);
-            self.env_dirty = true;
             return Ok(());
         }
         // `.so` / `.not` on a value whose type defines a user `Bool` method must

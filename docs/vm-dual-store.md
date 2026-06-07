@@ -871,9 +871,26 @@ Reaching that requires, roughly in order:
       | `mb_method` (`$p.g()`)  |                 10001 |     1 |
       | `mb_nested` (`self.d()`)|                 10001 |     1 |
       | `@a.elems` on a var     |                 10001 |     1 |
+      | `benchmarks/method-call`|                 20000 |     1 |
+      | `benchmarks/bench-class`|                 14001 |     2 |
+
+      **Stage 1b (same bug, other dispatch shapes).** Two more per-call
+      false-positive setters were found by measuring the real benchmarks and fixed
+      together (PR after #2689):
+      - **Fast attribute-accessor read** — `$obj.x` via `try_fast_accessor_read` in
+        both the `CallMethod` and `CallMethodMut` handlers unconditionally set
+        `env_dirty`. It is a pure read that touches no env (its own comment says so),
+        so the mark is dropped. This dominated accessor-heavy code (`bench-class`;
+        `distance-to`'s `$other.x`/`$other.y`).
+      - **Native default construction** — `Foo.new(...)` via
+        `try_native_default_construct` returned early without clearing the
+        conservative mark, yet it returns a fresh instance and writes nothing to the
+        caller env, so it is now marked pure. (This was the residual `method-call`
+        cost: `my $p2 = Point.new(...)` in the loop dirtied env and the next
+        `$p1.distance-to` receiver read paid the pull.)
 
       `make test` PASS (5093); method/OOP/closure/dynamic-var roast green. Pinned
-      by `t/method-env-dirty.t`. The flag is NOT yet deleted: the function-dispatch
+      by `t/method-env-dirty.t` (24 cases). The flag is NOT yet deleted: the function-dispatch
       half of step (1) is already precise (Slice 6.1), but steps (2) the ~36 by-name
       var/control setters and (3) the ~21 I/O + interpreter-carrier setters remain
       — (3) is gated on the interpreter-bridge removal (lever A finish / Q2). So
