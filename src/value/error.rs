@@ -819,10 +819,17 @@ impl RuntimeError {
             "nogo".to_string(),
             Value::array(nogo.iter().map(|s| Value::str(s.to_string())).collect()),
         );
-        if !unexpected.is_empty() {
-            let unexpected_str = unexpected.join(" ");
-            attrs.insert("unexpected".to_string(), Value::str(unexpected_str));
-        }
+        // `.unexpected` is a list of the unknown adverb names (Raku returns a
+        // Seq), so smartmatch against `<foo>` / a regex over its elements works.
+        attrs.insert(
+            "unexpected".to_string(),
+            Value::array(
+                unexpected
+                    .iter()
+                    .map(|s| Value::str(s.to_string()))
+                    .collect(),
+            ),
+        );
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Adverb", attrs)
     }

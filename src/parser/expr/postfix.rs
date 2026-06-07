@@ -312,6 +312,17 @@ fn try_parse_unknown_adverb(input: &str) -> Option<(&str, String)> {
 /// Determine "element access" vs "slice" from the target and index.
 /// Hash access is always "slice"; array single-element is "element access".
 fn determine_subscript_what(target: &Expr, index_expr: &Expr) -> String {
+    // A zen slice (empty subscript → Whatever index) reports the bracket kind:
+    // `{} slice` for a hash, `[] slice` for an array. This is only used when
+    // there is no `nogo` (pure unknown-adverb) error; the runtime overrides it
+    // to plain "slice" when a conflicting (nogo) combination is present.
+    if matches!(index_expr, Expr::Whatever) {
+        return if matches!(target, Expr::HashVar(_)) {
+            "{} slice".to_string()
+        } else {
+            "[] slice".to_string()
+        };
+    }
     if matches!(target, Expr::HashVar(_)) {
         return "slice".to_string();
     }
@@ -2501,10 +2512,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             // However, %h{}:exists and %h{}:delete need Index{Whatever} for adverb handling.
             if let Some(r) = r.strip_prefix('}') {
                 let (r_adv, _) = ws(r)?;
-                if r_adv.starts_with(":exists")
+                // `%h{}` followed by ANY subscript adverb (`:exists`/`:delete`,
+                // `:k`/`:v`/`:kv`/`:p` and their negations/args, or an unknown
+                // `:foo`) is kept as Index{Whatever} so the shared adverb-parsing
+                // loop below handles the slice semantics and X::Adverb validation.
+                // A bare `%h{}` with no adverb stays a ZenSlice.
+                let has_adverb = r_adv.starts_with(":exists")
                     || r_adv.starts_with(":!exists")
                     || r_adv.starts_with(":delete")
-                {
+                    || r_adv.starts_with(":!delete")
+                    || parse_subscript_adverb_with_expr(r_adv).is_some()
+                    || try_parse_unknown_adverb(r_adv).is_some();
+                if has_adverb {
                     // Keep as Index with Whatever so adverb processing works
                     expr = Expr::Index {
                         target: Box::new(expr),

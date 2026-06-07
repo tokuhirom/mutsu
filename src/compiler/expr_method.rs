@@ -55,6 +55,20 @@ impl Compiler {
             }
             _ => unreachable!(),
         };
+        // `.name` on an array/hash variable returns the sigil'd variable name
+        // (e.g. `%h.name` → "%h", `@a.name` → "@a"), matching Raku's container
+        // `.name`. (`$x.name` operates on the contained value, and `&f.name`
+        // returns the routine name, so those are left to normal dispatch.)
+        if name.resolve() == "name"
+            && args.is_empty()
+            && modifier.is_none()
+            && !quoted
+            && matches!(target, Expr::ArrayVar(_) | Expr::HashVar(_))
+        {
+            let idx = self.code.add_constant(Value::str(target_name));
+            self.code.emit(OpCode::LoadConst(idx));
+            return;
+        }
         // Fast path: @arr.push(single_expr) with no modifiers → ArrayPush opcode
         // Only for local variables (not captured closures) to avoid COW env sync issues
         if name.resolve() == "push"

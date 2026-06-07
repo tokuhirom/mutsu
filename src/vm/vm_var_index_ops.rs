@@ -399,6 +399,14 @@ impl VM {
         };
         // Object hash shortcut: when the target hash has a key_type constraint,
         // use .WHICH-based lookup and enforce key type checking on access.
+        // A Range used as a hash subscript is a multi-key slice: `%h{"b".."c"}`
+        // selects the keys "b","c". (For arrays a Range is a positional slice and
+        // is handled elsewhere, so only expand it for Hash targets here.)
+        let index = if matches!(&target, Value::Hash(_)) && index.is_range() {
+            Value::array(crate::runtime::utils::value_to_list(&index))
+        } else {
+            index
+        };
         if let Value::Hash(ref items) = target {
             let hash_val = Value::Hash(items.clone());
             if let Some(key_type) = self.interpreter.hash_key_type(&hash_val)
