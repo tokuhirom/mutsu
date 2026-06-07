@@ -943,15 +943,26 @@ Reaching that requires, roughly in order:
         1 → 5000 (the routine-`_` insert into the freshly-chained overlay forces a
         make_mut). The compile-time `has_env_writes` gate is zero runtime cost and
         avoids the overlay entirely. Pinned by `t/zeroarg-env-dirty.t` (16).
-      - **NEXT: the rest of step 2** — the remaining setters split into THREE kinds
-        (the resume map originally lumped them as "by-name var/control ops"; they are
-        not uniform):
-        1. **post-call conservative marks on alternate dispatch paths** — `vm_var_get_ops`
-           (bareword-term-as-call, 10), `vm_register_ops` trait/`call_function` sites
-           (1138/1171/1349/1474/1569): these mark dirty after an interpreter/named
-           call. Making them precise needs the *function-dispatch purity signal*
-           extended to `call_compiled_function_named` (it currently does the merge but
-           does not report a changed-flag like the method path's `method_dispatch_pure`).
+      - **DONE: heavy "named" dispatch path (step 2, third target).** `call_compiled_function_named`
+        (`vm_call_dispatch.rs`) — the path for complex signatures (default params, return
+        types, where-constraints, typed params, multis) — now signals env_dirty
+        *precisely* from its return merge instead of relying on a blanket post-call
+        mark. It saves the caller's incoming dirtiness, resets before the body (the
+        body's nested-call dirtiness is about the callee env, reconciled by the merge),
+        and sets `env_dirty = saved || changed` where `changed` is true iff the merge
+        wrote a caller-slot-aliasing value: a plain-lexical (captured-outer) writeback
+        whose value actually differs, a non-empty `is rw` writeback, or an `is raw`
+        return. Dynamic-var writeback (`pop_caller_env_with_writeback`) targets `$*x`
+        names with no compiled slot, so it never obliges a pull. The blanket marks at
+        the hot call sites are removed (`vm_call_func_ops` heavy/OTF/cached named,
+        `vm_var_get_ops` bareword-term named). **`for ^5000 { $c += g(2) }` with a
+        default-param / return-type / where / typed / multi callee: locals_pulls 5001
+        → 1.** (The named path's `env_deep_copies` per call is a separate cost — its
+        env clone — not the env_dirty flag.) Pinned by `t/named-call-env-dirty.t` (16:
+        default/return-type/where/typed coherence, captured-outer + is-rw + dynamic
+        writeback propagation, nested calls, RMW). The EVAL/carrier callers
+        (`vm_call_exec_ops`) keep their conservative marks — that's step 3.
+      - **NEXT: the rest of step 2** — the remaining setters:
         2. **genuine by-name writes — clean reverse-write-through / redundant drops**:
            `vm_data_ops:418` (push fast path already restores the local slot at
            ~413-415 → the mark is redundant, drop it), `vm_register_ops:824/908`

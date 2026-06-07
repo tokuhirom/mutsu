@@ -155,17 +155,12 @@ impl VM {
                             r
                         };
                         // Put CF back in cache
-                        let used_named = !Self::is_light_call_eligible(&cf, name_str)
-                            && !Self::is_positional_light_call_eligible(&cf, name_str);
                         self.otf_call_cache.insert(name_sym, cf);
                         self.stack.push(result?);
-                        // light / positional_light sub-cases signal env_dirty via
-                        // their scoped-overlay merge; the named sub-case (complex
-                        // signatures, possible `is rw`/`is raw` caller writeback)
-                        // is handled conservatively like the main named path.
-                        if used_named {
-                            self.env_dirty = true;
-                        }
+                        // Slice 6.3 step 2: all three sub-cases now signal env_dirty
+                        // precisely — light / positional_light via their scoped-overlay
+                        // merge, and the named sub-case via call_compiled_function_named's
+                        // return merge. No blanket mark needed.
                         return Ok(());
                     }
                     // Put CF back if we couldn't use it (stack underflow)
@@ -414,7 +409,7 @@ impl VM {
                 .interpreter
                 .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
-            self.env_dirty = true;
+            // Slice 6.3 step 2: precise env_dirty from the named-call merge.
         } else if self.interpreter.user_function_matches_call(&name, &args) {
             // A user-defined sub shadows a same-named builtin.
             crate::vm::vm_stats::record_function_fallback(&name);
@@ -677,15 +672,12 @@ impl VM {
                 if pushed_dispatch {
                     self.interpreter.pop_multi_dispatch();
                 }
-                // The named (heavy) path is used for complex signatures that can
-                // write back into caller-named state in ways the scoped-overlay
-                // merge does not capture: an `is rw` param writeback targets a
-                // callee-local name (skipped by the merge), and `is raw` / Proxy
-                // returns alias caller containers. Conservatively mark env dirty
-                // so the caller re-syncs. This is not the hot recursion path
-                // (simple positional calls use positional_light), so keeping the
-                // old behavior here costs nothing measurable.
-                self.env_dirty = true;
+                // Slice 6.3 step 2: no blanket mark. call_compiled_function_named
+                // now signals env_dirty precisely — its return merge sets it when a
+                // captured-outer / `is rw` writeback (or an `is raw` return) actually
+                // wrote a caller-aliasing value. A pure heavy-signature call (default
+                // param, return type, where-constraint) no longer forces a per-call
+                // O(caller-locals) pull.
                 self.interpreter
                     .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
             } else {
