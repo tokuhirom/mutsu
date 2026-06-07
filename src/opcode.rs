@@ -89,6 +89,11 @@ pub(crate) enum OpCode {
     /// item in list context. Emitted when `$` variable values are used inside
     /// `ArrayLiteral` or assigned to `@`/`%` targets.
     Itemize,
+    /// Like `Itemize`, but skips itemization when the named scalar variable is
+    /// bound (`:=`) to a Positional value. A bound scalar is NOT a Scalar
+    /// container, so `@a = $bound` must flatten (matching Raku). The argument is
+    /// the constant-pool index of the variable name. Emitted for `@a = $var`.
+    ItemizeVar(u32),
     /// Wrap the top-of-stack value in a Value::Scalar container.
     /// Used for `my $ = expr` (anonymous scalar) in argument position,
     /// so the anonymous container is preserved in immutable List contexts.
@@ -103,6 +108,9 @@ pub(crate) enum OpCode {
     WrapVarRef(u32),
     /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
     MarkBindContext,
+    /// Signal that the next SetLocal binds a `$` scalar to a Positional value via
+    /// `:=`, so it must be recorded as decontainerized (so `@a = $bound` flattens).
+    MarkScalarBindContext,
     /// Signal that the next SetLocal is a `:=` rebind (not a VarDecl).
     /// Triggers cleanup of old bind pairs and reverse aliases.
     MarkRebindContext,

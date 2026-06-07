@@ -128,6 +128,15 @@ pub(crate) struct VM {
     resume_ip: Option<usize>,
     /// When true, the next SetLocal is a `:=` bind (preserves container type for `@` vars).
     bind_context: bool,
+    /// When true, the next SetLocal binds a `$` scalar to a Positional via `:=` and
+    /// must record the scalar as decontainerized. Independent of `bind_context` so
+    /// scalar binds keep their existing (fast-path) store routing.
+    scalar_bind_context: bool,
+    /// True once any scalar has been bound (`:=`) to a Positional value, marking
+    /// it as decontainerized in the env (`__mutsu_bound_decont::$name`). Guards the
+    /// (otherwise hot) marker-clearing in scalar assignment so the common case
+    /// (no such binds) stays zero-cost.
+    bound_decont_active: bool,
     /// When true, the next SetLocal is a `:=` rebind (not VarDecl).
     /// Used to trigger cleanup of old bind pairs and reverse aliases.
     rebind_context: bool,
@@ -382,6 +391,8 @@ impl VM {
             env_dirty: false,
             resume_ip: None,
             bind_context: false,
+            scalar_bind_context: false,
+            bound_decont_active: false,
             rebind_context: false,
             constant_context: false,
             explicit_initializer_context: false,
@@ -1806,6 +1817,35 @@ impl VM {
                 self.stack.push(itemized);
                 *ip += 1;
             }
+            OpCode::ItemizeVar(name_idx) => {
+                // Itemize a scalar variable's value for `@a = $var`, UNLESS the
+                // scalar was bound (`:=`) to a Positional. A bound scalar is not
+                // a Scalar container, so its value must flatten on `@`-assignment.
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let is_bound_decont = if self.bound_decont_active {
+                    let var_name = match &code.constants[*name_idx as usize] {
+                        Value::Str(s) => s.as_str(),
+                        _ => "",
+                    };
+                    let key = format!("__mutsu_bound_decont::{}", var_name);
+                    matches!(self.interpreter.env().get(&key), Some(Value::Bool(true)))
+                } else {
+                    false
+                };
+                let result = if is_bound_decont {
+                    val
+                } else {
+                    match val {
+                        Value::Array(items, kind) if !kind.is_itemized() => {
+                            Value::Array(items, kind.itemize())
+                        }
+                        Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
+                        other => other,
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
             OpCode::WrapScalar => {
                 // Wrap the top-of-stack value in a Value::Scalar container.
                 // Used for `my $ = expr` (anonymous scalar) in argument position
@@ -1837,6 +1877,10 @@ impl VM {
             }
             OpCode::MarkBindContext => {
                 self.bind_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkScalarBindContext => {
+                self.scalar_bind_context = true;
                 *ip += 1;
             }
             OpCode::MarkRebindContext => {
