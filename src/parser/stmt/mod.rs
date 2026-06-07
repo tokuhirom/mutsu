@@ -1,7 +1,7 @@
 mod args;
 pub(crate) mod assign;
 pub(super) mod class;
-mod control;
+pub(in crate::parser) mod control;
 pub(crate) mod decl;
 pub(super) mod modifier;
 pub(super) mod simple;

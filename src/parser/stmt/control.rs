@@ -958,15 +958,60 @@ pub(super) fn foreach_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Err(PError::expected("foreach (obsolete) check"));
     }
-    // If followed by '(' it could be a function call (e.g. `sub foreach {}; foreach();`).
-    // Don't emit a fatal error — allow fallback to expression parsing.
-    let rest_trimmed = rest.trim_start();
-    if rest_trimmed.starts_with('(') || rest_trimmed.starts_with(';') || rest_trimmed.is_empty() {
+    // `foreach(...)` or `foreach;` with no intervening whitespace could be a
+    // call of a user-defined `sub foreach {}` (see #2440). The obsolete loop
+    // form always has whitespace before its term (`foreach (1..10) { }`,
+    // `foreach @x { }`), so only bail when `(`/`;` follow immediately.
+    if rest.starts_with('(') || rest.starts_with(';') || rest.trim_start().is_empty() {
         return Err(PError::expected("foreach (obsolete) check"));
     }
-    Err(PError::fatal(
-        "X::Obsolete: Unsupported use of 'foreach'. In Raku please use: 'for'.".to_string(),
+    Err(make_obsolete_error(
+        "'foreach'",
+        Some("'for'"),
+        "X::Obsolete: Unsupported use of 'foreach'. In Raku please use: 'for'.",
     ))
+}
+
+/// Given input starting at `(`, return true if its matching `)` group contains
+/// a top-level `;` (the C-style `for (init; test; incr)` obsolete form).
+fn paren_has_toplevel_semicolon(input: &str) -> bool {
+    let mut depth = 0i32;
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return false;
+                }
+            }
+            ';' if depth == 1 => return true,
+            // Skip a backslash-escaped char so an escaped delimiter is ignored.
+            '\\' => {
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Build a fatal, structured `X::Obsolete` parse error carrying `old` /
+/// `replacement` attributes so that `throws-like` can match them.
+pub(in crate::parser) fn make_obsolete_error(
+    old: &str,
+    replacement: Option<&str>,
+    message: &str,
+) -> PError {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("old".to_string(), Value::str(old.to_string()));
+    if let Some(rep) = replacement {
+        attrs.insert("replacement".to_string(), Value::str(rep.to_string()));
+    }
+    attrs.insert("message".to_string(), Value::str(message.to_string()));
+    let exception = Value::make_instance(crate::symbol::Symbol::intern("X::Obsolete"), attrs);
+    PError::fatal_with_exception(message.to_string(), Box::new(exception))
 }
 
 pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -1053,6 +1098,15 @@ fn find_rw_pointy_block(input: &str) -> Option<usize> {
 fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stmt> {
     let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
     let (rest, _) = ws1(rest)?;
+    // C-style `for (init; test; incr) { }` is obsolete — Raku uses `loop`.
+    // Detected by a top-level `;` inside the parenthesized iterable.
+    if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) {
+        return Err(make_obsolete_error(
+            "C-style \"for\"",
+            Some("\"loop\""),
+            "X::Obsolete: Unsupported use of C-style \"for\". In Raku please use: \"loop\".",
+        ));
+    }
     // Try to detect `<->` (rw pointy block) before the expression parser
     // consumes the `<` as a comparison operator.
     let (rest, iterable, rw_detected) = if let Some(rw_pos) = find_rw_pointy_block(rest) {

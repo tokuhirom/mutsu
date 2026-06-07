@@ -1452,6 +1452,18 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
     }
 
+    // `undef` as a value is obsolete Perl 5 syntax. A following `(` makes it a
+    // routine call instead (e.g. `sub undef {}; undef()`), so only flag the
+    // bare-term use.
+    if name == "undef" && !rest.starts_with('(') {
+        return Err(crate::parser::stmt::control::make_obsolete_error(
+            "undef",
+            None,
+            "X::Obsolete: Unsupported use of undef as a value. \
+             In Raku please use: an appropriate type object such as Any.",
+        ));
+    }
+
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {
