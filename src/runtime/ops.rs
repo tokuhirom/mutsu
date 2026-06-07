@@ -1106,28 +1106,7 @@ impl Interpreter {
             }
             "%" | "mod" => crate::builtins::arith_mod(left.clone(), right.clone()),
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
-            "~" => {
-                // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
-                if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
-                    let result_class = if let Value::Instance { class_name, .. } = left {
-                        *class_name
-                    } else {
-                        crate::symbol::Symbol::intern("Buf")
-                    };
-                    let mut bytes = crate::vm::VM::extract_buf_bytes(left);
-                    bytes.extend(crate::vm::VM::extract_buf_bytes(right));
-                    let byte_vals: Vec<Value> =
-                        bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(result_class, attrs));
-                }
-                Ok(Value::str(format!(
-                    "{}{}",
-                    crate::runtime::utils::coerce_to_str(left),
-                    crate::runtime::utils::coerce_to_str(right)
-                )))
-            }
+            "~" => Ok(crate::vm::VM::concat_values(left.clone(), right.clone())),
             "&&" | "and" => {
                 if !left.truthy() {
                     Ok(left.clone())
