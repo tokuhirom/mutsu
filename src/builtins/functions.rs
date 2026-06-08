@@ -1219,17 +1219,7 @@ fn native_function_2arg(
             if matches!(arg1, Value::Junction { .. }) || matches!(arg2, Value::Junction { .. }) {
                 return None;
             }
-            let start = match arg2 {
-                Value::Int(i) if *i >= 0 => *i as usize,
-                Value::Int(_) => return None, // negative: let runtime handle
-                _ => return None,
-            };
-            let s = arg1.to_string_value();
-            let chars: Vec<char> = s.chars().collect();
-            if start > chars.len() {
-                return None; // out-of-range: let runtime handle (returns Failure)
-            }
-            Some(Ok(Value::str(chars[start..].iter().collect())))
+            super::substr::native_substr_slice(&arg1.to_string_value(), arg2, None)
         }
         "samemark" => {
             let target = arg1.to_string_value();
@@ -1442,23 +1432,7 @@ fn native_function_3arg(
             {
                 return None;
             }
-            let start = match arg2 {
-                Value::Int(i) if *i >= 0 => *i as usize,
-                Value::Int(_) => return None, // negative: let runtime handle
-                _ => return None,
-            };
-            let len = match arg3 {
-                Value::Int(i) if *i >= 0 => *i as usize,
-                Value::Int(_) => return None,
-                _ => return None,
-            };
-            let s = arg1.to_string_value();
-            let chars: Vec<char> = s.chars().collect();
-            if start > chars.len() {
-                return None; // out-of-range: let runtime handle (returns Failure)
-            }
-            let end = (start + len).min(chars.len());
-            Some(Ok(Value::str(chars[start..end].iter().collect())))
+            super::substr::native_substr_slice(&arg1.to_string_value(), arg2, Some(arg3))
         }
         _ => None,
     }
