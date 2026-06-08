@@ -345,8 +345,10 @@ impl VM {
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
 
-        // TODO: compile to bytecode — Routine value dispatch (the call_function /
-        // call_method_with_values sites in this block). See ledger §1.
+        // TODO: compile to bytecode — Routine value dispatch (the call_function
+        // sites in this block; the method-dispatch site now routes through the
+        // unified compiled-first path). Blocked-by: VM-side function/multi
+        // resolution (ledger §2).
         // Routine: resolve to function name and dispatch
         // Keep using interpreter.call_function here because Routine values may
         // reference builtin functions (e.g. &SETTING::not resolves to Routine{name:"not"})
@@ -375,9 +377,9 @@ impl VM {
             {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
-                return self
-                    .interpreter
-                    .call_method_with_values(invocant, &name_str, method_args);
+                // Route through the VM's unified compiled-first dispatch (ledger §1):
+                // user-defined methods run as compiled bytecode, native fall back.
+                return self.try_compiled_method_or_interpret(invocant, &name_str, method_args);
             }
             return self.interpreter.call_function(&name_str, args);
         }

@@ -29,8 +29,7 @@
 | `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B（共有セル所有） |
 | `vm_data_ops.rs` shaped push | shaped 配列 push | MEDIUM | shaped 次元メタ検査の VM 化 |
 | `vm_data_ops.rs` non-simple push | closure-captured / 非Array push | MEDIUM | 第一級コンテナ Phase 2（ContainerRef） |
-| `vm_smart_match.rs` key-method | smartmatch のキーメソッド抽出 | EASY-MED | ③ |
-| `vm_dispatch_helpers.rs` Routine dispatch | Routine 値の call_function/method | MEDIUM | ② レジストリ / multi 解決 |
+| ~~`vm_smart_match.rs` key-method~~ | ~~smartmatch のキーメソッド抽出~~ | — | **✅消化 (PR2)**: 統一 compiled-first へ |
 | `vm_call_helpers.rs` hyper temp | temp-bind した item への hyper メソッド | MEDIUM | 第一級コンテナ Phase 2 |
 | `vm_register_ops.rs` react loop | `run_react_event_loop[_drain]` | HARD | lever B（async state 所有） |
 
@@ -44,6 +43,7 @@
 | `vm_call_dispatch.rs` catch-all | `call_function_compiled_first` 末端 | HARD | ③ |
 | `vm_var_get_ops.rs` 0-arg term | 0引数のユーザ/multi 関数 term | MEDIUM | ② |
 | `vm_var_get_ops.rs` pkg-qualified | `Module::func` を term 位置で | MEDIUM | ② |
+| `vm_dispatch_helpers.rs` Routine call_function | Routine 値の関数解決（method 部は消化済） | MEDIUM | ② レジストリ / multi 解決 |
 
 ## §C — CARRIER（撲滅対象外・文書化して残す。④で確定）
 
@@ -60,10 +60,15 @@
 
 ## 進捗ログ
 
-- **2026-06-08 (PR-1)**: ① の起点。全フォールバックを `// TODO: compile to bytecode` / `// CARRIER:` で可視化し
-  本台帳を新設。併せて EASY 撲滅 1 件: `succ`/`pred`（`vm_var_assign_ops.rs` の `increment_value_smart`/
+- **2026-06-08 (PR-1, #2755 merged)**: ① の起点。全フォールバックを `// TODO: compile to bytecode` / `// CARRIER:`
+  で可視化し本台帳を新設。併せて EASY 撲滅 1 件: `succ`/`pred`（`vm_var_assign_ops.rs` の `increment_value_smart`/
   `decrement_value_smart`）の生 `interpreter.call_method_with_values` を統一 compiled-first ディスパッチ
   `try_compiled_method_or_interpret` に差し替え（§1 から 2 サイト消化）。
+- **2026-06-08 (PR-2)**: 同手法で value-receiver の生 `call_method_with_values` をさらに 2 サイト消化 →
+  `vm_smart_match.rs` smartmatch キーメソッド、`vm_dispatch_helpers.rs` Routine の method-dispatch 分岐
+  （`&?ROUTINE.dispatcher()(self,…)`）を統一 compiled-first ディスパッチへ。ユーザ定義メソッドは compiled bytecode
+  実行になり、native/reflective のみが共有末端へ。t/smartmatch-method-dispatch.t 追加。S03-smartmatch 全 pass。
+  （補足: fat-arrow `$o ~~ (k => v)` が False を返すのは Pair 分岐到達前の別パースバグで本作業の対象外。コロンペアは正常。）
 
 ## 撲滅の順序（PLAN.md ①〜⑤ に対応）
 
