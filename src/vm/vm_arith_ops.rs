@@ -439,6 +439,9 @@ impl VM {
     }
 
     pub(super) fn exec_decont_op(&mut self) {
+        // Strips a SINGLE level of Value::Scalar for slurpy flattening. This is
+        // intentionally non-recursive and distinct from the recursive
+        // Value::descalarize (see the decont family note in value/mod.rs §3).
         let val = self.stack.pop().unwrap();
         let new_val = match val {
             Value::Scalar(inner) => *inner,
@@ -538,13 +541,13 @@ impl VM {
             .interpreter
             .auto_fetch_proxy(&left)
             .unwrap_or(left)
-            .decontainerize()
+            .descalarize()
             .clone();
         let right = self
             .interpreter
             .auto_fetch_proxy(&right)
             .unwrap_or(right)
-            .decontainerize()
+            .descalarize()
             .clone();
         // Both junctions: thread left first, swap kinds if right is tighter
         if let (Value::Junction { kind: lk, .. }, Value::Junction { kind: rk, .. }) =

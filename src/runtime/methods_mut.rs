@@ -54,18 +54,11 @@ fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &Big
 }
 
 impl Interpreter {
-    fn strip_scalar(value: Value) -> Value {
-        match value {
-            Value::Scalar(inner) => Self::strip_scalar(*inner),
-            other => other,
-        }
-    }
-
     fn apply_hash_assignment_entry(
         updated: &mut std::collections::HashMap<String, Value>,
         item: Value,
     ) -> bool {
-        match Self::strip_scalar(item) {
+        match item.into_descalarized() {
             Value::Pair(key, boxed) => {
                 updated.insert(key, *boxed);
                 true
@@ -86,7 +79,7 @@ impl Interpreter {
         existing_hash: std::collections::HashMap<String, Value>,
         value: Value,
     ) -> Value {
-        let normalized_value = Self::strip_scalar(value);
+        let normalized_value = value.into_descalarized();
         match normalized_value {
             Value::Pair(..) | Value::ValuePair(..) | Value::Hash(..) => {
                 let mut updated = existing_hash;
@@ -113,7 +106,7 @@ impl Interpreter {
     }
 
     fn normalize_rw_accessor_assignment(current: Option<Value>, value: Value) -> Value {
-        let current = current.map(Self::strip_scalar);
+        let current = current.map(Value::into_descalarized);
         match current {
             Some(Value::Hash(existing_hash)) => {
                 Self::normalize_hash_like_assignment((*existing_hash).clone(), value)

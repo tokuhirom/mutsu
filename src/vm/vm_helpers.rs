@@ -908,8 +908,8 @@ impl VM {
         let left = self.interpreter.auto_fetch_proxy(&left)?;
         let right = self.interpreter.auto_fetch_proxy(&right)?;
         // Decontainerize Scalar wrappers
-        let left = left.decontainerize().clone();
-        let right = right.decontainerize().clone();
+        let left = left.descalarize().clone();
+        let right = right.descalarize().clone();
         if let (
             Value::Junction {
                 kind: left_kind,

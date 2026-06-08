@@ -2366,11 +2366,33 @@ impl Value {
         Value::str(key.to_string())
     }
 
-    /// Unwrap a Scalar container, returning the inner value.
-    /// For non-Scalar values, returns self unchanged.
-    pub fn decontainerize(&self) -> &Value {
+    // --- decont family (see docs/container-identity.md §3) ---
+    // mutsu has THREE "decontainerize" operations on THREE different axes.
+    // They are intentionally NOT fused into one helper:
+    //   - Value::descalarize / into_descalarized — strips `Scalar` ($(...)), RECURSIVE
+    //   - Value::deref_container                  — reads through `ContainerRef` (:=), single cell
+    //   - ArrayKind::decontainerize               — strips `ItemList`/`ItemArray` flag (list flatten)
+    // A "full decont" that strips all three is deferred to Phase 1+; it must NOT be
+    // applied at lvalue/container-requiring sites (is-rw writeback, :=, .VAR, =:=,
+    // take-rw, autoviv slot-refs), which need the live cell or the container variant.
+
+    /// Unwrap a `Scalar` container, returning a reference to the inner value.
+    /// RECURSIVE: nested `$($(...))` are fully stripped. Non-Scalar values are
+    /// returned as-is. See the decont family note above; this is the Scalar axis only.
+    pub fn descalarize(&self) -> &Value {
         match self {
-            Value::Scalar(inner) => inner.decontainerize(),
+            Value::Scalar(inner) => inner.descalarize(),
+            other => other,
+        }
+    }
+
+    /// Owned, recursive `Scalar`-strip. Same axis/semantics as [`Value::descalarize`]
+    /// but consumes `self` and returns the inner value by value (no extra clone for
+    /// callers that already own the value). Canonical replacement for the former
+    /// `runtime::methods_mut::strip_scalar`.
+    pub fn into_descalarized(self) -> Value {
+        match self {
+            Value::Scalar(inner) => inner.into_descalarized(),
             other => other,
         }
     }

@@ -84,7 +84,8 @@ pub(crate) enum OpCode {
     BoolBitNeg, // ?^ prefix: boolean bitwise negation
     StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
-    Decont,     // decontainerize: Array(_, true) → Array(_, false) for slurpy flattening
+    Decont,     // strip ONE level of Value::Scalar for slurpy flattening (NOT the
+    // recursive Value::descalarize; touches no ArrayKind flag — see decont family note)
     /// Itemize (containerize) an Array/List value so it behaves as a single
     /// item in list context. Emitted when `$` variable values are used inside
     /// `ArrayLiteral` or assigned to `@`/`%` targets.
