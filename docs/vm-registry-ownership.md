@@ -134,13 +134,38 @@ dual-store は [vm-dual-store.md](vm-dual-store.md)。
   検出スキャナは `match/if-let self.registry_mut()` ブロック本体の registry 再アクセスも走査せよ（下記）。
   最終防衛線は make roast のタイムアウト**（make test+51823 roast サンプル緑、回帰ゼロ）。
 
+## PR-B（read 側移行）進捗
+
+- **PR-B slice 1 = MRO/クラス lookup の Registry メソッド化（本 PR）**: MRO 計算は VM の全メソッド
+  ディスパッチが叩く最ホットの registry-read。これを `impl Registry`（`src/runtime/registry.rs`）の
+  pure メソッドへ降ろした:
+  - `Registry::compute_class_mro(&self, name, stack) -> Result<Vec<String>>` — `self.classes` のみ参照
+    する純 C3 線形化。再帰は registry 内に閉じ、ユーザコード再入なし。
+  - `Registry::class_mro(&mut self, name) -> Vec<String>` — builtin 階層（Match/Capture/CompUnit…）+
+    parameterized（`Foo[Bar]`）+ `ClassDef::mro` キャッシュ参照 + compute + キャッシュ書き戻しを**単一
+    write ガード**で実施。従来 `Interpreter::class_mro` は最大 5 本の `registry()`/`registry_mut()` を
+    個別取得していたのを 1 本に集約（ホットパスの lock 取得削減）。
+  - `Registry::class_mro_cached(&self, name) -> Option<Vec<String>>` — readonly（キャッシュ or 単一要素）。
+  - `Registry::class_has_method(&mut self, name, method) -> bool` — MRO walk による method 有無判定。
+  Interpreter 側 `class_mro`/`compute_class_mro`/`class_mro_readonly`/`class_has_method` は薄い委譲
+  ラッパへ（65 + 多数の呼び出し側は無改変）。挙動不変、build/clippy/make test 緑、S12/S14 roast 緑。
+- **VM 直読みについて（調査結果）**: 現状 VM が registry フィールドを直接読むサイトは皆無で、`package_stubs`
+  の 2 write のみ（`vm.rs`）。VM の registry 系アクセスは全て `self.interpreter.<wrapper>()` 経由
+  （`type_matches_value` 40+ サイト、`class_mro` 等）。よって「VM ~15-20 read サイトを `self.registry.read()`
+  へ」は実コードと不一致＝VM への registry ハンドル追加は本 slice では不要（②非ゴールの Arc→plain 畳み込み
+  と一体で ③/④へ）。read 側移行の実体は wrapper の Registry メソッド化＝本 slice。
+- **残（PR-B 後続）**: 型マッチ（`type_matching.rs`）の「クラス MRO 経由の composed-role 推移 walk」2 ブロック
+  （L668-697 / L821-850）。pure-registry 読みだが、ゲート条件が **block1=`resolve_role_key`（Interpreter
+  名前解決）/ effective_constraint subtype 判定**、**block2=`roles.contains_key` / exact 一致**で非自明に異なり、
+  素朴な統合は推移閉包を変える恐れ。挙動不変を厳守するため別 slice で（gate を保ったまま Registry 側 closure
+  ヘルパへ抽出）。`resolve_method_with_owner_impl` の registry-read 部も同様に後続。
+
 ## 完了の定義（②）— **PR-A 完了（slice 1-5, #2760/2762/2763/2764/本PR）**
 
 `Interpreter` から宣言レジストリ全フィールドが消え `registry: Arc<RwLock<Registry>>` 1 本に。`clone_for_thread`
 のレジストリ複製は registry 全体 clone 1 行のみ（個別フィールド clone ゼロ、snapshot 不変）。VM の registry 系
-lookup は accessor 経由（多くは既に owned 返し）。**次は PR-B**（lookup/MRO/型マッチを Registry メソッド化して
-VM が `self.registry.read()` で直読み、台帳 §2 の関数 dispatch fallback 撲滅の前提を整える）→ **PR-C**
-（register_* の write-through 整理）→ ③（env/型/state 移管）。
+lookup は accessor 経由（多くは既に owned 返し）。**PR-B**（lookup/MRO/型マッチを Registry メソッド化、上記
+進捗）→ **PR-C**（register_* の write-through 整理）→ ③（env/型/state 移管）。
 
 ## 非ゴール
 

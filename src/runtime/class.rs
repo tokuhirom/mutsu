@@ -190,107 +190,19 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Compute the C3 MRO for `class_name`. Delegates to the pure-registry
+    /// [`Registry::compute_class_mro`] under a single read guard.
     pub(super) fn compute_class_mro(
         &mut self,
         class_name: &str,
         stack: &mut Vec<String>,
     ) -> Result<Vec<String>, RuntimeError> {
-        if stack.iter().any(|name| name == class_name) {
-            return Err(RuntimeError::new(format!(
-                "C3 MRO cycle detected at {}",
-                class_name
-            )));
-        }
-        if let Some(class_def) = self.registry().classes.get(class_name)
-            && !class_def.mro.is_empty()
-        {
-            return Ok(class_def.mro.clone());
-        }
-        stack.push(class_name.to_string());
-        let explicit_parents = self
-            .registry()
-            .classes
-            .get(class_name)
-            .map(|c| c.parents.clone())
-            .unwrap_or_default();
-        // If a user-defined class has no explicit parents, it implicitly
-        // inherits from Any (which in turn inherits from Mu).  This matches
-        // Raku's default class hierarchy.
-        let parents =
-            if explicit_parents.is_empty() && self.registry().classes.contains_key(class_name) {
-                vec!["Any".to_string()]
-            } else {
-                explicit_parents
-            };
-        let mut seqs: Vec<Vec<String>> = Vec::new();
-        for parent in &parents {
-            if self.registry().classes.contains_key(parent) {
-                let mro = self.compute_class_mro(parent, stack)?;
-                seqs.push(mro);
-            } else if parent == "Any" {
-                // Any implicitly inherits from Mu
-                seqs.push(vec!["Any".to_string(), "Mu".to_string()]);
-            } else if parent == "Cool" {
-                seqs.push(vec![
-                    "Cool".to_string(),
-                    "Any".to_string(),
-                    "Mu".to_string(),
-                ]);
-            } else {
-                seqs.push(vec![parent.clone()]);
-            }
-        }
-        seqs.push(parents.clone());
-        let mut result = vec![class_name.to_string()];
-        while seqs.iter().any(|s| !s.is_empty()) {
-            let mut candidate = None;
-            for seq in &seqs {
-                if seq.is_empty() {
-                    continue;
-                }
-                let head = &seq[0];
-                let mut in_tail = false;
-                for other in &seqs {
-                    if other.len() > 1 && other[1..].contains(head) {
-                        in_tail = true;
-                        break;
-                    }
-                }
-                if !in_tail {
-                    candidate = Some(head.clone());
-                    break;
-                }
-            }
-            if let Some(head) = candidate {
-                result.push(head.clone());
-                for seq in seqs.iter_mut() {
-                    if !seq.is_empty() && seq[0] == head {
-                        seq.remove(0);
-                    }
-                }
-            } else {
-                stack.pop();
-                return Err(RuntimeError::new(format!(
-                    "Inconsistent class hierarchy for {}",
-                    class_name
-                )));
-            }
-        }
-        stack.pop();
-        Ok(result)
+        self.registry().compute_class_mro(class_name, stack)
     }
 
     pub(super) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
-        let mro = self.class_mro(class_name);
-        for cn in mro {
-            if let Some(class_def) = self.registry().classes.get(&cn)
-                && (class_def.methods.contains_key(method_name)
-                    || class_def.native_methods.contains(method_name))
-            {
-                return true;
-            }
-        }
-        false
+        self.registry_mut()
+            .class_has_method(class_name, method_name)
     }
 
     /// Check whether the class (or its MRO ancestors) has a `new` method
