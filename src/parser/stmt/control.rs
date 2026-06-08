@@ -1129,6 +1129,23 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
         parse_for_params(rest)?;
     let rw_block = rw_block || rw_detected;
     let (rest, _) = ws(rest)?;
+    // A `for` loop always requires a brace block. Having parsed the iterable and
+    // any pointy parameters, if no `{` follows then the block is missing
+    // (`for 1, 2` → X::Syntax::Missing, what => 'block'). Fail fatally so the
+    // statement dispatcher does not fall back to reparsing `for` as a term.
+    if !rest.starts_with('{') {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("what".to_string(), Value::str("block".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Missing block".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
+        return Err(PError::fatal_with_exception(
+            "X::Syntax::Missing: Missing block".to_string(),
+            Box::new(ex),
+        ));
+    }
     // Collect &-sigil parameter names so they can be registered as user subs
     // inside the block scope — this prevents `m()` from being misread as `m//`
     // (a regex match) when `m` is bound via `-> &m { m() }`.

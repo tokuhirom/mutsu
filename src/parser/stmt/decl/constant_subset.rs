@@ -19,9 +19,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     // `constant ($a, $b) = ...` is a syntax error (X::Syntax::Missing)
     if rest.starts_with('(') {
-        return Err(PError::fatal(
-            "X::Syntax::Missing: Missing initializer on constant declaration".to_string(),
-        ));
+        return Err(missing_initializer_error());
     }
     // The name can be $var, @var, %var, &var, or bare identifier.
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
@@ -170,22 +168,19 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
-    let (rest, _) = opt_char(rest, ';');
-    Ok((
-        rest,
-        Stmt::VarDecl {
-            name,
-            expr: Expr::Literal(Value::Nil),
-            type_constraint: None,
-            is_state: false,
-            is_our: true,
-            is_dynamic: false,
-            is_export,
-            export_tags,
-            custom_traits: constant_traits.clone(),
-            where_constraint: None,
-        },
-    ))
+    // A `constant` with no `=`/`:=` initializer is a compile-time error
+    // (`constant foo;` → X::Syntax::Missing, what => 'initializer').
+    Err(missing_initializer_error())
+}
+
+/// X::Syntax::Missing for a `constant` declaration that has no initializer.
+fn missing_initializer_error() -> PError {
+    let msg = "X::Syntax::Missing: Missing initializer on constant declaration".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("what".to_string(), Value::str("initializer".to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
 }
 
 /// Parse `subset` declaration.
