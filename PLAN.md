@@ -112,7 +112,7 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
       使えば旧 `dispatch_sort` の暗黙処理を吸収できる → `dispatch_sort` 削除が可能になる（make roast 必須）。
     - 別根・未対処: pointy `-> $p {...}` / `*.value` matcher は `find_first_match_over_items` の `Value::Sub`
       呼び出し分岐ではなく `smart_match` 経路に行き topic 未束縛（リテラル配列でも失敗）。別 PR。
-- [ ] **Category C — メソッド / 演算子・arith・coercion の重複**: native fast path（`src/builtins/methods_*`,
+- [x] **Category C — メソッド / 演算子・arith・coercion の重複 ＝ 完了**: native fast path（`src/builtins/methods_*`,
       `vm_arith_ops`）と Interpreter slow path（`src/runtime/methods*.rs`）の重複。段階導入・手動監査
       （手順・対象マップ・進捗は [docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)）。
   - [x] **Phase 1a (#2719)**: arith `%`/`mod` の `runtime/ops.rs::apply_reduction_op` ローカル再実装を削除し
@@ -127,11 +127,22 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
         - `[minmax]` を共有 `vm_misc_ops::minmax_bounds_of_value`（再帰版）へ委譲（重複1削除＋ネストの bug 修正）。
         - 論理短絡 `&&`/`||`/`//` は reduction 専用実装（VM は infix をジャンプにコンパイル）で重複ではない。
           比較は共有 `runtime::compare_values` 使用済み。→ `apply_reduction_op` の operator-body dedup は完了。
-  - [~] **Phase 3 groundwork (#2725)**: genuine-fork メソッドの native 折込。`%`-chain ブロッカーの根本原因を
-        特定（上の Category B 参照 = `Value::Pair` の named 束縛）し `pair_as_positional` を追加・`.first` を修正。
-        **残（大作業・未着手）**: ① native/VM sort 移行 + `dispatch_sort` 削除（`pair_as_positional` で解禁済み・
-        高 blast-radius）、② `comb`(正規表現 matcher)/`substr`/`split`(named args) の native 折込、
-        ③ pointy/`*.code` matcher の `.first`（smart_match 経路 topic 未束縛、別根）。
+  - [x] **Phase 3 ＝ 完了**: groundwork (#2725) で `%`-chain ブロッカーの根本原因（= `Value::Pair` の named 束縛）を
+        特定し `pair_as_positional` を追加・`.first` を修正。残 3 件も完了:
+        - **① sort ラッパ重複の統合 (#2744)**: orchestration 本体（`sort_items_generic`/`sort_indices_generic`）は既に
+          共有だったが、その手前の「引数 parse（`:k`/`:by`/arity）＋ 形状→要素リスト変換」ラッパが `dispatch_sort`
+          (interp) と `try_native_sort` (VM) に**二重**にあった（しかも `:kv`/`:p`/`:v` で drift）。engine 非依存の
+          共有 `sort_value_generic(&mut dyn SortCaller, target, args)` に集約し `dispatch_sort` を**削除**。挙動保存。
+        - **② comb/substr/split の配置監査と dedup (#2745, #2747)**: 監査の結果 split は既に適正
+          （`SplitOpts`/`apply_split_opts`/`split_by_*_static` を native↔interp で共有、regex 分割だけが regex
+          エンジン依存の正当な fork）。**comb (#2745)**: 純粋な Int-chunk / Str-fixed 分割が interp 層に取り残されて
+          いたので `builtins::comb`（`comb_pure`）へ降ろし、native fast path と interp の両方が呼ぶ単一実装に（regex は
+          interp 維持）。**substr (#2747)**: start/length 解決は WhateverCode で `eval_call_on_value` を呼ぶため本質的に
+          interp 結合で interp から降ろせない代わりに、native 層に**4 コピー**あった単純スライスを共有
+          `builtins::substr::native_substr_slice` の 1 本に畳んだ。
+        - **③ `.first` の pointy `-> $p {...}` matcher param 束縛バグ (#2743)**: pointy lambda は `param_defs` 空で
+          legacy binding path に落ち、`pair_as_positional` 由来の `ValuePair(Str,_)` が named 扱いで除外され positional
+          param `$p` が未束縛になっていた。`bind_function_args_values` の 1 箇所修正で VM/interp 両経路を同時に解消。
 - [ ] **正規表現の validator/matcher 二重実装の統合**（[ANALYSIS.md](ANALYSIS.md) §3.1。重複の一種）。
 
 ### 最終ゴール
@@ -141,12 +152,16 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
       `sync_locals_from_env`/`saved_env_dirty` の dual-store 機構も削除できる（レバー B 完遂）。
 - **残フォールバック**には `// TODO: compile to bytecode` を付け負債を可視化。
 - **次の着手候補（優先順）**: Category A 完了・**Category B 完了**（ブロック系 sort/min/max/minmax/first
-  #2727/#2728/#2730/#2731 ＋ lazy-fork elems/flat/join/reverse #2733/#2734/#2735/#2739、上記参照）。
-  次は **Category C Phase 3 の残**（`comb`(正規表現 matcher)/`substr`/`split`(named args) の native 折込、
-  pointy/`*.code` matcher の `.first`）→ 🟣第2優先「第一級コンテナ」（レバー C 本丸 + Q2 の Arc-pointer flaky を吸収）。
+  #2727/#2728/#2730/#2731 ＋ lazy-fork elems/flat/join/reverse #2733/#2734/#2735/#2739）・**Category C 完了**
+  （Phase 1a/1b/2 ＋ Phase 3 = sort ラッパ統合 #2744 / comb 降ろし #2745 / substr 4→1 #2747 / `.first` pointy 修正
+  #2743）。残る関数/メソッド重複は **正規表現の validator/matcher 二重実装**（下記、ANALYSIS §3.1）のみ。
+  次は 🟣第2優先「第一級コンテナ」（レバー C 本丸 + Q2 の Arc-pointer flaky を吸収）。
   - 教訓: 「重複削除」を始めると**潜在バグが芋づる式に出る**（`[%] 2**70` 精度・`[~]` NFC・`[minmax]` ネスト・
     `%h.first` の named 束縛・`elems("hello")`・`flat` over-flatten・`join(sep,Range)` セパレータ無視・
-    `reverse()`=Nil は全て dedup 作業中に発見・修正）。重複は drift してバグの温床になる実例。
+    `reverse()`=Nil・`.first(-> $p)` の pointy 未束縛は全て dedup 作業中に発見・修正）。重複は drift してバグの温床になる実例。
+  - 教訓2（配置監査）: 「1 操作 = 1 実装」に加え**「単一実装が正しいレイヤに在るか」**も問う。comb の純粋分割は
+    interp 層に取り残されており（split.rs は適正）、降ろして両エンジン共有にした。WhateverCode/regex の様に本質的に
+    interp 結合な部分は `runtime/` に残すのが正しい。
 
 ---
 

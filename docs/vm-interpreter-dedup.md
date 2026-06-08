@@ -215,3 +215,71 @@ zero positionals (`first`'s `$p` / sort's `$^a,$^b`). Array literals
   `-> $p {...}` / `*.value` matchers on `.first` go through the `smart_match` path
   (not the `Value::Sub` call branch) and leave `$_`/`$p` unbound — fails even for
   literal arrays; a distinct fix.
+
+### Phase 3 — complete (#2743, #2744, #2745, #2747)
+
+The three remaining Phase 3 items are done.
+
+- **① sort wrapper dedup — `dispatch_sort` deleted (#2744).** The orchestration
+  body (`sort_items_generic` / `sort_indices_generic` + the `SortCaller` trait)
+  was already shared, but the *wrapper* around it (arg parse `:k`/`:by`/arity +
+  target-shape → element-list dispatch) was duplicated in `Interpreter::
+  dispatch_sort` and `VM::try_native_sort`, and had drifted (`dispatch_sort` took
+  stray adverbs `:kv`/`:p`/`:v` as a callable; `try_native_sort` bailed to the
+  interpreter for them, which then ran `dispatch_sort` anyway). Collapsed into one
+  engine-agnostic `sort_value_generic(&mut dyn SortCaller, target, args)` (added
+  `SortCaller::callable_arity`). `dispatch_sort` deleted; its callers build an
+  `InterpCaller` and call the shared fn. `try_native_sort` keeps only the
+  target-shape gate (Shaped/Instance/Supply still fall back) and delegates.
+  Behavior-preserving.
+
+- **③ `.first` pointy-block param binding (#2743).** The "out of scope" pointy
+  matcher bug above turned out to be a one-line-locus fix, *not* a `smart_match`
+  issue: a pointy lambda `-> $p {...}` compiles to `params: ["p"]` with an **empty
+  `param_defs`**, so binding falls to the legacy path in
+  `bind_function_args_values`, whose positional filter treated the
+  `ValuePair(Str,_)` (from `pair_as_positional`) as a *named* arg, leaving `$p`
+  unbound. Fix: in the legacy path, when the param list has a plain positional
+  name, treat `ValuePair(Str,_)` as positional. One shared helper → both the VM
+  (`vm_native_first`) and interpreter `.first`/`.grep`/`.sort` carrier paths fixed
+  at once. (`$:name` placeholders, WhateverCode, `$^a` are unaffected.)
+
+### Category C, item ② — placement audit (comb / substr / split)
+
+The "fold into native" item was reframed by an explicit *placement* audit under
+the "1 operation = 1 implementation" principle, extended to **"is that single
+implementation in the right layer?"**
+
+- **split — already correct (the model).** The pure mechanics (`SplitOpts`,
+  `apply_split_opts`, `parse_split_limit`, `split_by_string_static`,
+  `split_by_strings_static`, `SplitMatch`) live in `builtins/split.rs` and the
+  interpreter *imports and reuses* them, adding only the regex-split case. The
+  regex matcher (`regex_find_*`) is genuinely interpreter-coupled (`parse_regex`,
+  `current_package`, grammar-subrule resolution, embedded `{ }` block eval), so
+  regex split correctly lives in `runtime/`. No change.
+
+- **comb — pure split was stranded in the interpreter; relocated (#2745).** The
+  `Int`-chunk and `Str`-fixed matchers are pure but lived in
+  `runtime/.../dispatch_comb_with_args`, so `.comb(2)` / `.comb("x")` took a
+  VM→interpreter fallback. Moved into `builtins/comb.rs` (`comb_pure`) as the
+  single impl, called by both the native fast path (`native_comb_method` in
+  `native_method_1arg`/`2arg`) and the interpreter. The `Regex` matcher and
+  Code-arg rejection stay in `runtime/`. **Not** a duplicate native copy — the one
+  impl moved down to the correct layer.
+
+- **substr — no relocatable pure logic, but four native copies → one (#2747).**
+  Position resolution is genuinely interpreter-coupled (a `WhateverCode` start or
+  length calls `eval_call_on_value`; out-of-range yields a `Failure`), so unlike
+  comb there is no pure algorithm to relocate from the interpreter. The real
+  duplication was the **four** native copies of the simple non-neg slice
+  (`native_method_1arg`/`2arg` + the 2-/3-arg `substr` function); collapsed into
+  one `builtins/substr.rs::native_substr_slice`. The interpreter's `dispatch_substr`
+  remains the single owner of the Whatever/Range/negative/out-of-range cases.
+
+### Category C — done
+
+All Category C duplication is removed: Phase 1a/1b (arith/coercion), Phase 2
+(reduction operator bodies), Phase 3 (sort wrapper, `.first` binding) and the
+item ② placement audit (comb relocated, substr 4→1, split confirmed correct). The
+only remaining function/method-level duplicate flagged in PLAN.md is the regex
+validator/matcher double-implementation (ANALYSIS §3.1), tracked separately.
