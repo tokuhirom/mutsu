@@ -636,6 +636,24 @@ impl VM {
             Value::Seq(ref items) | Value::Slip(ref items) => {
                 runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
             }
+            // A single bare scalar assigned to a hash is a one-element (odd)
+            // initializer: `my %h = 1` is X::Hash::Store::OddNumber. Hashes,
+            // pairs, sets, instances, Nil, etc. keep their existing coercion.
+            ref scalar
+                if matches!(
+                    scalar.clone().into_descalarized(),
+                    Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Str(_)
+                        | Value::Bool(_)
+                        | Value::Rat(..)
+                        | Value::FatRat(..)
+                        | Value::BigRat(..)
+                ) =>
+            {
+                runtime::utils::build_hash_from_items(vec![value])?
+            }
             _ => runtime::coerce_to_hash(value),
         };
         // Resolve hash sentinel entries (bound variable refs) when assigning
