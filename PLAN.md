@@ -124,9 +124,16 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             実行時 guard で保証**: `registry()`/`registry_mut()` を再入検出ラッパ（debug 限定・ロックアドレスでキー付け）へ
             差し替え、同一ロック再取得を `.read()`/`.write()` 手前で位置付き panic（サイレントデッドロックを即・明示化）。
             台帳に②抽出/read/write-through 完了＋登録の CARRIER 性を記録。**②完了 → 次は ③（env/型/state 移管）**。
-- [ ] **③ VM が借用している Interpreter 状態を VM 所有へ移管**: env HashMap（変数ストア本体）・classes/roles/enums
-      レジストリ・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・`let`/`temp` 復元・multi 解決・
-      state 変数・`current_package`。これが移れば **interpreter ブリッジ自体が不要**になる。最大の山。
+- [~] **③ VM が借用している Interpreter 状態を VM 所有へ移管**（設計: [docs/vm-state-ownership.md](docs/vm-state-ownership.md)）:
+      env HashMap（変数ストア本体）・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・
+      `let`/`temp` 復元・multi 解決・state 変数・`current_package`。これが移れば **interpreter ブリッジ自体が
+      不要**になる。最大の山。**核心の確定**: ③は②と異なり**フォールバック撲滅駆動**（env は単一所有者で真の
+      同時共有が無く、終状態は plain VM field＝共有ハンドル `Arc<RwLock>` 方式は採れない／最ホットで perf 破綻。
+      かつ高価値 state は runtime/ tree-walk に浸透し §1/§2 フォールバック経由で読まれるため、フィールド再配置は
+      tree-walk 実行パス撲滅後にしかできない）。よって**③のスライス＝台帳 §1/§2 の撲滅**。
+      - [x] **PR-1（Routine dispatch）**: `vm_dispatch_helpers` の Routine 値解決を統一 compiled-first へ
+            （builtin 名 Routine は builtin 優先維持）。台帳 §2 Routine 行消化。pin `t/routine-value-dispatch.t`。
+      - [ ] 次: §1 catch-all メソッド dispatch（本丸）/ §2 `vm_call_func_ops` multi/sub 解決。
 - [ ] **④ 本質的キャリアの扱いを確定**（消すのではなく分離 or 明示）: `EVAL`/`EVALFILE`（既に compile→サブ VM 実行で
       tree-walk ではない＝env/レジストリ所有のため Interpreter を借りる**キャリア**）、正規表現の埋め込み `{}` ブロック
       （interpreter regex エンジン経由で caller local を名前書き込み）、pseudo-package（`CALLER::`/`OUTER::` の reflective
