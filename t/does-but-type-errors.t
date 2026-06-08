@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 11;
 
 # `does` / `but` on a type-object invocant has no instance to mix into.
 throws-like '(my $foo) does Int', X::Does::TypeObject,
@@ -32,3 +32,10 @@ throws-like 'my class NC { }; NC.new but NC', X::Mixin::NotComposable,
     my $y = 5 but "five";
     is ~$y, "five", 'mixing a concrete value still works';
 }
+# A concrete value mixed into a built-in type object is allowed (it produces a
+# mixed type object); only a role/type mixed into a built-in type object errors.
+is (Method but True).defined, False,
+    'mixing a concrete value into a type object is allowed';
+# A user-defined (anonymous) class type object may have a role mixed in.
+is (class { } but role { method answer { 42 } }).answer, 42,
+    'mixing a role into a user-defined class type object is allowed';

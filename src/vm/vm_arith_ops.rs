@@ -980,10 +980,10 @@ impl VM {
     pub(super) fn exec_but_mixin_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // `but` on a type-object invocant is illegal — there is no instance.
-        if let Some(tn) = Self::does_invocant_type_object(&left) {
-            return Err(Self::does_type_object_error("but", &tn));
-        }
+        // `but` composing a role or another type into a type-object invocant is
+        // illegal (no instance); mixing a concrete value (`Method but True`) is
+        // allowed, so this only guards the role / type-object-RHS branches.
+        let left_type_object = self.does_invocant_type_object(&left);
         let role_composed = match &right {
             Value::Pair(name, boxed)
                 if self.interpreter.has_role(name)
@@ -1005,11 +1005,18 @@ impl VM {
             _ => None,
         };
         if let Some(composed) = role_composed {
+            if let Some(tn) = &left_type_object {
+                return Err(Self::does_type_object_error("but", tn));
+            }
             self.stack.push(composed?);
             return Ok(());
         }
-        // A non-role type object / class on the RHS is not composable.
+        // A type object / class (not a role) on the RHS: into a type-object
+        // invocant it is X::Does::TypeObject; otherwise not composable.
         if matches!(&right, Value::Package(_)) {
+            if let Some(tn) = &left_type_object {
+                return Err(Self::does_type_object_error("but", tn));
+            }
             return Err(Self::mixin_not_composable_error(&left, &right));
         }
         let result = Self::apply_but_mixin(left, right)?;
@@ -1097,13 +1104,23 @@ impl VM {
         self.stack.push(Value::Bool(result));
     }
 
-    /// If `left` is a type object (so `does`/`but` has no instance to mix
-    /// into), return its type name. Undefined scalars are `Nil` (the `Any`
-    /// type object); `Value::Package` is an explicit type object.
-    fn does_invocant_type_object(left: &Value) -> Option<String> {
+    /// If `left` is a *built-in* type object, return its type name. Mixing a
+    /// role into such an object via `does`/`but` is illegal (X::Does::TypeObject)
+    /// because there is no instance to compose into. A *user-defined* class type
+    /// object (including an anonymous `class {}`) may have a role mixed in —
+    /// that creates a new anonymous subtype — so it is excluded here. Undefined
+    /// scalars are stored as `Nil` and act as the `Any` type object.
+    fn does_invocant_type_object(&self, left: &Value) -> Option<String> {
         match left {
-            Value::Package(name) => Some(name.resolve().to_string()),
             Value::Nil => Some("Any".to_string()),
+            Value::Package(name) => {
+                let n = name.resolve();
+                if self.interpreter.has_class(&n) {
+                    None
+                } else {
+                    Some(n.to_string())
+                }
+            }
             _ => None,
         }
     }
@@ -1152,24 +1169,30 @@ impl VM {
     /// VM-native `does` check. Inlines the pure `does_check` path and
     /// only falls back to the interpreter for actual role composition.
     fn vm_does_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
-        // `does` on a type-object invocant is illegal — there is no instance.
-        // Undefined scalars (`my $foo`) are stored as Nil and act as the `Any`
-        // type object here.
-        if let Some(tn) = Self::does_invocant_type_object(&left) {
-            return Err(Self::does_type_object_error("does", &tn));
-        }
+        // `does`/`but` on a type-object invocant (undefined scalars are stored
+        // as Nil and act as the `Any` type object) is illegal *when composing a
+        // role or another type* — there is no instance to compose into. Mixing a
+        // *concrete value* (e.g. `Method but True`) is still allowed, so this
+        // check guards only the role / type-object-RHS branches below.
+        let left_type_object = self.does_invocant_type_object(&left);
         // Handle array of roles: `$obj does (RoleA, RoleB)`
         if let Value::Array(ref items, ..) = right {
             let all_roles = items
                 .iter()
                 .all(|item| self.interpreter.is_role_application(item));
             if all_roles && !items.is_empty() {
+                if let Some(tn) = &left_type_object {
+                    return Err(Self::does_type_object_error("does", tn));
+                }
                 return self.interpreter.eval_does_values_list(left, items.as_ref());
             }
         }
         // Check if the RHS is a role that needs to be composed onto the value.
         // If so, delegate to the interpreter which manages role state.
         if self.interpreter.is_role_application(&right) {
+            if let Some(tn) = &left_type_object {
+                return Err(Self::does_type_object_error("does", tn));
+            }
             return self.interpreter.eval_does_values(left, right);
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
@@ -1195,9 +1218,13 @@ impl VM {
         if matches!(&right, Value::Instance { .. }) {
             return Self::apply_but_mixin(left, right);
         }
-        // Infix `does` always mixes in; a non-role type object or class on the
-        // RHS is not composable (`5 does Int`, `obj does SomeClass`).
+        // A type object / class (not a role) on the RHS: `(my $foo) does Int`
+        // mixes into a type-object invocant (X::Does::TypeObject); otherwise the
+        // type itself is not composable (`5 does Int`, `obj does SomeClass`).
         if matches!(&right, Value::Package(_)) {
+            if let Some(tn) = &left_type_object {
+                return Err(Self::does_type_object_error("does", tn));
+            }
             return Err(Self::mixin_not_composable_error(&left, &right));
         }
         // Pure check: does the value conform to the named role/type?
