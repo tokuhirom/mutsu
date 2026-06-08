@@ -2129,6 +2129,22 @@ impl Value {
         self.with_deref(Value::clone)
     }
 
+    /// Owned counterpart of [`Value::deref_container`]: read through a
+    /// `ContainerRef` BY VALUE, cloning ONLY the inner value when `self` is a
+    /// ContainerRef; non-ContainerRef values move through with no clone. This is
+    /// the canonical move-friendly read chokepoint for hot read opcodes
+    /// (`GetLocal`/`GetGlobal`), mirroring how [`Value::into_descalarized`] is the
+    /// owned variant of [`Value::descalarize`]. Single-level only (a nested
+    /// `ContainerRef` is unwrapped one cell), and it does NOT force an inner
+    /// `LazyThunk` nor strip an inner `Scalar` — matching the prior hand-rolled
+    /// `arc.lock().unwrap().clone()` reads it replaces.
+    pub fn into_deref(self) -> Value {
+        match self {
+            Value::ContainerRef(arc) => arc.lock().unwrap().clone(),
+            other => other,
+        }
+    }
+
     /// Assign a value into a `ContainerRef`.
     /// Returns `true` if the value was a ContainerRef and the assignment happened.
     pub fn assign_into_container(&self, new_val: Value) -> bool {
@@ -2376,8 +2392,9 @@ impl Value {
     // mutsu has THREE "decontainerize" operations on THREE different axes.
     // They are intentionally NOT fused into one helper:
     //   - Value::descalarize / into_descalarized — strips `Scalar` ($(...)), RECURSIVE
-    //   - Value::with_deref / deref_container     — reads through `ContainerRef` (:=), single cell
-    //     (with_deref is non-cloning; deref_container returns an owned clone)
+    //   - Value::with_deref / deref_container / into_deref — reads through `ContainerRef` (:=),
+    //     single cell. with_deref is non-cloning; deref_container clones from &self;
+    //     into_deref consumes self, cloning only the inner of a ContainerRef (move otherwise).
     //   - ArrayKind::decontainerize               — strips `ItemList`/`ItemArray` flag (list flatten)
     // A "full decont" that strips all three is deferred to Phase 1+; it must NOT be
     // applied at lvalue/container-requiring sites (is-rw writeback, :=, .VAR, =:=,

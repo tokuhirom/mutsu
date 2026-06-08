@@ -1067,12 +1067,9 @@ impl VM {
                 } else {
                     val
                 };
-                // Auto-deref ContainerRef for stack use
-                let val = if let Value::ContainerRef(ref arc) = val {
-                    arc.lock().unwrap().clone()
-                } else {
-                    val
-                };
+                // Auto-deref ContainerRef for stack use (ContainerRef axis of the
+                // decont family; moves through for the common non-container case).
+                let val = val.into_deref();
                 self.stack.push(val);
                 *ip += 1;
             }
