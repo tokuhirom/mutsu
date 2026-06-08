@@ -1040,6 +1040,15 @@ pub(crate) struct CompiledCode {
     pub(crate) our_locals: Vec<(usize, String)>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
+    /// Parallel to `closure_compiled_codes`: `closure_escapes[i]` is true if the
+    /// i-th child closure was created in an *escaping position* — its value is
+    /// stored/returned/bound (assignment or `:=` RHS, `return`/`fail` operand,
+    /// block tail, or a literal element) rather than immediately invoked (a call
+    /// argument like `lives-ok {...}` / `map {...}`, or a control-construct
+    /// block). Consumed by `compute_free_vars` to decide which captured-and-
+    /// mutated own-locals need a shared `ContainerRef` cell (escape analysis,
+    /// replacing the old `>=2 sibling closures` proxy).
+    pub(crate) closure_escapes: Vec<bool>,
     /// Whether this compiled code represents a Routine (sub/method) as opposed
     /// to a Block (bare block / pointy block).  `return` signals are caught
     /// only at routine boundaries, allowing pointy-block returns to propagate
@@ -1090,15 +1099,20 @@ pub(crate) struct CompiledCode {
     /// Declaration-only / read-only captures are excluded on purpose: boxing
     /// them is unnecessary and trips ContainerRef-unaware paths.
     pub(crate) captured_mutated_locals: Vec<Symbol>,
-    /// Subset of `captured_mutated_locals` that is captured by **two or more
-    /// distinct child closures** of this frame. These genuinely need a shared
-    /// `ContainerRef` cell so sibling closures observe each other's writes even
-    /// after the declaring frame exits (Phase 1 / lever C, non-loop case). The VM
-    /// boxes these regardless of loop context (see `box_captured_lexicals`); the
-    /// `>=2` restriction keeps boxing rare (per-closure-creation cost bounded) and
-    /// excludes the single immediately-invoked closure pattern (`lives-ok {...}`)
-    /// that caused the broad-boxing perf/correctness regression (see #2749).
-    pub(crate) multi_captured_mutated_locals: Vec<Symbol>,
+    /// Subset of `captured_mutated_locals` captured by at least one child closure
+    /// whose value **escapes** the creating frame (its `closure_escapes` bit is
+    /// set — stored/returned/bound rather than immediately invoked). These
+    /// genuinely need a shared `ContainerRef` cell so the escaping closure (and
+    /// any siblings) observe mutations even after the declaring frame exits
+    /// (Phase 1 / lever C, non-loop case). The VM boxes these regardless of loop
+    /// context (see `box_captured_lexicals`). This escape signal replaces the old
+    /// `>=2 distinct sibling closures` proxy: it both subsumes the sibling
+    /// getter+setter case (both are assigned, so both escape) AND fixes the
+    /// single escaping closure (`&f = sub {...}`) that the >=2 proxy missed —
+    /// while keeping immediately-invoked closures (`lives-ok {...}` / `map {...}`,
+    /// call args / control blocks) non-boxed, avoiding the broad-boxing
+    /// perf/correctness regression (see #2749).
+    pub(crate) needs_cell_locals: Vec<Symbol>,
     /// True if this code contains any call opcode (function/method/closure
     /// invocation). Set during `emit()`. The closure exit-writeback skip uses
     /// this as the "is this a leaf closure" test: a non-leaf closure may have a
@@ -1132,6 +1146,7 @@ impl CompiledCode {
             state_locals: Vec::new(),
             our_locals: Vec::new(),
             closure_compiled_codes: Vec::new(),
+            closure_escapes: Vec::new(),
             is_routine: false,
             source_line: None,
             is_pointy_block: false,
@@ -1142,7 +1157,7 @@ impl CompiledCode {
             free_var_syms: Vec::new(),
             free_var_writes: Vec::new(),
             captured_mutated_locals: Vec::new(),
-            multi_captured_mutated_locals: Vec::new(),
+            needs_cell_locals: Vec::new(),
             has_calls: false,
         }
     }
@@ -1453,44 +1468,39 @@ impl CompiledCode {
             }
         }
         // Own locals captured by a nested closure AND mutated -> must be boxed
-        // into a shared container at capture time. Also count how many DISTINCT
-        // child closures capture each own-local, so siblings (>=2 closures over
-        // the same local) can share one cell even in non-loop frames.
+        // into a shared container at capture time. `captured_mutated` drives the
+        // loop (path A) boxing and the VM's capture filter. `needs_cell` is the
+        // escape-analysis subset: captured-and-mutated locals closed over by at
+        // least one child closure whose value ESCAPES the frame
+        // (`closure_escapes[i]` — stored/returned/bound, not immediately
+        // invoked). This replaces the old `>=2 distinct sibling closures` proxy.
         let mut captured_mutated: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
-        let mut child_capture_count: std::collections::HashMap<Symbol, usize> =
-            std::collections::HashMap::new();
-        for nested in &self.closure_compiled_codes {
-            // De-dup within a single child so each child counts at most once.
-            let mut seen_in_child: std::collections::HashSet<Symbol> =
-                std::collections::HashSet::new();
+        let mut needs_cell: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        for (i, nested) in self.closure_compiled_codes.iter().enumerate() {
+            let escapes = self.closure_escapes.get(i).copied().unwrap_or(false);
             for sym in &nested.free_var_syms {
-                if sym.with_str(|s| own.contains(s)) {
-                    if self_mutated.contains(sym) {
-                        captured_mutated.insert(*sym);
-                    }
-                    if seen_in_child.insert(*sym) {
-                        *child_capture_count.entry(*sym).or_insert(0) += 1;
+                if sym.with_str(|s| own.contains(s)) && self_mutated.contains(sym) {
+                    captured_mutated.insert(*sym);
+                    if escapes {
+                        needs_cell.insert(*sym);
                     }
                 }
             }
         }
-        // Sibling-shared: captured-and-mutated AND captured by >=2 child closures.
-        let multi_captured: Vec<Symbol> = captured_mutated
-            .iter()
-            .filter(|sym| child_capture_count.get(*sym).copied().unwrap_or(0) >= 2)
-            .copied()
-            .collect();
         self.free_var_syms = free.into_iter().collect();
         self.free_var_writes = free_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
-        self.multi_captured_mutated_locals = multi_captured;
+        self.needs_cell_locals = needs_cell.into_iter().collect();
     }
 
-    /// Store a compiled closure body and return its index.
-    pub(crate) fn add_closure_code(&mut self, code: CompiledCode) -> u32 {
+    /// Store a compiled closure body and return its index. `escapes` records
+    /// whether the closure was created in an escaping position (see
+    /// `closure_escapes`); the two Vecs are kept index-aligned in lockstep.
+    pub(crate) fn add_closure_code(&mut self, code: CompiledCode, escapes: bool) -> u32 {
         let idx = self.closure_compiled_codes.len() as u32;
         self.closure_compiled_codes.push(Arc::new(code));
+        self.closure_escapes.push(escapes);
         idx
     }
 

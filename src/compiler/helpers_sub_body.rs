@@ -363,7 +363,9 @@ impl Compiler {
             if is_last {
                 match stmt {
                     Stmt::Expr(expr) => {
-                        sub_compiler.compile_expr(expr);
+                        // Tail expression becomes the routine's value (implicit
+                        // return) -> a closure here escapes the frame.
+                        sub_compiler.with_escape(true, |c| c.compile_expr(expr));
                         // Don't emit Pop — leave value on stack as implicit return
                         continue;
                     }
@@ -547,7 +549,8 @@ impl Compiler {
             for (i, stmt) in body_stmts.iter().enumerate() {
                 let is_last = i == body_stmts.len() - 1;
                 if is_last && let Stmt::Expr(expr) = stmt {
-                    sub_compiler.compile_expr(expr);
+                    // Tail expression becomes the block value -> closure escapes.
+                    sub_compiler.with_escape(true, |c| c.compile_expr(expr));
                     sub_compiler.code.emit(OpCode::SetTopic);
                     continue;
                 }
@@ -629,7 +632,8 @@ impl Compiler {
                 if is_last {
                     match stmt {
                         Stmt::Expr(expr) => {
-                            sub_compiler.compile_expr(expr);
+                            // Tail expression = implicit return -> closure escapes.
+                            sub_compiler.with_escape(true, |c| c.compile_expr(expr));
                             continue;
                         }
                         Stmt::Call { name, args } => {

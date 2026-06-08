@@ -231,7 +231,10 @@ impl Compiler {
     }
 
     fn compile_assignment_rhs_for_target(&mut self, name: &str, expr: &Expr) {
-        self.compile_expr(expr);
+        // The RHS value is stored into the target, so a closure literal here
+        // escapes the creating frame (escape analysis): force a shared cell for
+        // the captured-and-mutated locals it closes over.
+        self.with_escape(true, |c| c.compile_expr(expr));
         if !name.starts_with('@')
             && !name.starts_with('%')
             && !name.starts_with('&')
@@ -1582,7 +1585,8 @@ impl Compiler {
                 self.code.emit(OpCode::Redo(label.clone()));
             }
             Stmt::Return(expr) => {
-                self.compile_expr(expr);
+                // A returned closure escapes the routine frame (escape analysis).
+                self.with_escape(true, |c| c.compile_expr(expr));
                 if self.is_routine {
                     self.code.emit(OpCode::Return);
                 } else {
@@ -1595,7 +1599,8 @@ impl Compiler {
                 self.code.emit(OpCode::Die);
             }
             Stmt::Fail(expr) => {
-                self.compile_expr(expr);
+                // A failed value is stored/propagated -> closure escapes.
+                self.with_escape(true, |c| c.compile_expr(expr));
                 self.code.emit(OpCode::Fail);
             }
             Stmt::Proceed => {
@@ -1613,7 +1618,7 @@ impl Compiler {
                 expr,
                 op: AssignOp::MatchAssign,
             } if name != "*PID" => {
-                self.compile_expr(expr);
+                self.with_escape(true, |c| c.compile_expr(expr));
                 self.code.emit(OpCode::StrCoerce);
                 self.emit_set_named_var(name);
             }

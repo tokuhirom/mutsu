@@ -255,3 +255,26 @@ push」に変えると、配列要素が `Value::Scalar`/`ContainerRef`/`ItemArr
     `gather.t` 38 は Phase 2 take-rw の既知未対応（非 whitelist・無関係）。
   - **範囲外（次スライス）**: 単一の脱出クロージャ（`my &f; { my $a=3; &f=sub{$a++} }` → 3,0）は 1 クロージャで
     multi に入らず未修正。`.VAR.^name` 反映 / `is rw` 3-way persistent も別スライス。
+- 2026-06-08: **step 1 = escape 解析（コンパイラ・キーストーン）= 成功**。PLAN.md §🟣「実装順序」step 1。
+  `multi_captured_mutated_locals`（「≥2 兄弟クロージャに捕捉」という proxy）を、本来の信号 **escape 解析**
+  （捕捉する子クロージャの値がフレームを脱出するか）に置換。proxy ではなく本機構にしたことで、単一脱出
+  クロージャを**構造的に**捕捉し、かつ即時呼び出し（`lives-ok {...}`/`map {...}`）は非 box のまま維持。
+  - **コンパイラ signal**: `Compiler::escaping_position`（bool）+ `with_escape(escaping, f)` save/restore ヘルパ。
+    escaping=true: 代入/`:=` RHS（`compile_assignment_rhs_for_target`）、`return`/`fail` operand、ブロック/
+    ルーチン tail（`helpers_sub_body.rs` の last-`Stmt::Expr` 3 箇所 + `mod.rs` top-level tail）、配列/ハッシュ/
+    capture リテラル要素。escaping=false（既定）: 呼び出し引数（`compile_call_arg`/`compile_method_arg` で
+    リセット＝#2746 ガード。`my @r = map {...}` のように call が脱出位置でも引数クロージャは非 box）。
+  - **データ**: `CompiledCode.closure_escapes: Vec<bool>`（`closure_compiled_codes` と添字一致）。
+    `add_closure_code(code, escapes)` が `escaping_position` を記録。`compute_free_vars` は子を enumerate して
+    `closure_escapes[i]` を見、捕捉×変異 own-local を**脱出する子に捕捉**されたら `needs_cell_locals`
+    （旧 `multi_captured_mutated_locals` をリネーム）へ。`captured_mutated_locals`（path A ループ boxing 用）は不変。
+  - **VM**: `box_captured_lexicals` の path B が `needs_cell_locals` を参照（型/`where` ガード・path A は byte-for-byte 不変）。
+  - 検証: `$f = sub{$a++}` 単一脱出（`my $f`/`&f()`）→ 3/4（旧 3/0）。兄弟 `make(); $s(42); $g()` → 42（subsume）。
+    factory `return sub{$n++}` → 0/1/0。即時呼び出し `for`/`map` → 非 box（3 / 12）。**perf カナリア
+    int.t 0.21s 維持（#2746 回帰なし）**。`make test` PASS（458 unit + 5315 prove）、clippy clean、
+    S03-binding/closure・S04-declarations/state・pointy(-rw) 等 whitelist PASS。
+  - **範囲外（別系統の事前バグ・follow-up）**: **bareword `f()` 呼び出し**は、捕捉変数が**抜けた bare block 内**
+    にある場合に凍結スナップショットを読む（`&f()` / `$f` は正しく共有セルを読むので escape 解析は正常）。
+    これは bareword sub 呼び出しの dispatch/scope-exit 経路の別バグで、step 1 の cell 共有とは独立。
+  - **次（step 2）**: needs-cell な `$` local を宣言時にセル化し、`owned_captures`/`closure_captured_state`/
+    `box_captured_lexicals` の boxing ヒューリスティック（4→1）を削除（PLAN.md 実装順序 step 2）。

@@ -100,30 +100,35 @@ impl Compiler {
     /// Compile a method call argument. Named args (AssignExpr) are
     /// compiled as Pair values so they survive VM execution.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
-        if let Expr::AssignExpr { name, expr, .. } = arg {
-            // `foo(arg = 1)` in method-call argument position is treated as a named
-            // argument only for sigilless identifiers. Sigiled targets (`$x = ...`,
-            // `@x = ...`, `%x = ...`) are real assignment expressions.
-            if name.starts_with('$')
-                || name.starts_with('@')
-                || name.starts_with('%')
-                || name.starts_with('&')
-            {
-                self.compile_expr(arg);
-                if Self::needs_decont(arg) {
-                    self.code.emit(OpCode::Decont);
+        // A method argument is passed to the callee, not stored in the caller
+        // frame, so a closure argument is conservatively NON-escaping (same
+        // #2746 guard as compile_call_arg).
+        self.with_escape(false, |s| {
+            if let Expr::AssignExpr { name, expr, .. } = arg {
+                // `foo(arg = 1)` in method-call argument position is treated as a
+                // named argument only for sigilless identifiers. Sigiled targets
+                // (`$x = ...`, `@x = ...`, `%x = ...`) are real assignment exprs.
+                if name.starts_with('$')
+                    || name.starts_with('@')
+                    || name.starts_with('%')
+                    || name.starts_with('&')
+                {
+                    s.compile_expr(arg);
+                    if Self::needs_decont(arg) {
+                        s.code.emit(OpCode::Decont);
+                    }
+                } else {
+                    s.compile_expr(&Expr::Literal(Value::str(name.clone())));
+                    s.compile_expr(expr);
+                    s.code.emit(OpCode::MakePair);
                 }
             } else {
-                self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                self.compile_expr(expr);
-                self.code.emit(OpCode::MakePair);
+                s.compile_expr(arg);
+                if Self::needs_decont(arg) {
+                    s.code.emit(OpCode::Decont);
+                }
             }
-        } else {
-            self.compile_expr(arg);
-            if Self::needs_decont(arg) {
-                self.code.emit(OpCode::Decont);
-            }
-        }
+        });
     }
 
     /// Check if an expression produces an array value that needs decontainerization
@@ -155,7 +160,11 @@ impl Compiler {
     }
 
     pub(super) fn compile_call_arg(&mut self, arg: &Expr) {
-        self.compile_expr(arg);
+        // A call argument's value is passed to the callee, not stored in the
+        // caller frame, so a closure argument is conservatively NON-escaping
+        // (the #2746 guard: `map {...}` / `lives-ok {...}` must not box even when
+        // the whole call sits in an escaping position like `my @r = map {...}`).
+        self.with_escape(false, |c| c.compile_expr(arg));
         if Self::needs_decont(arg) {
             self.code.emit(OpCode::Decont);
         }
