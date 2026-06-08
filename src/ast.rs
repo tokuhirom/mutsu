@@ -863,6 +863,145 @@ pub(crate) fn collect_placeholders_shallow(stmts: &[Stmt]) -> Vec<String> {
     names
 }
 
+/// Collect placeholder variables that belong directly to the *current*
+/// (non-signature) scope: the mainline, a `do {}` block, or a class/role/module
+/// body. Descends through expressions and statement header positions but stops
+/// at any nested `{}` block (control-flow bodies, bare/pointy blocks, closures,
+/// do-blocks, gather/try/phasers) since those introduce their own placeholder
+/// scope and capture the placeholders inside them.
+///
+/// Also recognizes the implicit slurpy placeholders `@_` / `%_`. Returns
+/// display names like `$^x`, `@^a`, `@_`. False negatives are safe (we just
+/// miss raising an error); a positive means a placeholder is genuinely used
+/// where no signature can capture it.
+pub(crate) fn collect_unattached_placeholders(stmts: &[Stmt]) -> Vec<String> {
+    let mut names = Vec::new();
+    for stmt in stmts {
+        collect_unattached_ph_stmt(stmt, &mut names);
+    }
+    names
+}
+
+fn collect_unattached_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
+    match stmt {
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e)
+        | Stmt::Goto(e) => collect_unattached_ph_expr(e, out),
+        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+            collect_unattached_ph_expr(expr, out)
+        }
+        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
+            for e in es {
+                collect_unattached_ph_expr(e, out);
+            }
+        }
+        Stmt::Call { args, .. } => {
+            for arg in args {
+                match arg {
+                    CallArg::Positional(e) | CallArg::Invocant(e) | CallArg::Slip(e) => {
+                        collect_unattached_ph_expr(e, out)
+                    }
+                    CallArg::Named { value: Some(e), .. } => collect_unattached_ph_expr(e, out),
+                    CallArg::Named { value: None, .. } => {}
+                }
+            }
+        }
+        // Control-flow headers are evaluated in the current scope, but their
+        // bodies are signature-capable blocks -> do NOT descend into bodies.
+        Stmt::If { cond, .. } | Stmt::While { cond, .. } | Stmt::When { cond, .. } => {
+            collect_unattached_ph_expr(cond, out)
+        }
+        Stmt::For { iterable, .. } => collect_unattached_ph_expr(iterable, out),
+        Stmt::Given { topic, .. } => collect_unattached_ph_expr(topic, out),
+        Stmt::Label { stmt, .. } => collect_unattached_ph_stmt(stmt, out),
+        // Everything else (blocks, sub/class decls, ...) is a boundary.
+        _ => {}
+    }
+}
+
+fn collect_unattached_ph_expr(expr: &Expr, out: &mut Vec<String>) {
+    let push = |name: String, out: &mut Vec<String>| {
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    };
+    match expr {
+        Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
+            push(format!("${}", name), out)
+        }
+        Expr::CodeVar(name) if name.starts_with('^') => push(format!("&{}", name), out),
+        Expr::ArrayVar(name) if name.starts_with('^') || name.starts_with(':') => {
+            push(format!("@{}", name), out)
+        }
+        Expr::HashVar(name) if name.starts_with('^') || name.starts_with(':') => {
+            push(format!("%{}", name), out)
+        }
+        // Implicit slurpy placeholders.
+        Expr::ArrayVar(name) if name == "_" => push("@_".to_string(), out),
+        Expr::HashVar(name) if name == "_" => push("%_".to_string(), out),
+        Expr::Binary { left, right, .. } => {
+            collect_unattached_ph_expr(left, out);
+            collect_unattached_ph_expr(right, out);
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
+            collect_unattached_ph_expr(expr, out)
+        }
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            collect_unattached_ph_expr(target, out);
+            for a in args {
+                collect_unattached_ph_expr(a, out);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                collect_unattached_ph_expr(a, out);
+            }
+        }
+        Expr::CallOn { target, args } => {
+            collect_unattached_ph_expr(target, out);
+            for a in args {
+                collect_unattached_ph_expr(a, out);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            collect_unattached_ph_expr(target, out);
+            collect_unattached_ph_expr(index, out);
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            collect_unattached_ph_expr(cond, out);
+            collect_unattached_ph_expr(then_expr, out);
+            collect_unattached_ph_expr(else_expr, out);
+        }
+        Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
+            collect_unattached_ph_expr(expr, out)
+        }
+        Expr::ArrayLiteral(es)
+        | Expr::BracketArray(es, _)
+        | Expr::StringInterpolation(es)
+        | Expr::CaptureLiteral(es) => {
+            for e in es {
+                collect_unattached_ph_expr(e, out);
+            }
+        }
+        Expr::Hash(pairs) => {
+            for (_, v) in pairs {
+                if let Some(e) = v {
+                    collect_unattached_ph_expr(e, out);
+                }
+            }
+        }
+        // Closures and nested blocks define their own placeholder scope: stop.
+        _ => {}
+    }
+}
+
 fn placeholder_sort_key(name: &str) -> &str {
     let without_sigil = if let Some(first) = name.chars().next() {
         if matches!(first, '$' | '@' | '%' | '&') {
