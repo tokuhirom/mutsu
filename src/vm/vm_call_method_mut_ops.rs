@@ -427,10 +427,12 @@ impl VM {
             && !Self::is_builtin_type(&target_name)
             && !self.interpreter.has_class(&target_name)
         {
-            return Err(RuntimeError::undeclared_symbols(format!(
-                "Undeclared name:\n    {} used at line 1",
-                target_name,
-            )));
+            let suggestions = self.interpreter.suggest_type_names(&target_name);
+            return Err(RuntimeError::undeclared_type_symbols(
+                &target_name,
+                format!("Undeclared name:\n    {} used at line 1", target_name),
+                suggestions,
+            ));
         }
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target

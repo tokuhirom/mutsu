@@ -1075,10 +1075,12 @@ impl VM {
             let env_key = format!("&{}", name);
             let is_declared = self.interpreter.env().contains_key(&env_key);
             if !is_declared {
-                return Err(RuntimeError::undeclared_symbols(format!(
-                    "Undeclared routine:\n    {} used at line 1",
-                    name
-                )));
+                let suggestions = self.interpreter.suggest_routine_names(name);
+                return Err(RuntimeError::undeclared_routine_symbols(
+                    name,
+                    format!("Undeclared routine:\n    {} used at line 1", name),
+                    suggestions,
+                ));
             }
         }
         self.stack.push(val);
