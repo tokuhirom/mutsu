@@ -247,9 +247,7 @@ impl Interpreter {
     fn multiply_bag_counts(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, (i64, bool)>, RuntimeError> {
-        if let Value::Scalar(inner) = value {
-            return Self::multiply_bag_counts(inner.as_ref());
-        }
+        let value = value.descalarize();
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
@@ -334,9 +332,7 @@ impl Interpreter {
     fn multiply_mix_weights(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
-        if let Value::Scalar(inner) = value {
-            return Self::multiply_mix_weights(inner.as_ref());
-        }
+        let value = value.descalarize();
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }

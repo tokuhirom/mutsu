@@ -647,9 +647,8 @@ pub(crate) fn native_method_1arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    if let Value::Scalar(inner) = target {
-        return native_method_1arg(inner, method_sym, arg);
-    }
+    // Scalar containers are transparent for method dispatch (no .VAR at this arity).
+    let target = target.descalarize();
     // Instance with __baggy_data__: delegate to the inner Bag/Set for collection methods
     if let Value::Instance { attributes, .. } = target
         && let Some(inner) = attributes.get("__baggy_data__")
@@ -2759,9 +2758,8 @@ pub(crate) fn native_method_2arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    if let Value::Scalar(inner) = target {
-        return native_method_2arg(inner, method_sym, arg1, arg2);
-    }
+    // Scalar containers are transparent for method dispatch (no .VAR at this arity).
+    let target = target.descalarize();
     if method == "flat" {
         let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {
             (Some(depth), is_hammer_pair(arg2))

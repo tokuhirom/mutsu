@@ -485,9 +485,9 @@ pub(crate) fn version_cmp_parts(
 
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     let mix_weight_value = crate::value::mix_weight_to_value;
+    let value = value.into_descalarized();
     match value {
         Value::Hash(_) => value,
-        Value::Scalar(inner) => coerce_to_hash(*inner),
         Value::Array(items, ..) => {
             // Flatten nested Hashes into pairs before building the hash.
             // This handles `%h = %h1, %h2` where each hash should be merged.
@@ -2233,8 +2233,8 @@ pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
 }
 
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
+    let val = val.into_descalarized();
     match val {
-        Value::Scalar(inner) => coerce_to_numeric(*inner),
         Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
         Value::Int(_)
         | Value::BigInt(_)
@@ -2380,8 +2380,8 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
         }
     }
 
+    let val = val.descalarize();
     match val {
-        Value::Scalar(inner) => coerce_to_set(inner),
         Value::Set(s, _) => s.elements.clone(),
         Value::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
@@ -2435,8 +2435,8 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 /// - Pair with falsy value → empty Set
 /// - Other scalars → Set with one element
 pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
+    let val = val.descalarize();
     match val {
-        Value::Scalar(inner) => coerce_value_to_quanthash(inner),
         Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => val.clone(),
         Value::Hash(h) => {
             let mut set = HashSet::new();
