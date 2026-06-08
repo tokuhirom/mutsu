@@ -598,7 +598,8 @@ impl Interpreter {
         {
             return Ok(Value::Seq(std::sync::Arc::new(vec![target])));
         }
-        self.dispatch_sort(target, &args)
+        let mut caller = crate::runtime::methods_collection_ops::sort::InterpCaller(self);
+        crate::runtime::methods_collection_ops::sort::sort_value_generic(&mut caller, target, &args)
     }
 
     /// Dispatch the "minmax" method.

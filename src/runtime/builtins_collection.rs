@@ -1225,7 +1225,7 @@ impl Interpreter {
             }
         }
 
-        // Build sort args for dispatch_sort
+        // Build sort args for the shared sort entry point.
         let mut sort_args: Vec<Value> = Vec::new();
         if let Some(c) = callable {
             sort_args.push(c);
@@ -1238,7 +1238,12 @@ impl Interpreter {
             return Ok(Value::array(Vec::new()));
         }
 
-        self.dispatch_sort(Value::array(items), &sort_args)
+        let mut caller = crate::runtime::methods_collection_ops::sort::InterpCaller(self);
+        crate::runtime::methods_collection_ops::sort::sort_value_generic(
+            &mut caller,
+            Value::array(items),
+            &sort_args,
+        )
     }
 
     pub(super) fn builtin_unique(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

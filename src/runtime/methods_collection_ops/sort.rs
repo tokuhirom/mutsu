@@ -135,6 +135,9 @@ pub(crate) trait SortCaller {
     fn call_callable(&mut self, callable: &Value, args: Vec<Value>) -> Value;
     /// Call the 0-arg method `name` on `recv` (Schwartzian key extraction).
     fn call_method(&mut self, recv: Value, name: &str) -> Value;
+    /// Resolve the arity of the sort callable (0 = none, 1 = mapper, >=2 =
+    /// comparator). Delegates to the single shared `Interpreter::sort_callable_arity`.
+    fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError>;
 }
 
 /// [`SortCaller`] backed by the tree-walking interpreter.
@@ -158,6 +161,10 @@ impl SortCaller for InterpCaller<'_> {
         self.0
             .call_method_with_values(recv, name, vec![])
             .unwrap_or(Value::Nil)
+    }
+
+    fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError> {
+        self.0.sort_callable_arity(callable)
     }
 }
 
@@ -475,115 +482,121 @@ impl Interpreter {
             _ => Ok(1),
         }
     }
+}
 
-    pub(crate) fn dispatch_sort(
-        &mut self,
-        target: Value,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        // Extract :k adverb and callable from args
-        let mut return_indices = false;
-        let mut callable: Option<Value> = None;
-        for arg in args {
-            match arg {
-                Value::Pair(key, val) if key == "k" => {
-                    return_indices = val.truthy();
+/// Shared `.sort` entry point — engine-agnostic argument parsing + target-shape
+/// dispatch, on top of the shared [`sort_items_generic`] / [`sort_indices_generic`]
+/// orchestration. Both engines call this with their own [`SortCaller`]:
+/// `InterpCaller` for the tree-walking interpreter (EVAL / regex carrier / `sort()`
+/// builtin / top-level `.sort` method) and `VmSortCaller` for the bytecode VM
+/// (`try_native_sort`). This removes the duplicate arg-parse + shape-dispatch
+/// wrapper that previously lived once per engine.
+///
+/// Behavior is identical to the former `Interpreter::dispatch_sort`: `:k` selects
+/// index mode, `:by` names the callable, and any other arg (including stray
+/// adverbs) is taken as the callable. Shaped multi-dim arrays sort over leaves;
+/// non-collection targets pass through unchanged. The VM gates which target shapes
+/// it accepts before calling here (Shaped / Instance / Supply still fall back).
+pub(crate) fn sort_value_generic(
+    caller: &mut dyn SortCaller,
+    target: Value,
+    args: &[Value],
+) -> Result<Value, RuntimeError> {
+    // Extract :k adverb and callable from args
+    let mut return_indices = false;
+    let mut callable: Option<Value> = None;
+    for arg in args {
+        match arg {
+            Value::Pair(key, val) if key == "k" => {
+                return_indices = val.truthy();
+            }
+            Value::Pair(key, val) if key == "by" => {
+                callable = Some(val.as_ref().clone());
+            }
+            _ => {
+                callable = Some(arg.clone());
+            }
+        }
+    }
+
+    let arity = caller.callable_arity(callable.as_ref())?;
+    let callable_ref = callable.as_ref();
+
+    match target {
+        Value::Array(ref items_arc, ref kind) => {
+            // For multi-dim shaped arrays, sort over leaves
+            let use_leaves = *kind == crate::value::ArrayKind::Shaped
+                && items_arc.iter().any(|v| matches!(v, Value::Array(..)));
+            if use_leaves {
+                let mut leaves = crate::runtime::utils::shaped_array_leaves(&target);
+                if return_indices {
+                    Ok(Value::array(sort_indices_generic(
+                        caller,
+                        &leaves,
+                        callable_ref,
+                        arity,
+                    )))
+                } else {
+                    sort_items_generic(caller, &mut leaves, callable_ref, arity);
+                    Ok(Value::Seq(Arc::new(leaves)))
                 }
-                Value::Pair(key, val) if key == "by" => {
-                    callable = Some(val.as_ref().clone());
-                }
-                _ => {
-                    callable = Some(arg.clone());
+            } else {
+                let Value::Array(mut items, ..) = target else {
+                    unreachable!()
+                };
+                let items_mut = Arc::make_mut(&mut items);
+                if return_indices {
+                    Ok(Value::array(sort_indices_generic(
+                        caller,
+                        items_mut,
+                        callable_ref,
+                        arity,
+                    )))
+                } else {
+                    sort_items_generic(caller, items_mut, callable_ref, arity);
+                    Ok(Value::Seq(Arc::new(items_mut.to_vec())))
                 }
             }
         }
-
-        let callable_arity = self.sort_callable_arity(callable.as_ref())?;
-
-        let callable_args = if let Some(c) = callable {
-            vec![c]
-        } else {
-            vec![]
-        };
-
-        let callable_ref = callable_args.first();
-
-        match target {
-            Value::Array(ref items_arc, ref kind) => {
-                // For multi-dim shaped arrays, sort over leaves
-                let use_leaves = *kind == crate::value::ArrayKind::Shaped
-                    && items_arc.iter().any(|v| matches!(v, Value::Array(..)));
-                if use_leaves {
-                    let mut leaves = crate::runtime::utils::shaped_array_leaves(&target);
-                    let mut caller = InterpCaller(self);
-                    if return_indices {
-                        let indices = sort_indices_generic(
-                            &mut caller,
-                            &leaves,
-                            callable_ref,
-                            callable_arity,
-                        );
-                        Ok(Value::array(indices))
-                    } else {
-                        sort_items_generic(&mut caller, &mut leaves, callable_ref, callable_arity);
-                        Ok(Value::Seq(Arc::new(leaves)))
-                    }
-                } else {
-                    let Value::Array(mut items, ..) = target else {
-                        unreachable!()
-                    };
-                    let items_mut = Arc::make_mut(&mut items);
-                    let mut caller = InterpCaller(self);
-                    if return_indices {
-                        let indices = sort_indices_generic(
-                            &mut caller,
-                            items_mut,
-                            callable_ref,
-                            callable_arity,
-                        );
-                        Ok(Value::array(indices))
-                    } else {
-                        sort_items_generic(&mut caller, items_mut, callable_ref, callable_arity);
-                        Ok(Value::Seq(Arc::new(items_mut.to_vec())))
-                    }
-                }
+        Value::Seq(items) | Value::Slip(items) => {
+            let mut sorted = items.as_ref().clone();
+            if return_indices {
+                Ok(Value::array(sort_indices_generic(
+                    caller,
+                    &sorted,
+                    callable_ref,
+                    arity,
+                )))
+            } else {
+                sort_items_generic(caller, &mut sorted, callable_ref, arity);
+                Ok(Value::Seq(Arc::new(sorted)))
             }
-            Value::Seq(items) | Value::Slip(items) => {
-                let mut sorted = items.as_ref().clone();
-                let mut caller = InterpCaller(self);
-                if return_indices {
-                    let indices =
-                        sort_indices_generic(&mut caller, &sorted, callable_ref, callable_arity);
-                    Ok(Value::array(indices))
-                } else {
-                    sort_items_generic(&mut caller, &mut sorted, callable_ref, callable_arity);
-                    Ok(Value::Seq(Arc::new(sorted)))
-                }
-            }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
-                let mut sorted = Self::value_to_list(&target);
-                let mut caller = InterpCaller(self);
-                if return_indices {
-                    let indices =
-                        sort_indices_generic(&mut caller, &sorted, callable_ref, callable_arity);
-                    Ok(Value::array(indices))
-                } else {
-                    sort_items_generic(&mut caller, &mut sorted, callable_ref, callable_arity);
-                    Ok(Value::Seq(Arc::new(sorted)))
-                }
-            }
-            Value::Hash(map) => {
-                let items: Vec<Value> = map
-                    .iter()
-                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                    .collect();
-                self.dispatch_sort(Value::array(items), args)
-            }
-            other => Ok(other),
         }
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => {
+            let mut sorted = Interpreter::value_to_list(&target);
+            if return_indices {
+                Ok(Value::array(sort_indices_generic(
+                    caller,
+                    &sorted,
+                    callable_ref,
+                    arity,
+                )))
+            } else {
+                sort_items_generic(caller, &mut sorted, callable_ref, arity);
+                Ok(Value::Seq(Arc::new(sorted)))
+            }
+        }
+        Value::Hash(map) => {
+            let items: Vec<Value> = map
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .collect();
+            sort_value_generic(caller, Value::array(items), args)
+        }
+        other => Ok(other),
     }
 }
