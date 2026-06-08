@@ -1,9 +1,10 @@
 use Test;
 
-# Lever C Slice 2: a closure captures the *container* of a closed-over lexical
+# Lever C (Phase 1): a closure captures the *container* of a closed-over lexical
 # scalar, not a frozen value. Mutation after capture is visible, and sibling
-# closures over the same lexical share one cell, while loop-body `my` stays
-# per-iteration fresh.
+# closures over the same lexical share one cell (loop-body AND non-loop, the
+# latter via the compiler's >=2-sibling-closure signal), while loop-body `my`
+# stays per-iteration fresh.
 
 plan 15;
 
@@ -22,8 +23,9 @@ plan 15;
 }
 
 # --- sibling closures over a *non-loop* (sub-body) local share one container.
-# Deferred: Slice 2 boxes only loop-body locals; general "capture the container"
-# for non-loop siblings needs a broader ContainerRef-handling audit (Slice 3+). ---
+# Phase 1: a local captured by >=2 sibling closures is boxed into a shared cell
+# (compiler `multi_captured_mutated_locals` signal), so reads/writes round-trip
+# through the same ContainerRef even after the declaring frame returns. ---
 {
     sub make-pair {
         my $v = 1;
@@ -33,16 +35,14 @@ plan 15;
     }
     my ($g, $s) = make-pair();
     $s(42);
-    todo 'non-loop sibling-closure container sharing (deferred to a later slice)';
     is $g(), 42, 'sibling closures share the same lexical container';
 }
 
-# --- counter factory: mutating + reading sibling share state (non-loop, deferred) ---
+# --- counter factory: mutating + reading sibling share state (non-loop) ---
 {
     sub mk { my $n = 0; return { $n++ }, { $n } }
     my ($inc, $get) = mk();
     $inc(); $inc();
-    todo 'non-loop sibling-closure container sharing (deferred to a later slice)';
     is $get(), 2, 'mutating and reading sibling closures share state';
 }
 

@@ -1090,6 +1090,15 @@ pub(crate) struct CompiledCode {
     /// Declaration-only / read-only captures are excluded on purpose: boxing
     /// them is unnecessary and trips ContainerRef-unaware paths.
     pub(crate) captured_mutated_locals: Vec<Symbol>,
+    /// Subset of `captured_mutated_locals` that is captured by **two or more
+    /// distinct child closures** of this frame. These genuinely need a shared
+    /// `ContainerRef` cell so sibling closures observe each other's writes even
+    /// after the declaring frame exits (Phase 1 / lever C, non-loop case). The VM
+    /// boxes these regardless of loop context (see `box_captured_lexicals`); the
+    /// `>=2` restriction keeps boxing rare (per-closure-creation cost bounded) and
+    /// excludes the single immediately-invoked closure pattern (`lives-ok {...}`)
+    /// that caused the broad-boxing perf/correctness regression (see #2749).
+    pub(crate) multi_captured_mutated_locals: Vec<Symbol>,
     /// True if this code contains any call opcode (function/method/closure
     /// invocation). Set during `emit()`. The closure exit-writeback skip uses
     /// this as the "is this a leaf closure" test: a non-leaf closure may have a
@@ -1133,6 +1142,7 @@ impl CompiledCode {
             free_var_syms: Vec::new(),
             free_var_writes: Vec::new(),
             captured_mutated_locals: Vec::new(),
+            multi_captured_mutated_locals: Vec::new(),
             has_calls: false,
         }
     }
@@ -1443,19 +1453,38 @@ impl CompiledCode {
             }
         }
         // Own locals captured by a nested closure AND mutated -> must be boxed
-        // into a shared container at capture time.
+        // into a shared container at capture time. Also count how many DISTINCT
+        // child closures capture each own-local, so siblings (>=2 closures over
+        // the same local) can share one cell even in non-loop frames.
         let mut captured_mutated: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
+        let mut child_capture_count: std::collections::HashMap<Symbol, usize> =
+            std::collections::HashMap::new();
         for nested in &self.closure_compiled_codes {
+            // De-dup within a single child so each child counts at most once.
+            let mut seen_in_child: std::collections::HashSet<Symbol> =
+                std::collections::HashSet::new();
             for sym in &nested.free_var_syms {
-                if sym.with_str(|s| own.contains(s)) && self_mutated.contains(sym) {
-                    captured_mutated.insert(*sym);
+                if sym.with_str(|s| own.contains(s)) {
+                    if self_mutated.contains(sym) {
+                        captured_mutated.insert(*sym);
+                    }
+                    if seen_in_child.insert(*sym) {
+                        *child_capture_count.entry(*sym).or_insert(0) += 1;
+                    }
                 }
             }
         }
+        // Sibling-shared: captured-and-mutated AND captured by >=2 child closures.
+        let multi_captured: Vec<Symbol> = captured_mutated
+            .iter()
+            .filter(|sym| child_capture_count.get(*sym).copied().unwrap_or(0) >= 2)
+            .copied()
+            .collect();
         self.free_var_syms = free.into_iter().collect();
         self.free_var_writes = free_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
+        self.multi_captured_mutated_locals = multi_captured;
     }
 
     /// Store a compiled closure body and return its index.

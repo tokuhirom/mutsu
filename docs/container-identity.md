@@ -217,3 +217,21 @@ push」に変えると、配列要素が `Value::Scalar`/`ContainerRef`/`ItemArr
     boxing 対象を絞り、かつ **mutation-writeback を cell 対応化**してから入れる必要がある。素朴な
     「ループ限定を外すだけ」は不可。これは §6「速度の担保＝エスケープ解析でコンテナを省略」の実証でもある。
   - revert で main は clean（`#2742` の `into_deref` 地ならしのみ残す）。`int.t` は 1 秒に復帰。
+- 2026-06-08: **Phase 1 第1スライス再設計（escape-aware）= 成功**。前回の教訓どおり box 対象を精密 signal で
+  絞り、非ループ兄弟クロージャのコンテナ共有を実装。
+  - **コンパイラ signal `multi_captured_mutated_locals`**（`opcode.rs` `compute_free_vars`）: own-local を
+    捕捉する distinct な子クロージャ数を数え、**≥2** かつ `captured_mutated` のものを集合化。
+  - **`box_captured_lexicals`**（`vm_register_ops.rs`）: box 条件を (A) ループローカル（既存・不変）OR
+    (B) `multi_captured_mutated_locals`（新・非ループ兄弟）に。型/`where` 制約ガードは (B) のみに適用
+    （ループパスは byte 単位で維持）。`>=2` 制限が `lives-ok {…}`（1 クロージャ）を除外し、前回の perf 爆発
+    （`Arc<Mutex>`+env COW を closure 生成毎）と correctness 回帰（テストヘルパパターン）を**構造的に回避**。
+  - **mutation-writeback を cell 対応化**: `overwrite_instance_recursive`（env 経路）と
+    `overwrite_instance_in_locals`（locals 経路）に `ContainerRef` arm を追加（boxed スカラーが instance を
+    保持して変異メソッドを受けても共有セルを通して伝播）。`try_eval_simple_protect_expr` の Var 直接読みに
+    `into_deref` を追加（fast-path の値漏れ防止）。
+  - 検証: ターゲット `make(); $s(42); $g()` → `42`。**`int.t` は ~1s/165 維持（性能回帰なし）**、重量級 roast
+    サンプル 11 ファイル 2314 テストが 3 秒で完走。`where-constraint-var.t`（block/whatever where がガードで保護）/
+    `submethods.t` / `S24-testing` / closure 一式 全 PASS。`make test` PASS（456 unit + 5315 prove）。
+    `gather.t` 38 は Phase 2 take-rw の既知未対応（非 whitelist・無関係）。
+  - **範囲外（次スライス）**: 単一の脱出クロージャ（`my &f; { my $a=3; &f=sub{$a++} }` → 3,0）は 1 クロージャで
+    multi に入らず未修正。`.VAR.^name` 反映 / `is rw` 3-way persistent も別スライス。
