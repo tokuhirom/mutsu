@@ -1144,7 +1144,8 @@ impl Interpreter {
             // produce a dispatch error.
             let own_class = class_name.resolve();
             let method_exists = self.class_mro(&own_class).iter().any(|cn| {
-                self.classes
+                self.registry()
+                    .classes
                     .get(cn.as_str())
                     .and_then(|c| c.methods.get(method))
                     .is_some_and(|ovs| {

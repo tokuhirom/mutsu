@@ -56,7 +56,7 @@ impl Interpreter {
                 nested.token_defs = self.token_defs.clone();
                 nested.proto_subs = self.proto_subs.clone();
                 nested.proto_tokens = self.proto_tokens.clone();
-                nested.classes = self.classes.clone();
+                nested.registry_mut().classes = self.registry().classes.clone();
                 nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
                 nested.registry_mut().class_composed_roles =
                     self.registry().class_composed_roles.clone();

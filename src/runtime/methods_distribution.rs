@@ -651,7 +651,7 @@ impl Interpreter {
         // Load the module source in isolation: capture the classes/roles it
         // registers so we can keep them invisible to `::()` until merged.
         let class_before: std::collections::HashSet<String> =
-            self.classes.keys().cloned().collect();
+            self.registry().classes.keys().cloned().collect();
         let role_before: std::collections::HashSet<String> = self.roles.keys().cloned().collect();
         if source_path.exists() {
             let saved = self.precomp_enabled;
@@ -663,7 +663,7 @@ impl Interpreter {
             }
         }
         let mut new_symbols: Vec<String> = Vec::new();
-        for k in self.classes.keys() {
+        for k in self.registry().classes.keys() {
             if !class_before.contains(k) {
                 new_symbols.push(k.clone());
             }

@@ -330,7 +330,7 @@ impl Interpreter {
             "__MUTSU_UNREGISTER_CLASS__" => {
                 if let Some(name) = args.first() {
                     let class_name = name.to_string_value();
-                    self.classes.remove(&class_name);
+                    self.registry_mut().classes.remove(&class_name);
                     self.env.remove(&class_name);
                     self.suppress_name(&class_name);
                 }

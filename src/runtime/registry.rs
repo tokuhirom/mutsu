@@ -28,19 +28,29 @@ use std::collections::{HashMap, HashSet};
 
 use crate::value::{EnumValue, Value};
 
-use super::SubsetDef;
+use super::{ClassDef, SubsetDef};
 
 /// Program declaration registry. See module docs.
 ///
 /// Fields are migrated here group-by-group (PLAN.md PR-A). Fields are
 /// `pub(crate)` so registry-internal runtime code can access them directly;
 /// PR-B adds typed lookup methods for the VM to call.
-#[derive(Debug, Clone, Default)]
+///
+/// Note: no `Debug` derive — `ClassDef` (and its `MethodDef`/AST graph) is not
+/// `Debug`, and nothing needs to format the registry.
+#[derive(Clone, Default)]
 pub(crate) struct Registry {
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// `subset Name of Base where { ... }` declarations.
     pub(crate) subsets: HashMap<String, SubsetDef>,
+
+    /// User/builtin class definitions: class name -> [`ClassDef`] (parents, MRO,
+    /// methods, attributes, ...). Read on hot method-dispatch paths; callers take
+    /// short-lived `registry()` guards and clone the minimal projection they need
+    /// (e.g. `mro.clone()`, `methods.get(name).cloned()`) rather than the whole
+    /// `ClassDef`.
+    pub(crate) classes: HashMap<String, ClassDef>,
 
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).

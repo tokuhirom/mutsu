@@ -91,8 +91,21 @@ dual-store は [vm-dual-store.md](vm-dual-store.md)。
   前の `attribute_build_overrides` clone、`has_class_scoped_subs` の二重 read を単一 let-bound guard へ。
   VM 直アクセスは `vm.rs` の `package_stubs.insert/remove` を `registry_mut()` 経由へ。build/clippy/make test
   緑、whitelist class/role/attribute roast 緑（非 whitelist の private-method 既存失敗は不変）。
-- 残（フィールド別 total/writes）: classes(178/33, 要 perf 設計)、roles(110)/role_parents(45)
-  /role_candidates(21)、functions(96)/token_defs(35)。
+- **PR-A slice 3（本 PR, #2762 後）**: `classes: HashMap<String, ClassDef>` 移行（~178 サイト）。
+  `ClassDef` を `pub(crate)` 化、Registry から `Debug` derive を除去（ClassDef/MethodDef/AST graph が非 Debug）。
+  builtin classes は `Interpreter::new` で `Registry { classes, ..default() }` に投入。`clone_for_thread` の
+  `classes.clone()` を削除（Registry 全体 clone に吸収＝snapshot 維持）。**perf 方針（#2746 の轍回避）**:
+  whole-`ClassDef` の naive clone は一切せず、ホットパス（`resolve_method_with_owner_impl`/`class_mro`/
+  `compute_class_mro`/type matching）は従来同様 targeted 投影 clone（`mro.clone()`/`methods.get(m).cloned()`）の
+  まま `registry()` ガード経由に。release microbench（病的な純メソッドディスパッチ 30万回）で **+2–4%**＝
+  遷移期 RwLock 取得コストのみ（実ワークロードでは <1%、Interpreter 撤去後に plain field へ畳めば消滅）。
+  **再入安全性**: ① `clone_for_thread` がスレッド毎に独立 Arc を生成するため lock はスレッド間非共有→単一スレッド
+  内の再帰 read は futex 実装で安全。② 真の危険＝read ガード保持中の同一ロック write（read→write 昇格 deadlock）
+  は皆無を確認（write は別オブジェクト `nested` か、guard drop 後）。③ `&mut self` 再入を跨ぐ read ガードは
+  edition-2021 の `if let` 一時値スコープ罠を含め全て `let` 巻き上げ／clone-out で解消（resolution.rs の
+  multi/private dispatch、methods_object の BUILD、private-zeroarg fast-path の cache 書き込みを guard 外へ）。
+  全 `get_mut` ボディは registry 非再入を確認。build/clippy/make test 緑。
+- 残（フィールド別 total/writes）: roles(110)/role_parents(45)/role_candidates(21)、functions(96)/token_defs(35)。
 
 ## 完了の定義（②）
 

@@ -1236,7 +1236,10 @@ impl Interpreter {
                     // user-defined class that explicitly inherits from Mu only
                     // (e.g., `class Foo is Mu {}`) should NOT match Any.
                     // Check the actual MRO to correct this.
-                    if type_ok && base_type == "Any" && self.classes.contains_key(&*lhs_resolved) {
+                    if type_ok
+                        && base_type == "Any"
+                        && self.registry().classes.contains_key(&*lhs_resolved)
+                    {
                         let mro = self.class_mro(&lhs_resolved);
                         if !mro.iter().any(|c| c == "Any") {
                             type_ok = false;

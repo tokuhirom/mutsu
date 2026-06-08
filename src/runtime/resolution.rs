@@ -110,7 +110,7 @@ impl Interpreter {
 
     /// Get parent class names without requiring &mut self (no MRO caching).
     pub(crate) fn class_parents_readonly(&self, class_name: &str) -> Vec<String> {
-        if let Some(class_def) = self.classes.get(class_name) {
+        if let Some(class_def) = self.registry().classes.get(class_name) {
             if !class_def.mro.is_empty() {
                 return class_def.mro.clone();
             }
@@ -314,12 +314,17 @@ impl Interpreter {
         // descendants).
         let mut submethod_blocks = false;
         for cn in &mro {
-            if let Some(overloads) = self
+            // Hoist the clone to a `let` so the registry read guard drops here,
+            // before method_args_match_for_invocant re-enters (&mut self). An
+            // `if let` scrutinee would keep the temporary guard alive across the
+            // whole block (edition-2021 temporary scope).
+            let overloads = self
+                .registry()
                 .classes
                 .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
-                .cloned()
-            {
+                .cloned();
+            if let Some(overloads) = overloads {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
                 let mut first_visible_non_multi: Option<MethodDef> = None;
                 // Check if all overloads are submethods on an ancestor class
@@ -570,6 +575,7 @@ impl Interpreter {
             // parent (`class Foo is R1 { ... }`). Role methods are stored in
             // `self.roles`, so fall back there when the entry is not a class.
             let overloads = self
+                .registry()
                 .classes
                 .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
@@ -618,6 +624,7 @@ impl Interpreter {
         for cn in &mro {
             let is_ancestor = cn != class_name;
             if let Some(overloads) = self
+                .registry()
                 .classes
                 .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
@@ -635,7 +642,8 @@ impl Interpreter {
             return Vec::new();
         }
         let any_multi = defining_levels.iter().any(|cn| {
-            self.classes
+            self.registry()
+                .classes
                 .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
                 .is_some_and(|ovs| ovs.iter().any(|d| d.is_multi))
@@ -691,12 +699,14 @@ impl Interpreter {
             if cn != owner_class {
                 continue;
             }
-            if let Some(overloads) = self
+            // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
+            let overloads = self
+                .registry()
                 .classes
                 .get(&cn)
                 .and_then(|c| c.methods.get(method_name))
-                .cloned()
-            {
+                .cloned();
+            if let Some(overloads) = overloads {
                 for def in overloads {
                     if !def.is_private {
                         continue;
@@ -735,8 +745,13 @@ impl Interpreter {
         // overloads vector by scanning with a shared borrow first. This covers
         // the common case of zero-argument private method calls in tight loops.
         if arg_values.is_empty() {
-            for cn in &mro {
-                if let Some(overloads) = self
+            // Scan with a shared registry borrow (avoids cloning the whole
+            // overloads Vec — only the single matched def is cloned), find the
+            // candidate, then drop the guard before mutating the cache.
+            let mut resolved: Option<(String, MethodDef)> = None;
+            'scan: for cn in &mro {
+                let registry = self.registry();
+                if let Some(overloads) = registry
                     .classes
                     .get(cn)
                     .and_then(|c| c.methods.get(method_name))
@@ -754,12 +769,8 @@ impl Interpreter {
                             .iter()
                             .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
                         {
-                            let resolved = Some((cn.clone(), def.clone()));
-                            self.private_zeroarg_method_cache.insert(
-                                (class_name.to_string(), method_name.to_string()),
-                                resolved.clone(),
-                            );
-                            return resolved;
+                            resolved = Some((cn.clone(), def.clone()));
+                            break 'scan;
                         }
                     }
                     // Second pass: include stubs
@@ -772,24 +783,29 @@ impl Interpreter {
                             .iter()
                             .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
                         {
-                            let resolved = Some((cn.clone(), def.clone()));
-                            self.private_zeroarg_method_cache.insert(
-                                (class_name.to_string(), method_name.to_string()),
-                                resolved.clone(),
-                            );
-                            return resolved;
+                            resolved = Some((cn.clone(), def.clone()));
+                            break 'scan;
                         }
                     }
                 }
             }
+            if let Some(resolved) = resolved {
+                self.private_zeroarg_method_cache.insert(
+                    (class_name.to_string(), method_name.to_string()),
+                    Some(resolved.clone()),
+                );
+                return Some(resolved);
+            }
         }
         for cn in mro {
-            if let Some(overloads) = self
+            // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
+            let overloads = self
+                .registry()
                 .classes
                 .get(&cn)
                 .and_then(|c| c.methods.get(method_name))
-                .cloned()
-            {
+                .cloned();
+            if let Some(overloads) = overloads {
                 for def in &overloads {
                     if !def.is_private {
                         continue;
@@ -848,7 +864,7 @@ impl Interpreter {
 
     pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
         // Built-in type hierarchies for types that are not user-defined classes
-        if !self.classes.contains_key(class_name) {
+        if !self.registry().classes.contains_key(class_name) {
             let builtin_mro: Option<Vec<&str>> = match class_name {
                 "Match" => Some(vec!["Match", "Capture", "Cool", "Any", "Mu"]),
                 "Capture" => Some(vec!["Capture", "Any", "Mu"]),
@@ -887,16 +903,16 @@ impl Interpreter {
                 return mro.into_iter().map(String::from).collect();
             }
         }
-        if !self.classes.contains_key(class_name)
+        if !self.registry().classes.contains_key(class_name)
             && let Some((base, _)) = class_name.split_once('[')
             && class_name.ends_with(']')
-            && self.classes.contains_key(base)
+            && self.registry().classes.contains_key(base)
         {
             let mut mro = vec![class_name.to_string()];
             mro.extend(self.class_mro(base));
             return mro;
         }
-        if let Some(class_def) = self.classes.get(class_name)
+        if let Some(class_def) = self.registry().classes.get(class_name)
             && !class_def.mro.is_empty()
         {
             return class_def.mro.clone();
@@ -904,7 +920,7 @@ impl Interpreter {
         let mut stack = Vec::new();
         match self.compute_class_mro(class_name, &mut stack) {
             Ok(mro) => {
-                if let Some(class_def) = self.classes.get_mut(class_name) {
+                if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
                     class_def.mro = mro.clone();
                 }
                 mro

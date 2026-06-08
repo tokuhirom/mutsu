@@ -34,7 +34,7 @@ impl Interpreter {
         if cn_resolved.contains('[') || cn_resolved.contains("::") {
             return false;
         }
-        if !self.classes.contains_key(cn_resolved) {
+        if !self.registry().classes.contains_key(cn_resolved) {
             return false;
         }
         let mut has_attribute = false;
@@ -42,7 +42,11 @@ impl Interpreter {
             if cls == "Any" || cls == "Mu" || cls == "Cool" {
                 continue;
             }
-            let Some(class_def) = self.classes.get(&cls) else {
+            // Single guard for the whole eligibility check (used by both the
+            // class_def lookup and the nested parent contains_key — avoids a
+            // same-thread recursive read lock). No user-code re-entry here.
+            let registry = self.registry();
+            let Some(class_def) = registry.classes.get(&cls) else {
                 // A non-class entry in the MRO (e.g. a role) — be conservative.
                 return false;
             };
@@ -52,7 +56,7 @@ impl Interpreter {
                 && !class_def.methods.contains_key("new")
                 && class_def.native_methods.is_empty()
                 && class_def.parents.iter().all(|p| {
-                    p == "Any" || p == "Mu" || p == "Cool" || self.classes.contains_key(p)
+                    p == "Any" || p == "Mu" || p == "Cool" || registry.classes.contains_key(p)
                 })
                 && class_def.attributes.iter().all(
                     |(_, _, _, is_required, type_constraint, sigil, where_constraint)| {
@@ -409,8 +413,10 @@ impl Interpreter {
             } else {
                 (cn_resolved.as_str(), None)
             };
-            if cn_resolved.starts_with("IO::Path::") && !self.classes.contains_key(&cn_resolved) {
-                self.classes.insert(
+            if cn_resolved.starts_with("IO::Path::")
+                && !self.registry().classes.contains_key(&cn_resolved)
+            {
+                self.registry_mut().classes.insert(
                     cn_resolved.clone(),
                     ClassDef {
                         parents: vec!["IO::Path".to_string()],
@@ -432,7 +438,7 @@ impl Interpreter {
                 let attrs = HashMap::new();
                 return Ok(Value::make_instance(Symbol::intern(&cn_resolved), attrs));
             }
-            let class_key = if self.classes.contains_key(&cn_resolved) {
+            let class_key = if self.registry().classes.contains_key(&cn_resolved) {
                 cn_resolved.as_str()
             } else {
                 base_class_name
@@ -2711,15 +2717,17 @@ impl Interpreter {
                 return self.construct_cunion_instance(&cn_resolved, &args);
             }
             // Auto-pun role to class if needed (e.g., role COERCE calling self.new)
-            if !self.classes.contains_key(&cn_resolved) && self.roles.contains_key(&cn_resolved) {
+            if !self.registry().classes.contains_key(&cn_resolved)
+                && self.roles.contains_key(&cn_resolved)
+            {
                 self.ensure_role_punned_to_class(&cn_resolved);
             }
-            if self.classes.contains_key(&cn_resolved)
+            if self.registry().classes.contains_key(&cn_resolved)
                 || type_args
                     .as_ref()
-                    .is_some_and(|_| self.classes.contains_key(base_class_name))
+                    .is_some_and(|_| self.registry().classes.contains_key(base_class_name))
             {
-                let class_key = if self.classes.contains_key(&cn_resolved) {
+                let class_key = if self.registry().classes.contains_key(&cn_resolved) {
                     cn_resolved.as_str()
                 } else {
                     base_class_name
@@ -2846,6 +2854,7 @@ impl Interpreter {
                     cn != "Any"
                         && cn != "Mu"
                         && self
+                            .registry()
                             .classes
                             .get(cn)
                             .and_then(|def| def.methods.get("BUILD"))
@@ -3065,12 +3074,13 @@ impl Interpreter {
                                 } else {
                                     let arr = Value::real_array(Vec::new());
                                     // Register element type constraint for typed array attributes
-                                    if let Some(tc) = self
+                                    let tc = self
+                                        .registry()
                                         .classes
                                         .get(class_key)
                                         .and_then(|cd| cd.attribute_types.get(&attr_name))
-                                        .cloned()
-                                    {
+                                        .cloned();
+                                    if let Some(tc) = tc {
                                         self.register_container_type_metadata(
                                             &arr,
                                             super::ContainerTypeInfo {
@@ -3100,12 +3110,13 @@ impl Interpreter {
                                 } else {
                                     let h = Value::hash(HashMap::new());
                                     // Register value type constraint for typed hash attributes
-                                    if let Some(tc) = self
+                                    let tc = self
+                                        .registry()
                                         .classes
                                         .get(class_key)
                                         .and_then(|cd| cd.attribute_types.get(&attr_name))
-                                        .cloned()
-                                    {
+                                        .cloned();
+                                    if let Some(tc) = tc {
                                         self.register_container_type_metadata(
                                             &h,
                                             super::ContainerTypeInfo {
@@ -3163,11 +3174,14 @@ impl Interpreter {
                         continue;
                     }
                     // Skip role entries in MRO — they are handled separately below
-                    if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                    if self.roles.contains_key(mro_class)
+                        && !self.registry().classes.contains_key(mro_class)
+                    {
                         continue;
                     }
                     // Check if the class has its own BUILD (not from a role)
                     let class_has_own_build = self
+                        .registry()
                         .classes
                         .get(mro_class)
                         .and_then(|def| def.methods.get("BUILD"))
@@ -3204,6 +3218,7 @@ impl Interpreter {
                     // by ordered_role_submethods_for_class. Role submethods (is_my=true,
                     // role_origin=Some) were already called above.
                     let has_non_submethod_build = self
+                        .registry()
                         .classes
                         .get(mro_class)
                         .and_then(|def| def.methods.get("BUILD"))
@@ -3249,6 +3264,7 @@ impl Interpreter {
                     cn != "Any"
                         && cn != "Mu"
                         && self
+                            .registry()
                             .classes
                             .get(cn)
                             .and_then(|def| def.methods.get("BUILD"))
@@ -3287,11 +3303,14 @@ impl Interpreter {
                         continue;
                     }
                     // Skip role entries in MRO
-                    if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                    if self.roles.contains_key(mro_class)
+                        && !self.registry().classes.contains_key(mro_class)
+                    {
                         continue;
                     }
                     // Check if the class has its own TWEAK (not from a role)
                     let class_has_own_tweak = self
+                        .registry()
                         .classes
                         .get(mro_class)
                         .and_then(|def| def.methods.get("TWEAK"))
@@ -3331,6 +3350,7 @@ impl Interpreter {
                     }
                     // Only call the class's own TWEAK (not role-composed ones).
                     let has_own_tweak = self
+                        .registry()
                         .classes
                         .get(mro_class)
                         .and_then(|def| def.methods.get("TWEAK"))
@@ -3687,7 +3707,7 @@ impl Interpreter {
     fn collect_attribute_type_constraints(&mut self, class_name: &str) -> HashMap<String, String> {
         let mut constraints = HashMap::new();
         for owner in self.class_mro(class_name) {
-            if let Some(class_def) = self.classes.get(&owner) {
+            if let Some(class_def) = self.registry().classes.get(&owner) {
                 for (attr_name, tc) in &class_def.attribute_types {
                     constraints
                         .entry(attr_name.clone())
@@ -3760,7 +3780,7 @@ impl Interpreter {
             std::collections::HashSet::new();
         let mro = self.class_mro(class_name);
         for mro_class in &mro {
-            if let Some(class_def) = self.classes.get(mro_class) {
+            if let Some(class_def) = self.registry().classes.get(mro_class) {
                 for (attr_name, smiley) in &class_def.attribute_smileys {
                     smileys
                         .entry(attr_name.clone())
@@ -3794,7 +3814,7 @@ impl Interpreter {
                             Value::str(format!(
                                 "Type check failed in default value of attribute $!{}; expected {}, got {}",
                                 attr_name,
-                                self.classes.get(class_name)
+                                self.registry().classes.get(class_name)
                                     .and_then(|cd| cd.attribute_types.get(attr_name))
                                     .map(|t| format!("{}:U", t))
                                     .unwrap_or_else(|| "Any:U".to_string()),
@@ -3822,7 +3842,7 @@ impl Interpreter {
                         Value::str(format!(
                             "Type check failed in default value of attribute $!{}; expected {}, got {}",
                             attr_name,
-                            self.classes.get(class_name)
+                            self.registry().classes.get(class_name)
                                 .and_then(|cd| cd.attribute_types.get(attr_name))
                                 .map(|t| format!("{}:D", t))
                                 .unwrap_or_else(|| "Any:D".to_string()),
@@ -3957,7 +3977,7 @@ impl Interpreter {
             "QuantHash",
         ];
         // Check the class definition's parents and MRO for Baggy/Setty
-        if let Some(class_def) = self.classes.get(class_name) {
+        if let Some(class_def) = self.registry().classes.get(class_name) {
             if class_def
                 .parents
                 .iter()
@@ -3987,7 +4007,7 @@ impl Interpreter {
     /// Determine whether a class inherits from a Set-like type (vs Bag-like).
     fn class_is_setty(&self, class_name: &str) -> bool {
         const SETTY_TYPES: &[&str] = &["Set", "SetHash"];
-        if let Some(class_def) = self.classes.get(class_name) {
+        if let Some(class_def) = self.registry().classes.get(class_name) {
             if class_def
                 .parents
                 .iter()

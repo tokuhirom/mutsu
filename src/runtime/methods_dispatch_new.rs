@@ -304,7 +304,7 @@ impl Interpreter {
         }
         // Initialize with default attribute values
         let mut attributes = HashMap::new();
-        if self.classes.contains_key(&class_name.resolve()) {
+        if self.registry().classes.contains_key(&class_name.resolve()) {
             for (attr_name, _is_public, default, _is_rw, _, _, _) in
                 self.collect_class_attributes(&class_name.resolve())
             {
@@ -359,11 +359,14 @@ impl Interpreter {
                 continue;
             }
             // Skip role entries in MRO
-            if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+            if self.roles.contains_key(mro_class)
+                && !self.registry().classes.contains_key(mro_class)
+            {
                 continue;
             }
             // Check if the class itself has a BUILD submethod
             let class_has_own_build = self
+                .registry()
                 .classes
                 .get(mro_class)
                 .and_then(|def| def.methods.get("BUILD"))
@@ -407,6 +410,7 @@ impl Interpreter {
             // role_origin=Some) were already called above. Regular methods
             // (is_my=false) from roles still need to go through run_instance_method.
             let has_non_submethod_build = self
+                .registry()
                 .classes
                 .get(mro_class)
                 .and_then(|def| def.methods.get("BUILD"))
@@ -432,11 +436,14 @@ impl Interpreter {
                 continue;
             }
             // Skip role entries in MRO
-            if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+            if self.roles.contains_key(mro_class)
+                && !self.registry().classes.contains_key(mro_class)
+            {
                 continue;
             }
             // Check if the class itself has a TWEAK submethod
             let class_has_own_tweak = self
+                .registry()
                 .classes
                 .get(mro_class)
                 .and_then(|def| def.methods.get("TWEAK"))
@@ -472,6 +479,7 @@ impl Interpreter {
             // Call the class's TWEAK if it has one that wasn't already handled
             // by ordered_role_submethods_for_class. Same logic as BUILD above.
             let has_non_submethod_tweak = self
+                .registry()
                 .classes
                 .get(mro_class)
                 .and_then(|def| def.methods.get("TWEAK"))

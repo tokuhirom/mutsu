@@ -628,7 +628,8 @@ impl Interpreter {
                 // isa only matches classes, not roles. If the target is a role
                 // that has NOT been punned to a class, return False (use .does
                 // for role checking).
-                if self.roles.contains_key(&target_name) && !self.classes.contains_key(&target_name)
+                if self.roles.contains_key(&target_name)
+                    && !self.registry().classes.contains_key(&target_name)
                 {
                     return Ok(Value::Bool(false));
                 }
@@ -1377,7 +1378,7 @@ impl Interpreter {
                 Value::CustomType { repr, .. } | Value::CustomTypeInstance { repr, .. } => {
                     Ok(Value::str(repr))
                 }
-                Value::Package(name) if self.classes.contains_key(&name.resolve()) => {
+                Value::Package(name) if self.registry().classes.contains_key(&name.resolve()) => {
                     Ok(Value::str_from("P6opaque"))
                 }
                 _ => Ok(Value::str_from("P6opaque")),
@@ -1449,8 +1450,10 @@ impl Interpreter {
                     .unwrap_or_else(|| "Anon".to_string());
                 // Register an empty class definition so that .new and other
                 // class operations work on this dynamically created type.
-                if !self.classes.contains_key(&name) {
-                    self.classes.insert(name.clone(), Default::default());
+                if !self.registry().classes.contains_key(&name) {
+                    self.registry_mut()
+                        .classes
+                        .insert(name.clone(), Default::default());
                 }
                 Ok(Value::Package(Symbol::intern(&name)))
             }
