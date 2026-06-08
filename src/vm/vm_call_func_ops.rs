@@ -411,12 +411,29 @@ impl VM {
             self.stack.push(result);
             // Slice 6.3 step 2: precise env_dirty from the named-call merge.
         } else if self.interpreter.user_function_matches_call(&name, &args) {
-            // A user-defined sub shadows a same-named builtin.
-            // TODO: compile to bytecode — builtin-shadowing user sub fork (ledger §2).
-            crate::vm::vm_stats::record_function_fallback(&name);
-            let result = self.interpreter.call_function_fallback(&name, &args)?;
-            let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
-            self.stack.push(result);
+            // A user-defined sub shadows a same-named builtin (③ PR-2). OTF-compile
+            // the resolved def to bytecode when it is a plain single candidate and
+            // simple enough; otherwise keep tree-walking. Restricted to genuine
+            // builtin shadows (this branch also catches ordinary module/dynamic user
+            // subs whose args match — those keep tree-walking, since
+            // def_is_otf_compilable doesn't catch every interpreter-needing
+            // construct). proto / multi keep going through call_function_fallback so
+            // candidate dispatch stays correct. Must not fall through to the native
+            // arm below (the shadowed builtin).
+            if crate::runtime::Interpreter::is_builtin_function(&name)
+                && !self.interpreter.has_proto(&name)
+                && !self.has_multi_candidates_cached(&name)
+                && let Some(def) = self.interpreter.resolve_function_with_types(&name, &args)
+                && Self::def_is_otf_compilable(&def)
+            {
+                let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                self.stack.push(result);
+            } else {
+                crate::vm::vm_stats::record_function_fallback(&name);
+                let result = self.interpreter.call_function_fallback(&name, &args)?;
+                let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
+                self.stack.push(result);
+            }
             self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
@@ -702,12 +719,37 @@ impl VM {
                     self.interpreter.set_pending_call_arg_sources(None);
                     self.interpreter.maybe_fetch_rw_proxy(result?, true)
                 } else if self.interpreter.user_function_matches_call(name, &args) {
-                    // A user-defined sub shadows a same-named builtin.
-                    crate::vm::vm_stats::record_function_fallback(name);
-                    self.interpreter.set_pending_call_arg_sources(arg_sources);
-                    let result = self.interpreter.call_function_fallback(name, &args);
-                    self.interpreter.set_pending_call_arg_sources(None);
-                    self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                    // A user-defined sub shadows a same-named builtin (③ PR-2). When
+                    // the resolved def is a plain single candidate that is
+                    // OTF-compilable, run it as compiled bytecode — but resolve it
+                    // explicitly and DO NOT fall through to the native arm below
+                    // (which would pick the shadowed builtin). proto / multi cases
+                    // (this branch is reached by proto'd multis, since the non-proto
+                    // multi fork above did not fire) must keep going through
+                    // call_function_fallback so candidate dispatch stays correct;
+                    // complex-bodied / complex-signature shadows likewise tree-walk.
+                    //
+                    // Restrict the OTF takeover to genuine builtin shadows: this
+                    // branch is also reached by ordinary module/dynamic user subs
+                    // (not in compiled_fns) whose args strictly match, and
+                    // def_is_otf_compilable does not catch every construct that needs
+                    // the interpreter (e.g. a nested `sub` whose `when` control flow
+                    // must not escape the enclosing routine — Test::Util's
+                    // is-deeply-junction). Those keep tree-walking unchanged.
+                    if crate::runtime::Interpreter::is_builtin_function(name)
+                        && !self.interpreter.has_proto(name)
+                        && !self.has_multi_candidates_cached(name)
+                        && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+                        && Self::def_is_otf_compilable(&def)
+                    {
+                        self.compile_and_call_function_def(&def, args, compiled_fns)
+                    } else {
+                        crate::vm::vm_stats::record_function_fallback(name);
+                        self.interpreter.set_pending_call_arg_sources(arg_sources);
+                        let result = self.interpreter.call_function_fallback(name, &args);
+                        self.interpreter.set_pending_call_arg_sources(None);
+                        self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                    }
                 } else if let Some(native_result) =
                     self.try_native_function(Symbol::intern(name), &args)
                 {
@@ -715,15 +757,10 @@ impl VM {
                 } else if !self.is_interpreter_handled_function(name)
                 && !self.has_multi_candidates_cached(name)
                 && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
-                && !Self::function_body_needs_interpreter(&def.body)
                 // Only OTF-compile simple functions: no default params, no
                 // code params (&foo), no where constraints, no closures.
-                && def.param_defs.iter().all(|pd| {
-                    pd.default.is_none()
-                        && pd.where_constraint.is_none()
-                        && pd.code_signature.is_none()
-                        && !pd.name.starts_with('&')
-                }) {
+                && Self::def_is_otf_compilable(&def)
+                {
                     self.compile_and_call_function_def(&def, args, compiled_fns)
                 } else if let Some(result) = self.try_native_test_function(name, &args) {
                     // Dispatch Test functions straight to their typed handler (lever A).
@@ -756,6 +793,21 @@ impl VM {
                 }
             }
         }
+    }
+
+    /// Whether a resolved `FunctionDef` is simple enough to compile on-the-fly to
+    /// bytecode and run via the VM (instead of tree-walking it through the
+    /// interpreter): a plain body and no default/where/code-signature/`&`-code
+    /// params. Shared by the non-shadow OTF branch and the builtin-shadow forks
+    /// (③ PR-2) so the same compilability gate is applied consistently.
+    pub(super) fn def_is_otf_compilable(def: &crate::ast::FunctionDef) -> bool {
+        !Self::function_body_needs_interpreter(&def.body)
+            && def.param_defs.iter().all(|pd| {
+                pd.default.is_none()
+                    && pd.where_constraint.is_none()
+                    && pd.code_signature.is_none()
+                    && !pd.name.starts_with('&')
+            })
     }
 
     /// Check if a function body contains constructs that require

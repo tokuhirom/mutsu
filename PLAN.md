@@ -133,7 +133,10 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
       tree-walk 実行パス撲滅後にしかできない）。よって**③のスライス＝台帳 §1/§2 の撲滅**。
       - [x] **PR-1（Routine dispatch）**: `vm_dispatch_helpers` の Routine 値解決を統一 compiled-first へ
             （builtin 名 Routine は builtin 優先維持）。台帳 §2 Routine 行消化。pin `t/routine-value-dispatch.t`。
-      - [ ] 次: §1 catch-all メソッド dispatch（本丸）/ §2 `vm_call_func_ops` multi/sub 解決。
+      - [x] **PR-2（builtin-shadow fork）**: ユーザ sub が同名 builtin を shadow する関数 dispatch fork の
+            compilable な単一候補を OTF compile（bytecode 実行）へ。proto/multi はガードで fallback 維持
+            （回帰実証 → 修正）。pin `t/builtin-shadow-dispatch.t`。
+      - [ ] 次: §1 catch-all メソッド dispatch（本丸）/ §2 非proto multi fork（VM 側 multi 候補解決）。
 - [ ] **④ 本質的キャリアの扱いを確定**（消すのではなく分離 or 明示）: `EVAL`/`EVALFILE`（既に compile→サブ VM 実行で
       tree-walk ではない＝env/レジストリ所有のため Interpreter を借りる**キャリア**）、正規表現の埋め込み `{}` ブロック
       （interpreter regex エンジン経由で caller local を名前書き込み）、pseudo-package（`CALLER::`/`OUTER::` の reflective
