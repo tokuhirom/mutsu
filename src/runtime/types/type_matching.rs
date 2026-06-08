@@ -667,17 +667,12 @@ impl Interpreter {
             }
             // Check transitive role composition through class_composed_roles and role_parents
             if resolved_constraint.is_some() {
-                let mut role_stack: Vec<String> = Vec::new();
+                // Seed from the registry (composed roles over the MRO); the divergent
+                // transitive walk below stays inline because its parent gate
+                // (`resolve_role_key`) re-enters the registry/env and must not run
+                // under a held guard.
+                let mut role_stack = self.registry().composed_roles_seed(&mro);
                 let mut seen_roles = HashSet::new();
-                // Collect all composed roles from the class and its parents
-                for cn in &mro {
-                    if let Some(composed) = self.registry().class_composed_roles.get(cn.as_str()) {
-                        for cr in composed {
-                            let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
-                            role_stack.push(base.to_string());
-                        }
-                    }
-                }
                 while let Some(role_name) = role_stack.pop() {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
@@ -821,16 +816,11 @@ impl Interpreter {
             // Check composed roles for the instance's class (and its MRO)
             if self.registry().roles.contains_key(constraint) {
                 let mro = self.class_mro(&class_name.resolve());
-                let mut role_stack: Vec<String> = Vec::new();
+                // Seed from the registry; the transitive walk below stays inline
+                // because its gate / match check diverge from the Package-value
+                // walk above (exact `== constraint` + `roles.contains_key` here).
+                let mut role_stack = self.registry().composed_roles_seed(&mro);
                 let mut seen_roles = HashSet::new();
-                for cn in &mro {
-                    if let Some(composed) = self.registry().class_composed_roles.get(cn.as_str()) {
-                        for cr in composed {
-                            let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
-                            role_stack.push(base.to_string());
-                        }
-                    }
-                }
                 while let Some(role_name) = role_stack.pop() {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
