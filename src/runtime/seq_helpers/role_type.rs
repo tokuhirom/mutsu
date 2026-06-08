@@ -40,7 +40,7 @@ impl Interpreter {
                     return true;
                 }
                 // Check if l_name is a subclass of r_name
-                if let Some(class_def) = self.classes.get(&l_resolved) {
+                if let Some(class_def) = self.registry().classes.get(&l_resolved) {
                     if class_def.parents.iter().any(|p| p == &r_resolved) {
                         return true;
                     }

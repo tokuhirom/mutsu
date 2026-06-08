@@ -32,7 +32,7 @@ impl Interpreter {
                 nested.token_defs = self.token_defs.clone();
                 nested.proto_subs = self.proto_subs.clone();
                 nested.proto_tokens = self.proto_tokens.clone();
-                nested.classes = self.classes.clone();
+                nested.registry_mut().classes = self.registry().classes.clone();
                 nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
                 nested.registry_mut().class_composed_roles =
                     self.registry().class_composed_roles.clone();
@@ -159,12 +159,12 @@ impl Interpreter {
                     cls == expected_normalized
                         || cls.starts_with(&format!("{}::", expected_normalized))
                         // Check MRO: the exception's class hierarchy may include the expected type
-                        || self.classes.get(cls).is_some_and(|def| {
+                        || self.registry().classes.get(cls).is_some_and(|def| {
                             def.mro.iter().any(|parent| parent == expected_normalized)
                         })
                         // X::Comp::Group wraps compile-time errors: match any X::Comp subtype
                         || (expected_normalized == "X::Comp::Group"
-                            && self.classes.get(cls).is_some_and(|def| {
+                            && self.registry().classes.get(cls).is_some_and(|def| {
                                 def.mro.iter().any(|p| p == "X::Comp")
                             }))
                         // X::AdHoc wrapping a die'd string that encodes a type name
@@ -367,7 +367,7 @@ impl Interpreter {
                 nested.token_defs = self.token_defs.clone();
                 nested.proto_subs = self.proto_subs.clone();
                 nested.proto_tokens = self.proto_tokens.clone();
-                nested.classes = self.classes.clone();
+                nested.registry_mut().classes = self.registry().classes.clone();
                 nested.roles = self.roles.clone();
                 nested.registry_mut().subsets = self.registry().subsets.clone();
                 nested.registry_mut().enum_types = self.registry().enum_types.clone();
@@ -418,35 +418,35 @@ impl Interpreter {
         };
 
         // Check if the exception matches any of the provided types
-        let type_ok = match &result {
-            Ok(_) => false,
-            Err(err) => {
-                let ex_class = err.exception.as_ref().and_then(|ex| {
-                    if let Value::Instance { class_name, .. } = ex.as_ref() {
-                        Some(class_name.resolve().to_string())
-                    } else {
-                        None
-                    }
-                });
-                type_names.iter().any(|expected: &String| -> bool {
-                    if expected.is_empty() || expected == "Exception" {
-                        return true;
-                    }
-                    if let Some(cls) = &ex_class
-                        && (cls == expected
-                            || cls.starts_with(&format!("{}::", expected))
-                            || self
-                                .classes
-                                .get(cls)
-                                .is_some_and(|def| def.mro.iter().any(|parent| parent == expected)))
-                    {
-                        return true;
-                    }
-                    // Fallback: message-based matching
-                    err.message.contains(expected.as_str())
-                })
-            }
-        };
+        let type_ok =
+            match &result {
+                Ok(_) => false,
+                Err(err) => {
+                    let ex_class = err.exception.as_ref().and_then(|ex| {
+                        if let Value::Instance { class_name, .. } = ex.as_ref() {
+                            Some(class_name.resolve().to_string())
+                        } else {
+                            None
+                        }
+                    });
+                    type_names.iter().any(|expected: &String| -> bool {
+                        if expected.is_empty() || expected == "Exception" {
+                            return true;
+                        }
+                        if let Some(cls) = &ex_class
+                            && (cls == expected
+                                || cls.starts_with(&format!("{}::", expected))
+                                || self.registry().classes.get(cls).is_some_and(|def| {
+                                    def.mro.iter().any(|parent| parent == expected)
+                                }))
+                        {
+                            return true;
+                        }
+                        // Fallback: message-based matching
+                        err.message.contains(expected.as_str())
+                    })
+                }
+            };
 
         let type_display = type_names.join(", ");
 

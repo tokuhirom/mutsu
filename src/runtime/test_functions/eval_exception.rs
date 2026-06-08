@@ -181,7 +181,7 @@ impl Interpreter {
         }
         nested.lib_paths = self.lib_paths.clone();
         nested.program_path = self.program_path.clone();
-        nested.classes = self.classes.clone();
+        nested.registry_mut().classes = self.registry().classes.clone();
         nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
         nested.registry_mut().class_composed_roles = self.registry().class_composed_roles.clone();
         nested.roles = self.roles.clone();
@@ -280,7 +280,7 @@ impl Interpreter {
         }
         nested.lib_paths = self.lib_paths.clone();
         nested.program_path = self.program_path.clone();
-        nested.classes = self.classes.clone();
+        nested.registry_mut().classes = self.registry().classes.clone();
         nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
         nested.registry_mut().class_composed_roles = self.registry().class_composed_roles.clone();
         nested.roles = self.roles.clone();

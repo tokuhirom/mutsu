@@ -39,7 +39,7 @@ impl Interpreter {
             Value::Package(name) => name.resolve(),
             _ => return Ok(None),
         };
-        if !self.classes.contains_key(&receiver_class_name) {
+        if !self.registry().classes.contains_key(&receiver_class_name) {
             return Ok(None);
         }
 
@@ -186,7 +186,8 @@ impl Interpreter {
 
     /// Read-only variant of class_mro for use from non-mut helpers.
     fn class_mro_readonly(&self, class_name: &str) -> Option<Vec<String>> {
-        let class_def = self.classes.get(class_name)?;
+        let registry = self.registry();
+        let class_def = registry.classes.get(class_name)?;
         if !class_def.mro.is_empty() {
             return Some(class_def.mro.clone());
         }
@@ -206,7 +207,8 @@ impl Interpreter {
             WalkKind::Class => {
                 // For the receiver's own class, "own" is any candidate stored
                 // on the class with role_origin == None.
-                let class_def = self.classes.get(owner)?;
+                let registry = self.registry();
+                let class_def = registry.classes.get(owner)?;
                 let overloads = class_def.methods.get(method_name)?;
                 if owner == receiver_class {
                     overloads
@@ -232,7 +234,8 @@ impl Interpreter {
                 }
                 // Fall back to a method composed into the receiver's class
                 // table whose role origin matches this role.
-                let class_def = self.classes.get(receiver_class)?;
+                let registry = self.registry();
+                let class_def = registry.classes.get(receiver_class)?;
                 let overloads = class_def.methods.get(method_name)?;
                 overloads
                     .iter()

@@ -261,7 +261,7 @@ impl Interpreter {
             if Self::type_matches(type_name, package_base) {
                 return true;
             }
-            if let Some(class_def) = self.classes.get(package_base) {
+            if let Some(class_def) = self.registry().classes.get(package_base) {
                 return class_def
                     .parents
                     .clone()
@@ -799,7 +799,7 @@ impl Interpreter {
                 }
             }
             // Check parent classes of the instance
-            if let Some(class_def) = self.classes.get(&class_name.resolve()) {
+            if let Some(class_def) = self.registry().classes.get(&class_name.resolve()) {
                 for parent in class_def.parents.clone() {
                     if Self::type_matches(constraint, &parent) {
                         return true;

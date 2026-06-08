@@ -300,7 +300,7 @@ impl Interpreter {
             self.functions.keys().copied().collect();
         let before_env_keys: std::collections::HashSet<Symbol> = self.env.keys().copied().collect();
         let before_class_keys: std::collections::HashSet<String> =
-            self.classes.keys().cloned().collect();
+            self.registry().classes.keys().cloned().collect();
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
@@ -358,18 +358,18 @@ impl Interpreter {
             }
 
             let mut class_aliases: Vec<(String, ClassDef)> = Vec::new();
-            for (name, class_def) in &self.classes {
+            for (name, class_def) in &self.registry().classes {
                 if before_class_keys.contains(name) {
                     continue;
                 }
                 let tail = name.rsplit_once("::").map(|(_, t)| t).unwrap_or(name);
                 let alias = format!("{pkg}::{tail}");
-                if !self.classes.contains_key(&alias) {
+                if !self.registry().classes.contains_key(&alias) {
                     class_aliases.push((alias, class_def.clone()));
                 }
             }
             for (alias, class_def) in class_aliases {
-                self.classes.insert(alias, class_def);
+                self.registry_mut().classes.insert(alias, class_def);
             }
         }
 

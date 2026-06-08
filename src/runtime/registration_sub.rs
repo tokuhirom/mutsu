@@ -530,8 +530,8 @@ impl Interpreter {
     /// Resolve a name to a type object (Package value) if the name refers to a known class or role.
     pub(crate) fn resolve_type_object(&self, name: &str) -> Option<Value> {
         let fq_name = format!("{}::{}", self.current_package, name);
-        if self.classes.contains_key(name)
-            || self.classes.contains_key(fq_name.as_str())
+        if self.registry().classes.contains_key(name)
+            || self.registry().classes.contains_key(fq_name.as_str())
             || self.roles.contains_key(name)
             || self.roles.contains_key(fq_name.as_str())
         {

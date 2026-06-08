@@ -456,7 +456,7 @@ impl Interpreter {
                 return 0;
             }
             // Use a non-mutable copy of the MRO (classes field lookup)
-            if let Some(class_def) = self.classes.get(cn.as_str()) {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for (i, ancestor) in class_def.mro.iter().enumerate() {
                     if ancestor == base {
                         return i;
@@ -475,7 +475,7 @@ impl Interpreter {
             if base == cn.as_str() {
                 return 0;
             }
-            if let Some(class_def) = self.classes.get(cn.as_str()) {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for (i, ancestor) in class_def.mro.iter().enumerate() {
                     if ancestor == base {
                         return i;

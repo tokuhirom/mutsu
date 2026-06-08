@@ -815,7 +815,9 @@ impl Interpreter {
         method_name: &str,
         method_def: &super::MethodDef,
     ) -> Option<usize> {
-        let class_def = self.classes.get(class_name)?;
+        // No user-code re-entry here, so a let-bound guard is safe.
+        let registry = self.registry();
+        let class_def = registry.classes.get(class_name)?;
         let defs = class_def.methods.get(method_name)?;
         let target_fp = crate::ast::function_body_fingerprint(
             &method_def.params,
@@ -957,7 +959,10 @@ impl Interpreter {
         &self,
         class_name: &str,
     ) -> Option<crate::value::RuntimeError> {
-        let class_def = self.classes.get(class_name)?;
+        // No user-code re-entry here (only the static compiler check runs), so a
+        // let-bound guard is safe.
+        let registry = self.registry();
+        let class_def = registry.classes.get(class_name)?;
         for overloads in class_def.methods.values() {
             for def in overloads {
                 if let Some(err_val) =
@@ -985,7 +990,7 @@ impl Interpreter {
 
     /// Compile method bodies for a given class using the bytecode compiler.
     pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
-        if let Some(class_def) = self.classes.get_mut(class_name) {
+        if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
             let attr_names: Vec<String> =
                 class_def.attributes.iter().map(|a| a.0.clone()).collect();
             Self::compile_methods_for_map(&mut class_def.methods, class_name, &attr_names);
@@ -1510,7 +1515,11 @@ impl Interpreter {
                 .functions
                 .keys()
                 .any(|k| k.resolve().starts_with(&prefix))
-            || self.classes.keys().any(|k| k.starts_with(&prefix))
+            || self
+                .registry()
+                .classes
+                .keys()
+                .any(|k| k.starts_with(&prefix))
             || self.exported_subs.contains_key(package)
             || self.exported_vars.contains_key(package)
     }
@@ -1834,7 +1843,7 @@ impl Interpreter {
                 });
         }
 
-        for class_name in self.classes.keys() {
+        for class_name in self.registry().classes.keys() {
             let class_short = class_name
                 .rsplit_once("::")
                 .map(|(_, short)| short)

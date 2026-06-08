@@ -12,7 +12,7 @@ impl Interpreter {
             }
         };
         // Check user-defined class methods first
-        if let Some(class_def) = self.classes.get(&class_name_str)
+        if let Some(class_def) = self.registry().classes.get(&class_name_str)
             && let Some(defs) = class_def.methods.get(method_name)
             && let Some(def) = defs.first()
         {
@@ -106,7 +106,7 @@ impl Interpreter {
         // Check auto-generated accessor methods for public attributes (has $.x, has $.x is rw).
         // These are not stored in class_def.methods but are generated on-the-fly.
         // ClassAttributeDef: (attr_name, is_public, default, is_rw, is_required, sigil, where)
-        if let Some(class_def) = self.classes.get(&class_name_str) {
+        if let Some(class_def) = self.registry().classes.get(&class_name_str) {
             for (attr_name, is_public, _, is_rw, _, _, _) in &class_def.attributes {
                 if *is_public && attr_name == method_name {
                     let mut env = crate::env::Env::new();
@@ -180,7 +180,10 @@ impl Interpreter {
         method_name: &str,
         package: crate::symbol::Symbol,
     ) -> Vec<Value> {
-        let Some(class_def) = self.classes.get(class_name) else {
+        // No user-code re-entry below (pure Value construction), so a let-bound
+        // guard is safe.
+        let registry = self.registry();
+        let Some(class_def) = registry.classes.get(class_name) else {
             return Vec::new();
         };
         let Some(defs) = class_def.methods.get(method_name) else {
@@ -287,7 +290,7 @@ impl Interpreter {
             });
         }
         if let Value::Package(class_name) = invocant
-            && let Some(class_def) = self.classes.get(&class_name.resolve())
+            && let Some(class_def) = self.registry().classes.get(&class_name.resolve())
             && class_def.native_methods.contains(method_name)
         {
             return Some(Value::str(method_name.to_string()));
@@ -642,8 +645,8 @@ impl Interpreter {
                 };
                 // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
                 // create a stub ClassDef so methods can be added dynamically.
-                if !self.classes.contains_key(&class_name) {
-                    self.classes.insert(
+                if !self.registry().classes.contains_key(&class_name) {
+                    self.registry_mut().classes.insert(
                         class_name.clone(),
                         ClassDef {
                             parents: vec![],
@@ -660,7 +663,7 @@ impl Interpreter {
                         },
                     );
                 }
-                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
                 }
                 // Return Nil even if the class was not found (e.g. built-in types
@@ -702,7 +705,7 @@ impl Interpreter {
                     deprecated_message: None,
                     is_submethod: false,
                 };
-                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.methods.entry(method_name).or_default().push(def);
                     return Ok(Value::Nil);
                 }
@@ -720,7 +723,7 @@ impl Interpreter {
                     _ => return Ok(Value::Nil),
                 };
                 let mro = self.class_mro(&class_name);
-                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.mro = mro;
                 }
                 Ok(Value::Nil)
@@ -759,7 +762,7 @@ impl Interpreter {
                     });
                     let sigil = attr_name_raw.chars().next().unwrap_or('$');
                     // Add the attribute to the class definition
-                    if let Some(class_def) = self.classes.get_mut(&class_name) {
+                    if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                         class_def.attributes.push((
                             bare_name.clone(),
                             has_accessor, // is_public
@@ -1031,7 +1034,7 @@ impl Interpreter {
                     other => value_type_name(other).to_string(),
                 };
                 let mut table = HashMap::new();
-                if let Some(class_def) = self.classes.get(&type_name) {
+                if let Some(class_def) = self.registry().classes.get(&type_name) {
                     for (name, defs) in &class_def.methods {
                         if defs.iter().any(|d| d.is_my) {
                             table.insert(name.clone(), Value::str(name.clone()));
@@ -1053,7 +1056,7 @@ impl Interpreter {
             Value::Instance { class_name, .. } => class_name.resolve(),
             other => value_type_name(other).to_string(),
         };
-        let mut mro = if self.classes.contains_key(&class_name) {
+        let mut mro = if self.registry().classes.contains_key(&class_name) {
             self.class_mro(&class_name)
         } else {
             // Built-in type hierarchies for types that are not user-defined classes.
@@ -1375,7 +1378,7 @@ impl Interpreter {
             }
 
             // For built-in types that don't have class defs, add known methods
-            if result.is_empty() || !self.classes.contains_key(&class_name) {
+            if result.is_empty() || !self.registry().classes.contains_key(&class_name) {
                 self.collect_builtin_type_methods(&class_name, &mut result);
                 if all {
                     self.collect_builtin_type_methods("Any", &mut result);
@@ -1748,7 +1751,7 @@ impl Interpreter {
         include_private: bool,
         result: &mut Vec<Value>,
     ) {
-        if let Some(class_def) = self.classes.get(class_name) {
+        if let Some(class_def) = self.registry().classes.get(class_name) {
             // First add accessor methods for public attributes (in order)
             for (attr_name, is_public, ..) in &class_def.attributes {
                 if *is_public && !class_def.methods.contains_key(attr_name) {
@@ -1912,7 +1915,7 @@ impl Interpreter {
         self.collect_class_methods(class_name, include_private, &mut result);
 
         // Then: each parent's tree as a nested array
-        if let Some(class_def) = self.classes.get(class_name) {
+        if let Some(class_def) = self.registry().classes.get(class_name) {
             for parent in &class_def.parents {
                 let subtree = self.classhow_methods_tree(parent, include_private)?;
                 result.push(subtree);
@@ -1935,7 +1938,7 @@ impl Interpreter {
         let mro = self.classhow_mro_unhidden_names(target);
         let mut results = Vec::new();
         for cn in &mro {
-            if let Some(class_def) = self.classes.get(cn)
+            if let Some(class_def) = self.registry().classes.get(cn)
                 && let Some(defs) = class_def.methods.get(method_name)
             {
                 for def in defs.iter().filter(|def| !def.is_my || cn == &class_name) {
@@ -2044,11 +2047,11 @@ impl Interpreter {
 
     fn collect_attribute_objects(&self, class_name: &str, local_only: bool) -> Vec<Value> {
         // For Attribute itself, return BOOTSTRAPATTR instances for its well-known attributes
-        if class_name == "Attribute" && !self.classes.contains_key("Attribute") {
+        if class_name == "Attribute" && !self.registry().classes.contains_key("Attribute") {
             return Self::make_bootstrapattr_list();
         }
         if local_only {
-            if let Some(class_def) = self.classes.get(class_name) {
+            if let Some(class_def) = self.registry().classes.get(class_name) {
                 class_def
                     .attributes
                     .iter()
@@ -2058,7 +2061,7 @@ impl Interpreter {
                 Vec::new()
             }
         } else {
-            let mro = if let Some(class_def) = self.classes.get(class_name)
+            let mro = if let Some(class_def) = self.registry().classes.get(class_name)
                 && !class_def.mro.is_empty()
             {
                 class_def.mro.clone()
@@ -2071,7 +2074,7 @@ impl Interpreter {
                 if cn == "Any" || cn == "Mu" {
                     continue;
                 }
-                if let Some(cd) = self.classes.get(cn) {
+                if let Some(cd) = self.registry().classes.get(cn) {
                     for attr in &cd.attributes {
                         if seen_names.insert(attr.0.clone()) {
                             result.push(self.make_attribute_object(attr, cn));
@@ -2133,6 +2136,7 @@ impl Interpreter {
         let (ref attr_name, is_public, ref default, is_rw, _, sigil, _) = *attr;
         let full_name = format!("{}!{}", sigil, attr_name);
         let raw_type_name = self
+            .registry()
             .classes
             .get(owner)
             .and_then(|cd| cd.attribute_types.get(attr_name))
@@ -2211,7 +2215,7 @@ impl Interpreter {
     /// Build a minimal Attribute introspection object for a `has` declaration
     /// that is being processed at class-registration time, so it can be passed
     /// to a user-defined `trait_mod:<is>`. Unlike `make_attribute_object`, this
-    /// does not require the owning class to already be present in `self.classes`.
+    /// does not require the owning class to already be present in `self.registry().classes`.
     pub(crate) fn make_trait_attribute_object(
         &self,
         attr_name: &str,
@@ -2336,7 +2340,8 @@ impl Interpreter {
         let mro = self.classhow_mro_names(&args[0]);
         let parents_iter = mro.into_iter().skip(1);
         let parents: Vec<Value> = if local {
-            self.classes
+            self.registry()
+                .classes
                 .get(&class_name)
                 .map(|cd| cd.parents.clone())
                 .unwrap_or_default()
@@ -2358,6 +2363,7 @@ impl Interpreter {
 
     fn parents_tree(&mut self, class_name: &str) -> Vec<Value> {
         let direct = self
+            .registry()
             .classes
             .get(class_name)
             .map(|cd| cd.parents.clone())
@@ -2427,7 +2433,8 @@ impl Interpreter {
     ) -> Vec<String> {
         // If the target is a role (not a class), return its role_parents.
         // For instances (punned roles), include the role itself in the list.
-        let is_role = self.roles.contains_key(class_name) && !self.classes.contains_key(class_name);
+        let is_role = self.roles.contains_key(class_name)
+            && !self.registry().classes.contains_key(class_name);
         if is_role {
             let mut result = Vec::new();
             // For instances of punned roles, include the role itself first
@@ -2482,7 +2489,7 @@ impl Interpreter {
                 result.retain(|r| !transitive.contains(r));
             }
         } else {
-            let mro = if let Some(cd) = self.classes.get(class_name)
+            let mro = if let Some(cd) = self.registry().classes.get(class_name)
                 && !cd.mro.is_empty()
             {
                 cd.mro.clone()

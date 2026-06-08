@@ -13,7 +13,7 @@ use super::*;
 impl Interpreter {
     pub(crate) fn sync_eval_definition_state(&mut self, nested: &Interpreter) {
         self.type_metadata = nested.type_metadata.clone();
-        self.classes = nested.classes.clone();
+        self.registry_mut().classes = nested.registry().classes.clone();
         // self and nested are distinct Interpreters with distinct registry Arcs,
         // so taking self's write lock and nested's read lock in one statement is
         // deadlock-free (matches the slice-1 `subsets` line below).

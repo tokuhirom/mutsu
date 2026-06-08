@@ -284,7 +284,7 @@ impl DocComment {
 }
 
 #[derive(Clone, Default)]
-struct ClassDef {
+pub(crate) struct ClassDef {
     parents: Vec<String>,
     // (name, is_public, default, is_rw, is_required, sigil, where_constraint)
     attributes: Vec<ClassAttributeDef>,
@@ -884,7 +884,6 @@ pub struct Interpreter {
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
     /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
     registry: Arc<RwLock<Registry>>,
-    classes: HashMap<String, ClassDef>,
     roles: HashMap<String, RoleDef>,
     /// Roles explicitly declared via user code (not pre-registered builtins).
     /// Used to detect X::Redeclaration for role->class name conflicts.
@@ -2868,7 +2867,12 @@ impl Interpreter {
             gather_take_limits: Vec::new(),
             block_scope_depth: 0,
             registry: {
-                let mut registry = Registry::default();
+                // Built-in class definitions (PR-A slice 3: `classes` now lives in the
+                // shared Registry instead of an Interpreter field).
+                let mut registry = Registry {
+                    classes,
+                    ..Registry::default()
+                };
                 // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
                 // now lives in the shared Registry instead of an Interpreter field).
                 let ccr = &mut registry.class_composed_roles;
@@ -2905,7 +2909,6 @@ impl Interpreter {
                 ccr.insert("Str".to_string(), vec!["Stringy".to_string()]);
                 Arc::new(RwLock::new(registry))
             },
-            classes,
             roles: {
                 let mut roles = HashMap::new();
                 roles.insert(
@@ -3426,7 +3429,7 @@ impl Interpreter {
     /// Save current function/class keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
         let func_keys: HashSet<Symbol> = self.functions.keys().copied().collect();
-        let class_keys: HashSet<String> = self.classes.keys().cloned().collect();
+        let class_keys: HashSet<String> = self.registry().classes.keys().cloned().collect();
         self.import_scope_stack.push((
             func_keys,
             class_keys,
@@ -3443,7 +3446,9 @@ impl Interpreter {
             self.import_scope_stack.pop()
         {
             self.functions.retain(|key, _| func_snapshot.contains(key));
-            self.classes.retain(|key, _| class_snapshot.contains(key));
+            self.registry_mut()
+                .classes
+                .retain(|key, _| class_snapshot.contains(key));
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;
@@ -3477,7 +3482,7 @@ impl Interpreter {
             // module was first loaded transitively by a non-contributing module.
             if self.module_load_stack.is_empty() && module.contains("::") {
                 let is_contributor =
-                    self.classes.contains_key(module) || self.roles.contains_key(module);
+                    self.registry().classes.contains_key(module) || self.roles.contains_key(module);
                 if is_contributor {
                     self.package_stash_hidden.remove(module);
                 }
@@ -3506,7 +3511,7 @@ impl Interpreter {
             HashSet::new()
         };
         self.module_load_stack.push(module.to_string());
-        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let role_snapshot: HashSet<String> = self.roles.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let func_keys_before: HashSet<Symbol> = self.functions.keys().copied().collect();
@@ -3554,7 +3559,8 @@ impl Interpreter {
             } else {
                 module
             };
-            for class_name in self.classes.keys() {
+            let class_names: Vec<String> = self.registry().classes.keys().cloned().collect();
+            for class_name in &class_names {
                 if class_snapshot.contains(class_name) {
                     continue;
                 }
@@ -3609,11 +3615,13 @@ impl Interpreter {
             // If neither condition holds, new classes/roles are hidden from X's stash.
             if let Some((namespace, _)) = module.rsplit_once("::") {
                 let module_declares_own_class =
-                    self.classes.contains_key(module) || self.roles.contains_key(module);
+                    self.registry().classes.contains_key(module) || self.roles.contains_key(module);
                 let chain_has_package_decl = self.chain_declared_packages.contains(namespace);
                 if !module_declares_own_class && !chain_has_package_decl {
                     // Hide newly registered classes/roles from the namespace stash
-                    for class_name in self.classes.keys() {
+                    let class_names: Vec<String> =
+                        self.registry().classes.keys().cloned().collect();
+                    for class_name in &class_names {
                         if !class_snapshot.contains(class_name)
                             && class_name.starts_with(namespace)
                             && class_name.get(namespace.len()..namespace.len() + 2) == Some("::")
@@ -4066,7 +4074,7 @@ impl Interpreter {
             )));
         }
         self.module_load_stack.push(module.to_string());
-        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let saved = self.suppress_exports;
         self.suppress_exports = true;
@@ -4079,7 +4087,8 @@ impl Interpreter {
             } else {
                 module.to_string()
             };
-            for class_name in self.classes.keys() {
+            let class_names: Vec<String> = self.registry().classes.keys().cloned().collect();
+            for class_name in &class_names {
                 if !class_snapshot.contains(class_name) {
                     self.need_hidden_classes.insert(class_name.clone());
                     if let Some((_, short)) = class_name.rsplit_once("::") {
@@ -4994,7 +5003,7 @@ impl Interpreter {
     }
 
     pub(crate) fn has_class(&self, name: &str) -> bool {
-        self.classes.contains_key(name)
+        self.registry().classes.contains_key(name)
     }
 
     /// Check if a class name refers to a user-defined class that inherits from
@@ -5005,14 +5014,21 @@ impl Interpreter {
             "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",
             "Seq",
         ];
-        let class_def = self.classes.get(name).or_else(|| {
-            self.classes
-                .iter()
-                .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
-                .map(|(_, v)| v)
-        });
-        if let Some(class_def) = class_def {
-            for parent in &class_def.parents {
+        // Clone out the parents under a single guard, then recurse without holding it.
+        let parents = {
+            let reg = self.registry();
+            reg.classes
+                .get(name)
+                .or_else(|| {
+                    reg.classes
+                        .iter()
+                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+                        .map(|(_, v)| v)
+                })
+                .map(|cd| cd.parents.clone())
+        };
+        if let Some(parents) = parents {
+            for parent in &parents {
                 if CONTAINER_TYPES.contains(&parent.as_str()) {
                     return true;
                 }
@@ -5030,14 +5046,21 @@ impl Interpreter {
         if IMMUTABLE_SETTY.contains(&name) {
             return true;
         }
-        let class_def = self.classes.get(name).or_else(|| {
-            self.classes
-                .iter()
-                .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
-                .map(|(_, v)| v)
-        });
-        if let Some(class_def) = class_def {
-            for parent in &class_def.parents {
+        // Clone out the parents under a single guard, then recurse without holding it.
+        let parents = {
+            let reg = self.registry();
+            reg.classes
+                .get(name)
+                .or_else(|| {
+                    reg.classes
+                        .iter()
+                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+                        .map(|(_, v)| v)
+                })
+                .map(|cd| cd.parents.clone())
+        };
+        if let Some(parents) = parents {
+            for parent in &parents {
                 if IMMUTABLE_SETTY.contains(&parent.as_str()) {
                     return true;
                 }
@@ -5203,7 +5226,6 @@ impl Interpreter {
             // independent snapshot (matches prior per-field clone semantics: the
             // child sees parent declarations but its own new ones don't leak back).
             registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
-            classes: self.classes.clone(),
             roles: self.roles.clone(),
             user_declared_roles: self.user_declared_roles.clone(),
             role_candidates: self.role_candidates.clone(),

@@ -81,7 +81,7 @@ impl Interpreter {
     pub(super) fn inject_eval_methods_into_class(&mut self, stmts: Vec<Stmt>) -> Vec<Stmt> {
         // Only applies when current_package is a class being defined
         let class_name = self.current_package.clone();
-        if !self.classes.contains_key(&class_name) {
+        if !self.registry().classes.contains_key(&class_name) {
             return stmts;
         }
         let mut remaining = Vec::new();
@@ -124,7 +124,7 @@ impl Interpreter {
                     deprecated_message: deprecated_message.clone(),
                     is_submethod: false,
                 };
-                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     if *multi {
                         class_def
                             .methods
@@ -832,7 +832,7 @@ impl Interpreter {
         let role_type_params_snapshot = self.role_type_params.clone();
         let role_parents_snapshot = self.role_parents.clone();
         let role_hides_snapshot = self.role_hides.clone();
-        let classes_snapshot = self.classes.clone();
+        let classes_snapshot = self.registry().classes.clone();
         let hidden_classes_snapshot = self.registry().hidden_classes.clone();
         let hidden_defer_parents_snapshot = self.registry().hidden_defer_parents.clone();
         let class_composed_roles_snapshot = self.registry().class_composed_roles.clone();
@@ -946,7 +946,7 @@ impl Interpreter {
         let current_role_type_params = self.role_type_params.clone();
         let current_role_parents = self.role_parents.clone();
         let current_role_hides = self.role_hides.clone();
-        let current_classes = self.classes.clone();
+        let current_classes = self.registry().classes.clone();
         let current_hidden_classes = self.registry().hidden_classes.clone();
         let current_hidden_defer_parents = self.registry().hidden_defer_parents.clone();
         let current_class_composed_roles = self.registry().class_composed_roles.clone();
@@ -955,7 +955,7 @@ impl Interpreter {
         let current_type_keys: std::collections::HashSet<String> = self
             .roles
             .keys()
-            .chain(self.classes.keys())
+            .chain(self.registry().classes.keys())
             .cloned()
             .collect();
         let snapshot_type_keys: std::collections::HashSet<String> = roles_snapshot
@@ -969,7 +969,7 @@ impl Interpreter {
         self.role_type_params = role_type_params_snapshot;
         self.role_parents = role_parents_snapshot;
         self.role_hides = role_hides_snapshot;
-        self.classes = classes_snapshot;
+        self.registry_mut().classes = classes_snapshot;
         self.registry_mut().hidden_classes = hidden_classes_snapshot;
         self.registry_mut().hidden_defer_parents = hidden_defer_parents_snapshot;
         self.registry_mut().class_composed_roles = class_composed_roles_snapshot;
@@ -981,7 +981,7 @@ impl Interpreter {
         self.role_type_params.extend(current_role_type_params);
         self.role_parents.extend(current_role_parents);
         self.role_hides.extend(current_role_hides);
-        self.classes.extend(current_classes);
+        self.registry_mut().classes.extend(current_classes);
         self.registry_mut()
             .hidden_classes
             .extend(current_hidden_classes);

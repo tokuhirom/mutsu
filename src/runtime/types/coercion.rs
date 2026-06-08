@@ -219,7 +219,7 @@ impl Interpreter {
             }
             return Err(coerce_impossible_error(target, &value));
         }
-        if self.classes.contains_key(base_target) {
+        if self.registry().classes.contains_key(base_target) {
             // Wrap Pair values in a Scalar container so they are passed as
             // positional arguments to COERCE/new rather than being flattened
             // into named arguments by the method dispatch logic.

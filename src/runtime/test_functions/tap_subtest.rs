@@ -46,7 +46,7 @@ impl Interpreter {
         let saved_token_defs = self.token_defs.clone();
         let saved_proto_subs = self.proto_subs.clone();
         let saved_proto_tokens = self.proto_tokens.clone();
-        let saved_classes = self.classes.clone();
+        let saved_classes = self.registry().classes.clone();
         let saved_class_trusts = self.registry().class_trusts.clone();
         let saved_roles = self.roles.clone();
         let saved_subsets = self.registry().subsets.clone();
@@ -69,7 +69,7 @@ impl Interpreter {
             self.token_defs = saved_token_defs;
             self.proto_subs = saved_proto_subs;
             self.proto_tokens = saved_proto_tokens;
-            self.classes = saved_classes;
+            self.registry_mut().classes = saved_classes;
             self.registry_mut().class_trusts = saved_class_trusts;
             self.roles = saved_roles;
             self.registry_mut().subsets = saved_subsets;
@@ -97,7 +97,7 @@ impl Interpreter {
         self.token_defs = saved_token_defs;
         self.proto_subs = saved_proto_subs;
         self.proto_tokens = saved_proto_tokens;
-        self.classes = saved_classes;
+        self.registry_mut().classes = saved_classes;
         self.registry_mut().class_trusts = saved_class_trusts;
         self.roles = saved_roles;
         self.registry_mut().subsets = saved_subsets;
@@ -144,7 +144,7 @@ impl Interpreter {
         let saved_token_defs = self.token_defs.clone();
         let saved_proto_subs = self.proto_subs.clone();
         let saved_proto_tokens = self.proto_tokens.clone();
-        let saved_classes = self.classes.clone();
+        let saved_classes = self.registry().classes.clone();
         let saved_class_trusts = self.registry().class_trusts.clone();
         let saved_roles = self.roles.clone();
         let saved_subsets = self.registry().subsets.clone();
@@ -158,7 +158,7 @@ impl Interpreter {
         self.token_defs = saved_token_defs;
         self.proto_subs = saved_proto_subs;
         self.proto_tokens = saved_proto_tokens;
-        self.classes = saved_classes;
+        self.registry_mut().classes = saved_classes;
         self.registry_mut().class_trusts = saved_class_trusts;
         self.roles = saved_roles;
         self.registry_mut().subsets = saved_subsets;

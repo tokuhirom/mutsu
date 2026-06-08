@@ -115,7 +115,10 @@ impl Interpreter {
         let mut count = 0usize;
         let mro = self.class_mro(class_name);
         for parent in mro.into_iter().skip(1) {
-            let Some(class_def) = self.classes.get(&parent) else {
+            // No user-code re-entry in this loop body (only static helpers), so a
+            // let-bound guard is safe.
+            let registry = self.registry();
+            let Some(class_def) = registry.classes.get(&parent) else {
                 continue;
             };
             let Some(defs) = class_def.methods.get(method_name) else {
@@ -494,7 +497,7 @@ impl Interpreter {
         &self,
         class_name: &str,
     ) -> Result<(), RuntimeError> {
-        let class_def = match self.classes.get(class_name) {
+        let class_def = match self.registry().classes.get(class_name) {
             Some(cd) => cd.clone(),
             None => return Ok(()),
         };

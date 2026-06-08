@@ -25,6 +25,7 @@ impl Interpreter {
             let instance_class = item.class_name.resolve();
             // Collect the MRO so we call DESTROY on each class in order (child → parent).
             let mro: Vec<String> = self
+                .registry()
                 .classes
                 .get(&instance_class)
                 .map(|cd| cd.mro.clone())
@@ -34,14 +35,19 @@ impl Interpreter {
             // Walk the MRO; submethods are per-class, not inherited.
             for mro_class in &mro {
                 // Skip role entries in MRO
-                if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                if self.roles.contains_key(mro_class)
+                    && !self.registry().classes.contains_key(mro_class)
+                {
                     continue;
                 }
-                let Some(class_def) = self.classes.get(mro_class) else {
-                    continue;
+                // Clone DESTROY overloads out and drop the guard before re-entering
+                // user code (run_instance_method_resolved).
+                let destroy_overloads = match self.registry().classes.get(mro_class) {
+                    Some(class_def) => class_def.methods.get("DESTROY").cloned(),
+                    None => continue,
                 };
                 // Call class's own DESTROY submethod
-                if let Some(overloads) = class_def.methods.get("DESTROY").cloned()
+                if let Some(overloads) = destroy_overloads
                     && let Some(method_def) = overloads.into_iter().find(|def| {
                         def.is_my && !def.is_private && self.method_args_match(&[], &def.param_defs)
                     })
@@ -195,13 +201,14 @@ impl Interpreter {
                 class_name
             )));
         }
-        if let Some(class_def) = self.classes.get(class_name)
+        if let Some(class_def) = self.registry().classes.get(class_name)
             && !class_def.mro.is_empty()
         {
             return Ok(class_def.mro.clone());
         }
         stack.push(class_name.to_string());
         let explicit_parents = self
+            .registry()
             .classes
             .get(class_name)
             .map(|c| c.parents.clone())
@@ -209,14 +216,15 @@ impl Interpreter {
         // If a user-defined class has no explicit parents, it implicitly
         // inherits from Any (which in turn inherits from Mu).  This matches
         // Raku's default class hierarchy.
-        let parents = if explicit_parents.is_empty() && self.classes.contains_key(class_name) {
-            vec!["Any".to_string()]
-        } else {
-            explicit_parents
-        };
+        let parents =
+            if explicit_parents.is_empty() && self.registry().classes.contains_key(class_name) {
+                vec!["Any".to_string()]
+            } else {
+                explicit_parents
+            };
         let mut seqs: Vec<Vec<String>> = Vec::new();
         for parent in &parents {
-            if self.classes.contains_key(parent) {
+            if self.registry().classes.contains_key(parent) {
                 let mro = self.compute_class_mro(parent, stack)?;
                 seqs.push(mro);
             } else if parent == "Any" {
@@ -275,7 +283,7 @@ impl Interpreter {
     pub(super) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro {
-            if let Some(class_def) = self.classes.get(&cn)
+            if let Some(class_def) = self.registry().classes.get(&cn)
                 && (class_def.methods.contains_key(method_name)
                     || class_def.native_methods.contains(method_name))
             {
@@ -296,7 +304,7 @@ impl Interpreter {
     ) -> bool {
         let mro = self.class_mro(class_name);
         for cn in &mro {
-            let methods = match self.classes.get(cn.as_str()) {
+            let methods = match self.registry().classes.get(cn.as_str()) {
                 Some(cd) => cd.methods.get("new").cloned(),
                 None => None,
             };
@@ -466,7 +474,7 @@ impl Interpreter {
         }
         let mro = self.class_mro(class_name);
         for cn in mro {
-            if let Some(class_def) = self.classes.get(&cn)
+            if let Some(class_def) = self.registry().classes.get(&cn)
                 && class_def.native_methods.contains(method_name)
             {
                 return true;
@@ -478,7 +486,7 @@ impl Interpreter {
     pub(crate) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro {
-            if let Some(class_def) = self.classes.get(&cn)
+            if let Some(class_def) = self.registry().classes.get(&cn)
                 && let Some(defs) = class_def.methods.get(method_name)
             {
                 return defs.iter().any(|d| !d.is_private);
@@ -497,7 +505,7 @@ impl Interpreter {
 
     /// Check if an attribute is buildable (can be set via .new).
     pub(crate) fn is_attribute_buildable(&self, class_name: &str, attr_name: &str) -> bool {
-        if let Some(class_def) = self.classes.get(class_name) {
+        if let Some(class_def) = self.registry().classes.get(class_name) {
             if let Some(&built) = class_def.attribute_built.get(attr_name) {
                 return built;
             }
@@ -507,7 +515,7 @@ impl Interpreter {
                 }
             }
         }
-        let mro = if let Some(cd) = self.classes.get(class_name) {
+        let mro = if let Some(cd) = self.registry().classes.get(class_name) {
             cd.mro.clone()
         } else {
             Vec::new()
@@ -516,7 +524,7 @@ impl Interpreter {
             if parent == class_name {
                 continue;
             }
-            if let Some(parent_def) = self.classes.get(parent) {
+            if let Some(parent_def) = self.registry().classes.get(parent) {
                 if let Some(&built) = parent_def.attribute_built.get(attr_name) {
                     return built;
                 }
@@ -538,7 +546,7 @@ impl Interpreter {
         attr_name: &str,
     ) -> Option<Value> {
         // Check own class first
-        if let Some(class_def) = self.classes.get(class_name)
+        if let Some(class_def) = self.registry().classes.get(class_name)
             && let Some(val) = class_def.class_level_attrs.get(attr_name)
         {
             return Some(val.clone());
@@ -549,7 +557,7 @@ impl Interpreter {
             if parent == class_name {
                 continue;
             }
-            if let Some(parent_def) = self.classes.get(parent)
+            if let Some(parent_def) = self.registry().classes.get(parent)
                 && let Some(val) = parent_def.class_level_attrs.get(attr_name)
             {
                 return Some(val.clone());
@@ -572,7 +580,7 @@ impl Interpreter {
         value: Value,
     ) -> bool {
         // Check own class first
-        if let Some(class_def) = self.classes.get_mut(class_name)
+        if let Some(class_def) = self.registry_mut().classes.get_mut(class_name)
             && class_def.class_level_attrs.contains_key(attr_name)
         {
             class_def
@@ -586,7 +594,7 @@ impl Interpreter {
             if parent == class_name {
                 continue;
             }
-            if let Some(parent_def) = self.classes.get_mut(parent)
+            if let Some(parent_def) = self.registry_mut().classes.get_mut(parent)
                 && parent_def.class_level_attrs.contains_key(attr_name)
             {
                 parent_def
@@ -603,7 +611,7 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let mut result = Vec::new();
         for cn in &mro {
-            if let Some(class_def) = self.classes.get(cn) {
+            if let Some(class_def) = self.registry().classes.get(cn) {
                 result.extend(class_def.wildcard_handles.iter().cloned());
             }
         }
@@ -619,7 +627,7 @@ impl Interpreter {
     ) {
         let mro = self.class_mro(class_name);
         for cn in &mro {
-            if let Some(class_def) = self.classes.get(cn) {
+            if let Some(class_def) = self.registry().classes.get(cn) {
                 for attr_name in &class_def.alias_attributes {
                     attrs.insert(
                         format!("__mutsu_attr_alias::{}", attr_name),
@@ -634,7 +642,7 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();
         for cn in mro.iter().rev() {
-            if let Some(class_def) = self.classes.get(cn) {
+            if let Some(class_def) = self.registry().classes.get(cn) {
                 for attr in &class_def.attributes {
                     if let Some(pos) = attrs.iter().position(|(n, ..)| n == &attr.0) {
                         attrs.remove(pos);
@@ -661,7 +669,7 @@ impl Interpreter {
         // Track which attribute names appear in multiple classes (need qualified storage)
         let mut attr_counts: HashMap<String, usize> = HashMap::new();
         for cn in &mro {
-            if let Some(class_def) = self.classes.get(cn) {
+            if let Some(class_def) = self.registry().classes.get(cn) {
                 for attr in &class_def.attributes {
                     *attr_counts.entry(attr.0.clone()).or_insert(0) += 1;
                 }
@@ -669,7 +677,7 @@ impl Interpreter {
         }
         // Only include attrs that appear in multiple classes (duplicated across hierarchy)
         for cn in &mro {
-            if let Some(class_def) = self.classes.get(cn) {
+            if let Some(class_def) = self.registry().classes.get(cn) {
                 for attr in &class_def.attributes {
                     if attr_counts.get(&attr.0).copied().unwrap_or(0) > 1 {
                         result.push((cn.clone(), attr.clone()));
@@ -729,7 +737,10 @@ impl Interpreter {
         let mut sigs = Vec::new();
         for cn in self.mro_readonly(receiver_class_name) {
             let is_ancestor = cn.as_str() != receiver_class_name;
-            let Some(class_def) = self.classes.get(cn.as_str()) else {
+            // No user-code re-entry in this loop body (pure signature-string
+            // building), so a let-bound guard is safe.
+            let registry = self.registry();
+            let Some(class_def) = registry.classes.get(cn.as_str()) else {
                 continue;
             };
             let Some(overloads) = class_def.methods.get(method_name) else {
@@ -810,7 +821,8 @@ impl Interpreter {
             // matched) from X::Method::NotFound (method does not exist at all,
             // e.g. submethod on ancestor only).
             let has_visible_method = self.class_mro(receiver_class_name).iter().any(|cn| {
-                self.classes
+                self.registry()
+                    .classes
                     .get(cn.as_str())
                     .and_then(|c| c.methods.get(method_name))
                     .is_some_and(|ovs| {

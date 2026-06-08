@@ -369,7 +369,7 @@ impl Interpreter {
     /// Collect method names from a class or role by name.
     fn collect_type_method_names(&self, type_name: &str) -> Vec<String> {
         let mut names = Vec::new();
-        if let Some(class_def) = self.classes.get(type_name) {
+        if let Some(class_def) = self.registry().classes.get(type_name) {
             names.extend(class_def.methods.keys().cloned());
         } else if let Some(role_def) = self.roles.get(type_name) {
             names.extend(role_def.methods.keys().cloned());
@@ -424,7 +424,7 @@ impl Interpreter {
         if constraint == "Any" || constraint == "Mu" {
             return 2;
         }
-        if let Some(def) = self.classes.get(constraint) {
+        if let Some(def) = self.registry().classes.get(constraint) {
             return 10 + def.parents.len() as i32;
         }
         if self.roles.contains_key(constraint) {
@@ -629,15 +629,15 @@ impl Interpreter {
         // declared inside a `unit module`/`unit class` body.
         if lookup.contains("::") {
             let bare = lookup.rsplit_once("::").map(|(_, b)| b).unwrap_or(lookup);
-            if !self.classes.contains_key(lookup)
+            if !self.registry().classes.contains_key(lookup)
                 && !self.roles.contains_key(lookup)
-                && (self.classes.contains_key(bare) || self.roles.contains_key(bare))
+                && (self.registry().classes.contains_key(bare) || self.roles.contains_key(bare))
             {
                 return format!("{}{}", bare, suffix);
             }
             if let Value::Package(pkg) = self.resolve_indirect_type_name(bare) {
                 let resolved = pkg.resolve();
-                if self.classes.contains_key(resolved.as_str())
+                if self.registry().classes.contains_key(resolved.as_str())
                     || self.roles.contains_key(resolved.as_str())
                 {
                     return format!("{}{}", resolved, suffix);
@@ -676,7 +676,7 @@ impl Interpreter {
         let does_parents = does_parents.as_slice();
         let hidden_parents: Vec<String> = hidden_parents.iter().map(|p| strip_colons(p)).collect();
         let hidden_parents = hidden_parents.as_slice();
-        let prev_class = self.classes.get(name).cloned();
+        let prev_class = self.registry().classes.get(name).cloned();
         let prev_hidden = self.registry().hidden_classes.contains(name);
         let prev_hidden_defer = self.registry().hidden_defer_parents.get(name).cloned();
         let prev_composed_roles = self.registry().class_composed_roles.get(name).cloned();
@@ -688,9 +688,11 @@ impl Interpreter {
 
         let restore_previous_state = |this: &mut Self| {
             if let Some(class_def) = prev_class.clone() {
-                this.classes.insert(name.to_string(), class_def);
+                this.registry_mut()
+                    .classes
+                    .insert(name.to_string(), class_def);
             } else {
-                this.classes.remove(name);
+                this.registry_mut().classes.remove(name);
             }
             if prev_hidden {
                 this.registry_mut().hidden_classes.insert(name.to_string());
@@ -751,7 +753,7 @@ impl Interpreter {
         // declaration), skip the stub registration to avoid overwriting the
         // real class definition.
         if is_stub_body
-            && self.classes.contains_key(name)
+            && self.registry().classes.contains_key(name)
             && !self.registry().class_stubs.contains(name)
         {
             return Ok(Vec::new());
@@ -845,7 +847,7 @@ impl Interpreter {
                     name
                 )));
             }
-            if !self.classes.contains_key(base_parent)
+            if !self.registry().classes.contains_key(base_parent)
                 && !BUILTIN_TYPES.contains(&base_parent)
                 && !self.roles.contains_key(base_parent)
                 && !self.registry().enum_types.contains_key(base_parent)
@@ -886,7 +888,7 @@ impl Interpreter {
             }
             // Check that `does` targets are actually roles, not classes
             if does_parents.contains(parent)
-                && self.classes.contains_key(resolved_parent)
+                && self.registry().classes.contains_key(resolved_parent)
                 && !self.roles.contains_key(resolved_parent)
                 && !BUILTIN_TYPES.contains(&resolved_parent)
             {
@@ -1189,7 +1191,7 @@ impl Interpreter {
                                     .or_default()
                                     .extend(composed);
                             }
-                        } else if self.classes.contains_key(parent_base)
+                        } else if self.registry().classes.contains_key(parent_base)
                             && !class_def.parents.iter().any(|p| p == &resolved_parent)
                         {
                             class_def.parents.push(resolved_parent.clone());
@@ -1229,8 +1231,8 @@ impl Interpreter {
                 .map(|(b, _)| b)
                 .unwrap_or(punned_role.as_str());
             // Create a punned class entry if one doesn't already exist
-            if !self.classes.contains_key(punned_role.as_str())
-                && !self.classes.contains_key(base_role)
+            if !self.registry().classes.contains_key(punned_role.as_str())
+                && !self.registry().classes.contains_key(base_role)
             {
                 // Collect class parents and composed roles recursively from role hierarchy
                 let mut punned_class_parents = Vec::new();
@@ -1250,7 +1252,7 @@ impl Interpreter {
                                     punned_composed_roles.push(rp.clone());
                                 }
                                 role_stack.push(rp_base.to_string());
-                            } else if self.classes.contains_key(rp_base)
+                            } else if self.registry().classes.contains_key(rp_base)
                                 && !punned_class_parents.contains(&rp)
                             {
                                 // It's a class - add as parent
@@ -1272,7 +1274,9 @@ impl Interpreter {
                     alias_attributes: HashSet::new(),
                     class_level_attrs: HashMap::new(),
                 };
-                self.classes.insert(base_role.to_string(), punned_class);
+                self.registry_mut()
+                    .classes
+                    .insert(base_role.to_string(), punned_class);
                 if !punned_composed_roles.is_empty() {
                     self.registry_mut()
                         .class_composed_roles
@@ -1293,7 +1297,7 @@ impl Interpreter {
                 }
                 // Recompute MRO for the punned class
                 let mro = self.class_mro(base_role);
-                if let Some(cd) = self.classes.get_mut(base_role) {
+                if let Some(cd) = self.registry_mut().classes.get_mut(base_role) {
                     cd.mro = mro;
                 }
             }
@@ -1329,7 +1333,7 @@ impl Interpreter {
                             if self.roles.contains_key(rp_base) {
                                 // It's a sub-role, recurse
                                 role_stack.push(rp_base.to_string());
-                            } else if self.classes.contains_key(rp_base)
+                            } else if self.registry().classes.contains_key(rp_base)
                                 && !class_def.parents.contains(&rp)
                             {
                                 class_def.parents.push(rp);
@@ -1394,10 +1398,14 @@ impl Interpreter {
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         // Clear stale method wrap chains from a previous class with the same name.
         self.method_wrap_chains.retain(|(cls, _, _), _| cls != name);
-        self.classes.insert(name.to_string(), class_def.clone());
+        self.registry_mut()
+            .classes
+            .insert(name.to_string(), class_def.clone());
         if is_stub_body {
             self.registry_mut().class_stubs.insert(name.to_string());
-            self.classes.insert(name.to_string(), class_def);
+            self.registry_mut()
+                .classes
+                .insert(name.to_string(), class_def);
             let mut stack = Vec::new();
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(deferred_custom_traits);
@@ -2161,7 +2169,7 @@ impl Interpreter {
                     if let Some(rparents) = self.role_parents.get(&role_name_str).cloned() {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.classes.contains_key(rp_base)
+                            if self.registry().classes.contains_key(rp_base)
                                 && !class_def.parents.iter().any(|p| p == &rp)
                             {
                                 class_def.parents.push(rp.clone());
@@ -2190,7 +2198,9 @@ impl Interpreter {
                         class_def.methods.insert(alias, overloads);
                     }
                     // Also execute the statement so the code variable is set
-                    self.classes.insert(name.to_string(), class_def.clone());
+                    self.registry_mut()
+                        .classes
+                        .insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
                     for outer_name in saved_env.keys() {
                         let class_scoped_name = format!("{}::{}", name, outer_name);
@@ -2198,7 +2208,7 @@ impl Interpreter {
                             self.env.insert_sym(*outer_name, updated);
                         }
                     }
-                    if let Some(updated) = self.classes.get(name).cloned() {
+                    if let Some(updated) = self.registry().classes.get(name).cloned() {
                         class_def = updated;
                     }
                 }
@@ -2221,7 +2231,9 @@ impl Interpreter {
                         Stmt::Expr(Expr::Call { name: fn_name, .. })
                             if fn_name.resolve() == "EVAL"
                     );
-                    self.classes.insert(name.to_string(), class_def.clone());
+                    self.registry_mut()
+                        .classes
+                        .insert(name.to_string(), class_def.clone());
                     let result = self.run_block_raw(std::slice::from_ref(stmt));
                     if let Err(e) = result {
                         if !is_swallowable {
@@ -2235,7 +2247,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    if let Some(updated) = self.classes.get(name).cloned() {
+                    if let Some(updated) = self.registry().classes.get(name).cloned() {
                         class_def = updated;
                     }
                 }
@@ -2256,7 +2268,9 @@ impl Interpreter {
                         .insert(fq, Value::Bool(true));
                 }
             }
-            self.classes.insert(name.to_string(), class_def.clone());
+            self.registry_mut()
+                .classes
+                .insert(name.to_string(), class_def.clone());
         }
         // Fire class-body LEAVE phasers in LIFO order now that the body scope
         // is being left. They run while the class package/env are still active
@@ -2281,7 +2295,9 @@ impl Interpreter {
             restore_previous_state(self);
             return Err(err);
         }
-        self.classes.insert(name.to_string(), class_def);
+        self.registry_mut()
+            .classes
+            .insert(name.to_string(), class_def);
         let mut stack = Vec::new();
         if let Err(err) = self.compute_class_mro(name, &mut stack) {
             restore_previous_state(self);
@@ -2300,7 +2316,7 @@ impl Interpreter {
     pub(crate) fn augment_class(&mut self, name: &str, body: &[Stmt]) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
         // Check if the class exists (user-defined or builtin)
-        let is_builtin = !self.classes.contains_key(name);
+        let is_builtin = !self.registry().classes.contains_key(name);
         if is_builtin {
             // For builtin types, create a minimal class def so we can add methods
             const BUILTIN_TYPES: &[&str] = &[
@@ -2361,7 +2377,10 @@ impl Interpreter {
                 )));
             }
             // Create a minimal entry for the builtin type
-            self.classes.entry(name.to_string()).or_default();
+            self.registry_mut()
+                .classes
+                .entry(name.to_string())
+                .or_default();
         }
 
         let saved_package = self.current_package.clone();
@@ -2455,7 +2474,7 @@ impl Interpreter {
                         deprecated_message: None,
                         is_submethod: *is_submethod,
                     };
-                    if let Some(class_def) = self.classes.get_mut(name) {
+                    if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
                         if *multi {
                             class_def
                                 .methods
@@ -2509,7 +2528,7 @@ impl Interpreter {
                     };
                     // Resolve handles before taking mutable borrow on class_def
                     let resolved = self.resolve_handle_specs_to_names(handles, &attr_var_name);
-                    if let Some(class_def) = self.classes.get_mut(name) {
+                    if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
                         class_def.attributes.push((
                             attr_name_str.clone(),
                             *is_public,
@@ -2651,7 +2670,7 @@ impl Interpreter {
             return Ok(());
         }
         // Clean up stale punned class entry for this role name.
-        self.classes.remove(name);
+        self.registry_mut().classes.remove(name);
         self.registry_mut().hidden_classes.remove(name);
         self.registry_mut().class_composed_roles.remove(name);
         // When registering a parametric variant of an existing non-parametric role
@@ -2789,7 +2808,7 @@ impl Interpreter {
                             .push(hidden_name.to_string());
                         continue;
                     }
-                    if self.classes.contains_key(&role_name_str) {
+                    if self.registry().classes.contains_key(&role_name_str) {
                         self.role_parents
                             .entry(name.to_string())
                             .or_default()
@@ -3331,7 +3350,7 @@ impl Interpreter {
         class_name: &str,
         attr_name: &str,
     ) -> Option<String> {
-        if let Some(class_def) = self.classes.get(class_name) {
+        if let Some(class_def) = self.registry().classes.get(class_name) {
             for (name, _is_public, _default, _is_rw, _, _, _) in &class_def.attributes {
                 if name == attr_name {
                     return class_def.attribute_types.get(attr_name).cloned();
@@ -3354,7 +3373,7 @@ impl Interpreter {
     /// Auto-pun a role into a class so it can be instantiated (e.g. via COERCE or new).
     /// If the role is already registered as a class, this is a no-op.
     pub(crate) fn ensure_role_punned_to_class(&mut self, role_name: &str) {
-        if self.classes.contains_key(role_name) {
+        if self.registry().classes.contains_key(role_name) {
             return;
         }
         self.clear_private_zeroarg_method_cache();
@@ -3409,7 +3428,9 @@ impl Interpreter {
             alias_attributes: HashSet::new(),
             class_level_attrs: HashMap::new(),
         };
-        self.classes.insert(role_name.to_string(), punned_class);
+        self.registry_mut()
+            .classes
+            .insert(role_name.to_string(), punned_class);
         // Register the role and its composed roles
         self.registry_mut()
             .class_composed_roles
