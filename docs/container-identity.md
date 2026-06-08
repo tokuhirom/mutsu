@@ -197,3 +197,23 @@ push」に変えると、配列要素が `Value::Scalar`/`ContainerRef`/`ItemArr
   - §7 に値読み出し opcode の棚卸し表を追加（Phase 1 の設計図。`GetLocalRaw` を lvalue 読みのアンカー前例に）。
   - 挙動不変を確認: build/clippy/fmt PASS。binding/`.VAR`/`=:=`/sigilless の t/ + S03-binding roast 全 PASS。
     全 roast は CI に委譲。
+- 2026-06-08: **Phase 1 第1スライス（非ループ兄弟クロージャの broad boxing）を試行 → revert（重要な教訓）**。
+  `box_captured_lexicals` のループ限定ゲートを撤去し非ループの捕捉＋変異 `$` スカラーも `ContainerRef` 化する
+  approach を試したが、**性能・正しさの両面で under-scoped** と判明し revert。理由を記録（次スライスの設計制約）:
+  - **(1) mutation-writeback ギャップ（部分的に対処可）**: `into_deref`（PR #2742）は**読み**だけを cell 対応に
+    したが、**変異の書き戻し**は cell 非対応だった。具体的に `overwrite_instance_recursive`
+    （`runtime/methods_mut.rs`、変異メソッドの結果を instance identity で全 env 束縛へ伝播するチョークポイント）が
+    `Value::ContainerRef` の中を見ず、boxed スカラーが instance を保持して変異メソッドを受けると変異が消えた
+    （`my $x; lives-ok { $x = Obj.new }; lives-ok { $x.mutate }; $x.read` という **roast 頻出のテストヘルパ
+    パターン**。submethods.t / S24-testing / test-util 等が回帰）。`ContainerRef` arm 追加で修正可能と確認したが、
+    これは「mutation 経路を全て cell 対応にする broad audit」の入口に過ぎない。
+  - **(2) 深刻な性能回帰（approach を否定する決定打）**: broad boxing は **closure 生成毎に**捕捉＋変異の全
+    自由変数を `Arc<Mutex>` 化し env へ insert する（= env COW のディープクローン誘発）。loop-only 制限は
+    正しさだけでなく **boxing コストの上限**でもあった。撤去した結果 `roast/S32-num/int.t` が **1 秒 → 150s+
+    に激遅化**（3 ファイルを main へ戻すと 1 秒に復帰、と差分で確定）。`make test` では露見せず CI の release
+    全 roast で timeout として顕在化。
+  - **教訓 / 次スライスの設計制約**: 兄弟クロージャ共有は **escape 解析（脱出する＝返却/外部格納される
+    クロージャの捕捉だけ box。`lives-ok {…}` のような即時呼び出し引数クロージャは box しない）** で
+    boxing 対象を絞り、かつ **mutation-writeback を cell 対応化**してから入れる必要がある。素朴な
+    「ループ限定を外すだけ」は不可。これは §6「速度の担保＝エスケープ解析でコンテナを省略」の実証でもある。
+  - revert で main は clean（`#2742` の `into_deref` 地ならしのみ残す）。`int.t` は 1 秒に復帰。
