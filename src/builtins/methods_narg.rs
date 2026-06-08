@@ -1024,19 +1024,7 @@ pub(crate) fn native_method_1arg(
                 None => Some(Ok(Value::Nil)),
             }
         }
-        "substr" => {
-            let start = match arg {
-                Value::Int(i) if *i >= 0 => *i as usize,
-                Value::Int(_) => return None, // negative: let runtime handle
-                _ => return None,
-            };
-            let s = target.to_string_value();
-            let chars: Vec<char> = s.chars().collect();
-            if start > chars.len() {
-                return None; // out-of-range: let runtime handle (returns Failure)
-            }
-            Some(Ok(Value::str(chars[start..].iter().collect())))
-        }
+        "substr" => super::substr::native_substr_slice(&target.to_string_value(), arg, None),
         "indent" => {
             let s = target.to_string_value();
             let (result, warning) = str_indent(&s, arg);
@@ -2924,25 +2912,7 @@ pub(crate) fn native_method_2arg(
                 )))
             }
         }
-        "substr" => {
-            let start = match arg1 {
-                Value::Int(i) if *i >= 0 => *i as usize,
-                Value::Int(_) => return None, // negative: let runtime handle
-                _ => return None,
-            };
-            let len = match arg2 {
-                Value::Int(i) if *i >= 0 => *i as usize,
-                Value::Int(_) => return None,
-                _ => return None,
-            };
-            let s = target.to_string_value();
-            let chars: Vec<char> = s.chars().collect();
-            if start > chars.len() {
-                return None; // out-of-range: let runtime handle (returns Failure)
-            }
-            let end = (start + len).min(chars.len());
-            Some(Ok(Value::str(chars[start..end].iter().collect())))
-        }
+        "substr" => super::substr::native_substr_slice(&target.to_string_value(), arg1, Some(arg2)),
         "base" => {
             let radix = match arg1 {
                 Value::Int(r) if (2..=36).contains(r) => *r as u32,

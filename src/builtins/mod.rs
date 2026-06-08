@@ -12,6 +12,7 @@ pub(crate) mod primality;
 pub(crate) mod rng;
 pub(crate) mod split;
 pub(crate) mod str_increment;
+pub(crate) mod substr;
 pub(crate) mod transliterate;
 pub(crate) mod unicode;
 pub(crate) mod unicode_numval_table;
