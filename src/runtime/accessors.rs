@@ -569,10 +569,12 @@ impl Interpreter {
                 return self.eval_call_on_value(callable, args);
             }
         }
-        Err(RuntimeError::undeclared_symbols(format!(
-            "Unknown function: {}",
-            full_name
-        )))
+        let suggestions = self.suggest_routine_names(full_name);
+        Err(RuntimeError::undeclared_routine_symbols(
+            full_name,
+            format!("Unknown function: {}", full_name),
+            suggestions,
+        ))
     }
 
     pub(crate) fn compose_callables(&self, left: Value, right: Value) -> Value {

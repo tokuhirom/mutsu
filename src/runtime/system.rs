@@ -507,6 +507,49 @@ impl Interpreter {
         scored.into_iter().map(|(_, s)| s).collect()
     }
 
+    /// Suggest close routine names (built-in functions + user-defined subs) for
+    /// an undeclared routine `name`. Used for X::Undeclared::Symbols
+    /// `.routine_suggestion`.
+    pub(crate) fn suggest_routine_names(&self, name: &str) -> Vec<String> {
+        let mut candidates: Vec<String> = crate::runtime::builtins::BUILTIN_FUNCTION_NAMES
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        candidates.extend(self.registry().functions.keys().map(|s| s.resolve()));
+        Self::suggest_from_candidates(name, &candidates)
+    }
+
+    /// Suggest close type names (registered classes/roles) for an undeclared
+    /// type `name`. Used for X::Undeclared::Symbols `.type_suggestion`.
+    pub(crate) fn suggest_type_names(&self, name: &str) -> Vec<String> {
+        let candidates: Vec<String> = self.registry().classes.keys().cloned().collect();
+        Self::suggest_from_candidates(name, &candidates)
+    }
+
+    fn suggest_from_candidates(name: &str, candidates: &[String]) -> Vec<String> {
+        use crate::runtime::did_you_mean::levenshtein_distance;
+        let max_distance = if name.len() <= 3 {
+            1
+        } else if name.len() <= 6 {
+            2
+        } else {
+            3
+        };
+        let mut scored: Vec<(usize, String)> = Vec::new();
+        let mut seen = HashSet::new();
+        for cand in candidates {
+            if cand == name || !seen.insert(cand.clone()) {
+                continue;
+            }
+            let dist = levenshtein_distance(name, cand);
+            if dist > 0 && dist <= max_distance {
+                scored.push((dist, cand.clone()));
+            }
+        }
+        scored.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        scored.into_iter().map(|(_, s)| s).collect()
+    }
+
     fn collect_declared_vars(stmt: &Stmt, out: &mut HashSet<String>) {
         match stmt {
             Stmt::VarDecl { name, expr, .. } => {
@@ -697,10 +740,12 @@ impl Interpreter {
         }
         for stmt in stmts {
             if let Some(name) = self.find_undeclared_name_in_stmt(stmt, &local_classes, &declared) {
-                return Err(RuntimeError::undeclared_symbols(format!(
-                    "Undeclared name:\n    {} used at line 1",
-                    name
-                )));
+                let suggestions = self.suggest_type_names(&name);
+                return Err(RuntimeError::undeclared_type_symbols(
+                    &name,
+                    format!("Undeclared name:\n    {} used at line 1", name),
+                    suggestions,
+                ));
             }
         }
         Ok(())

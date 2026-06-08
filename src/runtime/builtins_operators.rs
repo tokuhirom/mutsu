@@ -794,10 +794,12 @@ impl Interpreter {
             return self.call_function(short_name, args.to_vec());
         }
 
-        Err(RuntimeError::undeclared_symbols(format!(
-            "Unknown function: {}",
-            name
-        )))
+        let suggestions = self.suggest_routine_names(name);
+        Err(RuntimeError::undeclared_routine_symbols(
+            name,
+            format!("Unknown function: {}", name),
+            suggestions,
+        ))
     }
 
     pub(super) fn call_infix_routine(

@@ -1,6 +1,140 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// All built-in (core) function names. Single source of truth for
+/// `is_builtin_function` and for "Did you mean ...?" routine suggestions.
+pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
+    "defined",
+    "undefine",
+    "say",
+    "print",
+    "put",
+    "note",
+    "die",
+    "succeed",
+    "warn",
+    "sink",
+    "quietly",
+    "exit",
+    "abs",
+    "sign",
+    "val",
+    "sqrt",
+    "floor",
+    "ceiling",
+    "ceil",
+    "round",
+    "exp",
+    "log",
+    "cis",
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "sec",
+    "cosec",
+    "cotan",
+    "asec",
+    "acosec",
+    "acotan",
+    "sinh",
+    "cosh",
+    "tanh",
+    "sech",
+    "cosech",
+    "cotanh",
+    "asinh",
+    "acosh",
+    "atanh",
+    "asech",
+    "acosech",
+    "acotanh",
+    "chr",
+    "ord",
+    "unival",
+    "univals",
+    "chars",
+    "chomp",
+    "chop",
+    "flip",
+    "lc",
+    "uc",
+    "tc",
+    "trim",
+    "elems",
+    "end",
+    "keys",
+    "values",
+    "pairs",
+    "sort",
+    "reverse",
+    "rotate",
+    "join",
+    "map",
+    "grep",
+    "roundrobin",
+    "push",
+    "pop",
+    "shift",
+    "unshift",
+    "dir",
+    "chdir",
+    "QX",
+    "qx",
+    "indir",
+    "run",
+    "splice",
+    "flat",
+    "unique",
+    "repeated",
+    "squish",
+    "min",
+    "max",
+    "minmax",
+    "sum",
+    "any",
+    "all",
+    "none",
+    "one",
+    "so",
+    "not",
+    "truncate",
+    "atan2",
+    "roots",
+    "substr",
+    "substr-rw",
+    "words",
+    "rand",
+    "sprintf",
+    "zprintf",
+    "printf",
+    "uniname",
+    "uninames",
+    "uniprop",
+    "unimatch",
+    "uniparse",
+    "parse-names",
+    "parse-base",
+    "symlink",
+    "link",
+    "spurt",
+    "slurp",
+    "open",
+    "close",
+    "unlink",
+    "mkdir",
+    "rmdir",
+    "rename",
+    "copy",
+    "move",
+    "chmod",
+    "lines",
+    "get",
+    "prompt",
+];
+
 impl Interpreter {
     fn builtin_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let source_name = args.first().map(Value::to_string_value).unwrap_or_default();
@@ -818,138 +952,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_builtin_function(name: &str) -> bool {
-        matches!(
-            name,
-            "defined"
-                | "undefine"
-                | "say"
-                | "print"
-                | "put"
-                | "note"
-                | "die"
-                | "succeed"
-                | "warn"
-                | "sink"
-                | "quietly"
-                | "exit"
-                | "abs"
-                | "sign"
-                | "val"
-                | "sqrt"
-                | "floor"
-                | "ceiling"
-                | "ceil"
-                | "round"
-                | "exp"
-                | "log"
-                | "cis"
-                | "sin"
-                | "cos"
-                | "tan"
-                | "asin"
-                | "acos"
-                | "atan"
-                | "sec"
-                | "cosec"
-                | "cotan"
-                | "asec"
-                | "acosec"
-                | "acotan"
-                | "sinh"
-                | "cosh"
-                | "tanh"
-                | "sech"
-                | "cosech"
-                | "cotanh"
-                | "asinh"
-                | "acosh"
-                | "atanh"
-                | "asech"
-                | "acosech"
-                | "acotanh"
-                | "chr"
-                | "ord"
-                | "unival"
-                | "univals"
-                | "chars"
-                | "chomp"
-                | "chop"
-                | "flip"
-                | "lc"
-                | "uc"
-                | "tc"
-                | "trim"
-                | "elems"
-                | "end"
-                | "keys"
-                | "values"
-                | "pairs"
-                | "sort"
-                | "reverse"
-                | "rotate"
-                | "join"
-                | "map"
-                | "grep"
-                | "roundrobin"
-                | "push"
-                | "pop"
-                | "shift"
-                | "unshift"
-                | "dir"
-                | "chdir"
-                | "QX"
-                | "qx"
-                | "indir"
-                | "run"
-                | "splice"
-                | "flat"
-                | "unique"
-                | "repeated"
-                | "squish"
-                | "min"
-                | "max"
-                | "minmax"
-                | "sum"
-                | "any"
-                | "all"
-                | "none"
-                | "one"
-                | "so"
-                | "not"
-                | "truncate"
-                | "atan2"
-                | "roots"
-                | "substr"
-                | "substr-rw"
-                | "words"
-                | "rand"
-                | "sprintf"
-                | "zprintf"
-                | "printf"
-                | "uniname"
-                | "uninames"
-                | "uniprop"
-                | "unimatch"
-                | "uniparse"
-                | "parse-names"
-                | "parse-base"
-                | "symlink"
-                | "link"
-                | "spurt"
-                | "slurp"
-                | "open"
-                | "close"
-                | "unlink"
-                | "mkdir"
-                | "rmdir"
-                | "rename"
-                | "copy"
-                | "move"
-                | "chmod"
-                | "lines"
-                | "get"
-                | "prompt"
-        )
+        BUILTIN_FUNCTION_NAMES.contains(&name)
     }
 
     /// Builtin `skip(N, list)` function — skips N elements from the list.

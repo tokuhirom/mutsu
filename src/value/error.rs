@@ -545,6 +545,44 @@ impl RuntimeError {
         Self::typed_msg("X::Undeclared::Symbols", message)
     }
 
+    /// X::Undeclared::Symbols for a routine, carrying a `routine_suggestion`
+    /// hash `{ name => [close names] }` (empty list when there is no match).
+    pub(crate) fn undeclared_routine_symbols(
+        name: &str,
+        message: impl Into<String>,
+        suggestions: Vec<String>,
+    ) -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.into()));
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        let arr: Vec<Value> = suggestions.iter().cloned().map(Value::str).collect();
+        let mut map = HashMap::new();
+        map.insert(name.to_string(), Value::array(arr.clone()));
+        attrs.insert("routine_suggestion".to_string(), Value::hash(map));
+        // Also expose a flat `suggestions` list so `.suggestions` is uniformly
+        // available on X::Undeclared::Symbols (some call sites check it directly).
+        attrs.insert("suggestions".to_string(), Value::array(arr));
+        Self::typed("X::Undeclared::Symbols", attrs)
+    }
+
+    /// X::Undeclared::Symbols for a type/bareword, carrying a `type_suggestion`
+    /// hash `{ name => [close names] }` plus a flat `suggestions` list.
+    pub(crate) fn undeclared_type_symbols(
+        name: &str,
+        message: impl Into<String>,
+        suggestions: Vec<String>,
+    ) -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.into()));
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        let arr: Vec<Value> = suggestions.iter().cloned().map(Value::str).collect();
+        let mut map = HashMap::new();
+        map.insert(name.to_string(), Value::array(arr.clone()));
+        attrs.insert("type_suggestion".to_string(), Value::hash(map));
+        attrs.insert("suggestions".to_string(), Value::array(arr));
+        Self::typed("X::Undeclared::Symbols", attrs)
+    }
+
     /// X::CompUnit::UnsatisfiedDependency - a required module could not be found.
     pub(crate) fn unsatisfied_dependency(module: &str) -> Self {
         let msg = format!("Could not find {} in:\n    (module repositories)", module);
