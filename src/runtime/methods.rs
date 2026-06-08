@@ -34,9 +34,7 @@ pub(super) fn multidim_at_pos(target: &Value, indices: &[Value]) -> Value {
     let mut cur = target.clone();
     for idx in indices {
         // Transparently unwrap Scalar containers (used as "bound" markers for BIND-POS).
-        while let Value::Scalar(inner) = &cur {
-            cur = (**inner).clone();
-        }
+        cur = cur.into_descalarized();
         let Some(i) = pos_index(idx) else {
             return make_nonneg_failure();
         };
@@ -45,18 +43,13 @@ pub(super) fn multidim_at_pos(target: &Value, indices: &[Value]) -> Value {
         };
         cur = items.get(i).cloned().unwrap_or(Value::Nil);
     }
-    while let Value::Scalar(inner) = &cur {
-        cur = (**inner).clone();
-    }
-    cur
+    cur.into_descalarized()
 }
 
 pub(super) fn multidim_exists_pos(target: &Value, indices: &[Value]) -> bool {
     let mut cur = target.clone();
     for idx in indices {
-        while let Value::Scalar(inner) = &cur {
-            cur = (**inner).clone();
-        }
+        cur = cur.into_descalarized();
         let Some(i) = pos_index(idx) else {
             return false;
         };
@@ -76,9 +69,7 @@ pub(super) fn multidim_exists_pos(target: &Value, indices: &[Value]) -> bool {
 fn shaped_multidim_exists_pos(target: &Value, indices: &[Value], shape: &[usize]) -> bool {
     let mut cur = target.clone();
     for (dim_idx, idx) in indices.iter().enumerate() {
-        while let Value::Scalar(inner) = &cur {
-            cur = (**inner).clone();
-        }
+        cur = cur.into_descalarized();
         let Some(i) = pos_index(idx) else {
             return false;
         };
