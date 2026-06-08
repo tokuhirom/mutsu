@@ -1,6 +1,27 @@
 use super::*;
 
 impl VM {
+    /// A plain, eager, list-like target — `Array`/`List`, `Seq`, `Slip`, or any
+    /// `Range`. These are the shapes the native `.sort` / `.min` / `.max` /
+    /// `.minmax` / `.first` paths handle without falling back to the interpreter
+    /// (`Shaped`/`Lazy`/itemized arrays, `Instance`/`Supply`, etc. do not).
+    /// `Hash` is intentionally excluded — callers that also accept it
+    /// (`.sort` / `.first`) test for it separately.
+    pub(super) fn is_plain_eager_list(target: &crate::value::Value) -> bool {
+        use crate::value::{ArrayKind, Value};
+        matches!(
+            target,
+            Value::Array(_, ArrayKind::Array | ArrayKind::List)
+                | Value::Seq(_)
+                | Value::Slip(_)
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }
+        )
+    }
+
     /// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
     /// and their Unicode variants, returning the inner operator if found.
     fn strip_hyper_delimiters_str(s: &str) -> Option<&str> {

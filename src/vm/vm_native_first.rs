@@ -15,7 +15,7 @@
 use super::*;
 use crate::runtime::resolution::{FirstMatcher, find_first_match_generic};
 use crate::runtime::utils::pair_as_positional;
-use crate::value::{ArrayKind, Value};
+use crate::value::Value;
 
 /// [`FirstMatcher`] backed by the bytecode VM.
 struct VmFirstMatcher<'a>(&'a mut VM);
@@ -47,19 +47,10 @@ impl VM {
             return None;
         }
 
-        // Only plain list-like targets; `Supply`/`Instance`/… keep their own
-        // semantics -> fall back.
-        match target {
-            Value::Array(_, ArrayKind::Array | ArrayKind::List)
-            | Value::Seq(_)
-            | Value::Slip(_)
-            | Value::Hash(_)
-            | Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {}
-            _ => return None,
+        // Plain list-like targets plus `Hash` (`.first` iterates its pairs);
+        // `Supply`/`Instance`/… keep their own semantics -> fall back.
+        if !Self::is_plain_eager_list(target) && !matches!(target, Value::Hash(_)) {
+            return None;
         }
 
         // At most one positional matcher and no adverbs. Any `Pair` arg is an
