@@ -595,11 +595,12 @@ impl VM {
             )
         {
             let method_name = key.as_str();
-            // TODO: compile to bytecode — smartmatch key-method extraction (ledger §1).
-            match self
-                .interpreter
-                .call_method_with_values(left.clone(), method_name, vec![])
-            {
+            // Route the key-method call through the VM's unified compiled-first
+            // dispatch (ledger §1): user-defined methods run as compiled bytecode;
+            // only native/reflective methods bottom out at the interpreter. `left`
+            // is never an Array/Hash/Seq here (excluded above), so the native
+            // array/list fast paths inside are inert.
+            match self.try_compiled_method_or_interpret(left.clone(), method_name, Vec::new()) {
                 Ok(result) => {
                     return result.truthy() == val.truthy();
                 }
