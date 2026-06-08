@@ -9,6 +9,22 @@ use super::{
 };
 use crate::ast::Stmt;
 use crate::symbol::Symbol;
+use crate::value::Value;
+
+/// A `my <Type> sub f(--> OtherType)` declares the return type twice, which is
+/// X::Redeclaration of the return type.
+fn return_type_redeclaration(name: &Symbol, previous: &str) -> PError {
+    let msg = format!(
+        "X::Redeclaration: Redeclaration of return type for '{}' (previous return type was {}).",
+        name.resolve(),
+        previous
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("symbol".to_string(), Value::str(name.resolve().to_string()));
+    attrs.insert("what".to_string(), Value::str("return type".to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
 
 use super::super::sub::parse_type_constraint_expr;
 
@@ -35,13 +51,15 @@ pub(super) fn try_keyword_dispatch(
                 .unwrap_or(r);
             let (r, mut stmt) = sub_decl_body(r, true, false, false)?;
             if let Stmt::SubDecl {
+                name,
                 return_type,
                 custom_traits,
                 ..
             } = &mut stmt
             {
-                if return_type.is_none() {
-                    *return_type = Some(routine_type.clone());
+                match return_type {
+                    Some(existing) => return Err(return_type_redeclaration(name, existing)),
+                    None => *return_type = Some(routine_type.clone()),
                 }
                 if is_our {
                     custom_traits.push(("__our_scoped".to_string(), None));
@@ -53,13 +71,15 @@ pub(super) fn try_keyword_dispatch(
             let (r, _) = ws1(r)?;
             let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
             if let Stmt::SubDecl {
+                name,
                 return_type,
                 custom_traits,
                 ..
             } = &mut stmt
             {
-                if return_type.is_none() {
-                    *return_type = Some(routine_type.clone());
+                match return_type {
+                    Some(existing) => return Err(return_type_redeclaration(name, existing)),
+                    None => *return_type = Some(routine_type.clone()),
                 }
                 if is_our {
                     custom_traits.push(("__our_scoped".to_string(), None));

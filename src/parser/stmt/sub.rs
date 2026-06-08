@@ -1043,7 +1043,21 @@ pub(super) fn sub_decl_body(
     } else {
         (params, param_defs)
     };
-    // Merge return type: `-->` from inside params has priority, then `returns`/`of` traits
+    // Merge return type: `-->` from inside params has priority, then `returns`/`of` traits.
+    // Declaring the return type twice (e.g. `sub f(--> List) returns Str { }`) is
+    // X::Redeclaration of the return type.
+    if let (Some(inner), Some(trait_rt)) = (&return_type, &traits.return_type) {
+        let msg = format!(
+            "X::Redeclaration: Redeclaration of return type for '{}' (previous return type was {}).",
+            name, inner
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("symbol".to_string(), Value::str(name.clone()));
+        attrs.insert("what".to_string(), Value::str("return type".to_string()));
+        let _ = trait_rt;
+        let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+    }
     let merged_return_type = return_type.or(traits.return_type);
     let sub_name_sym = Symbol::intern(&name);
     let sub_decl = Stmt::SubDecl {
