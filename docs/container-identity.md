@@ -273,8 +273,21 @@ push」に変えると、配列要素が `Value::Scalar`/`ContainerRef`/`ItemArr
     factory `return sub{$n++}` → 0/1/0。即時呼び出し `for`/`map` → 非 box（3 / 12）。**perf カナリア
     int.t 0.21s 維持（#2746 回帰なし）**。`make test` PASS（458 unit + 5315 prove）、clippy clean、
     S03-binding/closure・S04-declarations/state・pointy(-rw) 等 whitelist PASS。
-  - **範囲外（別系統の事前バグ・follow-up）**: **bareword `f()` 呼び出し**は、捕捉変数が**抜けた bare block 内**
-    にある場合に凍結スナップショットを読む（`&f()` / `$f` は正しく共有セルを読むので escape 解析は正常）。
-    これは bareword sub 呼び出しの dispatch/scope-exit 経路の別バグで、step 1 の cell 共有とは独立。
+  - **bareword `f()` 抜けたブロック捕捉バグも修正**: `my &f; { my $a=3; &f=sub{$a++} }; f(); f()` が
+    `3,0`（read-only `sub{$a}` は `3,Nil`）だった件。bareword `f()` は interpreter の `call_sub_value` 経由、
+    `&f()`/`$f()` は VM の cell 対応 dispatch（`call_compiled_closure`）経由 — dual-store 分岐で VM 経路は元々正しい。
+    原因: `call_sub_value` のキャプチャ env マージが `merge_all=true` で `ContainerRef`（共有セル）も
+    `entry_or_insert`（caller 優先）していたため、宣言ブロックが漏らした stale 値や前回呼びの writeback が
+    生きたセルを隠し、2回目の呼びで失われていた。修正: **マージで `ContainerRef` だけ `insert_sym`（上書き）して
+    生きたセルを必ず採用**（VM `call_compiled_closure` と同じ「セルが真実の源」原則。`box_captured_lexicals` が
+    捕捉×変異スカラーを box するので read-only/mutating とも $a はセル）。**dynamic 変数や非セルの値には触れない**ので
+    `note`/`$*ERR` rebind（`note-gist-and-dynamic-handle.t`）も非回帰。
+    - **試して revert（重要教訓）**: 当初「クロージャの実スカラー lexical free var も `insert_sym` で強制」する広い版を
+      試したが、`S17-scheduler/{at,in,every}.t`・`S32-io/IO-Socket-Async.t` を回帰させた（`:in`/`:at` 遅延スケジューリングの
+      内部クロージャ scalar を強制上書きしてコールバックが過剰発火、every.t "seen 38 runs"）。`make test`・isolated 再現では
+      露見せず、**release roast で main 5/5 PASS vs branch 5/5 FAIL の比較で確定**。`ContainerRef`-only の最小版に縮小して解決
+      （`trans.t`/`squish.t` の二重カウント回帰も同時に消滅）。教訓: call_sub_value マージは全 interpreter クロージャ呼びの
+      hot path で、scalar 値の強制は scheduler 等の内部クロージャに広く干渉する。**触るのは既に共有な `ContainerRef` だけに限る。**
+    `make test` PASS（458 unit + 5336 prove）、clippy clean、int.t 0.20s、4 回帰ファイル release 8/8 PASS。
   - **次（step 2）**: needs-cell な `$` local を宣言時にセル化し、`owned_captures`/`closure_captured_state`/
     `box_captured_lexicals` の boxing ヒューリスティック（4→1）を削除（PLAN.md 実装順序 step 2）。

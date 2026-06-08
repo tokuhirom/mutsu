@@ -6,7 +6,7 @@ use Test;
 # latter via the compiler's >=2-sibling-closure signal), while loop-body `my`
 # stays per-iteration fresh.
 
-plan 19;
+plan 24;
 
 # --- intra-iteration mutation after capture (was: frozen value) ---
 {
@@ -129,4 +129,27 @@ plan 19;
     my $b = counter();
     $a(); $a();
     is $b(), 0, 'returned closure factory: instances have independent state';
+}
+
+# --- bareword `f()` call to a `&f` closure that captured a lexical from a
+# now-EXITED block. The closure's captured container must be observed on EVERY
+# call (the bareword path reads the closure's captured env, which previously lost
+# the captured value on the second call -> returned Nil/0). ---
+{
+    my &f;
+    { my $a = 3; &f = sub { $a++ } }
+    is f(), 3, 'bareword call to exited-block closure: first call';
+    is f(), 4, 'bareword call to exited-block closure: state persists';
+}
+{
+    my &g;
+    { my $a = 3; &g = sub { $a } }
+    is g(), 3, 'bareword call, read-only captured lexical: first call';
+    is g(), 3, 'bareword call, read-only captured lexical: second call (not Nil)';
+}
+# bareword `f()` and ampersand `&f()` observe the same shared container.
+{
+    my &h;
+    { my $a = 10; &h = sub { $a++ } }
+    is "{h()}{&h()}{h()}", '101112', 'bareword and &-call share the captured container';
 }
