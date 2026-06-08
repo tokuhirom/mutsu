@@ -40,7 +40,7 @@
 | ~~`vm_var_get_ops.rs` 0-arg term~~ | ~~0引数のユーザ/multi 関数 term~~ | — | **✅消化 (PR3)**: cold fallback を統一 compiled-first へ（OTF compile 追加） |
 | ~~`vm_var_get_ops.rs` pkg-qualified~~ | ~~`Module::func` を term 位置で~~ | — | **✅消化 (PR3)**: 同上 |
 | `vm_call_func_ops.rs` builtin-shadow（slip + 通常 2 サイト） | ユーザ sub が同名 builtin を shadow | 部分消化 | **✅単一候補の compilable 分は ③ PR-2 で OTF compile 化**（proto/multi/複雑 sig は call_function_fallback 維持） |
-| `vm_call_func_ops.rs` multi-dispatch fork / final else | 非proto multi / `call_function` 末端 | HARD | VM 側 multi 候補解決 / ③ |
+| `vm_call_func_ops.rs` multi-dispatch fork / final else | 非proto multi / `call_function` 末端 | 部分消化 | **✅非proto multi の unambiguous/OTF-compilable/非state 候補は ③ PR-4 で OTF compile 化**（ambiguity/where/state-alternate/proto/末端は fallback 維持） |
 | `vm_call_dispatch.rs` catch-all | `call_function_compiled_first` 末端 | HARD | ③ |
 | ~~`vm_dispatch_helpers.rs` Routine call_function~~ | ~~Routine 値の関数解決~~ | — | **✅消化 (③ PR-1)**: 3 サイトを統一 compiled-first へ（builtin 名 Routine は builtin 優先維持） |
 
@@ -128,6 +128,25 @@
   カバー。よって本 PR は §1 catch-all の**ユーザーメソッド分を確実に bytecode 化**（残りは native/MOP/別解決バグ）。
   S12/S14/S06-multi/metamodel whitelist 全緑、make test PASS。**教訓: フォールバックカウンタは「tree-walk」ではなく
   「interpreter ブリッジ経由」を数える**（ブリッジ先の `run_block_raw` 自体は VM compile ping-pong で実は bytecode）。
+
+- **2026-06-09 (③ PR-4, §2 非proto multi fork)**: `vm_call_func_ops.rs::dispatch_func_call_inner` の
+  非proto multi fork（`has_multi_candidates && !has_proto`）を、PR-2 の builtin-shadow 型と同様に
+  `resolve_function_with_types`（②で VM アクセス可能）で winner を解決 →`def_is_otf_compilable` かつ非state body なら
+  `compile_and_call_function_def` で OTF compile/bytecode 実行に。**関数パスの ambiguity は `None`+`pending_dispatch_error`
+  で表現される**（`dispatch.rs` choose_best_matching_candidate）ため `Some(def)` = unambiguous winner（メソッド側の
+  `dispatch_ambiguous` フラグとは別機構）。resolve 前に stale `pending_dispatch_error` を `take` でクリア（interpreter の
+  `resolve_function_with_alias` と同じ作法）。ambiguity/where/default/code-param/no-match/proto/末端は従来どおり
+  `call_function_fallback`（正規の `X::Multi::Ambiguous`/`X::Multi::NoMatch` を投げる）。**nextsame/callsame/callwith は
+  compiled 候補からでも正しく機能**（`compile_and_call_function_def` が interpreter と同じ `push_multi_dispatch_frame` を
+  張るため。実測で確認＝redispatch 除外は不要だった）。**2 つの落とし穴を対処**: ① **otf_call_cache の name 汚染** —
+  `compile_and_call_function_def` の name-cache insert を `!has_multi_candidates_cached` で条件化＋lookup 側にも同ガード
+  （type-blind な name cache が `f(5)`→Int 候補を後続 `f("hi")` に誤再利用するのを防止。fingerprint キーの
+  `otf_compile_cache` は per-候補で安全なので維持）。② **signature alternates の共有 state**（`(A)|(B){ state $x }` が
+  compile 時 state_group で 1 セル共有するが、OTF は body fingerprint＝per-alternate-sig キーで別 state になる）→
+  **state 宣言を含む multi body は OTF 除外**（新ヘルパ `function_body_declares_state` 再帰スキャン。`t/multi-signature-alternates.t`
+  回帰を発見・修正）。slip 経路（`exec_call_func_slip_op`）の multi は **既存の別バグで `|ms()` が Nil を返す**ため
+  本 PR では対象外（follow-up）。pin `t/multi-otf-dispatch.t`(24)。実測 multi-probe で fallback 5→2（残2=nextsame/callsame
+  builtin 自体）。S06-multi whitelist 全緑、make test PASS。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
