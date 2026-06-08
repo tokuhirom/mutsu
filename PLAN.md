@@ -57,117 +57,64 @@ CI（`make test` + 包括的 `make roast`）が全マージをゲートするの
   詳細は [docs/container-identity.md](docs/container-identity.md)）。残るは**単一の脱出クロージャ**1 件（別 signal
   が要るので Phase 1 の次スライスへ）。
 
-### 本丸: 重複実装を消す（進行中・主作業）
+### 本丸: 重複実装カタログの消化 ＝ ✅ 完了（詳細は [news/2026-06.md](news/2026-06.md)）
 
-**測り方 = 残っている重複実装の数**（フォールバック率ではない）。手順・落とし穴・優先マップは
-[docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)。安全削除の必須手順:
-native_function に arm がある（必要条件）だけでは不十分 — **EVAL 経路で同値確認**
-（`mutsu -e 'say EVAL(q{f(...)})'` が raku と一致）してから削除し、`make roast` で確認する。VM の
-`try_native_function` と interpreter fallback の `native_function` は**カバレッジが違う**（例: `chrs`/`ords`
-は native arm があるのに fallback 未到達 → 残す）。
+列挙された重複実装（測り方 = 残っている重複実装の数）はすべて消化済み。残り `[ ]` ゼロ:
 
-- [x] **Category A — 純粋値 builtin（delete & fallthrough）完了**: native が authoritative。Interpreter の
-      `builtin_*` arm + 本体を削除し、catch-all → fallback → native_function に委譲。
-  - [x] **第1バッチ (#2714)**: `abs`/`lc`/`uc`/`tc`/`trim`/`flip`/`chr`/`ord`/`chars` の Interpreter
-        コピー削除。
-  - [x] **第2バッチ（Category A 完了）**: 残りの純粋値重複 `sign`/`ords`/`chrs`/`unival`/`univals` を削除。
-        `sign`/`ords` は native 1-arg が既にカバー（純粋削除）。第1バッチで「fallback 未到達」として
-        残していた `chrs`/`unival`/`univals` は、重複維持ではなく **native を到達可能化** して削除:
-        `chrs` を `native_function_variadic` へ全 arity ルーティング（+ `value_to_list` で Range/Seq 平坦化）、
-        `unival`/`univals` を `native_function_1arg` から `.unival`/`.univals` メソッド実装へ委譲。
-        VM/EVAL 両経路で raku 一致を確認。**純粋値 builtin の重複はゼロ**。`words`（IO 版で別物）は非対象。
-- [x] **Category B — genuine fork（native に難ケースを足してから削除）＝ 完了**:
-      `min`/`max`/`minmax`/`sort`/`join`/`first`/`flat`/`elems`/`reverse`。native/pure 層が comparator ブロック・
-      lazy で bail し Interpreter に落ちていた重複を全て解消した。**2 種類の fork を別々の手法で潰した**:
-  - **ブロック系 fork（comparator/mapper/matcher ブロック）= 完了**。共通パターン: オーケストレーション
-    （fold/sort/scan 本体）を engine 非依存の単一実装に抽出し、**ブロック呼び出しだけ**を VM
-    (`vm_call_on_value`) / interpreter (`call_sub_value` / `eval_call_on_value`) のクロージャ（trait）で差し替え。
-    VM がインタープリタにフォールバックしなくなり（`interpreter_fallbacks=0` 実測）、重複オーケストレーションが消える。
-    - [x] **sort (#2727)**: `sort_items_generic`/`sort_indices_generic` + `SortCaller` 抽出。VM が comparator/
-          mapper/`:k`/Hash sort を完全 native 化。`dispatch_sort` は interpreter carrier 用の薄いアダプタに縮小。
-    - [x] **min/max (#2728)**: `extrema_from_values_generic` 抽出。VM が `.min`/`.max`（`:by` ブロック・
-          `:k`/`:v`/`:kv`/`:p` adverb 込み）を native 化。
-    - [x] **minmax (#2730)**: `minmax_from_values_generic` 抽出。VM が `.minmax`（`:by` 込み）を native 化。
-    - [x] **first (#2731)**: `find_first_match_generic` + `FirstMatcher` trait 抽出。VM が `.first`（block/regex/
-          smartmatch matcher、Hash 要素は `pair_as_positional`）を native 化。adverb/Bool-matcher は fallback。
-  - **lazy-fork（`elems`/`flat`/`join`/`reverse`）= 完了**。fork 原因は comparator ブロックではなく **lazy 強制／
-    多態が native と interpreter で別実装になっていた**こと。drift を 1 件ずつ raku で確認しながら **単一の正しい
-    実装へ委譲**し、その過程で **drift 由来の潜在バグを多数発見・修正**（dedup doc 警告の実証）:
-    - [x] **elems (#2733)**: `elems($x)` = `$x.elems` として `.elems` メソッドへ委譲。`elems("hello")` 5→1、
-          `elems(Seq)` 1→3、`elems(lazy)` を `X::Cannot::Lazy` に、`end("hello")` 4→0 修正。
-    - [x] **flat (#2734)**: 単一 `flat_val` に統一（`flat_into` 削除）。`flat(1,[2,[3,4]],…)` の nested array
-          over-flatten を修正（List vs Array の段数セマンティクスを正しく適用）。
-    - [x] **join (#2735)**: 単一 `join_flat`（`flat_val` 基盤）に統一。`join("-",1..4)` がセパレータを無視する
-          バグを修正（slurpy + shaped leaves + lazy 強制）。`join()` 無引数の panic も修正。
-    - [x] **reverse (#2739)**: 単一 native `reverse` へ委譲。`reverse()` 無引数 `Nil`→`()`、Range/Slip/shaped 修正。
-  - **対象外**: `index`/`rindex` は interpreter コピーが存在せず既に native のみ。
-  - ✅ **sort 移行の落とし穴 — 根本原因が判明（2026-06-07, #2725）**: 「`%h.sort({block})` → expected 2 got 0」
-    の正体は **`Value::Pair` vs `Value::ValuePair` の束縛差**。mutsu は呼び出し側の名前付き引数を `Value::Pair`
-    （dispatch 全体で positional arity から除外）、positional な pair 値を `Value::ValuePair` として **Value
-    variant で区別**している。**Hash の反復（`value_to_list`）は `Value::Pair` を生成**するため、要素をそのまま
-    comparator/matcher ブロックに渡すと**名前付き引数として束縛され positional が 0 個**になる（→ "got 0"）。
-    リストリテラル `(a=>3),(b=>1)` は `ValuePair` を生成するので `@x.list.sort({block})` は動いていた。これは
-    sort 固有ではなく、同根の live バグ `%h.first({block})`（→ "expected 1 got 0" / `.value on Any`）でも再現。
-    - 対処: 汎用ヘルパ `runtime::utils::pair_as_positional`（`Pair`→`ValuePair`）を追加し、要素をブロックに
-      positional 束縛させる。`find_first_match_over_items`（`.first` 駆動）に適用済み（#2725）。
-    - **sort 移行の解禁**: native/VM sort を書く際、comparator にペア要素を渡す箇所で `pair_as_positional` を
-      使えば旧 `dispatch_sort` の暗黙処理を吸収できる → `dispatch_sort` 削除が可能になる（make roast 必須）。
-    - 別根・未対処: pointy `-> $p {...}` / `*.value` matcher は `find_first_match_over_items` の `Value::Sub`
-      呼び出し分岐ではなく `smart_match` 経路に行き topic 未束縛（リテラル配列でも失敗）。別 PR。
-- [x] **Category C — メソッド / 演算子・arith・coercion の重複 ＝ 完了**: native fast path（`src/builtins/methods_*`,
-      `vm_arith_ops`）と Interpreter slow path（`src/runtime/methods*.rs`）の重複。段階導入・手動監査
-      （手順・対象マップ・進捗は [docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)）。
-  - [x] **Phase 1a (#2719)**: arith `%`/`mod` の `runtime/ops.rs::apply_reduction_op` ローカル再実装を削除し
-        native `arith_mod` へ委譲（重複2 arm 削除、`[%] 2**70,3` / `[%] 5,0` の正しさも改善）。
-  - [x] **Phase 1b (#2719)**: Instance→numeric bridge の重複統合。VM `coerce_numeric_bridge_value` を
-        interpreter `coerce_infix_operand_numeric`（単一 authoritative 実装）へ委譲（重複1削除）。
-        `utils::coerce_numeric`/`coerce_to_numeric` は既に単一実装の共有なので非対象。
-  - [x] **Phase 2 (#2719, #2723)**: 手動監査の結果、**単純値メソッドの interpreter コピーは既に削除済み**と
-        判明（残るのは生きた Instance/Buf/Failure/comparator fork。`dispatch_method_by_name_*` に harvest なし）。
-        真の残重複は `apply_reduction_op` の演算子本体の再実装で、VM がそこへ委譲しているので authoritative:
-        - `~`（concat）を VM `concat_values`（state-free 化）へ委譲（重複1削除＋非ASCII NFC/Buf の潜在バグ修正）。
-        - `[minmax]` を共有 `vm_misc_ops::minmax_bounds_of_value`（再帰版）へ委譲（重複1削除＋ネストの bug 修正）。
-        - 論理短絡 `&&`/`||`/`//` は reduction 専用実装（VM は infix をジャンプにコンパイル）で重複ではない。
-          比較は共有 `runtime::compare_values` 使用済み。→ `apply_reduction_op` の operator-body dedup は完了。
-  - [x] **Phase 3 ＝ 完了**: groundwork (#2725) で `%`-chain ブロッカーの根本原因（= `Value::Pair` の named 束縛）を
-        特定し `pair_as_positional` を追加・`.first` を修正。残 3 件も完了:
-        - **① sort ラッパ重複の統合 (#2744)**: orchestration 本体（`sort_items_generic`/`sort_indices_generic`）は既に
-          共有だったが、その手前の「引数 parse（`:k`/`:by`/arity）＋ 形状→要素リスト変換」ラッパが `dispatch_sort`
-          (interp) と `try_native_sort` (VM) に**二重**にあった（しかも `:kv`/`:p`/`:v` で drift）。engine 非依存の
-          共有 `sort_value_generic(&mut dyn SortCaller, target, args)` に集約し `dispatch_sort` を**削除**。挙動保存。
-        - **② comb/substr/split の配置監査と dedup (#2745, #2747)**: 監査の結果 split は既に適正
-          （`SplitOpts`/`apply_split_opts`/`split_by_*_static` を native↔interp で共有、regex 分割だけが regex
-          エンジン依存の正当な fork）。**comb (#2745)**: 純粋な Int-chunk / Str-fixed 分割が interp 層に取り残されて
-          いたので `builtins::comb`（`comb_pure`）へ降ろし、native fast path と interp の両方が呼ぶ単一実装に（regex は
-          interp 維持）。**substr (#2747)**: start/length 解決は WhateverCode で `eval_call_on_value` を呼ぶため本質的に
-          interp 結合で interp から降ろせない代わりに、native 層に**4 コピー**あった単純スライスを共有
-          `builtins::substr::native_substr_slice` の 1 本に畳んだ。
-        - **③ `.first` の pointy `-> $p {...}` matcher param 束縛バグ (#2743)**: pointy lambda は `param_defs` 空で
-          legacy binding path に落ち、`pair_as_positional` 由来の `ValuePair(Str,_)` が named 扱いで除外され positional
-          param `$p` が未束縛になっていた。`bind_function_args_values` の 1 箇所修正で VM/interp 両経路を同時に解消。
-- [x] **正規表現の validator/matcher 二重実装の統合（[ANALYSIS.md](ANALYSIS.md) §3.1）= 完了**。
-      `src/regex_validate.rs`（1108 行）を削除し、構造パーサ `parse_regex` を唯一の文法権威に統合。
-      `RegexParseMode { Match, Validate }` を導入し、パース時検証を自由関数 `validate_regex_structurally`
-      （構造パーサのドライラン）に一本化。validator 限定チェックを全て構造パーサへ移植（Validate ゲート、
-      Match はバイト等価）。詳細は [news/2026-06.md](news/2026-06.md)。
+- **Category A — 純粋値 builtin**（#2714 ほか）: `abs`/`lc`/…/`chars`、`sign`/`ords`/`chrs`/`unival`/`univals` の
+  Interpreter コピーを削除し native へ委譲。純粋値 builtin の重複ゼロ。
+- **Category B — genuine fork**（#2727/#2728/#2730/#2731/#2733/#2734/#2735/#2739）:
+  sort/min/max/minmax/first（ブロック系 = orchestration を engine 非依存実装に抽出、ブロック呼びだけ trait 差し替え）、
+  elems/flat/join/reverse（lazy-fork = 単一実装へ委譲）。
+- **Category C — method/arith/coercion**（#2719/#2723/#2743/#2744/#2745/#2747）:
+  Phase 1a/1b（arith・coercion bridge）、Phase 2（reduction operator 本体）、Phase 3（sort ラッパ統合＋`dispatch_sort`
+  削除、comb 降ろし、substr 4→1、`.first` pointy 修正）、配置監査（split は模範）。
+- **正規表現 validator/matcher §3.1**（#2750）: `src/regex_validate.rs`（1108 行）削除、構造パーサ `parse_regex` に
+  一本化、`RegexParseMode { Match, Validate }` 導入。
 
-### 最終ゴール
-- [ ] **Interpreter のメソッド/関数実行パス（`call_function`/`call_method_with_values`/`dispatch_*` の
-      重複実装）を削除**し、フォールバック率 0%（Test/EVAL 等の本質的例外を除く）にする。これが完了すると、
-      env を任意の名前で書く唯一の存在（interpreter ブリッジ）が消えるので `env_dirty`/`ensure_locals_synced`/
-      `sync_locals_from_env`/`saved_env_dirty` の dual-store 機構も削除できる（レバー B 完遂）。
-- **残フォールバック**には `// TODO: compile to bytecode` を付け負債を可視化。
-- **次の着手候補（優先順）**: Category A 完了・**Category B 完了**（ブロック系 sort/min/max/minmax/first
-  #2727/#2728/#2730/#2731 ＋ lazy-fork elems/flat/join/reverse #2733/#2734/#2735/#2739）・**Category C 完了**
-  （Phase 1a/1b/2 ＋ Phase 3 = sort ラッパ統合 #2744 / comb 降ろし #2745 / substr 4→1 #2747 / `.first` pointy 修正
-  #2743）。残る関数/メソッド重複は **正規表現の validator/matcher 二重実装**（下記、ANALYSIS §3.1）のみ。
-  次は 🟣第2優先「第一級コンテナ」（レバー C 本丸 + Q2 の Arc-pointer flaky を吸収）。
-  - 教訓: 「重複削除」を始めると**潜在バグが芋づる式に出る**（`[%] 2**70` 精度・`[~]` NFC・`[minmax]` ネスト・
-    `%h.first` の named 束縛・`elems("hello")`・`flat` over-flatten・`join(sep,Range)` セパレータ無視・
-    `reverse()`=Nil・`.first(-> $p)` の pointy 未束縛は全て dedup 作業中に発見・修正）。重複は drift してバグの温床になる実例。
-  - 教訓2（配置監査）: 「1 操作 = 1 実装」に加え**「単一実装が正しいレイヤに在るか」**も問う。comb の純粋分割は
-    interp 層に取り残されており（split.rs は適正）、降ろして両エンジン共有にした。WhateverCode/regex の様に本質的に
-    interp 結合な部分は `runtime/` に残すのが正しい。
+安全削除の必須手順（今後も適用）: native_function に arm がある（必要条件）だけでは不十分 — **EVAL 経路で同値確認**
+（`mutsu -e 'say EVAL(q{f(...)})'` が raku と一致）してから削除し `make roast` で確認。手順・落とし穴・優先マップは
+[docs/vm-interpreter-dedup.md](docs/vm-interpreter-dedup.md)。
+
+**教訓（実証）**: ①重複は drift してバグの温床 — `[%] 2**70` 精度・`[~]` NFC・`[minmax]` ネスト・`%h.first` の named
+束縛・`elems("hello")`・`flat` over-flatten・`join(sep,Range)`・`reverse()`=Nil・`.first(-> $p)` pointy 未束縛は全て
+dedup 作業中に発見・修正。②「1 操作 = 1 実装」に加え**「単一実装が正しいレイヤに在るか」**も問う（comb の純粋分割を
+interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に残すのが正しい）。
+
+### 最終ゴール（現・主作業）: Interpreter 実行パスの撤去 → dual-store 削除
+
+重複カタログ（本丸）完了に伴い、主作業はここへ移った。VM はいまも Interpreter を**共有実行状態 ＋
+フォールバック先**として使う（[ANALYSIS.md](ANALYSIS.md) §1.1: `self.interpreter.*` 参照 1300+、内訳上位は
+`env()`/`env_mut()` ~480、`type_matches_value`、`var_type_constraint`、`current_package`、`restore_let_saves`、
+`readonly_vars_mut`…）。これを VM 所有へ移し切り、真の tree-walk フォールバックを撲滅するのが最終ゴール。
+完了すると **env を任意名で書く唯一の存在＝interpreter ブリッジが消え**、`env_dirty`/`ensure_locals_synced`/
+`sync_locals_from_env`/`saved_env_dirty` の **dual-store 機構を削除**できる（レバー B 完遂）。
+
+着手順（依存順。各ステップは strangler-fig で段階的に、CI を安全網に）:
+
+- [ ] **① 残存する真の tree-walk フォールバックの撲滅**（ANALYSIS §1.1。これが「フォールバック率 0%」の本体）:
+      `call_method_with_values`（`vm/vm_call_method_compiled.rs`/`vm_call_method_mut_ops.rs`/`vm_data_ops.rs` の各サイト
+      ＝生きた Instance/Buf/Failure メソッド fork）、`run_instance_method`（`class.rs` ＝ユーザー定義クラスメソッド）、
+      `call_function`/`call_function_fallback`（`vm_call_func_ops.rs`/`vm_call_dispatch.rs`）、`run_react_event_loop` を
+      VM ネイティブ実行に置換。**残すフォールバックには規約どおり `// TODO: compile to bytecode` を付与**（現状 VM ツリー
+      に 0 件 ＝ 負債が不可視。まず可視化する）。
+- [ ] **② 宣言の実行を VM 所有レジストリへ**: `class`/`role`/`enum`/`subset`/`token`/`sub`/`method` は現在
+      `Register*` opcode が `interpreter.register_*_decl()` を呼び、クラスシステム・MRO・role 合成が Interpreter 側。
+      これらのレジストリを VM 所有データへ移す（②は③の前提）。
+- [ ] **③ VM が借用している Interpreter 状態を VM 所有へ移管**: env HashMap（変数ストア本体）・classes/roles/enums
+      レジストリ・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・`let`/`temp` 復元・multi 解決・
+      state 変数・`current_package`。これが移れば **interpreter ブリッジ自体が不要**になる。最大の山。
+- [ ] **④ 本質的キャリアの扱いを確定**（消すのではなく分離 or 明示）: `EVAL`/`EVALFILE`（既に compile→サブ VM 実行で
+      tree-walk ではない＝env/レジストリ所有のため Interpreter を借りる**キャリア**）、正規表現の埋め込み `{}` ブロック
+      （interpreter regex エンジン経由で caller local を名前書き込み）、pseudo-package（`CALLER::`/`OUTER::` の reflective
+      lookup）。③で所有が VM に移れば、これらは「Interpreter 実行パス」ではなく単なる共有レジストリ参照になる。
+- [ ] **⑤ dual-store 機構の削除（レバー B 完遂）**: ①〜③でブリッジが消えた後、`env_dirty`/`ensure_locals_synced`/
+      `sync_locals_from_env`/`saved_env_dirty`/`VmCallFrame` の dirty/bind フィールド群を撤去。カウンタ自体は既に
+      ほぼ最適化済み（method-call 1 / bench-class 2 / fib 0、docs/vm-dual-store.md の resume map）で、残る `bench-array`
+      の closure コストは🟣第2優先「第一級コンテナ」Phase 1（#2751 で着手済み）に収斂する。
+
+関連: 🟣第2優先「第一級コンテナ」はこの最終ゴールと地続き（レバー C ＝ Phase 1 の一部、Q2 の Arc-pointer flaky を
+吸収）。本セクション①〜③（Interpreter 実行パス撤去）と並行 or 接続して進める。
 
 ---
 
