@@ -1722,10 +1722,10 @@ impl Interpreter {
     /// Throws X::Package::Stubbed if any stubs remain.
     pub(crate) fn check_unresolved_stubs(&self) -> Result<(), RuntimeError> {
         let mut unresolved: Vec<String> = Vec::new();
-        for name in &self.class_stubs {
+        for name in &self.registry().class_stubs {
             unresolved.push(name.clone());
         }
-        for name in &self.package_stubs {
+        for name in &self.registry().package_stubs {
             unresolved.push(name.clone());
         }
         if unresolved.is_empty() {

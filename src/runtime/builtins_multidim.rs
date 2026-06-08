@@ -279,7 +279,6 @@ impl Interpreter {
                 // Check class_attribute_default for instance attributes
                 let class_default = if let Value::Instance { class_name, .. } = &target {
                     self.class_attribute_default(&class_name.resolve(), &method)
-                        .cloned()
                 } else {
                     None
                 };

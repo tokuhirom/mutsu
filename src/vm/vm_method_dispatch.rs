@@ -427,8 +427,7 @@ impl VM {
                 .or_else(|| {
                     self.interpreter
                         .class_attribute_default(receiver_class_name, attr_name)
-                })
-                .cloned();
+                });
             if let Some(def) = default_val {
                 // Register for $!attr and $.attr variable names
                 self.interpreter
@@ -980,8 +979,7 @@ impl VM {
                 .or_else(|| {
                     self.interpreter
                         .class_attribute_default(receiver_class_name, attr_name)
-                })
-                .cloned();
+                });
             if let Some(def) = default_val {
                 self.interpreter
                     .set_var_default(&format!("!{}", attr_name), def.clone());

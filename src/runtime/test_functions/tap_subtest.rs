@@ -47,7 +47,7 @@ impl Interpreter {
         let saved_proto_subs = self.proto_subs.clone();
         let saved_proto_tokens = self.proto_tokens.clone();
         let saved_classes = self.classes.clone();
-        let saved_class_trusts = self.class_trusts.clone();
+        let saved_class_trusts = self.registry().class_trusts.clone();
         let saved_roles = self.roles.clone();
         let saved_subsets = self.registry().subsets.clone();
         let mut saved_type_metadata = self.type_metadata.clone();
@@ -70,7 +70,7 @@ impl Interpreter {
             self.proto_subs = saved_proto_subs;
             self.proto_tokens = saved_proto_tokens;
             self.classes = saved_classes;
-            self.class_trusts = saved_class_trusts;
+            self.registry_mut().class_trusts = saved_class_trusts;
             self.roles = saved_roles;
             self.registry_mut().subsets = saved_subsets;
             // Merge type_metadata: preserve entries added during the subtest
@@ -98,7 +98,7 @@ impl Interpreter {
         self.proto_subs = saved_proto_subs;
         self.proto_tokens = saved_proto_tokens;
         self.classes = saved_classes;
-        self.class_trusts = saved_class_trusts;
+        self.registry_mut().class_trusts = saved_class_trusts;
         self.roles = saved_roles;
         self.registry_mut().subsets = saved_subsets;
         // Merge type_metadata: preserve entries added during the subtest
@@ -145,7 +145,7 @@ impl Interpreter {
         let saved_proto_subs = self.proto_subs.clone();
         let saved_proto_tokens = self.proto_tokens.clone();
         let saved_classes = self.classes.clone();
-        let saved_class_trusts = self.class_trusts.clone();
+        let saved_class_trusts = self.registry().class_trusts.clone();
         let saved_roles = self.roles.clone();
         let saved_subsets = self.registry().subsets.clone();
         let mut saved_type_metadata = self.type_metadata.clone();
@@ -159,7 +159,7 @@ impl Interpreter {
         self.proto_subs = saved_proto_subs;
         self.proto_tokens = saved_proto_tokens;
         self.classes = saved_classes;
-        self.class_trusts = saved_class_trusts;
+        self.registry_mut().class_trusts = saved_class_trusts;
         self.roles = saved_roles;
         self.registry_mut().subsets = saved_subsets;
         // Merge type_metadata: preserve entries added during the subtest

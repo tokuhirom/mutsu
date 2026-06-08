@@ -30,11 +30,13 @@ impl Interpreter {
                 let (pm_name, resolved) =
                     if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
                         let caller_allowed = caller_class.as_deref() == Some(owner_class)
-                            || self.class_trusts.get(owner_class).is_some_and(|trusted| {
-                                caller_class
-                                    .as_ref()
-                                    .is_some_and(|caller| trusted.contains(caller))
-                            });
+                            || self.registry().class_trusts.get(owner_class).is_some_and(
+                                |trusted| {
+                                    caller_class
+                                        .as_ref()
+                                        .is_some_and(|caller| trusted.contains(caller))
+                                },
+                            );
                         if !caller_allowed {
                             return Err(make_private_permission_error(pm_name, owner_class));
                         }
@@ -60,6 +62,7 @@ impl Interpreter {
                 if let Some((resolved_owner, method_def)) = resolved {
                     let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                         || self
+                            .registry()
                             .class_trusts
                             .get(&resolved_owner)
                             .is_some_and(|trusted| {
@@ -217,7 +220,8 @@ impl Interpreter {
                                 "Attribute.set_build missing owner or attribute name",
                             ));
                         }
-                        self.attribute_build_overrides
+                        self.registry_mut()
+                            .attribute_build_overrides
                             .insert((owner, attr_name), build);
                         return Ok(target.clone());
                     }
@@ -794,7 +798,7 @@ impl Interpreter {
                 if class_attrs.is_empty() {
                     if let Some(val) = attributes.get(method) {
                         // Check for deprecated attribute accessor
-                        if let Some(msg) = self.class_attribute_deprecated(&cn, method).cloned() {
+                        if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                             self.check_deprecation_for_method(method, &cn, &msg);
                         }
                         return Ok(val.clone());
@@ -803,8 +807,7 @@ impl Interpreter {
                     for (attr_name, is_public, _, _, _, sigil, _) in &class_attrs {
                         if *is_public && attr_name == method {
                             // Check for deprecated attribute accessor
-                            if let Some(msg) = self.class_attribute_deprecated(&cn, method).cloned()
-                            {
+                            if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                                 self.check_deprecation_for_method(method, &cn, &msg);
                             }
                             let val = attributes.get(method).cloned().unwrap_or(Value::Nil);
@@ -830,7 +833,11 @@ impl Interpreter {
             }
             // Enum-as-role dispatch: if the class `does` an enum, check variant methods
             if args.is_empty()
-                && let Some(enum_names) = self.class_enum_roles.get(&class_name.resolve()).cloned()
+                && let Some(enum_names) = self
+                    .registry()
+                    .class_enum_roles
+                    .get(&class_name.resolve())
+                    .cloned()
             {
                 for enum_name in &enum_names {
                     if let Some(variants) = self.registry().enum_types.get(enum_name).cloned()
@@ -1016,12 +1023,15 @@ impl Interpreter {
                 let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
                     private_rest.split_once("::")
                 {
-                    let caller_allowed = caller_class.as_deref() == Some(owner_class)
-                        || self.class_trusts.get(owner_class).is_some_and(|trusted| {
-                            caller_class
-                                .as_ref()
-                                .is_some_and(|caller| trusted.contains(caller))
-                        });
+                    let caller_allowed =
+                        caller_class.as_deref() == Some(owner_class)
+                            || self.registry().class_trusts.get(owner_class).is_some_and(
+                                |trusted| {
+                                    caller_class
+                                        .as_ref()
+                                        .is_some_and(|caller| trusted.contains(caller))
+                                },
+                            );
                     if !caller_allowed {
                         return Err(make_private_permission_error(pm_name, owner_class));
                     }
@@ -1043,6 +1053,7 @@ impl Interpreter {
                 if let Some((resolved_owner, method_def)) = resolved {
                     let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                         || self
+                            .registry()
                             .class_trusts
                             .get(&resolved_owner)
                             .is_some_and(|trusted| {

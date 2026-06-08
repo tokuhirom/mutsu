@@ -667,10 +667,13 @@ impl Interpreter {
         receiver_class: &str,
         candidate_owner: &str,
     ) -> bool {
-        if receiver_class != candidate_owner && self.hidden_classes.contains(candidate_owner) {
+        if receiver_class != candidate_owner
+            && self.registry().hidden_classes.contains(candidate_owner)
+        {
             return true;
         }
-        self.hidden_defer_parents
+        self.registry()
+            .hidden_defer_parents
             .get(receiver_class)
             .is_some_and(|hidden| hidden.contains(candidate_owner))
     }

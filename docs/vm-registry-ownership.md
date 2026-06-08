@@ -79,8 +79,19 @@ dual-store は [vm-dual-store.md](vm-dual-store.md)。
   `registry()`/`registry_mut()` ヘルパ、`clone_for_thread` 配線（snapshot 維持）、~75 サイト変換、
   再入ハザード（subset `where` 評価/ base-chain walk）をガード巻き上げで安全化、`resolve_subset_base_type`
   は `String` 返しへ。build/clippy/make test 緑、whitelist enum/subset/coercion 15 件 PASS。
-- 残（フィールド別 total/writes）: classes(178/33, 要 perf 設計)、class メタ群（class_composed_roles 37 等、
-  VM 直アクセスは `vm.rs` の `package_stubs.insert/remove` のみ。他はメソッド経由）、roles(110)/role_parents(45)
+- **PR-A slice 2（本 PR）**: class メタ群 14 フィールド移行（cunion_classes, hidden_classes, class_stubs,
+  package_stubs, hidden_defer_parents, class_trusts, class_how_values, class_composed_roles, class_enum_roles,
+  class_subs, attribute_build_overrides, class_attribute_defaults, class_attribute_is_types,
+  class_attribute_deprecated）。read=`registry()`/write=`registry_mut()` へ ~130 サイト変換。
+  `clone_for_thread` の 14 行個別 clone を削除（Registry 全体 clone に吸収）。`class_composed_roles` の
+  builtin seed は `Interpreter::new` で `Registry::default()` に投入。参照返却アクセサ 3 本
+  （`class_composed_roles`/`class_attribute_default`/`class_attribute_deprecated`）を owned 返し
+  （`.cloned()`）へ変更し VM/runtime 呼び出し側を追従（ガードへの参照を返せないため）。再入ハザードを
+  ガード巻き上げで安全化: `collect_transitive_roles` 前の `class_composed_roles` clone、`call_sub_value`
+  前の `attribute_build_overrides` clone、`has_class_scoped_subs` の二重 read を単一 let-bound guard へ。
+  VM 直アクセスは `vm.rs` の `package_stubs.insert/remove` を `registry_mut()` 経由へ。build/clippy/make test
+  緑、whitelist class/role/attribute roast 緑（非 whitelist の private-method 既存失敗は不変）。
+- 残（フィールド別 total/writes）: classes(178/33, 要 perf 設計)、roles(110)/role_parents(45)
   /role_candidates(21)、functions(96)/token_defs(35)。
 
 ## 完了の定義（②）

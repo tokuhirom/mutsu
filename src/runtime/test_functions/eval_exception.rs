@@ -182,8 +182,8 @@ impl Interpreter {
         nested.lib_paths = self.lib_paths.clone();
         nested.program_path = self.program_path.clone();
         nested.classes = self.classes.clone();
-        nested.class_trusts = self.class_trusts.clone();
-        nested.class_composed_roles = self.class_composed_roles.clone();
+        nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
+        nested.registry_mut().class_composed_roles = self.registry().class_composed_roles.clone();
         nested.roles = self.roles.clone();
         nested.role_candidates = self.role_candidates.clone();
         nested.role_parents = self.role_parents.clone();
@@ -281,8 +281,8 @@ impl Interpreter {
         nested.lib_paths = self.lib_paths.clone();
         nested.program_path = self.program_path.clone();
         nested.classes = self.classes.clone();
-        nested.class_trusts = self.class_trusts.clone();
-        nested.class_composed_roles = self.class_composed_roles.clone();
+        nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
+        nested.registry_mut().class_composed_roles = self.registry().class_composed_roles.clone();
         nested.roles = self.roles.clone();
         nested.role_candidates = self.role_candidates.clone();
         nested.role_parents = self.role_parents.clone();

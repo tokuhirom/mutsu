@@ -3527,12 +3527,12 @@ impl VM {
             }
             OpCode::RegisterPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.interpreter.package_stubs.insert(name);
+                self.interpreter.registry_mut().package_stubs.insert(name);
                 *ip += 1;
             }
             OpCode::ClearPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.interpreter.package_stubs.remove(&name);
+                self.interpreter.registry_mut().package_stubs.remove(&name);
                 *ip += 1;
             }
 

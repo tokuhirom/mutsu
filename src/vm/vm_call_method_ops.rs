@@ -102,11 +102,7 @@ impl VM {
         match val {
             Some(v) => {
                 let out = v.clone();
-                if let Some(msg) = self
-                    .interpreter
-                    .class_attribute_deprecated(&cn, method)
-                    .cloned()
-                {
+                if let Some(msg) = self.interpreter.class_attribute_deprecated(&cn, method) {
                     self.interpreter
                         .check_deprecation_for_method(method, &cn, &msg);
                 }

@@ -887,8 +887,11 @@ impl Interpreter {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<&Vec<String>> {
-        self.class_composed_roles.get(class_name)
+    pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<Vec<String>> {
+        self.registry()
+            .class_composed_roles
+            .get(class_name)
+            .cloned()
     }
 
     #[allow(dead_code)]

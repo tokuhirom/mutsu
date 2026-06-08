@@ -1073,6 +1073,7 @@ impl Interpreter {
                         .or_else(|| Some(self.current_package().to_string()));
                     let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                         || self
+                            .registry()
                             .class_trusts
                             .get(&resolved_owner)
                             .is_some_and(|trusted| {

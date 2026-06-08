@@ -371,6 +371,7 @@ impl Interpreter {
                     && let Some((owner_class, _)) = name.resolve().split_once("::")
                     && owner_class != caller_class
                     && !self
+                        .registry()
                         .class_trusts
                         .get(owner_class)
                         .is_some_and(|trusted| trusted.contains(caller_class))

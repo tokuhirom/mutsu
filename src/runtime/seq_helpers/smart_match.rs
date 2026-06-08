@@ -1081,7 +1081,7 @@ impl Interpreter {
                             return true;
                         }
                         // Check composed roles of parent class
-                        if let Some(composed) = self.class_composed_roles.get(&parent) {
+                        if let Some(composed) = self.registry().class_composed_roles.get(&parent) {
                             for cr in composed {
                                 let cr_base =
                                     cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());

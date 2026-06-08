@@ -24,11 +24,15 @@ impl Interpreter {
                 .cloned()
                 .or_else(|| Some(self.current_package().to_string()));
             let caller_allowed = caller_class.as_deref() == Some(owner_class)
-                || self.class_trusts.get(owner_class).is_some_and(|trusted| {
-                    caller_class
-                        .as_ref()
-                        .is_some_and(|caller| trusted.contains(caller))
-                });
+                || self
+                    .registry()
+                    .class_trusts
+                    .get(owner_class)
+                    .is_some_and(|trusted| {
+                        caller_class
+                            .as_ref()
+                            .is_some_and(|caller| trusted.contains(caller))
+                    });
             if !caller_allowed {
                 return Some(Err(make_private_permission_error(
                     private_name,
@@ -73,12 +77,15 @@ impl Interpreter {
         let in_mro = inst_mro.iter().any(|c| c == qualifier);
         let in_composed_roles = if !in_mro {
             inst_mro.iter().any(|c| {
-                self.class_composed_roles.get(c).is_some_and(|roles| {
-                    roles.iter().any(|r| {
-                        r == qualifier
-                            || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                self.registry()
+                    .class_composed_roles
+                    .get(c)
+                    .is_some_and(|roles| {
+                        roles.iter().any(|r| {
+                            r == qualifier
+                                || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                        })
                     })
-                })
             })
         } else {
             false
@@ -235,7 +242,7 @@ impl Interpreter {
         // The consumer's directly-composed roles: classes use class_composed_roles,
         // roles use role_parents (which records `does`-composed sub-roles).
         let direct_roles = |node: &str| -> Vec<String> {
-            if let Some(roles) = self.class_composed_roles.get(node) {
+            if let Some(roles) = self.registry().class_composed_roles.get(node) {
                 roles.clone()
             } else if let Some(parents) = self.role_parents.get(node) {
                 parents.clone()
@@ -303,12 +310,15 @@ impl Interpreter {
         };
         let composed_on_inner = inner_class.as_deref().is_some_and(|cn| {
             self.class_mro(cn).iter().any(|c| {
-                self.class_composed_roles.get(c).is_some_and(|roles| {
-                    roles.iter().any(|r| {
-                        r == qualifier
-                            || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                self.registry()
+                    .class_composed_roles
+                    .get(c)
+                    .is_some_and(|roles| {
+                        roles.iter().any(|r| {
+                            r == qualifier
+                                || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                        })
                     })
-                })
             })
         });
         let role_applied = mixins.contains_key(&format!("__mutsu_role__{qualifier}"))
@@ -381,12 +391,16 @@ impl Interpreter {
             let in_mro = inst_mro.iter().any(|c| c == qualifier);
             let in_composed_roles = !in_mro
                 && inst_mro.iter().any(|c| {
-                    self.class_composed_roles.get(c).is_some_and(|roles| {
-                        roles.iter().any(|r| {
-                            r == qualifier
-                                || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                    self.registry()
+                        .class_composed_roles
+                        .get(c)
+                        .is_some_and(|roles| {
+                            roles.iter().any(|r| {
+                                r == qualifier
+                                    || r.starts_with(qualifier)
+                                        && r[qualifier.len()..].starts_with('[')
+                            })
                         })
-                    })
                 });
             if !in_mro && !in_composed_roles {
                 return Some(Err(RuntimeError::new(format!(

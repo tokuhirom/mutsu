@@ -671,7 +671,7 @@ impl Interpreter {
                 let mut seen_roles = HashSet::new();
                 // Collect all composed roles from the class and its parents
                 for cn in &mro {
-                    if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {
+                    if let Some(composed) = self.registry().class_composed_roles.get(cn.as_str()) {
                         for cr in composed {
                             let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
                             role_stack.push(base.to_string());
@@ -747,7 +747,7 @@ impl Interpreter {
                         return true;
                     }
                     // Also check composed roles of the parent class
-                    if let Some(composed) = self.class_composed_roles.get(&parent) {
+                    if let Some(composed) = self.registry().class_composed_roles.get(&parent) {
                         for cr in composed {
                             let cr_base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
                             if Self::type_matches(effective_constraint, cr_base) {
@@ -820,7 +820,7 @@ impl Interpreter {
                 let mut role_stack: Vec<String> = Vec::new();
                 let mut seen_roles = HashSet::new();
                 for cn in &mro {
-                    if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {
+                    if let Some(composed) = self.registry().class_composed_roles.get(cn.as_str()) {
                         for cr in composed {
                             let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
                             role_stack.push(base.to_string());

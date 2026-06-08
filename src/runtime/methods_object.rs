@@ -2707,7 +2707,7 @@ impl Interpreter {
                 ));
             }
             // CUnion repr classes use byte-overlay construction
-            if self.cunion_classes.contains(&cn_resolved) {
+            if self.registry().cunion_classes.contains(&cn_resolved) {
                 return self.construct_cunion_instance(&cn_resolved, &args);
             }
             // Auto-pun role to class if needed (e.g., role COERCE calling self.new)
@@ -2967,11 +2967,14 @@ impl Interpreter {
                     if attrs.contains_key(&attr_name) {
                         continue;
                     }
-                    let val = if let Some(build_override) = self
+                    // Clone the override out and drop the registry guard before
+                    // call_sub_value re-enters user code (RwLock is not reentrant).
+                    let build_override = self
+                        .registry()
                         .attribute_build_overrides
                         .get(&(class_key.to_string(), attr_name.clone()))
-                        .cloned()
-                    {
+                        .cloned();
+                    let val = if let Some(build_override) = build_override {
                         let val = self.call_sub_value(build_override, Vec::new(), false)?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
                     } else if let Some(expr) = default {
@@ -3024,6 +3027,7 @@ impl Interpreter {
                             '@' => {
                                 // Check for `is Type` trait (e.g. `has @.a is Buf`)
                                 let is_type = self
+                                    .registry()
                                     .class_attribute_is_types
                                     .get(&(class_key.to_string(), attr_name.clone()))
                                     .cloned();
@@ -3082,6 +3086,7 @@ impl Interpreter {
                             '%' => {
                                 // Check for `is Type` trait (e.g. `has %.h is BagHash`)
                                 let is_type = self
+                                    .registry()
                                     .class_attribute_is_types
                                     .get(&(class_key.to_string(), attr_name.clone()))
                                     .cloned();
@@ -3395,6 +3400,7 @@ impl Interpreter {
                         } else {
                             // Check for `is Type` trait on this attribute
                             let is_type_val = self
+                                .registry()
                                 .class_attribute_is_types
                                 .get(&(declaring_class.clone(), attr_name.clone()))
                                 .cloned();
@@ -3610,7 +3616,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
     ) -> Vec<(String, MethodDef)> {
-        let composed = match self.class_composed_roles.get(class_name) {
+        let composed = match self.registry().class_composed_roles.get(class_name) {
             Some(roles) => roles.clone(),
             None => return Vec::new(),
         };
@@ -3968,7 +3974,7 @@ impl Interpreter {
             }
         }
         // Also check composed roles
-        if let Some(roles) = self.class_composed_roles.get(class_name)
+        if let Some(roles) = self.registry().class_composed_roles.get(class_name)
             && roles
                 .iter()
                 .any(|r| SETTY_BAGGY_TYPES.contains(&r.as_str()))
@@ -3997,7 +4003,7 @@ impl Interpreter {
                 return true;
             }
         }
-        if let Some(roles) = self.class_composed_roles.get(class_name)
+        if let Some(roles) = self.registry().class_composed_roles.get(class_name)
             && roles
                 .iter()
                 .any(|r| r == "Setty" || r == "Set" || r == "SetHash")
