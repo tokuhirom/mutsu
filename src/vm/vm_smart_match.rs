@@ -595,6 +595,7 @@ impl VM {
             )
         {
             let method_name = key.as_str();
+            // TODO: compile to bytecode — smartmatch key-method extraction (ledger §1).
             match self
                 .interpreter
                 .call_method_with_values(left.clone(), method_name, vec![])

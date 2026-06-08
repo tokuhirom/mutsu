@@ -412,6 +412,7 @@ impl VM {
             // Slice 6.3 step 2: precise env_dirty from the named-call merge.
         } else if self.interpreter.user_function_matches_call(&name, &args) {
             // A user-defined sub shadows a same-named builtin.
+            // TODO: compile to bytecode — builtin-shadowing user sub fork (ledger §2).
             crate::vm::vm_stats::record_function_fallback(&name);
             let result = self.interpreter.call_function_fallback(&name, &args)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
@@ -693,6 +694,8 @@ impl VM {
                     // User-defined multi candidates take priority over builtins.
                     // Call call_function_fallback directly to bypass the builtin match
                     // in call_function, which would shadow user-defined multi subs.
+                    // TODO: compile to bytecode — multi-dispatch sub fork, blocked-by:
+                    // VM-side multi-candidate resolution (ledger §2).
                     crate::vm::vm_stats::record_function_fallback(name);
                     self.interpreter.set_pending_call_arg_sources(arg_sources);
                     let result = self.interpreter.call_function_fallback(name, &args);
@@ -733,6 +736,9 @@ impl VM {
                     // EVAL/EVALFILE compile to bytecode and run on a sub-VM, and
                     // pseudo-package reads are reflective env lookups: the
                     // interpreter is a carrier here, not a tree-walk fallback.
+                    // CARRIER (is_interpreter_carrier_function) vs TODO: compile to
+                    // bytecode (else branch = true tree-walk function fallback). The
+                    // record_* split already tracks this at runtime. See ledger §2/§C.
                     if Self::is_interpreter_carrier_function(name) {
                         crate::vm::vm_stats::record_function_carrier(name);
                     } else {

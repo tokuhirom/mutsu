@@ -1153,6 +1153,8 @@ impl VM {
             .get(name)
             .cloned()
             .unwrap_or(Value::Nil);
+        // CARRIER: `.VAR` pseudo-method + `trait_mod:<is>` metaprogramming hook
+        // (reflective container object + user trait handler). See ledger §C.
         let var_obj = self
             .interpreter
             .call_method_mut_with_values(name, target, "VAR", vec![])?;
@@ -1644,6 +1646,8 @@ impl VM {
         // If `done;` was called in the react body, skip the event loop —
         // the body already signaled that no further events should be processed.
         let body_done = matches!(&run_result, Err(e) if e.is_react_done);
+        // TODO: compile to bytecode — react/supply event loop, blocked-by: async
+        // state ownership (lever B). See ledger §1.
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak
             self.interpreter.run_react_event_loop_drain();

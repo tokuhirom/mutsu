@@ -345,6 +345,8 @@ impl VM {
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
 
+        // TODO: compile to bytecode — Routine value dispatch (the call_function /
+        // call_method_with_values sites in this block). See ledger §1.
         // Routine: resolve to function name and dispatch
         // Keep using interpreter.call_function here because Routine values may
         // reference builtin functions (e.g. &SETTING::not resolves to Routine{name:"not"})

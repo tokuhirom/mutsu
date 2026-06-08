@@ -221,6 +221,7 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert(temp_name.clone(), item.clone());
+        // TODO: compile to bytecode — hyper method call over a temp-bound item (ledger §1).
         let result =
             self.interpreter
                 .call_method_mut_with_values(&temp_name, item.clone(), method, args)?;

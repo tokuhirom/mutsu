@@ -329,6 +329,8 @@ impl VM {
         target_name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let target_name = Self::const_str(code, target_name_idx);
+        // TODO: compile to bytecode — shared-array push, blocked-by: lever B
+        // (threaded shared-cell ownership). See ledger §1.
         // Fall back to interpreter for shared arrays (threaded context)
         if self.interpreter.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::Nil);
@@ -345,6 +347,8 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // TODO: compile to bytecode — shaped-array push, blocked-by: shaped
+        // dimension metadata check in VM. See ledger §1.
         // Check for shaped arrays — must fall back to interpreter
         // (push is illegal on fixed-dimension arrays)
         if let Some(Value::Array(_, kind)) = self.interpreter.env().get(target_name)
@@ -380,6 +384,9 @@ impl VM {
             return Ok(());
         }
 
+        // TODO: compile to bytecode — non-simple-target push, blocked-by:
+        // first-class container identity Phase 2 (closure-captured ContainerRef
+        // arrays). See ledger §1.
         // Check the target exists as a simple Array in env.
         // If not (e.g., captured closure var, or non-Array), fall back to interpreter.
         let is_simple_array = self

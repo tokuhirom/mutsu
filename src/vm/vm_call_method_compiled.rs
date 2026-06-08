@@ -159,12 +159,14 @@ impl VM {
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             if self.interpreter.is_native_method(&class, method) {
+                // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self
                     .interpreter
                     .call_method_with_values(target, method, args);
             }
         }
+        // CARRIER: MOP pseudo-methods (reflection; no bytecode form). See ledger §C.
         // Pseudo-methods must always go through the interpreter which handles
         // them specially — never intercept via the compiled fast path.
         if matches!(
@@ -267,6 +269,7 @@ impl VM {
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
+                // CARRIER: user-defined ^metamethod dispatch (MOP). See ledger §C.
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self
                     .interpreter
@@ -421,6 +424,8 @@ impl VM {
         if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
+        // TODO: compile to bytecode — generic Instance/Buf/Failure method fork,
+        // the primary remaining tree-walk method dispatch (ledger §1).
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
@@ -622,6 +627,7 @@ impl VM {
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             if self.interpreter.is_native_method(&class, method) {
+                // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self.interpreter.call_method_mut_with_values(
                     target_name,
@@ -635,6 +641,7 @@ impl VM {
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
         ) {
+            // CARRIER: MOP pseudo-methods, mut (reflection). See ledger §C.
             crate::vm::vm_stats::record_method_fallback(method);
             return self
                 .interpreter
@@ -656,6 +663,7 @@ impl VM {
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
+                // CARRIER: user-defined ^metamethod dispatch, mut (MOP). See ledger §C.
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self
                     .interpreter
@@ -846,6 +854,7 @@ impl VM {
         if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
+        // TODO: compile to bytecode — generic Instance/Buf/Failure method fork, mut (ledger §1).
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_mut_with_values(target_name, target, method, args)

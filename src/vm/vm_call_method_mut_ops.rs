@@ -300,6 +300,7 @@ impl VM {
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)?
         } else {
+            // TODO: compile to bytecode — generic mut method fork (ledger §1).
             self.interpreter
                 .call_method_mut_with_values(&target_name, target, &method, args)?
         };
@@ -1209,6 +1210,8 @@ impl VM {
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
                         // Perform the operation on the backing array
+                        // TODO: compile to bytecode — Array-backed instance method
+                        // (push/pop/shift on `is Array` storage). See ledger §1.
                         crate::vm::vm_stats::record_method_fallback(&method);
                         let result = self
                             .interpreter

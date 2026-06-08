@@ -97,7 +97,10 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
       ＝生きた Instance/Buf/Failure メソッド fork）、`run_instance_method`（`class.rs` ＝ユーザー定義クラスメソッド）、
       `call_function`/`call_function_fallback`（`vm_call_func_ops.rs`/`vm_call_dispatch.rs`）、`run_react_event_loop` を
       VM ネイティブ実行に置換。**残すフォールバックには規約どおり `// TODO: compile to bytecode` を付与**（現状 VM ツリー
-      に 0 件 ＝ 負債が不可視。まず可視化する）。
+      に 0 件 ＝ 負債が不可視。まず可視化する）。**可視化済み（2026-06-08）**: 全サイトを `// TODO: compile to bytecode`
+      （真フォールバック）/ `// CARRIER:`（反射・MOP・EVAL・メタプロ hook）で注釈し、進捗台帳
+      [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) を新設。同 PR で `succ`/`pred` を
+      統一 compiled-first ディスパッチへ降ろし §1 から 2 サイト消化。以後は台帳の行を消す形で進める。
 - [ ] **② 宣言の実行を VM 所有レジストリへ**: `class`/`role`/`enum`/`subset`/`token`/`sub`/`method` は現在
       `Register*` opcode が `interpreter.register_*_decl()` を呼び、クラスシステム・MRO・role 合成が Interpreter 側。
       これらのレジストリを VM 所有データへ移す（②は③の前提）。
