@@ -179,12 +179,41 @@ dual-store は [vm-dual-store.md](vm-dual-store.md)。
   既に owned clone 後の純メモリ処理で registry-read は本 slice で集約済み。次は **PR-C**（register_* の
   write-through 整理）。
 
-## 完了の定義（②）— **PR-A 完了（slice 1-5, #2760/2762/2763/2764/本PR）**
+## PR-C（write-through 整理）進捗 — **②完了**
+
+- **再入跨ぎ guard 無しを *実行時* 保証（本 PR の核心）**: 従来 `registry()`/`registry_mut()` は std の
+  `RwLockReadGuard`/`RwLockWriteGuard` を直接返していたため、再入で同一ロックを再取得すると**サイレントに
+  デッドロック**し、make roast の ~13 分タイムアウトでしか捕捉できなかった。静的スキャナはコード形状の盲点が
+  あり（PR-A slice 5 の `match self.registry_mut()...{}` arm 内 write→write は借用チェッカ・スキャナ双方を
+  すり抜けて実行時ハング）。本 PR で `registry()`/`registry_mut()` を**再入検出ラッパ guard**
+  （`RegistryReadGuard`/`RegistryWriteGuard`、`src/runtime/registry.rs`）へ差し替え:
+  - debug ビルドのみ、取得直前に thread-local の保持状況を検査し、**`.read()`/`.write()` のブロッキング呼び出し
+    の手前**で位置付き panic（デッドロックする代わりに即・明示的に落ちる）。
+  - **ロックのアドレスでキー付け**（thread-global ではない）。単一スレッドが*別の*レジストリの guard を同時保持
+    する正当ケース（`self.registry_mut().classes = nested.registry().classes.clone();` ＝ self の write guard と
+    sub-interpreter `nested` の read guard。別ロックなのでデッドロックしない）を誤検出しないため。
+  - 許可/禁止行列は std `RwLock` の実デッドロック条件に一致: 同一ロックで write-while-any / read-while-write は
+    panic、read-while-read（nested read。`a().x && b().y` で両 temporary guard が文末まで生存）は許容。
+  - release は `#[cfg(debug_assertions)]` で完全に消える（ホット `registry()` read 経路に thread-local bookkeeping を
+    乗せない）。CI の release make roast はタイムアウトが最終防衛線のまま。
+  - 検証: debug バイナリで t/ + S10/S11/S12/S14/S05/S04 等 6000+ ファイル実行・**再入 panic ゼロ**（false-positive
+    無し、潜在再入バグ無し）。threading（start/promise/channel）も clean。
+- **write-through 整理（register_class_decl）**: 連続する再入無し write/read クラスタを単一 guard ブロックへ集約し
+  ロック取得回数を削減＋「この区間は guard 保持＝再入禁止」境界を構文で明示。① prologue の prev_* 5 read を
+  単一 read guard ブロックへ（全て owned/cloned）。② `restore_previous_state` ロールバッククロージャの 10 個の
+  `this.registry_mut()` を単一 write guard へ（本体に再入無し）。③ stub クリアの `class_stubs.remove` +
+  `package_stubs.remove` 連続 2 write を単一 write guard へ。上記の実行時 guard が安全性を担保（誤って read 保持中に
+  クロージャを呼べば即 panic するが、6000+ 実行で発火せず＝呼び出し点に held guard 無しを確認）。
+- **台帳注釈**: `docs/vm-interpreter-fallback-ledger.md` 進捗ログに②抽出フェーズ完了＋登録が実行をトリガする
+  CARRIER 性を記録。
+
+## 完了の定義（②）— **PR-A/B/C 完了（#2760/2762/2763/2764/2767/2769/2772/本PR）**
 
 `Interpreter` から宣言レジストリ全フィールドが消え `registry: Arc<RwLock<Registry>>` 1 本に。`clone_for_thread`
 のレジストリ複製は registry 全体 clone 1 行のみ（個別フィールド clone ゼロ、snapshot 不変）。VM の registry 系
-lookup は accessor 経由（多くは既に owned 返し）。**PR-B**（lookup/MRO/型マッチを Registry メソッド化、上記
-進捗）→ **PR-C**（register_* の write-through 整理）→ ③（env/型/state 移管）。
+lookup は accessor 経由（多くは既に owned 返し）。**PR-A**（抽出）→ **PR-B**（lookup/MRO/型マッチを Registry
+メソッド化）→ **PR-C**（register_* の write-through 整理＋再入跨ぎ guard 無しを実行時 guard で保証）まで全完了。
+**次は ③**（env/型/state 移管＝interpreter ブリッジ撤去の最大の山）。
 
 ## 非ゴール
 

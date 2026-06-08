@@ -101,7 +101,8 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
       （真フォールバック）/ `// CARRIER:`（反射・MOP・EVAL・メタプロ hook）で注釈し、進捗台帳
       [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) を新設。同 PR で `succ`/`pred` を
       統一 compiled-first ディスパッチへ降ろし §1 から 2 サイト消化。以後は台帳の行を消す形で進める。
-- [~] **② 宣言レジストリの VM 所有化**（設計確定: [docs/vm-registry-ownership.md](docs/vm-registry-ownership.md)）:
+- [x] **② 宣言レジストリの VM 所有化 — 完了（PR-A/B/C）**（設計: [docs/vm-registry-ownership.md](docs/vm-registry-ownership.md)）。
+      Arc<RwLock<Registry>>→plain field の最終畳み込みは Interpreter 撤去後（④/⑤）。次の戦略主作業は ③:
       `class`/`role`/`enum`/`subset`/`token`/`sub` は現在 `Register*` opcode が `interpreter.register_*_decl()` を
       呼び、レジストリ・MRO・role 合成が Interpreter 側。これらの宣言レジストリ ~30 フィールドを `Interpreter` から
       切り出し、**遷移期は `Arc<RwLock<Registry>>` 足場**（VM と Interpreter が対等に共有。`Rc<RefCell>` は
@@ -115,10 +116,14 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             から宣言レジストリが消え `clone_for_thread` は registry 全体 clone 1 行のみ（個別 clone ゼロ・snapshot 不変）。
             参照返却アクセサは owned 化。再入安全規律（read→write/write→write 同一ロック deadlock を複数発見・修正、
             Python ブレース対応スキャナ＋make roast タイムアウトで検出）を確立。詳細は docs/vm-registry-ownership.md。
-      - [ ] **PR-B（read 側）**: lookup/MRO/型マッチの registry 読み部を Registry メソッド化し、VM の read サイトを
-            `self.registry.read()` 直読みへ。台帳 §2 の関数 dispatch fallback（multi/sub 解決）撲滅の前提。
-      - [ ] **PR-C（write-through）**: `register_*_decl` の registry 書き込みを write-lock ブロックへ整理、再入跨ぎ
-            guard 無しを保証、台帳注釈更新。これで②完了→③（env/型/state 移管）へ。
+      - [x] **PR-B 完了（read 側, #2769/#2772）**: lookup/MRO/型マッチの registry 読み部を `impl Registry` の pure
+            メソッド化（`compute_class_mro`/`class_mro`/`get_method_overloads`/`composed_roles_seed` 等）。VM の
+            registry アクセスは accessor 経由（多くは owned 返し）。台帳 §2 の関数 dispatch fallback 撲滅の前提が整った。
+      - [x] **PR-C 完了（write-through）**: `register_class_decl` の連続 write/read クラスタを単一 guard ブロックへ整理
+            （prologue 5-read snapshot / `restore_previous_state` クロージャ / stub クリア）。**再入跨ぎ guard 無しを
+            実行時 guard で保証**: `registry()`/`registry_mut()` を再入検出ラッパ（debug 限定・ロックアドレスでキー付け）へ
+            差し替え、同一ロック再取得を `.read()`/`.write()` 手前で位置付き panic（サイレントデッドロックを即・明示化）。
+            台帳に②抽出/read/write-through 完了＋登録の CARRIER 性を記録。**②完了 → 次は ③（env/型/state 移管）**。
 - [ ] **③ VM が借用している Interpreter 状態を VM 所有へ移管**: env HashMap（変数ストア本体）・classes/roles/enums
       レジストリ・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・`let`/`temp` 復元・multi 解決・
       state 変数・`current_package`。これが移れば **interpreter ブリッジ自体が不要**になる。最大の山。

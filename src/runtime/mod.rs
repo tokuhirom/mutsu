@@ -5084,16 +5084,20 @@ impl Interpreter {
     /// guard — NEVER `let`-bind it across a call that re-enters user-code
     /// execution (`eval_block_value`/`run_block_raw`/`call_function`): `RwLock`
     /// is not reentrant and would deadlock. Use as `self.registry().subsets...`.
+    ///
+    /// In debug builds the returned guard detects a re-entrant lock attempt on
+    /// this thread and panics with a located message instead of deadlocking (see
+    /// [`RegistryReadGuard`](crate::runtime::registry::RegistryReadGuard)).
     #[inline]
-    pub(crate) fn registry(&self) -> std::sync::RwLockReadGuard<'_, Registry> {
-        self.registry.read().unwrap()
+    pub(crate) fn registry(&self) -> crate::runtime::registry::RegistryReadGuard<'_> {
+        crate::runtime::registry::RegistryReadGuard::new(&self.registry)
     }
 
     /// Write access to the shared declaration [`Registry`]. Same guard discipline
     /// as [`Self::registry`].
     #[inline]
-    pub(crate) fn registry_mut(&self) -> std::sync::RwLockWriteGuard<'_, Registry> {
-        self.registry.write().unwrap()
+    pub(crate) fn registry_mut(&self) -> crate::runtime::registry::RegistryWriteGuard<'_> {
+        crate::runtime::registry::RegistryWriteGuard::new(&self.registry)
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
