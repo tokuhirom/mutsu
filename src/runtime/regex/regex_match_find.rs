@@ -419,15 +419,13 @@ impl Interpreter {
     ) -> Option<usize> {
         let mut interp = Interpreter {
             env: self.env.clone(),
-            functions: self.functions.clone(),
-            proto_functions: self.proto_functions.clone(),
-            token_defs: self.token_defs.clone(),
             current_package: pkg.to_string(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             var_type_constraints: self.var_type_constraints.clone(),
             state_vars: self.state_vars.clone(),
             ..Default::default()
         };
+        self.copy_decl_registry_into(&mut interp);
         interp.regex_match_len_at_start(pattern, text)
     }
 }

@@ -37,7 +37,12 @@ impl Interpreter {
     pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
             // Try direct lookup first
-            if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
+            if let Some(def) = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(name))
+                .cloned()
+            {
                 return Some(def);
             }
             // If not found, try qualifying with the current package prefix
@@ -54,7 +59,12 @@ impl Interpreter {
                 };
                 if prefix_visible {
                     let qualified = format!("{}::{}", self.current_package, name);
-                    if let Some(def) = self.functions.get(&Symbol::intern(&qualified)).cloned() {
+                    if let Some(def) = self
+                        .registry()
+                        .functions
+                        .get(&Symbol::intern(&qualified))
+                        .cloned()
+                    {
                         return Some(def);
                     }
                 }
@@ -62,11 +72,13 @@ impl Interpreter {
             return None;
         }
         let local = format!("{}::{}", self.current_package, name);
-        self.functions
+        self.registry()
+            .functions
             .get(&Symbol::intern(&local))
             .cloned()
             .or_else(|| {
-                self.functions
+                self.registry()
+                    .functions
                     .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
                     .cloned()
             })
@@ -75,9 +87,13 @@ impl Interpreter {
     pub(super) fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
         let key = Symbol::intern(&format!("{}::{}", self.current_package, name));
         if multi {
-            self.token_defs.entry(key).or_default().push(def);
+            self.registry_mut()
+                .token_defs
+                .entry(key)
+                .or_default()
+                .push(def);
         } else {
-            self.token_defs.insert(key, vec![def]);
+            self.registry_mut().token_defs.insert(key, vec![def]);
         }
     }
 
@@ -89,12 +105,13 @@ impl Interpreter {
         defs: &mut Vec<FunctionDef>,
     ) {
         let exact_key = format!("{scope}::{name}");
-        if let Some(exact) = self.token_defs.get(&Symbol::intern(&exact_key)) {
+        if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
             defs.extend(exact.clone());
         }
         let sym_prefix_angle = format!("{scope}::{name}:sym<");
         let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
         let mut sym_keys: Vec<String> = self
+            .registry()
             .token_defs
             .keys()
             .map(|key| key.resolve())
@@ -102,7 +119,7 @@ impl Interpreter {
             .collect();
         sym_keys.sort();
         for key in &sym_keys {
-            if let Some(sym_defs) = self.token_defs.get(&Symbol::intern(key)) {
+            if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                 defs.extend(sym_defs.clone());
             }
         }
@@ -139,12 +156,13 @@ impl Interpreter {
     pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
             let mut defs = Vec::new();
-            if let Some(exact) = self.token_defs.get(&Symbol::intern(name)) {
+            if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());
             }
             let sym_prefix_angle = format!("{name}:sym<");
             let sym_prefix_french = format!("{name}:sym\u{ab}");
             let mut sym_keys: Vec<String> = self
+                .registry()
                 .token_defs
                 .keys()
                 .map(|key| key.resolve())
@@ -154,7 +172,7 @@ impl Interpreter {
                 .collect();
             sym_keys.sort();
             for key in &sym_keys {
-                if let Some(sym_defs) = self.token_defs.get(&Symbol::intern(key)) {
+                if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                     defs.extend(sym_defs.clone());
                 }
             }
@@ -194,7 +212,7 @@ impl Interpreter {
 
     pub(crate) fn has_proto_token(&self, name: &str) -> bool {
         if name.contains("::") {
-            if self.proto_tokens.contains(name) {
+            if self.registry().proto_tokens.contains(name) {
                 return true;
             }
             // Walk MRO for qualified names
@@ -206,6 +224,7 @@ impl Interpreter {
                         continue;
                     }
                     if self
+                        .registry()
                         .proto_tokens
                         .contains(&format!("{ancestor}::{token_name}"))
                     {
@@ -217,11 +236,17 @@ impl Interpreter {
         }
         // Check current package MRO
         for scope in self.mro_readonly(&self.current_package) {
-            if self.proto_tokens.contains(&format!("{scope}::{name}")) {
+            if self
+                .registry()
+                .proto_tokens
+                .contains(&format!("{scope}::{name}"))
+            {
                 return true;
             }
         }
-        self.proto_tokens.contains(&format!("GLOBAL::{}", name))
+        self.registry()
+            .proto_tokens
+            .contains(&format!("GLOBAL::{}", name))
     }
 
     pub(super) fn resolve_method(
@@ -1773,9 +1798,9 @@ impl Interpreter {
             return Ok(Value::Nil);
         }
         let let_mark = self.let_saves_len();
-        let saved_functions = self.functions.clone();
-        let saved_proto_subs = self.proto_subs.clone();
-        let saved_proto_functions = self.proto_functions.clone();
+        let saved_functions = self.registry().functions.clone();
+        let saved_proto_subs = self.registry().proto_subs.clone();
+        let saved_proto_functions = self.registry().proto_functions.clone();
         let saved_operator_assoc = self.operator_assoc.clone();
         let saved_code_env: std::collections::HashMap<Symbol, Value> = self
             .env
@@ -1826,9 +1851,9 @@ impl Interpreter {
         };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
         // Sub/proto declarations in block scope are lexical; restore registries on block exit.
-        self.functions = saved_functions;
-        self.proto_subs = saved_proto_subs;
-        self.proto_functions = saved_proto_functions;
+        self.registry_mut().functions = saved_functions;
+        self.registry_mut().proto_subs = saved_proto_subs;
+        self.registry_mut().proto_functions = saved_proto_functions;
         self.operator_assoc = saved_operator_assoc;
         self.env
             .retain(|k, _| !(k.starts_with("&") || k.starts_with("__mutsu_callable_id::")));

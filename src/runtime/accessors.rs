@@ -1118,12 +1118,14 @@ impl Interpreter {
         let def = self.resolve_function(lookup_name).or_else(|| {
             if has_packages {
                 let fq = format!("{}::{}", self.current_package, lookup_name);
-                self.our_scoped_functions
+                self.registry()
+                    .our_scoped_functions
                     .get(&Symbol::intern(&fq))
                     .cloned()
                     .or_else(|| {
                         let global_fq = format!("GLOBAL::{}", lookup_name);
-                        self.our_scoped_functions
+                        self.registry()
+                            .our_scoped_functions
                             .get(&Symbol::intern(&global_fq))
                             .cloned()
                     })
@@ -1135,7 +1137,7 @@ impl Interpreter {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
             let prefix_local = format!("{}::{}/", self.current_package, lookup_name);
             let prefix_global = format!("GLOBAL::{}/", lookup_name);
-            self.functions.keys().any(|k| {
+            self.registry().functions.keys().any(|k| {
                 let ks = k.resolve();
                 ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
             })
@@ -1515,6 +1517,7 @@ impl Interpreter {
         let prefix = format!("{package}::");
         self.env.keys().any(|k| k.starts_with(&prefix))
             || self
+                .registry()
                 .functions
                 .keys()
                 .any(|k| k.resolve().starts_with(&prefix))
@@ -1823,7 +1826,7 @@ impl Interpreter {
             }
         }
 
-        for (key, def) in &self.functions {
+        for (key, def) in &self.registry().functions {
             let key_s = key.resolve();
             let Some(rest) = Self::stash_member_tail(&key_s, &package_name) else {
                 continue;
@@ -1987,13 +1990,15 @@ impl Interpreter {
     }
 
     pub(crate) fn snapshot_routine_registry(&self) -> RoutineRegistrySnapshot {
+        // Single guard for all six reads (avoids stacking read guards).
+        let registry = self.registry();
         (
-            self.functions.clone(),
-            self.proto_functions.clone(),
-            self.token_defs.clone(),
-            self.proto_subs.clone(),
-            self.proto_tokens.clone(),
-            self.our_scoped_functions.keys().copied().collect(),
+            registry.functions.clone(),
+            registry.proto_functions.clone(),
+            registry.token_defs.clone(),
+            registry.proto_subs.clone(),
+            registry.proto_tokens.clone(),
+            registry.our_scoped_functions.keys().copied().collect(),
         )
     }
 
@@ -2017,36 +2022,42 @@ impl Interpreter {
         // of our_scoped_functions keys that existed at snapshot time.
         let current_pkg = self.current_package.clone();
         let mut new_our: Vec<(Symbol, FunctionDef)> = Vec::new();
-        for (key, def) in &self.our_scoped_functions {
-            if functions.contains_key(key) {
-                continue;
-            }
-            let def_pkg = def.package.resolve();
-            // Always preserve same-package subs (original behavior).
-            if def_pkg == current_pkg {
-                new_our.push((*key, def.clone()));
-                continue;
-            }
-            // Also preserve subs that were newly added to our_scoped_functions
-            // during this block (i.e. their key was not in the snapshot). This
-            // covers nested `package Foo { our sub bar {} }` blocks. Subs from
-            // module loading (`use Foo`) are typically already in the snapshot
-            // by the time the block is restored, so they are not preserved here.
-            if !our_scoped_keys.contains(key) {
-                new_our.push((*key, def.clone()));
+        // Collect under a read guard, which drops before the writes below
+        // (read->write on the same lock would deadlock).
+        {
+            let registry = self.registry();
+            for (key, def) in &registry.our_scoped_functions {
+                if functions.contains_key(key) {
+                    continue;
+                }
+                let def_pkg = def.package.resolve();
+                // Always preserve same-package subs (original behavior).
+                if def_pkg == current_pkg {
+                    new_our.push((*key, def.clone()));
+                    continue;
+                }
+                // Also preserve subs that were newly added to our_scoped_functions
+                // during this block (i.e. their key was not in the snapshot). This
+                // covers nested `package Foo { our sub bar {} }` blocks. Subs from
+                // module loading (`use Foo`) are typically already in the snapshot
+                // by the time the block is restored, so they are not preserved here.
+                if !our_scoped_keys.contains(key) {
+                    new_our.push((*key, def.clone()));
+                }
             }
         }
-        self.functions = functions;
-        self.proto_functions = proto_functions;
-        self.token_defs = token_defs;
-        self.proto_subs = proto_subs;
-        self.proto_tokens = proto_tokens;
+        let mut registry = self.registry_mut();
+        registry.functions = functions;
+        registry.proto_functions = proto_functions;
+        registry.token_defs = token_defs;
+        registry.proto_subs = proto_subs;
+        registry.proto_tokens = proto_tokens;
         // Re-apply only newly added our-scoped functions so they survive block scope exit.
         // In EVAL context, our-scoped functions should NOT leak into the outer lexical
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
         if !is_eval {
             for (key, def) in new_our {
-                self.functions.insert(key, def);
+                registry.functions.insert(key, def);
             }
         }
     }

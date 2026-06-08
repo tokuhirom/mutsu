@@ -26,6 +26,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::ast::FunctionDef;
+use crate::symbol::Symbol;
 use crate::value::{EnumValue, Value};
 
 use super::{ClassDef, RoleCandidateDef, RoleDef, SubsetDef};
@@ -100,4 +102,20 @@ pub(crate) struct Registry {
     pub(crate) role_type_params: HashMap<String, Vec<String>>,
     /// Bound role type parameters per class: class -> (param name -> value).
     pub(crate) class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
+
+    // ----- functions / subs / tokens (PR-A slice 5, final PR-A slice) -----
+    /// User-defined subs: fully-qualified name -> [`FunctionDef`]. Read on the
+    /// sub/multi-dispatch hot path; callers clone the matched `FunctionDef`
+    /// (already the prior behavior) under a short-lived guard.
+    pub(crate) functions: HashMap<Symbol, FunctionDef>,
+    /// `our`-scoped subs that persist across block boundaries.
+    pub(crate) our_scoped_functions: HashMap<Symbol, FunctionDef>,
+    /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
+    pub(crate) proto_functions: HashMap<Symbol, FunctionDef>,
+    /// Grammar token/rule definitions: name -> [overloads].
+    pub(crate) token_defs: HashMap<Symbol, Vec<FunctionDef>>,
+    /// `proto sub` declaration markers (existence set).
+    pub(crate) proto_subs: HashSet<String>,
+    /// `proto token`/`proto rule` declaration markers (existence set).
+    pub(crate) proto_tokens: HashSet<String>,
 }

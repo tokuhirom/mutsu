@@ -357,7 +357,7 @@ impl Interpreter {
 
         let mut restore_always: HashMap<String, Option<Value>> = HashMap::new();
         let mut restore_on_fail: HashMap<String, Option<Value>> = HashMap::new();
-        let saved_token_defs = self.token_defs.clone();
+        let saved_token_defs = self.registry().token_defs.clone();
 
         for (decl_name, stmt_src) in declarators {
             let before_env = self.env.clone();
@@ -409,13 +409,13 @@ impl Interpreter {
             if !handled_state_postfix && !handled_direct_assign {
                 let eval_src = stmt_src.clone();
                 let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&eval_src) else {
-                    self.token_defs = saved_token_defs;
+                    self.registry_mut().token_defs = saved_token_defs;
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
                     return None;
                 };
                 if self.eval_block_value(&stmts).is_err() {
-                    self.token_defs = saved_token_defs;
+                    self.registry_mut().token_defs = saved_token_defs;
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
                     return None;
@@ -450,7 +450,7 @@ impl Interpreter {
 
         let result = self.regex_match_with_captures_core(&remaining_pattern, text);
         let matched = result.is_some();
-        self.token_defs = saved_token_defs;
+        self.registry_mut().token_defs = saved_token_defs;
         self.restore_env_entries(restore_always);
         if !matched {
             self.restore_env_entries(restore_on_fail);

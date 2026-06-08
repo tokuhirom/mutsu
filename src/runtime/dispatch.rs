@@ -636,18 +636,26 @@ impl Interpreter {
     ) -> Option<FunctionDef> {
         if name.contains("::") {
             let multi_key = format!("{}/{}", name, arity);
-            if let Some(def) = self.functions.get(&Symbol::intern(&multi_key)) {
+            if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_key)) {
                 return Some(def.clone());
             }
-            return self.functions.get(&Symbol::intern(name)).cloned();
+            return self
+                .registry()
+                .functions
+                .get(&Symbol::intern(name))
+                .cloned();
         }
         // Try multi-dispatch with arity first
         let multi_local = format!("{}::{}/{}", self.current_package, name, arity);
-        if let Some(def) = self.functions.get(&Symbol::intern(&multi_local)) {
+        if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_local)) {
             return Some(def.clone());
         }
         let multi_global = format!("GLOBAL::{}/{}", name, arity);
-        if let Some(def) = self.functions.get(&Symbol::intern(&multi_global)) {
+        if let Some(def) = self
+            .registry()
+            .functions
+            .get(&Symbol::intern(&multi_global))
+        {
             return Some(def.clone());
         }
         // Fall back to regular lookup
@@ -665,7 +673,12 @@ impl Interpreter {
             .filter(|v| !matches!(v, Value::Pair(..)))
             .count();
         if name.contains("::") {
-            if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
+            if let Some(def) = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(name))
+                .cloned()
+            {
                 // Block access to my-scoped (non-our) package items from outside
                 // their declaring package.
                 if self.is_my_scoped_package_item(name)
@@ -684,6 +697,7 @@ impl Interpreter {
             let untyped_key_sym = Symbol::intern(&untyped_key);
             let untyped_m_prefix = format!("{}__m", untyped_key);
             let mut candidates: Vec<(String, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(key, _)| {
@@ -705,6 +719,7 @@ impl Interpreter {
             // separately (across all arities under `name/`) and dispatch on them.
             let subsig_prefix = format!("{}/", name);
             let mut subsig_candidates: Vec<(String, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(key, def)| {
@@ -721,7 +736,12 @@ impl Interpreter {
                     return Some(def);
                 }
             }
-            if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
+            if let Some(def) = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(name))
+                .cloned()
+            {
                 if !self.is_my_scoped_package_item(name) {
                     return Some(def);
                 } else if let Some((pkg_prefix, _)) = name.rsplit_once("::")
@@ -752,7 +772,12 @@ impl Interpreter {
                 };
                 if prefix_visible {
                     let qualified = format!("{}::{}", self.current_package, name);
-                    if let Some(def) = self.functions.get(&Symbol::intern(&qualified)).cloned() {
+                    if let Some(def) = self
+                        .registry()
+                        .functions
+                        .get(&Symbol::intern(&qualified))
+                        .cloned()
+                    {
                         return Some(def);
                     }
                     let q_prefix = format!("{qualified}/{arity}:");
@@ -760,6 +785,7 @@ impl Interpreter {
                     let q_untyped_key_sym = Symbol::intern(&q_untyped_key);
                     let q_untyped_m_prefix = format!("{}__m", q_untyped_key);
                     let mut q_candidates: Vec<(String, FunctionDef)> = self
+                        .registry()
                         .functions
                         .iter()
                         .filter(|(key, _)| {
@@ -781,11 +807,21 @@ impl Interpreter {
             return None;
         }
         let exact_local = format!("{}::{}", self.current_package, name);
-        if let Some(def) = self.functions.get(&Symbol::intern(&exact_local)).cloned() {
+        if let Some(def) = self
+            .registry()
+            .functions
+            .get(&Symbol::intern(&exact_local))
+            .cloned()
+        {
             return Some(def);
         }
         let exact_global = format!("GLOBAL::{}", name);
-        if let Some(def) = self.functions.get(&Symbol::intern(&exact_global)).cloned() {
+        if let Some(def) = self
+            .registry()
+            .functions
+            .get(&Symbol::intern(&exact_global))
+            .cloned()
+        {
             return Some(def);
         }
         let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
@@ -796,6 +832,7 @@ impl Interpreter {
         ];
         let mut found_multi_candidates = false;
         let mut candidates: Vec<(String, FunctionDef)> = self
+            .registry()
             .functions
             .iter()
             .filter(|(key, _)| {
@@ -808,6 +845,7 @@ impl Interpreter {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
             let more: Vec<(String, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
@@ -829,6 +867,7 @@ impl Interpreter {
             format!("GLOBAL::{}/", name),
         ];
         let mut optional_candidates: Vec<(String, FunctionDef)> = self
+            .registry()
             .functions
             .iter()
             .filter(|(k, def)| {
@@ -868,6 +907,7 @@ impl Interpreter {
             format!("GLOBAL::{}/", name),
         ];
         let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
+            .registry()
             .functions
             .iter()
             .filter(|(k, def)| {
@@ -895,6 +935,7 @@ impl Interpreter {
             format!("GLOBAL::{name}/"),
         ];
         let mut any_arity_candidates: Vec<(String, FunctionDef)> = self
+            .registry()
             .functions
             .iter()
             .filter(|(k, _)| {
@@ -940,6 +981,7 @@ impl Interpreter {
             format!("GLOBAL::{}/{}:", name, arity),
         ] {
             let candidates: Vec<FunctionDef> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(key, _)| key.resolve().starts_with(&prefix_base))
@@ -961,6 +1003,7 @@ impl Interpreter {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
             let mut candidates: Vec<(String, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
@@ -994,6 +1037,7 @@ impl Interpreter {
             format!("GLOBAL::{}/", name),
         ];
         let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
+            .registry()
             .functions
             .iter()
             .filter(|(k, def)| {
@@ -1034,6 +1078,7 @@ impl Interpreter {
         let mut seen_fps = Vec::new();
         for prefix in &prefixes {
             let candidates: Vec<FunctionDef> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| k.resolve().starts_with(prefix.as_str()))
@@ -1168,13 +1213,15 @@ impl Interpreter {
 
     pub(crate) fn has_proto(&self, name: &str) -> bool {
         if name.contains("::") {
-            return self.proto_subs.contains(name);
+            return self.registry().proto_subs.contains(name);
         }
         let local = format!("{}::{}", self.current_package, name);
-        if self.proto_subs.contains(&local) {
+        if self.registry().proto_subs.contains(&local) {
             return true;
         }
-        self.proto_subs.contains(&format!("GLOBAL::{}", name))
+        self.registry()
+            .proto_subs
+            .contains(&format!("GLOBAL::{}", name))
     }
 
     /// Check if any multi candidates exist for this function name (any arity).
@@ -1183,7 +1230,7 @@ impl Interpreter {
             format!("{}::{}/", self.current_package, name),
             format!("GLOBAL::{}/", name),
         ];
-        self.functions.keys().any(|k| {
+        self.registry().functions.keys().any(|k| {
             let ks = k.resolve();
             prefixes.iter().any(|p| ks.starts_with(p))
         })
@@ -1209,13 +1256,18 @@ impl Interpreter {
 
     pub(super) fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
-            return self.proto_functions.get(&Symbol::intern(name)).cloned();
+            return self
+                .registry()
+                .proto_functions
+                .get(&Symbol::intern(name))
+                .cloned();
         }
         let local = format!("{}::{}", self.current_package, name);
-        if let Some(def) = self.proto_functions.get(&Symbol::intern(&local)) {
+        if let Some(def) = self.registry().proto_functions.get(&Symbol::intern(&local)) {
             return Some(def.clone());
         }
-        self.proto_functions
+        self.registry()
+            .proto_functions
             .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
             .cloned()
     }
@@ -1431,6 +1483,7 @@ impl Interpreter {
         ];
         // Collect all candidates (typed + generic) like resolve_function_with_types
         let mut candidates: Vec<(String, FunctionDef)> = self
+            .registry()
             .functions
             .iter()
             .filter(|(key, _)| {
@@ -1443,6 +1496,7 @@ impl Interpreter {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
             let more: Vec<(String, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
@@ -1498,6 +1552,7 @@ impl Interpreter {
             let untyped_key_sym = Symbol::intern(&untyped_key);
             let untyped_m_prefix = format!("{}__m", untyped_key);
             let mut candidates: Vec<(String, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter(|(key, _)| {
@@ -1537,7 +1592,7 @@ impl Interpreter {
         let global_prefix = format!("GLOBAL::{}/", name);
         let bare_prefix = format!("{}/", name);
         let mut seen_sigs = std::collections::HashSet::new();
-        for (key, def) in &self.functions {
+        for (key, def) in &self.registry().functions {
             let ks = key.resolve();
             if !ks.starts_with(&local_prefix)
                 && !ks.starts_with(&global_prefix)

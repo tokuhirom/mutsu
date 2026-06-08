@@ -128,7 +128,7 @@ impl Interpreter {
         }
         // Check grammar token/rule/regex definitions
         let token_key = format!("{}::{}", class_name_str, method_name);
-        if let Some(defs) = self.token_defs.get(&Symbol::intern(&token_key))
+        if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))
             && !defs.is_empty()
         {
             return Some(Value::Routine {
@@ -1310,7 +1310,8 @@ impl Interpreter {
 
     pub(super) fn package_looks_like_grammar(&self, package_name: &str) -> bool {
         let prefix = format!("{package_name}::");
-        self.token_defs
+        self.registry()
+            .token_defs
             .keys()
             .any(|key| key.resolve().starts_with(&prefix))
     }

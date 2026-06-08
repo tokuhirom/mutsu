@@ -1467,7 +1467,7 @@ impl Interpreter {
                 false
             };
             let before_function_keys: std::collections::HashSet<crate::symbol::Symbol> =
-                self.functions.keys().copied().collect();
+                self.registry().functions.keys().copied().collect();
             let result = self.run_block(&stmts);
             if pushed_unit {
                 self.unit_module_loading_stack.pop();
@@ -1476,7 +1476,10 @@ impl Interpreter {
             result?;
             // A `sub MAIN` defined in a used module is NOT the program's MAIN
             // and must not be auto-dispatched at program end.
-            Self::remove_leaked_main_routines(&mut self.functions, &before_function_keys);
+            Self::remove_leaked_main_routines(
+                &mut self.registry_mut().functions,
+                &before_function_keys,
+            );
         }
         crate::parser::set_current_language_version(&saved_language_version);
         self.current_distribution = saved_distribution;
