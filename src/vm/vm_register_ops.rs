@@ -233,29 +233,53 @@ impl VM {
         cc: &Option<std::sync::Arc<CompiledCode>>,
     ) {
         let Some(cc) = cc else { return };
-        // Box only loop-body locals that the compiler flagged as captured-and-
-        // mutated. Restricting to loop bodies (`loop_local_vars`) is deliberate:
-        // boxing a *non-loop* captured-mutated local (e.g. `$a .= new` inside a
-        // closure, a sibling-shared sub local) would hide it behind a ContainerRef
-        // and trip the many value-inspection paths that don't yet deref one
-        // (typed-container `.=`, isa-ok, subset/type-object assign, submethod
-        // state). That general "a closure captures the container" semantics needs
-        // a broad ContainerRef-deref audit and is deferred. The compiler signal
-        // also lets us skip boxing *read-only* loop locals, which `owned_captures`
-        // (value-freeze) already handles.
-        if code.captured_mutated_locals.is_empty() || self.loop_local_vars.is_empty() {
+        // Box captured-and-mutated `$` scalar locals into a shared `ContainerRef`
+        // cell so the closure observes mutations and siblings share one cell. Two
+        // narrow triggers (deliberately NOT "every captured-mutated local" — that
+        // broad form regressed perf and correctness, see #2749 / docs):
+        //   (A) loop-body locals (`loop_local_vars`): per-iteration binding, the
+        //       original lever-C path — kept byte-for-byte.
+        //   (B) `multi_captured_mutated_locals`: locals captured by >=2 distinct
+        //       sibling closures (compiler signal). These genuinely need a shared
+        //       cell even in non-loop frames (e.g. a getter+setter factory). The
+        //       >=2 restriction excludes the single immediately-invoked closure
+        //       (`lives-ok {...}`) pattern, bounding boxing cost and avoiding the
+        //       broad-boxing perf blowup.
+        // Read-only loop captures are handled by `owned_captures` (value-freeze).
+        if code.captured_mutated_locals.is_empty()
+            || (self.loop_local_vars.is_empty() && code.multi_captured_mutated_locals.is_empty())
+        {
             return;
         }
         for sym in &cc.free_var_syms {
             if !code.captured_mutated_locals.contains(sym) {
                 continue;
             }
+            let is_multi = code.multi_captured_mutated_locals.contains(sym);
             let Some(idx) = sym.with_str(|s| {
                 if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
                     return None;
                 }
-                if !self.loop_local_vars.iter().any(|set| set.contains(s)) {
-                    return None;
+                let is_loop_local = self.loop_local_vars.iter().any(|set| set.contains(s));
+                if !is_loop_local {
+                    // Non-loop sibling path (B) only.
+                    if !is_multi {
+                        return None;
+                    }
+                    // A type/`where`-constrained scalar must keep flowing through
+                    // the assignment chokepoint so each mutation re-checks the
+                    // constraint; the ContainerRef write-through bypasses it. Skip
+                    // boxing it (inline `where` desugars to an anonymous subset, so
+                    // var_type_constraint catches block/whatever/`&pred` forms).
+                    // Applied to (B) only — the loop path (A) is left unchanged.
+                    if self.interpreter.var_type_constraint(s).is_some()
+                        || self
+                            .interpreter
+                            .var_type_constraint(s.trim_start_matches('$'))
+                            .is_some()
+                    {
+                        return None;
+                    }
                 }
                 code.locals.iter().rposition(|n| n == s)
             }) else {
