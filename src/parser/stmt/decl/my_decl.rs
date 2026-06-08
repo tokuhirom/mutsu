@@ -19,6 +19,23 @@ use crate::ast::{Expr, Stmt};
 use super::super::sub::parse_type_constraint_expr;
 use super::super::sub_param::parse_of_type_constraint_chain;
 
+/// Build a fatal parse error for an illegal `$`-sigil variable name in a
+/// declaration (numeric / match / twigil). `extra_attrs` are extra exception
+/// attributes (e.g. `twigil`, `scope`).
+fn illegal_my_var_error(class: &str, message: &str, extra_attrs: &[(&str, &str)]) -> PError {
+    let full_msg = format!("{}: {}.", class, message);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        "message".to_string(),
+        crate::value::Value::str(full_msg.clone()),
+    );
+    for (k, v) in extra_attrs {
+        attrs.insert((*k).to_string(), crate::value::Value::str((*v).to_string()));
+    }
+    let exception = crate::value::Value::make_instance(crate::symbol::Symbol::intern(class), attrs);
+    PError::fatal_with_exception(full_msg, Box::new(exception))
+}
+
 /// State accumulated during `my_decl_inner` that is passed to the
 /// assignment/binding continuation in `my_decl_assign`.
 pub(super) struct MyDeclState {
@@ -209,40 +226,51 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         ""
     };
 
+    let scope_name = if is_state {
+        "state"
+    } else if is_our {
+        "our"
+    } else {
+        "my"
+    };
     let (rest, name) = if sigil == b'$' || is_array || is_hash || is_code {
+        // Reject illegal `$`-sigil variable names in a declaration. These are
+        // valid to *read* (match captures, the `$?FILE` compile-time var) but
+        // cannot be *declared*. The match (`<`) and numeric (digit) forms are
+        // not consumed by `var_name`, so check the post-sigil text directly.
+        if sigil == b'$' {
+            let after = &rest[1..];
+            // `my $0`, `my $123` — numeric variables cannot be declared.
+            if after.starts_with(|c: char| c.is_ascii_digit()) {
+                return Err(illegal_my_var_error(
+                    "X::Syntax::Variable::Numeric",
+                    "Cannot declare a numeric variable",
+                    &[],
+                ));
+            }
+            // `my $<a>` — match variables cannot be declared.
+            if after.starts_with('<') {
+                return Err(illegal_my_var_error(
+                    "X::Syntax::Variable::Match",
+                    "Cannot declare a match variable",
+                    &[],
+                ));
+            }
+        }
         let (r, n) = var_name(rest)?;
-        // Reject `!` twigil in `my` scope: `my $!foo` is invalid.
-        // But `my $!` (bare special variable) is allowed.
-        if n.starts_with('!') && n.len() > 1 {
-            let scope_name = if is_state {
-                "state"
-            } else if is_our {
-                "our"
-            } else {
-                "my"
-            };
+        // Reject `!`/`?` twigils in `my` scope: `my $!foo` / `my $?FILE` are
+        // invalid. Bare special variables (`my $!`, `my $?`) are still allowed.
+        if (n.starts_with('!') || n.starts_with('?')) && n.len() > 1 {
+            let twigil = &n[..1];
             let message = format!(
-                "X::Syntax::Variable::Twigil: Cannot use a '!' twigil on a '{} ' variable.",
-                scope_name
+                "Cannot use a '{}' twigil on a '{} ' variable",
+                twigil, scope_name
             );
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "message".to_string(),
-                crate::value::Value::str(message.clone()),
-            );
-            attrs.insert(
-                "twigil".to_string(),
-                crate::value::Value::str("!".to_string()),
-            );
-            attrs.insert(
-                "scope".to_string(),
-                crate::value::Value::str(scope_name.to_string()),
-            );
-            let exception = crate::value::Value::make_instance(
-                crate::symbol::Symbol::intern("X::Syntax::Variable::Twigil"),
-                attrs,
-            );
-            return Err(PError::fatal_with_exception(message, Box::new(exception)));
+            return Err(illegal_my_var_error(
+                "X::Syntax::Variable::Twigil",
+                &message,
+                &[("twigil", twigil), ("scope", scope_name)],
+            ));
         }
         (r, format!("{}{}", prefix, n))
     } else {
