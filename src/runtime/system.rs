@@ -183,6 +183,17 @@ impl Interpreter {
                 })
                 .collect()
         };
+        // A forward stub body is a single `... { !!! }` / `{ ??? }` placeholder,
+        // compiled to a lone `__mutsu_stub_die` / `__mutsu_stub_warn` call.
+        let body_is_stub = |body: &[Stmt]| -> bool {
+            let body_no_sl: Vec<_> = body
+                .iter()
+                .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                .collect();
+            body_no_sl.len() == 1
+                && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn")
+        };
 
         let type_redeclaration = |name: &str| -> RuntimeError {
             let mut attrs = std::collections::HashMap::new();
@@ -194,9 +205,26 @@ impl Interpreter {
             RuntimeError::typed("X::Redeclaration", attrs)
         };
 
+        // mutsu currently mis-parses `anon sub foo {}` as a bare `anon` term
+        // followed by a normal named SubDecl; an anonymous routine installs no
+        // symbol, so skip the SubDecl that immediately follows a bare `anon`.
+        // TODO: parse `anon sub`/`anon multi` into a genuinely anonymous routine
+        // so this textual heuristic is unnecessary.
+        let mut prev_was_anon = false;
         for stmt in stmts {
+            // SetLine markers are interleaved between real statements; they must
+            // not reset the "previous statement was `anon`" tracking.
+            if matches!(stmt, Stmt::SetLine(_)) {
+                continue;
+            }
+            let was_anon = prev_was_anon;
+            prev_was_anon = matches!(stmt, Stmt::Expr(Expr::BareWord(w)) if w == "anon");
+
             // Routine redeclaration (sub a {}; sub a {} / sub a {}; multi sub a {}).
             if let Stmt::SubDecl { name, multi, .. } = stmt {
+                if was_anon {
+                    continue;
+                }
                 let name = name.resolve().to_string();
                 if name.is_empty() {
                     continue;
@@ -214,7 +242,10 @@ impl Interpreter {
                             attrs.insert("what".to_string(), Value::str("routine".to_string()));
                             attrs.insert(
                                 "message".to_string(),
-                                Value::str(format!("Redeclaration of routine '{}'", name)),
+                                Value::str(format!(
+                                    "Redeclaration of routine '{}'. Did you mean to declare a multi-sub?",
+                                    name
+                                )),
                             );
                             return Err(RuntimeError::typed("X::Redeclaration", attrs));
                         }
@@ -250,13 +281,7 @@ impl Interpreter {
                         .entry(name.clone())
                         .or_default()
                         .extend(collect_nested(body));
-                    let body_no_sl: Vec<_> = body
-                        .iter()
-                        .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                        .collect();
-                    let is_stub = body_no_sl.len() == 1
-                        && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                            if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
+                    let is_stub = body_is_stub(body);
                     // A non-stub, non-lexical class that already exists in the
                     // outer environment cannot be redeclared. Lexical classes
                     // (`my class`) may shadow outer names. Only check
@@ -268,7 +293,9 @@ impl Interpreter {
                     }
                     (name, is_stub)
                 }
-                Stmt::RoleDecl { name, .. } => (name.resolve().to_string(), false),
+                Stmt::RoleDecl { name, body, .. } => {
+                    (name.resolve().to_string(), body_is_stub(body))
+                }
                 Stmt::SubsetDecl { name, .. } => (name.resolve().to_string(), false),
                 Stmt::EnumDecl { name, .. } => (name.resolve().to_string(), false),
                 _ => continue,
