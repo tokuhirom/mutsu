@@ -680,49 +680,59 @@ impl Interpreter {
         let does_parents = does_parents.as_slice();
         let hidden_parents: Vec<String> = hidden_parents.iter().map(|p| strip_colons(p)).collect();
         let hidden_parents = hidden_parents.as_slice();
-        let prev_class = self.registry().classes.get(name).cloned();
-        let prev_hidden = self.registry().hidden_classes.contains(name);
-        let prev_hidden_defer = self.registry().hidden_defer_parents.get(name).cloned();
-        let prev_composed_roles = self.registry().class_composed_roles.get(name).cloned();
-        let prev_role_param_bindings = self.registry().class_role_param_bindings.get(name).cloned();
+        // Snapshot the previous registry state for this class under a single read
+        // guard (all values are owned/cloned, no re-entry) so a redefinition can be
+        // rolled back if the new body fails.
+        let (
+            prev_class,
+            prev_hidden,
+            prev_hidden_defer,
+            prev_composed_roles,
+            prev_role_param_bindings,
+        ) = {
+            let reg = self.registry();
+            (
+                reg.classes.get(name).cloned(),
+                reg.hidden_classes.contains(name),
+                reg.hidden_defer_parents.get(name).cloned(),
+                reg.class_composed_roles.get(name).cloned(),
+                reg.class_role_param_bindings.get(name).cloned(),
+            )
+        };
         // Clear `is Type` trait entries for this class (they'll be re-populated from the body).
         self.registry_mut()
             .class_attribute_is_types
             .retain(|(cn, _), _| cn != name);
 
+        // Rollback writes are purely registry mutations with no user-code
+        // re-entry, so they take a single write guard for the whole block.
         let restore_previous_state = |this: &mut Self| {
+            let mut reg = this.registry_mut();
             if let Some(class_def) = prev_class.clone() {
-                this.registry_mut()
-                    .classes
-                    .insert(name.to_string(), class_def);
+                reg.classes.insert(name.to_string(), class_def);
             } else {
-                this.registry_mut().classes.remove(name);
+                reg.classes.remove(name);
             }
             if prev_hidden {
-                this.registry_mut().hidden_classes.insert(name.to_string());
+                reg.hidden_classes.insert(name.to_string());
             } else {
-                this.registry_mut().hidden_classes.remove(name);
+                reg.hidden_classes.remove(name);
             }
             if let Some(hidden) = prev_hidden_defer.clone() {
-                this.registry_mut()
-                    .hidden_defer_parents
-                    .insert(name.to_string(), hidden);
+                reg.hidden_defer_parents.insert(name.to_string(), hidden);
             } else {
-                this.registry_mut().hidden_defer_parents.remove(name);
+                reg.hidden_defer_parents.remove(name);
             }
             if let Some(composed) = prev_composed_roles.clone() {
-                this.registry_mut()
-                    .class_composed_roles
-                    .insert(name.to_string(), composed);
+                reg.class_composed_roles.insert(name.to_string(), composed);
             } else {
-                this.registry_mut().class_composed_roles.remove(name);
+                reg.class_composed_roles.remove(name);
             }
             if let Some(bindings) = prev_role_param_bindings.clone() {
-                this.registry_mut()
-                    .class_role_param_bindings
+                reg.class_role_param_bindings
                     .insert(name.to_string(), bindings);
             } else {
-                this.registry_mut().class_role_param_bindings.remove(name);
+                reg.class_role_param_bindings.remove(name);
             }
         };
 
@@ -1427,10 +1437,13 @@ impl Interpreter {
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(deferred_custom_traits);
         }
-        // Clear stub status now that the class has a real body.
-        self.registry_mut().class_stubs.remove(name);
-        // Also clear package stub status (for `package Foo { ... }; class Foo { }`)
-        self.registry_mut().package_stubs.remove(name);
+        // Clear stub status now that the class has a real body (also clears
+        // package stub status for `package Foo { ... }; class Foo { }`).
+        {
+            let mut reg = self.registry_mut();
+            reg.class_stubs.remove(name);
+            reg.package_stubs.remove(name);
+        }
         let saved_package = self.current_package.clone();
         let saved_env = self.env.clone();
         self.current_package = name.to_string();
