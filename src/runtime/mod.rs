@@ -338,7 +338,7 @@ pub(crate) struct RoleDef {
 }
 
 #[derive(Debug, Clone)]
-struct RoleCandidateDef {
+pub(crate) struct RoleCandidateDef {
     type_params: Vec<String>,
     type_param_defs: Vec<ParamDef>,
     role_def: RoleDef,
@@ -884,15 +884,6 @@ pub struct Interpreter {
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
     /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
     registry: Arc<RwLock<Registry>>,
-    roles: HashMap<String, RoleDef>,
-    /// Roles explicitly declared via user code (not pre-registered builtins).
-    /// Used to detect X::Redeclaration for role->class name conflicts.
-    user_declared_roles: HashSet<String>,
-    role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
-    role_parents: HashMap<String, Vec<String>>,
-    role_hides: HashMap<String, Vec<String>>,
-    role_type_params: HashMap<String, Vec<String>>,
-    class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
     proto_dispatch_stack: Vec<(String, Vec<Value>)>,
@@ -2907,127 +2898,15 @@ impl Interpreter {
                 );
                 ccr.insert("Complex".to_string(), vec!["Numeric".to_string()]);
                 ccr.insert("Str".to_string(), vec!["Stringy".to_string()]);
-                Arc::new(RwLock::new(registry))
-            },
-            roles: {
-                let mut roles = HashMap::new();
-                roles.insert(
-                    "Encoding".to_string(),
-                    RoleDef {
-                        attributes: Vec::new(),
-                        methods: HashMap::new(),
-                        is_stub_role: false,
-                        is_hidden: false,
-                        is_rw: false,
-                        captured_env: None,
-                        wildcard_handles: Vec::new(),
-                        role_id: 0,
-                        attribute_conflicts: Vec::new(),
-                        own_attribute_names: std::collections::HashSet::new(),
-                        deferred_body_stmts: Vec::new(),
-                        deferred_custom_traits: Vec::new(),
-                    },
-                );
-                roles.insert(
-                    "Iterator".to_string(),
-                    RoleDef {
-                        attributes: Vec::new(),
-                        methods: HashMap::new(),
-                        is_stub_role: false,
-                        is_hidden: false,
-                        is_rw: false,
-                        captured_env: None,
-                        wildcard_handles: Vec::new(),
-                        role_id: 0,
-                        attribute_conflicts: Vec::new(),
-                        own_attribute_names: std::collections::HashSet::new(),
-                        deferred_body_stmts: Vec::new(),
-                        deferred_custom_traits: Vec::new(),
-                    },
-                );
-                roles.insert(
-                    "PredictiveIterator".to_string(),
-                    RoleDef {
-                        attributes: Vec::new(),
-                        methods: HashMap::new(),
-                        is_stub_role: false,
-                        is_hidden: false,
-                        is_rw: false,
-                        captured_env: None,
-                        wildcard_handles: Vec::new(),
-                        role_id: 0,
-                        attribute_conflicts: Vec::new(),
-                        own_attribute_names: std::collections::HashSet::new(),
-                        deferred_body_stmts: Vec::new(),
-                        deferred_custom_traits: Vec::new(),
-                    },
-                );
-                roles.insert(
-                    "Iterable".to_string(),
-                    RoleDef {
-                        attributes: Vec::new(),
-                        methods: HashMap::new(),
-                        is_stub_role: false,
-                        is_hidden: false,
-                        is_rw: false,
-                        captured_env: None,
-                        wildcard_handles: Vec::new(),
-                        role_id: 0,
-                        attribute_conflicts: Vec::new(),
-                        own_attribute_names: std::collections::HashSet::new(),
-                        deferred_body_stmts: Vec::new(),
-                        deferred_custom_traits: Vec::new(),
-                    },
-                );
-                roles.insert(
-                    "X::Control".to_string(),
-                    RoleDef {
-                        attributes: Vec::new(),
-                        methods: HashMap::new(),
-                        is_stub_role: false,
-                        is_hidden: false,
-                        is_rw: false,
-                        captured_env: None,
-                        wildcard_handles: Vec::new(),
-                        role_id: 0,
-                        attribute_conflicts: Vec::new(),
-                        own_attribute_names: std::collections::HashSet::new(),
-                        deferred_body_stmts: Vec::new(),
-                        deferred_custom_traits: Vec::new(),
-                    },
-                );
-                // CompUnit::Repository role with required stub methods
-                {
-                    let stub_body = vec![Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("__mutsu_stub_die"),
-                        args: vec![],
-                    })];
-                    let stub_method = |body: Vec<Stmt>| MethodDef {
-                        params: Vec::new(),
-                        param_defs: Vec::new(),
-                        body: std::sync::Arc::new(body),
-                        is_rw: false,
-                        is_private: false,
-                        is_multi: false,
-                        is_my: false,
-                        role_origin: None,
-                        original_role: None,
-                        return_type: None,
-                        compiled_code: None,
-                        delegation: None,
-                        is_default: false,
-                        deprecated_message: None,
-                        is_submethod: false,
-                    };
-                    let mut methods = HashMap::new();
-                    for name in ["id", "need", "load", "loaded"] {
-                        methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
-                    }
+                // Built-in role definitions (PR-A slice 4: roles now live in the
+                // shared Registry instead of an Interpreter field).
+                registry.roles = {
+                    let mut roles = HashMap::new();
                     roles.insert(
-                        "CompUnit::Repository".to_string(),
+                        "Encoding".to_string(),
                         RoleDef {
                             attributes: Vec::new(),
-                            methods,
+                            methods: HashMap::new(),
                             is_stub_role: false,
                             is_hidden: false,
                             is_rw: false,
@@ -3040,15 +2919,123 @@ impl Interpreter {
                             deferred_custom_traits: Vec::new(),
                         },
                     );
-                }
-                roles
+                    roles.insert(
+                        "Iterator".to_string(),
+                        RoleDef {
+                            attributes: Vec::new(),
+                            methods: HashMap::new(),
+                            is_stub_role: false,
+                            is_hidden: false,
+                            is_rw: false,
+                            captured_env: None,
+                            wildcard_handles: Vec::new(),
+                            role_id: 0,
+                            attribute_conflicts: Vec::new(),
+                            own_attribute_names: std::collections::HashSet::new(),
+                            deferred_body_stmts: Vec::new(),
+                            deferred_custom_traits: Vec::new(),
+                        },
+                    );
+                    roles.insert(
+                        "PredictiveIterator".to_string(),
+                        RoleDef {
+                            attributes: Vec::new(),
+                            methods: HashMap::new(),
+                            is_stub_role: false,
+                            is_hidden: false,
+                            is_rw: false,
+                            captured_env: None,
+                            wildcard_handles: Vec::new(),
+                            role_id: 0,
+                            attribute_conflicts: Vec::new(),
+                            own_attribute_names: std::collections::HashSet::new(),
+                            deferred_body_stmts: Vec::new(),
+                            deferred_custom_traits: Vec::new(),
+                        },
+                    );
+                    roles.insert(
+                        "Iterable".to_string(),
+                        RoleDef {
+                            attributes: Vec::new(),
+                            methods: HashMap::new(),
+                            is_stub_role: false,
+                            is_hidden: false,
+                            is_rw: false,
+                            captured_env: None,
+                            wildcard_handles: Vec::new(),
+                            role_id: 0,
+                            attribute_conflicts: Vec::new(),
+                            own_attribute_names: std::collections::HashSet::new(),
+                            deferred_body_stmts: Vec::new(),
+                            deferred_custom_traits: Vec::new(),
+                        },
+                    );
+                    roles.insert(
+                        "X::Control".to_string(),
+                        RoleDef {
+                            attributes: Vec::new(),
+                            methods: HashMap::new(),
+                            is_stub_role: false,
+                            is_hidden: false,
+                            is_rw: false,
+                            captured_env: None,
+                            wildcard_handles: Vec::new(),
+                            role_id: 0,
+                            attribute_conflicts: Vec::new(),
+                            own_attribute_names: std::collections::HashSet::new(),
+                            deferred_body_stmts: Vec::new(),
+                            deferred_custom_traits: Vec::new(),
+                        },
+                    );
+                    // CompUnit::Repository role with required stub methods
+                    {
+                        let stub_body = vec![Stmt::Expr(Expr::Call {
+                            name: Symbol::intern("__mutsu_stub_die"),
+                            args: vec![],
+                        })];
+                        let stub_method = |body: Vec<Stmt>| MethodDef {
+                            params: Vec::new(),
+                            param_defs: Vec::new(),
+                            body: std::sync::Arc::new(body),
+                            is_rw: false,
+                            is_private: false,
+                            is_multi: false,
+                            is_my: false,
+                            role_origin: None,
+                            original_role: None,
+                            return_type: None,
+                            compiled_code: None,
+                            delegation: None,
+                            is_default: false,
+                            deprecated_message: None,
+                            is_submethod: false,
+                        };
+                        let mut methods = HashMap::new();
+                        for name in ["id", "need", "load", "loaded"] {
+                            methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
+                        }
+                        roles.insert(
+                            "CompUnit::Repository".to_string(),
+                            RoleDef {
+                                attributes: Vec::new(),
+                                methods,
+                                is_stub_role: false,
+                                is_hidden: false,
+                                is_rw: false,
+                                captured_env: None,
+                                wildcard_handles: Vec::new(),
+                                role_id: 0,
+                                attribute_conflicts: Vec::new(),
+                                own_attribute_names: std::collections::HashSet::new(),
+                                deferred_body_stmts: Vec::new(),
+                                deferred_custom_traits: Vec::new(),
+                            },
+                        );
+                    }
+                    roles
+                };
+                Arc::new(RwLock::new(registry))
             },
-            user_declared_roles: HashSet::new(),
-            role_candidates: HashMap::new(),
-            role_parents: HashMap::new(),
-            role_hides: HashMap::new(),
-            role_type_params: HashMap::new(),
-            class_role_param_bindings: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
             proto_dispatch_stack: Vec::new(),
@@ -3481,8 +3468,10 @@ impl Interpreter {
             // classes from the package stash. This handles the case where the
             // module was first loaded transitively by a non-contributing module.
             if self.module_load_stack.is_empty() && module.contains("::") {
-                let is_contributor =
-                    self.registry().classes.contains_key(module) || self.roles.contains_key(module);
+                let is_contributor = {
+                    let registry = self.registry();
+                    registry.classes.contains_key(module) || registry.roles.contains_key(module)
+                };
                 if is_contributor {
                     self.package_stash_hidden.remove(module);
                 }
@@ -3512,7 +3501,7 @@ impl Interpreter {
         };
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
-        let role_snapshot: HashSet<String> = self.roles.keys().cloned().collect();
+        let role_snapshot: HashSet<String> = self.registry().roles.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let func_keys_before: HashSet<Symbol> = self.functions.keys().copied().collect();
 
@@ -3614,8 +3603,10 @@ impl Interpreter {
             //       (tracked in `chain_declared_packages` which is scoped to this load).
             // If neither condition holds, new classes/roles are hidden from X's stash.
             if let Some((namespace, _)) = module.rsplit_once("::") {
-                let module_declares_own_class =
-                    self.registry().classes.contains_key(module) || self.roles.contains_key(module);
+                let module_declares_own_class = {
+                    let registry = self.registry();
+                    registry.classes.contains_key(module) || registry.roles.contains_key(module)
+                };
                 let chain_has_package_decl = self.chain_declared_packages.contains(namespace);
                 if !module_declares_own_class && !chain_has_package_decl {
                     // Hide newly registered classes/roles from the namespace stash
@@ -3629,7 +3620,8 @@ impl Interpreter {
                             self.package_stash_hidden.insert(class_name.clone());
                         }
                     }
-                    for role_name in self.roles.keys() {
+                    let role_names: Vec<String> = self.registry().roles.keys().cloned().collect();
+                    for role_name in &role_names {
                         if !role_snapshot.contains(role_name)
                             && role_name.starts_with(namespace)
                             && role_name.get(namespace.len()..namespace.len() + 2) == Some("::")
@@ -5226,13 +5218,6 @@ impl Interpreter {
             // independent snapshot (matches prior per-field clone semantics: the
             // child sees parent declarations but its own new ones don't leak back).
             registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
-            roles: self.roles.clone(),
-            user_declared_roles: self.user_declared_roles.clone(),
-            role_candidates: self.role_candidates.clone(),
-            role_parents: self.role_parents.clone(),
-            role_hides: self.role_hides.clone(),
-            role_type_params: self.role_type_params.clone(),
-            class_role_param_bindings: self.class_role_param_bindings.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),
             proto_dispatch_stack: Vec::new(),

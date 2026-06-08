@@ -652,7 +652,8 @@ impl Interpreter {
         // registers so we can keep them invisible to `::()` until merged.
         let class_before: std::collections::HashSet<String> =
             self.registry().classes.keys().cloned().collect();
-        let role_before: std::collections::HashSet<String> = self.roles.keys().cloned().collect();
+        let role_before: std::collections::HashSet<String> =
+            self.registry().roles.keys().cloned().collect();
         if source_path.exists() {
             let saved = self.precomp_enabled;
             self.precomp_enabled = false;
@@ -668,7 +669,7 @@ impl Interpreter {
                 new_symbols.push(k.clone());
             }
         }
-        for k in self.roles.keys() {
+        for k in self.registry().roles.keys() {
             if !role_before.contains(k) {
                 new_symbols.push(k.clone());
             }

@@ -2424,15 +2424,21 @@ impl Interpreter {
 
         // Role type-object method punning
         if method != "new" {
-            if let Value::Package(role_name) = &target
-                && let Some(role) = self.roles.get(&role_name.resolve())
-            {
-                let is_public_attr_accessor = args.is_empty()
-                    && role
-                        .attributes
-                        .iter()
-                        .any(|(attr_name, is_public, ..)| *is_public && attr_name == method);
-                if role.methods.contains_key(method) || is_public_attr_accessor {
+            if let Value::Package(role_name) = &target {
+                // Decide under the guard, then drop it before re-entering.
+                let should_dispatch = self
+                    .registry()
+                    .roles
+                    .get(&role_name.resolve())
+                    .map(|role| {
+                        let is_public_attr_accessor = args.is_empty()
+                            && role.attributes.iter().any(|(attr_name, is_public, ..)| {
+                                *is_public && attr_name == method
+                            });
+                        role.methods.contains_key(method) || is_public_attr_accessor
+                    })
+                    .unwrap_or(false);
+                if should_dispatch {
                     let instance = self.dispatch_new(target.clone(), Vec::new())?;
                     return self.call_method_with_values(instance, method, args);
                 }

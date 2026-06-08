@@ -19,12 +19,16 @@ impl Interpreter {
         role_args: &[Value],
         target_base: &str,
     ) -> Option<Vec<Value>> {
-        let candidate = self.role_candidates.get(role_name).and_then(|candidates| {
-            candidates
-                .iter()
-                .find(|c| c.type_params.len() == role_args.len())
-                .cloned()
-        })?;
+        let candidate = self
+            .registry()
+            .role_candidates
+            .get(role_name)
+            .and_then(|candidates| {
+                candidates
+                    .iter()
+                    .find(|c| c.type_params.len() == role_args.len())
+                    .cloned()
+            })?;
         let candidate_param_names = candidate.type_params;
         let param_map: HashMap<String, Value> = candidate_param_names
             .into_iter()

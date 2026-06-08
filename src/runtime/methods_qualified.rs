@@ -102,7 +102,7 @@ impl Interpreter {
         // ambiguous. Resolution happens against the consumer's immediate roles, so an
         // indirect second concretization (reached through another role) does not count.
         if in_composed_roles
-            && self.roles.contains_key(qualifier)
+            && self.registry().roles.contains_key(qualifier)
             && self
                 .role_concretizations_at_nearest(&inst_cn_str, qualifier)
                 .len()
@@ -191,8 +191,9 @@ impl Interpreter {
             }
         }
         // Also check the role definition directly
-        let role_lookup = self.roles.get(qualifier).cloned().or_else(|| {
-            self.roles
+        let role_lookup = self.registry().roles.get(qualifier).cloned().or_else(|| {
+            self.registry()
+                .roles
                 .iter()
                 .find(|(name, _)| {
                     name.starts_with(qualifier) && name[qualifier.len()..].starts_with('[')
@@ -246,7 +247,7 @@ impl Interpreter {
         let direct_roles = |node: &str| -> Vec<String> {
             if let Some(roles) = self.registry().class_composed_roles.get(node) {
                 roles.clone()
-            } else if let Some(parents) = self.role_parents.get(node) {
+            } else if let Some(parents) = self.registry().role_parents.get(node) {
                 parents.clone()
             } else {
                 Vec::new()

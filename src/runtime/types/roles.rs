@@ -13,15 +13,19 @@ impl Interpreter {
                 _ => None,
             });
         if let Some(role_id) = role_id
-            && let Some(candidate) = self.role_candidates.get(role_name).and_then(|candidates| {
-                candidates
-                    .iter()
-                    .find(|candidate| candidate.role_def.role_id == role_id)
-            })
+            && let Some(candidate) =
+                self.registry()
+                    .role_candidates
+                    .get(role_name)
+                    .and_then(|candidates| {
+                        candidates
+                            .iter()
+                            .find(|candidate| candidate.role_def.role_id == role_id)
+                    })
         {
             return Some(candidate.role_def.clone());
         }
-        self.roles.get(role_name).cloned()
+        self.registry().roles.get(role_name).cloned()
     }
 
     pub(crate) fn resolve_parametric_role_runtime(
@@ -29,13 +33,17 @@ impl Interpreter {
         base_name: &str,
         type_args: &[Value],
     ) -> Option<(RoleDef, Vec<String>)> {
-        let mut selected_role = self.roles.get(base_name).cloned();
+        let mut selected_role = self.registry().roles.get(base_name).cloned();
         let mut selected_param_names = self
+            .registry()
             .role_type_params
             .get(base_name)
             .cloned()
             .unwrap_or_default();
-        if let Some(candidates) = self.role_candidates.get(base_name).cloned() {
+        // Hoist clone to a `let` so the guard drops before the filter_map closure
+        // re-enters (an if-let scrutinee guard otherwise lives through the block).
+        let candidates = self.registry().role_candidates.get(base_name).cloned();
+        if let Some(candidates) = candidates {
             let mut matching: Vec<(crate::runtime::RoleCandidateDef, i32, usize)> = candidates
                 .into_iter()
                 .enumerate()
@@ -230,20 +238,20 @@ impl Interpreter {
             Value::ParametricRole {
                 base_name,
                 type_args,
-            } if self.roles.contains_key(&base_name.resolve()) => {
+            } if self.registry().roles.contains_key(&base_name.resolve()) => {
                 Some((base_name.resolve(), type_args.clone()))
             }
-            Value::Pair(name, boxed) if self.roles.contains_key(name) => {
+            Value::Pair(name, boxed) if self.registry().roles.contains_key(name) => {
                 if let Value::Array(args, ..) = boxed.as_ref() {
                     Some((name.clone(), args.as_ref().clone()))
                 } else {
                     None
                 }
             }
-            Value::Package(name) if self.roles.contains_key(&name.resolve()) => {
+            Value::Package(name) if self.registry().roles.contains_key(&name.resolve()) => {
                 Some((name.resolve(), Vec::new()))
             }
-            Value::Str(name) if self.roles.contains_key(name.as_str()) => {
+            Value::Str(name) if self.registry().roles.contains_key(name.as_str()) => {
                 Some((name.to_string(), Vec::new()))
             }
             _ => None,
@@ -256,7 +264,7 @@ impl Interpreter {
         role_name: &str,
         role_args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let role = self.roles.get(role_name).cloned();
+        let role = self.registry().roles.get(role_name).cloned();
         if role.is_none()
             && !matches!(
                 role_name,
@@ -281,6 +289,7 @@ impl Interpreter {
             // constraints (e.g. `method hi(vartype $foo)`) can resolve the type
             // variables during dispatch.
             let param_names = self
+                .registry()
                 .role_type_params
                 .get(role_name)
                 .cloned()
@@ -296,7 +305,11 @@ impl Interpreter {
         // same name (e.g. two `my role A { }` in different scopes) produce
         // distinct mixin maps, making `===` return False for values mixed with
         // different role instances.
-        let role_id = self.roles.get(role_name).map_or(0, |r| r.role_id);
+        let role_id = self
+            .registry()
+            .roles
+            .get(role_name)
+            .map_or(0, |r| r.role_id);
         if role_id != 0 {
             mixins.insert(
                 format!("__mutsu_role_id__{}", role_name),
@@ -351,7 +364,7 @@ impl Interpreter {
         target: Value,
         role_name: &str,
     ) -> Result<Value, RuntimeError> {
-        let role = match self.roles.get(role_name).cloned() {
+        let role = match self.registry().roles.get(role_name).cloned() {
             Some(r) => r,
             None => return Ok(target),
         };

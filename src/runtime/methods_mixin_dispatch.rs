@@ -28,7 +28,8 @@ impl Interpreter {
                     .keys()
                     .filter_map(|k| k.strip_prefix("__mutsu_role__"))
                     .any(|role_name| {
-                        self.roles
+                        self.registry()
+                            .roles
                             .get(role_name)
                             .is_some_and(|role| role.methods.contains_key(method))
                     });
@@ -37,7 +38,7 @@ impl Interpreter {
                         .keys()
                         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
                         .any(|role_name| {
-                            self.roles.get(role_name).is_some_and(|role| {
+                            self.registry().roles.get(role_name).is_some_and(|role| {
                                 role.attributes
                                     .iter()
                                     .any(|(name, is_pub, ..)| name == method && *is_pub)
@@ -186,7 +187,7 @@ impl Interpreter {
                 key.strip_prefix("__mutsu_role__")
                     .map(|name| name.to_string())
             }) {
-                if let Some(role) = self.roles.get(&role_name)
+                if let Some(role) = self.registry().roles.get(&role_name)
                     && let Some(defs) = role.methods.get(&method_name)
                 {
                     for def in defs {

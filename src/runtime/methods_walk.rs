@@ -168,7 +168,7 @@ impl Interpreter {
                     continue;
                 }
                 out.push((WalkKind::Role, base.clone()));
-                if let Some(parents) = self.role_parents.get(&base) {
+                if let Some(parents) = self.registry().role_parents.get(&base) {
                     for p in parents {
                         let p_base = p
                             .split_once('[')
@@ -226,7 +226,7 @@ impl Interpreter {
                 // Submethods on roles are not composed into the consuming
                 // class's method table, so look them up on the role's own
                 // method table first.
-                if let Some(role_def) = self.roles.get(owner)
+                if let Some(role_def) = self.registry().roles.get(owner)
                     && let Some(overloads) = role_def.methods.get(method_name)
                     && let Some(m) = overloads.iter().find(|m| !m.is_private)
                 {

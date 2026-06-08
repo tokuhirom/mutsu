@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::value::{EnumValue, Value};
 
-use super::{ClassDef, SubsetDef};
+use super::{ClassDef, RoleCandidateDef, RoleDef, SubsetDef};
 
 /// Program declaration registry. See module docs.
 ///
@@ -81,4 +81,23 @@ pub(crate) struct Registry {
     pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
     /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
     pub(crate) class_attribute_deprecated: HashMap<(String, String), String>,
+
+    // ----- roles (PR-A slice 4) -----
+    /// User/builtin role definitions: role name -> [`RoleDef`] (methods,
+    /// attributes, deferred body, ...). Like `classes`, callers clone the
+    /// minimal projection under a short-lived guard rather than the whole def.
+    pub(crate) roles: HashMap<String, RoleDef>,
+    /// Roles explicitly declared via user code (not pre-registered builtins);
+    /// used to detect `X::Redeclaration` for role->class name conflicts.
+    pub(crate) user_declared_roles: HashSet<String>,
+    /// Parameterized role candidates: role name -> [candidate by arity/types].
+    pub(crate) role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
+    /// Role inheritance: role -> [parent role specs].
+    pub(crate) role_parents: HashMap<String, Vec<String>>,
+    /// `also hides` relationships on roles: role -> [hidden names].
+    pub(crate) role_hides: HashMap<String, Vec<String>>,
+    /// Declared type parameters per parameterized role: role -> [param names].
+    pub(crate) role_type_params: HashMap<String, Vec<String>>,
+    /// Bound role type parameters per class: class -> (param name -> value).
+    pub(crate) class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
 }

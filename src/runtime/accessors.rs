@@ -718,7 +718,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_role(&self, name: &str) -> bool {
-        self.roles.contains_key(name)
+        self.registry().roles.contains_key(name)
     }
 
     pub(crate) fn push_method_class(&mut self, class_name: String) {
@@ -897,15 +897,18 @@ impl Interpreter {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get_role_def(&self, role_name: &str) -> Option<&super::RoleDef> {
-        self.roles.get(role_name)
+    pub(crate) fn get_role_def(&self, role_name: &str) -> Option<super::RoleDef> {
+        self.registry().roles.get(role_name).cloned()
     }
 
     pub(crate) fn class_role_param_bindings(
         &self,
         class_name: &str,
-    ) -> Option<&HashMap<String, Value>> {
-        self.class_role_param_bindings.get(class_name)
+    ) -> Option<HashMap<String, Value>> {
+        self.registry()
+            .class_role_param_bindings
+            .get(class_name)
+            .cloned()
     }
 
     /// Compile all uncompiled method bodies in a method map.
@@ -999,7 +1002,7 @@ impl Interpreter {
 
     /// Compile method bodies for a given role.
     pub(crate) fn compile_role_methods(&mut self, role_name: &str) {
-        if let Some(role_def) = self.roles.get_mut(role_name) {
+        if let Some(role_def) = self.registry_mut().roles.get_mut(role_name) {
             let attr_names: Vec<String> = role_def.attributes.iter().map(|a| a.0.clone()).collect();
             Self::compile_methods_for_map(&mut role_def.methods, role_name, &attr_names);
         }
@@ -1887,7 +1890,7 @@ impl Interpreter {
                 )))
             });
         }
-        for role_name in self.roles.keys() {
+        for role_name in self.registry().roles.keys() {
             // Skip roles hidden from package stash lookups (transitive deps)
             if package_name != "MY"
                 && package_name != "GLOBAL"

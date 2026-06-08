@@ -240,14 +240,18 @@ impl Interpreter {
         {
             let base_name_str = base_name.resolve();
             self.ensure_role_punned_to_class(&base_name_str);
-            let mut selected_role = self.roles.get(&base_name_str).cloned();
+            let mut selected_role = self.registry().roles.get(&base_name_str).cloned();
             let mut matched_lang_version: Option<String> = None;
             let mut selected_param_names = self
+                .registry()
                 .role_type_params
                 .get(&base_name_str)
                 .cloned()
                 .unwrap_or_default();
-            if let Some(candidates) = self.role_candidates.get(&base_name_str).cloned() {
+            // Hoist clone to a `let` so the guard drops before the filter_map
+            // closure re-enters (&mut self).
+            let candidates = self.registry().role_candidates.get(&base_name_str).cloned();
+            if let Some(candidates) = candidates {
                 let mut matching: Vec<(super::RoleCandidateDef, i32, usize)> = candidates
                     .into_iter()
                     .enumerate()
@@ -2612,7 +2616,10 @@ impl Interpreter {
                     return Ok(result);
                 }
             }
-            if let Some(role) = self.roles.get(&class_name.resolve()).cloned() {
+            // Hoist clone to a `let` so the guard drops before the body re-enters
+            // (eval_block_value for attribute defaults).
+            let role = self.registry().roles.get(&class_name.resolve()).cloned();
+            if let Some(role) = role {
                 // Check for attribute conflicts detected during role composition
                 if let Some((attr_name, role_a, role_b)) = role.attribute_conflicts.first() {
                     return Err(RuntimeError::new(format!(
@@ -2635,13 +2642,20 @@ impl Interpreter {
 
                 // Collect attributes from this role and all composed parent roles
                 let mut all_attributes = role.attributes.clone();
-                if let Some(parent_names) = self.role_parents.get(&class_name.resolve()).cloned() {
+                if let Some(parent_names) = self
+                    .registry()
+                    .role_parents
+                    .get(&class_name.resolve())
+                    .cloned()
+                {
                     let mut role_stack: Vec<String> = parent_names;
                     let mut visited = vec![class_name.resolve()];
                     while let Some(parent_role_name) = role_stack.pop() {
                         if !visited.contains(&parent_role_name) {
                             visited.push(parent_role_name.clone());
-                            if let Some(parent_role) = self.roles.get(&parent_role_name).cloned() {
+                            if let Some(parent_role) =
+                                self.registry().roles.get(&parent_role_name).cloned()
+                            {
                                 for attr in &parent_role.attributes {
                                     if !all_attributes.iter().any(|a| a.0 == attr.0) {
                                         all_attributes.push(attr.clone());
@@ -2649,7 +2663,7 @@ impl Interpreter {
                                 }
                             }
                             if let Some(grandparents) =
-                                self.role_parents.get(&parent_role_name).cloned()
+                                self.registry().role_parents.get(&parent_role_name).cloned()
                             {
                                 for gp_name in &grandparents {
                                     if !visited.contains(gp_name) {
@@ -2682,6 +2696,7 @@ impl Interpreter {
                 // returns the correct value for this role's origin module.
                 let cn_str = class_name.resolve();
                 let bare_lang_ver = self
+                    .registry()
                     .role_candidates
                     .get(&cn_str)
                     .and_then(|candidates| {
@@ -2718,7 +2733,7 @@ impl Interpreter {
             }
             // Auto-pun role to class if needed (e.g., role COERCE calling self.new)
             if !self.registry().classes.contains_key(&cn_resolved)
-                && self.roles.contains_key(&cn_resolved)
+                && self.registry().roles.contains_key(&cn_resolved)
             {
                 self.ensure_role_punned_to_class(&cn_resolved);
             }
@@ -2803,14 +2818,20 @@ impl Interpreter {
                 let mut attrs = HashMap::new();
                 let mut positional_ctor_args: Vec<Value> = Vec::new();
                 let saved_default_env = self.env.clone();
-                if let Some(role_bindings) = self.class_role_param_bindings.get(class_key) {
-                    for (name, value) in role_bindings {
-                        self.env.insert(name.clone(), value.clone());
-                    }
-                } else if let Some(role_bindings) =
-                    self.class_role_param_bindings.get(&class_name.resolve())
-                {
-                    for (name, value) in role_bindings {
+                let role_bindings = {
+                    let registry = self.registry();
+                    registry
+                        .class_role_param_bindings
+                        .get(class_key)
+                        .or_else(|| {
+                            registry
+                                .class_role_param_bindings
+                                .get(&class_name.resolve())
+                        })
+                        .cloned()
+                };
+                if let Some(role_bindings) = role_bindings {
+                    for (name, value) in &role_bindings {
                         self.env.insert(name.clone(), value.clone());
                     }
                 }
@@ -2955,16 +2976,20 @@ impl Interpreter {
                 // referencing role type parameters (e.g., `has $.x = $a`) work.
                 // Also add class-qualified versions (e.g., `AP_2::a`) so that
                 // bindings resolve correctly when current_package is the class.
-                if let Some(role_bindings) = self.class_role_param_bindings.get(class_key) {
-                    for (name, value) in role_bindings {
-                        self.env.insert(name.clone(), value.clone());
-                        self.env
-                            .insert(format!("{}::{}", class_key, name), value.clone());
-                    }
-                } else if let Some(role_bindings) =
-                    self.class_role_param_bindings.get(&class_name.resolve())
-                {
-                    for (name, value) in role_bindings {
+                let role_bindings = {
+                    let registry = self.registry();
+                    registry
+                        .class_role_param_bindings
+                        .get(class_key)
+                        .or_else(|| {
+                            registry
+                                .class_role_param_bindings
+                                .get(&class_name.resolve())
+                        })
+                        .cloned()
+                };
+                if let Some(role_bindings) = role_bindings {
+                    for (name, value) in &role_bindings {
                         self.env.insert(name.clone(), value.clone());
                         self.env
                             .insert(format!("{}::{}", class_key, name), value.clone());
@@ -3174,7 +3199,7 @@ impl Interpreter {
                         continue;
                     }
                     // Skip role entries in MRO — they are handled separately below
-                    if self.roles.contains_key(mro_class)
+                    if self.registry().roles.contains_key(mro_class)
                         && !self.registry().classes.contains_key(mro_class)
                     {
                         continue;
@@ -3303,7 +3328,7 @@ impl Interpreter {
                         continue;
                     }
                     // Skip role entries in MRO
-                    if self.roles.contains_key(mro_class)
+                    if self.registry().roles.contains_key(mro_class)
                         && !self.registry().classes.contains_key(mro_class)
                     {
                         continue;
@@ -3664,7 +3689,7 @@ impl Interpreter {
         // Now filter to only roles that have the requested submethod
         let mut result = Vec::new();
         for role_name in &ordered {
-            if let Some(role_def) = self.roles.get(role_name)
+            if let Some(role_def) = self.registry().roles.get(role_name)
                 && let Some(overloads) = role_def.methods.get(method_name)
             {
                 for md in overloads {
@@ -3689,13 +3714,13 @@ impl Interpreter {
             return;
         }
         // First, expand parent roles
-        if let Some(parents) = self.role_parents.get(role_name) {
+        if let Some(parents) = self.registry().role_parents.get(role_name) {
             for parent in parents {
                 let parent_base = parent
                     .split_once('[')
                     .map(|(b, _)| b)
                     .unwrap_or(parent.as_str());
-                if self.roles.contains_key(parent_base) {
+                if self.registry().roles.contains_key(parent_base) {
                     self.expand_role_depth_first(parent_base, ordered, seen);
                 }
             }

@@ -826,17 +826,18 @@ impl Interpreter {
 
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
-        let roles_snapshot = self.roles.clone();
-        let user_declared_roles_snapshot = std::mem::take(&mut self.user_declared_roles);
-        let role_candidates_snapshot = self.role_candidates.clone();
-        let role_type_params_snapshot = self.role_type_params.clone();
-        let role_parents_snapshot = self.role_parents.clone();
-        let role_hides_snapshot = self.role_hides.clone();
+        let roles_snapshot = self.registry().roles.clone();
+        let user_declared_roles_snapshot =
+            std::mem::take(&mut self.registry_mut().user_declared_roles);
+        let role_candidates_snapshot = self.registry().role_candidates.clone();
+        let role_type_params_snapshot = self.registry().role_type_params.clone();
+        let role_parents_snapshot = self.registry().role_parents.clone();
+        let role_hides_snapshot = self.registry().role_hides.clone();
         let classes_snapshot = self.registry().classes.clone();
         let hidden_classes_snapshot = self.registry().hidden_classes.clone();
         let hidden_defer_parents_snapshot = self.registry().hidden_defer_parents.clone();
         let class_composed_roles_snapshot = self.registry().class_composed_roles.clone();
-        let class_role_param_bindings_snapshot = self.class_role_param_bindings.clone();
+        let class_role_param_bindings_snapshot = self.registry().class_role_param_bindings.clone();
         let env_snapshot = self.env.clone();
         let saved_topic = self.env.get("_").cloned();
         let trimmed = code.trim();
@@ -941,18 +942,19 @@ impl Interpreter {
             self.env.remove("__mutsu_in_eval");
         }
         self.restore_routine_registry_eval(routine_snapshot);
-        let current_roles = self.roles.clone();
-        let current_role_candidates = self.role_candidates.clone();
-        let current_role_type_params = self.role_type_params.clone();
-        let current_role_parents = self.role_parents.clone();
-        let current_role_hides = self.role_hides.clone();
+        let current_roles = self.registry().roles.clone();
+        let current_role_candidates = self.registry().role_candidates.clone();
+        let current_role_type_params = self.registry().role_type_params.clone();
+        let current_role_parents = self.registry().role_parents.clone();
+        let current_role_hides = self.registry().role_hides.clone();
         let current_classes = self.registry().classes.clone();
         let current_hidden_classes = self.registry().hidden_classes.clone();
         let current_hidden_defer_parents = self.registry().hidden_defer_parents.clone();
         let current_class_composed_roles = self.registry().class_composed_roles.clone();
-        let current_class_role_param_bindings = self.class_role_param_bindings.clone();
+        let current_class_role_param_bindings = self.registry().class_role_param_bindings.clone();
         let current_env = self.env.clone();
         let current_type_keys: std::collections::HashSet<String> = self
+            .registry()
             .roles
             .keys()
             .chain(self.registry().classes.keys())
@@ -963,24 +965,30 @@ impl Interpreter {
             .chain(classes_snapshot.keys())
             .cloned()
             .collect();
-        self.roles = roles_snapshot;
-        self.user_declared_roles = user_declared_roles_snapshot;
-        self.role_candidates = role_candidates_snapshot;
-        self.role_type_params = role_type_params_snapshot;
-        self.role_parents = role_parents_snapshot;
-        self.role_hides = role_hides_snapshot;
+        self.registry_mut().roles = roles_snapshot;
+        self.registry_mut().user_declared_roles = user_declared_roles_snapshot;
+        self.registry_mut().role_candidates = role_candidates_snapshot;
+        self.registry_mut().role_type_params = role_type_params_snapshot;
+        self.registry_mut().role_parents = role_parents_snapshot;
+        self.registry_mut().role_hides = role_hides_snapshot;
         self.registry_mut().classes = classes_snapshot;
         self.registry_mut().hidden_classes = hidden_classes_snapshot;
         self.registry_mut().hidden_defer_parents = hidden_defer_parents_snapshot;
         self.registry_mut().class_composed_roles = class_composed_roles_snapshot;
-        self.class_role_param_bindings = class_role_param_bindings_snapshot;
-        self.roles.extend(current_roles);
+        self.registry_mut().class_role_param_bindings = class_role_param_bindings_snapshot;
+        self.registry_mut().roles.extend(current_roles);
         // Don't extend user_declared_roles: roles declared in EVAL are EVAL-scoped
         // and should not affect the parent's redeclaration detection.
-        self.role_candidates.extend(current_role_candidates);
-        self.role_type_params.extend(current_role_type_params);
-        self.role_parents.extend(current_role_parents);
-        self.role_hides.extend(current_role_hides);
+        self.registry_mut()
+            .role_candidates
+            .extend(current_role_candidates);
+        self.registry_mut()
+            .role_type_params
+            .extend(current_role_type_params);
+        self.registry_mut()
+            .role_parents
+            .extend(current_role_parents);
+        self.registry_mut().role_hides.extend(current_role_hides);
         self.registry_mut().classes.extend(current_classes);
         self.registry_mut()
             .hidden_classes
@@ -991,7 +999,8 @@ impl Interpreter {
         self.registry_mut()
             .class_composed_roles
             .extend(current_class_composed_roles);
-        self.class_role_param_bindings
+        self.registry_mut()
+            .class_role_param_bindings
             .extend(current_class_role_param_bindings);
         for key in current_type_keys.union(&snapshot_type_keys) {
             if let Some(value) = current_env.get(key).cloned() {

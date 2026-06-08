@@ -226,12 +226,12 @@ impl Interpreter {
     /// Check if a type name is known (either a class, role, or enum).
     pub(crate) fn has_type(&self, name: &str) -> bool {
         self.registry().classes.contains_key(name)
-            || self.roles.contains_key(name)
+            || self.registry().roles.contains_key(name)
             || self.registry().enum_types.contains_key(name)
             || self.registry().subsets.contains_key(name)
             || Self::parse_parametric_type_name(name).is_some_and(|(base, _)| {
                 self.registry().classes.contains_key(&base)
-                    || self.roles.contains_key(&base)
+                    || self.registry().roles.contains_key(&base)
                     || self.registry().enum_types.contains_key(&base)
                     || self.registry().subsets.contains_key(&base)
             })
@@ -249,11 +249,12 @@ impl Interpreter {
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
-        self.roles.contains_key(name)
+        self.registry().roles.contains_key(name)
     }
 
     pub(crate) fn role_has_method(&self, role_name: &str, method_name: &str) -> bool {
-        self.roles
+        self.registry()
+            .roles
             .get(role_name)
             .is_some_and(|r| r.methods.contains_key(method_name))
     }

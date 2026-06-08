@@ -197,7 +197,7 @@ impl Interpreter {
             let Some(role_name) = key.strip_prefix("__mutsu_role__") else {
                 continue;
             };
-            if let Some(role) = self.roles.get(role_name)
+            if let Some(role) = self.registry().roles.get(role_name)
                 && role.methods.contains_key(method)
             {
                 return true;

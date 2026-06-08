@@ -198,20 +198,20 @@ impl Interpreter {
     }
 
     /// Resolve a potentially qualified role name to its registered key.
-    /// If `name` is in `self.roles`, returns it as-is. Otherwise, if `name`
+    /// If `name` is in `self.registry().roles`, returns it as-is. Otherwise, if `name`
     /// contains `::`, tries the short name (after the last `::`).
     pub(in crate::runtime) fn resolve_role_key(&self, name: &str) -> Option<String> {
-        if self.roles.contains_key(name) {
+        if self.registry().roles.contains_key(name) {
             return Some(name.to_string());
         }
         if let Some(Value::Package(pkg)) = self.env.get(name) {
             let resolved = pkg.resolve();
-            if self.roles.contains_key(&resolved) {
+            if self.registry().roles.contains_key(&resolved) {
                 return Some(resolved);
             }
         }
         if let Some(short) = name.rsplit("::").next()
-            && self.roles.contains_key(short)
+            && self.registry().roles.contains_key(short)
         {
             return Some(short.to_string());
         }
@@ -685,7 +685,7 @@ impl Interpreter {
                     if Self::type_matches(effective_constraint, &role_name) {
                         return true;
                     }
-                    if let Some(rparents) = self.role_parents.get(&role_name) {
+                    if let Some(rparents) = self.registry().role_parents.get(&role_name) {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
                             if self.resolve_role_key(rp_base).is_some() {
@@ -707,27 +707,31 @@ impl Interpreter {
                 .split_once('[')
                 .map(|(b, _)| b)
                 .unwrap_or(&pkg_resolved);
-            if self.roles.contains_key(pkg_base) {
+            if self.registry().roles.contains_key(pkg_base) {
                 // For role groups, use candidate-specific parents:
                 // - Curried roles (e.g. R[Int]): use parametric candidate's parents
                 // - Bare role name: use non-parametric candidate's parents
-                let candidate_parents = self.role_candidates.get(pkg_base).and_then(|candidates| {
-                    if pkg_resolved.contains('[') {
-                        // Curried: find the parametric candidate
-                        candidates
-                            .iter()
-                            .find(|c| !c.type_params.is_empty())
-                            .map(|c| c.parents.clone())
-                    } else {
-                        // Bare: find the non-parametric candidate
-                        candidates
-                            .iter()
-                            .find(|c| c.type_params.is_empty())
-                            .map(|c| c.parents.clone())
-                    }
-                });
+                let candidate_parents =
+                    self.registry()
+                        .role_candidates
+                        .get(pkg_base)
+                        .and_then(|candidates| {
+                            if pkg_resolved.contains('[') {
+                                // Curried: find the parametric candidate
+                                candidates
+                                    .iter()
+                                    .find(|c| !c.type_params.is_empty())
+                                    .map(|c| c.parents.clone())
+                            } else {
+                                // Bare: find the non-parametric candidate
+                                candidates
+                                    .iter()
+                                    .find(|c| c.type_params.is_empty())
+                                    .map(|c| c.parents.clone())
+                            }
+                        });
                 let initial_parents = candidate_parents
-                    .or_else(|| self.role_parents.get(pkg_base).cloned())
+                    .or_else(|| self.registry().role_parents.get(pkg_base).cloned())
                     .unwrap_or_default();
                 let mut stack: Vec<String> = initial_parents;
                 let mut seen = HashSet::new();
@@ -755,7 +759,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    if let Some(rparents) = self.role_parents.get(&parent) {
+                    if let Some(rparents) = self.registry().role_parents.get(&parent) {
                         for rp in rparents {
                             stack.push(rp.clone());
                         }
@@ -815,7 +819,7 @@ impl Interpreter {
                 return true;
             }
             // Check composed roles for the instance's class (and its MRO)
-            if self.roles.contains_key(constraint) {
+            if self.registry().roles.contains_key(constraint) {
                 let mro = self.class_mro(&class_name.resolve());
                 let mut role_stack: Vec<String> = Vec::new();
                 let mut seen_roles = HashSet::new();
@@ -834,10 +838,10 @@ impl Interpreter {
                     if role_name == constraint {
                         return true;
                     }
-                    if let Some(rparents) = self.role_parents.get(&role_name) {
+                    if let Some(rparents) = self.registry().role_parents.get(&role_name) {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.roles.contains_key(rp_base) {
+                            if self.registry().roles.contains_key(rp_base) {
                                 role_stack.push(rp_base.to_string());
                             }
                         }

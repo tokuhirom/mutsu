@@ -184,12 +184,13 @@ impl Interpreter {
         nested.registry_mut().classes = self.registry().classes.clone();
         nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
         nested.registry_mut().class_composed_roles = self.registry().class_composed_roles.clone();
-        nested.roles = self.roles.clone();
-        nested.role_candidates = self.role_candidates.clone();
-        nested.role_parents = self.role_parents.clone();
-        nested.role_hides = self.role_hides.clone();
-        nested.role_type_params = self.role_type_params.clone();
-        nested.class_role_param_bindings = self.class_role_param_bindings.clone();
+        nested.registry_mut().roles = self.registry().roles.clone();
+        nested.registry_mut().role_candidates = self.registry().role_candidates.clone();
+        nested.registry_mut().role_parents = self.registry().role_parents.clone();
+        nested.registry_mut().role_hides = self.registry().role_hides.clone();
+        nested.registry_mut().role_type_params = self.registry().role_type_params.clone();
+        nested.registry_mut().class_role_param_bindings =
+            self.registry().class_role_param_bindings.clone();
         nested.registry_mut().subsets = self.registry().subsets.clone();
         nested.registry_mut().enum_types = self.registry().enum_types.clone();
         nested.type_metadata = self.type_metadata.clone();
@@ -283,12 +284,13 @@ impl Interpreter {
         nested.registry_mut().classes = self.registry().classes.clone();
         nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
         nested.registry_mut().class_composed_roles = self.registry().class_composed_roles.clone();
-        nested.roles = self.roles.clone();
-        nested.role_candidates = self.role_candidates.clone();
-        nested.role_parents = self.role_parents.clone();
-        nested.role_hides = self.role_hides.clone();
-        nested.role_type_params = self.role_type_params.clone();
-        nested.class_role_param_bindings = self.class_role_param_bindings.clone();
+        nested.registry_mut().roles = self.registry().roles.clone();
+        nested.registry_mut().role_candidates = self.registry().role_candidates.clone();
+        nested.registry_mut().role_parents = self.registry().role_parents.clone();
+        nested.registry_mut().role_hides = self.registry().role_hides.clone();
+        nested.registry_mut().role_type_params = self.registry().role_type_params.clone();
+        nested.registry_mut().class_role_param_bindings =
+            self.registry().class_role_param_bindings.clone();
         nested.registry_mut().subsets = self.registry().subsets.clone();
         nested.registry_mut().enum_types = self.registry().enum_types.clone();
         nested.type_metadata = self.type_metadata.clone();
