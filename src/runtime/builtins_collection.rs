@@ -1074,7 +1074,9 @@ impl Interpreter {
         // path uses. The previous inline copy here drifted from native (it had a
         // separate Range/Seq/itemized walk).
         let mut rest = Vec::with_capacity(args.len().saturating_sub(1));
-        for v in &args[1..] {
+        // `args.get(1..)` (not `&args[1..]`) so bare `join()` / `join(sep)` with no
+        // list args doesn't panic on an empty slice.
+        for v in args.get(1..).unwrap_or(&[]) {
             if let Value::LazyList(list) = v {
                 rest.push(Value::array(self.force_lazy_list(list)?));
             } else {
