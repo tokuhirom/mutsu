@@ -4202,10 +4202,12 @@ impl VM {
             self.stack.push(forced);
             return Ok(());
         }
-        // Auto-deref ContainerRef: read the inner value for stack use
-        if let Value::ContainerRef(ref arc) = val {
-            let inner = arc.lock().unwrap().clone();
-            self.stack.push(inner);
+        // Auto-deref ContainerRef: read the inner value for stack use (ContainerRef
+        // axis of the decont family). Gate on is_container_ref() to preserve the
+        // early return AND keep the non-container hot path move-only (into_deref is
+        // never reached for non-ContainerRef values).
+        if val.is_container_ref() {
+            self.stack.push(val.into_deref());
             return Ok(());
         }
         // Fast path: non-Nil values are always valid — skip env lookup
