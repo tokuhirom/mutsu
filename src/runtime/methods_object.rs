@@ -2806,10 +2806,7 @@ impl Interpreter {
                                 if self.class_does_baggy_or_setty(&cn) {
                                     return self.construct_baggy_instance(&cn, &args);
                                 }
-                                return Err(RuntimeError::new(format!(
-                                    "Default constructor for '{}' only takes named arguments",
-                                    class_name.resolve()
-                                )));
+                                return Err(constructor_positional_error(&class_name.resolve()));
                             }
                             // Fall through to default constructor below
                         }
@@ -2921,10 +2918,7 @@ impl Interpreter {
                         .iter()
                         .any(|n| n == "Array" || n == "Int" || n == "Num" || n == "Hash");
                     if !accepts_positional {
-                        return Err(RuntimeError::new(format!(
-                            "Default constructor for '{}' only takes named arguments",
-                            class_name.resolve()
-                        )));
+                        return Err(constructor_positional_error(&class_name.resolve()));
                     }
                 }
                 // For @-sigiled attributes with shaped array declarations,
@@ -4085,4 +4079,26 @@ impl Interpreter {
             Ok(Value::make_instance(Symbol::intern(class_name), attrs))
         }
     }
+}
+
+/// Build a typed `X::Constructor::Positional` for a default constructor that
+/// was handed positional arguments (e.g. `Mu.new(1)`). The `type` attribute is
+/// the type object so the test matcher `type => Foo` accepts it.
+fn constructor_positional_error(class_name: &str) -> RuntimeError {
+    let msg = format!(
+        "Default constructor for '{}' only takes named arguments",
+        class_name
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert(
+        "type".to_string(),
+        Value::Package(Symbol::intern(class_name)),
+    );
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern("X::Constructor::Positional"),
+        attrs,
+    )));
+    err
 }
