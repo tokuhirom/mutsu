@@ -374,7 +374,7 @@ impl Interpreter {
         } else if let Some(role_def) = self.roles.get(type_name) {
             names.extend(role_def.methods.keys().cloned());
             // Also include methods from composed roles
-            if let Some(composed) = self.class_composed_roles.get(type_name) {
+            if let Some(composed) = self.registry().class_composed_roles.get(type_name) {
                 for role_name in composed {
                     if let Some(rd) = self.roles.get(role_name) {
                         for key in rd.methods.keys() {
@@ -677,12 +677,13 @@ impl Interpreter {
         let hidden_parents: Vec<String> = hidden_parents.iter().map(|p| strip_colons(p)).collect();
         let hidden_parents = hidden_parents.as_slice();
         let prev_class = self.classes.get(name).cloned();
-        let prev_hidden = self.hidden_classes.contains(name);
-        let prev_hidden_defer = self.hidden_defer_parents.get(name).cloned();
-        let prev_composed_roles = self.class_composed_roles.get(name).cloned();
+        let prev_hidden = self.registry().hidden_classes.contains(name);
+        let prev_hidden_defer = self.registry().hidden_defer_parents.get(name).cloned();
+        let prev_composed_roles = self.registry().class_composed_roles.get(name).cloned();
         let prev_role_param_bindings = self.class_role_param_bindings.get(name).cloned();
         // Clear `is Type` trait entries for this class (they'll be re-populated from the body).
-        self.class_attribute_is_types
+        self.registry_mut()
+            .class_attribute_is_types
             .retain(|(cn, _), _| cn != name);
 
         let restore_previous_state = |this: &mut Self| {
@@ -692,19 +693,23 @@ impl Interpreter {
                 this.classes.remove(name);
             }
             if prev_hidden {
-                this.hidden_classes.insert(name.to_string());
+                this.registry_mut().hidden_classes.insert(name.to_string());
             } else {
-                this.hidden_classes.remove(name);
+                this.registry_mut().hidden_classes.remove(name);
             }
             if let Some(hidden) = prev_hidden_defer.clone() {
-                this.hidden_defer_parents.insert(name.to_string(), hidden);
+                this.registry_mut()
+                    .hidden_defer_parents
+                    .insert(name.to_string(), hidden);
             } else {
-                this.hidden_defer_parents.remove(name);
+                this.registry_mut().hidden_defer_parents.remove(name);
             }
             if let Some(composed) = prev_composed_roles.clone() {
-                this.class_composed_roles.insert(name.to_string(), composed);
+                this.registry_mut()
+                    .class_composed_roles
+                    .insert(name.to_string(), composed);
             } else {
-                this.class_composed_roles.remove(name);
+                this.registry_mut().class_composed_roles.remove(name);
             }
             if let Some(bindings) = prev_role_param_bindings.clone() {
                 this.class_role_param_bindings
@@ -745,7 +750,10 @@ impl Interpreter {
         // NOT a stub (i.e., it was already filled in by a hoisted real
         // declaration), skip the stub registration to avoid overwriting the
         // real class definition.
-        if is_stub_body && self.classes.contains_key(name) && !self.class_stubs.contains(name) {
+        if is_stub_body
+            && self.classes.contains_key(name)
+            && !self.registry().class_stubs.contains(name)
+        {
             return Ok(Vec::new());
         }
 
@@ -888,7 +896,7 @@ impl Interpreter {
                 )));
             }
             // Check if parent is a stub (not yet composed)
-            if self.class_stubs.contains(resolved_parent) {
+            if self.registry().class_stubs.contains(resolved_parent) {
                 let message = format!(
                     "'{}' cannot inherit from '{}' because '{}' isn't composed yet (maybe it is stubbed)",
                     name, resolved_parent, resolved_parent
@@ -924,14 +932,15 @@ impl Interpreter {
             class_level_attrs: HashMap::new(),
         };
         if is_hidden {
-            self.hidden_classes.insert(name.to_string());
+            self.registry_mut().hidden_classes.insert(name.to_string());
         } else {
-            self.hidden_classes.remove(name);
+            self.registry_mut().hidden_classes.remove(name);
         }
         if hidden_parents.is_empty() {
-            self.hidden_defer_parents.remove(name);
+            self.registry_mut().hidden_defer_parents.remove(name);
         } else {
-            self.hidden_defer_parents
+            self.registry_mut()
+                .hidden_defer_parents
                 .insert(name.to_string(), hidden_parents.iter().cloned().collect());
         }
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
@@ -1191,7 +1200,8 @@ impl Interpreter {
                 && self.registry().enum_types.contains_key(base_role_name)
             {
                 // Enum used as a role via `does`: record it for method dispatch
-                self.class_enum_roles
+                self.registry_mut()
+                    .class_enum_roles
                     .entry(name.to_string())
                     .or_default()
                     .push(base_role_name.to_string());
@@ -1264,17 +1274,22 @@ impl Interpreter {
                 };
                 self.classes.insert(base_role.to_string(), punned_class);
                 if !punned_composed_roles.is_empty() {
-                    self.class_composed_roles
+                    self.registry_mut()
+                        .class_composed_roles
                         .insert(base_role.to_string(), punned_composed_roles);
                 }
                 // Propagate hidden status from role to punned class
                 if let Some(role_def) = self.roles.get(base_role)
                     && role_def.is_hidden
                 {
-                    self.hidden_classes.insert(base_role.to_string());
+                    self.registry_mut()
+                        .hidden_classes
+                        .insert(base_role.to_string());
                 }
                 if hidden_punned_role_bases.contains(base_role) {
-                    self.hidden_classes.insert(base_role.to_string());
+                    self.registry_mut()
+                        .hidden_classes
+                        .insert(base_role.to_string());
                 }
                 // Recompute MRO for the punned class
                 let mro = self.class_mro(base_role);
@@ -1283,11 +1298,13 @@ impl Interpreter {
                 }
             }
             if hidden_punned_role_bases.contains(base_role) {
-                self.hidden_classes.insert(base_role.to_string());
+                self.registry_mut()
+                    .hidden_classes
+                    .insert(base_role.to_string());
             }
         }
         // Clear stale composed roles from previous registration
-        self.class_composed_roles.remove(name);
+        self.registry_mut().class_composed_roles.remove(name);
         if !composed_roles_list.is_empty() {
             // Propagate role parent classes to the class (recursively through sub-roles)
             // When a role `R is C1` is composed into a class, C1 becomes a parent
@@ -1321,7 +1338,8 @@ impl Interpreter {
                     }
                 }
             }
-            self.class_composed_roles
+            self.registry_mut()
+                .class_composed_roles
                 .insert(name.to_string(), composed_roles_list.clone());
             // Propagate `hides` from composed roles (and sub-roles) to the class
             {
@@ -1341,7 +1359,8 @@ impl Interpreter {
                     }
                     if let Some(hides_list) = self.role_hides.get(&role_name).cloned() {
                         for hidden in hides_list {
-                            self.hidden_defer_parents
+                            self.registry_mut()
+                                .hidden_defer_parents
                                 .entry(name.to_string())
                                 .or_default()
                                 .insert(hidden);
@@ -1364,7 +1383,8 @@ impl Interpreter {
                 name: trusted_class,
             } = stmt
             {
-                self.class_trusts
+                self.registry_mut()
+                    .class_trusts
                     .entry(name.to_string())
                     .or_default()
                     .insert(trusted_class.resolve());
@@ -1376,16 +1396,16 @@ impl Interpreter {
         self.method_wrap_chains.retain(|(cls, _, _), _| cls != name);
         self.classes.insert(name.to_string(), class_def.clone());
         if is_stub_body {
-            self.class_stubs.insert(name.to_string());
+            self.registry_mut().class_stubs.insert(name.to_string());
             self.classes.insert(name.to_string(), class_def);
             let mut stack = Vec::new();
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(deferred_custom_traits);
         }
         // Clear stub status now that the class has a real body.
-        self.class_stubs.remove(name);
+        self.registry_mut().class_stubs.remove(name);
         // Also clear package stub status (for `package Foo { ... }; class Foo { }`)
-        self.package_stubs.remove(name);
+        self.registry_mut().package_stubs.remove(name);
         let saved_package = self.current_package.clone();
         let saved_env = self.env.clone();
         self.current_package = name.to_string();
@@ -1573,7 +1593,8 @@ impl Interpreter {
                                     return Err(runtime_err);
                                 }
                             }
-                            self.class_attribute_defaults
+                            self.registry_mut()
+                                .class_attribute_defaults
                                 .insert((name.to_string(), attr_name_str.clone()), val);
                         }
                     } else if default.is_some() {
@@ -1603,11 +1624,13 @@ impl Interpreter {
                             .insert(attr_name_str.clone(), *built);
                     }
                     if let Some(it) = is_type {
-                        self.class_attribute_is_types
+                        self.registry_mut()
+                            .class_attribute_is_types
                             .insert((name.to_string(), attr_name_str.clone()), it.clone());
                     }
                     if let Some(dm) = deprecated_message {
-                        self.class_attribute_deprecated
+                        self.registry_mut()
+                            .class_attribute_deprecated
                             .insert((name.to_string(), attr_name_str.clone()), dm.clone());
                     }
                     let attr_var_name = if *is_public {
@@ -2150,7 +2173,8 @@ impl Interpreter {
                 Stmt::TrustsDecl {
                     name: trusted_class,
                 } => {
-                    self.class_trusts
+                    self.registry_mut()
+                        .class_trusts
                         .entry(name.to_string())
                         .or_default()
                         .insert(trusted_class.resolve());
@@ -2225,7 +2249,8 @@ impl Interpreter {
                 if self.functions.contains_key(&Symbol::intern(&fq))
                     && !saved_functions_keys.contains(&fq)
                 {
-                    self.class_subs
+                    self.registry_mut()
+                        .class_subs
                         .entry(name.to_string())
                         .or_default()
                         .insert(fq, Value::Bool(true));
@@ -2627,8 +2652,8 @@ impl Interpreter {
         }
         // Clean up stale punned class entry for this role name.
         self.classes.remove(name);
-        self.hidden_classes.remove(name);
-        self.class_composed_roles.remove(name);
+        self.registry_mut().hidden_classes.remove(name);
+        self.registry_mut().class_composed_roles.remove(name);
         // When registering a parametric variant of an existing non-parametric role
         // (forming a role group), save the non-parametric role's parents so we can
         // restore them after the parametric variant adds its own parents.
@@ -3194,7 +3219,7 @@ impl Interpreter {
 
     pub(crate) fn register_cunion_class(&mut self, name: &str) {
         self.clear_private_zeroarg_method_cache();
-        self.cunion_classes.insert(name.to_string());
+        self.registry_mut().cunion_classes.insert(name.to_string());
     }
 
     /// Construct a CUnion instance: all native-int fields share the same
@@ -3386,7 +3411,8 @@ impl Interpreter {
         };
         self.classes.insert(role_name.to_string(), punned_class);
         // Register the role and its composed roles
-        self.class_composed_roles
+        self.registry_mut()
+            .class_composed_roles
             .insert(role_name.to_string(), composed_roles_list);
         // When punning a bare role (no type params), update the language
         // revision metadata from the matching candidate so that

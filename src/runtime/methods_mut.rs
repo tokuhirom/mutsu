@@ -1158,11 +1158,15 @@ impl Interpreter {
                     (class_name.resolve(), private_rest.to_string())
                 };
             let caller_allowed = caller_class.as_deref() == Some(owner_class.as_str())
-                || self.class_trusts.get(&owner_class).is_some_and(|trusted| {
-                    caller_class
-                        .as_ref()
-                        .is_some_and(|caller| trusted.contains(caller))
-                });
+                || self
+                    .registry()
+                    .class_trusts
+                    .get(&owner_class)
+                    .is_some_and(|trusted| {
+                        caller_class
+                            .as_ref()
+                            .is_some_and(|caller| trusted.contains(caller))
+                    });
             if !caller_allowed {
                 return Err(RuntimeError::new(format!(
                     "X::Method::Private::Permission: Cannot call private method '{}' on {} because it does not trust {}",
@@ -1225,8 +1229,7 @@ impl Interpreter {
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
                     if matches!(assigned_value, Value::Nil)
-                        && let Some(def) =
-                            self.class_attribute_default(qualifier, &attr_name).cloned()
+                        && let Some(def) = self.class_attribute_default(qualifier, &attr_name)
                     {
                         assigned_value = def;
                     }
@@ -1278,9 +1281,7 @@ impl Interpreter {
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
                     if matches!(assigned_value, Value::Nil)
-                        && let Some(def) = self
-                            .class_attribute_default(qualifier, actual_method)
-                            .cloned()
+                        && let Some(def) = self.class_attribute_default(qualifier, actual_method)
                     {
                         assigned_value = def;
                     }
@@ -1498,9 +1499,7 @@ impl Interpreter {
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
                 if matches!(assigned_value, Value::Nil)
-                    && let Some(def) = self
-                        .class_attribute_default(&class_name.resolve(), method)
-                        .cloned()
+                    && let Some(def) = self.class_attribute_default(&class_name.resolve(), method)
                 {
                     assigned_value = def;
                 }
@@ -1643,9 +1642,7 @@ impl Interpreter {
             // When Nil is assigned to an attribute with `is default(...)`,
             // restore the default value instead of setting Nil.
             if matches!(assigned_value, Value::Nil)
-                && let Some(def) = self
-                    .class_attribute_default(&class_name.resolve(), &attr_name)
-                    .cloned()
+                && let Some(def) = self.class_attribute_default(&class_name.resolve(), &attr_name)
             {
                 assigned_value = def;
             }

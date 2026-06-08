@@ -428,6 +428,7 @@ impl Interpreter {
             let type_name = name.resolve();
             let role_name = method;
             let composes_role = self
+                .registry()
                 .class_composed_roles
                 .get(&type_name)
                 .is_some_and(|roles| roles.iter().any(|r| r == role_name));

@@ -14,20 +14,24 @@ impl Interpreter {
     pub(crate) fn sync_eval_definition_state(&mut self, nested: &Interpreter) {
         self.type_metadata = nested.type_metadata.clone();
         self.classes = nested.classes.clone();
-        self.cunion_classes = nested.cunion_classes.clone();
-        self.hidden_classes = nested.hidden_classes.clone();
-        self.class_stubs = nested.class_stubs.clone();
-        self.package_stubs = nested.package_stubs.clone();
-        self.hidden_defer_parents = nested.hidden_defer_parents.clone();
-        self.class_trusts = nested.class_trusts.clone();
-        self.class_composed_roles = nested.class_composed_roles.clone();
+        // self and nested are distinct Interpreters with distinct registry Arcs,
+        // so taking self's write lock and nested's read lock in one statement is
+        // deadlock-free (matches the slice-1 `subsets` line below).
+        self.registry_mut().cunion_classes = nested.registry().cunion_classes.clone();
+        self.registry_mut().hidden_classes = nested.registry().hidden_classes.clone();
+        self.registry_mut().class_stubs = nested.registry().class_stubs.clone();
+        self.registry_mut().package_stubs = nested.registry().package_stubs.clone();
+        self.registry_mut().hidden_defer_parents = nested.registry().hidden_defer_parents.clone();
+        self.registry_mut().class_trusts = nested.registry().class_trusts.clone();
+        self.registry_mut().class_composed_roles = nested.registry().class_composed_roles.clone();
         self.roles = nested.roles.clone();
         self.role_candidates = nested.role_candidates.clone();
         self.role_parents = nested.role_parents.clone();
         self.role_hides = nested.role_hides.clone();
         self.role_type_params = nested.role_type_params.clone();
         self.class_role_param_bindings = nested.class_role_param_bindings.clone();
-        self.attribute_build_overrides = nested.attribute_build_overrides.clone();
+        self.registry_mut().attribute_build_overrides =
+            nested.registry().attribute_build_overrides.clone();
         self.registry_mut().subsets = nested.registry().subsets.clone();
         self.need_hidden_classes = nested.need_hidden_classes.clone();
     }

@@ -923,17 +923,21 @@ impl Interpreter {
                     }
                     None
                 };
-                if let Some(result) =
-                    check_transitive(&self.class_composed_roles, &self.role_parents, &class_name)
-                {
+                if let Some(result) = check_transitive(
+                    &self.registry().class_composed_roles,
+                    &self.role_parents,
+                    &class_name,
+                ) {
                     return Ok(result);
                 }
                 if !local_only {
                     let mro = self.class_mro(&class_name);
                     for cn in &mro[1..] {
-                        if let Some(result) =
-                            check_transitive(&self.class_composed_roles, &self.role_parents, cn)
-                        {
+                        if let Some(result) = check_transitive(
+                            &self.registry().class_composed_roles,
+                            &self.role_parents,
+                            cn,
+                        ) {
                             return Ok(result);
                         }
                     }
@@ -1138,6 +1142,7 @@ impl Interpreter {
                     result.push(Value::Package(Symbol::intern(entry)));
                     // Insert composed roles for this class
                     let composed = self
+                        .registry()
                         .class_composed_roles
                         .get(entry)
                         .cloned()
@@ -1196,6 +1201,7 @@ impl Interpreter {
         };
         // Collect hidden parent names for this class
         let hidden_parents: HashSet<String> = self
+            .registry()
             .hidden_defer_parents
             .get(&class_name)
             .cloned()
@@ -1205,7 +1211,7 @@ impl Interpreter {
         for hp in &hidden_parents {
             hidden_set.insert(hp.clone());
         }
-        for hc in &self.hidden_classes {
+        for hc in &self.registry().hidden_classes {
             hidden_set.insert(hc.clone());
         }
         if hidden_set.is_empty() {
@@ -1222,8 +1228,16 @@ impl Interpreter {
                 .unwrap_or(hidden.as_str());
             to_hide.insert(hidden_base.to_string());
             // Also hide roles composed by the hidden class (try both full and base name)
-            let composed_full = self.class_composed_roles.get(hidden.as_str()).cloned();
-            let composed_base = self.class_composed_roles.get(hidden_base).cloned();
+            let composed_full = self
+                .registry()
+                .class_composed_roles
+                .get(hidden.as_str())
+                .cloned();
+            let composed_base = self
+                .registry()
+                .class_composed_roles
+                .get(hidden_base)
+                .cloned();
             let composed = composed_full.or(composed_base).unwrap_or_default();
             for role in &composed {
                 let base = role
@@ -1271,6 +1285,7 @@ impl Interpreter {
         };
         let mro = self.classhow_mro_names(invocant);
         let hidden_parents: HashSet<String> = self
+            .registry()
             .hidden_defer_parents
             .get(&class_name)
             .cloned()
@@ -1279,7 +1294,7 @@ impl Interpreter {
         for hp in &hidden_parents {
             hidden_set.insert(hp.clone());
         }
-        for hc in &self.hidden_classes {
+        for hc in &self.registry().hidden_classes {
             hidden_set.insert(hc.clone());
         }
         if hidden_set.is_empty() {
@@ -2443,7 +2458,7 @@ impl Interpreter {
         let mut result = Vec::new();
         let mut seen = std::collections::HashSet::new();
         if local_only || non_transitive {
-            if let Some(roles) = self.class_composed_roles.get(class_name) {
+            if let Some(roles) = self.registry().class_composed_roles.get(class_name) {
                 for r in roles {
                     if seen.insert(r.clone()) {
                         result.push(r.clone());
@@ -2478,8 +2493,12 @@ impl Interpreter {
                 if cn == "Any" || cn == "Mu" {
                     continue;
                 }
-                if let Some(roles) = self.class_composed_roles.get(cn) {
-                    for r in roles {
+                // Clone out before the recursive call so no registry read guard is
+                // held across `collect_transitive_roles` (avoids a same-thread
+                // recursive read lock).
+                let roles = self.registry().class_composed_roles.get(cn).cloned();
+                if let Some(roles) = roles {
+                    for r in &roles {
                         if seen.insert(r.clone()) {
                             result.push(r.clone());
                         }

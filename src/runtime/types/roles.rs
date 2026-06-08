@@ -162,7 +162,9 @@ impl Interpreter {
             // Persist HOW mixin: if the left is a HOW meta-object, store the
             // composed result so future `.HOW` calls return the mixed-in value.
             if let Some(how_target) = Self::how_target_from_value(&left) {
-                self.class_how_values.insert(how_target, result.clone());
+                self.registry_mut()
+                    .class_how_values
+                    .insert(how_target, result.clone());
             }
             return Ok(result);
         }

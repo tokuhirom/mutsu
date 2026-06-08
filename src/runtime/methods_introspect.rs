@@ -234,7 +234,7 @@ impl Interpreter {
             _ => None,
         };
         if let Some(ref name) = how_lookup_name
-            && let Some(how_val) = self.class_how_values.get(name)
+            && let Some(how_val) = self.registry().class_how_values.get(name)
         {
             return Ok(how_val.clone());
         }

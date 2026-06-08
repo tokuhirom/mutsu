@@ -885,18 +885,6 @@ pub struct Interpreter {
     /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
     registry: Arc<RwLock<Registry>>,
     classes: HashMap<String, ClassDef>,
-    cunion_classes: HashSet<String>,
-    hidden_classes: HashSet<String>,
-    /// Classes that were declared as stubs (`class Foo { ... }`).
-    class_stubs: HashSet<String>,
-    /// Packages/modules that were declared as stubs (`module Foo { ... }`).
-    pub(crate) package_stubs: HashSet<String>,
-    hidden_defer_parents: HashMap<String, HashSet<String>>,
-    class_trusts: HashMap<String, HashSet<String>>,
-    /// Persistent HOW meta-objects per class/role, used for `$c.HOW does Role` persistence
-    pub(crate) class_how_values: HashMap<String, Value>,
-    class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
-    class_enum_roles: HashMap<String, Vec<String>>,     // class -> enums composed via `does`
     roles: HashMap<String, RoleDef>,
     /// Roles explicitly declared via user code (not pre-registered builtins).
     /// Used to detect X::Redeclaration for role->class name conflicts.
@@ -906,19 +894,6 @@ pub struct Interpreter {
     role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
-    /// Private subs declared in class bodies, keyed by class name.
-    /// Maps class_name -> { "&sub_name" -> Value }.
-    class_subs: HashMap<String, HashMap<String, Value>>,
-    attribute_build_overrides: HashMap<(String, String), Value>,
-    /// Evaluated `is default(...)` values for class attributes.
-    /// Maps (class_name, attr_name) to the default value that should be restored when Nil is assigned.
-    class_attribute_defaults: HashMap<(String, String), Value>,
-    /// `is Type` traits on `@`/`%` class attributes (e.g. `has @.a is Buf`, `has %.h is BagHash`).
-    /// Maps (class_name, attr_name) to the type name.
-    class_attribute_is_types: HashMap<(String, String), String>,
-    /// `is DEPRECATED` messages on class attributes.
-    /// Maps (class_name, attr_name) to the deprecation message.
-    class_attribute_deprecated: HashMap<(String, String), String>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
     proto_dispatch_stack: Vec<(String, Vec<Value>)>,
@@ -2892,17 +2867,11 @@ impl Interpreter {
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: 0,
-            registry: Arc::new(RwLock::new(Registry::default())),
-            classes,
-            cunion_classes: HashSet::new(),
-            hidden_classes: HashSet::new(),
-            class_stubs: HashSet::new(),
-            package_stubs: HashSet::new(),
-            hidden_defer_parents: HashMap::new(),
-            class_trusts: HashMap::new(),
-            class_how_values: HashMap::new(),
-            class_composed_roles: {
-                let mut ccr = HashMap::new();
+            registry: {
+                let mut registry = Registry::default();
+                // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
+                // now lives in the shared Registry instead of an Interpreter field).
+                let ccr = &mut registry.class_composed_roles;
                 ccr.insert(
                     "CompUnit::Repository::FileSystem".to_string(),
                     vec!["CompUnit::Repository".to_string()],
@@ -2934,9 +2903,9 @@ impl Interpreter {
                 );
                 ccr.insert("Complex".to_string(), vec!["Numeric".to_string()]);
                 ccr.insert("Str".to_string(), vec!["Stringy".to_string()]);
-                ccr
+                Arc::new(RwLock::new(registry))
             },
-            class_enum_roles: HashMap::new(),
+            classes,
             roles: {
                 let mut roles = HashMap::new();
                 roles.insert(
@@ -3077,11 +3046,6 @@ impl Interpreter {
             role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
             class_role_param_bindings: HashMap::new(),
-            class_subs: HashMap::new(),
-            attribute_build_overrides: HashMap::new(),
-            class_attribute_defaults: HashMap::new(),
-            class_attribute_is_types: HashMap::new(),
-            class_attribute_deprecated: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
             proto_dispatch_stack: Vec::new(),
@@ -4471,9 +4435,11 @@ impl Interpreter {
         &self,
         class_name: &str,
         attr_name: &str,
-    ) -> Option<&Value> {
-        self.class_attribute_defaults
+    ) -> Option<Value> {
+        self.registry()
+            .class_attribute_defaults
             .get(&(class_name.to_string(), attr_name.to_string()))
+            .cloned()
     }
 
     /// Get the `is DEPRECATED` message for a class attribute accessor.
@@ -4481,9 +4447,11 @@ impl Interpreter {
         &self,
         class_name: &str,
         attr_name: &str,
-    ) -> Option<&String> {
-        self.class_attribute_deprecated
+    ) -> Option<String> {
+        self.registry()
+            .class_attribute_deprecated
             .get(&(class_name.to_string(), attr_name.to_string()))
+            .cloned()
     }
 
     /// Set the element default for a container (Array/Hash) by Arc pointer identity.
@@ -5083,10 +5051,14 @@ impl Interpreter {
 
     /// Check if a class has scoped subs declared in its body.
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
-        self.class_subs
+        // Single guard for both reads (no user-code re-entry here, so let-binding
+        // is safe and avoids a same-thread recursive read lock).
+        let registry = self.registry();
+        registry
+            .class_subs
             .get(class_name)
             .is_some_and(|subs| !subs.is_empty())
-            || self.class_subs.keys().any(|k| {
+            || registry.class_subs.keys().any(|k| {
                 k.ends_with(&format!("::{}", class_name))
                     || class_name.ends_with(&format!("::{}", k))
             })
@@ -5232,15 +5204,6 @@ impl Interpreter {
             // child sees parent declarations but its own new ones don't leak back).
             registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
             classes: self.classes.clone(),
-            cunion_classes: self.cunion_classes.clone(),
-            hidden_classes: self.hidden_classes.clone(),
-            class_stubs: self.class_stubs.clone(),
-            package_stubs: self.package_stubs.clone(),
-            hidden_defer_parents: self.hidden_defer_parents.clone(),
-            class_trusts: self.class_trusts.clone(),
-            class_how_values: self.class_how_values.clone(),
-            class_composed_roles: self.class_composed_roles.clone(),
-            class_enum_roles: self.class_enum_roles.clone(),
             roles: self.roles.clone(),
             user_declared_roles: self.user_declared_roles.clone(),
             role_candidates: self.role_candidates.clone(),
@@ -5248,11 +5211,6 @@ impl Interpreter {
             role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
             class_role_param_bindings: self.class_role_param_bindings.clone(),
-            class_subs: self.class_subs.clone(),
-            attribute_build_overrides: self.attribute_build_overrides.clone(),
-            class_attribute_defaults: self.class_attribute_defaults.clone(),
-            class_attribute_is_types: self.class_attribute_is_types.clone(),
-            class_attribute_deprecated: self.class_attribute_deprecated.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),
             proto_dispatch_stack: Vec::new(),

@@ -153,6 +153,7 @@ impl Interpreter {
             }
             // BFS over composed roles for this class.
             let initial: Vec<String> = self
+                .registry()
                 .class_composed_roles
                 .get(cn)
                 .cloned()

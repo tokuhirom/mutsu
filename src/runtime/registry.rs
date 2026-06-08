@@ -24,9 +24,9 @@
 //! Always use a *temporary* guard (`self.registry().subsets.get(..)`), never a
 //! `let`-bound guard that lives across such a call.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::value::EnumValue;
+use crate::value::{EnumValue, Value};
 
 use super::SubsetDef;
 
@@ -41,4 +41,34 @@ pub(crate) struct Registry {
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// `subset Name of Base where { ... }` declarations.
     pub(crate) subsets: HashMap<String, SubsetDef>,
+
+    // ----- class metadata (PR-A slice 2) -----
+    /// Classes declared as a C `union` (native interop helper set).
+    pub(crate) cunion_classes: HashSet<String>,
+    /// Classes marked `is hidden` (excluded from `.^mro` etc.).
+    pub(crate) hidden_classes: HashSet<String>,
+    /// Forward-declared class stubs (`class Foo { ... }` declared later).
+    pub(crate) class_stubs: HashSet<String>,
+    /// Forward-declared package stubs.
+    pub(crate) package_stubs: HashSet<String>,
+    /// `is hidden` parents deferred until the parent is fully declared.
+    pub(crate) hidden_defer_parents: HashMap<String, HashSet<String>>,
+    /// `trusts` relationships: class -> set of trusted classes.
+    pub(crate) class_trusts: HashMap<String, HashSet<String>>,
+    /// Per-class metaclass (`HOW`) value override.
+    pub(crate) class_how_values: HashMap<String, Value>,
+    /// Roles composed into each class: class -> [role names].
+    pub(crate) class_composed_roles: HashMap<String, Vec<String>>,
+    /// Roles implicitly composed by enums: enum -> [role names].
+    pub(crate) class_enum_roles: HashMap<String, Vec<String>>,
+    /// Subs declared inside a class body: class -> (sub name -> value).
+    pub(crate) class_subs: HashMap<String, HashMap<String, Value>>,
+    /// Per-attribute `BUILD` override: (class, attr) -> builder value.
+    pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
+    /// Per-attribute default value: (class, attr) -> default value.
+    pub(crate) class_attribute_defaults: HashMap<(String, String), Value>,
+    /// Per-attribute declared type: (class, attr) -> type name.
+    pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
+    /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
+    pub(crate) class_attribute_deprecated: HashMap<(String, String), String>,
 }

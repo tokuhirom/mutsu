@@ -464,7 +464,7 @@ impl Interpreter {
                 }
             }
             // Check composed roles
-            if let Some(roles) = self.class_composed_roles.get(cn.as_str())
+            if let Some(roles) = self.registry().class_composed_roles.get(cn.as_str())
                 && roles.iter().any(|r| r == base)
             {
                 return 1;
@@ -482,7 +482,7 @@ impl Interpreter {
                     }
                 }
             }
-            if let Some(roles) = self.class_composed_roles.get(cn.as_str())
+            if let Some(roles) = self.registry().class_composed_roles.get(cn.as_str())
                 && roles.iter().any(|r| r == base)
             {
                 return 1;
