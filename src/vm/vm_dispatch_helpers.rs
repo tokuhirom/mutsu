@@ -345,28 +345,40 @@ impl VM {
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
 
-        // TODO: compile to bytecode — Routine value dispatch (the call_function
-        // sites in this block; the method-dispatch site now routes through the
-        // unified compiled-first path). Blocked-by: VM-side function/multi
-        // resolution (ledger §2).
-        // Routine: resolve to function name and dispatch
-        // Keep using interpreter.call_function here because Routine values may
-        // reference builtin functions (e.g. &SETTING::not resolves to Routine{name:"not"})
-        // and call_function correctly prioritizes builtins over user-defined functions.
+        // Routine value dispatch (ledger §2, ③ PR-1). Resolve to a function name
+        // and route through the VM's unified compiled-first entry
+        // (`call_function_compiled_first`): user-defined subs/multi/proto run as
+        // compiled bytecode, native builtins fall through to `native_function`, and
+        // only genuine carriers (EVAL/pseudo-package) reach the interpreter terminal.
+        // This replaces the raw `interpreter.call_function` fallbacks; builtin
+        // priority is preserved because a bare builtin Routine (e.g. `&SETTING::not`
+        // -> Routine{GLOBAL, "not"}) is not a declared user function, so it skips the
+        // `has_function` branches and resolves natively in compiled-first.
         if let Value::Routine { package, name, .. } = &target {
             let pkg = package.resolve();
             let name_str = name.resolve();
+            let empty_fns = HashMap::new();
+            let fns = compiled_fns.unwrap_or(&empty_fns);
             if !pkg.is_empty() && pkg != "GLOBAL" {
                 let fq = format!("{pkg}::{name_str}");
                 if self.interpreter.has_function(&fq) {
-                    return self.interpreter.call_function(&fq, args);
+                    return self.call_function_compiled_first(&fq, args, fns);
                 }
             }
             if self.interpreter.has_function(&name_str)
                 || self.interpreter.has_proto(&name_str)
                 || self.interpreter.has_multi_candidates(&name_str)
             {
-                return self.interpreter.call_function(&name_str, args);
+                // A Routine whose name is also a builtin (e.g. `&SETTING::...::not`
+                // resolves to Routine{GLOBAL, "not"}, accessors.rs) intentionally
+                // refers to the builtin, not a user sub that shadows the name. Keep
+                // builtin priority via `call_function` for those (a plain user `&not`
+                // is a `Value::Sub` and never reaches this Routine branch). Otherwise
+                // route user subs/multi/proto through compiled-first.
+                if crate::runtime::Interpreter::is_builtin_function(&name_str) {
+                    return self.interpreter.call_function(&name_str, args);
+                }
+                return self.call_function_compiled_first(&name_str, args, fns);
             }
             // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
             // Only use this when the package is a known class.
@@ -381,7 +393,7 @@ impl VM {
                 // user-defined methods run as compiled bytecode, native fall back.
                 return self.try_compiled_method_or_interpret(invocant, &name_str, method_args);
             }
-            return self.interpreter.call_function(&name_str, args);
+            return self.call_function_compiled_first(&name_str, args, fns);
         }
 
         // Junction: thread over values
