@@ -1342,6 +1342,18 @@ impl Interpreter {
             };
             let mut new_env = saved_env.clone();
             for (k, v) in &closure_base_env {
+                // A captured `ContainerRef` is a shared container cell (box-on-
+                // capture / lever C): the single source of truth for that lexical,
+                // so it must OVERWRITE any stale value the caller env holds (a
+                // value the declaring block leaked, or this closure's own prior
+                // writeback). The default "don't overwrite" merge would hide the
+                // live cell and make a *second* bareword `f()` call read a stale
+                // value (`my &f; { my $a=3; &f=sub{$a++} }; f(); f()` returned 3
+                // then 0). Mirrors the VM closure dispatch (`call_compiled_closure`).
+                if matches!(v, Value::ContainerRef(_)) {
+                    new_env.insert_sym(*k, v.clone());
+                    continue;
+                }
                 if merge_all {
                     new_env.entry_or_insert(k.resolve(), v.clone());
                     continue;
