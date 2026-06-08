@@ -980,6 +980,10 @@ impl VM {
     pub(super) fn exec_but_mixin_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // `but` on a type-object invocant is illegal — there is no instance.
+        if let Some(tn) = Self::does_invocant_type_object(&left) {
+            return Err(Self::does_type_object_error("but", &tn));
+        }
         let role_composed = match &right {
             Value::Pair(name, boxed)
                 if self.interpreter.has_role(name)
@@ -1003,6 +1007,10 @@ impl VM {
         if let Some(composed) = role_composed {
             self.stack.push(composed?);
             return Ok(());
+        }
+        // A non-role type object / class on the RHS is not composable.
+        if matches!(&right, Value::Package(_)) {
+            return Err(Self::mixin_not_composable_error(&left, &right));
         }
         let result = Self::apply_but_mixin(left, right)?;
         self.stack.push(result);
@@ -1089,9 +1097,67 @@ impl VM {
         self.stack.push(Value::Bool(result));
     }
 
+    /// If `left` is a type object (so `does`/`but` has no instance to mix
+    /// into), return its type name. Undefined scalars are `Nil` (the `Any`
+    /// type object); `Value::Package` is an explicit type object.
+    fn does_invocant_type_object(left: &Value) -> Option<String> {
+        match left {
+            Value::Package(name) => Some(name.resolve().to_string()),
+            Value::Nil => Some("Any".to_string()),
+            _ => None,
+        }
+    }
+
+    /// `does`/`but` used with a type object as the invocant is illegal —
+    /// there is no instance to mix into (`Bool does role {...}`,
+    /// `(my $x) does Int`).
+    fn does_type_object_error(op: &str, type_name: &str) -> RuntimeError {
+        let msg = format!(
+            "Cannot use '{}' operator on a type object {}.",
+            op, type_name
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("typename".to_string(), Value::str(type_name.to_string()));
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Does::TypeObject"),
+            attrs,
+        )));
+        err
+    }
+
+    /// Mixing a non-composable type (a class or type object, not a role or a
+    /// concrete value) into an object is illegal (`5 does Int`, `obj does NC`).
+    /// `target` is the object being mixed into, `rolish` the offending type.
+    fn mixin_not_composable_error(target: &Value, rolish: &Value) -> RuntimeError {
+        let mixin_type = rolish.to_string_value();
+        let into_type = crate::runtime::utils::value_type_name(target);
+        let msg = format!(
+            "Cannot mix in non-composable type {} into object of type {}",
+            mixin_type, into_type
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("target".to_string(), target.clone());
+        attrs.insert("rolish".to_string(), rolish.clone());
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Mixin::NotComposable"),
+            attrs,
+        )));
+        err
+    }
+
     /// VM-native `does` check. Inlines the pure `does_check` path and
     /// only falls back to the interpreter for actual role composition.
     fn vm_does_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // `does` on a type-object invocant is illegal — there is no instance.
+        // Undefined scalars (`my $foo`) are stored as Nil and act as the `Any`
+        // type object here.
+        if let Some(tn) = Self::does_invocant_type_object(&left) {
+            return Err(Self::does_type_object_error("does", &tn));
+        }
         // Handle array of roles: `$obj does (RoleA, RoleB)`
         if let Value::Array(ref items, ..) = right {
             let all_roles = items
@@ -1128,6 +1194,11 @@ impl VM {
         // on the result returns that instance.
         if matches!(&right, Value::Instance { .. }) {
             return Self::apply_but_mixin(left, right);
+        }
+        // Infix `does` always mixes in; a non-role type object or class on the
+        // RHS is not composable (`5 does Int`, `obj does SomeClass`).
+        if matches!(&right, Value::Package(_)) {
+            return Err(Self::mixin_not_composable_error(&left, &right));
         }
         // Pure check: does the value conform to the named role/type?
         let role_name = right.to_string_value();
