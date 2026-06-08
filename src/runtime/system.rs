@@ -160,55 +160,137 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let mut seen_classes: HashMap<String, bool> = HashMap::new();
+        // Type-like declarations (class/role/subset/enum) share one symbol
+        // namespace; a non-stub declaration cannot be redeclared by another
+        // type declaration of the same name (regardless of kind).
+        // `bool` value records whether the existing declaration is a forward stub.
+        let mut seen_types: HashMap<String, bool> = HashMap::new();
+        // Routine declarations (`sub`) share a separate namespace; a routine may
+        // only be redeclared if every declaration of that name is `multi`.
+        let mut seen_routines: HashMap<String, bool> = HashMap::new();
+        // Nested type names declared directly inside each top-level class body,
+        // so that `augment class C { class Nested {} }` can detect redeclaring a
+        // nested type that the original `class C { class Nested {} }` declared.
+        let mut class_nested: HashMap<String, HashSet<String>> = HashMap::new();
+        let collect_nested = |body: &[Stmt]| -> HashSet<String> {
+            body.iter()
+                .filter_map(|s| match s {
+                    Stmt::ClassDecl { name, .. }
+                    | Stmt::RoleDecl { name, .. }
+                    | Stmt::SubsetDecl { name, .. }
+                    | Stmt::EnumDecl { name, .. } => Some(name.resolve().to_string()),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let type_redeclaration = |name: &str| -> RuntimeError {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!("Redeclaration of symbol '{}'", name)),
+            );
+            RuntimeError::typed("X::Redeclaration", attrs)
+        };
+
         for stmt in stmts {
-            let (name, body, is_lexical) = match stmt {
+            // Routine redeclaration (sub a {}; sub a {} / sub a {}; multi sub a {}).
+            if let Stmt::SubDecl { name, multi, .. } = stmt {
+                let name = name.resolve().to_string();
+                if name.is_empty() {
+                    continue;
+                }
+                match seen_routines.get(&name) {
+                    None => {
+                        seen_routines.insert(name, *multi);
+                    }
+                    Some(prev_all_multi) => {
+                        if *prev_all_multi && *multi {
+                            // still all-multi, allowed
+                        } else {
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert("symbol".to_string(), Value::str(name.clone()));
+                            attrs.insert("what".to_string(), Value::str("routine".to_string()));
+                            attrs.insert(
+                                "message".to_string(),
+                                Value::str(format!("Redeclaration of routine '{}'", name)),
+                            );
+                            return Err(RuntimeError::typed("X::Redeclaration", attrs));
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // `augment class C { class Nested {} }` redeclares a nested type that
+            // the original declaration of C already declared.
+            if let Stmt::AugmentClass { name, body } = stmt {
+                let cname = name.resolve().to_string();
+                if let Some(existing) = class_nested.get(&cname) {
+                    for nested in collect_nested(body) {
+                        if existing.contains(&nested) {
+                            return Err(type_redeclaration(&nested));
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Type-like declarations: class / role / subset / enum.
+            let (name, is_stub) = match stmt {
                 Stmt::ClassDecl {
                     name,
                     body,
                     is_lexical,
                     ..
-                } => (name.resolve(), body, *is_lexical),
+                } => {
+                    let name = name.resolve().to_string();
+                    class_nested
+                        .entry(name.clone())
+                        .or_default()
+                        .extend(collect_nested(body));
+                    let body_no_sl: Vec<_> = body
+                        .iter()
+                        .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                        .collect();
+                    let is_stub = body_no_sl.len() == 1
+                        && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                            if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
+                    // A non-stub, non-lexical class that already exists in the
+                    // outer environment cannot be redeclared. Lexical classes
+                    // (`my class`) may shadow outer names. Only check
+                    // package-qualified names (containing `::`): simple names may
+                    // have leaked into the global registry from block-scoped
+                    // declarations (a known scoping limitation).
+                    if !is_stub && !*is_lexical && name.contains("::") && self.has_class(&name) {
+                        return Err(type_redeclaration(&name));
+                    }
+                    (name, is_stub)
+                }
+                Stmt::RoleDecl { name, .. } => (name.resolve().to_string(), false),
+                Stmt::SubsetDecl { name, .. } => (name.resolve().to_string(), false),
+                Stmt::EnumDecl { name, .. } => (name.resolve().to_string(), false),
                 _ => continue,
             };
-            let body_no_sl: Vec<_> = body
-                .iter()
-                .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                .collect();
-            let is_stub = body_no_sl.len() == 1
-                && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
-            // Check against classes already registered in the outer environment.
-            // A non-stub, non-lexical class that already exists cannot be redeclared.
-            // Lexical classes (`my class`) are allowed to shadow outer names.
-            // Only check package-qualified names (containing `::`) because simple
-            // names may have been registered by block-scoped class declarations that
-            // leaked into the global registry (a known scoping limitation).
-            if !is_stub && !is_lexical && name.contains("::") && self.has_class(&name) {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: Redeclaration of symbol '{}'",
-                    name
-                )));
+
+            if name.is_empty() {
+                continue;
             }
 
-            match seen_classes.get(&name) {
+            match seen_types.get(&name) {
                 None => {
-                    seen_classes.insert(name.to_string(), is_stub);
+                    seen_types.insert(name, is_stub);
                 }
                 Some(false) => {
-                    return Err(RuntimeError::new(format!(
-                        "X::Redeclaration: Redeclaration of symbol '{}'",
-                        name
-                    )));
+                    return Err(type_redeclaration(&name));
                 }
                 Some(true) if is_stub => {
-                    return Err(RuntimeError::new(format!(
-                        "X::Redeclaration: Redeclaration of symbol '{}'",
-                        name
-                    )));
+                    return Err(type_redeclaration(&name));
                 }
                 Some(true) => {
-                    seen_classes.insert(name.to_string(), false);
+                    // A forward stub followed by its real definition: upgrade.
+                    seen_types.insert(name, false);
                 }
             }
         }
