@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::super::parse_result::{PError, PResult, parse_char, parse_tag, take_while1};
 
 use crate::ast::{Expr, Stmt};
-use crate::regex_validate::validate_regex_syntax;
+use crate::runtime::regex_parse::validate_regex_structurally;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::{RuntimeError, Value};
@@ -36,7 +36,7 @@ fn process_trans_escapes(raw: &str) -> String {
 
 /// Validate a regex pattern at parse time, converting any RuntimeError to PError.
 fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
-    validate_regex_syntax(pattern).map_err(|e| {
+    validate_regex_structurally(pattern).map_err(|e| {
         if let Some(ex) = e.exception {
             PError::fatal_with_exception(e.message, ex)
         } else {

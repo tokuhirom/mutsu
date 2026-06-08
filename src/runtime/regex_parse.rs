@@ -28,6 +28,188 @@ fn regex_pattern_is_static(pattern: &str) -> bool {
     !pattern.contains(['$', '@', '%'])
 }
 
+/// Parsing mode for the shared regex grammar parser (`parse_regex_uncached`).
+///
+/// The structural parser is the single source of truth for Raku regex grammar.
+/// It runs in two modes:
+///
+/// - `Match` — the runtime path. Interpolates `$`/`@`/`%` variables, resolves
+///   grammar tokens against the current package, and builds the `RegexPattern`
+///   that the matching engine executes.
+/// - `Validate` — a parse-time dry run used to syntax-check a pattern WITHOUT an
+///   interpreter. It skips interpolation and grammar-token resolution (variable
+///   values and grammar definitions are unavailable at parse time) and treats
+///   variable references as opaque, syntactically-valid atoms. Every structural
+///   and grammar syntax check still fires, so this replaces the former standalone
+///   `regex_validate` module.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum RegexParseMode {
+    Match,
+    Validate,
+}
+
+thread_local! {
+    /// A reusable interpreter used only as a `&self` receiver for parse-time
+    /// regex validation (`validate_regex_structurally`). In `Validate` mode the
+    /// structural parser never consults the interpreter's env / grammar tables
+    /// (those reads are gated on `Match` mode), so this instance's state is
+    /// irrelevant — it exists solely so we can call the shared `&self` parser
+    /// without constructing a fresh `Interpreter` (which reads the whole OS
+    /// environment) on every regex literal at compile time.
+    static VALIDATE_INTERP: Interpreter = Interpreter::new();
+}
+
+/// Parse-time syntax validation via the structural parser — the single grammar
+/// source of truth (replaces the former `regex_validate` module).
+///
+/// Returns `Ok(())` if the pattern is structurally valid, or the structural
+/// parser's `X::Syntax::Regex::*` / `X::*` error. A `None` parse with NO pending
+/// error means "not a recognized construct here" (the many `?`/`return None`
+/// paths inside the parser), which is NOT a syntax error — the legacy validator
+/// accepted those, so we treat them as `Ok(())`. We only surface an error when a
+/// check explicitly set `PENDING_REGEX_ERROR`.
+/// Reject a bare `<sym>` / `<.sym>` token used outside a proto regex. This is a
+/// flat scan over the raw pattern (skipping quoted strings) that, like the
+/// former validator, deliberately also looks inside embedded `{...}` code blocks
+/// — mutsu does not compile a code block's nested regexes at parse time, so this
+/// pre-scan is what surfaces e.g. `/grammar { token TOP { <sym> } }/` errors.
+fn check_bare_sym_usage(source: &str) -> Result<(), RuntimeError> {
+    let mut chars = source.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' | '\'' => {
+                let quote = c;
+                while let Some(ch) = chars.next() {
+                    if ch == '\\' {
+                        chars.next();
+                    } else if ch == quote {
+                        break;
+                    }
+                }
+            }
+            '<' => {
+                let mut name = String::new();
+                let mut depth = 1usize;
+                for ch in chars.by_ref() {
+                    if ch == '<' {
+                        depth += 1;
+                        name.push(ch);
+                    } else if ch == '>' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                        name.push(ch);
+                    } else {
+                        name.push(ch);
+                    }
+                }
+                let trimmed = name.trim();
+                if trimmed == "sym" || trimmed == ".sym" {
+                    let msg = "Can only use \"<sym>\" token in a proto regex";
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Proto"), attrs);
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeError> {
+    // Flat pre-scan for bare `<sym>` (also inside code blocks), matching the
+    // former validator's first check.
+    check_bare_sym_usage(pattern)?;
+    PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = None);
+    let _ = VALIDATE_INTERP
+        .with(|interp| interp.parse_regex_with_mode(pattern, RegexParseMode::Validate));
+    // Surface any error the structural parse recorded. The parser sometimes
+    // sets a pending error and then `continue`s past the bad construct (so it
+    // can return a partial pattern that the runtime later rejects via
+    // `take_pending_regex_error`), so we must check the pending slot regardless
+    // of whether a pattern was returned. A parse that simply returned `None`
+    // with no pending error means "not a recognized construct" — NOT a syntax
+    // error (the legacy validator accepted those), so that maps to `Ok(())`.
+    match PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take()) {
+        Some(err) => Err(err),
+        None => Ok(()),
+    }
+}
+
+/// Consume one opaque variable interpolation reference (`$name`, `${...}`,
+/// `$(...)`, `@name`, `@{...}`, `@(...)`, digit runs) from the char stream,
+/// after the leading sigil has already been consumed. Used in `Validate` mode
+/// where interpolation cannot be performed; mirrors the former validator's
+/// `skip_variable_ref`.
+fn skip_opaque_var_ref(chars: &mut std::iter::Peekable<std::str::Chars>) {
+    match chars.peek().copied() {
+        Some('<') => {
+            chars.next();
+            skip_balanced(chars, '<', '>');
+        }
+        Some('{') => {
+            chars.next();
+            skip_balanced(chars, '{', '}');
+        }
+        Some('(') => {
+            chars.next();
+            skip_balanced(chars, '(', ')');
+        }
+        Some(c) if c.is_ascii_digit() => {
+            while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                chars.next();
+            }
+        }
+        Some(c) if c == '*' || c == '?' || c == '^' || c == '.' => {
+            chars.next();
+            while chars
+                .peek()
+                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+            {
+                chars.next();
+            }
+        }
+        Some(c) if c.is_alphabetic() || c == '_' => {
+            while chars
+                .peek()
+                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+            {
+                chars.next();
+            }
+        }
+        _ => {}
+    }
+    // After a variable ref, a trailing `=` is capture aliasing (e.g. `$<x>=(...)`).
+    if chars.peek() == Some(&'=') {
+        chars.next();
+    }
+}
+
+/// Skip a balanced bracketed region (`open`..`close`) on the char stream, after
+/// the opening bracket has already been consumed. Honors backslash escapes.
+fn skip_balanced(chars: &mut std::iter::Peekable<std::str::Chars>, open: char, close: char) {
+    let mut depth = 1u32;
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            chars.next();
+            continue;
+        }
+        if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth -= 1;
+            if depth == 0 {
+                return;
+            }
+        }
+    }
+}
+
 fn single_token_pattern(token: RegexToken, ignore_case: bool, ignore_mark: bool) -> RegexPattern {
     RegexPattern {
         tokens: vec![token],
@@ -46,7 +228,7 @@ fn goal_text_for_token(token: &RegexToken) -> String {
     }
 }
 
-fn make_solitary_tilde_quantifier_error() -> RuntimeError {
+fn make_solitary_quantifier_error() -> RuntimeError {
     let msg = "Quantifier quantifies nothing";
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.to_string()));
@@ -57,6 +239,246 @@ fn make_solitary_tilde_quantifier_error() -> RuntimeError {
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
+}
+
+fn make_solitary_tilde_quantifier_error() -> RuntimeError {
+    make_solitary_quantifier_error()
+}
+
+fn make_non_quantifiable_error() -> RuntimeError {
+    let msg = "Can only quantify a construct that produces a match";
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::NonQuantifiable"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+fn make_unrecognized_metachar_error(metachar: char) -> RuntimeError {
+    let msg =
+        format!("Unrecognized regex metacharacter {metachar} (must be quoted to match literally)");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("metachar".to_string(), Value::str(metachar.to_string()));
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::UnrecognizedMetachar"),
+        attrs,
+    );
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+fn make_unrecognized_modifier_error(modifier: &str) -> RuntimeError {
+    let msg = format!("Unrecognized regex modifier :{modifier}");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("modifier".to_string(), Value::str(modifier.to_string()));
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::UnrecognizedModifier"),
+        attrs,
+    );
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+fn make_solitary_backtrack_control_error() -> RuntimeError {
+    let msg = "Backtrack control ':' does not seem to have a preceding atom to control";
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::SolitaryBacktrackControl"),
+        attrs,
+    );
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+fn make_backslash_unrecognized_error(esc: char) -> RuntimeError {
+    let msg = format!("Unrecognized backslash sequence: \\{esc}");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Backslash::UnrecognizedSequence"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+/// Detect a missing `+`/`-` operator between parts of a compound character
+/// class assertion (e.g. `<[abc] [def]>`, `<:Kata :Hira>`). Ported from the
+/// former validator; used only at parse time (`Validate` mode).
+fn check_missing_class_operator(content: &str) -> Result<(), RuntimeError> {
+    let trimmed = content.trim();
+    let is_charclass = trimmed.starts_with('[')
+        || trimmed.starts_with('+')
+        || trimmed.starts_with('-')
+        || (trimmed.starts_with(':') && trimmed.chars().nth(1).is_some_and(|c| c.is_uppercase()));
+    if !is_charclass {
+        return Ok(());
+    }
+    // Simple bracket classes without multiple parts don't need operator checking.
+    if trimmed.starts_with('[') && !trimmed.contains("] ") && !trimmed.contains("]+") {
+        return Ok(());
+    }
+    let missing = || RuntimeError::new("Missing + or - in character class expression");
+    let mut remaining = trimmed;
+    let mut had_part = false;
+    while !remaining.is_empty() {
+        let first = remaining.chars().next().unwrap();
+        if first == '+' || first == '-' {
+            remaining = remaining[1..].trim_start();
+            had_part = false;
+        } else if first == '[' {
+            if had_part {
+                return Err(missing());
+            }
+            remaining = &remaining[1..];
+            let mut chars = remaining.chars();
+            while let Some(c) = chars.next() {
+                if c == '\\' {
+                    chars.next();
+                } else if c == ']' {
+                    break;
+                }
+            }
+            remaining = chars.as_str().trim_start();
+            had_part = true;
+        } else if first == ':' && remaining.chars().nth(1).is_some_and(|c| c.is_uppercase()) {
+            if had_part {
+                return Err(missing());
+            }
+            let end = remaining
+                .find(|c: char| !c.is_alphanumeric() && c != ':' && c != '-' && c != '_')
+                .unwrap_or(remaining.len());
+            remaining = remaining[end..].trim_start();
+            had_part = true;
+        } else if first.is_alphanumeric() && had_part {
+            return Err(missing());
+        } else if first.is_alphanumeric() {
+            let mut end = 0;
+            let mut citer = remaining.chars();
+            while let Some(ch) = citer.next() {
+                if ch.is_alphanumeric() || ch == '_' {
+                    end += ch.len_utf8();
+                } else if ch == '-' {
+                    let after = citer.as_str().trim_start();
+                    if after.starts_with('[') || after.starts_with(':') || after.is_empty() {
+                        break;
+                    }
+                    end += 1;
+                } else {
+                    break;
+                }
+            }
+            remaining = remaining[end..].trim_start();
+            had_part = true;
+        } else {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn make_attribute_regex_error(symbol: &str) -> RuntimeError {
+    let msg = "Cannot interpolate attribute in a regex";
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    attrs.insert("symbol".to_string(), Value::str(symbol.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+fn make_hash_reserved_error() -> RuntimeError {
+    let msg = "The use of hashes in regexes is reserved";
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Reserved"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+/// Scan `text` for an attribute interpolation `$!name` and return the full
+/// symbol (`$!name`) if found. Used by the parse-time validator to reject
+/// `$!attr` interpolation inside regexes and embedded code blocks.
+fn find_attribute_interpolation(text: &str) -> Option<String> {
+    let bytes: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == '$' && bytes[i + 1] == '!' {
+            let mut symbol = String::from("$!");
+            let mut j = i + 2;
+            while j < bytes.len()
+                && (bytes[j].is_alphanumeric() || bytes[j] == '_' || bytes[j] == '-')
+            {
+                symbol.push(bytes[j]);
+                j += 1;
+            }
+            if symbol.chars().count() > 2 {
+                return Some(symbol);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Whether `name` is a known regex inline adverb (`:i`, `:ignorecase`, ...).
+/// Used by the parse-time validator to reject unknown modifiers like `:iabc`.
+fn is_known_regex_adverb(name: &str) -> bool {
+    matches!(
+        name,
+        "i" | "ignorecase"
+            | "m"
+            | "ignoremark"
+            | "s"
+            | "sigspace"
+            | "r"
+            | "ratchet"
+            | "g"
+            | "global"
+            | "ii"
+            | "samecase"
+            | "ss"
+            | "samespace"
+            | "mm"
+            | "samemark"
+            | "dba"
+    )
+}
+
+/// Determine the correct error for a bare quantifier metacharacter (`*`, `+`,
+/// `?`) found at atom position in `Validate` mode. A valid quantifier after an
+/// atom is consumed by the quantifier peek, so reaching this point means there
+/// is nothing valid to quantify. Mirrors the former validator's
+/// has_atom / prev_was_anchor / prev_was_tilde tracking, derived here from the
+/// token stream built so far.
+fn quantifier_context_error(tokens: &[RegexToken], anchor_start: bool) -> RuntimeError {
+    match tokens.last() {
+        None => {
+            if anchor_start {
+                // `^` start-of-string anchor was consumed without a token.
+                make_non_quantifiable_error()
+            } else {
+                make_solitary_quantifier_error()
+            }
+        }
+        Some(t) => match &t.atom {
+            RegexAtom::StartOfLine | RegexAtom::EndOfLine => make_non_quantifiable_error(),
+            RegexAtom::TildeMarker => make_solitary_quantifier_error(),
+            RegexAtom::CodeAssertion { .. }
+            | RegexAtom::VarDecl { .. }
+            | RegexAtom::ClosureInterpolation { .. } => make_non_quantifiable_error(),
+            // A real atom whose own quantifier was already consumed: a second
+            // bare quantifier (e.g. `a+ +`) quantifies nothing.
+            _ => make_solitary_quantifier_error(),
+        },
+    }
 }
 
 /// Check if a regex token is a whitespace-like token (WsRule or <.ws> subrule call).
@@ -1341,12 +1763,19 @@ impl Interpreter {
     }
 
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
+        self.parse_regex_with_mode(pattern, RegexParseMode::Match)
+    }
+
+    fn parse_regex_with_mode(&self, pattern: &str, mode: RegexParseMode) -> Option<RegexPattern> {
         // Fast path: reuse a previously-parsed result for static patterns.
-        if regex_pattern_is_static(pattern) {
+        // Only the runtime `Match` mode caches: `Validate` produces opaque
+        // (un-interpolated, un-resolved) structures that must never leak into
+        // the runtime cache.
+        if mode == RegexParseMode::Match && regex_pattern_is_static(pattern) {
             if let Some(cached) = REGEX_PARSE_CACHE.with(|c| c.borrow().get(pattern).cloned()) {
                 return Some(cached);
             }
-            let parsed = self.parse_regex_uncached(pattern);
+            let parsed = self.parse_regex_uncached(pattern, mode);
             if let Some(ref p) = parsed {
                 REGEX_PARSE_CACHE.with(|c| {
                     c.borrow_mut().insert(pattern.to_string(), p.clone());
@@ -1354,10 +1783,10 @@ impl Interpreter {
             }
             return parsed;
         }
-        self.parse_regex_uncached(pattern)
+        self.parse_regex_uncached(pattern, mode)
     }
 
-    fn parse_regex_uncached(&self, pattern: &str) -> Option<RegexPattern> {
+    fn parse_regex_uncached(&self, pattern: &str, mode: RegexParseMode) -> Option<RegexPattern> {
         fn named_lookup_is_ws(name: &str) -> bool {
             let mut raw = name.trim();
             if let Some(stripped) = raw.strip_prefix('.') {
@@ -1385,14 +1814,22 @@ impl Interpreter {
             }
         }
 
-        let interpolated = match self.interpolate_regex_scalars(pattern) {
-            Ok(s) => s,
-            Err(e) => {
-                PENDING_REGEX_ERROR.with(|err| {
-                    *err.borrow_mut() = Some(e);
-                });
-                return None;
+        // `Match` mode interpolates `$`/`@`/`%` variable values into the pattern
+        // before structural parsing. `Validate` mode (parse-time dry run) has no
+        // variable values available, so it skips interpolation and treats sigil
+        // references as opaque atoms further down.
+        let interpolated = if mode == RegexParseMode::Match {
+            match self.interpolate_regex_scalars(pattern) {
+                Ok(s) => s,
+                Err(e) => {
+                    PENDING_REGEX_ERROR.with(|err| {
+                        *err.borrow_mut() = Some(e);
+                    });
+                    return None;
+                }
             }
+        } else {
+            pattern.to_string()
         };
         let mut source = interpolated.trim_start();
         let mut ignore_case = false;
@@ -1549,7 +1986,7 @@ impl Interpreter {
                 if sigspace {
                     alt_pat = format!(":s {}", alt_pat);
                 }
-                if let Some(p) = self.parse_regex(&alt_pat) {
+                if let Some(p) = self.parse_regex_with_mode(&alt_pat, mode) {
                     alt_patterns.push(p);
                 }
             }
@@ -1597,7 +2034,7 @@ impl Interpreter {
                 } else {
                     part_src.to_string()
                 };
-                if let Some(p) = self.parse_regex(&part_pat) {
+                if let Some(p) = self.parse_regex_with_mode(&part_pat, mode) {
                     conj_patterns.push(p);
                 }
             }
@@ -1623,7 +2060,15 @@ impl Interpreter {
             }
         }
 
-        let expanded = Self::expand_ltm_pattern(source, sigspace);
+        // LTM (longest-token-match) expansion is a Match-time rewrite used by the
+        // matching engine. In Validate mode we syntax-check the raw pattern (as the
+        // former standalone validator did); expanding first can produce
+        // intermediate forms whose quantifiers trip the parse-time checks.
+        let expanded = if mode == RegexParseMode::Match {
+            Self::expand_ltm_pattern(source, sigspace)
+        } else {
+            source.to_string()
+        };
         let mut chars = expanded.chars().peekable();
         let mut tokens = Vec::new();
         let mut anchor_start = false;
@@ -1807,6 +2252,87 @@ impl Interpreter {
                 });
                 continue;
             }
+            // Validate mode handling of `$` / `@` that was NOT recognized as an
+            // anchor (`$$`, trailing `$`) or backreference (`$0`, `$<name>`)
+            // above. In `Match` mode interpolation already substituted these, so
+            // they only reach here at parse time.
+            if mode == RegexParseMode::Validate && (c == '$' || c == '@') {
+                let next = chars.peek().copied();
+                let placeholder = |toks: &mut Vec<RegexToken>| {
+                    toks.push(RegexToken {
+                        atom: RegexAtom::ZeroWidth,
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        hash_capture: None,
+                        secondary_named_capture: None,
+                        ratchet,
+                        frugal: false,
+                        separator: None,
+                    });
+                };
+                if c == '$' {
+                    // `$!attr` — interpolating an attribute into a regex is prohibited.
+                    if next == Some('!') {
+                        let mut symbol = String::from("$!");
+                        let mut peeked = chars.clone();
+                        peeked.next(); // skip '!'
+                        while peeked
+                            .peek()
+                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                        {
+                            symbol.push(peeked.next().unwrap());
+                        }
+                        if symbol.chars().count() > 2 {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(make_attribute_regex_error(&symbol));
+                            });
+                            return None;
+                        }
+                    }
+                    // `$` followed by a variable-introducing char is interpolation
+                    // (`$name`, `${...}`, `$(...)`, `$*dyn`, `$.attr`, ...). `$$`,
+                    // `$<name>`, `$0`, and trailing `$` were handled above; what
+                    // remains that is NOT interpolation is the end-of-string anchor.
+                    let is_var = next.is_some_and(|ch| {
+                        ch.is_alphabetic()
+                            || ch == '_'
+                            || ch == '{'
+                            || ch == '('
+                            || ch == '*'
+                            || ch == '?'
+                            || ch == '^'
+                            || ch == '.'
+                    });
+                    if is_var {
+                        skip_opaque_var_ref(&mut chars);
+                        placeholder(&mut tokens);
+                        continue;
+                    }
+                    // Bare `$` end-of-string anchor; quantifying it is NonQuantifiable.
+                    if next == Some('+') {
+                        PENDING_REGEX_ERROR
+                            .with(|e| *e.borrow_mut() = Some(make_non_quantifiable_error()));
+                        return None;
+                    }
+                    tokens.push(RegexToken {
+                        atom: RegexAtom::EndOfLine,
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        hash_capture: None,
+                        secondary_named_capture: None,
+                        ratchet,
+                        frugal: false,
+                        separator: None,
+                    });
+                    continue;
+                }
+                // `@...` is always an array interpolation (e.g. `@var`, `@$aref`,
+                // `@var[0]`). Consume the reference opaquely and leave any trailing
+                // construct (like `[0]` / `$aref`) for subsequent iterations.
+                skip_opaque_var_ref(&mut chars);
+                placeholder(&mut tokens);
+                continue;
+            }
             // Handle %<name>= and %ident= hash aliasing in regex
             if c == '%' {
                 if chars.peek() == Some(&'<') {
@@ -1830,6 +2356,12 @@ impl Interpreter {
                             pending_hash_capture = Some(hash_name);
                             continue;
                         }
+                    }
+                    // `%<name>` without `=` is a bare hash variable — reserved.
+                    if mode == RegexParseMode::Validate {
+                        PENDING_REGEX_ERROR
+                            .with(|e| *e.borrow_mut() = Some(make_hash_reserved_error()));
+                        return None;
                     }
                     continue;
                 } else if chars
@@ -1855,6 +2387,12 @@ impl Interpreter {
                             pending_hash_capture = Some(hash_name);
                             continue;
                         }
+                    }
+                    // Bare `%var` (no `=` aliasing) is a reserved hash interpolation.
+                    if mode == RegexParseMode::Validate {
+                        PENDING_REGEX_ERROR
+                            .with(|e| *e.borrow_mut() = Some(make_hash_reserved_error()));
+                        return None;
                     }
                     continue;
                 }
@@ -1903,6 +2441,125 @@ impl Interpreter {
                     }
                     continue;
                 }
+                // Validate mode: the `:my`/inline-modifier forms above were not
+                // matched. Reproduce the validator's remaining `:` checks —
+                // solitary backtrack control and unrecognized modifiers.
+                if mode == RegexParseMode::Validate {
+                    if chars.peek() == Some(&'!') {
+                        chars.next();
+                        continue;
+                    }
+                    // Bare `:` with no preceding atom -> solitary backtrack control.
+                    if tokens.is_empty() && !anchor_start {
+                        let mut lookahead = chars.clone();
+                        while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+                            lookahead.next();
+                        }
+                        if lookahead
+                            .peek()
+                            .is_none_or(|ch| !ch.is_alphanumeric() && *ch != '_')
+                        {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(make_solitary_backtrack_control_error());
+                            });
+                            return None;
+                        }
+                    }
+                    // `:digits` with no following modifier name -> unrecognized.
+                    let mut digits = String::new();
+                    while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                        digits.push(chars.next().unwrap());
+                    }
+                    if !digits.is_empty() {
+                        let mut name = String::new();
+                        while chars
+                            .peek()
+                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                        {
+                            name.push(chars.next().unwrap());
+                        }
+                        if name.is_empty() {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(make_unrecognized_modifier_error(&digits));
+                            });
+                            return None;
+                        }
+                        continue;
+                    }
+                    // `:name` — unknown adverb (e.g. `:iabc`), or `:name(...)`.
+                    let mut name = String::new();
+                    {
+                        let mut lookahead = chars.clone();
+                        while lookahead
+                            .peek()
+                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                        {
+                            name.push(lookahead.next().unwrap());
+                        }
+                    }
+                    if !name.is_empty() {
+                        for _ in 0..name.chars().count() {
+                            chars.next();
+                        }
+                        if chars.peek() == Some(&'(') {
+                            // `:name(...)` optional argument — consume balanced parens.
+                            chars.next();
+                            let mut depth = 1u32;
+                            for ch in chars.by_ref() {
+                                if ch == '(' {
+                                    depth += 1;
+                                } else if ch == ')' {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        break;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                        if !is_known_regex_adverb(&name) {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(make_unrecognized_modifier_error(&name));
+                            });
+                            return None;
+                        }
+                        continue;
+                    }
+                }
+            }
+            // Validate mode: a quantifier metacharacter (`*`, `+`, `?`) reaching
+            // atom position usually has nothing valid to quantify — any quantifier
+            // that legitimately follows a normal atom is consumed by the quantifier
+            // peek below. Reproduces the former validator's solitary/non-quantifiable
+            // checks (e.g. `/ * /`, `/ a+ + /`, `/ ^+ /`, `/ ~? /`).
+            if mode == RegexParseMode::Validate && matches!(c, '*' | '+' | '?') {
+                // Backreferences and interpolation placeholders are pushed WITHOUT
+                // a quantifier peek (they `continue` immediately), so a quantifier
+                // here is a valid first quantifier on that atom (e.g. `$0*`,
+                // `@var+`). Consume it (and any `**`-range / frugal marker) instead
+                // of treating it as solitary.
+                if matches!(
+                    tokens.last().map(|t| &t.atom),
+                    Some(RegexAtom::Backref(_))
+                        | Some(RegexAtom::NamedBackref(_))
+                        | Some(RegexAtom::ZeroWidth)
+                ) {
+                    if c == '*' && chars.peek() == Some(&'*') {
+                        chars.next();
+                        while chars.peek().is_some_and(|ch| {
+                            ch.is_ascii_digit() || matches!(ch, '.' | '*' | '^' | '_' | ' ')
+                        }) {
+                            chars.next();
+                        }
+                    }
+                    if chars.peek() == Some(&'?') {
+                        chars.next();
+                    }
+                    continue;
+                }
+                let err = quantifier_context_error(&tokens, anchor_start);
+                PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                return None;
             }
             let atom = match c {
                 '.' => RegexAtom::Any,
@@ -2212,7 +2869,47 @@ impl Interpreter {
                             });
                             return None;
                         }
-                        other => RegexAtom::Literal(other),
+                        // Obsolete Perl 5 anchors — reject at parse time (Validate).
+                        'A' if mode == RegexParseMode::Validate => {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                    "\\A as beginning-of-string matcher",
+                                    "^",
+                                ));
+                            });
+                            return None;
+                        }
+                        'Z' if mode == RegexParseMode::Validate => {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                    "\\Z as end-of-string matcher",
+                                    "\\n?$",
+                                ));
+                            });
+                            return None;
+                        }
+                        'z' if mode == RegexParseMode::Validate => {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                    "\\z as end-of-string matcher",
+                                    "$",
+                                ));
+                            });
+                            return None;
+                        }
+                        other => {
+                            // Validate mode: an unknown *alphabetic* backslash escape
+                            // is invalid metasyntax (e.g. `\a`, `\q`). Non-alphabetic
+                            // escapes are always valid (escaping a metacharacter).
+                            if mode == RegexParseMode::Validate && other.is_ascii_alphabetic() {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() =
+                                        Some(make_backslash_unrecognized_error(other));
+                                });
+                                return None;
+                            }
+                            RegexAtom::Literal(other)
+                        }
                     }
                 }
                 '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
@@ -2453,7 +3150,8 @@ impl Interpreter {
                                 }
                             }
                             // Parse the inner pattern as a regex
-                            let Some(inner_pattern) = self.parse_regex(&inner) else {
+                            let Some(inner_pattern) = self.parse_regex_with_mode(&inner, mode)
+                            else {
                                 continue;
                             };
                             RegexAtom::Lookaround {
@@ -2701,6 +3399,32 @@ impl Interpreter {
                                 // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
                                 // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>
                                 let trimmed = name.trim();
+                                // Validate mode: reject a compound character class
+                                // assertion that is missing a `+`/`-` operator
+                                // between its parts (e.g. `<[abc] [def]>`,
+                                // `<:Kata :Hira>`).
+                                if mode == RegexParseMode::Validate
+                                    && let Err(err) = check_missing_class_operator(trimmed)
+                                {
+                                    PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                                    return None;
+                                }
+                                // Validate mode: a long name (`::`) used as a regex
+                                // alias (`<Name::Path=alias>`, `<::IO::File=bar>`) is
+                                // illegal. Exclude embedded code (`<{...}>`,
+                                // `<?{...}>`, `<!{...}>`) which may contain `::`/`=`.
+                                if mode == RegexParseMode::Validate
+                                    && !trimmed.starts_with('{')
+                                    && !trimmed.starts_with("?{")
+                                    && !trimmed.starts_with("!{")
+                                    && trimmed.contains("::")
+                                    && trimmed.contains('=')
+                                {
+                                    PENDING_REGEX_ERROR.with(|e| {
+                                        *e.borrow_mut() = Some(Self::make_longname_alias_error());
+                                    });
+                                    return None;
+                                }
                                 if (trimmed.starts_with('[')
                                     || trimmed.starts_with("-[")
                                     || trimmed.starts_with("+["))
@@ -2851,11 +3575,27 @@ impl Interpreter {
                                     }
                                 } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
                                     // Combined character class: <+ xdigit - lower>
-                                    if let Some(atom) = self.parse_combined_class(trimmed) {
+                                    if let Some(atom) = self.parse_combined_class(trimmed, mode) {
                                         atom
                                     } else {
                                         continue;
                                     }
+                                } else if trimmed.starts_with('$')
+                                    && mode == RegexParseMode::Validate
+                                {
+                                    // <$!attr> — attribute interpolation is prohibited.
+                                    if let Some(rest) = trimmed.strip_prefix("$!") {
+                                        let symbol = format!("$!{}", rest.trim_end_matches('>'));
+                                        PENDING_REGEX_ERROR.with(|e| {
+                                            *e.borrow_mut() =
+                                                Some(make_attribute_regex_error(&symbol));
+                                        });
+                                        return None;
+                                    }
+                                    // <$var> interpolation — opaque at parse time (the variable's
+                                    // value is unavailable). Accept it as a syntactically-valid
+                                    // assertion; the runtime `Match` path below resolves it.
+                                    RegexAtom::Named(name.clone())
                                 } else if let Some(var_name) = trimmed.strip_prefix('$') {
                                     // <$var> — look up scalar variable and compile as regex
                                     let value = match self.env.get(var_name).cloned() {
@@ -2929,11 +3669,18 @@ impl Interpreter {
                                     } else {
                                         pat_str
                                     };
-                                    if let Some(parsed) = self.parse_regex(&scoped_pat) {
+                                    if let Some(parsed) =
+                                        self.parse_regex_with_mode(&scoped_pat, mode)
+                                    {
                                         RegexAtom::Group(parsed)
                                     } else {
                                         continue;
                                     }
+                                } else if trimmed.starts_with('@')
+                                    && mode == RegexParseMode::Validate
+                                {
+                                    // <@var> interpolation — opaque at parse time.
+                                    RegexAtom::Named(name.clone())
                                 } else if trimmed.starts_with('@') {
                                     // <@var> — look up array variable and compile
                                     // each element as a regex pattern (alternation)
@@ -2953,7 +3700,9 @@ impl Interpreter {
                                             }
                                             other => other.to_string_value(),
                                         };
-                                        if let Some(parsed) = self.parse_regex(&pat_str) {
+                                        if let Some(parsed) =
+                                            self.parse_regex_with_mode(&pat_str, mode)
+                                        {
                                             alt_patterns.push(parsed);
                                         }
                                     }
@@ -3244,9 +3993,9 @@ impl Interpreter {
                                 } else {
                                     scoped.push_str(alt.trim_end());
                                 }
-                                self.parse_regex(&scoped)
+                                self.parse_regex_with_mode(&scoped, mode)
                             } else {
-                                self.parse_regex(alt)
+                                self.parse_regex_with_mode(alt, mode)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
@@ -3301,9 +4050,9 @@ impl Interpreter {
                             } else {
                                 scoped.push_str(group_pattern.trim_end());
                             }
-                            self.parse_regex(&scoped)
+                            self.parse_regex_with_mode(&scoped, mode)
                         } else {
-                            self.parse_regex(&group_pattern)
+                            self.parse_regex_with_mode(&group_pattern, mode)
                         };
                         if let Some(p) = parsed_group {
                             RegexAtom::CaptureGroup(p)
@@ -3366,9 +4115,9 @@ impl Interpreter {
                                 } else {
                                     scoped.push_str(alt.trim_end());
                                 }
-                                self.parse_regex(&scoped)
+                                self.parse_regex_with_mode(&scoped, mode)
                             } else {
-                                self.parse_regex(alt)
+                                self.parse_regex_with_mode(alt, mode)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
@@ -3404,9 +4153,9 @@ impl Interpreter {
                             } else {
                                 scoped.push_str(group_pattern.trim_end());
                             }
-                            self.parse_regex(&scoped)
+                            self.parse_regex_with_mode(&scoped, mode)
                         } else {
-                            self.parse_regex(&group_pattern)
+                            self.parse_regex_with_mode(&group_pattern, mode)
                         };
                         if let Some(p) = parsed_group {
                             RegexAtom::Group(p)
@@ -3432,6 +4181,15 @@ impl Interpreter {
                         } else {
                             code.push(ch);
                         }
+                    }
+                    // Validate mode: an embedded code block may not interpolate
+                    // an attribute (`{ $!attr }`).
+                    if mode == RegexParseMode::Validate
+                        && let Some(symbol) = find_attribute_interpolation(&code)
+                    {
+                        PENDING_REGEX_ERROR
+                            .with(|e| *e.borrow_mut() = Some(make_attribute_regex_error(&symbol)));
+                        return None;
                     }
                     // Detect P5-style {N,M} or {N,} quantifiers
                     let trimmed_code = code.trim();
@@ -3462,7 +4220,25 @@ impl Interpreter {
                     }
                 }
                 '~' => RegexAtom::TildeMarker,
-                other => RegexAtom::Literal(other),
+                other => {
+                    // Validate mode: an unhandled non-identifier glyph here is an
+                    // unrecognized regex metacharacter (e.g. `-`, `!`, `;`). The
+                    // validator accepts `=`, `,`, `|`, `&` as bare metacharacters
+                    // (residual alternation/conjunction markers); `.`, `~`, `«`,
+                    // `»` are handled in their own arms above. Reproduces the
+                    // former validator's UnrecognizedMetachar check.
+                    if mode == RegexParseMode::Validate
+                        && !other.is_alphanumeric()
+                        && other != '_'
+                        && !matches!(other, '=' | ',' | '|' | '&')
+                    {
+                        PENDING_REGEX_ERROR.with(|e| {
+                            *e.borrow_mut() = Some(make_unrecognized_metachar_error(other));
+                        });
+                        return None;
+                    }
+                    RegexAtom::Literal(other)
+                }
             };
             let mut quant = RegexQuant::One;
             // In Raku regex, whitespace between an atom and its quantifier is
@@ -3557,6 +4333,21 @@ impl Interpreter {
                     _ => RegexQuant::One,
                 };
             }
+            // Validate mode: a code block / code assertion / variable declaration
+            // produces no match and cannot be quantified (e.g. `/ {}* /`,
+            // `/ <?{1}>? /`). Reproduces the validator's NonQuantifiable check.
+            if mode == RegexParseMode::Validate
+                && !matches!(quant, RegexQuant::One)
+                && matches!(
+                    atom,
+                    RegexAtom::CodeAssertion { .. }
+                        | RegexAtom::VarDecl { .. }
+                        | RegexAtom::ClosureInterpolation { .. }
+                )
+            {
+                PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(make_non_quantifiable_error()));
+                return None;
+            }
             // Handle frugal (non-greedy) modifier: `*?`, `+?`, `??`
             let token_frugal = if starstar_frugal {
                 true
@@ -3568,7 +4359,18 @@ impl Interpreter {
             };
             // Handle per-token backtracking control.
             // `:` enables ratchet on this token; `:!` disables it.
-            let token_ratchet = if chars.peek() == Some(&':') {
+            // In Validate mode a `:` immediately followed by an identifier/digit
+            // is a (possibly unrecognized) modifier such as `:11` — not a ratchet
+            // control — so leave it for the `:` handler at the loop top to report
+            // (reproduces the validator's `/00:11:22/` -> UnrecognizedModifier).
+            let colon_is_modifier =
+                mode == RegexParseMode::Validate && chars.peek() == Some(&':') && {
+                    let mut la = chars.clone();
+                    la.next();
+                    la.peek()
+                        .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_')
+                };
+            let token_ratchet = if !colon_is_modifier && chars.peek() == Some(&':') {
                 chars.next();
                 if chars.peek() == Some(&'!') {
                     chars.next();
@@ -5002,7 +5804,7 @@ impl Interpreter {
 
     /// Parse combined character class like `+ xdigit - lower` or `+ :HexDigit - :Upper`.
     /// Also handles bracket classes: `+ [a..z] - [aeiou]`.
-    fn parse_combined_class(&self, input: &str) -> Option<RegexAtom> {
+    fn parse_combined_class(&self, input: &str, mode: RegexParseMode) -> Option<RegexAtom> {
         let mut positive_items: Vec<ClassItem> = Vec::new();
         let mut negative_items: Vec<ClassItem> = Vec::new();
         let mut remaining = input.trim();
@@ -5068,8 +5870,11 @@ impl Interpreter {
                         // Check if the name resolves as a grammar token in the current package
                         let is_grammar_token = !self.current_package.is_empty()
                             && self.resolve_token_defs(class_name).is_some();
-                        if !is_grammar_token {
-                            // Unknown name outside grammar context — set error
+                        // "No such method" is a runtime resolution failure, not a
+                        // parse-time syntax error: such patterns are meant to die
+                        // at match time (`dies-ok`), not at compile time. In
+                        // `Validate` mode treat the unknown name as opaque.
+                        if !is_grammar_token && mode == RegexParseMode::Match {
                             let msg = format!(
                                 "No such method '{}' for invocant of type 'Match'",
                                 class_name
@@ -5157,6 +5962,80 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Helper: the typed exception name a structural-validation error carries.
+    fn validate_exc(pattern: &str) -> Option<String> {
+        match validate_regex_structurally(pattern) {
+            Ok(()) => None,
+            Err(e) => e.exception.as_ref().and_then(|ex| match ex.as_ref() {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            }),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_valid_patterns() {
+        // A representative spread of valid Raku regex syntax must validate Ok.
+        for p in [
+            r"\d+",
+            r"<[a..z]>+",
+            r"(\w+) \s+ (\d+)",
+            r"a+ % ','",
+            r"^ foo $",
+            r"<?before bar>",
+            r"$0",
+            r"$<name>",
+            r"$var",      // opaque interpolation
+            r"@var",      // opaque array interpolation
+            r"@$aref[0]", // array-deref interpolation
+            r"$var+",     // quantified interpolation
+            r"<$var>",    // assertion interpolation
+            r":i foo",
+            r"a* %% b",
+            r"<+alpha+digit>",
+        ] {
+            assert!(
+                validate_regex_structurally(p).is_ok(),
+                "expected `{p}` to validate"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_with_correct_exception() {
+        // Each invalid pattern must surface the same typed exception the former
+        // standalone validator produced.
+        let cases = [
+            ("*", "X::Syntax::Regex::SolitaryQuantifier"),
+            ("a+ +", "X::Syntax::Regex::SolitaryQuantifier"),
+            ("^+", "X::Syntax::Regex::NonQuantifiable"),
+            ("^^+", "X::Syntax::Regex::NonQuantifiable"),
+            ("$+", "X::Syntax::Regex::NonQuantifiable"),
+            ("{}*", "X::Syntax::Regex::NonQuantifiable"),
+            (":", "X::Syntax::Regex::SolitaryBacktrackControl"),
+            ("-", "X::Syntax::Regex::UnrecognizedMetachar"),
+            ("!", "X::Syntax::Regex::UnrecognizedMetachar"),
+            ("00:11:22", "X::Syntax::Regex::UnrecognizedModifier"),
+            (r"\q", "X::Backslash::UnrecognizedSequence"),
+            ("%var", "X::Syntax::Reserved"),
+            ("$!attr", "X::Attribute::Regex"),
+            ("<::IO::File=bar>", "X::Syntax::Regex::Alias::LongName"),
+        ];
+        for (p, exc) in cases {
+            assert_eq!(
+                validate_exc(p).as_deref(),
+                Some(exc),
+                "pattern `{p}` should throw {exc}"
+            );
+        }
+        // Obsolete Perl 5 escapes.
+        for p in [r"\A", r"\Z", r"\z"] {
+            assert_eq!(validate_exc(p).as_deref(), Some("X::Obsolete"), "{p}");
+        }
+        // Compound class missing operator (plain message, no typed exception).
+        assert!(validate_regex_structurally("<[abc] [def]>").is_err());
+    }
 
     #[test]
     fn interpolate_array_var_into_alternation() {

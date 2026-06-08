@@ -143,7 +143,11 @@ native_function に arm がある（必要条件）だけでは不十分 — **E
         - **③ `.first` の pointy `-> $p {...}` matcher param 束縛バグ (#2743)**: pointy lambda は `param_defs` 空で
           legacy binding path に落ち、`pair_as_positional` 由来の `ValuePair(Str,_)` が named 扱いで除外され positional
           param `$p` が未束縛になっていた。`bind_function_args_values` の 1 箇所修正で VM/interp 両経路を同時に解消。
-- [ ] **正規表現の validator/matcher 二重実装の統合**（[ANALYSIS.md](ANALYSIS.md) §3.1。重複の一種）。
+- [x] **正規表現の validator/matcher 二重実装の統合（[ANALYSIS.md](ANALYSIS.md) §3.1）= 完了**。
+      `src/regex_validate.rs`（1108 行）を削除し、構造パーサ `parse_regex` を唯一の文法権威に統合。
+      `RegexParseMode { Match, Validate }` を導入し、パース時検証を自由関数 `validate_regex_structurally`
+      （構造パーサのドライラン）に一本化。validator 限定チェックを全て構造パーサへ移植（Validate ゲート、
+      Match はバイト等価）。詳細は [news/2026-06.md](news/2026-06.md)。
 
 ### 最終ゴール
 - [ ] **Interpreter のメソッド/関数実行パス（`call_function`/`call_method_with_values`/`dispatch_*` の
@@ -483,7 +487,7 @@ BLOCKERS.md の分析に基づき、インパクト順に並べたもの。
 
 VM↔Interpreter の切り離し本体は冒頭の「🔴 最優先」セクション参照。以下はそれ以外の構造的負債。
 
-- [ ] 正規表現の validator/matcher 二重実装を単一パーサに統合 (§3.1)
+- [x] 正規表現の validator/matcher 二重実装を単一パーサに統合 (§3.1) — 完了（news/2026-06.md）
 - [ ] `.^methods`/`.can` の型別メソッド一覧を実ディスパッチ表から導出 (§4)
 - [ ] roast fudge ロジックを核から分離 / テストの一時ファイルを `tmp/` へ / 500行超ファイルの分割 (§6)
 

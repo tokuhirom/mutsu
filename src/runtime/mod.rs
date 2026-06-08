@@ -198,7 +198,7 @@ mod ops;
 pub(crate) mod phasers;
 mod react_died;
 mod regex;
-mod regex_parse;
+pub(crate) mod regex_parse;
 mod registration;
 mod registration_class;
 mod registration_sub;

@@ -8,7 +8,6 @@ mod opcode;
 mod parse_dispatch;
 mod parser;
 pub(crate) mod precomp;
-mod regex_validate;
 #[cfg(feature = "native")]
 pub mod repl;
 mod runtime;
