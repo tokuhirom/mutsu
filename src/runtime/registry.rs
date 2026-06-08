@@ -231,8 +231,12 @@ impl Registry {
             let builtin_mro: Option<Vec<&str>> = match class_name {
                 "Match" => Some(vec!["Match", "Capture", "Cool", "Any", "Mu"]),
                 "Capture" => Some(vec!["Capture", "Any", "Mu"]),
-                "Distribution::Path" => Some(vec!["Distribution::Path", "Distribution", "Any", "Mu"]),
-                "Distribution::Hash" => Some(vec!["Distribution::Hash", "Distribution", "Any", "Mu"]),
+                "Distribution::Path" => {
+                    Some(vec!["Distribution::Path", "Distribution", "Any", "Mu"])
+                }
+                "Distribution::Hash" => {
+                    Some(vec!["Distribution::Hash", "Distribution", "Any", "Mu"])
+                }
                 "Distribution::Installation" => Some(vec![
                     "Distribution::Installation",
                     "Distribution",
