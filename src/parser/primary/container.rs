@@ -889,10 +889,31 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
             rest = r;
         } else {
             let (r, _) = ws(r)?;
+            if let Ok((r, _)) = parse_char(r, ']') {
+                return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), false)));
+            }
+            // Neither a separator nor the closing bracket: if another term
+            // follows, this is "Two terms in a row" (X::Syntax::Confused),
+            // e.g. `["a" "b"]`.
+            if expression(r).is_ok() {
+                return Err(two_terms_confused());
+            }
             let (r, _) = parse_char(r, ']')?;
             return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), false)));
         }
     }
+}
+
+/// Build a fatal `X::Syntax::Confused` parse error with reason
+/// "Two terms in a row".
+fn two_terms_confused() -> PError {
+    let reason = "Two terms in a row";
+    let message = format!("Confused: {}", reason);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("reason".to_string(), Value::str(reason.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Syntax::Confused"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
 }
 
 fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
