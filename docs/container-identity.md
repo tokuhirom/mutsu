@@ -197,3 +197,17 @@ push」に変えると、配列要素が `Value::Scalar`/`ContainerRef`/`ItemArr
   - §7 に値読み出し opcode の棚卸し表を追加（Phase 1 の設計図。`GetLocalRaw` を lvalue 読みのアンカー前例に）。
   - 挙動不変を確認: build/clippy/fmt PASS。binding/`.VAR`/`=:=`/sigilless の t/ + S03-binding roast 全 PASS。
     全 roast は CI に委譲。
+- 2026-06-08: **Phase 1 第1スライス（非ループ兄弟クロージャのコンテナ共有 = レバー C 完遂）**。挙動変化スライス。
+  - `box_captured_lexicals`（`vm_register_ops.rs`）のループ限定ゲート（246 の `loop_local_vars.is_empty()` 句、
+    257 の per-symbol ループフィルタ）を撤去し、**非ループの捕捉＋変異 `$` スカラー**も共有 `ContainerRef` セルへ
+    box。兄弟 Sub の env は `flattened` で Arc を共有するので同一セルを指し、read=GetGlobal `into_deref`／
+    write=SetGlobal write-through で往復が成立。PR #2742 の `into_deref` チョークポイントが decont を担保。
+  - **唯一の値漏れを修正**: メソッド fast-path の `try_eval_simple_protect_expr`（`vm_call_method_compiled.rs`）の
+    `Expr::Var` arm が GetLocal/GetGlobal を経ない直接読みだったので `into_deref` を付与。
+  - **型制約スカラーは box しないガードを追加**: ContainerRef write-through（`$x++`/`=`/`.=`）は代入チョーク
+    ポイントの制約再チェックを回避するため、`var_type_constraint` を持つスカラーは box 対象外（subset/`where`/
+    `my Int`）。`t/where-constraint-var.t` の `$x++` 回帰を防止。制約付き捕捉スカラーの共有は広範な write 監査へ後送り。
+  - 解決: 兄弟クロージャ共有（`t/closure-container-capture.t` の todo 2 件を解消）。S02-names-vars/
+    variables-and-packages.t が 16→13 fail に改善（副次）。
+  - 検証: build/clippy/fmt PASS、`make test` PASS（456 unit + 5274 prove、回帰なし）、closure/binding/native-int
+    （whitelist）roast 全 PASS。`gather.t` 38 は Phase 2 take-rw の既知未対応（非 whitelist・無関係）。全 roast は CI。

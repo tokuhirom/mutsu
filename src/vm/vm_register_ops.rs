@@ -233,17 +233,18 @@ impl VM {
         cc: &Option<std::sync::Arc<CompiledCode>>,
     ) {
         let Some(cc) = cc else { return };
-        // Box only loop-body locals that the compiler flagged as captured-and-
-        // mutated. Restricting to loop bodies (`loop_local_vars`) is deliberate:
-        // boxing a *non-loop* captured-mutated local (e.g. `$a .= new` inside a
-        // closure, a sibling-shared sub local) would hide it behind a ContainerRef
-        // and trip the many value-inspection paths that don't yet deref one
-        // (typed-container `.=`, isa-ok, subset/type-object assign, submethod
-        // state). That general "a closure captures the container" semantics needs
-        // a broad ContainerRef-deref audit and is deferred. The compiler signal
-        // also lets us skip boxing *read-only* loop locals, which `owned_captures`
-        // (value-freeze) already handles.
-        if code.captured_mutated_locals.is_empty() || self.loop_local_vars.is_empty() {
+        // Box `$`-scalar locals that the compiler flagged as captured-and-mutated
+        // into a shared `ContainerRef` cell, so sibling closures (and any closure
+        // that outlives the frame) observe each other's writes. This was once
+        // restricted to loop-body locals (`loop_local_vars`) because boxing a
+        // non-loop captured-mutated local hides it behind a ContainerRef that the
+        // many value-inspection paths must then deref. That restriction is now
+        // lifted (Phase 1 / lever C): the hot value-read opcodes GetLocal/GetGlobal
+        // decont via `Value::into_deref` (PR #2742), so a boxed cell is unwrapped
+        // at the read chokepoint before reaching any value op. The sigil filter and
+        // reference-type skip below keep this to plain `$` scalars (the only safe
+        // target); `owned_captures` (value-freeze) handles read-only loop locals.
+        if code.captured_mutated_locals.is_empty() {
             return;
         }
         for sym in &cc.free_var_syms {
@@ -252,9 +253,6 @@ impl VM {
             }
             let Some(idx) = sym.with_str(|s| {
                 if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
-                    return None;
-                }
-                if !self.loop_local_vars.iter().any(|set| set.contains(s)) {
                     return None;
                 }
                 code.locals.iter().rposition(|n| n == s)
@@ -278,6 +276,20 @@ impl VM {
                     | Value::Instance { .. }
                     | Value::Proxy { .. }
             ) {
+                continue;
+            }
+            // A type-constrained scalar (`my Int $x`, subset/`where`) must keep
+            // flowing through the assignment chokepoint so every mutation re-checks
+            // the constraint. Boxing it routes writes through the cell directly and
+            // bypasses that re-check (`$x++`, `$x = ...`, `.=`). Skip it; sharing a
+            // constrained captured scalar is deferred to the broader write audit.
+            if sym.with_str(|s| {
+                self.interpreter.var_type_constraint(s).is_some()
+                    || self
+                        .interpreter
+                        .var_type_constraint(s.trim_start_matches('$'))
+                        .is_some()
+            }) {
                 continue;
             }
             let container = cur.clone().into_container_ref();

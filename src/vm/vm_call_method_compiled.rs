@@ -16,7 +16,13 @@ impl VM {
         };
         match expr {
             Expr::Literal(value) => Some(value.clone()),
-            Expr::Var(name) => local_value(name).or_else(|| self.get_env_with_main_alias(name)),
+            // Decont via into_deref: a captured-mutated `$` scalar may be boxed into
+            // a ContainerRef (see box_captured_lexicals), and this direct locals/env
+            // read bypasses the GetLocal/GetGlobal chokepoint, so it must deref here
+            // to avoid leaking a raw cell into the method fast-path receiver/args.
+            Expr::Var(name) => local_value(name)
+                .or_else(|| self.get_env_with_main_alias(name))
+                .map(Value::into_deref),
             Expr::ArrayVar(name) => {
                 let sigiled = format!("@{name}");
                 local_value(&sigiled).or_else(|| self.get_env_with_main_alias(&sigiled))
