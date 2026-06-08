@@ -1388,6 +1388,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         {
                             return Err(PError::expected("substitution"));
                         }
+                        // Reject obsolete Perl 5 trailing flags on substitution
+                        // (`s/a/b/i` -> use `s:i/a/b/`), mirroring `m//`.
+                        reject_trailing_p5_modifiers(rest)?;
                         let pattern = if adverbs.perl5 {
                             pattern.to_string()
                         } else {
