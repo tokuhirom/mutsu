@@ -2030,6 +2030,25 @@ impl Interpreter {
                 });
             }
         }
+        // Built-in exception instances (X::...) expose their attributes as
+        // accessor methods (e.g. X::Undeclared.suggestions, .symbol). The HOW
+        // metamodel has no user class def for these, so probe the instance's own
+        // attribute map directly.
+        if results.is_empty()
+            && let Value::Instance {
+                class_name: cn,
+                attributes,
+                ..
+            } = target
+            && cn.resolve().starts_with("X::")
+            && attributes.contains_key(method_name)
+        {
+            results.push(Value::Routine {
+                package: Symbol::intern(&class_name),
+                name: Symbol::intern(method_name),
+                is_regex: false,
+            });
+        }
         // For enum values, also check enum-specific methods (key, value, Int, Str, etc.)
         if results.is_empty()
             && matches!(target, Value::Enum { .. })

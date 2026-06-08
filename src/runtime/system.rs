@@ -369,10 +369,24 @@ impl Interpreter {
                 // still expecting at the eject point. For an undeclared variable
                 // there is nothing else expected, so it is an empty list.
                 attrs.insert("highexpect".to_string(), Value::array(vec![]));
+                // Suggest close lexically-declared names (Did-you-mean).
+                let suggestions = Self::suggest_declared_vars(&symbol, &declared);
+                let mut message = format!("Variable '{}' is not declared.", symbol);
+                if suggestions.len() == 1 {
+                    message.push_str(&format!(" Did you mean '{}'?", suggestions[0]));
+                } else if suggestions.len() > 1 {
+                    let quoted: Vec<String> =
+                        suggestions.iter().map(|s| format!("'{}'", s)).collect();
+                    message.push_str(&format!(
+                        " Did you mean any of these: {}?",
+                        quoted.join(", ")
+                    ));
+                }
                 attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!("Variable '{}' is not declared.", symbol)),
+                    "suggestions".to_string(),
+                    Value::array(suggestions.into_iter().map(Value::str).collect()),
                 );
+                attrs.insert("message".to_string(), Value::str(message));
                 return Err(RuntimeError::typed("X::Undeclared", attrs));
             }
         }
@@ -448,6 +462,49 @@ impl Interpreter {
             }
             _ => false,
         }
+    }
+
+    /// Suggest lexically-declared variable names close to an undeclared
+    /// `symbol` (sigiled, e.g. `$Foo`). Candidate names from `declared` are
+    /// normalized to sigiled form (scalars are stored without `$`; arrays/hashes
+    /// keep their sigil). Matching is sigil-insensitive on the name part so that
+    /// e.g. `$barf` suggests `@barf`. Returns suggestions sorted by edit distance.
+    fn suggest_declared_vars(symbol: &str, declared: &HashSet<String>) -> Vec<String> {
+        use crate::runtime::did_you_mean::levenshtein_distance;
+        let sigiled = |name: &str| -> String {
+            if name.starts_with(['$', '@', '%', '&']) {
+                name.to_string()
+            } else {
+                format!("${}", name)
+            }
+        };
+        // Compare on the name part (without sigil) so a differing sigil counts
+        // as a near match rather than excluding the candidate.
+        let strip_sigil = |s: &str| s.trim_start_matches(['$', '@', '%', '&']).to_string();
+        let target = strip_sigil(symbol);
+        let max_distance = if target.len() <= 3 {
+            1
+        } else if target.len() <= 6 {
+            2
+        } else {
+            3
+        };
+        let mut scored: Vec<(usize, String)> = Vec::new();
+        for cand in declared {
+            let cand_sigiled = sigiled(cand);
+            if cand_sigiled == symbol {
+                continue;
+            }
+            // Self is already excluded above by the full-name comparison, so a
+            // distance of 0 here means a same-name-different-sigil candidate
+            // (e.g. `$barf` -> `@barf`), which is a valid suggestion.
+            let dist = levenshtein_distance(&target, &strip_sigil(&cand_sigiled));
+            if dist <= max_distance {
+                scored.push((dist, cand_sigiled));
+            }
+        }
+        scored.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        scored.into_iter().map(|(_, s)| s).collect()
     }
 
     fn collect_declared_vars(stmt: &Stmt, out: &mut HashSet<String>) {
@@ -542,11 +599,17 @@ impl Interpreter {
                 }
                 // Check if in the outer environment (with $ prefix)
                 let sigiled = format!("${}", name);
-                if self.env.contains_key(&sigiled) || self.env.contains_key(name) {
+                if self.env.contains_key(&sigiled) {
                     return None;
                 }
-                // Check if it's a known function or class name
-                if self.has_function(name) || self.has_class(name) {
+                // A bare-name environment entry only declares the scalar `$name`
+                // if it is an actual variable. A class/sub named `Foo` is stored
+                // bare (as a type object), but does NOT declare the scalar `$Foo`
+                // -- in Raku `$Foo` is its own (undeclared) symbol.
+                if self.env.contains_key(name)
+                    && !self.registry().classes.contains_key(name)
+                    && !self.has_function(name)
+                {
                     return None;
                 }
                 Some(("$", name.clone()))
