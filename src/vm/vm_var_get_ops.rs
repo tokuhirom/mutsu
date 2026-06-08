@@ -130,8 +130,8 @@ impl VM {
                 && !name.starts_with('%')
                 && matches!(v, Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_))
             {
-                // Pseudo-package names (SETTING::, OUTER::, CALLER::) need interpreter's
-                // special resolution logic, so use call_function directly for those.
+                // CARRIER: pseudo-package names (SETTING::, OUTER::, CALLER::) need
+                // the interpreter's reflective scope resolution. See ledger §C.
                 // For regular qualified names, try compiled dispatch first.
                 let result = if self.is_interpreter_handled_function(name) {
                     self.interpreter.call_function(name, Vec::new())?
@@ -187,6 +187,7 @@ impl VM {
             // should go through the normal function resolution path.
             && name.contains('-')
         {
+            // CARRIER: Test-framework function dispatch (test-mode state). See ledger §C.
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
@@ -203,6 +204,7 @@ impl VM {
             {
                 native_result?
             } else {
+                // TODO: compile to bytecode — 0-arg user/multi function term fork (ledger §2).
                 let result = self.interpreter.call_function(name, Vec::new())?;
                 self.env_dirty = true;
                 result
@@ -214,6 +216,7 @@ impl VM {
             || name == "nextcallee"
             || name == "lastcall"
         {
+            // CARRIER: call-chain introspection (interpreter MOP dispatch stack). See ledger §C.
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
@@ -236,6 +239,7 @@ impl VM {
             if let Some((_pkg, short)) = name.rsplit_once("::")
                 && self.interpreter.has_function(&format!("GLOBAL::{}", short))
             {
+                // TODO: compile to bytecode — package-qualified function term fork (ledger §2).
                 let result = self.interpreter.call_function(name, Vec::new())?;
                 self.env_dirty = true;
                 result

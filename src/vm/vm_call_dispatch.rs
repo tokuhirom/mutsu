@@ -69,6 +69,8 @@ impl VM {
         if let Some(result) = self.try_native_test_function(name, &args) {
             return result;
         }
+        // CARRIER (EVAL/pseudo-package) vs TODO: compile to bytecode (else branch =
+        // true tree-walk function fallback). See ledger §2/§C.
         if Self::is_interpreter_carrier_function(name) {
             crate::vm::vm_stats::record_function_carrier(name);
         } else {

@@ -1380,10 +1380,12 @@ impl VM {
 
     /// Increment a value, calling .succ() on Instance values with custom methods.
     pub(super) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+        // Route user-defined `.succ` through the VM's unified compiled-first
+        // dispatch (same entry point `.Str` interpolation already uses) instead
+        // of a raw interpreter tree-walk — one method-dispatch path, not two.
         if let Value::Instance { .. } = val
             && let Ok(result) =
-                self.interpreter
-                    .call_method_with_values(val.clone(), "succ", vec![])
+                self.try_compiled_method_or_interpret(val.clone(), "succ", Vec::new())
         {
             return Ok(result);
         }
@@ -1430,10 +1432,12 @@ impl VM {
 
     /// Decrement a value, calling .pred() on Instance values with custom methods.
     pub(super) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+        // Route user-defined `.pred` through the VM's unified compiled-first
+        // dispatch (see increment_value_smart) instead of a raw interpreter
+        // tree-walk — one method-dispatch path, not two.
         if let Value::Instance { .. } = val
             && let Ok(result) =
-                self.interpreter
-                    .call_method_with_values(val.clone(), "pred", vec![])
+                self.try_compiled_method_or_interpret(val.clone(), "pred", Vec::new())
         {
             return Ok(result);
         }
