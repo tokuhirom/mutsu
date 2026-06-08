@@ -73,7 +73,13 @@ fn is_infinite_range(value: &Value) -> bool {
 /// (their elements are exposed). Elements coming from a List/Seq context
 /// pass `true`; elements coming from inside an Array pass `false`
 /// (because `[...]` itemizes its contents in Raku).
-fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
+/// Flatten `v` into `out`. Single shared `flat` helper for both the pure
+/// `native_function("flat", ..)` path and the interpreter's `builtin_flat`
+/// (which wraps its args in a `List` and calls this). `flatten_arrays`
+/// distinguishes List context (flatten `[...]` children one level) from Array
+/// context (preserve nested `[...]`), matching raku — the interpreter's old
+/// `flat_into` lacked this and over-flattened nested arrays in `flat(a, b, c)`.
+pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match v {
         // Lists, Seqs, and Slips are always flattened; their children
         // inherit flatten_arrays=true since Lists don't itemize.
@@ -91,6 +97,17 @@ fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
         }
         // Itemized containers — don't descend
         Value::Array(_, kind) if kind.is_itemized() => out.push(v.clone()),
+        // Already-realized lazy lists flatten their cached items; an un-forced
+        // lazy list stays opaque (we don't force here).
+        Value::LazyList(ll) => {
+            if let Some(cached) = ll.cache.lock().unwrap().clone() {
+                for item in &cached {
+                    flat_val(item, out, flatten_arrays);
+                }
+            } else {
+                out.push(v.clone());
+            }
+        }
         Value::Range(..)
         | Value::RangeExcl(..)
         | Value::RangeExclStart(..)
