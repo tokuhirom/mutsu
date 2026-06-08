@@ -1187,7 +1187,8 @@ impl Interpreter {
                         }
                     }
                 }
-            } else if does_parents.contains(parent) && self.registry().enum_types.contains_key(base_role_name)
+            } else if does_parents.contains(parent)
+                && self.registry().enum_types.contains_key(base_role_name)
             {
                 // Enum used as a role via `does`: record it for method dispatch
                 self.class_enum_roles

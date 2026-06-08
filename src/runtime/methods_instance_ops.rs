@@ -1337,8 +1337,11 @@ impl Interpreter {
                 if pkg_name == target_name {
                     return Ok(Value::Bool(true));
                 }
-                if let Some(mut base) =
-                    self.registry().subsets.get(&pkg_name).map(|s| s.base.clone())
+                if let Some(mut base) = self
+                    .registry()
+                    .subsets
+                    .get(&pkg_name)
+                    .map(|s| s.base.clone())
                 {
                     loop {
                         if base == target_name {

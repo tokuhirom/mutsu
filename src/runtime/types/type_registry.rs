@@ -7,7 +7,8 @@ impl Interpreter {
             ("LittleEndian".to_string(), EnumValue::Int(1)),
             ("BigEndian".to_string(), EnumValue::Int(2)),
         ];
-        self.registry_mut().enum_types
+        self.registry_mut()
+            .enum_types
             .insert("Endian".to_string(), variants.clone());
         base.insert(Symbol::intern("Endian"), Value::str_from("Endian"));
         for (index, (key, val)) in variants.iter().enumerate() {
@@ -38,7 +39,8 @@ impl Interpreter {
             ("PF_UNIX".to_string(), EnumValue::Int(3)),
             ("PF_MAX".to_string(), EnumValue::Int(4)),
         ];
-        self.registry_mut().enum_types
+        self.registry_mut()
+            .enum_types
             .insert("ProtocolFamily".to_string(), variants.clone());
         base.insert(
             Symbol::intern("ProtocolFamily"),
@@ -65,7 +67,8 @@ impl Interpreter {
             ("Same".to_string(), EnumValue::Int(0)),
             ("More".to_string(), EnumValue::Int(1)),
         ];
-        self.registry_mut().enum_types
+        self.registry_mut()
+            .enum_types
             .insert("Order".to_string(), variants.clone());
         base.insert(Symbol::intern("Order"), Value::str_from("Order"));
         for (index, (key, val)) in variants.iter().enumerate() {
@@ -103,7 +106,8 @@ impl Interpreter {
             ("SIGTTIN".to_string(), EnumValue::Int(Self::sig_num(21))),
             ("SIGTTOU".to_string(), EnumValue::Int(Self::sig_num(22))),
         ];
-        self.registry_mut().enum_types
+        self.registry_mut()
+            .enum_types
             .insert("Signal".to_string(), variants.clone());
         base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
         for (index, (key, val)) in variants.iter().enumerate() {
@@ -238,7 +242,8 @@ impl Interpreter {
     }
 
     pub(crate) fn has_enum_variant(&self, enum_name: &str, variant_name: &str) -> bool {
-        self.registry().enum_types
+        self.registry()
+            .enum_types
             .get(enum_name)
             .is_some_and(|variants| variants.iter().any(|(k, _)| k == variant_name))
     }
@@ -407,7 +412,11 @@ impl Interpreter {
         // Follow subset chain up to a reasonable depth to avoid cycles.
         // Clone the base out per step so the registry read guard never spans iterations.
         for _ in 0..20 {
-            let next = self.registry().subsets.get(&current).map(|s| s.base.clone());
+            let next = self
+                .registry()
+                .subsets
+                .get(&current)
+                .map(|s| s.base.clone());
             match next {
                 Some(base) => current = base,
                 None => break,

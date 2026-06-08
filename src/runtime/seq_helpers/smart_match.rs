@@ -1267,7 +1267,9 @@ impl Interpreter {
                 self.type_matches_value(&type_name_resolved, left)
             }
             // Backward-compatibility: enum type objects may still arrive as Str values.
-            (_, Value::Str(type_name)) if self.registry().enum_types.contains_key(type_name.as_str()) => {
+            (_, Value::Str(type_name))
+                if self.registry().enum_types.contains_key(type_name.as_str()) =>
+            {
                 matches!(left, Value::Enum { enum_type, .. } if enum_type.resolve() == **type_name)
             }
             // Mu instances smartmatch only the Mu type object (Mu ~~ Mu.new is True).
