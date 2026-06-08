@@ -329,11 +329,7 @@ impl Interpreter {
         invocant: Option<&Value>,
     ) -> Option<(String, MethodDef)> {
         self.dispatch_ambiguous = false;
-        let role_bindings = self
-            .registry()
-            .class_role_param_bindings
-            .get(class_name)
-            .cloned();
+        let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         // Collect all matching multi candidates across the MRO, then pick the
         // most specific one by type hierarchy distance.
@@ -349,10 +345,7 @@ impl Interpreter {
             // across the whole block.
             let overloads = self
                 .registry()
-                .classes
-                .get(cn.as_str())
-                .and_then(|c| c.methods.get(method_name))
-                .cloned();
+                .get_method_overloads(cn.as_str(), method_name);
             if let Some(overloads) = overloads {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
                 let mut first_visible_non_multi: Option<MethodDef> = None;
@@ -596,11 +589,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Vec<(String, MethodDef)> {
-        let role_bindings = self
-            .registry()
-            .class_role_param_bindings
-            .get(class_name)
-            .cloned();
+        let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
         for cn in &mro {
@@ -663,10 +652,7 @@ impl Interpreter {
             let is_ancestor = cn != class_name;
             if let Some(overloads) = self
                 .registry()
-                .classes
-                .get(cn.as_str())
-                .and_then(|c| c.methods.get(method_name))
-                .cloned()
+                .get_method_overloads(cn.as_str(), method_name)
             {
                 let has_visible = overloads
                     .iter()
@@ -681,9 +667,7 @@ impl Interpreter {
         }
         let any_multi = defining_levels.iter().any(|cn| {
             self.registry()
-                .classes
-                .get(cn.as_str())
-                .and_then(|c| c.methods.get(method_name))
+                .get_method_overloads(cn.as_str(), method_name)
                 .is_some_and(|ovs| ovs.iter().any(|d| d.is_multi))
         });
         if !any_multi {
@@ -713,15 +697,11 @@ impl Interpreter {
         receiver_class: &str,
         candidate_owner: &str,
     ) -> bool {
-        if receiver_class != candidate_owner
-            && self.registry().hidden_classes.contains(candidate_owner)
-        {
+        if receiver_class != candidate_owner && self.registry().is_hidden_class(candidate_owner) {
             return true;
         }
         self.registry()
-            .hidden_defer_parents
-            .get(receiver_class)
-            .is_some_and(|hidden| hidden.contains(candidate_owner))
+            .is_hidden_defer_parent(receiver_class, candidate_owner)
     }
 
     pub(super) fn resolve_private_method_with_owner(
@@ -731,23 +711,14 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
-        let role_bindings = self
-            .registry()
-            .class_role_param_bindings
-            .get(class_name)
-            .cloned();
+        let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         for cn in mro {
             if cn != owner_class {
                 continue;
             }
             // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
-            let overloads = self
-                .registry()
-                .classes
-                .get(&cn)
-                .and_then(|c| c.methods.get(method_name))
-                .cloned();
+            let overloads = self.registry().get_method_overloads(&cn, method_name);
             if let Some(overloads) = overloads {
                 for def in overloads {
                     if !def.is_private {
@@ -774,11 +745,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
-        let role_bindings = self
-            .registry()
-            .class_role_param_bindings
-            .get(class_name)
-            .cloned();
+        let role_bindings = self.registry().get_role_param_bindings(class_name);
         if arg_values.is_empty()
             && let Some(cached) = self
                 .private_zeroarg_method_cache
@@ -845,12 +812,7 @@ impl Interpreter {
         }
         for cn in mro {
             // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
-            let overloads = self
-                .registry()
-                .classes
-                .get(&cn)
-                .and_then(|c| c.methods.get(method_name))
-                .cloned();
+            let overloads = self.registry().get_method_overloads(&cn, method_name);
             if let Some(overloads) = overloads {
                 for def in &overloads {
                     if !def.is_private {

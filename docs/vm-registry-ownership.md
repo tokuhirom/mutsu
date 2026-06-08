@@ -154,11 +154,30 @@ dual-store は [vm-dual-store.md](vm-dual-store.md)。
   （`type_matches_value` 40+ サイト、`class_mro` 等）。よって「VM ~15-20 read サイトを `self.registry.read()`
   へ」は実コードと不一致＝VM への registry ハンドル追加は本 slice では不要（②非ゴールの Arc→plain 畳み込み
   と一体で ③/④へ）。read 側移行の実体は wrapper の Registry メソッド化＝本 slice。
-- **残（PR-B 後続）**: 型マッチ（`type_matching.rs`）の「クラス MRO 経由の composed-role 推移 walk」2 ブロック
-  （L668-697 / L821-850）。pure-registry 読みだが、ゲート条件が **block1=`resolve_role_key`（Interpreter
-  名前解決）/ effective_constraint subtype 判定**、**block2=`roles.contains_key` / exact 一致**で非自明に異なり、
-  素朴な統合は推移閉包を変える恐れ。挙動不変を厳守するため別 slice で（gate を保ったまま Registry 側 closure
-  ヘルパへ抽出）。`resolve_method_with_owner_impl` の registry-read 部も同様に後続。
+- **PR-B slice 2 = メソッド解決/型マッチの registry-read メソッド化（本 PR）**: dispatch ホットパスに散在する
+  同型の pure-registry read を `impl Registry` の owned 返しメソッドへ集約（ガード即 drop の規律を維持）:
+  - `Registry::get_method_overloads(&self, class, method) -> Option<Vec<MethodDef>>` — `classes.get(c).methods.get(m).cloned()`。
+    `resolution.rs` の同型 5 サイト（`resolve_method_with_owner_impl` のオーバーロード read、
+    `resolve_methods_per_mro_level` の read + any_multi 再チェック、private 解決 2 サイト）を変換。
+  - `Registry::get_role_param_bindings(&self, class) -> Option<HashMap<String,Value>>` — 同 4 サイト変換。
+  - `Registry::is_hidden_class` / `is_hidden_defer_parent(class, owner) -> bool`（後者は所有 set を返さず
+    述語化＝`&self`-only 呼び出し側の gratuitous clone を回避）。`should_skip_defer_method_candidate` を変換。
+  - `Registry::composed_roles_seed(&self, mro) -> Vec<String>` — composed-role 推移 walk の**シードのみ**
+    （MRO→`class_composed_roles`、push 順保持・dedup/sort 禁止＝LIFO walk の first-match-wins が load-bearing）。
+    `type_matching.rs` の Block A（Package, `resolved_constraint.is_some()`）/ Block B（Instance,
+    `roles.contains_key`）両方のシードに適用。**推移 walk 本体はインライン据え置き**: gate が
+    block A=`resolve_role_key`（env+lock 再入）/ block B=`roles.contains_key`、match が `type_matches` /
+    exact `== constraint` で非自明に異なり、`resolve_role_key` gate を Registry メソッド内（read ガード保持中）
+    から呼ぶと std `RwLock` 非再入で deadlock するため。
+  - **変換しない（意図的）**: `resolve_all_methods_with_owner` の class-OR-role `.or_else` fallback（非同型）、
+    private zero-arg fast-path（borrow 走査で matched 1 件のみ clone のホットパス最適化＝Vec 全 clone 退行回避）。
+  - **対象外（別件）**: `methods_classhow.rs`/`methods_walk.rs` の composed-role walk は構造差（VecDeque BFS vs
+    LIFO Vec、base strip タイミング差、二重 map closure）で walk 順が変わるため据え置き。`functions.get(&Symbol)`
+    lookup は周辺キー構築が `current_package`/`env` 依存のため Interpreter 側据え置き。
+  挙動不変、build/clippy/make test 緑、S12/S14（typecheck/parameterized/generic-subtyping 含む）roast 緑。
+- **残（PR-B 後続）**: `resolve_method_with_owner_impl` の残る tie-break/candidate 収集（type-distance 計算等）は
+  既に owned clone 後の純メモリ処理で registry-read は本 slice で集約済み。次は **PR-C**（register_* の
+  write-through 整理）。
 
 ## 完了の定義（②）— **PR-A 完了（slice 1-5, #2760/2762/2763/2764/本PR）**
 

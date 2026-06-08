@@ -30,7 +30,7 @@ use crate::ast::FunctionDef;
 use crate::symbol::Symbol;
 use crate::value::{EnumValue, RuntimeError, Value};
 
-use super::{ClassDef, RoleCandidateDef, RoleDef, SubsetDef};
+use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
 /// Program declaration registry. See module docs.
 ///
@@ -316,5 +316,60 @@ impl Registry {
             }
         }
         false
+    }
+
+    /// The method overloads named `method_name` defined directly on `class_name`
+    /// (not inherited). Owned clone — `MethodDef` is `Arc`-backed so the clone is
+    /// O(overload count) refcount bumps, matching the prior `.cloned()` call sites.
+    pub(crate) fn get_method_overloads(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<Vec<MethodDef>> {
+        self.classes
+            .get(class_name)
+            .and_then(|c| c.methods.get(method_name))
+            .cloned()
+    }
+
+    /// Bound role type parameters for `class_name` (e.g. the `::T` -> value map
+    /// of a `class C does R[Int]`). Owned clone.
+    pub(crate) fn get_role_param_bindings(
+        &self,
+        class_name: &str,
+    ) -> Option<HashMap<String, Value>> {
+        self.class_role_param_bindings.get(class_name).cloned()
+    }
+
+    /// Whether `name` is marked `is hidden` (excluded from `.^mro` etc.).
+    pub(crate) fn is_hidden_class(&self, name: &str) -> bool {
+        self.hidden_classes.contains(name)
+    }
+
+    /// Whether `owner` is a deferred `is hidden` parent of `class`. Predicate form
+    /// (not an owned-set getter) so the `&self`-only caller keeps the guard local
+    /// and clones nothing.
+    pub(crate) fn is_hidden_defer_parent(&self, class: &str, owner: &str) -> bool {
+        self.hidden_defer_parents
+            .get(class)
+            .is_some_and(|h| h.contains(owner))
+    }
+
+    /// Seed for the composed-role transitive walk: the base names of every role
+    /// composed into any class in `mro`, in MRO-then-declaration order. The
+    /// parametric suffix is stripped (`R[Int]` -> `R`). Push order is load-bearing
+    /// — the caller consumes this LIFO via `.pop()` and relies on first-match-wins,
+    /// so this method MUST NOT dedup or sort (dedup happens during the walk).
+    pub(crate) fn composed_roles_seed(&self, mro: &[String]) -> Vec<String> {
+        let mut seed = Vec::new();
+        for cn in mro {
+            if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {
+                for cr in composed {
+                    let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                    seed.push(base.to_string());
+                }
+            }
+        }
+        seed
     }
 }
