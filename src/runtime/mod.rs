@@ -4843,6 +4843,17 @@ impl Interpreter {
             .unwrap_or(false)
     }
 
+    /// True if `name` is a dynamic variable by syntax (`*` twigil): an optional
+    /// sigil (`$`/`@`/`%`/`&`) immediately followed by `*`, or a bare leading
+    /// `*`. Dynamic variables are late-bound through the caller's dynamic scope
+    /// and so must not have a closure's lexical capture forced over them.
+    pub(crate) fn is_dynamic_var_key(name: &str) -> bool {
+        matches!(
+            name.as_bytes(),
+            [b'$' | b'@' | b'%' | b'&', b'*', ..] | [b'*', ..]
+        )
+    }
+
     pub(crate) fn push_caller_env(&mut self) {
         self.push_caller_env_with_code(None);
     }

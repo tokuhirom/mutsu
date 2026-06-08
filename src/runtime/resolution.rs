@@ -1337,8 +1337,38 @@ impl Interpreter {
             } else {
                 data.env.clone()
             };
+            // The closure's own captured lexical free variables (`free_var_syms`)
+            // must reflect THIS closure's captured value on every call, not a
+            // same-named variable that the caller env happens to hold. Under
+            // `merge_all` the default merge is "don't overwrite" (to preserve the
+            // caller's dynamic `$*FOO` scope), but that also lets a stale caller
+            // value — a lexical the declaring block leaked, or this closure's own
+            // prior-call writeback — hide the captured value, so a *second*
+            // bareword call read a stale/absent value (`my &f; { my $a=3;
+            // &f=sub{$a} }; f(); f()` returned 3 then Nil). Force the captured
+            // value for the genuine lexical free vars only; dynamic `$*FOO` vars
+            // are excluded so they still follow the caller's dynamic scope.
+            let captured_free_lexicals: std::collections::HashSet<crate::symbol::Symbol> = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| {
+                    cc.free_var_syms
+                        .iter()
+                        .copied()
+                        .filter(|s| !s.with_str(Self::is_dynamic_var_key))
+                        .collect()
+                })
+                .unwrap_or_default();
             let mut new_env = saved_env.clone();
             for (k, v) in &closure_base_env {
+                // A captured `ContainerRef` is a shared container cell (box-on-
+                // capture / lever C): the single source of truth for that lexical,
+                // so it must OVERWRITE any stale value. Mirrors the VM closure
+                // dispatch (`call_compiled_closure`).
+                if matches!(v, Value::ContainerRef(_)) || captured_free_lexicals.contains(k) {
+                    new_env.insert_sym(*k, v.clone());
+                    continue;
+                }
                 if merge_all {
                     new_env.entry_or_insert(k.resolve(), v.clone());
                     continue;
