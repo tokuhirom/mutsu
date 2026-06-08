@@ -666,16 +666,6 @@ impl Interpreter {
         self.state_vars.insert(key, value);
     }
 
-    /// Read per-closure-instance captured-variable state (hot closure-call path).
-    pub(crate) fn get_closure_captured_state(&self, id: u64, name: Symbol) -> Option<&Value> {
-        self.closure_captured_state.get(&(id, name))
-    }
-
-    /// Persist per-closure-instance captured-variable state (hot closure-call path).
-    pub(crate) fn set_closure_captured_state(&mut self, id: u64, name: Symbol, value: Value) {
-        self.closure_captured_state.insert((id, name), value);
-    }
-
     pub(crate) fn current_once_scope(&self) -> Option<u64> {
         // When inside a closure call, __mutsu_callable_id identifies the
         // specific closure clone.  This must take priority over the

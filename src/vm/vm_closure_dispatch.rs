@@ -251,33 +251,13 @@ impl VM {
                 self.interpreter.env_mut().insert_sym(*sym, val);
             }
         }
-        // Override with persisted per-closure-instance captured variable state.
-        // This ensures that each closure instance maintains independent mutable
-        // state across calls (e.g. two closures from the same factory each get
-        // their own copy of captured variables).
-        //
-        // Only the closure's free variables can be mutated by its body, so only
-        // those carry per-instance state. Iterating `cc.free_var_syms` (a handful
-        // of names) instead of the whole captured env (~100 names) avoids that
-        // many `format!` allocations and state-var lookups per call.
-        let cap_overrides: Vec<(Symbol, Value)> = cc
-            .free_var_syms
-            .iter()
-            .filter_map(|k| {
-                // Skip box-on-capture cells: a ContainerRef-captured lexical is a
-                // shared container, not per-instance frozen state, so the stale
-                // closure_captured_state value must not clobber the live Arc.
-                if matches!(data.env.get_sym(*k), Some(Value::ContainerRef(_))) {
-                    return None;
-                }
-                self.interpreter
-                    .get_closure_captured_state(data.id, *k)
-                    .map(|val| (*k, val.clone()))
-            })
-            .collect();
-        for (k, val) in cap_overrides {
-            self.interpreter.env_mut().insert_sym(k, val);
-        }
+        // (Per-closure-instance mutable state used to be re-applied here from a
+        // `closure_captured_state` side table. Container-identity step 2 deleted
+        // that mechanism: the escape analysis now boxes every captured-and-mutated
+        // lexical of an escaping closure into a shared `ContainerRef` cell, and a
+        // fresh declaration installs a fresh cell, so per-instance independence —
+        // two closures from one factory, each factory call's own state — falls out
+        // of the cell model for free. See docs/container-identity.md.)
 
         self.interpreter.push_caller_env();
 
@@ -650,16 +630,10 @@ impl VM {
             }
         }
 
-        // Persist captured variable state so this closure instance retains
-        // its own mutable state across calls (independent from other closures).
-        // Mirror of `cap_overrides` above: only free variables can be mutated by
-        // the body, so only those need persisting.
-        for k in &cc.free_var_syms {
-            if let Some(val) = self.interpreter.env().get_sym(*k).cloned() {
-                self.interpreter
-                    .set_closure_captured_state(data.id, *k, val);
-            }
-        }
+        // (No per-instance state persistence here anymore — see the deleted
+        // `closure_captured_state` note at the call-entry override above. The
+        // shared `ContainerRef` cells installed by the escape analysis carry a
+        // mutating closure's state across calls directly.)
 
         // Environment writeback: merge changes back to caller
         let frame = self.pop_call_frame();

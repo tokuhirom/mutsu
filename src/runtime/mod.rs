@@ -985,13 +985,6 @@ pub struct Interpreter {
     /// preserves env keys that existed before the block).
     our_vars: HashMap<String, Value>,
     state_vars: HashMap<String, Value>,
-    /// Per-closure-instance captured-variable state, keyed by
-    /// (closure instance id, captured variable Symbol). This is the hot
-    /// closure-call persistence store (loaded/saved on every closure call for
-    /// its free variables); a typed key avoids the per-call
-    /// `format!("__mutsu_closure_cap::{id}::{name}")` String allocation and the
-    /// String hashing that dominated the closure dispatch profile.
-    closure_captured_state: HashMap<(u64, Symbol), Value>,
     once_values: HashMap<String, Value>,
     once_scope_stack: Vec<u64>,
     next_once_scope_id: u64,
@@ -3083,7 +3076,6 @@ impl Interpreter {
             fatal_mode: false,
             our_vars: HashMap::new(),
             state_vars: HashMap::new(),
-            closure_captured_state: HashMap::new(),
             once_values: HashMap::new(),
             once_scope_stack: Vec::new(),
             next_once_scope_id: 1,
@@ -5251,7 +5243,6 @@ impl Interpreter {
             // Mirror state_vars: a thread clone starts with no persisted
             // closure captured state (falls back to the captured-env initial
             // values), exactly as before this store existed.
-            closure_captured_state: HashMap::new(),
             once_values: self.once_values.clone(),
             once_scope_stack: Vec::new(),
             next_once_scope_id: self.next_once_scope_id,
