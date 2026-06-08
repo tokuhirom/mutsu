@@ -1148,39 +1148,27 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_reverse(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // If multiple args, reverse the list of args
-        if args.len() > 1 {
+        // `reverse()` (empty) and `reverse(a, b, c)` reverse the argument *list*
+        // (so `reverse()` is `()`, not `Nil`). Only the single-arg form reverses a
+        // collection.
+        if args.len() != 1 {
             let mut items: Vec<Value> = args.to_vec();
             items.reverse();
             return Ok(Value::array(items));
         }
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Array(mut items, ..)) => {
-                Arc::make_mut(&mut items).reverse();
-                Value::Array(items, ArrayKind::List)
+        // LazyIoLines must be materialized by the interpreter (native bails).
+        if let Value::LazyIoLines { handle, .. } = &args[0] {
+            let mut lines = Vec::new();
+            while let Some(line) = self.read_line_from_handle_value(handle)? {
+                lines.push(Value::str(line));
             }
-            Some(Value::LazyIoLines { ref handle, .. }) => {
-                // Materialize all lines from the lazy IO source, then reverse
-                let mut lines = Vec::new();
-                while let Some(line) = self.read_line_from_handle_value(handle)? {
-                    lines.push(Value::str(line));
-                }
-                lines.reverse();
-                Value::Array(Arc::new(lines), ArrayKind::List)
-            }
-            Some(Value::Seq(items)) => {
-                let mut v = items.to_vec();
-                v.reverse();
-                Value::Array(Arc::new(v), ArrayKind::List)
-            }
-            Some(Value::Str(s)) => {
-                // reverse() on a string in list context returns the string as-is
-                // (unlike flip() which reverses characters)
-                Value::str(s.to_string())
-            }
-            _ => Value::Nil,
-        })
+            lines.reverse();
+            return Ok(Value::Array(Arc::new(lines), ArrayKind::List));
+        }
+        // Single arg: delegate to the single shared native `reverse` (Array / Seq
+        // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy
+        // that lacked Range/Slip/shaped arms.
+        crate::builtins::native_function(Symbol::intern("reverse"), args).unwrap_or(Ok(Value::Nil))
     }
 
     pub(super) fn builtin_sort(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
