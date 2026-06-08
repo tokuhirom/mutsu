@@ -186,12 +186,7 @@ impl Interpreter {
 
     /// Read-only variant of class_mro for use from non-mut helpers.
     fn class_mro_readonly(&self, class_name: &str) -> Option<Vec<String>> {
-        let registry = self.registry();
-        let class_def = registry.classes.get(class_name)?;
-        if !class_def.mro.is_empty() {
-            return Some(class_def.mro.clone());
-        }
-        Some(vec![class_name.to_string()])
+        self.registry().class_mro_cached(class_name)
     }
 
     /// Look up the "own" MethodDef for `method_name` on the given class or role.
