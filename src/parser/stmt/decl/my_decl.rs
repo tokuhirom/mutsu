@@ -287,6 +287,29 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
 
     let (rest, _) = ws(rest)?;
 
+    // `()` immediately after the variable name is the reserved shape syntax
+    // (`my @a()`, `my &a()`), not a valid declaration. A real declaration has
+    // `=`/`:=`/`;`/`[`/a trait here instead.
+    if rest.starts_with('(') && (is_array || is_code || is_hash) {
+        let (kind, instead) = if is_code {
+            ("routine", " (maybe use :() to declare a longname?)")
+        } else if is_array {
+            ("array", "")
+        } else {
+            ("hash", "")
+        };
+        let msg = format!(
+            "The () shape syntax in {} declarations is reserved{}",
+            kind, instead
+        );
+        let reserved = format!("() shape syntax in {} declarations", kind);
+        return Err(illegal_my_var_error(
+            "X::Syntax::Reserved",
+            &msg,
+            &[("reserved", reserved.as_str()), ("instead", ":()")],
+        ));
+    }
+
     // Parse hash key-type parameterization: %h{Str}, %h{Int}, ...
     let (rest, hash_key_constraint) = if is_hash
         && rest.starts_with('{')
