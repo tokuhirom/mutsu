@@ -21,9 +21,9 @@
 | file:line | 受け手 / メソッド | 難易度 | ブロッカー / 依存 |
 |---|---|---|---|
 | `vm_call_method_compiled.rs` native-method (非mut) | IO::Pipe/IO::Handle 等の組み込みクラスメソッド | HARD | ③（実装 `native_io_*` がファイルハンドル等の interpreter 所有状態を要求。当初「個別可」は誤り） |
-| `vm_call_method_compiled.rs` catch-all (非mut) | generic Instance/Buf/Failure メソッド | HARD | ③ state 所有移管（残る主 tree-walk） |
+| `vm_call_method_compiled.rs` catch-all (非mut) | **native/Buf/Failure/MOP のみ**（ユーザーメソッドは全て bytecode 化済） | HARD | ③ state 所有移管。**③ PR-3 で実測訂正**: ここはユーザーメソッド tree-walk では**なかった** |
 | `vm_call_method_compiled.rs` native-method (mut) | 同上 mut | HARD | ③（同上） |
-| `vm_call_method_compiled.rs` catch-all (mut) | 同上 mut | HARD | ③ |
+| `vm_call_method_compiled.rs` catch-all (mut) | 同上 mut（native/Buf/Failure/MOP のみ） | HARD | ③ |
 | `vm_call_method_mut_ops.rs` catch-all | generic mut メソッド | HARD | ③ |
 | `vm_call_method_mut_ops.rs` array-backed instance | `is Array` storage の push/pop/shift | MEDIUM | 第一級コンテナ Phase 2 |
 | `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B（共有セル所有） |
@@ -110,6 +110,24 @@
   （非builtin のモジュール sub は従来通り tree-walk）。pin = `t/builtin-shadow-dispatch.t`(9)。S06 whitelist 86 件緑
   （S32-str gb2312/shiftjis は main でも落ちる既存環境依存）。残: 非proto multi fork（VM 側 multi 候補解決が前提）、
   catch-all 末端（③）、非builtin モジュール sub の tree-walk（compiled_fns 拡充 or 安全な汎用 OTF gate が前提）。
+
+- **2026-06-09 (③ PR-3, §1 catch-all = ユーザーメソッド compile-on-demand + 実態訂正)**: §1 catch-all
+  （`vm_call_method_compiled.rs` の `try_compiled_method_or_interpret` line 457 / `try_compiled_method_mut_or_interpret`
+  line ~919）の dispatch チョークポイントに、**解決済みユーザーメソッド def が `compiled_code == None` の場合の
+  compile-on-demand** を追加（新ヘルパ `populate_uncompiled_method`: `compile_class_methods`/`compile_role_methods`
+  で canonical registry を冪等に compile→再解決→`dispatch_compiled_method` で bytecode 実行。owner が user
+  class/role でない or 空ボディなら `None` で interpreter フォールバック温存）。pin `t/method-otf-dispatch.t`(14)。
+  **最大の収穫は実態の実測訂正**: `MUTSU_VM_STATS=1` + プローブで catch-all 到達集合を計測した結果、台帳が
+  「catch-all = 残る主 tree-walk（ユーザーメソッド）」としていたのは**誤りだった**。実際は:
+  ① **通常宣言メソッド（multi method 含む）・submethod・role 合成・継承・`.^add_method` は全て登録時に
+  `compile_class_methods` で bytecode 化済**（`.^add_method` は method リテラル Sub の `compiled_code` を引き継ぐ、
+  `methods_classhow.rs:640`）。② catch-all に来る Instance トラフィックは **native coercion（`Exception.Stringy`）/
+  MOP（`.does`/`.^does`）/ role-qualified（`WithAttr.AccessesAttr::meth` は resolve=None で resolved ブロックに
+  入らない）** のみ＝③/builtins/別解決バグ依存。③ `populate_uncompiled_method` が実際に発火する唯一の compile-gap は
+  **`.^add_multi_method`**（`compiled_code: None` 固定, `methods_classhow.rs:702`）＋将来の同種サイトの defensive
+  カバー。よって本 PR は §1 catch-all の**ユーザーメソッド分を確実に bytecode 化**（残りは native/MOP/別解決バグ）。
+  S12/S14/S06-multi/metamodel whitelist 全緑、make test PASS。**教訓: フォールバックカウンタは「tree-walk」ではなく
+  「interpreter ブリッジ経由」を数える**（ブリッジ先の `run_block_raw` 自体は VM compile ping-pong で実は bytecode）。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

@@ -376,8 +376,38 @@ impl VM {
                 ) {
                     return result;
                 }
-                if let Some(ref compiled) = method_def.compiled_code {
-                    let cc = compiled.clone();
+                // Resolve to a method def that has compiled bytecode. Normally
+                // `compiled_code` is already populated at class registration. A
+                // few sites add methods after that compile pass (e.g.
+                // `.^add_method`, ledger §1) and leave `compiled_code = None`;
+                // for those, compile on demand here so the method runs as
+                // bytecode instead of tree-walking through the interpreter.
+                let compiled_def: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
+                    if method_def.compiled_code.is_some() {
+                        Some((owner_class.clone(), method_def.clone()))
+                    } else if !method_def.body.is_empty()
+                        && let Some((owner, def)) = self.populate_uncompiled_method(
+                            cn,
+                            &owner_class,
+                            method,
+                            &args,
+                            &target,
+                        )
+                    {
+                        // Refresh the resolve caches so future calls take the
+                        // already-compiled fast path without re-resolving.
+                        self.method_resolve_cache
+                            .insert(cache_key, Some((owner.clone(), def.clone())));
+                        if !def.is_multi {
+                            self.last_method_resolve =
+                                Some((class_sym, method_sym, owner.clone(), def.clone()));
+                        }
+                        Some((owner, def))
+                    } else {
+                        None
+                    };
+                if let Some((owner_class, method_def)) = compiled_def {
+                    let cc = method_def.compiled_code.clone().expect("compiled_code set");
 
                     // Try to populate fast_method_cache for future calls
                     if !method_def.is_multi {
@@ -424,11 +454,50 @@ impl VM {
         if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
-        // TODO: compile to bytecode — generic Instance/Buf/Failure method fork,
-        // the primary remaining tree-walk method dispatch (ledger §1).
+        // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
+        // User-defined Instance methods now always run as bytecode (compiled at
+        // registration, or on demand above via `populate_uncompiled_method`), so
+        // what remains here is native receiver dispatch (Buf/Blob/Failure/IO and
+        // the `dispatch_method_by_name_*` machinery) that depends on interpreter-
+        // owned state (③ state ownership / first-class container Phase 2).
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
+    }
+
+    /// Compile a resolved user method's body on demand when it lacks bytecode,
+    /// then dispatch as bytecode instead of through the interpreter bridge.
+    /// Almost all user methods are already compiled at class registration
+    /// (`compile_class_methods`); the gap this closes is methods inserted after
+    /// that pass without their own bytecode — notably `.^add_multi_method`
+    /// (which hardcodes `compiled_code = None`) and any future such site.
+    /// (`.^add_method` already carries the method literal's compiled code.)
+    /// Populates `compiled_code` in the canonical registry (idempotent) and
+    /// re-resolves so the returned def carries the bytecode. Returns `None`
+    /// when the owner is not a user class/role (native receiver) or the body
+    /// stays uncompilable, preserving the interpreter fallback. Ledger §1.
+    fn populate_uncompiled_method(
+        &mut self,
+        cn: &str,
+        owner_class: &str,
+        method: &str,
+        args: &[Value],
+        target: &Value,
+    ) -> Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> {
+        // Both compile passes are no-ops if the name is absent from the
+        // respective registry, so calling both safely covers class- and
+        // role-owned methods. Neither re-enters user code (pure compilation),
+        // so the registry re-entrancy discipline (②) is respected.
+        self.interpreter.compile_class_methods(owner_class);
+        self.interpreter.compile_role_methods(owner_class);
+        let (owner, def) = self
+            .interpreter
+            .resolve_method_with_owner_invocant(cn, method, args, target)?;
+        if def.compiled_code.is_some() {
+            Some((owner, std::sync::Arc::new(def)))
+        } else {
+            None
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -771,8 +840,20 @@ impl VM {
             {
                 return result;
             }
-            if let Some(ref cc) = method_def.compiled_code {
-                let cc = cc.clone();
+            // Resolve to a def carrying compiled bytecode, compiling on demand
+            // for methods added after the registration compile pass (e.g.
+            // `.^add_method`, ledger §1) so they run as bytecode rather than
+            // tree-walking. None → native receiver, keep interpreter fallback.
+            let resolved: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
+                if method_def.compiled_code.is_some() {
+                    Some((owner_class, std::sync::Arc::new(method_def)))
+                } else if !method_def.body.is_empty() {
+                    self.populate_uncompiled_method(&cn, &owner_class, method, &args, &target)
+                } else {
+                    None
+                };
+            if let Some((owner_class, method_def)) = resolved {
+                let cc = method_def.compiled_code.clone().expect("compiled_code set");
                 let target_id = match &target {
                     Value::Instance { id, .. } => Some(*id),
                     _ => None,
@@ -854,7 +935,10 @@ impl VM {
         if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
-        // TODO: compile to bytecode — generic Instance/Buf/Failure method fork, mut (ledger §1).
+        // TODO: compile to bytecode — native/Buf/Failure method fork, mut (ledger §1).
+        // User-defined methods run as bytecode (compiled at registration or on
+        // demand above); what remains is native receiver dispatch blocked on
+        // ③ state ownership / first-class container Phase 2.
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_mut_with_values(target_name, target, method, args)
