@@ -1,5 +1,31 @@
 use super::*;
 
+/// Does this legacy-path placeholder/signature param list contain a *plain
+/// positional* param — a real signature name like `p` (from a pointy block
+/// `-> $p {...}`), as opposed to a `$:name` named placeholder, a `^`-twigil
+/// implicit placeholder (`$^a`/`@^x`/`%^h`/`&^cb`), or the `_`/`@_`/`%_`
+/// topic/args slots?
+///
+/// Pointy lambdas compile to `params: ["p"]` with an empty `param_defs`, so they
+/// reach the legacy binding path. When a positional pair value (`ValuePair(Str,
+/// _)`, produced by `pair_as_positional` for `.first`/etc. over Hash/Pair
+/// elements) is passed, it must bind to such a plain param positionally rather
+/// than be siphoned off as a named argument.
+fn legacy_has_plain_positional_param(params: &[String]) -> bool {
+    params.iter().any(|p| {
+        !p.starts_with(':')
+            && !p.starts_with("@:")
+            && !p.starts_with("%:")
+            && !p.starts_with('^')
+            && !p.starts_with("@^")
+            && !p.starts_with("%^")
+            && !p.starts_with("&^")
+            && p != "_"
+            && p != "@_"
+            && p != "%_"
+    })
+}
+
 impl Interpreter {
     fn parameter_binding_error(message: String) -> RuntimeError {
         let mut err = RuntimeError::new(message);
@@ -142,11 +168,23 @@ impl Interpreter {
             }
             // Legacy path: bind positional placeholders ($^a, $^b) by position,
             // and named placeholders ($:name) by matching Pair arg keys.
+            //
+            // A `ValuePair(Str, _)` is normally a colonpair passed positionally
+            // that should feed a `$:name` named placeholder. But a pointy block
+            // `-> $p {...}` reaches this path with a plain positional param (and
+            // no named placeholders), and `.first`/`.sort`/etc. pass Hash/Pair
+            // elements as `ValuePair(Str, _)` via `pair_as_positional`: those
+            // must bind to `$p` positionally. So when the param list has a plain
+            // positional name, treat `ValuePair(Str, _)` as positional (and not
+            // as a named arg) — otherwise the pair is dropped and `$p` is unbound.
+            let promote_valuepair_positional = legacy_has_plain_positional_param(params);
             let positional_args: Vec<Value> = plain_args
                 .iter()
                 .filter(|a| match a {
                     Value::Pair(..) => false,
-                    Value::ValuePair(key, _) => !matches!(key.as_ref(), Value::Str(..)),
+                    Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(..)) => {
+                        promote_valuepair_positional
+                    }
                     _ => true,
                 })
                 .cloned()
@@ -157,6 +195,9 @@ impl Interpreter {
                     if let Value::Pair(key, val) = a {
                         Some((key.clone(), *val.clone()))
                     } else if let Value::ValuePair(key, val) = a {
+                        if promote_valuepair_positional {
+                            return None;
+                        }
                         if let Value::Str(name) = key.as_ref() {
                             Some((name.to_string(), *val.clone()))
                         } else {
