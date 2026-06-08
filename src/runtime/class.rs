@@ -35,7 +35,7 @@ impl Interpreter {
             // Walk the MRO; submethods are per-class, not inherited.
             for mro_class in &mro {
                 // Skip role entries in MRO
-                if self.roles.contains_key(mro_class)
+                if self.registry().roles.contains_key(mro_class)
                     && !self.registry().classes.contains_key(mro_class)
                 {
                     continue;
@@ -696,23 +696,24 @@ impl Interpreter {
         role_name: &str,
     ) -> Vec<ClassAttributeDef> {
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();
-        if let Some(role) = self.roles.get(role_name) {
+        if let Some(role) = self.registry().roles.get(role_name) {
             attrs.extend(role.attributes.clone());
         }
-        if let Some(parent_names) = self.role_parents.get(role_name) {
+        if let Some(parent_names) = self.registry().role_parents.get(role_name) {
             let mut role_stack: Vec<String> = parent_names.clone();
             let mut visited = vec![role_name.to_string()];
             while let Some(parent_role_name) = role_stack.pop() {
                 if !visited.contains(&parent_role_name) {
                     visited.push(parent_role_name.clone());
-                    if let Some(parent_role) = self.roles.get(&parent_role_name) {
+                    if let Some(parent_role) = self.registry().roles.get(&parent_role_name) {
                         for attr in &parent_role.attributes {
                             if !attrs.iter().any(|a| a.0 == attr.0) {
                                 attrs.push(attr.clone());
                             }
                         }
                     }
-                    if let Some(grandparents) = self.role_parents.get(&parent_role_name) {
+                    if let Some(grandparents) = self.registry().role_parents.get(&parent_role_name)
+                    {
                         for gp in grandparents {
                             if !visited.contains(gp) {
                                 role_stack.push(gp.clone());
@@ -1090,7 +1091,7 @@ impl Interpreter {
         let saved_var_bindings = self.var_bindings.clone();
         let saved_readonly = self.save_readonly_vars();
         self.method_class_stack.push(owner_class.to_string());
-        let role_context = if self.roles.contains_key(owner_class) {
+        let role_context = if self.registry().roles.contains_key(owner_class) {
             Some(owner_class.to_string())
         } else {
             method_def.role_origin.clone()
@@ -1117,13 +1118,18 @@ impl Interpreter {
         // will set $_ back to self if the invocant param is named "_".
         self.env
             .insert("_".to_string(), Value::Package(Symbol::intern("Any")));
-        if let Some(role_bindings) = self.class_role_param_bindings.get(owner_class) {
-            for (name, value) in role_bindings {
-                self.env.insert(name.clone(), value.clone());
-            }
-        } else if let Some(role_bindings) = self.class_role_param_bindings.get(receiver_class_name)
-        {
-            for (name, value) in role_bindings {
+        // Clone the bindings out under a single guard, then write env (the guard
+        // borrows *self, so it must drop before mutating self.env).
+        let role_bindings = {
+            let registry = self.registry();
+            registry
+                .class_role_param_bindings
+                .get(owner_class)
+                .or_else(|| registry.class_role_param_bindings.get(receiver_class_name))
+                .cloned()
+        };
+        if let Some(role_bindings) = role_bindings {
+            for (name, value) in &role_bindings {
                 self.env.insert(name.clone(), value.clone());
             }
         }

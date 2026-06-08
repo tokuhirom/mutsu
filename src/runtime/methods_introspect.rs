@@ -266,7 +266,7 @@ impl Interpreter {
             }
         };
         // Use appropriate HOW metaclass for each type kind
-        let how_name = if self.roles.contains_key(&type_name) && !type_name.contains('[')
+        let how_name = if self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
             || matches!(
                 type_name.as_str(),
                 "Numeric"

@@ -366,7 +366,7 @@ impl Interpreter {
             return Ok(value);
         };
         let role_name = role_name.resolve();
-        let Some(candidates) = self.role_candidates.get(&role_name).cloned() else {
+        let Some(candidates) = self.registry().role_candidates.get(&role_name).cloned() else {
             return Ok(value);
         };
         let Some(candidate) = candidates.into_iter().find(|candidate| {

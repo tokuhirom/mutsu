@@ -24,12 +24,13 @@ impl Interpreter {
         self.registry_mut().hidden_defer_parents = nested.registry().hidden_defer_parents.clone();
         self.registry_mut().class_trusts = nested.registry().class_trusts.clone();
         self.registry_mut().class_composed_roles = nested.registry().class_composed_roles.clone();
-        self.roles = nested.roles.clone();
-        self.role_candidates = nested.role_candidates.clone();
-        self.role_parents = nested.role_parents.clone();
-        self.role_hides = nested.role_hides.clone();
-        self.role_type_params = nested.role_type_params.clone();
-        self.class_role_param_bindings = nested.class_role_param_bindings.clone();
+        self.registry_mut().roles = nested.registry().roles.clone();
+        self.registry_mut().role_candidates = nested.registry().role_candidates.clone();
+        self.registry_mut().role_parents = nested.registry().role_parents.clone();
+        self.registry_mut().role_hides = nested.registry().role_hides.clone();
+        self.registry_mut().role_type_params = nested.registry().role_type_params.clone();
+        self.registry_mut().class_role_param_bindings =
+            nested.registry().class_role_param_bindings.clone();
         self.registry_mut().attribute_build_overrides =
             nested.registry().attribute_build_overrides.clone();
         self.registry_mut().subsets = nested.registry().subsets.clone();

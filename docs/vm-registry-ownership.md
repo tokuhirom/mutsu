@@ -105,7 +105,21 @@ dual-store は [vm-dual-store.md](vm-dual-store.md)。
   edition-2021 の `if let` 一時値スコープ罠を含め全て `let` 巻き上げ／clone-out で解消（resolution.rs の
   multi/private dispatch、methods_object の BUILD、private-zeroarg fast-path の cache 書き込みを guard 外へ）。
   全 `get_mut` ボディは registry 非再入を確認。build/clippy/make test 緑。
-- 残（フィールド別 total/writes）: roles(110)/role_parents(45)/role_candidates(21)、functions(96)/token_defs(35)。
+- **PR-A slice 4（本 PR, #2763 後）**: roles 群 7 フィールド移行（roles, user_declared_roles, role_candidates,
+  role_parents, role_hides, role_type_params, class_role_param_bindings、~200 サイト）。`RoleCandidateDef` を
+  `pub(crate)` 化（`RoleDef` は既に Debug/Clone/pub(crate)）。builtin roles seed は `Interpreter::new` の
+  registry ブロックで `registry.roles = {..}` に投入、`clone_for_thread` の 7 個別 clone 削除。**参照返却アクセサ
+  2 本**（`get_role_def -> Option<&RoleDef>`、`class_role_param_bindings -> Option<&HashMap>`）を owned 返しへ。
+  VM 側は両アクセサ経由のみ（`.is_some()`/`.map()` なので呼び出し側不変）。再入安全化: ① **read→write 同一ロック
+  deadlock を 2 件発見・修正**（registration_class.rs の role hidden フラグ→hidden_classes、role_hides→
+  hidden_defer_parents。read ガード保持中に `registry_mut()` を呼ぶ＝借用チェッカ未捕捉のデッドロック）。
+  Python ブレース対応スキャナで全 registry フィールドの read-get ボディ内 `registry_mut` を網羅検査し 0 を確認。
+  ② `&mut self` 再入を跨ぐ read ガード（`if let` scrutinee は本クレート edition2024 でもボディ全体で生存）を
+  clone-out/`let` 巻き上げで解消（methods.rs role 型punning、methods_object の new() role bindings、smart_match の
+  parametric parents、resolution の class+role メソッド表 or_else 単一ガード化）。③ 一文 2 read ガード
+  （`classes.contains_key || roles.contains_key` 3 箇所）を単一束縛ガードへ。build/clippy/make test 緑。
+  挙動不変確認（ロール合成/継承/パラメタ化/punning/conflict/`but`; Stack配列属性の Nil は main と同一の既存ギャップ）。
+- 残（フィールド別 total/writes）: functions(96)/token_defs(35)/proto_*。
 
 ## 完了の定義（②）
 

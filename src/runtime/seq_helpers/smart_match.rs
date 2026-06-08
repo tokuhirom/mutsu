@@ -1060,10 +1060,20 @@ impl Interpreter {
                 }
                 // Check if the parametric candidate's `is` parents include the RHS class.
                 // For role groups, look up the parametric candidate's parents.
-                if let Some(candidates) = self.role_candidates.get(&lhs_base_resolved)
-                    && let Some(candidate) = candidates.iter().find(|c| !c.type_params.is_empty())
-                {
-                    let mut stack: Vec<String> = candidate.parents.clone();
+                // Clone the parametric candidate's parents out under a single guard,
+                // then drop it before the loop re-enters (class_mro is &mut self).
+                let candidate_parents = {
+                    let registry = self.registry();
+                    registry
+                        .role_candidates
+                        .get(&lhs_base_resolved)
+                        .and_then(|candidates| {
+                            candidates.iter().find(|c| !c.type_params.is_empty())
+                        })
+                        .map(|candidate| candidate.parents.clone())
+                };
+                if let Some(candidate_parents) = candidate_parents {
+                    let mut stack: Vec<String> = candidate_parents;
                     let mut seen = HashSet::new();
                     while let Some(parent) = stack.pop() {
                         if !seen.insert(parent.clone()) {

@@ -258,7 +258,7 @@ impl Interpreter {
             && (self.has_type(name)
                 || crate::runtime::utils::is_known_type_constraint(name)
                 || self.registry().subsets.contains_key(name)
-                || self.roles.contains_key(name))
+                || self.registry().roles.contains_key(name))
         {
             let source = match &args[0] {
                 Value::Package(sym) => Some(sym.resolve()),
@@ -773,7 +773,7 @@ impl Interpreter {
             && (self.has_type(name)
                 || crate::runtime::utils::is_known_type_constraint(name)
                 || self.registry().subsets.contains_key(name)
-                || self.roles.contains_key(name))
+                || self.registry().roles.contains_key(name))
         {
             return Ok(Value::Package(Symbol::intern(&format!("{name}(Any)"))));
         }

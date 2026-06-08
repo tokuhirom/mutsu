@@ -58,7 +58,7 @@ impl Interpreter {
             ));
         }
         // Check role methods
-        if let Some(role_def) = self.roles.get(&class_name_str)
+        if let Some(role_def) = self.registry().roles.get(&class_name_str)
             && let Some(defs) = role_def.methods.get(method_name)
             && let Some(def) = defs.first()
         {
@@ -454,7 +454,7 @@ impl Interpreter {
                 let mut attrs = HashMap::new();
                 attrs.insert(
                     "composable".to_string(),
-                    Value::Bool(self.roles.contains_key(base_name)),
+                    Value::Bool(self.registry().roles.contains_key(base_name)),
                 );
                 Ok(Value::make_instance(
                     Symbol::intern("Perl6::Metamodel::Archetypes"),
@@ -814,7 +814,7 @@ impl Interpreter {
                         .trim_end_matches(')')
                         .to_string(),
                 };
-                if let Some(candidates) = self.role_candidates.get(&base_name) {
+                if let Some(candidates) = self.registry().role_candidates.get(&base_name) {
                     let values = candidates
                         .iter()
                         .enumerate()
@@ -846,7 +846,7 @@ impl Interpreter {
                         .collect::<Vec<_>>();
                     return Ok(Value::array(values));
                 }
-                if self.roles.contains_key(&base_name) {
+                if self.registry().roles.contains_key(&base_name) {
                     return Ok(Value::array(vec![Value::Package(Symbol::intern(
                         &base_name,
                     ))]));
@@ -928,7 +928,7 @@ impl Interpreter {
                 };
                 if let Some(result) = check_transitive(
                     &self.registry().class_composed_roles,
-                    &self.role_parents,
+                    &self.registry().role_parents,
                     &class_name,
                 ) {
                     return Ok(result);
@@ -938,7 +938,7 @@ impl Interpreter {
                     for cn in &mro[1..] {
                         if let Some(result) = check_transitive(
                             &self.registry().class_composed_roles,
-                            &self.role_parents,
+                            &self.registry().role_parents,
                             cn,
                         ) {
                             return Ok(result);
@@ -1128,7 +1128,7 @@ impl Interpreter {
                 .split_once('[')
                 .map(|(b, _)| b)
                 .unwrap_or(entry.as_str());
-            if self.roles.contains_key(base_entry)
+            if self.registry().roles.contains_key(base_entry)
                 && entry != "Any"
                 && entry != "Mu"
                 && entry != &class_name
@@ -1180,13 +1180,13 @@ impl Interpreter {
         result: &mut Vec<Value>,
         seen: &mut HashSet<String>,
     ) {
-        if let Some(parents) = self.role_parents.get(role_name) {
+        if let Some(parents) = self.registry().role_parents.get(role_name) {
             for parent in parents {
                 let base = parent
                     .split_once('[')
                     .map(|(b, _)| b)
                     .unwrap_or(parent.as_str());
-                if self.roles.contains_key(base) && seen.insert(base.to_string()) {
+                if self.registry().roles.contains_key(base) && seen.insert(base.to_string()) {
                     result.push(Value::Package(Symbol::intern(base)));
                     self.add_role_parents_to_mro(base, _base_mro, result, seen);
                 }
@@ -1266,13 +1266,13 @@ impl Interpreter {
     }
 
     pub(super) fn collect_hidden_roles(&self, role_name: &str, to_hide: &mut HashSet<String>) {
-        if let Some(parents) = self.role_parents.get(role_name) {
+        if let Some(parents) = self.registry().role_parents.get(role_name) {
             for parent in parents {
                 let base = parent
                     .split_once('[')
                     .map(|(b, _)| b)
                     .unwrap_or(parent.as_str());
-                if self.roles.contains_key(base) && to_hide.insert(base.to_string()) {
+                if self.registry().roles.contains_key(base) && to_hide.insert(base.to_string()) {
                     self.collect_hidden_roles(base, to_hide);
                 }
             }
@@ -1794,7 +1794,7 @@ impl Interpreter {
         include_private: bool,
         result: &mut Vec<Value>,
     ) {
-        if let Some(role_def) = self.roles.get(role_name) {
+        if let Some(role_def) = self.registry().roles.get(role_name) {
             // Add accessor methods for public attributes
             for (attr_name, is_public, ..) in &role_def.attributes {
                 if *is_public && !role_def.methods.contains_key(attr_name) {
@@ -2433,7 +2433,7 @@ impl Interpreter {
     ) -> Vec<String> {
         // If the target is a role (not a class), return its role_parents.
         // For instances (punned roles), include the role itself in the list.
-        let is_role = self.roles.contains_key(class_name)
+        let is_role = self.registry().roles.contains_key(class_name)
             && !self.registry().classes.contains_key(class_name);
         if is_role {
             let mut result = Vec::new();
@@ -2442,12 +2442,13 @@ impl Interpreter {
                 result.push(class_name.to_string());
             }
             if non_transitive {
-                if !is_instance && let Some(parents) = self.role_parents.get(class_name) {
+                if !is_instance && let Some(parents) = self.registry().role_parents.get(class_name)
+                {
                     result.extend(parents.clone());
                 }
                 return result;
             }
-            if let Some(parents) = self.role_parents.get(class_name) {
+            if let Some(parents) = self.registry().role_parents.get(class_name) {
                 let mut seen: std::collections::HashSet<String> = result.iter().cloned().collect();
                 for p in parents {
                     if seen.insert(p.clone()) {
@@ -2479,7 +2480,7 @@ impl Interpreter {
                 let mut transitive = std::collections::HashSet::new();
                 for r in &all {
                     let base = r.split_once('[').map(|(b, _)| b).unwrap_or(r.as_str());
-                    if let Some(parents) = self.role_parents.get(base) {
+                    if let Some(parents) = self.registry().role_parents.get(base) {
                         for p in parents {
                             transitive.insert(p.clone());
                             self.collect_transitive_set(p, &mut transitive);
@@ -2527,7 +2528,7 @@ impl Interpreter {
             .split_once('[')
             .map(|(b, _)| b)
             .unwrap_or(role_name);
-        if let Some(parents) = self.role_parents.get(base) {
+        if let Some(parents) = self.registry().role_parents.get(base) {
             for p in parents {
                 if result.insert(p.clone()) {
                     self.collect_transitive_set(p, result);
@@ -2546,7 +2547,7 @@ impl Interpreter {
             .split_once('[')
             .map(|(b, _)| b)
             .unwrap_or(role_name);
-        if let Some(parents) = self.role_parents.get(base) {
+        if let Some(parents) = self.registry().role_parents.get(base) {
             for p in parents {
                 if seen.insert(p.clone()) {
                     result.push(p.clone());

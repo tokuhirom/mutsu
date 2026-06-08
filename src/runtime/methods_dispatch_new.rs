@@ -359,7 +359,7 @@ impl Interpreter {
                 continue;
             }
             // Skip role entries in MRO
-            if self.roles.contains_key(mro_class)
+            if self.registry().roles.contains_key(mro_class)
                 && !self.registry().classes.contains_key(mro_class)
             {
                 continue;
@@ -436,7 +436,7 @@ impl Interpreter {
                 continue;
             }
             // Skip role entries in MRO
-            if self.roles.contains_key(mro_class)
+            if self.registry().roles.contains_key(mro_class)
                 && !self.registry().classes.contains_key(mro_class)
             {
                 continue;

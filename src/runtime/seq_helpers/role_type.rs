@@ -12,7 +12,7 @@ impl Interpreter {
             if !seen.insert(role.clone()) {
                 continue;
             }
-            if let Some(parents) = self.role_parents.get(&role) {
+            if let Some(parents) = self.registry().role_parents.get(&role) {
                 for parent in parents {
                     if parent == rhs_role {
                         return true;

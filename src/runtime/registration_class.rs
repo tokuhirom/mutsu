@@ -371,12 +371,12 @@ impl Interpreter {
         let mut names = Vec::new();
         if let Some(class_def) = self.registry().classes.get(type_name) {
             names.extend(class_def.methods.keys().cloned());
-        } else if let Some(role_def) = self.roles.get(type_name) {
+        } else if let Some(role_def) = self.registry().roles.get(type_name) {
             names.extend(role_def.methods.keys().cloned());
             // Also include methods from composed roles
             if let Some(composed) = self.registry().class_composed_roles.get(type_name) {
                 for role_name in composed {
-                    if let Some(rd) = self.roles.get(role_name) {
+                    if let Some(rd) = self.registry().roles.get(role_name) {
                         for key in rd.methods.keys() {
                             if !names.contains(key) {
                                 names.push(key.clone());
@@ -427,7 +427,7 @@ impl Interpreter {
         if let Some(def) = self.registry().classes.get(constraint) {
             return 10 + def.parents.len() as i32;
         }
-        if self.roles.contains_key(constraint) {
+        if self.registry().roles.contains_key(constraint) {
             return 9;
         }
         8
@@ -495,8 +495,8 @@ impl Interpreter {
         } else {
             &parent
         };
-        let Some(candidates) = self.role_candidates.get(base_role_name).cloned() else {
-            if let Some(role) = self.roles.get(base_role_name).cloned() {
+        let Some(candidates) = self.registry().role_candidates.get(base_role_name).cloned() else {
+            if let Some(role) = self.registry().roles.get(base_role_name).cloned() {
                 return Ok(Some((role, Vec::new(), Vec::new())));
             }
             if matches!(base_role_name, "Positional" | "Associative" | "Callable") {
@@ -629,16 +629,20 @@ impl Interpreter {
         // declared inside a `unit module`/`unit class` body.
         if lookup.contains("::") {
             let bare = lookup.rsplit_once("::").map(|(_, b)| b).unwrap_or(lookup);
-            if !self.registry().classes.contains_key(lookup)
-                && !self.roles.contains_key(lookup)
-                && (self.registry().classes.contains_key(bare) || self.roles.contains_key(bare))
-            {
+            // Single guard for all four lookups (avoids stacking read guards).
+            let needs_bare = {
+                let registry = self.registry();
+                !registry.classes.contains_key(lookup)
+                    && !registry.roles.contains_key(lookup)
+                    && (registry.classes.contains_key(bare) || registry.roles.contains_key(bare))
+            };
+            if needs_bare {
                 return format!("{}{}", bare, suffix);
             }
             if let Value::Package(pkg) = self.resolve_indirect_type_name(bare) {
                 let resolved = pkg.resolve();
                 if self.registry().classes.contains_key(resolved.as_str())
-                    || self.roles.contains_key(resolved.as_str())
+                    || self.registry().roles.contains_key(resolved.as_str())
                 {
                     return format!("{}{}", resolved, suffix);
                 }
@@ -680,7 +684,7 @@ impl Interpreter {
         let prev_hidden = self.registry().hidden_classes.contains(name);
         let prev_hidden_defer = self.registry().hidden_defer_parents.get(name).cloned();
         let prev_composed_roles = self.registry().class_composed_roles.get(name).cloned();
-        let prev_role_param_bindings = self.class_role_param_bindings.get(name).cloned();
+        let prev_role_param_bindings = self.registry().class_role_param_bindings.get(name).cloned();
         // Clear `is Type` trait entries for this class (they'll be re-populated from the body).
         self.registry_mut()
             .class_attribute_is_types
@@ -714,17 +718,18 @@ impl Interpreter {
                 this.registry_mut().class_composed_roles.remove(name);
             }
             if let Some(bindings) = prev_role_param_bindings.clone() {
-                this.class_role_param_bindings
+                this.registry_mut()
+                    .class_role_param_bindings
                     .insert(name.to_string(), bindings);
             } else {
-                this.class_role_param_bindings.remove(name);
+                this.registry_mut().class_role_param_bindings.remove(name);
             }
         };
 
         // Detect X::Redeclaration when a class redefines a role in the same scope.
         // Only check user-declared roles (not pre-registered builtins like Iterator).
         // Lexical classes (`my class`) are allowed to shadow outer role names.
-        if !is_lexical && self.user_declared_roles.contains(name) {
+        if !is_lexical && self.registry().user_declared_roles.contains(name) {
             // Only report redeclaration for non-stub class bodies
             let body_non_stub: Vec<_> = body
                 .iter()
@@ -849,7 +854,7 @@ impl Interpreter {
             }
             if !self.registry().classes.contains_key(base_parent)
                 && !BUILTIN_TYPES.contains(&base_parent)
-                && !self.roles.contains_key(base_parent)
+                && !self.registry().roles.contains_key(base_parent)
                 && !self.registry().enum_types.contains_key(base_parent)
             {
                 // Use X::InvalidType for `does` parents, X::Inheritance::UnknownParent
@@ -889,7 +894,7 @@ impl Interpreter {
             // Check that `does` targets are actually roles, not classes
             if does_parents.contains(parent)
                 && self.registry().classes.contains_key(resolved_parent)
-                && !self.roles.contains_key(resolved_parent)
+                && !self.registry().roles.contains_key(resolved_parent)
                 && !BUILTIN_TYPES.contains(&resolved_parent)
             {
                 return Err(RuntimeError::new(format!(
@@ -1080,7 +1085,9 @@ impl Interpreter {
                         // Don't remove the param name itself - methods may need it
                     }
                 }
-                if let Some(parent_specs) = self.role_parents.get(base_role_name).cloned() {
+                if let Some(parent_specs) =
+                    self.registry().role_parents.get(base_role_name).cloned()
+                {
                     for parent_spec in parent_specs {
                         let resolved_parent = if let Some(v) = role_param_values.get(&parent_spec) {
                             type_value_name(v)
@@ -1110,27 +1117,28 @@ impl Interpreter {
                             .split_once('[')
                             .map(|(b, _)| b)
                             .unwrap_or(resolved_parent.as_str());
-                        if let Some(parent_role) = self.roles.get(parent_base).cloned() {
+                        if let Some(parent_role) = self.registry().roles.get(parent_base).cloned() {
                             if !composed_roles_list.contains(&resolved_parent) {
                                 composed_roles_list.push(resolved_parent.clone());
                             }
-                            let parent_type_subs: Vec<(String, String)> =
-                                if let Some(parent_tps) = self.role_type_params.get(parent_base) {
-                                    if let Some(bracket_start) = resolved_parent.find('[') {
-                                        let args_str = &resolved_parent
-                                            [bracket_start + 1..resolved_parent.len() - 1];
-                                        let args = parse_role_type_args(args_str);
-                                        parent_tps
-                                            .iter()
-                                            .zip(args.iter())
-                                            .map(|(p, a)| (p.clone(), a.clone()))
-                                            .collect()
-                                    } else {
-                                        Vec::new()
-                                    }
+                            let parent_type_subs: Vec<(String, String)> = if let Some(parent_tps) =
+                                self.registry().role_type_params.get(parent_base)
+                            {
+                                if let Some(bracket_start) = resolved_parent.find('[') {
+                                    let args_str = &resolved_parent
+                                        [bracket_start + 1..resolved_parent.len() - 1];
+                                    let args = parse_role_type_args(args_str);
+                                    parent_tps
+                                        .iter()
+                                        .zip(args.iter())
+                                        .map(|(p, a)| (p.clone(), a.clone()))
+                                        .collect()
                                 } else {
                                     Vec::new()
-                                };
+                                }
+                            } else {
+                                Vec::new()
+                            };
                             for attr in &parent_role.attributes {
                                 if !class_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
                                     class_def.attributes.push(attr.clone());
@@ -1209,7 +1217,7 @@ impl Interpreter {
                     .push(base_role_name.to_string());
             } else if does_parents.contains(parent)
                 && BUILTIN_TYPES.contains(&base_role_name)
-                && !self.roles.contains_key(base_role_name)
+                && !self.registry().roles.contains_key(base_role_name)
                 && !composed_roles_list.contains(&resolved_parent_name)
             {
                 // Built-in type used as a role via `does` (e.g., `does Numeric`,
@@ -1219,9 +1227,10 @@ impl Interpreter {
             }
         }
         if class_role_param_bindings.is_empty() {
-            self.class_role_param_bindings.remove(name);
+            self.registry_mut().class_role_param_bindings.remove(name);
         } else {
-            self.class_role_param_bindings
+            self.registry_mut()
+                .class_role_param_bindings
                 .insert(name.to_string(), class_role_param_bindings);
         }
         // Handle role punning: `is Role` creates a punned class from the role
@@ -1243,10 +1252,10 @@ impl Interpreter {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
                     }
-                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                    if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.roles.contains_key(rp_base) {
+                            if self.registry().roles.contains_key(rp_base) {
                                 // It's a role - add as composed role and recurse
                                 if !punned_composed_roles.contains(&rp) {
                                     punned_composed_roles.push(rp.clone());
@@ -1283,9 +1292,14 @@ impl Interpreter {
                         .insert(base_role.to_string(), punned_composed_roles);
                 }
                 // Propagate hidden status from role to punned class
-                if let Some(role_def) = self.roles.get(base_role)
-                    && role_def.is_hidden
-                {
+                // Read the flag under the guard, drop it, then write (read->write on
+                // the same lock would deadlock).
+                let base_role_is_hidden = self
+                    .registry()
+                    .roles
+                    .get(base_role)
+                    .is_some_and(|role_def| role_def.is_hidden);
+                if base_role_is_hidden {
                     self.registry_mut()
                         .hidden_classes
                         .insert(base_role.to_string());
@@ -1327,10 +1341,10 @@ impl Interpreter {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
                     }
-                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                    if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.roles.contains_key(rp_base) {
+                            if self.registry().roles.contains_key(rp_base) {
                                 // It's a sub-role, recurse
                                 role_stack.push(rp_base.to_string());
                             } else if self.registry().classes.contains_key(rp_base)
@@ -1361,7 +1375,10 @@ impl Interpreter {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
                     }
-                    if let Some(hides_list) = self.role_hides.get(&role_name).cloned() {
+                    // Hoist the clone to a `let` so the read guard drops before the
+                    // registry_mut write below (read->write on the same lock deadlocks).
+                    let hides_list = self.registry().role_hides.get(&role_name).cloned();
+                    if let Some(hides_list) = hides_list {
                         for hidden in hides_list {
                             self.registry_mut()
                                 .hidden_defer_parents
@@ -1371,10 +1388,10 @@ impl Interpreter {
                         }
                     }
                     // Recurse into sub-roles
-                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                    if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.roles.contains_key(rp_base) {
+                            if self.registry().roles.contains_key(rp_base) {
                                 role_stack.push(rp_base.to_string());
                             }
                         }
@@ -2096,7 +2113,7 @@ impl Interpreter {
                 }
                 Stmt::DoesDecl { name: role_name } => {
                     let role_name_str = role_name.resolve();
-                    if !self.roles.contains_key(&role_name_str)
+                    if !self.registry().roles.contains_key(&role_name_str)
                         && matches!(
                             role_name_str.as_str(),
                             "Real"
@@ -2114,9 +2131,14 @@ impl Interpreter {
                         }
                         continue;
                     }
-                    let role = self.roles.get(&role_name_str).cloned().ok_or_else(|| {
-                        RuntimeError::new(format!("Unknown role: {}", role_name_str))
-                    })?;
+                    let role = self
+                        .registry()
+                        .roles
+                        .get(&role_name_str)
+                        .cloned()
+                        .ok_or_else(|| {
+                            RuntimeError::new(format!("Unknown role: {}", role_name_str))
+                        })?;
                     if role.is_stub_role {
                         return Err(RuntimeError::typed_msg(
                             "X::Role::Parametric::NoSuchCandidate",
@@ -2166,7 +2188,9 @@ impl Interpreter {
                         class_def.mro.clear();
                     }
                     // Transfer role's own parents (from `is` declarations) to the class
-                    if let Some(rparents) = self.role_parents.get(&role_name_str).cloned() {
+                    if let Some(rparents) =
+                        self.registry().role_parents.get(&role_name_str).cloned()
+                    {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
                             if self.registry().classes.contains_key(rp_base)
@@ -2663,6 +2687,7 @@ impl Interpreter {
         if is_stub_body
             && type_params.is_empty()
             && self
+                .registry()
                 .roles
                 .get(name)
                 .is_some_and(|existing| !existing.is_stub_role)
@@ -2678,16 +2703,17 @@ impl Interpreter {
         // restore them after the parametric variant adds its own parents.
         let prev_parents = if !type_params.is_empty()
             && self
+                .registry()
                 .roles
                 .get(name)
                 .is_some_and(|existing| !existing.is_stub_role)
         {
-            self.role_parents.get(name).cloned()
+            self.registry().role_parents.get(name).cloned()
         } else {
             None
         };
-        self.role_parents.remove(name);
-        self.role_hides.remove(name);
+        self.registry_mut().role_parents.remove(name);
+        self.registry_mut().role_hides.remove(name);
         let mut role_def = RoleDef {
             attributes: Vec::new(),
             methods: HashMap::new(),
@@ -2755,13 +2781,14 @@ impl Interpreter {
                         // Record the conflict; the existing one came from a composed role.
                         // We need to figure out which role contributed it.
                         let parent_role = self
+                            .registry()
                             .role_parents
                             .get(name)
                             .and_then(|parents| {
                                 parents.iter().find(|p| {
                                     let base =
                                         p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
-                                    self.roles.get(base).is_some_and(|r| {
+                                    self.registry().roles.get(base).is_some_and(|r| {
                                         r.attributes.iter().any(|(n, ..)| n == &attr_name_str)
                                     })
                                 })
@@ -2802,14 +2829,16 @@ impl Interpreter {
                     let role_name_str = role_name.resolve();
                     if let Some(hidden_name) = role_name_str.strip_prefix("__mutsu_role_hides__") {
                         // Track hidden class relationship for this role
-                        self.role_hides
+                        self.registry_mut()
+                            .role_hides
                             .entry(name.to_string())
                             .or_default()
                             .push(hidden_name.to_string());
                         continue;
                     }
                     if self.registry().classes.contains_key(&role_name_str) {
-                        self.role_parents
+                        self.registry_mut()
+                            .role_parents
                             .entry(name.to_string())
                             .or_default()
                             .push(role_name_str);
@@ -2820,7 +2849,7 @@ impl Interpreter {
                         .map(|(b, _)| b)
                         .unwrap_or(role_name_str.as_str());
                     if type_params.iter().any(|tp| tp == base_role_name)
-                        || (!self.roles.contains_key(base_role_name)
+                        || (!self.registry().roles.contains_key(base_role_name)
                             && matches!(
                                 base_role_name,
                                 "Real"
@@ -2832,13 +2861,14 @@ impl Interpreter {
                                     | "Associative"
                             ))
                     {
-                        self.role_parents
+                        self.registry_mut()
+                            .role_parents
                             .entry(name.to_string())
                             .or_default()
                             .push(role_name_str);
                         continue;
                     }
-                    let role = match self.roles.get(base_role_name).cloned() {
+                    let role = match self.registry().roles.get(base_role_name).cloned() {
                         Some(r) => r,
                         None => {
                             // If trait_mod:<is> is defined and this is a lowercase name,
@@ -2867,7 +2897,8 @@ impl Interpreter {
                             "No matching candidate found for the parametric role",
                         ));
                     }
-                    self.role_parents
+                    self.registry_mut()
+                        .role_parents
                         .entry(name.to_string())
                         .or_default()
                         .push(role_name_str.clone());
@@ -2881,12 +2912,17 @@ impl Interpreter {
                             // Store the resolved param bindings so they are
                             // available when the child role is punned to a class
                             // and methods referencing role params are dispatched.
-                            let bindings = self
-                                .class_role_param_bindings
-                                .entry(name.to_string())
-                                .or_default();
-                            for (p, v) in resolved_param_names.iter().zip(resolved_values.iter()) {
-                                bindings.insert(p.clone(), v.clone());
+                            {
+                                let mut registry = self.registry_mut();
+                                let bindings = registry
+                                    .class_role_param_bindings
+                                    .entry(name.to_string())
+                                    .or_default();
+                                for (p, v) in
+                                    resolved_param_names.iter().zip(resolved_values.iter())
+                                {
+                                    bindings.insert(p.clone(), v.clone());
+                                }
                             }
                             resolved_param_names
                                 .iter()
@@ -2894,7 +2930,7 @@ impl Interpreter {
                                 .map(|(p, v)| (p.clone(), type_value_name(v)))
                                 .collect()
                         } else if let Some(parent_type_params) =
-                            self.role_type_params.get(base_role_name)
+                            self.registry().role_type_params.get(base_role_name)
                         {
                             if let Some(bracket_start) = role_name_str.find('[') {
                                 let args_str =
@@ -3156,8 +3192,14 @@ impl Interpreter {
         }
         // Capture the parents that were added during this registration
         // (these are the parents specific to this candidate).
-        let candidate_parents = self.role_parents.get(name).cloned().unwrap_or_default();
-        self.role_candidates
+        let candidate_parents = self
+            .registry()
+            .role_parents
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
+        self.registry_mut()
+            .role_candidates
             .entry(name.to_string())
             .or_default()
             .push(RoleCandidateDef {
@@ -3168,22 +3210,27 @@ impl Interpreter {
                 language_version: crate::parser::current_language_version(),
             });
         if self
+            .registry()
             .roles
             .get(name)
             .is_none_or(|existing| existing.is_stub_role || type_params.is_empty())
         {
-            self.roles.insert(name.to_string(), role_def);
-            self.user_declared_roles.insert(name.to_string());
+            self.registry_mut().roles.insert(name.to_string(), role_def);
+            self.registry_mut()
+                .user_declared_roles
+                .insert(name.to_string());
         }
-        if !type_params.is_empty() && !self.role_type_params.contains_key(name) {
-            self.role_type_params
+        if !type_params.is_empty() && !self.registry().role_type_params.contains_key(name) {
+            self.registry_mut()
+                .role_type_params
                 .insert(name.to_string(), type_params.to_vec());
         }
         // When a parametric variant was registered over an existing non-parametric
         // role (forming a role group), merge the previous parents back into
         // role_parents so that role_parent_args_for can find all candidates' parents.
         if let Some(prev) = prev_parents {
-            let current = self.role_parents.entry(name.to_string()).or_default();
+            let mut registry = self.registry_mut();
+            let current = registry.role_parents.entry(name.to_string()).or_default();
             for p in prev {
                 if !current.contains(&p) {
                     current.push(p);
@@ -3377,7 +3424,7 @@ impl Interpreter {
             return;
         }
         self.clear_private_zeroarg_method_cache();
-        let role_def = match self.roles.get(role_name) {
+        let role_def = match self.registry().roles.get(role_name) {
             Some(r) => r.clone(),
             None => return,
         };
@@ -3385,12 +3432,13 @@ impl Interpreter {
         let mut all_attributes = role_def.attributes.clone();
         let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def.methods.clone();
         let mut composed_roles_list = vec![role_name.to_string()];
-        if let Some(parent_names) = self.role_parents.get(role_name).cloned() {
+        if let Some(parent_names) = self.registry().role_parents.get(role_name).cloned() {
             let mut role_stack: Vec<String> = parent_names;
             while let Some(parent_role_name) = role_stack.pop() {
                 if !composed_roles_list.contains(&parent_role_name) {
                     composed_roles_list.push(parent_role_name.clone());
-                    if let Some(parent_role) = self.roles.get(&parent_role_name).cloned() {
+                    if let Some(parent_role) = self.registry().roles.get(&parent_role_name).cloned()
+                    {
                         for attr in &parent_role.attributes {
                             // ClassAttributeDef is a tuple; field 0 is the attribute name
                             if !all_attributes.iter().any(|a| a.0 == attr.0) {
@@ -3405,7 +3453,9 @@ impl Interpreter {
                         }
                     }
                     // Also recurse into grandparent roles
-                    if let Some(grandparents) = self.role_parents.get(&parent_role_name).cloned() {
+                    if let Some(grandparents) =
+                        self.registry().role_parents.get(&parent_role_name).cloned()
+                    {
                         for gp_name in &grandparents {
                             if !composed_roles_list.contains(gp_name) {
                                 role_stack.push(gp_name.clone());
@@ -3439,12 +3489,16 @@ impl Interpreter {
         // revision metadata from the matching candidate so that
         // `.^language-revision` on the pun instance returns the correct
         // revision (not the last-registered candidate's revision).
-        let candidate_lang_version = self.role_candidates.get(role_name).and_then(|candidates| {
-            candidates
-                .iter()
-                .find(|c| c.type_params.is_empty())
-                .map(|c| c.language_version.clone())
-        });
+        let candidate_lang_version =
+            self.registry()
+                .role_candidates
+                .get(role_name)
+                .and_then(|candidates| {
+                    candidates
+                        .iter()
+                        .find(|c| c.type_params.is_empty())
+                        .map(|c| c.language_version.clone())
+                });
         if let Some(version) = candidate_lang_version {
             self.store_language_revision_from_version(role_name, &version);
         }

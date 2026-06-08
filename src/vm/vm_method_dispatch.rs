@@ -227,11 +227,7 @@ impl VM {
         );
 
         // Role param bindings
-        if let Some(role_bindings) = self
-            .interpreter
-            .class_role_param_bindings(owner_class)
-            .cloned()
-        {
+        if let Some(role_bindings) = self.interpreter.class_role_param_bindings(owner_class) {
             for (name, value) in &role_bindings {
                 self.interpreter
                     .env_mut()
@@ -240,7 +236,6 @@ impl VM {
         } else if let Some(role_bindings) = self
             .interpreter
             .class_role_param_bindings(receiver_class_name)
-            .cloned()
         {
             for (name, value) in &role_bindings {
                 self.interpreter

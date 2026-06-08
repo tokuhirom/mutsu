@@ -532,8 +532,8 @@ impl Interpreter {
         let fq_name = format!("{}::{}", self.current_package, name);
         if self.registry().classes.contains_key(name)
             || self.registry().classes.contains_key(fq_name.as_str())
-            || self.roles.contains_key(name)
-            || self.roles.contains_key(fq_name.as_str())
+            || self.registry().roles.contains_key(name)
+            || self.registry().roles.contains_key(fq_name.as_str())
         {
             Some(Value::Package(Symbol::intern(name)))
         } else if let Some(val) = self.env.get(name) {

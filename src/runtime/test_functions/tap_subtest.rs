@@ -48,7 +48,7 @@ impl Interpreter {
         let saved_proto_tokens = self.proto_tokens.clone();
         let saved_classes = self.registry().classes.clone();
         let saved_class_trusts = self.registry().class_trusts.clone();
-        let saved_roles = self.roles.clone();
+        let saved_roles = self.registry().roles.clone();
         let saved_subsets = self.registry().subsets.clone();
         let mut saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
@@ -71,7 +71,7 @@ impl Interpreter {
             self.proto_tokens = saved_proto_tokens;
             self.registry_mut().classes = saved_classes;
             self.registry_mut().class_trusts = saved_class_trusts;
-            self.roles = saved_roles;
+            self.registry_mut().roles = saved_roles;
             self.registry_mut().subsets = saved_subsets;
             // Merge type_metadata: preserve entries added during the subtest
             for (key, val) in std::mem::take(&mut self.type_metadata) {
@@ -99,7 +99,7 @@ impl Interpreter {
         self.proto_tokens = saved_proto_tokens;
         self.registry_mut().classes = saved_classes;
         self.registry_mut().class_trusts = saved_class_trusts;
-        self.roles = saved_roles;
+        self.registry_mut().roles = saved_roles;
         self.registry_mut().subsets = saved_subsets;
         // Merge type_metadata: preserve entries added during the subtest
         for (key, val) in std::mem::take(&mut self.type_metadata) {
@@ -146,7 +146,7 @@ impl Interpreter {
         let saved_proto_tokens = self.proto_tokens.clone();
         let saved_classes = self.registry().classes.clone();
         let saved_class_trusts = self.registry().class_trusts.clone();
-        let saved_roles = self.roles.clone();
+        let saved_roles = self.registry().roles.clone();
         let saved_subsets = self.registry().subsets.clone();
         let mut saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
@@ -160,7 +160,7 @@ impl Interpreter {
         self.proto_tokens = saved_proto_tokens;
         self.registry_mut().classes = saved_classes;
         self.registry_mut().class_trusts = saved_class_trusts;
-        self.roles = saved_roles;
+        self.registry_mut().roles = saved_roles;
         self.registry_mut().subsets = saved_subsets;
         // Merge type_metadata: preserve entries added during the subtest
         for (key, val) in std::mem::take(&mut self.type_metadata) {

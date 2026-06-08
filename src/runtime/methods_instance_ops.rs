@@ -628,7 +628,7 @@ impl Interpreter {
                 // isa only matches classes, not roles. If the target is a role
                 // that has NOT been punned to a class, return False (use .does
                 // for role checking).
-                if self.roles.contains_key(&target_name)
+                if self.registry().roles.contains_key(&target_name)
                     && !self.registry().classes.contains_key(&target_name)
                 {
                     return Ok(Value::Bool(false));
@@ -1266,7 +1266,7 @@ impl Interpreter {
                     _ => None,
                 };
                 if let Some(name) = type_obj_name {
-                    if !self.roles.contains_key(&name) {
+                    if !self.registry().roles.contains_key(&name) {
                         return Err(RuntimeError::new(format!(
                             "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                             method
@@ -1409,7 +1409,7 @@ impl Interpreter {
                     _ => None,
                 };
                 if let Some(name) = num_name {
-                    if self.roles.contains_key(&name) {
+                    if self.registry().roles.contains_key(&name) {
                         Ok(Value::Int(0))
                     } else {
                         Err(RuntimeError::new(format!(

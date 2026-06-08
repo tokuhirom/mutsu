@@ -304,7 +304,11 @@ impl Interpreter {
         invocant: Option<&Value>,
     ) -> Option<(String, MethodDef)> {
         self.dispatch_ambiguous = false;
-        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
+        let role_bindings = self
+            .registry()
+            .class_role_param_bindings
+            .get(class_name)
+            .cloned();
         let mro = self.class_mro(class_name);
         // Collect all matching multi candidates across the MRO, then pick the
         // most specific one by type hierarchy distance.
@@ -316,8 +320,8 @@ impl Interpreter {
         for cn in &mro {
             // Hoist the clone to a `let` so the registry read guard drops here,
             // before method_args_match_for_invocant re-enters (&mut self). An
-            // `if let` scrutinee would keep the temporary guard alive across the
-            // whole block (edition-2021 temporary scope).
+            // `if let` scrutinee would otherwise keep the temporary guard alive
+            // across the whole block.
             let overloads = self
                 .registry()
                 .classes
@@ -567,24 +571,33 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Vec<(String, MethodDef)> {
-        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
+        let role_bindings = self
+            .registry()
+            .class_role_param_bindings
+            .get(class_name)
+            .cloned();
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
         for cn in &mro {
             // An MRO entry may be a regular class or a punned role used as a
             // parent (`class Foo is R1 { ... }`). Role methods are stored in
-            // `self.roles`, so fall back there when the entry is not a class.
-            let overloads = self
-                .registry()
-                .classes
-                .get(cn.as_str())
-                .and_then(|c| c.methods.get(method_name))
-                .or_else(|| {
-                    self.roles
-                        .get(cn.as_str())
-                        .and_then(|r| r.methods.get(method_name))
-                })
-                .cloned();
+            // `self.registry().roles`, so fall back there when the entry is not a class.
+            // Single guard for both the class and role method tables; clone the
+            // matched overload Vec out so the guard drops before re-entry below.
+            let overloads = {
+                let registry = self.registry();
+                registry
+                    .classes
+                    .get(cn.as_str())
+                    .and_then(|c| c.methods.get(method_name))
+                    .or_else(|| {
+                        registry
+                            .roles
+                            .get(cn.as_str())
+                            .and_then(|r| r.methods.get(method_name))
+                    })
+                    .cloned()
+            };
             if let Some(overloads) = overloads {
                 let is_ancestor = cn != class_name;
                 for def in overloads {
@@ -693,7 +706,11 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
-        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
+        let role_bindings = self
+            .registry()
+            .class_role_param_bindings
+            .get(class_name)
+            .cloned();
         let mro = self.class_mro(class_name);
         for cn in mro {
             if cn != owner_class {
@@ -732,7 +749,11 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
-        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
+        let role_bindings = self
+            .registry()
+            .class_role_param_bindings
+            .get(class_name)
+            .cloned();
         if arg_values.is_empty()
             && let Some(cached) = self
                 .private_zeroarg_method_cache
