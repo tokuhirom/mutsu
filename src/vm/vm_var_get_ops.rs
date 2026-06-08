@@ -204,8 +204,11 @@ impl VM {
             {
                 native_result?
             } else {
-                // TODO: compile to bytecode — 0-arg user/multi function term fork (ledger §2).
-                let result = self.interpreter.call_function(name, Vec::new())?;
+                // Route the cold 0-arg term fallback through the VM's unified
+                // compiled-first function dispatch (ledger §2): this adds OTF
+                // compilation of simple user subs; the interpreter remains only as
+                // the terminal fallback inside call_function_compiled_first.
+                let result = self.call_function_compiled_first(name, Vec::new(), compiled_fns)?;
                 self.env_dirty = true;
                 result
             }
@@ -239,8 +242,10 @@ impl VM {
             if let Some((_pkg, short)) = name.rsplit_once("::")
                 && self.interpreter.has_function(&format!("GLOBAL::{}", short))
             {
-                // TODO: compile to bytecode — package-qualified function term fork (ledger §2).
-                let result = self.interpreter.call_function(name, Vec::new())?;
+                // Route the package-qualified term fork through the VM's unified
+                // compiled-first function dispatch (ledger §2): interpreter remains
+                // only as the terminal fallback.
+                let result = self.call_function_compiled_first(name, Vec::new(), compiled_fns)?;
                 self.env_dirty = true;
                 result
             } else if let Some((pkg_prefix, last_seg)) = name.rsplit_once("::")
