@@ -2,6 +2,7 @@
 
 pub(crate) mod arith;
 pub(crate) mod collation;
+pub(crate) mod comb;
 pub(crate) mod exception_message;
 mod functions;
 pub(crate) mod methods_0arg;

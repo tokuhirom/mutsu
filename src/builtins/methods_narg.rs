@@ -1102,6 +1102,20 @@ pub(crate) fn native_method_1arg(
             }
             super::split::native_split_method(target, std::slice::from_ref(arg))
         }
+        "comb" => {
+            // Supply/IO targets have their own comb semantics in the interpreter.
+            if let Value::Instance { class_name, .. } = target
+                && (class_name == "Supply"
+                    || class_name == "IO::Handle"
+                    || class_name == "IO::Path"
+                    || class_name == "IO::Pipe")
+            {
+                return None;
+            }
+            // Pure Int-chunk / Str-fixed split (shared with the interpreter via
+            // builtins::comb); Regex/Sub/bare matchers return None -> interpreter.
+            super::comb::native_comb_method(target, std::slice::from_ref(arg))
+        }
         "lines" => {
             if let Value::Instance { class_name, .. } = target
                 && class_name == "Supply"
@@ -2789,6 +2803,21 @@ pub(crate) fn native_method_2arg(
             return None;
         }
         return super::split::native_split_method(target, &[arg1.clone(), arg2.clone()]);
+    }
+
+    if method == "comb" {
+        // Supply/IO targets keep their interpreter comb semantics.
+        if let Value::Instance { class_name, .. } = target
+            && (class_name == "Supply"
+                || class_name == "IO::Handle"
+                || class_name == "IO::Path"
+                || class_name == "IO::Pipe")
+        {
+            return None;
+        }
+        // `.comb(matcher, limit)`: pure Int/Str split shared with the
+        // interpreter; Regex/Sub/bare matchers return None -> interpreter.
+        return super::comb::native_comb_method(target, &[arg1.clone(), arg2.clone()]);
     }
 
     match method {

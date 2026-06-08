@@ -188,8 +188,6 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        use unicode_segmentation::UnicodeSegmentation;
-
         let text = target.to_string_value();
 
         // Separate positional args from named :match pair
@@ -224,42 +222,13 @@ impl Interpreter {
         let make_seq = |items: Vec<Value>| Value::Seq(std::sync::Arc::new(items));
 
         match matcher {
-            Some(Value::Int(n)) => {
-                let chunk_size = if *n <= 0 { 1usize } else { *n as usize };
-                let graphemes: Vec<&str> = text.graphemes(true).collect();
-                let result: Vec<Value> = graphemes
-                    .chunks(chunk_size)
-                    .map(|chunk| Value::str(chunk.concat()))
-                    .collect();
-                let result = Self::apply_limit(result, limit);
-                Some(Ok(make_seq(result)))
-            }
-            Some(Value::Str(needle)) => {
-                if needle.is_empty() {
-                    let chars: Vec<Value> = text
-                        .graphemes(true)
-                        .map(|g| Value::str(g.to_string()))
-                        .collect();
-                    let chars = Self::apply_limit(chars, limit);
-                    return Some(Ok(make_seq(chars)));
-                }
-                let mut result = Vec::new();
-                let mut offset = 0usize;
-                while offset <= text.len() {
-                    if let Some(lim) = limit
-                        && result.len() >= lim as usize
-                    {
-                        break;
-                    }
-                    let Some(pos) = text[offset..].find(needle.as_str()) else {
-                        break;
-                    };
-                    let start = offset + pos;
-                    let end = start + needle.len();
-                    result.push(Value::str(text[start..end].to_string()));
-                    offset = end;
-                }
-                Some(Ok(make_seq(result)))
+            // Pure Int-chunk / Str-fixed split: single shared impl in
+            // `builtins::comb` (also driving the native fast path). The regex
+            // engine cases below stay here because they need the interpreter.
+            Some(m @ (Value::Int(_) | Value::Str(_))) => {
+                let items = crate::builtins::comb::comb_pure(&text, Some(m), limit)
+                    .expect("comb_pure always handles Int/Str matchers");
+                Some(Ok(make_seq(items)))
             }
             Some(Value::Regex(pat)) => {
                 // Use the capturing path only when the regex contains code
