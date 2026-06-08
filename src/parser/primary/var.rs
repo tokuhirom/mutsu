@@ -587,6 +587,10 @@ fn parse_interpolation_qualified_ident_with_hyphens_or_empty(input: &str) -> (&s
 /// Parse an @array variable reference.
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
+    // Detect Perl 5 special array variables (@-, @+) and throw X::Syntax::Perl5Var.
+    if let Some(err) = detect_perl5_sigil_var('@', input) {
+        return Err(PError::fatal(err));
+    }
     // Symbolic variable dereference: @::("name")
     if let Some(after_colons) = input.strip_prefix("::(") {
         let (after_expr, expr) = expression(after_colons)?;
@@ -692,6 +696,10 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
 /// Parse a %hash variable reference.
 pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
+    // Detect Perl 5 special hash variables (%-, %+, %!) and throw X::Syntax::Perl5Var.
+    if let Some(err) = detect_perl5_sigil_var('%', input) {
+        return Err(PError::fatal(err));
+    }
     // Symbolic variable dereference: %::("name")
     if let Some(after_colons) = input.strip_prefix("::(") {
         let (after_expr, expr) = expression(after_colons)?;
@@ -1225,6 +1233,45 @@ pub(crate) fn detect_perl5_scalar_var(input: &str) -> Option<String> {
                 .to_string(),
         );
     }
+    // $@ — Perl 5 error variable; in Raku use $!. Only flag assignment position
+    // (`$@ = ...`): bare `$@` is allowed, and `$@!attr` is an item-context deref
+    // of a private array attribute.
+    if let Some(after) = input.strip_prefix('@') {
+        let trimmed = after.trim_start();
+        if trimmed.starts_with('=')
+            && !trimmed.starts_with("==")
+            && !trimmed.starts_with("=>")
+            && !trimmed.starts_with("=:=")
+        {
+            return Some(
+                "X::Syntax::Perl5Var: Unsupported use of $@ variable; in Raku please use $!"
+                    .to_string(),
+            );
+        }
+    }
+    // $; $, $. — Perl 5 separator/format variables. These characters are
+    // normally operators/separators (and `$.foo` is Raku attribute access), so
+    // only flag them in assignment position (`$; = ...`), which is how Perl 5
+    // code uses them and what distinguishes them from valid Raku constructs.
+    for (ch, suggestion) in [
+        (';', "real multidimensional hashes"),
+        (',', ".join() method"),
+        ('.', "the .kv method on e.g. .lines"),
+    ] {
+        if let Some(after) = input.strip_prefix(ch) {
+            let trimmed = after.trim_start();
+            let is_assignment = trimmed.starts_with('=')
+                && !trimmed.starts_with("==")
+                && !trimmed.starts_with("=>")
+                && !trimmed.starts_with("=:=");
+            if is_assignment {
+                return Some(format!(
+                    "X::Syntax::Perl5Var: Unsupported use of ${} variable; in Raku please use {}",
+                    ch, suggestion
+                ));
+            }
+        }
+    }
     // $# followed by identifier — Perl 5 last index; in Raku use @array.end
     if let Some(after) = input.strip_prefix('#')
         && !after.is_empty()
@@ -1238,6 +1285,40 @@ pub(crate) fn detect_perl5_scalar_var(input: &str) -> Option<String> {
             "X::Syntax::Perl5Var: Unsupported use of $#{} variable; in Raku please use @{}.end",
             name, name
         ));
+    }
+    None
+}
+
+/// Detect Perl 5 special array/hash variables (`@-`, `@+`, `%-`, `%+`, `%!`)
+/// unsupported in Raku. `input` is the text after the sigil. Because `-`/`+`
+/// are operators and `%!foo`/`@!foo` are private attributes, these are only
+/// flagged in assignment position (`@- = ...`), matching how Perl 5 uses them.
+fn detect_perl5_sigil_var(sigil: char, input: &str) -> Option<String> {
+    let assignment_after = |after: &str| -> bool {
+        let trimmed = after.trim_start();
+        trimmed.starts_with('=')
+            && !trimmed.starts_with("==")
+            && !trimmed.starts_with("=>")
+            && !trimmed.starts_with("=:=")
+    };
+    // @-/@+/%-/%+ : match-position arrays/hashes; suggest .from / .to.
+    for (ch, suggestion) in [('-', ".from method"), ('+', ".to method")] {
+        if let Some(after) = input.strip_prefix(ch)
+            && assignment_after(after)
+        {
+            return Some(format!(
+                "X::Syntax::Perl5Var: Unsupported use of {}{} variable; in Raku please use {}",
+                sigil, ch, suggestion
+            ));
+        }
+    }
+    // %! : Perl 5 error hash. `%!foo` is a private attribute, so only flag the
+    // standalone variable in assignment position.
+    if sigil == '%'
+        && let Some(after) = input.strip_prefix('!')
+        && assignment_after(after)
+    {
+        return Some("X::Syntax::Perl5Var: Unsupported use of %! variable".to_string());
     }
     None
 }
