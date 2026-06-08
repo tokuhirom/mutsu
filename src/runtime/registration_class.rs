@@ -886,6 +886,29 @@ impl Interpreter {
                     deferred_custom_traits.push(resolved_parent_name.to_string());
                     continue;
                 }
+                // A name that is declared as a `package` (or module) exists but
+                // does not support inheritance: `package A {}; class B is A {}`
+                // is X::Inheritance::Unsupported, not an unknown-parent error.
+                if self.chain_declared_packages.contains(base_parent)
+                    || self
+                        .chain_declared_packages
+                        .contains(resolved_parent_name.as_str())
+                {
+                    let msg = format!(
+                        "{} does not support inheritance, so {} cannot inherit from it",
+                        resolved_parent_name, name
+                    );
+                    let mut attrs = HashMap::new();
+                    attrs.insert("child-typename".to_string(), Value::str(name.to_string()));
+                    attrs.insert(
+                        "parent".to_string(),
+                        Value::Package(crate::symbol::Symbol::intern(
+                            resolved_parent_name.as_str(),
+                        )),
+                    );
+                    attrs.insert("message".to_string(), Value::str(msg));
+                    return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
+                }
                 {
                     let msg = format!(
                         "class '{}' specifies unknown parent class '{}'",
