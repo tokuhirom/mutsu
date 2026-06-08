@@ -17,12 +17,9 @@
 //! `dispatch_sort` unchanged — which now shares the same orchestration.
 
 use super::*;
-use crate::runtime::methods_collection_ops::sort::{
-    SortCaller, sort_indices_generic, sort_items_generic,
-};
+use crate::runtime::methods_collection_ops::sort::{SortCaller, sort_value_generic};
 use crate::runtime::utils::pair_as_positional;
 use crate::value::{ArrayKind, Value};
-use std::sync::Arc;
 
 /// [`SortCaller`] backed by the bytecode VM.
 struct VmSortCaller<'a>(&'a mut VM);
@@ -43,6 +40,10 @@ impl SortCaller for VmSortCaller<'_> {
             .try_compiled_method_or_interpret(recv, name, vec![])
             .unwrap_or(Value::Nil)
     }
+
+    fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError> {
+        self.0.interpreter.sort_callable_arity(callable)
+    }
 }
 
 impl VM {
@@ -61,51 +62,25 @@ impl VM {
             return None;
         }
 
-        // Collect the eager element list for the supported target shapes. Shaped
-        // multi-dim arrays (sort over leaves), Lazy, and item/scalar-wrapped
-        // arrays keep their interpreter semantics -> fall back.
-        let items: Vec<Value> = match target {
-            Value::Array(elems, ArrayKind::Array | ArrayKind::List) => elems.as_ref().clone(),
-            Value::Seq(elems) | Value::Slip(elems) => elems.as_ref().clone(),
-            Value::Range(..)
+        // Gate: only plain eager target shapes run natively. Shaped multi-dim
+        // arrays (sort over leaves), Lazy, item/scalar-wrapped arrays, and
+        // `Instance`/`Supply` keep their interpreter semantics -> fall back. The
+        // arg parsing, shape dispatch, and orchestration are then the single
+        // shared `sort_value_generic` (same code the interpreter runs).
+        match target {
+            Value::Array(_, ArrayKind::Array | ArrayKind::List)
+            | Value::Seq(_)
+            | Value::Slip(_)
+            | Value::Hash(_)
+            | Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)
             | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => crate::runtime::Interpreter::value_to_list(target),
-            Value::Hash(map) => map
-                .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                .collect(),
+            | Value::GenericRange { .. } => {}
             _ => return None,
-        };
-
-        // Parse the (optional) comparator and the `:k` adverb. `:by` names the
-        // callable; any other adverb (`:kv`/`:p`/`:v`) needs the interpreter.
-        let mut callable: Option<Value> = None;
-        let mut return_indices = false;
-        for arg in args {
-            match arg {
-                Value::Pair(key, val) if key == "by" => callable = Some(val.as_ref().clone()),
-                Value::Pair(key, val) if key == "k" => return_indices = val.truthy(),
-                Value::Pair(..) => return None,
-                _ => callable = Some(arg.clone()),
-            }
         }
 
-        // Resolve arity via the shared helper (rejects explicitly 0-arity subs).
-        let arity = match self.interpreter.sort_callable_arity(callable.as_ref()) {
-            Ok(a) => a,
-            Err(e) => return Some(Err(e)),
-        };
-
-        let mut items = items;
         let mut caller = VmSortCaller(self);
-        if return_indices {
-            let indices = sort_indices_generic(&mut caller, &items, callable.as_ref(), arity);
-            Some(Ok(Value::array(indices)))
-        } else {
-            sort_items_generic(&mut caller, &mut items, callable.as_ref(), arity);
-            Some(Ok(Value::Seq(Arc::new(items))))
-        }
+        Some(sort_value_generic(&mut caller, target.clone(), args))
     }
 }
