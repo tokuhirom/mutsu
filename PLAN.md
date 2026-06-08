@@ -101,9 +101,19 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
       （真フォールバック）/ `// CARRIER:`（反射・MOP・EVAL・メタプロ hook）で注釈し、進捗台帳
       [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) を新設。同 PR で `succ`/`pred` を
       統一 compiled-first ディスパッチへ降ろし §1 から 2 サイト消化。以後は台帳の行を消す形で進める。
-- [ ] **② 宣言の実行を VM 所有レジストリへ**: `class`/`role`/`enum`/`subset`/`token`/`sub`/`method` は現在
-      `Register*` opcode が `interpreter.register_*_decl()` を呼び、クラスシステム・MRO・role 合成が Interpreter 側。
-      これらのレジストリを VM 所有データへ移す（②は③の前提）。
+- [~] **② 宣言レジストリの VM 所有化**（設計確定: [docs/vm-registry-ownership.md](docs/vm-registry-ownership.md)）:
+      `class`/`role`/`enum`/`subset`/`token`/`sub` は現在 `Register*` opcode が `interpreter.register_*_decl()` を
+      呼び、レジストリ・MRO・role 合成が Interpreter 側。これらの宣言レジストリ ~30 フィールドを `Interpreter` から
+      切り出し、**遷移期は `Arc<RwLock<Registry>>` 足場**（VM と Interpreter が対等に共有。`Rc<RefCell>` は
+      `Interpreter` がスレッド境界を越えるため不可）で持ち上げる。**エンドステート＝Interpreter 撤去後（④/⑤）に
+      plain な VM フィールドへ畳む**（＝ Interpreter オブジェクト消滅）。登録は登録中にユーザコードへ再入する
+      （trait ハンドラ / 属性デフォルト / クラス本体）ため、**RwLock ガードを再入を跨いで保持しない**規律が肝。
+      `clone_for_thread` のスナップショット意味論は厳守（挙動不変）。②は③の前提。
+      - [x] **PR-A slice 1（#2760）**: 機構確立 + `enum_types`/`subsets` 移行（`src/runtime/registry.rs` 新設、
+            `registry()`/`registry_mut()` ヘルパ、~75 サイト変換、再入ハザードをガード巻き上げで安全化）。
+      - [ ] **PR-A 残**: classes（178 サイト・ホット経路・大きい `ClassDef` なので naive clone を避け Registry
+            アクセサで最小データ返却）/ class メタ群 / roles 群 / functions・subs・tokens（移行後 `clone_for_thread`
+            1 行化）。→ **PR-B**（lookup を Registry メソッド化・VM 直読み）→ **PR-C**（register_* write-through 整理）。
 - [ ] **③ VM が借用している Interpreter 状態を VM 所有へ移管**: env HashMap（変数ストア本体）・classes/roles/enums
       レジストリ・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・`let`/`temp` 復元・multi 解決・
       state 変数・`current_package`。これが移れば **interpreter ブリッジ自体が不要**になる。最大の山。
