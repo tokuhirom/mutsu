@@ -78,6 +78,7 @@ pub(crate) use arith::{
     arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub,
 };
 pub(crate) use functions::flat_val;
+pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{native_method_1arg, native_method_2arg};
