@@ -109,11 +109,16 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
       plain な VM フィールドへ畳む**（＝ Interpreter オブジェクト消滅）。登録は登録中にユーザコードへ再入する
       （trait ハンドラ / 属性デフォルト / クラス本体）ため、**RwLock ガードを再入を跨いで保持しない**規律が肝。
       `clone_for_thread` のスナップショット意味論は厳守（挙動不変）。②は③の前提。
-      - [x] **PR-A slice 1（#2760）**: 機構確立 + `enum_types`/`subsets` 移行（`src/runtime/registry.rs` 新設、
-            `registry()`/`registry_mut()` ヘルパ、~75 サイト変換、再入ハザードをガード巻き上げで安全化）。
-      - [ ] **PR-A 残**: classes（178 サイト・ホット経路・大きい `ClassDef` なので naive clone を避け Registry
-            アクセサで最小データ返却）/ class メタ群 / roles 群 / functions・subs・tokens（移行後 `clone_for_thread`
-            1 行化）。→ **PR-B**（lookup を Registry メソッド化・VM 直読み）→ **PR-C**（register_* write-through 整理）。
+      - [x] **PR-A 完了（抽出フェーズ, #2760/2762/2763/2764/2767）**: 全宣言レジストリを `Registry` へ移行。
+            slice 1 enum/subset（機構確立）→ 2 class メタ群 → 3 classes（ホット経路・targeted 投影 clone 維持、
+            naive whole-clone 回避で perf 回帰なし）→ 4 roles 群 → 5 functions/subs/tokens。**結果**: `Interpreter`
+            から宣言レジストリが消え `clone_for_thread` は registry 全体 clone 1 行のみ（個別 clone ゼロ・snapshot 不変）。
+            参照返却アクセサは owned 化。再入安全規律（read→write/write→write 同一ロック deadlock を複数発見・修正、
+            Python ブレース対応スキャナ＋make roast タイムアウトで検出）を確立。詳細は docs/vm-registry-ownership.md。
+      - [ ] **PR-B（read 側）**: lookup/MRO/型マッチの registry 読み部を Registry メソッド化し、VM の read サイトを
+            `self.registry.read()` 直読みへ。台帳 §2 の関数 dispatch fallback（multi/sub 解決）撲滅の前提。
+      - [ ] **PR-C（write-through）**: `register_*_decl` の registry 書き込みを write-lock ブロックへ整理、再入跨ぎ
+            guard 無しを保証、台帳注釈更新。これで②完了→③（env/型/state 移管）へ。
 - [ ] **③ VM が借用している Interpreter 状態を VM 所有へ移管**: env HashMap（変数ストア本体）・classes/roles/enums
       レジストリ・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・`let`/`temp` 復元・multi 解決・
       state 変数・`current_package`。これが移れば **interpreter ブリッジ自体が不要**になる。最大の山。
