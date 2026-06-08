@@ -202,6 +202,7 @@ pub(crate) mod regex_parse;
 mod registration;
 mod registration_class;
 mod registration_sub;
+mod registry;
 pub(crate) mod resolution;
 mod run;
 mod seq_helpers;
@@ -220,6 +221,7 @@ mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) use self::registration_class::ClassDeclModifiers;
+pub(crate) use self::registry::Registry;
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
 
 pub(crate) use utils::*;
@@ -347,7 +349,7 @@ struct RoleCandidateDef {
 }
 
 #[derive(Debug, Clone)]
-struct SubsetDef {
+pub(crate) struct SubsetDef {
     base: String,
     predicate: Option<Expr>,
     version: String,
@@ -878,7 +880,10 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     gather_take_limits: Vec<Option<usize>>,
     block_scope_depth: usize,
-    enum_types: HashMap<String, Vec<(String, EnumValue)>>,
+    /// Declaration registry (enums/subsets/... — migrated group-by-group, PLAN.md ②),
+    /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
+    /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
+    registry: Arc<RwLock<Registry>>,
     classes: HashMap<String, ClassDef>,
     cunion_classes: HashSet<String>,
     hidden_classes: HashSet<String>,
@@ -914,7 +919,6 @@ pub struct Interpreter {
     /// `is DEPRECATED` messages on class attributes.
     /// Maps (class_name, attr_name) to the deprecation message.
     class_attribute_deprecated: HashMap<(String, String), String>,
-    subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
     proto_dispatch_stack: Vec<(String, Vec<Value>)>,
@@ -2888,7 +2892,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: 0,
-            enum_types: HashMap::new(),
+            registry: Arc::new(RwLock::new(Registry::default())),
             classes,
             cunion_classes: HashSet::new(),
             hidden_classes: HashSet::new(),
@@ -3078,7 +3082,6 @@ impl Interpreter {
             class_attribute_defaults: HashMap::new(),
             class_attribute_is_types: HashMap::new(),
             class_attribute_deprecated: HashMap::new(),
-            subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
             proto_dispatch_stack: Vec::new(),
@@ -5089,6 +5092,22 @@ impl Interpreter {
             })
     }
 
+    /// Read access to the shared declaration [`Registry`]. Returns a temporary
+    /// guard — NEVER `let`-bind it across a call that re-enters user-code
+    /// execution (`eval_block_value`/`run_block_raw`/`call_function`): `RwLock`
+    /// is not reentrant and would deadlock. Use as `self.registry().subsets...`.
+    #[inline]
+    pub(crate) fn registry(&self) -> std::sync::RwLockReadGuard<'_, Registry> {
+        self.registry.read().unwrap()
+    }
+
+    /// Write access to the shared declaration [`Registry`]. Same guard discipline
+    /// as [`Self::registry`].
+    #[inline]
+    pub(crate) fn registry_mut(&self) -> std::sync::RwLockWriteGuard<'_, Registry> {
+        self.registry.write().unwrap()
+    }
+
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
@@ -5208,7 +5227,10 @@ impl Interpreter {
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: self.block_scope_depth,
-            enum_types: self.enum_types.clone(),
+            // Deep-clone the registry into a fresh Arc so the child thread gets an
+            // independent snapshot (matches prior per-field clone semantics: the
+            // child sees parent declarations but its own new ones don't leak back).
+            registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
             classes: self.classes.clone(),
             cunion_classes: self.cunion_classes.clone(),
             hidden_classes: self.hidden_classes.clone(),
@@ -5231,7 +5253,6 @@ impl Interpreter {
             class_attribute_defaults: self.class_attribute_defaults.clone(),
             class_attribute_is_types: self.class_attribute_is_types.clone(),
             class_attribute_deprecated: self.class_attribute_deprecated.clone(),
-            subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),
             proto_dispatch_stack: Vec::new(),

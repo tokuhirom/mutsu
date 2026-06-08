@@ -194,7 +194,8 @@ impl Interpreter {
         {
             return Ok(coerced);
         }
-        if let Some(variants) = self.enum_types.get(base_target).cloned()
+        let variants = self.registry().enum_types.get(base_target).cloned();
+        if let Some(variants) = variants
             && let Some(enum_value) =
                 self.coerce_to_enum_variant(base_target, &variants, value.clone())
         {
@@ -302,7 +303,12 @@ impl Interpreter {
         if resolved_constraint != constraint {
             return self.try_coerce_value_for_constraint(&resolved_constraint, value);
         }
-        if let Some(subset) = self.subsets.get(resolved_constraint.as_str()).cloned()
+        let subset = self
+            .registry()
+            .subsets
+            .get(resolved_constraint.as_str())
+            .cloned();
+        if let Some(subset) = subset
             && subset.base != resolved_constraint
         {
             return self.try_coerce_value_for_constraint(&subset.base, value);

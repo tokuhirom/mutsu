@@ -943,7 +943,7 @@ impl Interpreter {
                 Value::Int(i) => vec![Value::Int(i)],
                 Value::Package(ref name) => {
                     // Enum type as shape: use the number of enum variants
-                    if let Some(variants) = self.enum_types.get(&name.resolve()) {
+                    if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
                         vec![Value::Int(variants.len() as i64)]
                     } else if name == "Bool" {
                         // Bool is a builtin enum with 2 values (False, True)
@@ -967,7 +967,7 @@ impl Interpreter {
                     return Err(RuntimeError::illegal_dimension_in_shape(*f as i64));
                 }
                 Value::Package(name) => {
-                    if let Some(variants) = self.enum_types.get(&name.resolve()) {
+                    if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
                         variants.len()
                     } else if name == "Bool" {
                         2

@@ -229,7 +229,8 @@ impl Interpreter {
         if let Some(pattern) = self.eval_token_call_values(name, args)? {
             return Ok(Value::regex(pattern));
         }
-        if let Some(variants) = self.enum_types.get(name).cloned() {
+        let variants = self.registry().enum_types.get(name).cloned();
+        if let Some(variants) = variants {
             let Some(first) = args.first().cloned() else {
                 return Ok(Value::Nil);
             };
@@ -256,7 +257,7 @@ impl Interpreter {
         if args.len() == 1
             && (self.has_type(name)
                 || crate::runtime::utils::is_known_type_constraint(name)
-                || self.subsets.contains_key(name)
+                || self.registry().subsets.contains_key(name)
                 || self.roles.contains_key(name))
         {
             let source = match &args[0] {
@@ -771,7 +772,7 @@ impl Interpreter {
         if args.is_empty()
             && (self.has_type(name)
                 || crate::runtime::utils::is_known_type_constraint(name)
-                || self.subsets.contains_key(name)
+                || self.registry().subsets.contains_key(name)
                 || self.roles.contains_key(name))
         {
             return Ok(Value::Package(Symbol::intern(&format!("{name}(Any)"))));

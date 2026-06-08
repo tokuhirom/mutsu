@@ -7,7 +7,8 @@ impl Interpreter {
             ("LittleEndian".to_string(), EnumValue::Int(1)),
             ("BigEndian".to_string(), EnumValue::Int(2)),
         ];
-        self.enum_types
+        self.registry_mut()
+            .enum_types
             .insert("Endian".to_string(), variants.clone());
         base.insert(Symbol::intern("Endian"), Value::str_from("Endian"));
         for (index, (key, val)) in variants.iter().enumerate() {
@@ -38,7 +39,8 @@ impl Interpreter {
             ("PF_UNIX".to_string(), EnumValue::Int(3)),
             ("PF_MAX".to_string(), EnumValue::Int(4)),
         ];
-        self.enum_types
+        self.registry_mut()
+            .enum_types
             .insert("ProtocolFamily".to_string(), variants.clone());
         base.insert(
             Symbol::intern("ProtocolFamily"),
@@ -65,7 +67,8 @@ impl Interpreter {
             ("Same".to_string(), EnumValue::Int(0)),
             ("More".to_string(), EnumValue::Int(1)),
         ];
-        self.enum_types
+        self.registry_mut()
+            .enum_types
             .insert("Order".to_string(), variants.clone());
         base.insert(Symbol::intern("Order"), Value::str_from("Order"));
         for (index, (key, val)) in variants.iter().enumerate() {
@@ -103,7 +106,8 @@ impl Interpreter {
             ("SIGTTIN".to_string(), EnumValue::Int(Self::sig_num(21))),
             ("SIGTTOU".to_string(), EnumValue::Int(Self::sig_num(22))),
         ];
-        self.enum_types
+        self.registry_mut()
+            .enum_types
             .insert("Signal".to_string(), variants.clone());
         base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
         for (index, (key, val)) in variants.iter().enumerate() {
@@ -223,22 +227,23 @@ impl Interpreter {
     pub(crate) fn has_type(&self, name: &str) -> bool {
         self.classes.contains_key(name)
             || self.roles.contains_key(name)
-            || self.enum_types.contains_key(name)
-            || self.subsets.contains_key(name)
+            || self.registry().enum_types.contains_key(name)
+            || self.registry().subsets.contains_key(name)
             || Self::parse_parametric_type_name(name).is_some_and(|(base, _)| {
                 self.classes.contains_key(&base)
                     || self.roles.contains_key(&base)
-                    || self.enum_types.contains_key(&base)
-                    || self.subsets.contains_key(&base)
+                    || self.registry().enum_types.contains_key(&base)
+                    || self.registry().subsets.contains_key(&base)
             })
     }
 
     pub(crate) fn has_enum_type(&self, name: &str) -> bool {
-        self.enum_types.contains_key(name)
+        self.registry().enum_types.contains_key(name)
     }
 
     pub(crate) fn has_enum_variant(&self, enum_name: &str, variant_name: &str) -> bool {
-        self.enum_types
+        self.registry()
+            .enum_types
             .get(enum_name)
             .is_some_and(|variants| variants.iter().any(|(k, _)| k == variant_name))
     }
@@ -261,7 +266,7 @@ impl Interpreter {
         if let Some((target, _source)) = parse_coercion_type(base_constraint) {
             return self.is_definite_constraint(target);
         }
-        if let Some(subset) = self.subsets.get(base_constraint) {
+        if let Some(subset) = self.registry().subsets.get(base_constraint) {
             if self.is_definite_constraint(&subset.base) {
                 return true;
             }
@@ -402,14 +407,19 @@ impl Interpreter {
 
     /// Resolve the ultimate base type of a constraint, following subset chains.
     /// Returns the constraint itself if it is not a subset type.
-    pub(crate) fn resolve_subset_base_type<'a>(&'a self, constraint: &'a str) -> &'a str {
-        let mut current = constraint;
-        // Follow subset chain up to a reasonable depth to avoid cycles
+    pub(crate) fn resolve_subset_base_type(&self, constraint: &str) -> String {
+        let mut current = constraint.to_string();
+        // Follow subset chain up to a reasonable depth to avoid cycles.
+        // Clone the base out per step so the registry read guard never spans iterations.
         for _ in 0..20 {
-            if let Some(subset) = self.subsets.get(current) {
-                current = &subset.base;
-            } else {
-                break;
+            let next = self
+                .registry()
+                .subsets
+                .get(&current)
+                .map(|s| s.base.clone());
+            match next {
+                Some(base) => current = base,
+                None => break,
             }
         }
         current

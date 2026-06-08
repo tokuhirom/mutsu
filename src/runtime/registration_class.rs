@@ -840,7 +840,7 @@ impl Interpreter {
             if !self.classes.contains_key(base_parent)
                 && !BUILTIN_TYPES.contains(&base_parent)
                 && !self.roles.contains_key(base_parent)
-                && !self.enum_types.contains_key(base_parent)
+                && !self.registry().enum_types.contains_key(base_parent)
             {
                 // Use X::InvalidType for `does` parents, X::Inheritance::UnknownParent
                 // for `is` parents.
@@ -1187,7 +1187,8 @@ impl Interpreter {
                         }
                     }
                 }
-            } else if does_parents.contains(parent) && self.enum_types.contains_key(base_role_name)
+            } else if does_parents.contains(parent)
+                && self.registry().enum_types.contains_key(base_role_name)
             {
                 // Enum used as a role via `does`: record it for method dispatch
                 self.class_enum_roles
@@ -3179,7 +3180,7 @@ impl Interpreter {
             }
             pred.clone()
         });
-        self.subsets.insert(
+        self.registry_mut().subsets.insert(
             name.to_string(),
             SubsetDef {
                 base: base.to_string(),

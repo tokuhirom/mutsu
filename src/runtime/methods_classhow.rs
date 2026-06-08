@@ -336,7 +336,7 @@ impl Interpreter {
                 {
                     return Ok(Self::version_from_value(value));
                 }
-                if let Some(subset) = self.subsets.get(&name) {
+                if let Some(subset) = self.registry().subsets.get(&name) {
                     return Ok(Self::version_from_value(Value::str(subset.version.clone())));
                 }
                 if invocant_name == "Grammar" {
@@ -386,19 +386,27 @@ impl Interpreter {
                 }
                 let class_resolved = class_name.resolve();
                 let other_resolved = other_name.resolve();
-                if let Some(subset) = self.subsets.get(&class_resolved) {
-                    let mut base = subset.base.clone();
+                // Clone the base out per step so the registry read guard never spans
+                // iterations (recursive read locks may deadlock).
+                if let Some(mut base) = self
+                    .registry()
+                    .subsets
+                    .get(&class_resolved)
+                    .map(|s| s.base.clone())
+                {
                     loop {
                         if base == other_resolved {
                             return Ok(Value::Bool(true));
                         }
-                        let Some(parent_subset) = self.subsets.get(&base) else {
+                        let Some(parent_base) =
+                            self.registry().subsets.get(&base).map(|s| s.base.clone())
+                        else {
                             break;
                         };
-                        if parent_subset.base == base {
+                        if parent_base == base {
                             break;
                         }
-                        base = parent_subset.base.clone();
+                        base = parent_base;
                     }
                 }
                 let mro = self.class_mro(&class_name.resolve());
@@ -961,7 +969,7 @@ impl Interpreter {
                     _ => None,
                 };
                 if let Some(type_name) = type_name
-                    && let Some(variants) = self.enum_types.get(&type_name)
+                    && let Some(variants) = self.registry().enum_types.get(&type_name)
                 {
                     let values: Vec<Value> = variants
                         .iter()

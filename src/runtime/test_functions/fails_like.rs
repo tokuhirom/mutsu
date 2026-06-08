@@ -65,8 +65,8 @@ impl Interpreter {
                 nested.role_hides = self.role_hides.clone();
                 nested.role_type_params = self.role_type_params.clone();
                 nested.class_role_param_bindings = self.class_role_param_bindings.clone();
-                nested.subsets = self.subsets.clone();
-                nested.enum_types = self.enum_types.clone();
+                nested.registry_mut().subsets = self.registry().subsets.clone();
+                nested.registry_mut().enum_types = self.registry().enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();

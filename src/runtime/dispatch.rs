@@ -69,7 +69,7 @@ impl Interpreter {
                 || p.type_constraint
                     .as_deref()
                     .map(Self::constraint_base_name)
-                    .map(|base| self.subsets.contains_key(base))
+                    .map(|base| self.registry().subsets.contains_key(base))
                     .unwrap_or(false)
         })
     }
@@ -269,7 +269,7 @@ impl Interpreter {
                 p.type_constraint
                     .as_deref()
                     .map(Self::constraint_base_name)
-                    .map(|base| self.subsets.contains_key(base))
+                    .map(|base| self.registry().subsets.contains_key(base))
                     .unwrap_or(false)
             })
             .count();

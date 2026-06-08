@@ -506,7 +506,7 @@ impl Interpreter {
         let enum_name = match target {
             Value::Package(name) if name == "Bool" => Some("Bool".to_string()),
             Value::Bool(_) => Some("Bool".to_string()),
-            Value::Package(name) if self.enum_types.contains_key(&name.resolve()) => {
+            Value::Package(name) if self.registry().enum_types.contains_key(&name.resolve()) => {
                 Some(name.resolve())
             }
             Value::Enum { enum_type, .. } => Some(enum_type.resolve()),

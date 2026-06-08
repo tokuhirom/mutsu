@@ -52,7 +52,7 @@ impl Interpreter {
                     if method == key.resolve() {
                         return Some(Ok(Value::Bool(true)));
                     }
-                    if let Some(variants) = self.enum_types.get(&enum_type.resolve())
+                    if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve())
                         && variants.iter().any(|(variant, _)| variant == method)
                     {
                         return Some(Ok(Value::Bool(false)));

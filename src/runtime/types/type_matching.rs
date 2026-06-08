@@ -492,7 +492,10 @@ impl Interpreter {
             };
         }
 
-        if let Some(subset) = self.subsets.get(constraint).cloned() {
+        // Drop the registry guard before the body: it evaluates the subset's `where`
+        // predicate (user code re-entry), which would deadlock under a held read lock.
+        let subset = self.registry().subsets.get(constraint).cloned();
+        if let Some(subset) = subset {
             if !self.type_matches_value(&subset.base, value) {
                 return false;
             }
@@ -641,10 +644,12 @@ impl Interpreter {
                     }
                 }
             }
-            if let Some(subset_base) = self
+            let subset_base = self
+                .registry()
                 .subsets
                 .get(&package_name.resolve())
-                .map(|subset| subset.base.clone())
+                .map(|subset| subset.base.clone());
+            if let Some(subset_base) = subset_base
                 && (constraint == package_name.resolve()
                     || self.type_matches_value(
                         constraint,

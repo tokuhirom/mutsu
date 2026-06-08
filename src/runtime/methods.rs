@@ -656,7 +656,7 @@ impl Interpreter {
                 "pairs" | "keys" | "values" | "kv" | "antipairs" | "invert"
             )
         {
-            if let Some(variants) = self.enum_types.get(&pkg_name.resolve()) {
+            if let Some(variants) = self.registry().enum_types.get(&pkg_name.resolve()) {
                 let variants = variants.clone();
                 return self.dispatch_enum_type_collection(method, &variants);
             }

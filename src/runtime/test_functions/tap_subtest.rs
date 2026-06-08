@@ -49,7 +49,7 @@ impl Interpreter {
         let saved_classes = self.classes.clone();
         let saved_class_trusts = self.class_trusts.clone();
         let saved_roles = self.roles.clone();
-        let saved_subsets = self.subsets.clone();
+        let saved_subsets = self.registry().subsets.clone();
         let mut saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let run_result = self.call_sub_value(block, vec![], true);
@@ -72,7 +72,7 @@ impl Interpreter {
             self.classes = saved_classes;
             self.class_trusts = saved_class_trusts;
             self.roles = saved_roles;
-            self.subsets = saved_subsets;
+            self.registry_mut().subsets = saved_subsets;
             // Merge type_metadata: preserve entries added during the subtest
             for (key, val) in std::mem::take(&mut self.type_metadata) {
                 saved_type_metadata.entry(key).or_insert(val);
@@ -100,7 +100,7 @@ impl Interpreter {
         self.classes = saved_classes;
         self.class_trusts = saved_class_trusts;
         self.roles = saved_roles;
-        self.subsets = saved_subsets;
+        self.registry_mut().subsets = saved_subsets;
         // Merge type_metadata: preserve entries added during the subtest
         for (key, val) in std::mem::take(&mut self.type_metadata) {
             saved_type_metadata.entry(key).or_insert(val);
@@ -147,7 +147,7 @@ impl Interpreter {
         let saved_classes = self.classes.clone();
         let saved_class_trusts = self.class_trusts.clone();
         let saved_roles = self.roles.clone();
-        let saved_subsets = self.subsets.clone();
+        let saved_subsets = self.registry().subsets.clone();
         let mut saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
         self.test_fn_plan(&[Value::Int(plan)])?;
@@ -161,7 +161,7 @@ impl Interpreter {
         self.classes = saved_classes;
         self.class_trusts = saved_class_trusts;
         self.roles = saved_roles;
-        self.subsets = saved_subsets;
+        self.registry_mut().subsets = saved_subsets;
         // Merge type_metadata: preserve entries added during the subtest
         for (key, val) in std::mem::take(&mut self.type_metadata) {
             saved_type_metadata.entry(key).or_insert(val);

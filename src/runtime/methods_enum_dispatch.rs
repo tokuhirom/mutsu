@@ -88,7 +88,7 @@ impl Interpreter {
                     // .pred on first element returns itself
                     return Some(Ok(target.clone()));
                 }
-                if let Some(variants) = self.enum_types.get(&enum_type.resolve())
+                if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve())
                     && let Some((prev_key, prev_val)) = variants.get(index - 1)
                 {
                     return Some(Ok(Value::Enum {
@@ -102,7 +102,7 @@ impl Interpreter {
                 Some(Ok(target.clone()))
             }
             "succ" => {
-                if let Some(variants) = self.enum_types.get(&enum_type.resolve()) {
+                if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve()) {
                     if let Some((next_key, next_val)) = variants.get(index + 1) {
                         return Some(Ok(Value::Enum {
                             enum_type: *enum_type,

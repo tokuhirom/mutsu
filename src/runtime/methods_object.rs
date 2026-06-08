@@ -216,7 +216,7 @@ impl Interpreter {
             }
         }
         if let Value::Str(ref name) = target
-            && self.enum_types.contains_key(name.as_str())
+            && self.registry().enum_types.contains_key(name.as_str())
         {
             let msg = format!(
                 "Enum '{}' is insufficiently type-like to be instantiated.  Did you mean 'class'?",

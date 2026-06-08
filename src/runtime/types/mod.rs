@@ -313,7 +313,7 @@ impl Interpreter {
                 return self.nominal_type_object_name_for_constraint(&resolved);
             }
         }
-        if let Some(subset) = self.subsets.get(&base_name) {
+        if let Some(subset) = self.registry().subsets.get(&base_name) {
             if language_version_is_6e_or_newer(&subset.version) {
                 // In v6.e, the default for a subset variable is the base type's
                 // type object (the subset's "nominalization").
