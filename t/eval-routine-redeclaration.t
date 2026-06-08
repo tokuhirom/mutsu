@@ -1,6 +1,6 @@
 use Test;
 
-plan 11;
+plan 14;
 
 # Routine redeclaration in the same scope.
 throws-like 'sub a { }; sub a { }', X::Redeclaration,
@@ -14,6 +14,15 @@ throws-like 'multi sub a { }; sub a { }', X::Redeclaration,
     'multi sub then non-multi sub redeclares';
 lives-ok { EVAL 'multi sub a(Int) { }; multi sub a(Str) { }' },
     'two multi subs of the same name are allowed';
+lives-ok { EVAL 'sub foo { }; anon sub foo() { }' },
+    'an anon sub of the same name installs no symbol, so no redeclaration';
+throws-like 'sub foo {1; }; sub foo($x) {1; };', X::Redeclaration,
+    :message{.contains: 'multi'},
+    'duplicate routine error suggests a multi-sub';
+
+# Forward stubs may be completed by a real declaration of the same name.
+lives-ok { EVAL 'role R { ... }; role R { method foo { } }' },
+    'a role stub may be completed by a real role declaration';
 
 # Cross-kind type redeclaration (class / role / subset share one namespace).
 throws-like 'my class B { }; my subset B of Any;', X::Redeclaration,
