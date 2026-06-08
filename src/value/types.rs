@@ -17,13 +17,11 @@ impl Value {
         if let Value::Scalar(inner) = other {
             return self.eqv(inner);
         }
-        if let Value::ContainerRef(arc) = self {
-            let inner = arc.lock().unwrap();
-            return inner.eqv(other);
+        if matches!(self, Value::ContainerRef(_)) {
+            return self.with_deref(|inner| inner.eqv(other));
         }
-        if let Value::ContainerRef(arc) = other {
-            let inner = arc.lock().unwrap();
-            return self.eqv(&inner);
+        if matches!(other, Value::ContainerRef(_)) {
+            return other.with_deref(|inner| self.eqv(inner));
         }
         // Junction threading: if either side is a junction, thread eqv
         // through it and return the boolean result of the junction.
@@ -454,10 +452,7 @@ impl Value {
             Value::CustomType { .. } => false,
             Value::CustomTypeInstance { .. } => true,
             Value::Scalar(inner) => inner.truthy(),
-            Value::ContainerRef(arc) => {
-                let inner = arc.lock().unwrap();
-                inner.truthy()
-            }
+            Value::ContainerRef(_) => self.with_deref(Value::truthy),
             Value::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
@@ -591,10 +586,7 @@ impl Value {
                 return tn.resolve() == type_name;
             }
             Value::Scalar(inner) => return inner.isa_check(type_name),
-            Value::ContainerRef(arc) => {
-                let inner = arc.lock().unwrap();
-                return inner.isa_check(type_name);
-            }
+            Value::ContainerRef(_) => return self.with_deref(|inner| inner.isa_check(type_name)),
             Value::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
@@ -899,10 +891,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Mixin(inner, mixins) => {
             allomorph_type_name(inner, mixins).unwrap_or_else(|| what_type_name(inner))
         }
-        Value::ContainerRef(arc) => {
-            let inner = arc.lock().unwrap();
-            what_type_name(&inner)
-        }
+        Value::ContainerRef(_) => val.with_deref(what_type_name),
         _ => "Any".to_string(),
     }
 }
