@@ -1068,78 +1068,24 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        if args.len() == 2
-            && let Some(Value::Array(items, kind)) = args.get(1)
-        {
-            if kind.is_itemized() {
-                // Itemized array: treat as single item, stringify
-                return Ok(Value::str(args[1].to_string_value()));
+        // `join(sep, *@rest)` joins the flattened rest. Force any lazy lists
+        // (join is eager over the flattened list) then run the single shared
+        // `join_flat` helper — the same one the pure `native_function("join", ..)`
+        // path uses. The previous inline copy here drifted from native (it had a
+        // separate Range/Seq/itemized walk).
+        let mut rest = Vec::with_capacity(args.len().saturating_sub(1));
+        // `args.get(1..)` (not `&args[1..]`) so bare `join()` / `join(sep)` with no
+        // list args doesn't panic on an empty slice.
+        for v in args.get(1..).unwrap_or(&[]) {
+            if let Value::LazyList(list) = v {
+                rest.push(Value::array(self.force_lazy_list(list)?));
+            } else {
+                rest.push(v.clone());
             }
-            let joined = items
-                .iter()
-                .map(|v| v.to_str_context())
-                .collect::<Vec<_>>()
-                .join(&sep);
-            return Ok(Value::str(joined));
         }
-        // Force LazyList before joining
-        if args.len() == 2
-            && let Some(Value::LazyList(list)) = args.get(1)
-        {
-            let items = self.force_lazy_list(list)?;
-            let joined = items
-                .iter()
-                .map(|v| v.to_str_context())
-                .collect::<Vec<_>>()
-                .join(&sep);
-            return Ok(Value::str(joined));
-        }
-        // Multi-arg: join(sep, item1, item2, ...)
-        // Flatten ranges and lists to their elements
-        if args.len() > 1 {
-            let mut parts = Vec::new();
-            for v in &args[1..] {
-                match v {
-                    Value::Range(start, end) => {
-                        for i in *start..=*end {
-                            parts.push(Value::Int(i).to_string_value());
-                        }
-                    }
-                    Value::RangeExcl(start, end) => {
-                        for i in *start..*end {
-                            parts.push(Value::Int(i).to_string_value());
-                        }
-                    }
-                    Value::GenericRange { .. } => {
-                        for item in crate::runtime::utils::value_to_list(v) {
-                            parts.push(item.to_str_context());
-                        }
-                    }
-                    Value::Array(items, kind) if !kind.is_itemized() => {
-                        for item in items.iter() {
-                            parts.push(item.to_str_context());
-                        }
-                    }
-                    Value::Seq(items) | Value::Slip(items) => {
-                        for item in items.as_ref() {
-                            parts.push(item.to_str_context());
-                        }
-                    }
-                    Value::LazyList(list) => {
-                        let items = self.force_lazy_list(list)?;
-                        for item in items.iter() {
-                            parts.push(item.to_str_context());
-                        }
-                    }
-                    _ => {
-                        parts.push(v.to_str_context());
-                    }
-                }
-            }
-            let joined = parts.join(&sep);
-            return Ok(Value::str(joined));
-        }
-        Ok(Value::str(String::new()))
+        Ok(Value::str(
+            crate::builtins::join_flat(&sep, &rest).unwrap_or_default(),
+        ))
     }
 
     pub(super) fn builtin_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -119,6 +119,34 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     }
 }
 
+/// Join `rest` with `sep`, flattening with `flat`/slurpy semantics (the single
+/// shared `join` body for both `native_function("join", ..)` and the
+/// interpreter's `builtin_join`). Returns `None` when an un-realized lazy list is
+/// present, so the interpreter can force it and retry. Top-level shaped arrays
+/// join over their leaves.
+pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<String> {
+    let mut items = Vec::new();
+    for v in rest {
+        if let Value::LazyList(ll) = v
+            && ll.cache.lock().unwrap().is_none()
+        {
+            return None; // needs interpreter forcing
+        }
+        if crate::runtime::utils::is_shaped_array(v) {
+            items.extend(crate::runtime::utils::shaped_array_leaves(v));
+        } else {
+            flat_val(v, &mut items, true);
+        }
+    }
+    Some(
+        items
+            .iter()
+            .map(|v| v.to_str_context())
+            .collect::<Vec<_>>()
+            .join(sep),
+    )
+}
+
 // ── Built-in function dispatch ───────────────────────────────────────
 /// Try to dispatch a built-in function call.
 /// Native (interpreter-free) `sprintf` / `zprintf`.
@@ -1115,44 +1143,12 @@ fn native_function_2arg(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
-        "join" => {
-            let sep = arg1.to_string_value();
-            if crate::runtime::utils::is_shaped_array(arg2) {
-                let leaves = crate::runtime::utils::shaped_array_leaves(arg2);
-                let joined = leaves
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                return Some(Ok(Value::str(joined)));
-            }
-            match arg2 {
-                Value::Array(items, kind) if !kind.is_itemized() => {
-                    let joined = items
-                        .iter()
-                        .map(|v| v.to_str_context())
-                        .collect::<Vec<_>>()
-                        .join(&sep);
-                    Some(Ok(Value::str(joined)))
-                }
-                Value::Seq(items) | Value::Slip(items) => {
-                    let joined = items
-                        .iter()
-                        .map(|v| v.to_str_context())
-                        .collect::<Vec<_>>()
-                        .join(&sep);
-                    Some(Ok(Value::str(joined)))
-                }
-                Value::LazyList(_) => {
-                    // Fall through to runtime to force the lazy list
-                    None
-                }
-                _ => {
-                    // Treat as single-element list (includes itemized arrays)
-                    Some(Ok(Value::str(arg2.to_str_context())))
-                }
-            }
-        }
+        // `join(sep, list)`: flatten `list` (slurpy/`flat` semantics) and join.
+        // The previous inline version ignored the separator for a `Range` arg
+        // (`join("-", 1..4)` -> "1 2 3 4"); the shared `join_flat` fixes it.
+        // Returns `None` for an un-realized lazy list -> the interpreter forces it.
+        "join" => join_flat(&arg1.to_string_value(), std::slice::from_ref(arg2))
+            .map(|joined| Ok(Value::str(joined))),
         "rotate" => {
             if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg1) {
                 if shape.len() > 1 {
