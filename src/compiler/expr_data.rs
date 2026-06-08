@@ -87,9 +87,10 @@ impl Compiler {
             // Push key as string constant
             let key_idx = self.code.add_constant(Value::str(key.clone()));
             self.code.emit(OpCode::LoadConst(key_idx));
-            // Push value (or True if none, for bare colonpairs like :a)
+            // Push value (or True if none, for bare colonpairs like :a). Values
+            // are stored into the hash -> a closure value escapes the frame.
             if let Some(val_expr) = val_opt {
-                self.compile_expr(val_expr);
+                self.with_escape(true, |c| c.compile_expr(val_expr));
             } else {
                 self.code.emit(OpCode::LoadTrue);
             }
@@ -290,37 +291,40 @@ impl Compiler {
 
     /// Compile BracketArray expression ([...]).
     pub(super) fn compile_expr_bracket_array(&mut self, elems: &[Expr], trailing_comma: bool) {
-        let single_with_trailing_comma = trailing_comma && elems.len() == 1;
-        if elems.len() == 1 && !single_with_trailing_comma {
-            if let Expr::ArrayLiteral(items) = &elems[0] {
-                for item in items {
-                    self.compile_expr(item);
-                }
-                self.code.emit(OpCode::MakeRealArray(items.len() as u32));
-            } else {
-                self.compile_expr(&elems[0]);
-                // When the single element is a scalar variable ($x) or explicit
-                // item context ($%h, $@a), use MakeRealArrayNoFlatten so that
-                // hash/array values held in scalars are not flattened.
-                // HashVar and ArrayVar (% and @ sigiled) SHOULD flatten.
-                let should_not_flatten = matches!(&elems[0], Expr::Var(_) | Expr::Itemize(_));
-                if should_not_flatten {
-                    self.code.emit(OpCode::MakeRealArrayNoFlatten(1));
+        // Elements are stored into the array -> a closure element escapes.
+        self.with_escape(true, |s| {
+            let single_with_trailing_comma = trailing_comma && elems.len() == 1;
+            if elems.len() == 1 && !single_with_trailing_comma {
+                if let Expr::ArrayLiteral(items) = &elems[0] {
+                    for item in items {
+                        s.compile_expr(item);
+                    }
+                    s.code.emit(OpCode::MakeRealArray(items.len() as u32));
                 } else {
-                    self.code.emit(OpCode::MakeRealArray(1));
+                    s.compile_expr(&elems[0]);
+                    // When the single element is a scalar variable ($x) or explicit
+                    // item context ($%h, $@a), use MakeRealArrayNoFlatten so that
+                    // hash/array values held in scalars are not flattened.
+                    // HashVar and ArrayVar (% and @ sigiled) SHOULD flatten.
+                    let should_not_flatten = matches!(&elems[0], Expr::Var(_) | Expr::Itemize(_));
+                    if should_not_flatten {
+                        s.code.emit(OpCode::MakeRealArrayNoFlatten(1));
+                    } else {
+                        s.code.emit(OpCode::MakeRealArray(1));
+                    }
+                }
+            } else {
+                for elem in elems {
+                    s.compile_expr(elem);
+                }
+                if single_with_trailing_comma {
+                    s.code
+                        .emit(OpCode::MakeRealArrayNoFlatten(elems.len() as u32));
+                } else {
+                    s.code.emit(OpCode::MakeRealArray(elems.len() as u32));
                 }
             }
-        } else {
-            for elem in elems {
-                self.compile_expr(elem);
-            }
-            if single_with_trailing_comma {
-                self.code
-                    .emit(OpCode::MakeRealArrayNoFlatten(elems.len() as u32));
-            } else {
-                self.code.emit(OpCode::MakeRealArray(elems.len() as u32));
-            }
-        }
+        });
     }
 
     /// Compile Index expression (target[index] or target{index}).

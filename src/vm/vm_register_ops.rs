@@ -239,15 +239,17 @@ impl VM {
         // broad form regressed perf and correctness, see #2749 / docs):
         //   (A) loop-body locals (`loop_local_vars`): per-iteration binding, the
         //       original lever-C path — kept byte-for-byte.
-        //   (B) `multi_captured_mutated_locals`: locals captured by >=2 distinct
-        //       sibling closures (compiler signal). These genuinely need a shared
-        //       cell even in non-loop frames (e.g. a getter+setter factory). The
-        //       >=2 restriction excludes the single immediately-invoked closure
-        //       (`lives-ok {...}`) pattern, bounding boxing cost and avoiding the
-        //       broad-boxing perf blowup.
+        //   (B) `needs_cell_locals`: locals captured by a child closure whose
+        //       value ESCAPES the creating frame (escape analysis — stored,
+        //       returned, or bound, not immediately invoked). These genuinely
+        //       need a shared cell even in non-loop frames (e.g. a getter+setter
+        //       factory, or a single `&f = sub {...}` assigned closure). The
+        //       escape signal excludes the immediately-invoked closure
+        //       (`lives-ok {...}` / `map {...}`, call args / control blocks),
+        //       bounding boxing cost and avoiding the broad-boxing perf blowup.
         // Read-only loop captures are handled by `owned_captures` (value-freeze).
         if code.captured_mutated_locals.is_empty()
-            || (self.loop_local_vars.is_empty() && code.multi_captured_mutated_locals.is_empty())
+            || (self.loop_local_vars.is_empty() && code.needs_cell_locals.is_empty())
         {
             return;
         }
@@ -255,15 +257,15 @@ impl VM {
             if !code.captured_mutated_locals.contains(sym) {
                 continue;
             }
-            let is_multi = code.multi_captured_mutated_locals.contains(sym);
+            let needs_cell = code.needs_cell_locals.contains(sym);
             let Some(idx) = sym.with_str(|s| {
                 if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
                     return None;
                 }
                 let is_loop_local = self.loop_local_vars.iter().any(|set| set.contains(s));
                 if !is_loop_local {
-                    // Non-loop sibling path (B) only.
-                    if !is_multi {
+                    // Non-loop escaping path (B) only.
+                    if !needs_cell {
                         return None;
                     }
                     // A type/`where`-constrained scalar must keep flowing through

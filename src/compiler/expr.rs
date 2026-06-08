@@ -111,21 +111,26 @@ impl Compiler {
                 self.code.patch_jump(jump_end);
             }
             Expr::ArrayLiteral(elems) => {
-                for elem in elems {
-                    self.compile_expr(elem);
-                    if Self::expr_is_scalar_var(elem) {
-                        self.code.emit(OpCode::Itemize);
+                // Elements are stored into the list -> a closure element escapes.
+                self.with_escape(true, |c| {
+                    for elem in elems {
+                        c.compile_expr(elem);
+                        if Self::expr_is_scalar_var(elem) {
+                            c.code.emit(OpCode::Itemize);
+                        }
                     }
-                }
+                });
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
             Expr::BracketArray(elems, trailing_comma) => {
                 self.compile_expr_bracket_array(elems, *trailing_comma);
             }
             Expr::CaptureLiteral(items) => {
-                for item in items {
-                    self.compile_expr(item);
-                }
+                self.with_escape(true, |c| {
+                    for item in items {
+                        c.compile_expr(item);
+                    }
+                });
                 self.code.emit(OpCode::MakeCapture(items.len() as u32));
             }
             // Expression-level function call

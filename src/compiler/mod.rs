@@ -90,6 +90,15 @@ pub(crate) struct Compiler {
     pub(super) pending_index_rw_writebacks: Vec<(Expr, String, String)>,
     /// The current distribution context for $?DISTRIBUTION.
     pub(crate) current_distribution: Option<Value>,
+    /// True while compiling a sub-expression whose VALUE is stored/returned/bound
+    /// (an *escaping position*): assignment or `:=` RHS, `return`/`fail` operand,
+    /// block/routine tail, or a literal element. A closure created while this is
+    /// set has its value escape the creating frame, forcing a shared `ContainerRef`
+    /// cell for the captured-and-mutated locals it closes over (escape analysis;
+    /// see `CompiledCode::closure_escapes`). Default false = the conservative
+    /// non-escaping (immediately-invoked) classification, so call arguments and
+    /// control-construct blocks never over-box (the #2746 perf guard).
+    escaping_position: bool,
 }
 
 impl Compiler {
@@ -117,7 +126,19 @@ impl Compiler {
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
+            escaping_position: false,
         }
+    }
+
+    /// Run `f` with the escaping-position flag set to `escaping`, restoring the
+    /// previous value afterward. Used to mark which syntactic positions cause a
+    /// closure created within them to escape its frame (see `escaping_position`).
+    pub(super) fn with_escape<R>(&mut self, escaping: bool, f: impl FnOnce(&mut Self) -> R) -> R {
+        let saved = self.escaping_position;
+        self.escaping_position = escaping;
+        let r = f(self);
+        self.escaping_position = saved;
+        r
     }
 
     /// Emit a SetSourceLine opcode for the current source line, if known.
@@ -563,7 +584,8 @@ impl Compiler {
                 if is_last {
                     match stmt {
                         Stmt::Expr(expr) => {
-                            self.compile_expr(expr);
+                            // Tail expression becomes the body value -> escapes.
+                            self.with_escape(true, |c| c.compile_expr(expr));
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }

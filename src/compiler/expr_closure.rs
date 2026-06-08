@@ -13,7 +13,8 @@ impl Compiler {
             } else {
                 self.compile_routine_closure_body(&[], &[], body)
             };
-            let cc_idx = self.code.add_closure_code(compiled);
+            let esc = self.escaping_position;
+            let cc_idx = self.code.add_closure_code(compiled, esc);
             let idx = self.code.add_stmt(Stmt::SubDecl {
                 name: Symbol::intern(""),
                 name_expr: None,
@@ -53,7 +54,8 @@ impl Compiler {
             } else {
                 self.compile_routine_closure_body(&placeholders, &[], body)
             };
-            let cc_idx = self.code.add_closure_code(compiled);
+            let esc = self.escaping_position;
+            let cc_idx = self.code.add_closure_code(compiled, esc);
             let idx = self.code.add_stmt(Stmt::Block(body.to_vec()));
             self.code
                 .emit(OpCode::MakeAnonSub(idx, Some(cc_idx), is_block));
@@ -137,7 +139,8 @@ impl Compiler {
         if is_pointy {
             compiled.is_pointy_block = true;
         }
-        let cc_idx = self.code.add_closure_code(compiled);
+        let esc = self.escaping_position;
+        let cc_idx = self.code.add_closure_code(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
             name: Symbol::intern(""),
             name_expr: None,
@@ -177,7 +180,8 @@ impl Compiler {
             vec![param.to_string()]
         };
         let compiled = self.compile_closure_body(&params, &[], body);
-        let cc_idx = self.code.add_closure_code(compiled);
+        let esc = self.escaping_position;
+        let cc_idx = self.code.add_closure_code(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
             name: Symbol::intern(""),
             name_expr: None,

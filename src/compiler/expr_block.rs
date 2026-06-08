@@ -374,7 +374,8 @@ impl Compiler {
         if Self::has_block_placeholders(stmts) {
             let placeholders = crate::ast::collect_placeholders_shallow(stmts);
             let compiled = self.compile_closure_body(&placeholders, &[], stmts);
-            let cc_idx = self.code.add_closure_code(compiled);
+            let esc = self.escaping_position;
+            let cc_idx = self.code.add_closure_code(compiled, esc);
             let idx = self.code.add_stmt(Stmt::Block(stmts.to_vec()));
             self.code.emit(OpCode::MakeBlockClosure(idx, Some(cc_idx)));
         } else {

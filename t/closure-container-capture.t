@@ -6,7 +6,7 @@ use Test;
 # latter via the compiler's >=2-sibling-closure signal), while loop-body `my`
 # stays per-iteration fresh.
 
-plan 15;
+plan 19;
 
 # --- intra-iteration mutation after capture (was: frozen value) ---
 {
@@ -101,4 +101,32 @@ plan 15;
     my $c = { @a.elems };
     @a.push(4);
     is $c(), 4, 'array free variable stays reference-shared';
+}
+
+# --- escape analysis (step 1): a SINGLE closure that ESCAPES the frame (assigned
+# to an outer variable) shares the captured container, even though only one
+# closure captures it (the old >=2-sibling proxy missed this). ---
+{
+    my $f;
+    { my $a = 3; $f = sub { $a++ } }
+    is $f(), 3, 'single escaping closure: first call reads captured value';
+    is $f(), 4, 'single escaping closure: state persists through the shared cell';
+}
+
+# --- immediately-invoked closures (call arguments) are NOT boxed: the captured
+# topic/local flows through the non-escaping path. This is the #2746 perf guard;
+# here we just assert correctness is unaffected. ---
+{
+    my $sum = 0;
+    (1, 2, 3).map({ $sum += $_ });
+    is $sum, 6, 'immediately-invoked map closure mutates outer var correctly';
+}
+
+# --- a returned closure factory keeps independent per-instance state ---
+{
+    sub counter { my $n = 0; return sub { $n++ } }
+    my $a = counter();
+    my $b = counter();
+    $a(); $a();
+    is $b(), 0, 'returned closure factory: instances have independent state';
 }
