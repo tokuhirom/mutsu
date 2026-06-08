@@ -2,6 +2,18 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
+        // A `do {}` block does not take a signature, so a placeholder variable
+        // used directly inside it cannot be captured -> X::Placeholder::Block.
+        if let Some(ph) = crate::ast::collect_unattached_placeholders(body)
+            .into_iter()
+            .next()
+        {
+            let err = Self::placeholder_scope_error("block", &ph);
+            let idx = self.code.add_constant(err);
+            self.code.emit(OpCode::LoadConst(idx));
+            self.code.emit(OpCode::Die);
+            return;
+        }
         // DoBlocks from lifted CHECK phasers carry a sentinel label so we can
         // wrap them in CheckPhaserStart/CheckPhaserEnd, ensuring errors inside
         // are wrapped in X::Comp::BeginTime.

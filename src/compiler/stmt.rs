@@ -2235,6 +2235,7 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterEnum(idx));
             }
+            Stmt::ClassDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
             Stmt::ClassDecl { .. } => {
                 // Pre-qualify the class name when compiling inside a
                 // `unit module`/`unit class` body so that the runtime
@@ -2248,6 +2249,7 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::AugmentClass(idx));
             }
+            Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
             Stmt::RoleDecl { .. } => {
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.code.add_stmt(stmt);

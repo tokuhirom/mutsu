@@ -327,6 +327,31 @@ impl Interpreter {
     /// Check for undeclared variable references in EVAL'd code.
     /// Collects declared variable names from VarDecl/Assign nodes and checks
     /// Var references against them and the outer environment.
+    /// Placeholder variables ($^x, @_, ...) used directly in the mainline are
+    /// X::Placeholder::Mainline. This must take precedence over the undeclared
+    /// check (otherwise `@_` would be reported as X::Undeclared).
+    pub(crate) fn check_eval_mainline_placeholders(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        if let Some(ph) = crate::ast::collect_unattached_placeholders(stmts)
+            .into_iter()
+            .next()
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("placeholder".to_string(), Value::str(ph.clone()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Cannot use placeholder parameter {} outside of a sub or block",
+                    ph
+                )),
+            );
+            return Err(RuntimeError::typed("X::Placeholder::Mainline", attrs));
+        }
+        Ok(())
+    }
+
     pub(crate) fn check_eval_undeclared_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         let mut declared: HashSet<String> = HashSet::new();
         for stmt in stmts {

@@ -99,6 +99,10 @@ pub(crate) struct Compiler {
     /// non-escaping (immediately-invoked) classification, so call arguments and
     /// control-construct blocks never over-box (the #2746 perf guard).
     escaping_position: bool,
+    /// True only for the outermost compilation unit (the mainline / a top-level
+    /// EVAL). Used to detect placeholder variables (`$^x`, `@_`, ...) that appear
+    /// outside any sub or block -> X::Placeholder::Mainline.
+    pub(crate) is_mainline: bool,
 }
 
 impl Compiler {
@@ -127,6 +131,7 @@ impl Compiler {
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
+            is_mainline: false,
         }
     }
 
@@ -566,6 +571,21 @@ impl Compiler {
         } else {
             stmts
         };
+        // A placeholder variable ($^x, @_, ...) directly in the mainline is
+        // outside any sub or block -> X::Placeholder::Mainline. Emit the Die
+        // first so it fires before any other statement runs.
+        if self.is_mainline
+            && let Some(ph) = crate::ast::collect_unattached_placeholders(stmts)
+                .into_iter()
+                .next()
+        {
+            let err = Self::placeholder_scope_error("mainline", &ph);
+            let idx = self.code.add_constant(err);
+            self.code.emit(OpCode::LoadConst(idx));
+            self.code.emit(OpCode::Die);
+            self.code.compute_needs_env_sync();
+            return (self.code, self.compiled_functions);
+        }
         self.hoist_sub_decls(stmts, false);
         // If the top-level body contains a CATCH or CONTROL block, wrap in
         // an implicit try so the phaser can observe exceptions / control

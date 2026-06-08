@@ -829,6 +829,7 @@ impl Interpreter {
         self.preregister_top_level_subs(&body_main)?;
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package.clone());
+        compiler.is_mainline = true;
         let (code, compiled_fns) = compiler.compile(&body_main);
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
@@ -942,6 +943,9 @@ impl Interpreter {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
+        // The outermost compilation unit is the mainline: placeholder variables
+        // ($^x, @_, ...) appearing here are outside any sub or block.
+        compiler.is_mainline = self.routine_stack.is_empty();
         compiler.set_current_package(self.current_package.clone());
         // Resolve distribution context: prefer the current one, then look up
         // by the current package name in case we're running a function body
