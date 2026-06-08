@@ -2111,16 +2111,22 @@ impl Value {
         }
     }
 
-    /// Read through a `ContainerRef`, returning the inner value.
-    /// Non-ContainerRef values are returned as-is.
-    pub fn deref_container(&self) -> Value {
+    /// Read through a `ContainerRef` and apply `f` to the inner value WITHOUT
+    /// cloning it. Non-ContainerRef values are passed to `f` as-is. This is the
+    /// canonical non-cloning ContainerRef-read chokepoint (the ContainerRef axis of
+    /// the decont family); prefer it over hand-rolled `arc.lock().unwrap()` reads.
+    pub fn with_deref<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
         match self {
-            Value::ContainerRef(arc) => {
-                let inner = arc.lock().unwrap();
-                inner.clone()
-            }
-            other => other.clone(),
+            Value::ContainerRef(arc) => f(&arc.lock().unwrap()),
+            other => f(other),
         }
+    }
+
+    /// Read through a `ContainerRef`, returning an owned clone of the inner value.
+    /// Non-ContainerRef values are cloned as-is. Use [`Value::with_deref`] instead
+    /// when you only need to read the inner value (it avoids the clone).
+    pub fn deref_container(&self) -> Value {
+        self.with_deref(Value::clone)
     }
 
     /// Assign a value into a `ContainerRef`.
@@ -2370,7 +2376,8 @@ impl Value {
     // mutsu has THREE "decontainerize" operations on THREE different axes.
     // They are intentionally NOT fused into one helper:
     //   - Value::descalarize / into_descalarized — strips `Scalar` ($(...)), RECURSIVE
-    //   - Value::deref_container                  — reads through `ContainerRef` (:=), single cell
+    //   - Value::with_deref / deref_container     — reads through `ContainerRef` (:=), single cell
+    //     (with_deref is non-cloning; deref_container returns an owned clone)
     //   - ArrayKind::decontainerize               — strips `ItemList`/`ItemArray` flag (list flatten)
     // A "full decont" that strips all three is deferred to Phase 1+; it must NOT be
     // applied at lvalue/container-requiring sites (is-rw writeback, :=, .VAR, =:=,

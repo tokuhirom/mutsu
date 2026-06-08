@@ -1619,10 +1619,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::HashSlotRef { .. } => "Scalar",
         Value::ArraySlotRef { .. } => "Scalar",
         Value::DeferredHashAccess { .. } => "Any",
-        Value::ContainerRef(arc) => {
-            let inner = arc.lock().unwrap();
-            value_type_name(&inner)
-        }
+        Value::ContainerRef(_) => value.with_deref(value_type_name),
     }
 }
 
