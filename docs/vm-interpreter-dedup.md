@@ -110,12 +110,25 @@ and `src/runtime/builtins*.rs`, plus method and operator duplication.
 
 - **Category A — pure value builtins, delete-and-fallthrough** (low risk; the
   above batch + any stragglers). Each needs the EVAL-path check.
-- **Category B — genuine forks** (need real consolidation, not a delete):
-  `min`/`max`/`sort`/`reverse`/`join`/`flat`/`first`/`elems`/`index`/`rindex`.
-  The native copy bails (returns `None`) on hard cases (a comparator block, a
-  `LazyList`, junction threading) and the interpreter copy handles them. To
-  collapse these, the native side must learn the hard cases first, *then* the
-  interpreter copy can be deleted. Multi-PR.
+- **Category B — genuine forks — DONE**
+  (#2727/#2728/#2730/#2731/#2733/#2734/#2735/#2739). Two distinct fork shapes,
+  collapsed by two methods:
+  - *Block forks* (`sort`/`min`/`max`/`minmax`/`first`): the native copy bailed on
+    a comparator/mapper/matcher block. Fixed by extracting the orchestration
+    (`sort_items_generic`, `extrema_from_values_generic`,
+    `minmax_from_values_generic`, `find_first_match_generic`) into one
+    engine-agnostic implementation and swapping only the block invocation through a
+    closure/trait (`SortCaller`, `FirstMatcher`, `vm_call_on_value` /
+    `call_sub_value`). The VM runs them natively (`interpreter_fallbacks=0`); the
+    interpreter copy is now a thin adapter.
+  - *Lazy forks* (`elems`/`flat`/`join`/`reverse`): the fork was lazy-forcing /
+    polymorphism re-implemented in both layers, and the two copies had **drifted**.
+    Collapsed to one correct implementation (delegate `elems`→`.elems` method,
+    `flat`/`join`→shared `flat_val`/`join_flat`, `reverse`→native), reconciling each
+    drift against `raku` — which surfaced and fixed several latent bugs
+    (`elems("hello")` 5→1, `flat` nested over-flatten, `join(sep, Range)` ignoring
+    the separator, `reverse()` `Nil`→`()`).
+  - `index`/`rindex` had no interpreter copy (already native-only).
 - **Category C — methods** duplicated across `src/builtins/methods_*` (native
   fast path) and `src/runtime/methods.rs` / `methods_mut.rs` (slow path), and
   operator/arith/coercion logic across `src/builtins/arith.rs` /

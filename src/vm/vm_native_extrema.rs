@@ -15,7 +15,7 @@
 //! arguments fall back to the interpreter unchanged.
 
 use super::*;
-use crate::value::{ArrayKind, Value};
+use crate::value::Value;
 
 impl VM {
     /// Try to run `target.min(...)` / `target.max(...)` natively. Returns
@@ -34,19 +34,10 @@ impl VM {
             _ => return None,
         };
 
-        // Only plain eager lists. Hash sorts by key via a separate path; ranges
-        // expand; everything else (Instance/Supply/Lazy/…) keeps interpreter
-        // semantics -> fall back.
-        match target {
-            Value::Array(_, ArrayKind::Array | ArrayKind::List)
-            | Value::Seq(_)
-            | Value::Slip(_)
-            | Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {}
-            _ => return None,
+        // Only plain eager lists; everything else (Hash/Instance/Supply/Lazy/…)
+        // keeps interpreter semantics -> fall back.
+        if !Self::is_plain_eager_list(target) {
+            return None;
         }
 
         // Parse args: an optional `:by` callable (a bare Sub/Routine first arg or
@@ -114,16 +105,8 @@ impl VM {
         if method != "minmax" {
             return None;
         }
-        match target {
-            Value::Array(_, ArrayKind::Array | ArrayKind::List)
-            | Value::Seq(_)
-            | Value::Slip(_)
-            | Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {}
-            _ => return None,
+        if !Self::is_plain_eager_list(target) {
+            return None;
         }
 
         // `.minmax` takes only an optional `:by` callable (no `:k`/etc. adverbs).
