@@ -211,3 +211,11 @@ push」に変えると、配列要素が `Value::Scalar`/`ContainerRef`/`ItemArr
     variables-and-packages.t が 16→13 fail に改善（副次）。
   - 検証: build/clippy/fmt PASS、`make test` PASS（456 unit + 5274 prove、回帰なし）、closure/binding/native-int
     （whitelist）roast 全 PASS。`gather.t` 38 は Phase 2 take-rw の既知未対応（非 whitelist・無関係）。全 roast は CI。
+  - **CI 回帰修正（mutation-writeback を cell 対応化）**: 初回 CI で submethods.t / S24-testing / test-util /
+    isDEPRECATED 等が回帰。根因は **`overwrite_instance_recursive`（`runtime/methods_mut.rs`、変異メソッドが
+    instance を identity で全 env 束縛へ伝播するチョークポイント）が `Value::ContainerRef` の中を見ない**こと。
+    `my $x; block { $x = Obj.new }; block { $x.mutate }` のように boxed スカラーが instance を保持し変異メソッドを
+    受けると、cell 内の instance が更新されず変異が消える（roast 頻出のテストヘルパパターン
+    `my $x; lives-ok { $x = obj }; $x.method`）。`ContainerRef` arm を追加し lock して in-place 再帰更新
+    （共有 Arc なので全保持者へ伝播）。into_deref は**読み**のみ cell 対応だったが、これで**instance 変異の
+    書き戻し**も cell 対応に。Array/Hash/`.=`/`++` の変異は既に cell 対応済みと確認。

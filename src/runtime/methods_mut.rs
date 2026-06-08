@@ -561,6 +561,15 @@ impl Interpreter {
                 Self::overwrite_instance_recursive(&mut new_inner, class_name, id, updated);
                 *value = Value::Mixin(std::sync::Arc::new(new_inner), mixins.clone());
             }
+            // A captured-and-mutated `$` scalar may be boxed into a shared
+            // `ContainerRef` cell (see box_captured_lexicals). When a mutating
+            // method runs on the instance it holds, write the update THROUGH the
+            // cell in place so all holders of the shared Arc (the outer variable
+            // and any sibling/escaping closure snapshot) observe the mutation.
+            Value::ContainerRef(arc) => {
+                let mut inner = arc.lock().unwrap();
+                Self::overwrite_instance_recursive(&mut inner, class_name, id, updated);
+            }
             _ => {}
         }
     }
