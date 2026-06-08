@@ -119,13 +119,28 @@ dual-store は [vm-dual-store.md](vm-dual-store.md)。
   parametric parents、resolution の class+role メソッド表 or_else 単一ガード化）。③ 一文 2 read ガード
   （`classes.contains_key || roles.contains_key` 3 箇所）を単一束縛ガードへ。build/clippy/make test 緑。
   挙動不変確認（ロール合成/継承/パラメタ化/punning/conflict/`but`; Stack配列属性の Nil は main と同一の既存ギャップ）。
-- 残（フィールド別 total/writes）: functions(96)/token_defs(35)/proto_*。
+- **PR-A slice 5 = PR-A 最終（本 PR, #2764 後）**: functions/subs/tokens 群 6 フィールド移行（functions,
+  our_scoped_functions, proto_functions, token_defs, proto_subs, proto_tokens）。`FunctionDef` は既に
+  Debug/Clone/pub(crate)。builtin seed 無し（全ユーザ定義）。**これで宣言レジストリが全て Registry に入り、
+  `clone_for_thread` の個別フィールド clone がゼロ＝registry 全体 clone 1 本のみ**（②の完了の定義を達成）。VM 直
+  アクセス無し。snapshot_routine_registry は単一 read ガード化、restore は read（our_scoped 収集）→guard drop→
+  write の 2 段に分離。regex/grammar サブインタプリタ構築の struct リテラル 9 箇所（`Interpreter { functions:..,
+  token_defs:.., ..Default }`）は `copy_decl_registry_into(&mut interp)` ヘルパへ（別 Arc 間 snapshot コピー）。
+  **★重大: write→write 同一ロック deadlock を発見・修正**: `match self.registry_mut().functions.entry(k) {
+  Occupied => { ... self.registry_mut().functions.entry(k2) ... } }` ＝外側 write ガード保持中に arm 内で再度
+  `registry_mut()`。**借用チェッカは別 `registry_mut()` 呼び出しを別借用と見るため未捕捉**で、**スキャナでも当初
+  見逃し→multi sub 宣言が実行時ハング**（スモークテストで顕在化）。`insert_multi_overload` ヘルパ（単一 write
+  ガードで base→`__m{N}` fallback）に統合。**教訓: read→write だけでなく write→write/write→read も危険。
+  検出スキャナは `match/if-let self.registry_mut()` ブロック本体の registry 再アクセスも走査せよ（下記）。
+  最終防衛線は make roast のタイムアウト**（make test+51823 roast サンプル緑、回帰ゼロ）。
 
-## 完了の定義（②）
+## 完了の定義（②）— **PR-A 完了（slice 1-5, #2760/2762/2763/2764/本PR）**
 
-`Interpreter` から宣言レジストリ ~30 フィールドが消え `registry: Arc<RwLock<Registry>>` 1 本に。VM の
-registry 系 lookup が `self.registry.read()` 経由へ。`clone_for_thread` のレジストリ複製が 1 行化（snapshot
-不変）。台帳の §2 前提「②レジストリ」を満たした旨を更新。③（env/型/state 移管）と §2 撲滅へ進める状態。
+`Interpreter` から宣言レジストリ全フィールドが消え `registry: Arc<RwLock<Registry>>` 1 本に。`clone_for_thread`
+のレジストリ複製は registry 全体 clone 1 行のみ（個別フィールド clone ゼロ、snapshot 不変）。VM の registry 系
+lookup は accessor 経由（多くは既に owned 返し）。**次は PR-B**（lookup/MRO/型マッチを Registry メソッド化して
+VM が `self.registry.read()` で直読み、台帳 §2 の関数 dispatch fallback 撲滅の前提を整える）→ **PR-C**
+（register_* の write-through 整理）→ ③（env/型/state 移管）。
 
 ## 非ゴール
 

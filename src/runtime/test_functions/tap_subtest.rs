@@ -41,11 +41,11 @@ impl Interpreter {
         // Override the default (true) set by begin_subtest
         self.tap.set_subtest_callable_is_sub_last(callable_is_sub);
         let saved_env = self.env.clone();
-        let saved_functions = self.functions.clone();
-        let saved_proto_functions = self.proto_functions.clone();
-        let saved_token_defs = self.token_defs.clone();
-        let saved_proto_subs = self.proto_subs.clone();
-        let saved_proto_tokens = self.proto_tokens.clone();
+        let saved_functions = self.registry().functions.clone();
+        let saved_proto_functions = self.registry().proto_functions.clone();
+        let saved_token_defs = self.registry().token_defs.clone();
+        let saved_proto_subs = self.registry().proto_subs.clone();
+        let saved_proto_tokens = self.registry().proto_tokens.clone();
         let saved_classes = self.registry().classes.clone();
         let saved_class_trusts = self.registry().class_trusts.clone();
         let saved_roles = self.registry().roles.clone();
@@ -64,11 +64,11 @@ impl Interpreter {
             self.halted = ctx.parent_halted;
             self.tap.end_subtest();
             self.env = saved_env;
-            self.functions = saved_functions;
-            self.proto_functions = saved_proto_functions;
-            self.token_defs = saved_token_defs;
-            self.proto_subs = saved_proto_subs;
-            self.proto_tokens = saved_proto_tokens;
+            self.registry_mut().functions = saved_functions;
+            self.registry_mut().proto_functions = saved_proto_functions;
+            self.registry_mut().token_defs = saved_token_defs;
+            self.registry_mut().proto_subs = saved_proto_subs;
+            self.registry_mut().proto_tokens = saved_proto_tokens;
             self.registry_mut().classes = saved_classes;
             self.registry_mut().class_trusts = saved_class_trusts;
             self.registry_mut().roles = saved_roles;
@@ -92,11 +92,11 @@ impl Interpreter {
             }
         }
         self.env = merged_env;
-        self.functions = saved_functions;
-        self.proto_functions = saved_proto_functions;
-        self.token_defs = saved_token_defs;
-        self.proto_subs = saved_proto_subs;
-        self.proto_tokens = saved_proto_tokens;
+        self.registry_mut().functions = saved_functions;
+        self.registry_mut().proto_functions = saved_proto_functions;
+        self.registry_mut().token_defs = saved_token_defs;
+        self.registry_mut().proto_subs = saved_proto_subs;
+        self.registry_mut().proto_tokens = saved_proto_tokens;
         self.registry_mut().classes = saved_classes;
         self.registry_mut().class_trusts = saved_class_trusts;
         self.registry_mut().roles = saved_roles;
@@ -139,11 +139,11 @@ impl Interpreter {
         let desc = desc_key.to_string_value();
         let ctx = self.begin_subtest();
         let saved_env = self.env.clone();
-        let saved_functions = self.functions.clone();
-        let saved_proto_functions = self.proto_functions.clone();
-        let saved_token_defs = self.token_defs.clone();
-        let saved_proto_subs = self.proto_subs.clone();
-        let saved_proto_tokens = self.proto_tokens.clone();
+        let saved_functions = self.registry().functions.clone();
+        let saved_proto_functions = self.registry().proto_functions.clone();
+        let saved_token_defs = self.registry().token_defs.clone();
+        let saved_proto_subs = self.registry().proto_subs.clone();
+        let saved_proto_tokens = self.registry().proto_tokens.clone();
         let saved_classes = self.registry().classes.clone();
         let saved_class_trusts = self.registry().class_trusts.clone();
         let saved_roles = self.registry().roles.clone();
@@ -153,11 +153,11 @@ impl Interpreter {
         self.test_fn_plan(&[Value::Int(plan)])?;
         let run_result = self.call_sub_value(block, vec![], true);
         self.env = saved_env;
-        self.functions = saved_functions;
-        self.proto_functions = saved_proto_functions;
-        self.token_defs = saved_token_defs;
-        self.proto_subs = saved_proto_subs;
-        self.proto_tokens = saved_proto_tokens;
+        self.registry_mut().functions = saved_functions;
+        self.registry_mut().proto_functions = saved_proto_functions;
+        self.registry_mut().token_defs = saved_token_defs;
+        self.registry_mut().proto_subs = saved_proto_subs;
+        self.registry_mut().proto_tokens = saved_proto_tokens;
         self.registry_mut().classes = saved_classes;
         self.registry_mut().class_trusts = saved_class_trusts;
         self.registry_mut().roles = saved_roles;

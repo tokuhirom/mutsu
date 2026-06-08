@@ -297,7 +297,7 @@ impl Interpreter {
         };
         let saved_package = self.current_package.clone();
         let before_function_keys: std::collections::HashSet<Symbol> =
-            self.functions.keys().copied().collect();
+            self.registry().functions.keys().copied().collect();
         let before_env_keys: std::collections::HashSet<Symbol> = self.env.keys().copied().collect();
         let before_class_keys: std::collections::HashSet<String> =
             self.registry().classes.keys().cloned().collect();
@@ -313,13 +313,16 @@ impl Interpreter {
         // A `sub MAIN` defined in a required module is NOT the program's MAIN
         // and must not be auto-dispatched at program end. Remove any top-level
         // MAIN routines that this module introduced.
-        Self::remove_leaked_main_routines(&mut self.functions, &before_function_keys);
+        Self::remove_leaked_main_routines(
+            &mut self.registry_mut().functions,
+            &before_function_keys,
+        );
 
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
             let mut fn_aliases: Vec<(Symbol, FunctionDef)> = Vec::new();
-            for (name, def) in &self.functions {
+            for (name, def) in &self.registry().functions {
                 if before_function_keys.contains(name) {
                     continue;
                 }
@@ -330,12 +333,12 @@ impl Interpreter {
                 }
                 let alias = format!("{pkg}::{tail}");
                 let alias_sym = Symbol::intern(&alias);
-                if !self.functions.contains_key(&alias_sym) {
+                if !self.registry().functions.contains_key(&alias_sym) {
                     fn_aliases.push((alias_sym, def.clone()));
                 }
             }
             for (alias, def) in fn_aliases {
-                self.functions.insert(alias, def);
+                self.registry_mut().functions.insert(alias, def);
             }
 
             let mut env_aliases: Vec<(String, Value)> = Vec::new();
@@ -419,6 +422,7 @@ impl Interpreter {
             let target_prefix = format!("GLOBAL::{name}/");
             let mut found = false;
             let function_entries: Vec<(Symbol, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter_map(|(k, v)| {
@@ -438,10 +442,11 @@ impl Interpreter {
                 })
                 .collect();
             for (k, v) in function_entries {
-                self.functions.insert(k, v);
+                self.registry_mut().functions.insert(k, v);
             }
             return found
                 || self
+                    .registry()
                     .functions
                     .contains_key(&Symbol::intern(&format!("GLOBAL::{name}")));
         }
@@ -487,7 +492,10 @@ impl Interpreter {
             return true;
         }
         if let Some(value) = self.env.get(&source_single).cloned() {
-            if self.functions.contains_key(&Symbol::intern(&source_single))
+            if self
+                .registry()
+                .functions
+                .contains_key(&Symbol::intern(&source_single))
                 && matches!(value, Value::Int(_))
             {
                 return false;
@@ -592,6 +600,7 @@ impl Interpreter {
             let prefix = format!("{module}::");
             if self.loaded_modules.contains(module)
                 && !self
+                    .registry()
                     .functions
                     .keys()
                     .any(|k| k.resolve().starts_with(&prefix))

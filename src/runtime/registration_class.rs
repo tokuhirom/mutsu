@@ -1466,8 +1466,12 @@ impl Interpreter {
                 class_own_attrs.insert(attr_name.resolve());
             }
         }
-        let saved_functions_keys: HashSet<String> =
-            self.functions.keys().map(|k| k.resolve()).collect();
+        let saved_functions_keys: HashSet<String> = self
+            .registry()
+            .functions
+            .keys()
+            .map(|k| k.resolve())
+            .collect();
         // LEAVE phasers declared at class-body scope (e.g. via
         // `my $x will leave { ... }`) must fire when the class body is left,
         // i.e. once all body statements have been processed. Collect them here
@@ -2027,7 +2031,8 @@ impl Interpreter {
                             is_default: *is_default_candidate,
                             deprecated_message: None,
                         };
-                        self.functions
+                        self.registry_mut()
+                            .functions
                             .insert(Symbol::intern(&qualified_name), func_def);
                     }
                     // `my method` registers as a lexically-scoped function
@@ -2101,11 +2106,13 @@ impl Interpreter {
                             deprecated_message: None,
                         };
                         // Register under the short name (lexical scope)
-                        self.functions
+                        self.registry_mut()
+                            .functions
                             .insert(Symbol::intern(&resolved_method_name), func_def.clone());
                         // Also register under the qualified name for consistency
                         let qualified_name = format!("{}::{}", name, resolved_method_name);
-                        self.functions
+                        self.registry_mut()
+                            .functions
                             .insert(Symbol::intern(&qualified_name), func_def);
                         // Mark as my-scoped so it doesn't appear in the package stash
                         self.mark_my_scoped_package_item(qualified_name);
@@ -2282,7 +2289,7 @@ impl Interpreter {
             // registered via MethodDecl and stored in the class methods table).
             if let Stmt::SubDecl { name: sub_name, .. } = stmt {
                 let fq = format!("{}::{}", name, sub_name);
-                if self.functions.contains_key(&Symbol::intern(&fq))
+                if self.registry().functions.contains_key(&Symbol::intern(&fq))
                     && !saved_functions_keys.contains(&fq)
                 {
                     self.registry_mut()

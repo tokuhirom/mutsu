@@ -708,7 +708,7 @@ impl Interpreter {
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         // Include all user-defined operators (infix, prefix, postfix,
         // circumfix, postcircumfix) so the EVAL parser can recognize them.
-        for key in self.functions.keys() {
+        for key in self.registry().functions.keys() {
             let key_s = key.resolve();
             let name = if let Some(pos) = key_s.rfind("::") {
                 &key_s[pos + 2..]
@@ -807,7 +807,7 @@ impl Interpreter {
     /// the `first` listop builtin) to parse correctly as `first().uc`.
     pub(crate) fn collect_eval_user_sub_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for key in self.functions.keys() {
+        for key in self.registry().functions.keys() {
             let key_s = key.resolve();
             let short = if let Some(pos) = key_s.rfind("::") {
                 &key_s[pos + 2..]

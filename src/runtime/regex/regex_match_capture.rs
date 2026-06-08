@@ -342,10 +342,10 @@ impl Interpreter {
                 if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {
                     let mut interp = Interpreter {
                         env: self.env.clone(),
-                        functions: self.functions.clone(),
                         current_package: self.current_package.clone(),
                         ..Default::default()
                     };
+                    self.copy_decl_registry_into(&mut interp);
                     let _ = interp.eval_block_value(&stmts);
                     let mut new_caps = current_caps.clone();
                     for (k, v) in &interp.env {
@@ -393,15 +393,13 @@ impl Interpreter {
                     let tail_text: String = tail.iter().collect();
                     let mut interp = Interpreter {
                         env: self.env.clone(),
-                        functions: self.functions.clone(),
-                        proto_functions: self.proto_functions.clone(),
-                        token_defs: self.token_defs.clone(),
                         current_package: sub_pkg.clone(),
                         var_dynamic_flags: self.var_dynamic_flags.clone(),
                         var_type_constraints: self.var_type_constraints.clone(),
                         state_vars: self.state_vars.clone(),
                         ..Default::default()
                     };
+                    self.copy_decl_registry_into(&mut interp);
                     if let Some(mut inner_caps) =
                         interp.regex_match_with_captures(&sub_pat, &tail_text)
                     {

@@ -709,7 +709,7 @@ impl Interpreter {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
         let mut multi_idx = 0usize;
-        for (key, def) in &self.functions {
+        for (key, def) in &self.registry().functions {
             let key_s = key.resolve();
             if key_s == exact_local
                 || key_s == exact_global

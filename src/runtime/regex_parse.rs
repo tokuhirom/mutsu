@@ -5947,11 +5947,10 @@ impl Interpreter {
         };
         let mut interp = Interpreter {
             env: self.env.clone(),
-            functions: self.functions.clone(),
-            token_defs: self.token_defs.clone(),
             current_package: self.current_package.clone(),
             ..Default::default()
         };
+        self.copy_decl_registry_into(&mut interp);
         match interp.eval_block_value(&stmts) {
             Ok(v) => v,
             Err(e) => e.return_value.unwrap_or(Value::Nil),

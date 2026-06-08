@@ -842,17 +842,12 @@ pub struct Interpreter {
     /// Tracks whether any output was emitted (useful when immediate_stdout
     /// skips the buffer).
     output_emitted: bool,
-    functions: HashMap<Symbol, FunctionDef>,
-    /// Functions declared with `our` scope that should persist across block boundaries.
-    our_scoped_functions: HashMap<Symbol, FunctionDef>,
     operator_assoc: HashMap<String, String>,
     /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
     /// imported into the current lexical scope via `use Module`. Used to
     /// preseed the parser when EVAL is called so that imported operators
     /// remain visible, but non-exported operators from loaded modules do not.
     pub(crate) imported_operator_names: HashSet<String>,
-    proto_functions: HashMap<Symbol, FunctionDef>,
-    token_defs: HashMap<Symbol, Vec<FunctionDef>>,
     lib_paths: Vec<String>,
     handles: HashMap<usize, IoHandleState>,
     next_handle_id: usize,
@@ -884,8 +879,6 @@ pub struct Interpreter {
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
     /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
     registry: Arc<RwLock<Registry>>,
-    proto_subs: HashSet<String>,
-    proto_tokens: HashSet<String>,
     proto_dispatch_stack: Vec<(String, Vec<Value>)>,
     pending_dispatch_error: Option<RuntimeError>,
     end_phasers: Vec<(Vec<Stmt>, Env)>,
@@ -2830,12 +2823,8 @@ impl Interpreter {
             nested_mode: false,
             immediate_stdout: false,
             output_emitted: false,
-            functions: HashMap::new(),
-            our_scoped_functions: HashMap::new(),
             operator_assoc: HashMap::new(),
             imported_operator_names: HashSet::new(),
-            proto_functions: HashMap::new(),
-            token_defs: HashMap::new(),
             lib_paths: Vec::new(),
             handles: HashMap::new(),
             next_handle_id: 1,
@@ -3036,8 +3025,6 @@ impl Interpreter {
                 };
                 Arc::new(RwLock::new(registry))
             },
-            proto_subs: HashSet::new(),
-            proto_tokens: HashSet::new(),
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,
             end_phasers: Vec::new(),
@@ -3415,7 +3402,7 @@ impl Interpreter {
 
     /// Save current function/class keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
-        let func_keys: HashSet<Symbol> = self.functions.keys().copied().collect();
+        let func_keys: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
         let class_keys: HashSet<String> = self.registry().classes.keys().cloned().collect();
         self.import_scope_stack.push((
             func_keys,
@@ -3432,7 +3419,9 @@ impl Interpreter {
         if let Some((func_snapshot, class_snapshot, newline_mode, strict_mode, fatal_mode)) =
             self.import_scope_stack.pop()
         {
-            self.functions.retain(|key, _| func_snapshot.contains(key));
+            self.registry_mut()
+                .functions
+                .retain(|key, _| func_snapshot.contains(key));
             self.registry_mut()
                 .classes
                 .retain(|key, _| class_snapshot.contains(key));
@@ -3503,7 +3492,7 @@ impl Interpreter {
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let role_snapshot: HashSet<String> = self.registry().roles.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
-        let func_keys_before: HashSet<Symbol> = self.functions.keys().copied().collect();
+        let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
 
         let result = if module == "Test"
             || matches!(
@@ -3668,11 +3657,12 @@ impl Interpreter {
                             // This export should NOT be imported — remove from GLOBAL
                             let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
                             if !func_keys_before.contains(&global_key) {
-                                self.functions.remove(&global_key);
+                                self.registry_mut().functions.remove(&global_key);
                             }
                             // Also remove multi-dispatch variants
                             let prefix = format!("GLOBAL::{}/", name);
                             let multi_keys: Vec<Symbol> = self
+                                .registry()
                                 .functions
                                 .keys()
                                 .filter(|k| {
@@ -3682,7 +3672,7 @@ impl Interpreter {
                                 .copied()
                                 .collect();
                             for mk in multi_keys {
-                                self.functions.remove(&mk);
+                                self.registry_mut().functions.remove(&mk);
                             }
                         }
                     }
@@ -3711,6 +3701,7 @@ impl Interpreter {
                 }
             }
             let non_exported_op_globals: Vec<Symbol> = self
+                .registry()
                 .functions
                 .keys()
                 .filter(|k| {
@@ -3729,7 +3720,7 @@ impl Interpreter {
                 .copied()
                 .collect();
             for k in non_exported_op_globals {
-                self.functions.remove(&k);
+                self.registry_mut().functions.remove(&k);
             }
 
             // Remove GLOBAL:: sub aliases that were leaked by sub hoisting during
@@ -3760,6 +3751,7 @@ impl Interpreter {
                     }
                 }
                 let leaked_globals: Vec<Symbol> = self
+                    .registry()
                     .functions
                     .keys()
                     .filter(|k| {
@@ -3776,7 +3768,7 @@ impl Interpreter {
                     .copied()
                     .collect();
                 for k in leaked_globals {
-                    self.functions.remove(&k);
+                    self.registry_mut().functions.remove(&k);
                 }
             }
 
@@ -3812,27 +3804,34 @@ impl Interpreter {
         // Package::EXPORT::TAG::name resolve via normal function lookup.
         let fq_key = format!("{}::{}", package, name);
         let fq_sym = crate::symbol::Symbol::intern(&fq_key);
-        if let Some(def) = self.functions.get(&fq_sym).cloned() {
+        // Hoist the clone to a `let` so the read guard drops before the
+        // registry_mut writes below (read->write on the same lock deadlocks).
+        let def = self.registry().functions.get(&fq_sym).cloned();
+        if let Some(def) = def {
             for tag in &tags {
                 // Bare EXPORT::TAG::name (accessible from the same package)
                 let bare_export = format!("EXPORT::{}::{}", tag, name);
-                self.functions
+                self.registry_mut()
+                    .functions
                     .entry(crate::symbol::Symbol::intern(&bare_export))
                     .or_insert_with(|| def.clone());
                 // Fully-qualified Package::EXPORT::TAG::name
                 let pkg_export = format!("{}::EXPORT::{}::{}", package, tag, name);
-                self.functions
+                self.registry_mut()
+                    .functions
                     .entry(crate::symbol::Symbol::intern(&pkg_export))
                     .or_insert_with(|| def.clone());
             }
             // Always register under EXPORT::ALL::name
             if !tags.contains(&"ALL".to_string()) {
                 let bare_all = format!("EXPORT::ALL::{}", name);
-                self.functions
+                self.registry_mut()
+                    .functions
                     .entry(crate::symbol::Symbol::intern(&bare_all))
                     .or_insert_with(|| def.clone());
                 let pkg_all = format!("{}::EXPORT::ALL::{}", package, name);
-                self.functions
+                self.registry_mut()
+                    .functions
                     .entry(crate::symbol::Symbol::intern(&pkg_all))
                     .or_insert_with(|| def);
             }
@@ -3979,6 +3978,7 @@ impl Interpreter {
             let target_prefix = format!("{target_pkg}::{name}/");
 
             let function_entries: Vec<(Symbol, FunctionDef)> = self
+                .registry()
                 .functions
                 .iter()
                 .filter_map(|(k, v)| {
@@ -3996,10 +3996,11 @@ impl Interpreter {
                 })
                 .collect();
             for (k, v) in function_entries {
-                self.functions.insert(k, v);
+                self.registry_mut().functions.insert(k, v);
             }
 
             let proto_entries: Vec<(Symbol, FunctionDef)> = self
+                .registry()
                 .proto_functions
                 .iter()
                 .filter_map(|(k, v)| {
@@ -4011,7 +4012,7 @@ impl Interpreter {
                 })
                 .collect();
             for (k, v) in proto_entries {
-                self.proto_functions.insert(k, v);
+                self.registry_mut().proto_functions.insert(k, v);
             }
 
             // If this exported sub carried a trait-modified value (e.g. a role
@@ -5187,12 +5188,8 @@ impl Interpreter {
             nested_mode: self.nested_mode,
             immediate_stdout: false,
             output_emitted: false,
-            functions: self.functions.clone(),
-            our_scoped_functions: self.our_scoped_functions.clone(),
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
-            proto_functions: self.proto_functions.clone(),
-            token_defs: self.token_defs.clone(),
             lib_paths: self.lib_paths.clone(),
             handles: cloned_handles,
             next_handle_id: self.next_handle_id,
@@ -5218,8 +5215,6 @@ impl Interpreter {
             // independent snapshot (matches prior per-field clone semantics: the
             // child sees parent declarations but its own new ones don't leak back).
             registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
-            proto_subs: self.proto_subs.clone(),
-            proto_tokens: self.proto_tokens.clone(),
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,
             end_phasers: Vec::new(),

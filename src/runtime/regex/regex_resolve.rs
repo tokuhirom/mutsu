@@ -153,7 +153,7 @@ impl Interpreter {
         out: &mut Vec<(String, String, Option<String>)>,
     ) {
         let exact_key = format!("{scope}::{name}");
-        if let Some(defs) = self.token_defs.get(&Symbol::intern(&exact_key)) {
+        if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
                     out.push((p, def.package.resolve(), None));
@@ -163,6 +163,7 @@ impl Interpreter {
         let sym_prefix_angle = format!("{scope}::{name}:sym<");
         let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
         let mut sym_keys: Vec<String> = self
+            .registry()
             .token_defs
             .keys()
             .map(|key| key.resolve())
@@ -171,7 +172,7 @@ impl Interpreter {
         sym_keys.sort();
         for key in &sym_keys {
             let sym_val = Self::extract_sym_adverb(key);
-            if let Some(defs) = self.token_defs.get(&Symbol::intern(key)) {
+            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
                         out.push((p, def.package.resolve(), sym_val.clone()));
@@ -476,12 +477,10 @@ impl Interpreter {
         let (stmts, _) = crate::parse_dispatch::parse_source(&source).ok()?;
         let mut interp = Interpreter {
             env: self.make_regex_eval_env(caps),
-            functions: self.functions.clone(),
-            proto_functions: self.proto_functions.clone(),
-            token_defs: self.token_defs.clone(),
             current_package: self.current_package.clone(),
             ..Default::default()
         };
+        self.copy_decl_registry_into(&mut interp);
         match interp.eval_block_value(&stmts) {
             Ok(v) => Some(v),
             Err(e) => e.return_value,

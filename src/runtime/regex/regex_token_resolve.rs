@@ -6,12 +6,13 @@ impl Interpreter {
     pub(super) fn resolve_token_defs_in_pkg(&self, name: &str, pkg: &str) -> Vec<FunctionDef> {
         let mut out = Vec::new();
         if name.contains("::") {
-            if let Some(defs) = self.token_defs.get(&Symbol::intern(name)) {
+            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(name)) {
                 out.extend(defs.clone());
             }
             let sym_prefix_angle = format!("{name}:sym<");
             let sym_prefix_french = format!("{name}:sym\u{ab}");
             let mut sym_keys: Vec<String> = self
+                .registry()
                 .token_defs
                 .keys()
                 .map(|key| key.resolve())
@@ -21,7 +22,7 @@ impl Interpreter {
                 .collect();
             sym_keys.sort();
             for key in &sym_keys {
-                if let Some(defs) = self.token_defs.get(&Symbol::intern(key)) {
+                if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                     out.extend(defs.clone());
                 }
             }
@@ -66,12 +67,10 @@ impl Interpreter {
         for def in self.resolve_token_defs_in_pkg(name, pkg) {
             let mut interp = Interpreter {
                 env: self.env.clone(),
-                functions: self.functions.clone(),
-                proto_functions: self.proto_functions.clone(),
-                token_defs: self.token_defs.clone(),
                 current_package: def.package.resolve(),
                 ..Default::default()
             };
+            self.copy_decl_registry_into(&mut interp);
             let saved_env = interp.env.clone();
             if interp
                 .bind_function_args_values(&def.param_defs, &def.params, arg_values)

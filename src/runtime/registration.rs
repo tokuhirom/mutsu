@@ -679,8 +679,11 @@ impl Interpreter {
 
     pub(crate) fn has_declared_function(&self, name: &str) -> bool {
         let fq = format!("{}::{}", self.current_package, name);
-        self.functions.contains_key(&Symbol::intern(&fq))
-            || self.functions.contains_key(&Symbol::intern(name))
+        self.registry().functions.contains_key(&Symbol::intern(&fq))
+            || self
+                .registry()
+                .functions
+                .contains_key(&Symbol::intern(name))
     }
 
     pub(crate) fn is_implicit_zero_arg_builtin(name: &str) -> bool {
@@ -690,7 +693,8 @@ impl Interpreter {
     /// Check if a multi-dispatched function with the given name exists (any arity).
     pub(crate) fn has_multi_function(&self, name: &str) -> bool {
         let fq_slash = format!("{}::{}/", self.current_package, name);
-        self.functions
+        self.registry()
+            .functions
             .keys()
             .any(|k| k.resolve().starts_with(&fq_slash))
     }

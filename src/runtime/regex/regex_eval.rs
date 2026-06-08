@@ -3,6 +3,25 @@ use super::regex_helpers::{CaseFoldIter, matches_named_builtin};
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Copy the declaration registry (functions / proto_functions / token_defs)
+    /// from `self` into a freshly-built sub-interpreter used for regex/grammar
+    /// evaluation. `self` and `target` have distinct registry `Arc`s, so this is
+    /// a snapshot copy (matches the prior per-field clone in the struct literal).
+    pub(crate) fn copy_decl_registry_into(&self, target: &mut Interpreter) {
+        let (functions, proto_functions, token_defs) = {
+            let src = self.registry();
+            (
+                src.functions.clone(),
+                src.proto_functions.clone(),
+                src.token_defs.clone(),
+            )
+        };
+        let mut dst = target.registry_mut();
+        dst.functions = functions;
+        dst.proto_functions = proto_functions;
+        dst.token_defs = token_defs;
+    }
+
     /// Evaluate a closure interpolation `<{ code }>` inside a regex.
     /// Returns the regex pattern string to match against.
     pub(super) fn eval_regex_closure_interpolation(
@@ -21,11 +40,10 @@ impl Interpreter {
         let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
         let mut interp = Interpreter {
             env,
-            functions: self.functions.clone(),
-            token_defs: self.token_defs.clone(),
             current_package: self.current_package.clone(),
             ..Default::default()
         };
+        self.copy_decl_registry_into(&mut interp);
         let val = match interp.eval_block_value(&stmts) {
             Ok(v) => v,
             Err(e) => e.return_value?,
@@ -107,11 +125,10 @@ impl Interpreter {
         // Evaluate the code in a fresh interpreter with this env
         let mut interp = Interpreter {
             env,
-            functions: self.functions.clone(),
-            token_defs: self.token_defs.clone(),
             current_package: self.current_package.clone(),
             ..Default::default()
         };
+        self.copy_decl_registry_into(&mut interp);
         match interp.eval_block_value(&stmts) {
             Ok(val) => val.truthy(),
             Err(_) => false,
@@ -153,11 +170,10 @@ impl Interpreter {
         let env = self.make_regex_eval_env(caps);
         let mut interp = Interpreter {
             env,
-            functions: self.functions.clone(),
-            token_defs: self.token_defs.clone(),
             current_package: self.current_package.clone(),
             ..Default::default()
         };
+        self.copy_decl_registry_into(&mut interp);
         let val = match interp.eval_block_value(&stmts) {
             Ok(v) => v,
             Err(_) => return None,

@@ -61,6 +61,34 @@ fn string_increment(s: &str) -> String {
 }
 
 impl Interpreter {
+    /// Insert a multi-overload `def` into the function registry under `base_key`,
+    /// falling back to the first free `base_key__m{N}` suffix when `base_key` is
+    /// already taken. Uses a SINGLE write guard for all probes — the previous
+    /// `match self.registry_mut().functions.entry(..) { Occupied => self.registry_mut()... }`
+    /// shape acquired a second write lock inside the arm and deadlocked (the
+    /// borrow checker cannot see it because each `registry_mut()` is a fresh guard).
+    fn insert_multi_overload(&mut self, base_key: &str, def: FunctionDef) {
+        let mut registry = self.registry_mut();
+        let funcs = &mut registry.functions;
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            funcs.entry(Symbol::intern(base_key))
+        {
+            entry.insert(def);
+            return;
+        }
+        let mut idx = 1usize;
+        loop {
+            let key = format!("{}__m{}", base_key, idx);
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                funcs.entry(Symbol::intern(&key))
+            {
+                entry.insert(def);
+                return;
+            }
+            idx += 1;
+        }
+    }
+
     fn default_check_constraint_base(constraint: &str) -> &str {
         let mut end = constraint.len();
         for (idx, ch) in constraint.char_indices() {
@@ -207,7 +235,7 @@ impl Interpreter {
         });
         if multi {
             let single_key = format!("{}::{}", self.current_package, name);
-            if is_our_scoped && !self.proto_subs.contains(&single_key) {
+            if is_our_scoped && !self.registry().proto_subs.contains(&single_key) {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(
                     "message".to_string(),
@@ -236,12 +264,13 @@ impl Interpreter {
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
         let single_key_sym = Symbol::intern(&single_key);
-        let has_single = self.functions.contains_key(&single_key_sym);
+        let has_single = self.registry().functions.contains_key(&single_key_sym);
         let has_multi = self
+            .registry()
             .functions
             .keys()
             .any(|k| k.resolve().starts_with(&multi_prefix));
-        let has_proto = self.proto_subs.contains(&single_key);
+        let has_proto = self.registry().proto_subs.contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
             && !matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)))
             && !matches!(
@@ -268,7 +297,10 @@ impl Interpreter {
             }
         }
         let has_user_custom_traits = custom_traits.iter().any(|(t, _)| !t.starts_with("__"));
-        if let Some(existing) = self.functions.get(&single_key_sym) {
+        // Clone the existing def out so the guard drops before mutating self.env
+        // (registration cold path, so the FunctionDef clone is cheap enough).
+        let existing = self.registry().functions.get(&single_key_sym).cloned();
+        if let Some(existing) = existing {
             let same = existing.package == new_def.package
                 && existing.name == new_def.name
                 && existing.params == new_def.params
@@ -306,6 +338,7 @@ impl Interpreter {
             }
         }
         let existing_is_stub = self
+            .registry()
             .functions
             .get(&single_key_sym)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
@@ -330,7 +363,7 @@ impl Interpreter {
         if !multi && allow_lexical_shadow && !is_our_scoped {
             let lexical_single = format!("{}::{}", self.current_package, name);
             let lexical_multi_prefix = format!("{}::{}/", self.current_package, name);
-            self.functions.retain(|key, _| {
+            self.registry_mut().functions.retain(|key, _| {
                 let resolved = key.resolve();
                 resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
             });
@@ -372,59 +405,34 @@ impl Interpreter {
                     arity,
                     type_sig.join(",")
                 );
-                match self.functions.entry(Symbol::intern(&typed_fq)) {
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(def.clone());
-                    }
-                    std::collections::hash_map::Entry::Occupied(_) => {
-                        let mut idx = 1usize;
-                        loop {
-                            let key = format!("{}__m{}", typed_fq, idx);
-                            if let std::collections::hash_map::Entry::Vacant(entry) =
-                                self.functions.entry(Symbol::intern(&key))
-                            {
-                                entry.insert(def.clone());
-                                break;
-                            }
-                            idx += 1;
-                        }
-                    }
-                }
+                self.insert_multi_overload(&typed_fq, def.clone());
             }
             let fq = format!("{}::{}/{}", self.current_package, name, arity);
             if !has_types || name == "trait_mod:<is>" {
-                match self.functions.entry(Symbol::intern(&fq)) {
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(def);
-                    }
-                    std::collections::hash_map::Entry::Occupied(_) => {
-                        let mut idx = 1usize;
-                        loop {
-                            let key = format!("{}__m{}", fq, idx);
-                            if let std::collections::hash_map::Entry::Vacant(entry) =
-                                self.functions.entry(Symbol::intern(&key))
-                            {
-                                entry.insert(def);
-                                break;
-                            }
-                            idx += 1;
-                        }
-                    }
-                }
+                self.insert_multi_overload(&fq, def);
             } else {
-                self.functions.entry(Symbol::intern(&fq)).or_insert(def);
+                self.registry_mut()
+                    .functions
+                    .entry(Symbol::intern(&fq))
+                    .or_insert(def);
             }
         } else {
             let fq = format!("{}::{}", self.current_package, name);
-            self.functions.insert(Symbol::intern(&fq), def);
+            self.registry_mut()
+                .functions
+                .insert(Symbol::intern(&fq), def);
         }
         // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
         // so it survives block scope restoration.
         if is_our_scoped {
             let fq = format!("{}::{}", self.current_package, name);
-            if let Some(f) = self.functions.get(&Symbol::intern(&fq)) {
-                self.our_scoped_functions
-                    .insert(Symbol::intern(&fq), f.clone());
+            // Clone out before the registry_mut write (read->write on the same
+            // lock would deadlock).
+            let f = self.registry().functions.get(&Symbol::intern(&fq)).cloned();
+            if let Some(f) = f {
+                self.registry_mut()
+                    .our_scoped_functions
+                    .insert(Symbol::intern(&fq), f);
             }
         }
         // If this is NOT our-scoped and we're inside a non-GLOBAL package,
@@ -582,20 +590,24 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let key = format!("{}::{}", self.current_package, name);
-        if self.functions.contains_key(&Symbol::intern(&key)) {
+        if self
+            .registry()
+            .functions
+            .contains_key(&Symbol::intern(&key))
+        {
             return Err(RuntimeError::redeclaration_routine(name));
         }
-        if self.proto_subs.contains(&key) {
+        if self.registry().proto_subs.contains(&key) {
             return Err(RuntimeError::redeclaration_routine(name));
         }
         let prefix = format!("{key}/");
-        self.functions.retain(|existing, _| {
+        self.registry_mut().functions.retain(|existing, _| {
             let resolved = existing.resolve();
             resolved != key && !resolved.starts_with(&prefix)
         });
-        self.proto_subs.insert(key);
+        self.registry_mut().proto_subs.insert(key);
         let fq = format!("{}::{}", self.current_package, name);
-        self.proto_functions.insert(
+        self.registry_mut().proto_functions.insert(
             Symbol::intern(&fq),
             FunctionDef {
                 package: Symbol::intern(&self.current_package),
@@ -713,18 +725,19 @@ impl Interpreter {
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
         let multi_prefix = format!("GLOBAL::{}/", name);
-        let has_single = self.functions.contains_key(&single_key_sym);
+        let has_single = self.registry().functions.contains_key(&single_key_sym);
         let has_multi = self
+            .registry()
             .functions
             .keys()
             .any(|k| k.resolve().starts_with(&multi_prefix));
-        let has_proto = self.proto_subs.contains(&single_key);
+        let has_proto = self.registry().proto_subs.contains(&single_key);
         if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("GLOBAL::{}", name), assoc.clone());
         }
-        if let Some(existing) = self.functions.get(&single_key_sym) {
+        if let Some(existing) = self.registry().functions.get(&single_key_sym) {
             let same = existing.package == def.package
                 && existing.name == def.name
                 && existing.params == def.params
@@ -743,6 +756,7 @@ impl Interpreter {
             }
         }
         let existing_is_stub = self
+            .registry()
             .functions
             .get(&single_key_sym)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
@@ -766,31 +780,18 @@ impl Interpreter {
             let has_types = type_sig.iter().any(|t| *t != "Any");
             if has_types {
                 let typed_fq = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
-                self.functions
+                self.registry_mut()
+                    .functions
                     .insert(Symbol::intern(&typed_fq), def.clone());
             }
             let fq = format!("GLOBAL::{}/{}", name, arity);
             if !has_types {
-                match self.functions.entry(Symbol::intern(&fq)) {
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(def);
-                    }
-                    std::collections::hash_map::Entry::Occupied(_) => {
-                        let mut idx = 1usize;
-                        loop {
-                            let key = format!("{}__m{}", fq, idx);
-                            if let std::collections::hash_map::Entry::Vacant(entry) =
-                                self.functions.entry(Symbol::intern(&key))
-                            {
-                                entry.insert(def);
-                                break;
-                            }
-                            idx += 1;
-                        }
-                    }
-                }
+                self.insert_multi_overload(&fq, def);
             } else {
-                self.functions.entry(Symbol::intern(&fq)).or_insert(def);
+                self.registry_mut()
+                    .functions
+                    .entry(Symbol::intern(&fq))
+                    .or_insert(def);
             }
         } else {
             if has_multi && !has_proto && !supersede {
@@ -800,7 +801,9 @@ impl Interpreter {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
             let fq = format!("GLOBAL::{}", name);
-            self.functions.insert(Symbol::intern(&fq), def);
+            self.registry_mut()
+                .functions
+                .insert(Symbol::intern(&fq), def);
         }
         let callable_key = format!("__mutsu_callable_id::GLOBAL::{}", name);
         self.env.insert(
@@ -819,10 +822,14 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let key = format!("GLOBAL::{}", name);
-        if self.functions.contains_key(&Symbol::intern(&key)) {
+        if self
+            .registry()
+            .functions
+            .contains_key(&Symbol::intern(&key))
+        {
             return Err(RuntimeError::redeclaration_routine(name));
         }
-        if self.proto_subs.contains(&key) {
+        if self.registry().proto_subs.contains(&key) {
             // A proto with this name is already visible in GLOBAL. This happens
             // when `is export` on a GLOBAL proto hits both local/global paths,
             // or when an outer (mainline) `proto sub` of the same name already
@@ -832,8 +839,8 @@ impl Interpreter {
             // be a spurious redeclaration error, so skip it.
             return Ok(());
         }
-        self.proto_subs.insert(key.clone());
-        self.proto_functions.insert(
+        self.registry_mut().proto_subs.insert(key.clone());
+        self.registry_mut().proto_functions.insert(
             Symbol::intern(&key),
             FunctionDef {
                 package: Symbol::intern("GLOBAL"),
@@ -856,7 +863,7 @@ impl Interpreter {
 
     pub(crate) fn register_proto_token_decl(&mut self, name: &str) {
         let key = format!("{}::{}", self.current_package, name);
-        self.proto_tokens.insert(key);
+        self.registry_mut().proto_tokens.insert(key);
     }
 
     pub(crate) fn register_enum_decl(

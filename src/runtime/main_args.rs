@@ -192,7 +192,7 @@ impl Interpreter {
             }
             p
         };
-        for (key, def) in &self.functions {
+        for (key, def) in &self.registry().functions {
             let ks = key.resolve();
             if prefixes.iter().any(|prefix| ks.starts_with(prefix)) {
                 let fp =

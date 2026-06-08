@@ -27,11 +27,11 @@ impl Interpreter {
                 }
                 nested.lib_paths = self.lib_paths.clone();
                 nested.program_path = self.program_path.clone();
-                nested.functions = self.functions.clone();
-                nested.proto_functions = self.proto_functions.clone();
-                nested.token_defs = self.token_defs.clone();
-                nested.proto_subs = self.proto_subs.clone();
-                nested.proto_tokens = self.proto_tokens.clone();
+                nested.registry_mut().functions = self.registry().functions.clone();
+                nested.registry_mut().proto_functions = self.registry().proto_functions.clone();
+                nested.registry_mut().token_defs = self.registry().token_defs.clone();
+                nested.registry_mut().proto_subs = self.registry().proto_subs.clone();
+                nested.registry_mut().proto_tokens = self.registry().proto_tokens.clone();
                 nested.registry_mut().classes = self.registry().classes.clone();
                 nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
                 nested.registry_mut().class_composed_roles =
@@ -363,11 +363,11 @@ impl Interpreter {
                 nested.strict_mode = self.strict_mode;
                 nested.lib_paths = self.lib_paths.clone();
                 nested.program_path = self.program_path.clone();
-                nested.functions = self.functions.clone();
-                nested.proto_functions = self.proto_functions.clone();
-                nested.token_defs = self.token_defs.clone();
-                nested.proto_subs = self.proto_subs.clone();
-                nested.proto_tokens = self.proto_tokens.clone();
+                nested.registry_mut().functions = self.registry().functions.clone();
+                nested.registry_mut().proto_functions = self.registry().proto_functions.clone();
+                nested.registry_mut().token_defs = self.registry().token_defs.clone();
+                nested.registry_mut().proto_subs = self.registry().proto_subs.clone();
+                nested.registry_mut().proto_tokens = self.registry().proto_tokens.clone();
                 nested.registry_mut().classes = self.registry().classes.clone();
                 nested.registry_mut().roles = self.registry().roles.clone();
                 nested.registry_mut().subsets = self.registry().subsets.clone();
