@@ -127,7 +127,7 @@ impl VM {
                                 return false;
                             }
                             let resolved_base = self.interpreter.resolve_subset_base_type(tc);
-                            return !matches!(resolved_base, "Mu" | "Junction");
+                            return !matches!(resolved_base.as_str(), "Mu" | "Junction");
                         }
                         return true; // No type constraint = default Any
                     }
@@ -148,7 +148,7 @@ impl VM {
                         // junction should be passed as-is to the subset's
                         // where-clause check.
                         let resolved_base = self.interpreter.resolve_subset_base_type(tc);
-                        if matches!(resolved_base, "Mu" | "Junction") {
+                        if matches!(resolved_base.as_str(), "Mu" | "Junction") {
                             return false;
                         }
                         return true;

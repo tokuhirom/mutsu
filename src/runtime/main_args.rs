@@ -540,12 +540,12 @@ impl Interpreter {
     /// params show `[=SubsetName]`, everything else shows `=<value>`.
     fn usage_value_placeholder(&self, pd: &ParamDef) -> String {
         if let Some(tc) = &pd.type_constraint {
-            if let Some(variants) = self.enum_types.get(tc.as_str()) {
+            if let Some(variants) = self.registry().enum_types.get(tc.as_str()) {
                 let mut names: Vec<&str> = variants.iter().map(|(k, _)| k.as_str()).collect();
                 names.sort_unstable();
                 return format!("=<{}> ({})", tc, names.join(" "));
             }
-            if self.subsets.contains_key(tc.as_str()) {
+            if self.registry().subsets.contains_key(tc.as_str()) {
                 return format!("[={}]", tc);
             }
         }
@@ -568,17 +568,22 @@ impl Interpreter {
             _ => {}
         }
         let matching: Vec<String> = self
+            .registry()
             .enum_types
             .iter()
             .filter(|(_, variants)| variants.iter().any(|(k, _)| k == &name))
             .map(|(enum_name, _)| enum_name.clone())
             .collect();
-        if matching.len() == 1
-            && let Some(variants) = self.enum_types.get(&matching[0]).cloned()
-            && let Some(enum_val) =
-                self.coerce_to_enum_variant(&matching[0], &variants, Value::str(name))
-        {
-            return enum_val;
+        if matching.len() == 1 {
+            // Hoist the registry read so the guard drops before coerce_to_enum_variant
+            // (which needs &mut self); never hold a guard across user-code re-entry.
+            let variants = self.registry().enum_types.get(&matching[0]).cloned();
+            if let Some(variants) = variants
+                && let Some(enum_val) =
+                    self.coerce_to_enum_variant(&matching[0], &variants, Value::str(name))
+            {
+                return enum_val;
+            }
         }
         arg.clone()
     }
@@ -609,7 +614,8 @@ impl Interpreter {
                 // If the parameter is typed with an enum, coerce the CLI string to
                 // the matching enum variant so type-checked binding succeeds. An
                 // unmatched string is left unchanged so dispatch can reject it.
-                if let Some(variants) = self.enum_types.get(tc).cloned()
+                let variants = self.registry().enum_types.get(tc).cloned();
+                if let Some(variants) = variants
                     && let Some(enum_val) =
                         self.coerce_to_enum_variant(tc, &variants, Value::str(s.clone()))
                 {

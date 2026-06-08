@@ -28,7 +28,7 @@ impl Interpreter {
         self.role_type_params = nested.role_type_params.clone();
         self.class_role_param_bindings = nested.class_role_param_bindings.clone();
         self.attribute_build_overrides = nested.attribute_build_overrides.clone();
-        self.subsets = nested.subsets.clone();
+        self.registry_mut().subsets = nested.registry().subsets.clone();
         self.need_hidden_classes = nested.need_hidden_classes.clone();
     }
 

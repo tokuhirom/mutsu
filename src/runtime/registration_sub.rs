@@ -985,7 +985,7 @@ impl Interpreter {
 
         let is_anonymous = name.is_empty();
         let enum_type_name = if is_anonymous { "__ANON_ENUM__" } else { name };
-        self.enum_types
+        self.registry_mut().enum_types
             .insert(enum_type_name.to_string(), enum_variants.clone());
         if !is_anonymous {
             self.env

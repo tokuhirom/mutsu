@@ -14,12 +14,12 @@ impl Interpreter {
         }
         let enum_type_name: Option<String> = match target {
             Value::Package(type_name) => Some(type_name.resolve()),
-            Value::Str(type_name) if self.enum_types.contains_key(type_name.as_str()) => {
+            Value::Str(type_name) if self.registry().enum_types.contains_key(type_name.as_str()) => {
                 Some(type_name.to_string())
             }
             Value::Mixin(_, mixins) => mixins.values().find_map(|v| match v {
                 Value::Enum { enum_type, .. }
-                    if self.enum_types.contains_key(&enum_type.resolve()) =>
+                    if self.registry().enum_types.contains_key(&enum_type.resolve()) =>
                 {
                     Some(enum_type.resolve())
                 }
@@ -31,7 +31,7 @@ impl Interpreter {
         let pool: Option<Vec<Value>> = if type_name == "Bool" {
             Some(vec![Value::Bool(false), Value::Bool(true)])
         } else {
-            self.enum_types.get(&type_name).map(|variants| {
+            self.registry().enum_types.get(&type_name).map(|variants| {
                 variants
                     .iter()
                     .enumerate()

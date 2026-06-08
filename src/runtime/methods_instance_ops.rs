@@ -833,7 +833,7 @@ impl Interpreter {
                 && let Some(enum_names) = self.class_enum_roles.get(&class_name.resolve()).cloned()
             {
                 for enum_name in &enum_names {
-                    if let Some(variants) = self.enum_types.get(enum_name).cloned()
+                    if let Some(variants) = self.registry().enum_types.get(enum_name).cloned()
                         && variants.iter().any(|(vname, _)| vname == method)
                     {
                         // Get the stored enum value from the instance attribute
@@ -1337,18 +1337,22 @@ impl Interpreter {
                 if pkg_name == target_name {
                     return Ok(Value::Bool(true));
                 }
-                if let Some(mut base) = self.subsets.get(&pkg_name).map(|s| s.base.clone()) {
+                if let Some(mut base) =
+                    self.registry().subsets.get(&pkg_name).map(|s| s.base.clone())
+                {
                     loop {
                         if base == target_name {
                             return Ok(Value::Bool(true));
                         }
-                        let Some(parent_subset) = self.subsets.get(&base) else {
+                        let Some(parent_base) =
+                            self.registry().subsets.get(&base).map(|s| s.base.clone())
+                        else {
                             break;
                         };
-                        if parent_subset.base == base {
+                        if parent_base == base {
                             break;
                         }
-                        base = parent_subset.base.clone();
+                        base = parent_base;
                     }
                 }
                 Ok(Value::Bool(

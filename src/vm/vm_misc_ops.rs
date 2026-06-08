@@ -2440,7 +2440,7 @@ impl VM {
                 .interpreter
                 .resolve_subset_base_type(declared_constraint);
             matches!(
-                ultimate_base,
+                ultimate_base.as_str(),
                 "List"
                     | "Array"
                     | "Positional"

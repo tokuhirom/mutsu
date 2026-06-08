@@ -353,7 +353,8 @@ impl Interpreter {
         }
 
         // Check if this is a subset type
-        if let Some(subset) = self.subsets.get(spec).cloned() {
+        let subset = self.registry().subsets.get(spec).cloned();
+        if let Some(subset) = subset {
             // For subsets with coercion base types, coerce first then check predicate
             let coerced = if subset.base.contains('(') && subset.base.ends_with(')') {
                 self.enforce_coercion_return(&subset.base, value)?
@@ -465,7 +466,8 @@ impl Interpreter {
         }
 
         // For subset targets, check the where constraint
-        if let Some(subset) = self.subsets.get(base_target).cloned()
+        let subset = self.registry().subsets.get(base_target).cloned();
+        if let Some(subset) = subset
             && let Some(ref pred) = subset.predicate
         {
             let pred_clone = pred.clone();
@@ -485,7 +487,8 @@ impl Interpreter {
         value: Value,
     ) -> Result<Value, RuntimeError> {
         // If target is a subset, coerce to the subset's base type
-        if let Some(subset) = self.subsets.get(target).cloned() {
+        let subset = self.registry().subsets.get(target).cloned();
+        if let Some(subset) = subset {
             let (base, _) = super::types::strip_type_smiley(&subset.base);
             return self.try_coerce_value_for_constraint(&format!("{}()", base), value);
         }

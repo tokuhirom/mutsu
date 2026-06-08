@@ -285,9 +285,9 @@ impl Interpreter {
                     | "PositionalBindFailover"
             ) {
             "Perl6::Metamodel::ParametricRoleGroupHOW"
-        } else if self.enum_types.contains_key(&type_name) {
+        } else if self.registry().enum_types.contains_key(&type_name) {
             "Perl6::Metamodel::EnumHOW"
-        } else if self.subsets.contains_key(&type_name)
+        } else if self.registry().subsets.contains_key(&type_name)
             || matches!(type_name.as_str(), "UInt" | "NativeInt")
         {
             "Perl6::Metamodel::SubsetHOW"
@@ -601,7 +601,7 @@ impl Interpreter {
         };
         let type_name = type_name_owned.as_deref();
         if let Some(type_name) = type_name
-            && let Some(variants) = self.enum_types.get(type_name)
+            && let Some(variants) = self.registry().enum_types.get(type_name)
         {
             let values: Vec<Value> = variants
                 .iter()
@@ -636,7 +636,12 @@ impl Interpreter {
             ];
             Some(variants_owned.as_slice())
         } else if let Some(type_name) = type_name {
-            self.enum_types.get(type_name).map(|v| v.as_slice())
+            if let Some(v) = self.registry().enum_types.get(type_name) {
+                variants_owned = v.clone();
+                Some(variants_owned.as_slice())
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -666,7 +671,7 @@ impl Interpreter {
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
         if let Value::Str(type_name) = target
-            && let Some(variants) = self.enum_types.get(type_name.as_str())
+            && let Some(variants) = self.registry().enum_types.get(type_name.as_str())
         {
             let mut result = Vec::new();
             for (k, v) in variants {
