@@ -100,9 +100,18 @@ fn after_default_error(kind: &str, modifier: &str, default: &str) -> PError {
     );
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
-    attrs.insert("type".to_string(), crate::value::Value::str(kind.to_string()));
-    attrs.insert("modifier".to_string(), crate::value::Value::str(modifier.to_string()));
-    attrs.insert("default".to_string(), crate::value::Value::str(default.to_string()));
+    attrs.insert(
+        "type".to_string(),
+        crate::value::Value::str(kind.to_string()),
+    );
+    attrs.insert(
+        "modifier".to_string(),
+        crate::value::Value::str(modifier.to_string()),
+    );
+    attrs.insert(
+        "default".to_string(),
+        crate::value::Value::str(default.to_string()),
+    );
     let ex = crate::value::Value::make_instance(
         crate::symbol::Symbol::intern("X::Parameter::AfterDefault"),
         attrs,
@@ -1591,7 +1600,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let after_eq = &rest[1..];
         let (expr_start, _) = ws(after_eq)?;
         let (rest, expr) = expression(expr_start)?;
-        default_src = expr_start[..expr_start.len() - rest.len()].trim().to_string();
+        default_src = expr_start[..expr_start.len() - rest.len()]
+            .trim()
+            .to_string();
         (rest, Some(expr))
     } else {
         (rest, None)
