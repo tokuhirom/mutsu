@@ -100,9 +100,10 @@ impl Interpreter {
                             && match sigil {
                                 '$' => match type_constraint {
                                     None => true,
-                                    Some(inner) => inner
-                                        .as_deref()
-                                        .is_some_and(Self::is_simple_native_ctor_constraint),
+                                    Some(inner) => inner.as_deref().is_some_and(|tc| {
+                                        Self::is_simple_native_ctor_constraint(tc)
+                                            || Self::native_scalar_default(tc).is_some()
+                                    }),
                                 },
                                 '@' | '%' => {
                                     !class_def.attribute_types.contains_key(name)
@@ -114,10 +115,15 @@ impl Interpreter {
                             }
                     },
                 )
-                && class_def
-                    .attribute_types
-                    .values()
-                    .all(|tc| Self::is_simple_native_ctor_constraint(tc))
+                && class_def.attribute_types.values().all(|tc| {
+                    // A typed scalar `$` constraint: either a plain class type
+                    // (`type_matches_value`-checkable) or a native scalar type
+                    // (`int`/`num`/`str`, which defaults to a native zero rather
+                    // than a type object). Typed `@`/`%` containers are already
+                    // rejected by the per-attribute sigil branch above.
+                    Self::is_simple_native_ctor_constraint(tc)
+                        || Self::native_scalar_default(tc).is_some()
+                })
                 && class_def.attribute_smileys.is_empty();
             if !simple {
                 return false;
@@ -135,6 +141,21 @@ impl Interpreter {
     /// keeps the interpreter's richer construction semantics.
     fn is_simple_native_ctor_constraint(tc: &str) -> bool {
         tc.starts_with(char::is_uppercase) && !tc.contains('(') && !tc.contains('[')
+    }
+
+    /// The default value for an uninitialized native-typed scalar attribute
+    /// (`has int $.x`, `has num $.y`, `has str $.z`): the native zero/empty,
+    /// not a type object. Mirrors the interpreter's `bless` default logic in
+    /// `methods_dispatch_new.rs`. Returns `None` for non-native types so the
+    /// caller can distinguish a native scalar constraint from a class one.
+    fn native_scalar_default(tc: &str) -> Option<Value> {
+        match tc {
+            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+            | "uint32" | "uint64" | "byte" | "atomicint" => Some(Value::Int(0)),
+            "num" | "num32" | "num64" => Some(Value::Num(0.0)),
+            "str" => Some(Value::str(String::new())),
+            _ => None,
+        }
     }
 
     /// Default-construct `class_name` natively when it is eligible (see
@@ -199,8 +220,12 @@ impl Interpreter {
                         // A provided value that does not already match its
                         // attribute's type constraint needs the interpreter
                         // (coercion or a proper X::TypeCheck::Assignment) — fall
-                        // through.
+                        // through. Native-typed attributes (`int`/`num`/`str`)
+                        // are exempt: the interpreter stores the provided value
+                        // as-is without coercing or type-checking it, so we do
+                        // the same and never fall through on them.
                         if let Some(c) = type_constraints.get(key)
+                            && Self::native_scalar_default(c).is_none()
                             && !self.type_matches_value(c, val)
                         {
                             return None;
@@ -217,13 +242,17 @@ impl Interpreter {
                 return None;
             }
         }
-        // A typed `$` attribute that is neither provided nor defaulted is
+        // A class-typed `$` attribute that is neither provided nor defaulted is
         // initialized to its *type object* (e.g. `Int`), not `Nil`. Let the
-        // interpreter synthesize it.
+        // interpreter synthesize it. Native-typed attributes (`int`/`num`/`str`)
+        // are the exception: they default to a native zero (handled in the fill
+        // loop below), not a type object, so they stay native.
         for (attr_name, _, default_expr, _, _, _, _) in &class_attrs {
             if default_expr.is_none()
                 && !attrs.contains_key(attr_name)
-                && type_constraints.contains_key(attr_name)
+                && type_constraints
+                    .get(attr_name)
+                    .is_some_and(|c| Self::native_scalar_default(c).is_none())
             {
                 return None;
             }
@@ -281,7 +310,10 @@ impl Interpreter {
                 };
                 // A default whose value does not match the attribute's type
                 // constraint needs the interpreter's handling — fall through.
+                // Native-typed attributes are exempt (the interpreter evaluates
+                // and stores their default without a type check).
                 if let Some(c) = type_constraints.get(attr_name)
+                    && Self::native_scalar_default(c).is_none()
                     && !self.type_matches_value(c, &val)
                 {
                     typed_default_mismatch = true;
@@ -295,12 +327,17 @@ impl Interpreter {
                 self.env.insert(format!("!{}", attr_name), val.clone());
                 self.env.insert(format!(".{}", attr_name), val);
             } else {
-                // Uninitialized: `@` -> empty Array, `%` -> empty Hash, `$` -> Nil
-                // (an untyped `$`; typed `$` fell through above).
+                // Uninitialized: `@` -> empty Array, `%` -> empty Hash. For `$`:
+                // a native-typed scalar gets its native zero (`int` -> 0,
+                // `num` -> 0e0, `str` -> ""); an untyped `$` gets Nil. A
+                // class-typed `$` cannot reach here — it fell through above.
                 let empty = match sigil {
                     '@' => Value::real_array(Vec::new()),
                     '%' => Value::hash(HashMap::new()),
-                    _ => Value::Nil,
+                    _ => type_constraints
+                        .get(attr_name)
+                        .and_then(|c| Self::native_scalar_default(c))
+                        .unwrap_or(Value::Nil),
                 };
                 attrs.insert(attr_name.clone(), empty);
             }
