@@ -460,6 +460,19 @@ impl RuntimeError {
         Self::typed("X::Assignment::RO", attrs)
     }
 
+    /// X::Role::Initialization - supplied an initialization value to a role that
+    /// does not have exactly one public attribute.
+    pub(crate) fn role_initialization(role_name: &str) -> Self {
+        let msg = format!(
+            "Can only supply an initialization value for a role if it has a single public attribute, but this is not the case for '{}'",
+            role_name
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("role".to_string(), Value::str(role_name.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Role::Initialization", attrs)
+    }
+
     /// X::Assignment::RO with typename - Cannot modify an immutable value of a given type
     pub(crate) fn assignment_ro_typename(typename: &str, repr: &str) -> Self {
         let msg = format!("Cannot modify an immutable {} ({})", typename, repr);

@@ -426,7 +426,19 @@ impl Compiler {
                 }
             }
             self.compile_expr(left);
+            // `but`/`does` with a role-applied RHS (`X but R(v)`, `99 does R(v)`)
+            // must let the role call return a role-application Pair instead of
+            // coercing. The `does`+variable path above already does this; cover
+            // the remaining cases (`but`, and `does` on a non-variable LHS).
+            let does_context =
+                matches!(op, TokenKind::Ident(name) if name == "but" || name == "does");
+            if does_context {
+                self.code.emit(OpCode::SetDoesContext(true));
+            }
             self.compile_expr(right);
+            if does_context {
+                self.code.emit(OpCode::SetDoesContext(false));
+            }
             // For `!=` between native int typed variables, emit a native-aware
             // opcode that replicates Rakudo's MoarVM behaviour: cross-signed
             // comparisons where the signed operand is negative return False.
