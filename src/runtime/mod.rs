@@ -2720,6 +2720,7 @@ impl Interpreter {
         register_x("X::Syntax::WithoutElse", "X::Syntax");
         register_x("X::Syntax::UnlessElse", "X::Syntax");
         register_x("X::Syntax::Reserved", "X::Syntax");
+        register_x("X::Syntax::KeywordAsFunction", "X::Syntax");
 
         // X::Obsolete (compile-time, subtype of X::Comp)
         register_x("X::Obsolete", "X::Comp");
