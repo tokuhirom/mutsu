@@ -220,6 +220,7 @@ pub(crate) mod types;
 mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
+pub(crate) mod value_iterator;
 pub(crate) use self::registration_class::ClassDeclModifiers;
 pub(crate) use self::registry::Registry;
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};

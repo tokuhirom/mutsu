@@ -8,7 +8,7 @@ use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
-const MAX_RANGE_EXPAND: i64 = 1_000_000;
+pub(crate) const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
 /// Strip a leading UTF-8 BOM (U+FEFF) from a string, as Raku does when reading files.
 pub(crate) fn strip_utf8_bom(s: String) -> String {
