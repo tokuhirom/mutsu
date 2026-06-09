@@ -32,14 +32,9 @@ impl Compiler {
         if let Some(attr_name) = name.strip_prefix('.')
             && !attr_name.is_empty()
         {
-            // Load self and call the accessor method to validate it exists
-            if let Some(&slot) = self.local_map.get("self") {
-                self.code.emit(OpCode::GetLocal(slot));
-            } else {
-                let self_name = self.qualify_variable_name("self");
-                let self_idx = self.code.add_constant(Value::str(self_name));
-                self.code.emit(OpCode::GetGlobal(self_idx));
-            }
+            // Load self (or raise X::Syntax::NoSelf when unavailable) and call
+            // the accessor method to validate it exists.
+            self.emit_load_self_for_accessor(&format!("${}", name));
             let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
             self.emit_source_line_if_known();
             self.code.emit(OpCode::CallMethod {

@@ -43,6 +43,10 @@ pub(crate) enum OpCode {
     GetLocalRaw(u32),
     SetLocal(u32),
     GetGlobal(u32),
+    /// Load `self` from the captured environment for a `$.attr` accessor.
+    /// Raises X::Syntax::NoSelf (the operand is the constant index of the
+    /// accessor's display name, e.g. `$.a`) when `self` is unavailable.
+    GetSelfOrNoSelf(u32),
     SetGlobal(u32),
     /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
     SetGlobalRaw(u32),
