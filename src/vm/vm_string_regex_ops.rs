@@ -1279,12 +1279,22 @@ impl VM {
         err
     }
 
-    /// Build an `X::HyperOp::NonDWIM` exception carrying `left-elems` and
-    /// `right-elems` attributes for a non-dwimmy hyper op length mismatch.
-    fn hyperop_nondwim_error(left_elems: usize, right_elems: usize) -> RuntimeError {
+    /// Build an `X::HyperOp::NonDWIM` exception carrying `left-elems`,
+    /// `right-elems`, and `operator` attributes for a non-dwimmy hyper op length
+    /// mismatch. `op` is the infix source (e.g. `+`); `.operator` is exposed as
+    /// a routine handle named `infix:<+>` so `.operator.name` works.
+    fn hyperop_nondwim_error(left_elems: usize, right_elems: usize, op: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("left-elems".to_string(), Value::Int(left_elems as i64));
         attrs.insert("right-elems".to_string(), Value::Int(right_elems as i64));
+        attrs.insert(
+            "operator".to_string(),
+            Value::Routine {
+                package: crate::symbol::Symbol::intern("GLOBAL"),
+                name: crate::symbol::Symbol::intern(&format!("infix:<{}>", op)),
+                is_regex: false,
+            },
+        );
         let msg = format!(
             "Lists on both sides of non-dwimmy hyperop are not of the same length: \
              left: {} elements, right: {} elements",
@@ -1429,7 +1439,7 @@ impl VM {
             let right_fixed = !dwim_right && !right_ext;
             // A non-dwimmy, non-extensible hyper requires equal lengths.
             if left_fixed && right_fixed && left_len != right_len {
-                return Err(Self::hyperop_nondwim_error(left_len, right_len));
+                return Err(Self::hyperop_nondwim_error(left_len, right_len, op));
             }
             // An empty operand cannot be cycled or padded to fill a dwim side, so
             // any empty side yields an empty result (`True »+» ()` is `()`, not a
