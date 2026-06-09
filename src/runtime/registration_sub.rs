@@ -237,6 +237,7 @@ impl Interpreter {
             let single_key = format!("{}::{}", self.current_package, name);
             if is_our_scoped && !self.registry().proto_subs.contains(&single_key) {
                 let mut attrs = std::collections::HashMap::new();
+                attrs.insert("scope".to_string(), Value::str("our".to_string()));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(
