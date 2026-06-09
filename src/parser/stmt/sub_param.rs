@@ -89,6 +89,36 @@ fn make_param(name: String) -> ParamDef {
     }
 }
 
+/// Build an `X::Parameter::AfterDefault` error for a trait or post-constraint
+/// that appears after the parameter's default value (e.g. `$x = 60 is rw` or
+/// `$x = 60 where Int`). `kind` is `"trait"` or `"post constraint"`; `modifier`
+/// is the offending source fragment (`is rw`, `where Int`); `default` is the
+/// default value source (`60`).
+fn after_default_error(kind: &str, modifier: &str, default: &str) -> PError {
+    let msg = format!(
+        "The {kind} '{modifier}' came after the default value.  Did you mean: ...{modifier} = {default} ?"
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    attrs.insert(
+        "type".to_string(),
+        crate::value::Value::str(kind.to_string()),
+    );
+    attrs.insert(
+        "modifier".to_string(),
+        crate::value::Value::str(modifier.to_string()),
+    );
+    attrs.insert(
+        "default".to_string(),
+        crate::value::Value::str(default.to_string()),
+    );
+    let ex = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Parameter::AfterDefault"),
+        attrs,
+    );
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 fn parse_param_default_expr(input: &str) -> PResult<'_, Expr> {
     if let Ok((rest, expr)) = expression(input) {
         return Ok((rest, expr));
@@ -1565,14 +1595,45 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     }
 
     // Default value
+    let mut default_src = String::new();
     let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
-        let rest = &rest[1..];
-        let (rest, _) = ws(rest)?;
-        let (rest, expr) = expression(rest)?;
+        let after_eq = &rest[1..];
+        let (expr_start, _) = ws(after_eq)?;
+        let (rest, expr) = expression(expr_start)?;
+        default_src = expr_start[..expr_start.len() - rest.len()]
+            .trim()
+            .to_string();
         (rest, Some(expr))
     } else {
         (rest, None)
     };
+
+    // X::Parameter::AfterDefault: a trait (`is rw`) or post-constraint
+    // (`where Int`) that appears AFTER the default value is illegal.
+    if default.is_some() {
+        let (after_default, _) = ws(rest)?;
+        if let Some(after_is) = keyword("is", after_default) {
+            let (trait_start, _) = ws1(after_is)?;
+            let (_, trait_name) = ident(trait_start)?;
+            return Err(after_default_error(
+                "trait",
+                &format!("is {trait_name}"),
+                &default_src,
+            ));
+        }
+        if let Some(after_where) = keyword("where", after_default) {
+            let (constraint_start, _) = ws1(after_where)?;
+            let (rest_after, _) = parse_where_constraint_expr(constraint_start)?;
+            let constraint_src = constraint_start[..constraint_start.len() - rest_after.len()]
+                .trim()
+                .to_string();
+            return Err(after_default_error(
+                "post constraint",
+                &format!("where {constraint_src}"),
+                &default_src,
+            ));
+        }
+    }
 
     // `is copy`, `is rw`, `is readonly`, `is raw` traits (may have multiple)
     let (mut rest, _) = ws(rest)?;
