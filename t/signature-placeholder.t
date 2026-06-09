@@ -1,6 +1,6 @@
 use Test;
 
-plan 7;
+plan 9;
 
 # A routine with an explicit signature (even empty) may not use placeholder
 # variables in its body -> X::Signature::Placeholder.
@@ -26,3 +26,11 @@ lives-ok { EVAL 'sub g() { -> { $^y } }' },
 # The message is the canonical Rakudo one.
 throws-like 'sub h() { $^z }', X::Signature::Placeholder,
     message => /"Placeholder variable '\$^z' cannot override existing signature"/;
+
+# `@_` / `%_` are legal when explicitly declared as parameters — they do not
+# override the signature, they ARE the signature, so the declaration must not
+# raise X::Signature::Placeholder.
+lives-ok { EVAL 'sub f(%_) { %_<a> }' },
+    'explicitly declared %_ parameter is allowed';
+lives-ok { EVAL 'sub f(@_) { @_[0] }' },
+    'explicitly declared @_ parameter is allowed';
