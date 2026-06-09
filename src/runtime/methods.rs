@@ -338,6 +338,12 @@ impl Interpreter {
             }
             return self.call_method_with_values(*inner, method, args);
         }
+        // Operations that need the full (finite) list cannot run on a lazy or
+        // infinite source: throw X::Cannot::Lazy instead of hanging while
+        // materializing it, matching raku.
+        if let Some(err) = Self::lazy_guard_error(method, &target) {
+            return Err(err);
+        }
         // Seq deferred iterator handling: Seq.new(iterator) stores the iterator
         // without pulling. When a method is called on such a Seq, materialize the
         // items first by pulling from the iterator.

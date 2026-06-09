@@ -258,6 +258,12 @@ fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
 }
 
 fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
+    // Eager list operations (combinations/permutations/...) cannot run on a
+    // lazy/infinite source: throw X::Cannot::Lazy instead of hanging while
+    // generating an unbounded result. Shared with the method-dispatch paths.
+    if let Some(err) = crate::runtime::Interpreter::lazy_guard_error(name, arg) {
+        return Some(Err(err));
+    }
     match name {
         "combinations" => {
             // combinations($n) where $n is Int => (^$n).combinations (powerset)
