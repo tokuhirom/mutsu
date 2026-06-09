@@ -1370,12 +1370,15 @@ impl Interpreter {
                             list_items.push(Value::Pair(k.clone(), Box::new(v.clone())));
                         }
                     }
-                    Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
-                    Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
-                    Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
-                    Value::RangeExclBoth(a, b) => list_items.extend((*a + 1..*b).map(Value::Int)),
                     v if v.is_range() => {
-                        list_items.extend(crate::runtime::utils::value_to_list(v));
+                        // Route ranges through the unified pull iterator so an
+                        // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
+                        // truncated at the cap instead of panicking with
+                        // `capacity overflow` (ANALYSIS §8.2).
+                        list_items.extend(crate::runtime::value_iterator::materialize_capped(
+                            v,
+                            crate::runtime::utils::MAX_RANGE_EXPAND as usize,
+                        ));
                     }
                     other => list_items.push(other.clone()),
                 }
@@ -1670,10 +1673,15 @@ impl Interpreter {
         for arg in positional.iter().skip(1) {
             match arg {
                 Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
-                Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
-                Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                 v if v.is_range() => {
-                    list_items.extend(crate::runtime::utils::value_to_list(v));
+                    // Route ranges through the unified pull iterator so an
+                    // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
+                    // truncated at the cap instead of panicking with
+                    // `capacity overflow` (ANALYSIS §8.2).
+                    list_items.extend(crate::runtime::value_iterator::materialize_capped(
+                        v,
+                        crate::runtime::utils::MAX_RANGE_EXPAND as usize,
+                    ));
                 }
                 other => list_items.push(other.clone()),
             }
