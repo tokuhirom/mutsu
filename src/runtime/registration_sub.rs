@@ -110,6 +110,76 @@ impl Interpreter {
         }
     }
 
+    /// Reject parameter type constraints that name an unknown type. To avoid
+    /// false positives we only flag a *simple, undecorated* uppercase type name
+    /// (no `[]`/`()`/smiley/`::`/`<`), which is the typo case rakudo reports as
+    /// X::Parameter::InvalidType. Decorated forms (parametric, coercion,
+    /// smileys, qualified, captures) are left alone. `declared_types` holds the
+    /// type names declared anywhere in the current compilation unit (collected
+    /// before execution, since subs are pre-registered before their declaring
+    /// type executes), so backward/forward references within the unit are valid.
+    pub(crate) fn validate_param_type_constraints(
+        &self,
+        param_defs: &[ParamDef],
+        declared_types: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        // Type-capture names declared in this signature (e.g. `::T`) are valid
+        // type names for the rest of the signature.
+        let captures: std::collections::HashSet<&str> = param_defs
+            .iter()
+            .filter_map(|pd| pd.type_constraint.as_deref())
+            .filter_map(|tc| tc.strip_prefix("::"))
+            .collect();
+        for pd in param_defs {
+            // Skip synthetic params (`__type_only__`, `__literal__`): a bare
+            // `(Inf)` / `(True)` term param smartmatches a value, so its
+            // "constraint" is not necessarily a type name.
+            if pd.name.starts_with("__") {
+                continue;
+            }
+            let Some(tc) = pd.type_constraint.as_deref() else {
+                continue;
+            };
+            // Only a bare identifier (letters/digits/_/-) starting uppercase is
+            // considered; anything decorated is skipped as potentially valid.
+            if tc.is_empty()
+                || !tc.starts_with(|c: char| c.is_ascii_uppercase())
+                || !tc
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                continue;
+            }
+            if captures.contains(tc)
+                || declared_types.contains(tc)
+                || self.is_resolvable_type(tc)
+                || self.has_type(tc)
+            {
+                continue;
+            }
+            let suggestions = self.suggest_type_names(tc);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("type".to_string(), Value::str(tc.to_string()));
+            attrs.insert(
+                "suggestions".to_string(),
+                Value::array(suggestions.iter().cloned().map(Value::str).collect()),
+            );
+            let mut message = format!("Invalid typename '{}' in parameter declaration.", tc);
+            if suggestions.len() == 1 {
+                message.push_str(&format!(" Did you mean '{}'?", suggestions[0]));
+            } else if suggestions.len() > 1 {
+                let quoted: Vec<String> = suggestions.iter().map(|s| format!("'{}'", s)).collect();
+                message.push_str(&format!(
+                    " Did you mean any of these: {}?",
+                    quoted.join(", ")
+                ));
+            }
+            attrs.insert("message".to_string(), Value::str(message));
+            return Err(RuntimeError::typed("X::Parameter::InvalidType", attrs));
+        }
+        Ok(())
+    }
+
     fn validate_static_default_typechecks(
         &mut self,
         param_defs: &[ParamDef],

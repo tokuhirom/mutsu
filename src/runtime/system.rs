@@ -96,6 +96,7 @@ impl Interpreter {
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
+                self.check_eval_param_type_constraints(&stmts)?;
                 // When EVAL is called inside a class body, MethodDecl statements
                 // should be added to the enclosing class rather than lowered to subs.
                 let mut stmts = self.inject_eval_methods_into_class(stmts);
