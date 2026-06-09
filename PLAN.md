@@ -385,12 +385,11 @@ NaN-boxing で payload 8byte 化。**各ステップで int.t 等の重量級 ro
 コードベース精読で判明した根本的な正しさ・健全性の問題。Threading/Async (BLOCKERS 31件) の
 最大ボトルネックに直結するため最優先。詳細・再現コマンドは ANALYSIS.md 各節を参照。
 
-- [ ] **無限 Range の即時展開クラッシュを撲滅** (ANALYSIS §8.2) — `(a..=b).map(Value::Int).collect()`
-      が src 全体 43 箇所で無ガード、`MAX_ARRAY_EXPAND` ガードは 9 箇所のみ。無限 Range で
-      `capacity overflow` パニックしプロセスごと落ちる。展開サイトを単一ヘルパに集約しガードを一元化。
-      `(1..Inf).grep(* %% 2)[^3]` がクラッシュ (raku は `(2 4 6)`)。
-- [ ] **遅延リストを pull/Iterator モデルに統一** (ANALYSIS §8.1) — `grep` 等の eager 経路を
-      `map`/`first`/`head`/`[]` と同じ遅延扱いに揃える。Seq/Range を真の遅延イテレータに。
+- [x] **無限 Range の即時展開クラッシュ撲滅 (ANALYSIS §8.2) + 遅延リスト pull モデル統一 (§8.1)**
+      — 実質完了（#2791/#2793/#2796/#2799/#2804、詳細は [news/2026-06.md](news/2026-06.md)）。
+      `materialize_capped` で無限 Range crash 撲滅、eager ops は `X::Cannot::Lazy` throw、
+      無限 gather コルーチンの bounded pull、**method 形 `.map`/`.grep` を真に遅延化**（`LazyList::lazy_pipe`）。
+      残（低優先・実害確認なし）: §8.2 の残り生 `(a..=b).collect()` サイト掃討（多くは end cap 済/`.take`/`0..n`）。
 - [ ] **並行 state 共有の修正** (ANALYSIS §8.3, §2.2) — `clone_for_thread` のスナップショットコピーを
       やめ、共有すべきレキシカル/state/global を `Arc<Mutex>` のライブセルとして真に共有する。
       `start` ブロック間で `$counter`/`state $n` が共有されない (mutsu 1/0、raku 4/3)。
