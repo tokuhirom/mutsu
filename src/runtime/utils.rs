@@ -2881,10 +2881,17 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
 /// requires. The generic comparators (`cmp`, `before`/`after`, `min`/`max`) do
 /// NOT call this — they compare strings as strings.
 pub(crate) fn check_str_numeric(value: &Value) -> Result<(), RuntimeError> {
-    let inner = unwrap_mixin(value.clone());
-    if let Value::Str(s) = &inner
-        && let Some((pos, reason)) = crate::runtime::str_numeric::str_numeric_failure(s)
-    {
+    // Hot path: only a bare or Mixin-wrapped Str can fail; everything else
+    // (Int/Num/Rat/...) returns immediately without cloning or parsing.
+    let s = match value {
+        Value::Str(s) => s,
+        Value::Mixin(inner, _) => match inner.as_ref() {
+            Value::Str(s) => s,
+            _ => return Ok(()),
+        },
+        _ => return Ok(()),
+    };
+    if let Some((pos, reason)) = crate::runtime::str_numeric::str_numeric_failure(s) {
         return Err(str_numeric_error(s, pos, &reason));
     }
     Ok(())
