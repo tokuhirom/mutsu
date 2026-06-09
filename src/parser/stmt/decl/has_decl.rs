@@ -136,10 +136,60 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
+/// Detect `<scope> <declaration>` combinations that are illegal in Raku, e.g.
+/// `has sub`, `has package`. Returns a fatal `X::Declaration::Scope` (or
+/// `X::Declaration::Scope::Multi` for `multi`) parse error when `rest` begins
+/// with such a declarator keyword.
+pub(in crate::parser::stmt) fn scope_declaration_error(scope: &str, rest: &str) -> Option<PError> {
+    // `proto` is reported by Rakudo as a `sub` declaration.
+    const DECLARATORS: &[(&str, &str)] = &[
+        ("sub", "sub"),
+        ("proto", "sub"),
+        ("package", "package"),
+        ("class", "class"),
+        ("module", "module"),
+        ("role", "role"),
+        ("grammar", "grammar"),
+        ("constant", "constant"),
+        ("subset", "subset"),
+        ("enum", "enum"),
+    ];
+
+    if keyword("multi", rest).is_some() {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("scope".to_string(), Value::str(scope.to_string()));
+        let message = format!("Cannot use '{}' with a multi declaration", scope);
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::Declaration::Scope::Multi"), attrs);
+        return Some(PError::fatal_with_exception(message, Box::new(ex)));
+    }
+
+    for (kw, decl) in DECLARATORS {
+        if keyword(kw, rest).is_some() {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("scope".to_string(), Value::str(scope.to_string()));
+            attrs.insert("declaration".to_string(), Value::str((*decl).to_string()));
+            let message = format!("Cannot use '{}' with {} declaration", scope, decl);
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Declaration::Scope"), attrs);
+            return Some(PError::fatal_with_exception(message, Box::new(ex)));
+        }
+    }
+
+    None
+}
+
 /// Parse `has` attribute declaration.
 pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
     let (rest, _) = ws1(rest)?;
+
+    // `has` cannot be used as the scope for a routine/package-style declaration.
+    // `has sub`, `has package`, `has class`, etc. are X::Declaration::Scope.
+    // (`has method`/`has submethod` are valid and not rejected here.)
+    if let Some(err) = scope_declaration_error("has", rest) {
+        return Err(err);
+    }
 
     // Handle parenthesized list form: has ($a, $.b, $!c)
     // This desugars into a Block containing multiple HasDecl statements.
