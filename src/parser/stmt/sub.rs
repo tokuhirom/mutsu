@@ -144,6 +144,17 @@ fn default_type_matches_constraint(
     }
 }
 
+/// Reconstruct a parameter's display name with its sigil. Array/hash/code
+/// parameters already store the sigil in `name` (e.g. `@x`, `%x`); scalar
+/// parameters store the bare name (e.g. `x`) and get a `$` prefix.
+fn param_display_name(name: &str) -> String {
+    if name.starts_with(['@', '%', '&']) {
+        name.to_string()
+    } else {
+        format!("${}", name)
+    }
+}
+
 pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PError> {
     let mut saw_optional_positional = false;
     let mut saw_named = false;
@@ -168,6 +179,43 @@ pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
             return Err(PError::fatal(
                 "X::Trait::Invalid: Cannot make an 'is rw' parameter optional".to_string(),
             ));
+        }
+        // X::Parameter::Default: a default value is illegal on a slurpy parameter
+        // (`*@a = 2`, `*@ = 2`) or a required parameter (`$x! = 3`, `:$x! = 3`).
+        if pd.default.is_some() {
+            let is_slurpy = pd.slurpy || pd.double_slurpy || pd.onearg;
+            if is_slurpy || pd.required {
+                let (how, parameter, message) = if is_slurpy {
+                    let anonymous = pd.name.contains("__ANON_");
+                    let param = if anonymous {
+                        String::new()
+                    } else {
+                        param_display_name(&pd.name)
+                    };
+                    let message = if anonymous {
+                        "Cannot put default on anonymous slurpy parameter".to_string()
+                    } else {
+                        format!("Cannot put default on slurpy parameter {}", param)
+                    };
+                    ("slurpy", param, message)
+                } else {
+                    let param = param_display_name(&pd.name);
+                    let message = format!("Cannot put default on required parameter {}", param);
+                    ("required", param, message)
+                };
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("how".to_string(), crate::value::Value::str(how.to_string()));
+                attrs.insert("parameter".to_string(), crate::value::Value::str(parameter));
+                attrs.insert(
+                    "message".to_string(),
+                    crate::value::Value::str(message.clone()),
+                );
+                let ex = crate::value::Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Parameter::Default"),
+                    attrs,
+                );
+                return Err(PError::fatal_with_exception(message, Box::new(ex)));
+            }
         }
         if let (Some(constraint), Some(default_expr)) = (&pd.type_constraint, &pd.default)
             && let Some(default_type) = static_default_type(default_expr)
