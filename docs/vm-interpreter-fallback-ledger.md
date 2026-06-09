@@ -24,7 +24,8 @@
 | `vm_call_method_compiled.rs` catch-all (非mut) | **native/Buf/Failure/MOP のみ**（ユーザーメソッドは全て bytecode 化済） | HARD | ③ state 所有移管。**③ PR-3 で実測訂正**: ここはユーザーメソッド tree-walk では**なかった** |
 | `vm_call_method_compiled.rs` native-method (mut) | 同上 mut | HARD | ③（同上） |
 | `vm_call_method_compiled.rs` catch-all (mut) | 同上 mut（native/Buf/Failure/MOP のみ） | HARD | ③ |
-| `vm_call_method_mut_ops.rs` catch-all | generic mut メソッド | HARD | ③ |
+| `vm_call_method_mut_ops.rs` catch-all | generic mut メソッド（plain untyped `@`-array の append/prepend/unshift/pop/shift は除く） | HARD | ③ |
+| ~~`vm_call_method_mut_ops.rs` plain `@`-array mutators~~ | ~~append/prepend/unshift/pop/shift~~ | — | **✅消化 (③ PR-5)**: `try_native_array_mut` で VM ネイティブ。typed/shaped/lazy/shared/constrained は interpreter 維持 |
 | `vm_call_method_mut_ops.rs` array-backed instance | `is Array` storage の push/pop/shift | MEDIUM | 第一級コンテナ Phase 2 |
 | `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B（共有セル所有） |
 | `vm_data_ops.rs` shaped push | shaped 配列 push | MEDIUM | shaped 次元メタ検査の VM 化 |
@@ -158,6 +159,24 @@
   multi stub が registry に登録されている）を OTF compile し、native handler を迂回して `S16-io/words.t`・`S32-io/slurp.t` を
   決定的に破壊（is-eqv 経由）。非-builtin OTF パスと同じ `!is_interpreter_handled_function(name)` ガードを multi fork にも
   追加して解消（is-eqv は call_function_fallback → native test handler へ正しく回る）。ローカル full make roast PASS で確認。
+
+- **2026-06-09 (③ PR-5, §1 catch-all = plain `@`-array mutators の VM ネイティブ化)**: `MUTSU_VM_STATS` に
+  catch-all 受け手の型名（`Class.method`）を一時計測する計装を入れ、whitelist sample 全体で **catch-all 到達集合を実測**。
+  PR-3 が「残りは native/Buf/Failure」と推定していたが、**実態は Buf/Failure ではなく配列ミューテータ + iterator protocol + coercion**
+  だった（top: `Package.new`=38698〔③コンストラクタ・user BUILD/属性で③ブロック〕, `Array.append`=16721, `Array.shift`=5796,
+  `Any.AT-POS`=5795, iterator `pull-one`/`skip-one`/`push-exactly` 系, `Array.splice`=381, `List.Set/Bag/Mix` coercion …）。
+  `Package.new` を除く**最大の tractable カテゴリ＝配列ミューテータ**（append+shift+splice ≈ 22900）。本 PR は
+  `vm_call_method_mut_ops.rs::exec_call_method_mut_op` に `try_native_array_mut` を追加し、**plain untyped `@`-array
+  （`ArrayKind::Array`）への `append`/`prepend`/`unshift`/`pop`/`shift`** を VM ネイティブに（`env.get_mut` + `Arc::make_mut`
+  で interpreter の primary branch と同一セマンティクス、empty pop/shift は `make_empty_array_failure_what(..,"Array")`）。
+  **保守的フォールスルー**: typed（`var_type_constraint` Some）/ shaped / lazy（kind が `Array` 以外）/ shared
+  （`shared_vars_active`）/ metadata 持ち（`container_type_metadata` Some）/ 非env-bound receiver は interpreter 維持。
+  **落とし穴: type_metadata の Arc-ptr keying aliasing**（🟣第一級コンテナの既知ハザード）— `make_mut` 再確保で得た新 Arc
+  ポインタが、解放済み typed array の stale `array_type_metadata` エントリと衝突し untyped 配列が `Array[Int]` に誤型付け
+  （フルファイル文脈でのみ・アロケータ依存で間欠再現）。native path は untyped を保証済みなので、変異後の env 配列に対し
+  `unregister_container_type_metadata` で防御的に stale エントリを除去（安全＝生きた別配列が同ポインタを持つことは不可能）。
+  pin `t/native-array-mut.t`(31, aliasing ケース含む)。S32-array whitelist 全緑、make test PASS、array 系 whitelist 156/156。
+  **残る catch-all**: `Package.new`〔③〕, `Any.AT-POS`/iterator protocol〔値型/iterator state〕, coercion〔builtins 降ろし候補〕, splice。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

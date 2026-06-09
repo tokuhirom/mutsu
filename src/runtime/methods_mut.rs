@@ -126,7 +126,7 @@ impl Interpreter {
         }
     }
 
-    fn normalize_push_unshift_args(args: Vec<Value>) -> Vec<Value> {
+    pub(crate) fn normalize_push_unshift_args(args: Vec<Value>) -> Vec<Value> {
         let needs_normalize = args.iter().any(|arg| match arg {
             Value::Scalar(_) => true,
             Value::Array(_, kind) => kind.is_itemized(),

@@ -1188,6 +1188,21 @@ impl VM {
                 self.env_dirty = true;
             }
             _ => {
+                // Native fast path for mutating list methods on a plain, untyped
+                // `@`-array (ledger §1: native receiver dispatch -> VM-native).
+                // Handles the common hot-loop case directly in the VM, writing the
+                // mutated array back to env, instead of routing through the
+                // tree-walking interpreter bridge. Falls through (returns None) for
+                // typed/shaped/lazy/shared/constrained arrays so the interpreter
+                // keeps owning those richer semantics.
+                if modifier.is_none()
+                    && let Some(result) =
+                        self.try_native_array_mut(&target_name, &target, &method, &args)
+                {
+                    self.stack.push(result?);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
                 // Array-subclass instance delegation (mut path): when the Instance's
                 // class inherits from Array, delegate mutating Array methods to the
                 // backing __mutsu_array_storage attribute and write back.
@@ -1365,5 +1380,107 @@ impl VM {
             }
         }
         Ok(())
+    }
+
+    /// VM-native mutating list methods (`append`/`prepend`/`unshift`/`pop`/`shift`)
+    /// on a plain, untyped `@`-array stored in env. Mirrors the interpreter's
+    /// primary (`env.get_mut` + `Arc::make_mut`) branch in `methods_mut.rs`
+    /// exactly for this narrow case, so the result is behavior-invariant.
+    ///
+    /// Returns:
+    /// - `Some(Ok(v))` — handled natively (env already mutated); `v` is the
+    ///   method's return value (the array for append/prepend/unshift, the removed
+    ///   element for pop/shift).
+    /// - `Some(Err(_))` — handled natively but errored.
+    /// - `None` — not eligible; the caller must fall through to the interpreter.
+    ///
+    /// Intentionally conservative: bails out (returns `None`) for typed/shaped/
+    /// lazy arrays, type-constrained or metadata-bearing containers, shared
+    /// arrays, and any receiver that is not the exact array currently bound to
+    /// `target_name` in env. Those richer semantics stay owned by the interpreter.
+    fn try_native_array_mut(
+        &mut self,
+        target_name: &str,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "append" | "prepend" | "unshift" | "pop" | "shift") {
+            return None;
+        }
+        // Only a plain `@`-sigiled variable whose value is a real `[...]` array
+        // (ArrayKind::Array). This excludes List/Item/Shaped/Lazy kinds.
+        if !target_name.starts_with('@')
+            || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
+        {
+            return None;
+        }
+        // Shared arrays keep their interior-mutation (Arc>1) semantics in the
+        // interpreter so bound aliases observe the change; type-constrained or
+        // metadata-bearing containers need element checks / typed empty Failures.
+        if self.interpreter.shared_vars_active
+            || self.interpreter.var_type_constraint(target_name).is_some()
+            || self.interpreter.container_type_metadata(target).is_some()
+        {
+            return None;
+        }
+        // pop/shift take no positionals; let the interpreter raise the arity error.
+        if matches!(method, "pop" | "shift") && !args.is_empty() {
+            return None;
+        }
+        // The receiver must be exactly the array currently bound to this name, so
+        // an in-place `Arc::make_mut` writeback is correct.
+        let Some(Value::Array(arc_items, crate::value::ArrayKind::Array)) =
+            self.interpreter.env_mut().get_mut(target_name)
+        else {
+            return None;
+        };
+        let result = match method {
+            "append" | "prepend" => {
+                let flat = crate::runtime::flatten_append_args(args.to_vec());
+                let items = Arc::make_mut(arc_items);
+                if method == "append" {
+                    items.extend(flat);
+                } else {
+                    for (i, v) in flat.into_iter().enumerate() {
+                        items.insert(i, v);
+                    }
+                }
+                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+            }
+            "unshift" => {
+                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                let items = Arc::make_mut(arc_items);
+                for (i, v) in norm.into_iter().enumerate() {
+                    items.insert(i, v);
+                }
+                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+            }
+            "pop" => {
+                if arc_items.is_empty() {
+                    crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
+                } else {
+                    Arc::make_mut(arc_items).pop().unwrap_or(Value::Nil)
+                }
+            }
+            "shift" => {
+                if arc_items.is_empty() {
+                    crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
+                } else {
+                    Arc::make_mut(arc_items).remove(0)
+                }
+            }
+            _ => unreachable!(),
+        };
+        // `Arc::make_mut` may reallocate the backing buffer, giving the array a
+        // fresh heap pointer. Container type metadata is keyed by that pointer
+        // (`array_type_metadata`), and the map is not cleaned when an Arc is
+        // freed, so the new pointer can collide with a stale entry left by a
+        // freed typed array and spuriously type this (guaranteed-untyped) array.
+        // Defensively drop any such aliased entry for the post-mutation array.
+        if let Some(stored @ Value::Array(..)) = self.interpreter.env().get(target_name).cloned() {
+            self.interpreter.unregister_container_type_metadata(&stored);
+        }
+        Some(Ok(result))
     }
 }
