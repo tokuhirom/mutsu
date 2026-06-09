@@ -460,6 +460,19 @@ impl VM {
         // Non-gather LazyLists (e.g. from infinite ranges) are NOT forced here — they
         // go through builtins which may return Failure for methods like .elems.
         // Exception: .List and .values on coroutine-equipped gathers preserve laziness.
+        // Lazy `.first` over a gather coroutine: pull incrementally instead of
+        // forcing the (possibly infinite) list to completion.
+        if let Value::LazyList(ref ll) = target
+            && matches!(
+                ll.env.get("__mutsu_lazylist_from_gather"),
+                Some(crate::value::Value::Bool(true))
+            )
+            && method == "first"
+            && let Some(result) = self.try_lazy_gather_first(ll, &args)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         let target = if let Value::LazyList(ref ll) = target
             && matches!(
                 ll.env.get("__mutsu_lazylist_from_gather"),
@@ -469,7 +482,12 @@ impl VM {
             && !(ll.coroutine.is_some() && matches!(method, "List" | "values"))
         {
             let saved_env = self.interpreter.env().clone();
-            let items = self.force_lazy_list_vm(ll)?;
+            // `.head(n)` only needs the first `n` elements: pull them lazily so
+            // an infinite gather does not hang.
+            let items = match Self::gather_head_bound(method, &args) {
+                Some(n) => self.force_lazy_list_vm_n(ll, n)?,
+                None => self.force_lazy_list_vm(ll)?,
+            };
             if !matches!(method, "elems" | "hyper" | "race") {
                 *self.interpreter.env_mut() = saved_env;
             }

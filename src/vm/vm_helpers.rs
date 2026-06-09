@@ -337,6 +337,22 @@ impl VM {
         )
     }
 
+    /// For `.head` on a gather-sourced `LazyList`, return how many leading
+    /// elements need to be produced (so an infinite gather is pulled lazily via
+    /// [`Self::force_lazy_list_vm_n`] instead of forced to completion).
+    /// Returns `None` for forms that need the whole list (e.g. `.head(*-3)`).
+    pub(super) fn gather_head_bound(method: &str, args: &[Value]) -> Option<usize> {
+        if method != "head" {
+            return None;
+        }
+        match args {
+            [] => Some(1),
+            [Value::Int(n)] => Some((*n).max(0) as usize),
+            [Value::Num(f)] => Some((*f as i64).max(0) as usize),
+            _ => None,
+        }
+    }
+
     /// Force a LazyList by running its compiled bytecode in the VM.
     /// Falls back to interpreter if no compiled code is available.
     pub(super) fn force_lazy_list_vm(
