@@ -200,6 +200,21 @@ impl VM {
         ))
     }
 
+    /// Like [`coerce_numeric_bridge_pair`], but additionally raises
+    /// X::Str::Numeric when either operand is a non-numeric string. Used by the
+    /// genuinely-numeric operators (`+ - * / % **`, `== != < > <= >= <=>`); the
+    /// generic comparators (`cmp`, `before`/`after`) use the plain bridge so they
+    /// keep comparing strings as strings.
+    pub(super) fn coerce_numeric_bridge_pair_strict(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<(Value, Value), RuntimeError> {
+        crate::runtime::utils::check_str_numeric(&left)?;
+        crate::runtime::utils::check_str_numeric(&right)?;
+        self.coerce_numeric_bridge_pair(left, right)
+    }
+
     /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.

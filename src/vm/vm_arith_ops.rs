@@ -219,7 +219,7 @@ impl VM {
             {
                 return crate::builtins::arith_add(l, r);
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             crate::builtins::arith_add(l, r)
         })?;
         self.stack.push(result);
@@ -253,7 +253,7 @@ impl VM {
             {
                 return Ok(crate::builtins::arith_sub(l, r));
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             Ok(crate::builtins::arith_sub(l, r))
         })?;
         self.stack.push(result);
@@ -296,7 +296,7 @@ impl VM {
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
         })?;
         self.stack.push(result);
@@ -307,7 +307,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             crate::builtins::arith_div(l, r)
         })?;
         self.stack.push(result);
@@ -323,7 +323,7 @@ impl VM {
             if crate::builtins::arith::is_temporal_operand(&l) {
                 return crate::builtins::arith_mod(l, r);
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             crate::builtins::arith_mod(l, r)
         })?;
         self.stack.push(result);
@@ -355,7 +355,7 @@ impl VM {
             }
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             Ok(crate::builtins::arith_pow(l, r))
         })?;
         self.stack.push(result);

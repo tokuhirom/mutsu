@@ -1201,6 +1201,12 @@ impl Interpreter {
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
             if self.infix_uses_numeric_bridge(op) {
+                // Genuinely-numeric ops reject non-numeric strings; the generic
+                // comparators (cmp/before/after/min/max) compare them as strings.
+                if Self::infix_is_strictly_numeric(op) {
+                    crate::runtime::utils::check_str_numeric(&lhs)?;
+                    crate::runtime::utils::check_str_numeric(&rhs)?;
+                }
                 lhs = self.coerce_infix_operand_numeric(lhs)?;
                 rhs = self.coerce_infix_operand_numeric(rhs)?;
             }
@@ -1546,6 +1552,17 @@ impl Interpreter {
         )
     }
 
+    /// Subset of [`infix_uses_numeric_bridge`] that is *purely* numeric, so a
+    /// non-numeric string operand is an X::Str::Numeric error rather than a
+    /// string comparison. Excludes the generic comparators cmp/before/after/
+    /// min/max, which order strings as strings.
+    fn infix_is_strictly_numeric(op: &str) -> bool {
+        matches!(
+            op,
+            "+" | "-" | "*" | "/" | "%" | "**" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "<=>"
+        )
+    }
+
     /// Coerce an Instance operand to a numeric value via its `Numeric`/`Bridge`
     /// method. This is the single authoritative implementation shared by both the
     /// interpreter's infix-routine path (`call_infix_routine`) and the VM's arith/
@@ -1556,13 +1573,6 @@ impl Interpreter {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        // A non-numeric Str operand in numeric context (arithmetic/comparison)
-        // raises X::Str::Numeric — Raku never silently coerces "5 foo" to 0.
-        if let Value::Str(s) = &value
-            && let Some((pos, reason)) = crate::runtime::str_numeric::str_numeric_failure(s)
-        {
-            return Err(crate::runtime::utils::str_numeric_error(s, pos, &reason));
-        }
         if !matches!(value, Value::Instance { .. }) {
             return Ok(value);
         }

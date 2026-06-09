@@ -2875,6 +2875,21 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
     err
 }
 
+/// Raise `X::Str::Numeric` if `value` is a `Str` (or allomorph wrapping one)
+/// that cannot be parsed as a number. Used by the genuinely-numeric operators
+/// (`+ - * / % **`, `== != < > <= >= <=>`) so `"5 foo" + 8` fails the way Raku
+/// requires. The generic comparators (`cmp`, `before`/`after`, `min`/`max`) do
+/// NOT call this — they compare strings as strings.
+pub(crate) fn check_str_numeric(value: &Value) -> Result<(), RuntimeError> {
+    let inner = unwrap_mixin(value.clone());
+    if let Value::Str(s) = &inner
+        && let Some((pos, reason)) = crate::runtime::str_numeric::str_numeric_failure(s)
+    {
+        return Err(str_numeric_error(s, pos, &reason));
+    }
+    Ok(())
+}
+
 pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     // Unwrap allomorphic types (Mixin) to their inner numeric value
     let left = unwrap_mixin(left);

@@ -271,6 +271,11 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         return parse_to_heredoc(rest, flags.has_interpolation() || flags.qq_mode);
     }
 
+    // `Q => ...` is the pair key `Q`, not a `Q`-quote with `=` as its delimiter.
+    if rest.trim_start_matches(' ').starts_with("=>") {
+        return Err(PError::expected("Q string"));
+    }
+
     if let Some((open, close)) = quote_delimiters(rest) {
         flags.quote_open = Some(open);
         flags.quote_close = Some(close);
@@ -826,6 +831,12 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::fatal(
             "# cannot be used as a quote delimiter".to_string(),
         ));
+    }
+
+    // `q => ...` is the pair key `q`, not a `q`-quote with `=` as its delimiter.
+    // (rakudo accepts `=` as a delimiter for `q=foo=`, but `=>` is a fat arrow.)
+    if trimmed_after_q.starts_with("=>") {
+        return Err(PError::expected("q string"));
     }
 
     if let Some((open, close)) = quote_delimiters(after_q) {
