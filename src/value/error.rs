@@ -753,22 +753,32 @@ impl RuntimeError {
         Self::typed("X::ControlFlow::Return", attrs)
     }
 
-    /// X::TypeCheck::Assignment - Type check failed in assignment (with optional symbol)
-    pub(crate) fn typecheck_assignment(expected: &str, got: &str, symbol: Option<&str>) -> Self {
+    /// X::TypeCheck::Assignment - Type check failed in assignment (with optional symbol).
+    /// raku exposes `.expected` as the expected type OBJECT and `.got` as the
+    /// offending VALUE; the message still names the value's type.
+    pub(crate) fn typecheck_assignment(
+        expected: &str,
+        got_value: &Value,
+        symbol: Option<&str>,
+    ) -> Self {
+        let got_type = crate::value::types::what_type_name(got_value);
         let msg = if let Some(sym) = symbol {
             format!(
                 "Type check failed in assignment to {}; expected {}, got {}",
-                sym, expected, got
+                sym, expected, got_type
             )
         } else {
             format!(
                 "Type check failed in assignment; expected {}, got {}",
-                expected, got
+                expected, got_type
             )
         };
         let mut attrs = HashMap::new();
-        attrs.insert("expected".to_string(), Value::str(expected.to_string()));
-        attrs.insert("got".to_string(), Value::str(got.to_string()));
+        attrs.insert(
+            "expected".to_string(),
+            Value::Package(crate::symbol::Symbol::intern(expected)),
+        );
+        attrs.insert("got".to_string(), got_value.clone());
         if let Some(sym) = symbol {
             attrs.insert("symbol".to_string(), Value::str(sym.to_string()));
         }

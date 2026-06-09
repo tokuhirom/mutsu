@@ -2570,7 +2570,7 @@ impl VM {
                     }
                     return Err(RuntimeError::typecheck_assignment(
                         base_constraint,
-                        crate::runtime::utils::value_type_name(&value),
+                        &value,
                         var_name,
                     ));
                 }
@@ -2630,9 +2630,7 @@ impl VM {
             && !self.interpreter.is_container_subclass(constraint)
         {
             return Err(RuntimeError::typecheck_assignment(
-                constraint,
-                crate::runtime::utils::value_type_name(&value),
-                var_name,
+                constraint, &value, var_name,
             ));
         }
         if !matches!(value, Value::Nil) {

@@ -1345,7 +1345,7 @@ impl Interpreter {
                 {
                     return Err(RuntimeError::typecheck_assignment(
                         &type_constraint,
-                        super::utils::value_type_name(&value),
+                        &value,
                         Some(&format!("$!{}", method)),
                     ));
                 }
