@@ -1,7 +1,64 @@
 use super::*;
 use crate::ast::{PhaserKind, Stmt};
 
+/// Collect the names of all types (class/role/enum/subset) declared anywhere in
+/// `stmts`, descending into block-like bodies. Used so a sub parameter type that
+/// names a type declared in the same compilation unit is not falsely rejected.
+fn collect_declared_type_names(stmts: &[Stmt], out: &mut std::collections::HashSet<String>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::ClassDecl { name, body, .. } | Stmt::RoleDecl { name, body, .. } => {
+                out.insert(name.resolve().to_string());
+                collect_declared_type_names(body, out);
+            }
+            Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
+                out.insert(name.resolve().to_string());
+            }
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
+                collect_declared_type_names(body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Validate parameter type constraints for plain subs in `stmts` (descending
+/// into bare blocks/packages, but not class/role bodies whose methods may
+/// legitimately forward-reference the enclosing type).
+fn walk_validate_sub_param_types(
+    interp: &Interpreter,
+    stmts: &[Stmt],
+    declared: &std::collections::HashSet<String>,
+) -> Result<(), RuntimeError> {
+    for stmt in stmts {
+        match stmt {
+            Stmt::SubDecl {
+                param_defs, body, ..
+            } => {
+                interp.validate_param_type_constraints(param_defs, declared)?;
+                walk_validate_sub_param_types(interp, body, declared)?;
+            }
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
+                walk_validate_sub_param_types(interp, body, declared)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 impl Interpreter {
+    /// Reject sub parameter types that name a type unknown to this compilation
+    /// unit (e.g. `sub yoink(Junctoin $barf)`) -> X::Parameter::InvalidType.
+    pub(crate) fn check_eval_param_type_constraints(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut declared = std::collections::HashSet::new();
+        collect_declared_type_names(stmts, &mut declared);
+        walk_validate_sub_param_types(self, stmts, &declared)
+    }
+
     /// Parse and run only BEGIN/CHECK phasers from EVAL'd code (`:check` mode).
     fn parse_and_check_only_with_operators(
         &mut self,
