@@ -73,7 +73,10 @@ impl Interpreter {
                         );
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        attrs.insert("target".to_string(), Value::str_from("Num"));
+                        attrs.insert(
+                            "target".to_string(),
+                            Value::Package(crate::symbol::Symbol::intern("Num")),
+                        );
                         attrs.insert("source".to_string(), value.clone());
                         let ex = Value::make_instance(
                             crate::symbol::Symbol::intern("X::Numeric::Real"),
