@@ -42,7 +42,7 @@
 | ~~`vm_var_get_ops.rs` pkg-qualified~~ | ~~`Module::func` を term 位置で~~ | — | **✅消化 (PR3)**: 同上 |
 | `vm_call_func_ops.rs` builtin-shadow（slip + 通常 2 サイト） | ユーザ sub が同名 builtin を shadow | 部分消化 | **✅単一候補の compilable 分は ③ PR-2 で OTF compile 化**（proto/multi/複雑 sig は call_function_fallback 維持） |
 | `vm_call_func_ops.rs` multi-dispatch fork / final else | 非proto multi / `call_function` 末端 | 部分消化 | **✅非proto multi の unambiguous/OTF-compilable/非state 候補は ③ PR-4 で OTF compile 化**（ambiguity/where/state-alternate/proto/末端は fallback 維持） |
-| `vm_call_dispatch.rs` catch-all | `call_function_compiled_first` 末端 | HARD | ③ |
+| `vm_call_dispatch.rs` catch-all | `call_function_compiled_first` 末端（実測でほぼ枯渇＝下記 PR-6 注記） | HARD | ③（残=lexical-alias-to-builtin / `__mutsu_*` 内部 / 並行〔lever B〕/ no-match エラー生成） |
 | ~~`vm_dispatch_helpers.rs` Routine call_function~~ | ~~Routine 値の関数解決~~ | — | **✅消化 (③ PR-1)**: 3 サイトを統一 compiled-first へ（builtin 名 Routine は builtin 優先維持） |
 
 ## §C — CARRIER（撲滅対象外・文書化して残す。④で確定）
@@ -177,6 +177,21 @@
   `unregister_container_type_metadata` で防御的に stale エントリを除去（安全＝生きた別配列が同ポインタを持つことは不可能）。
   pin `t/native-array-mut.t`(31, aliasing ケース含む)。S32-array whitelist 全緑、make test PASS、array 系 whitelist 156/156。
   **残る catch-all**: `Package.new`〔③〕, `Any.AT-POS`/iterator protocol〔値型/iterator state〕, coercion〔builtins 降ろし候補〕, splice。
+
+- **2026-06-09 (③ PR-6, §2 catch-all 末端の実測 + junction constructor の builtins 降ろし)**: `vm_call_dispatch.rs:79`
+  の `call_function_compiled_first` 末端（`call_function` final else）に `END:` プレフィックス計装を入れ、whitelist sample
+  全体で**末端到達集合を実測**。結論: **末端はほぼ枯渇**（PR-1〜4 ＋ line 63-67 の「resolve できた def は全て OTF compile」
+  により、ユーザー関数はもう末端に来ない）。sample 全体で末端到達は合計 ~760 と少なく diffuse、内訳は ①`any`/`all`/`one`/`none`
+  junction constructor（pure builtin・本 PR で降ろし）, ②**lexical-alias-to-builtin**（`my &junction = ::("&any"); junction(|$_)`
+  ＝S03-junctions/autothreading.t の `END:junction=56`; Routine 束縛を名前経由で呼ぶため末端で lexical 解決＝正しく動作・niche）,
+  ③`__mutsu_*` 内部（CAS 等・並行は lever B）, ④no-match エラー生成（`notthere`＝末端で正規例外を投げるのが正しい）。
+  **高トラフィックの builtin は末端に残っていない**（`split`/`index`/`comb` 等は既に native か、他4サイト〔vm_call_func_ops〕
+  経由で Instance-guard fallback）。本 PR は唯一の pure-builtin カテゴリ＝**junction constructor を `builtins/functions.rs::build_junction`
+  へ降ろし**（one-arg flatten rule 込み・state 不使用）、`native_function` で any/all/one/none を全 arity ルート、interpreter の
+  `builtin_junction` も同 fn へ委譲して**重複実装を解消**（[[feedback_dedup_over_perf]]/[[feedback_placement_audit]]）。
+  junction 構築は型非依存で安全なので `try_native_function` の Instance-arg ガードを any/all/one/none に限り bypass
+  （`any($instance)` も native）。pin `t/native-junction-ctor.t`(24, Instance-arg 含む)。S03-junctions whitelist 全緑、make test PASS。
+  **結論: §2 末端は「高トラフィック撲滅」フェーズを終え、残りは③ state 所有（並行 CAS）/ lexical-alias-niche / エラー生成 carrier。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

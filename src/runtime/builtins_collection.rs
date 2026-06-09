@@ -277,31 +277,10 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let kind = match name {
-            "any" => JunctionKind::Any,
-            "all" => JunctionKind::All,
-            "one" => JunctionKind::One,
-            _ => JunctionKind::None,
-        };
-        // One-arg rule: when called with a single list/range argument,
-        // flatten it into the junction elements. With multiple arguments,
-        // each argument becomes a junction element without flattening.
-        let elems = if args.len() == 1 {
-            let arg = args.into_iter().next().unwrap();
-            match arg {
-                Value::Array(items, ..) => items.to_vec(),
-                Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                range @ (Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }) => Self::value_to_list(&range),
-                other => vec![other],
-            }
-        } else {
-            args
-        };
-        Ok(Value::junction(kind, elems))
+        // Delegate to the single shared implementation in `builtins` (the same
+        // one the VM-native dispatch uses) so this is no longer a duplicate
+        // tree-walk copy. See `crate::builtins::functions::build_junction`.
+        Ok(crate::builtins::build_junction(name, args))
     }
 
     pub(super) fn builtin_pair(&self, args: &[Value]) -> Result<Value, RuntimeError> {
