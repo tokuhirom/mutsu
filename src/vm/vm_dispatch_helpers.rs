@@ -436,7 +436,11 @@ impl VM {
             return self.interpreter.call_sub_value(target, args, true);
         }
 
-        Ok(Value::Nil)
+        // Any remaining value (Int, Str, Num, ...) is not Callable. Invoking it
+        // with `()` resolves the postfix-call to a `CALL-ME` method, which these
+        // types do not provide, so this raises X::Method::NotFound (method
+        // 'CALL-ME', typename = the value's type) — matching Raku.
+        self.try_compiled_method_or_interpret(target, "CALL-ME", args)
     }
 
     /// Force a lazy thunk: evaluate the sub on first access, cache and return the result.
