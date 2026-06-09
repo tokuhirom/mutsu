@@ -2440,10 +2440,18 @@ impl Interpreter {
                 "Capture",
             ];
             if !BUILTIN_TYPES.contains(&name) {
-                return Err(RuntimeError::new(format!(
-                    "You tried to augment class {}, but it does not exist",
-                    name
-                )));
+                let message = format!("You tried to augment class {}, but it does not exist", name);
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("message".to_string(), Value::str(message.clone()));
+                attrs.insert("package-kind".to_string(), Value::str("class".to_string()));
+                attrs.insert("package".to_string(), Value::str(name.to_string()));
+                let ex = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Augment::NoSuchType"),
+                    attrs,
+                );
+                let mut err = RuntimeError::new(message);
+                err.exception = Some(Box::new(ex));
+                return Err(err);
             }
             // Create a minimal entry for the builtin type
             self.registry_mut()
