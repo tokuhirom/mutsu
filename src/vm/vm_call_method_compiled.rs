@@ -532,6 +532,126 @@ impl VM {
         Some(result)
     }
 
+    /// VM-native Iterator protocol over a self-contained, array-backed `Iterator`
+    /// instance (`items` Array + `index` Int, no `squish_source` callbacks).
+    /// Handles the index-advancing protocol methods `pull-one`/`skip-one`/
+    /// `skip-at-least`/`skip-at-least-pull-one`/`sink-all`, mirroring the
+    /// interpreter's mutating iterator dispatch in `methods_mut.rs` exactly,
+    /// including the identity-based writeback (env + locals) so the receiver
+    /// variable and any aliases observe the advance. Behavior-invariant.
+    ///
+    /// Returns `None` (fall through to the interpreter) for: non-`Iterator`
+    /// receivers; squish iterators (which invoke user `as`/`with` callbacks);
+    /// predictive / coroutine iterators (no concrete `items` array); the
+    /// `push-*` family (it writes pulled elements into an external buffer arg,
+    /// needing array-identity writeback handled by the interpreter); and
+    /// `count-only`/`bool-only` (left to the interpreter's predictive handling).
+    pub(super) fn try_native_iterator(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(
+            method,
+            "pull-one" | "skip-one" | "skip-at-least" | "skip-at-least-pull-one" | "sink-all"
+        ) {
+            return None;
+        }
+        let Value::Instance {
+            class_name,
+            attributes,
+            id,
+        } = target
+        else {
+            return None;
+        };
+        if class_name.resolve() != "Iterator"
+            || attributes.contains_key("squish_source")
+            || attributes.contains_key("is_lazy")
+        {
+            // squish iterators invoke user callbacks; lazy iterators (gather /
+            // lazy Seq) pull through interpreter-owned coroutine state rather than
+            // a materialized `items` snapshot — leave both to the interpreter.
+            return None;
+        }
+        // Only a concrete array-backed iterator (excludes predictive/coroutine
+        // iterators whose state lives off the instance).
+        let Some(Value::Array(items, ..)) = attributes.get("items") else {
+            return None;
+        };
+        let len = items.len();
+        let start_index = match attributes.get("index") {
+            Some(Value::Int(i)) if *i >= 0 => *i as usize,
+            _ => 0,
+        };
+        let mut index = start_index;
+        let ret = match method {
+            "pull-one" => {
+                if index < len {
+                    let out = items[index].clone();
+                    index += 1;
+                    out
+                } else {
+                    Value::str_from("IterationEnd")
+                }
+            }
+            "sink-all" => {
+                index = len;
+                Value::str_from("IterationEnd")
+            }
+            "skip-one" => {
+                if index < len {
+                    index += 1;
+                    Value::Bool(true)
+                } else {
+                    Value::Bool(false)
+                }
+            }
+            "skip-at-least" => {
+                let want = args.first().map(crate::runtime::to_int).unwrap_or(0).max(0) as usize;
+                if len.saturating_sub(index) >= want {
+                    index += want;
+                    Value::Bool(true)
+                } else {
+                    index = len;
+                    Value::Bool(false)
+                }
+            }
+            "skip-at-least-pull-one" => {
+                let want = args.first().map(crate::runtime::to_int).unwrap_or(0).max(0) as usize;
+                if len.saturating_sub(index) >= want {
+                    index += want;
+                    if index < len {
+                        let out = items[index].clone();
+                        index += 1;
+                        out
+                    } else {
+                        Value::str_from("IterationEnd")
+                    }
+                } else {
+                    index = len;
+                    Value::str_from("IterationEnd")
+                }
+            }
+            _ => unreachable!(),
+        };
+        // Write the advanced index back by instance identity (env + locals), as
+        // the interpreter's mutating iterator dispatch does, so the receiver
+        // variable and aliases see the advance.
+        if index != start_index {
+            let mut updated = attributes.as_ref().clone();
+            updated.insert("index".to_string(), Value::Int(index as i64));
+            let cn = class_name.resolve();
+            let inst_id = *id;
+            self.interpreter
+                .overwrite_instance_bindings_by_identity(&cn, inst_id, updated.clone());
+            self.overwrite_instance_in_locals(&cn, inst_id, &updated);
+            self.env_dirty = true;
+        }
+        Some(Ok(ret))
+    }
+
     /// Compile a resolved user method's body on demand when it lacks bytecode,
     /// then dispatch as bytecode instead of through the interpreter bridge.
     /// Almost all user methods are already compiled at class registration

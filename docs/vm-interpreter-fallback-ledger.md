@@ -27,6 +27,7 @@
 | `vm_call_method_mut_ops.rs` catch-all | generic mut メソッド（plain untyped `@`-array mutators ＋ mutable Buf write methods は除く） | HARD | ③ |
 | ~~`vm_call_method_mut_ops.rs` plain `@`-array mutators~~ | ~~append/prepend/unshift/pop/shift~~ | — | **✅消化 (③ PR-5)**: `try_native_array_mut` で VM ネイティブ。typed/shaped/lazy/shared/constrained は interpreter 維持 |
 | ~~`vm_call_method_mut_ops.rs` mutable Buf write methods~~ | ~~write-bits/write-ubits/write-num*/write-int*/write-uint*~~ | — | **✅消化 (③ PR-7)**: `try_native_buf_mut` で VM ネイティブ。pure 変換は `builtins/{buf_bits,buf_write_num,buf_write_int}` に一本化。type-object/Blob/malformed-arity は interpreter 維持 |
+| ~~`vm_call_method_mut_ops.rs` 単純 array-backed Iterator~~ | ~~pull-one/skip-one/skip-at-least/skip-at-least-pull-one/sink-all~~ | — | **✅消化 (③ PR-9)**: `try_native_iterator` で VM ネイティブ（`$it.pull-one` は CallMethodMut＝mut パス）。`items`+`index` 自己完結のみ。squish（コールバック）/ lazy（gather/coroutine, `is_lazy`）/ push-*（外部バッファ）/ count-only/bool-only は interpreter 維持 |
 | `vm_call_method_mut_ops.rs` array-backed instance | `is Array` storage の push/pop/shift | MEDIUM | 第一級コンテナ Phase 2 |
 | `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B（共有セル所有） |
 | `vm_data_ops.rs` shaped push | shaped 配列 push | MEDIUM | shaped 次元メタ検査の VM 化 |
@@ -228,6 +229,22 @@
   pin `t/native-quanthash-coerce.t`(26)。whitelisted set/bag/mix 29 件全緑、cargo test 458/0。（set.t/bag.t の既知 fail は
   BLOCKERS.md 記載の pre-existing〔bag.t 215=BigInt weight・252=Foo instance union, set.t 226=typed-hash bind〕で本変更と無関係。）
   **次候補: iterator protocol（pull-one/skip-one/push-exactly）の VM ネイティブ化、または `AT-POS` native。本丸は `new`（③ ctor）。**
+
+- **2026-06-09 (③ PR-9, §1 = 単純 array-backed Iterator protocol の VM ネイティブ化)**: PR-8 の広がり実測で次点だった
+  iterator protocol（pull-one=2466/skip-one=2130 等、4-5 files・高カウント）を着手。`vm_call_method_mut_ops.rs` の
+  `try_native_buf_mut` の隣に `try_native_iterator` を追加し、**`items`(Array)+`index`(Int) 自己完結な `Iterator` インスタンス**への
+  `pull-one`/`skip-one`/`skip-at-least`/`skip-at-least-pull-one`/`sink-all` を VM ネイティブに（index 前進 →
+  `overwrite_instance_bindings_by_identity`(env) + `overwrite_instance_in_locals`(locals) で identity writeback＝interpreter の
+  mutating iterator dispatch と同一。エイリアス・sub ローカルスロットも正しく前進）。**重要な発見**: `$it.pull-one` は
+  **CallMethodMut にコンパイルされる**（`expr_method.rs:110` 変数受け手は全て CallMethodMut）＝当初 non-mut パスに置いて発火せず、
+  mut パスへ移して解決。**保守的フォールスルー**: squish iterator（`squish_source`＝ユーザー `as`/`with` コールバック）/ lazy
+  iterator（gather/coroutine＝`is_lazy` 属性、materialized items snapshot でなく interpreter コルーチン pull）/ push-*（外部
+  バッファ arg へ array-identity writeback が必要）/ count-only/bool-only（predictive 扱い）は interpreter 維持＝behavior-invariant。
+  **gather 回帰を1件発見・修正**: 初版が `is_lazy` 付き iterator も掴み `gather{...}.iterator.pull-one` が IterationEnd 即返し →
+  `is_lazy` 除外で解消（除外後は interpreter フォールスルー＝pre-existing 動作）。実測: List/Array/finite-Range iterator の pull-one
+  fallback → 0。pin `t/native-iterator.t`(18, エイリアス/sub ローカル/Range 含む)。S07-iterationbuffer/*-iterator 全緑、cargo test 458/0。
+  （gather.t の Failed:1 は BLOCKERS.md 記載の pre-existing take-rw〔test 38〕で本変更と無関係。）
+  **次候補: `AT-POS` native、coercion 以外の broad な §1、または本丸 `new`（③ ctor）の設計。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

@@ -1213,6 +1213,17 @@ impl VM {
                     self.env_dirty = true;
                     return Ok(());
                 }
+                // Native fast path for the Iterator protocol on a self-contained
+                // array-backed iterator (ledger §1: native receiver dispatch ->
+                // VM-native). `$it.pull-one` etc. compile to CallMethodMut, so the
+                // index-advancing dispatch lands here.
+                if modifier.is_none()
+                    && let Some(result) = self.try_native_iterator(&target, &method, &args)
+                {
+                    self.stack.push(result?);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
                 // Array-subclass instance delegation (mut path): when the Instance's
                 // class inherits from Array, delegate mutating Array methods to the
                 // backing __mutsu_array_storage attribute and write back.
