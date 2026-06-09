@@ -652,6 +652,26 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // Track whether user provided an explicit default (before auto-default)
     let has_explicit_default = default.is_some();
 
+    // A placeholder variable (`$^b`, `@_`, ...) used directly in an attribute
+    // initializer cannot be captured by any signature -> X::Placeholder::Attribute.
+    if let Some(def) = default.as_ref()
+        && let Some(ph) = crate::ast::collect_unattached_placeholders(std::slice::from_ref(
+            &Stmt::Expr(def.clone()),
+        ))
+        .into_iter()
+        .next()
+    {
+        let message = format!(
+            "Cannot use placeholder parameter {} in an attribute initializer",
+            ph
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("placeholder".to_string(), Value::str(ph));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::Placeholder::Attribute"), attrs);
+        return Err(PError::fatal_with_exception(message, Box::new(ex)));
+    }
+
     // Apply `use attributes :D/:U/:_` pragma if no explicit smiley on the type
     let smiley_from_pragma = type_smiley.is_none() && type_constraint.is_some() && {
         let pragma = super::super::simple::current_attributes_pragma();
