@@ -4,13 +4,69 @@ use crate::symbol::Symbol;
 /// Core built-in type names used as candidates for type-name "Did you mean"
 /// suggestions (in addition to user-registered classes).
 pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
-    "Mu", "Any", "Cool", "Int", "Num", "Rat", "FatRat", "Complex", "Str", "Bool", "Array", "Hash",
-    "List", "Map", "Set", "Bag", "Mix", "SetHash", "BagHash", "MixHash", "Range", "Pair", "Seq",
-    "Slip", "Junction", "Regex", "Match", "Grammar", "Exception", "Failure", "Version", "Nil",
-    "Block", "Code", "Routine", "Sub", "Method", "Whatever", "WhateverCode", "Callable", "Numeric",
-    "Real", "Stringy", "Positional", "Associative", "Iterable", "Iterator", "Capture", "Signature",
-    "Parameter", "Date", "DateTime", "Instant", "Duration", "Buf", "Blob", "Promise", "Supply",
-    "Channel", "Thread", "Proc", "IO", "Scalar",
+    "Mu",
+    "Any",
+    "Cool",
+    "Int",
+    "Num",
+    "Rat",
+    "FatRat",
+    "Complex",
+    "Str",
+    "Bool",
+    "Array",
+    "Hash",
+    "List",
+    "Map",
+    "Set",
+    "Bag",
+    "Mix",
+    "SetHash",
+    "BagHash",
+    "MixHash",
+    "Range",
+    "Pair",
+    "Seq",
+    "Slip",
+    "Junction",
+    "Regex",
+    "Match",
+    "Grammar",
+    "Exception",
+    "Failure",
+    "Version",
+    "Nil",
+    "Block",
+    "Code",
+    "Routine",
+    "Sub",
+    "Method",
+    "Whatever",
+    "WhateverCode",
+    "Callable",
+    "Numeric",
+    "Real",
+    "Stringy",
+    "Positional",
+    "Associative",
+    "Iterable",
+    "Iterator",
+    "Capture",
+    "Signature",
+    "Parameter",
+    "Date",
+    "DateTime",
+    "Instant",
+    "Duration",
+    "Buf",
+    "Blob",
+    "Promise",
+    "Supply",
+    "Channel",
+    "Thread",
+    "Proc",
+    "IO",
+    "Scalar",
 ];
 
 impl Interpreter {
@@ -544,11 +600,8 @@ impl Interpreter {
         // Rakudo accepts a candidate whose Levenshtein distance from the typo
         // is at most `chars div 3` (e.g. a 4-char name tolerates 1 edit, a
         // 9-char name 3 edits), with a floor of 1 for names of length >= 3.
-        let max_distance = (name.chars().count() / 3).max(if name.chars().count() >= 3 {
-            1
-        } else {
-            0
-        });
+        let max_distance =
+            (name.chars().count() / 3).max(if name.chars().count() >= 3 { 1 } else { 0 });
         let mut scored: Vec<(usize, String)> = Vec::new();
         let mut seen = HashSet::new();
         for cand in candidates {

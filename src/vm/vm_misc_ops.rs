@@ -2598,8 +2598,10 @@ impl VM {
                 } else if suggestions.len() > 1 {
                     let quoted: Vec<String> =
                         suggestions.iter().map(|s| format!("'{}'", s)).collect();
-                    undecl_msg
-                        .push_str(&format!(" Did you mean any of these: {}?", quoted.join(", ")));
+                    undecl_msg.push_str(&format!(
+                        " Did you mean any of these: {}?",
+                        quoted.join(", ")
+                    ));
                 }
                 let mut undecl_attrs = std::collections::HashMap::new();
                 undecl_attrs.insert("what".to_string(), Value::str("type".to_string()));
@@ -2609,8 +2611,10 @@ impl VM {
                     Value::array(suggestions.iter().cloned().map(Value::str).collect()),
                 );
                 undecl_attrs.insert("message".to_string(), Value::str(undecl_msg.clone()));
-                let sorrow =
-                    Value::make_instance(crate::symbol::Symbol::intern("X::Undeclared"), undecl_attrs);
+                let sorrow = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Undeclared"),
+                    undecl_attrs,
+                );
                 // Group message mirrors Raku: the sorrow message plus "Malformed my".
                 let group_msg = format!("{}\nMalformed my", undecl_msg);
                 let mut group_attrs = std::collections::HashMap::new();
