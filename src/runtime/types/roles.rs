@@ -318,6 +318,25 @@ impl Interpreter {
         }
 
         if let Some(role) = role {
+            // Supplying an initialization value (`$x but R(v)`) is only legal
+            // when the role has exactly one public attribute. Type parameters
+            // (`R[T]`) are not initialization values, so skip the check when the
+            // role is parameterized.
+            let has_type_params = self
+                .registry()
+                .role_type_params
+                .get(role_name)
+                .is_some_and(|params| !params.is_empty());
+            if !role_args.is_empty() && !has_type_params {
+                let public_attr_count = role
+                    .attributes
+                    .iter()
+                    .filter(|(_, is_public, ..)| *is_public)
+                    .count();
+                if public_attr_count != 1 {
+                    return Err(RuntimeError::role_initialization(role_name));
+                }
+            }
             // Temporarily merge captured environment from the role definition
             // so that attribute defaults can reference closure variables.
             let saved_env = if let Some(captured) = &role.captured_env {
