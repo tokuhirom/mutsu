@@ -308,6 +308,16 @@ pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
 /// placeholders `@_` / `%_` are legal when they are explicitly declared as
 /// parameters (`sub f(%_) { %_<k> }`), so such declared names are skipped.
 fn placeholder_overrides_signature_error(body: &[Stmt], param_defs: &[ParamDef]) -> Option<PError> {
+    // `$^X`, `$^O`, ... (a sigil, a caret, then a single uppercase ASCII letter)
+    // are Perl 5 special variables, not Raku placeholders, so they never
+    // override a signature (Rakudo reports them as "Unsupported use" instead).
+    let is_perl5_caret_special = |ph: &str| {
+        let b = ph.as_bytes();
+        b.len() == 3
+            && matches!(b[0], b'$' | b'@' | b'%' | b'&')
+            && b[1] == b'^'
+            && b[2].is_ascii_uppercase()
+    };
     let declared: std::collections::HashSet<&str> =
         param_defs.iter().map(|p| p.name.as_str()).collect();
     let mut line: i64 = 0;
@@ -318,7 +328,7 @@ fn placeholder_overrides_signature_error(body: &[Stmt], param_defs: &[ParamDef])
         }
         if let Some(ph) = crate::ast::collect_unattached_placeholders(std::slice::from_ref(stmt))
             .into_iter()
-            .find(|ph| !declared.contains(ph.as_str()))
+            .find(|ph| !declared.contains(ph.as_str()) && !is_perl5_caret_special(ph))
         {
             let message = format!(
                 "Placeholder variable '{}' cannot override existing signature",

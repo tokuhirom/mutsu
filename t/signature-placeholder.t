@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 10;
 
 # A routine with an explicit signature (even empty) may not use placeholder
 # variables in its body -> X::Signature::Placeholder.
@@ -34,3 +34,8 @@ lives-ok { EVAL 'sub f(%_) { %_<a> }' },
     'explicitly declared %_ parameter is allowed';
 lives-ok { EVAL 'sub f(@_) { @_[0] }' },
     'explicitly declared @_ parameter is allowed';
+
+# `$^X` (a single uppercase letter after the caret) is a Perl 5 special
+# variable, not a placeholder, so it must not raise X::Signature::Placeholder.
+lives-ok { EVAL 'sub f($a) { my $s = qq/x$^X/ }' },
+    'single-uppercase caret var ($^X) is not a placeholder';
