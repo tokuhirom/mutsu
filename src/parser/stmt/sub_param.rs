@@ -278,6 +278,75 @@ fn malformed_double_closure_error() -> PError {
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
+/// Reject placeholder (`$:x`, `$^x`) and twigil (`$?x`, `$=x`, `$~x`) variables
+/// when they appear as a signature parameter. `input` is the remaining param
+/// text, positioned at the sigil. Returns `Ok(())` when the param is not one of
+/// these forms (the caller proceeds with normal parsing).
+fn reject_placeholder_or_twigil_param(input: &str) -> Result<(), PError> {
+    let bytes = input.as_bytes();
+    if bytes.len() < 3 || !matches!(bytes[0], b'$' | b'@' | b'%' | b'&') {
+        return Ok(());
+    }
+    let sigil = bytes[0] as char;
+    let twigil = bytes[1] as char;
+    if !matches!(twigil, ':' | '^' | '?' | '=' | '~') {
+        return Ok(());
+    }
+    // `$::x` is a package-qualified variable, not a `:` placeholder.
+    if twigil == ':' && bytes[2] == b':' {
+        return Ok(());
+    }
+    // Must be followed by an identifier character to be a placeholder/twigil var.
+    let after = &input[2..];
+    let next = after.chars().next();
+    if !next.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+        return Ok(());
+    }
+    let end = after
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(after.len());
+    let name = &after[..end];
+    let parameter = format!("{sigil}{twigil}{name}");
+
+    let mut attrs = HashMap::new();
+    attrs.insert("parameter".to_string(), Value::str(parameter.clone()));
+
+    let (class, msg) = match twigil {
+        ':' => {
+            let right = format!(":{sigil}{name}");
+            attrs.insert("right".to_string(), Value::str(right.clone()));
+            (
+                "X::Parameter::Placeholder",
+                format!(
+                    "Named placeholder variables like '{parameter}' are not allowed in signatures. \nDid you mean: '{right}' ?"
+                ),
+            )
+        }
+        '^' => {
+            let right = format!("{sigil}{name}");
+            attrs.insert("right".to_string(), Value::str(right.clone()));
+            (
+                "X::Parameter::Placeholder",
+                format!(
+                    "Positional placeholder variables like '{parameter}' are not allowed in signatures.  Did you mean: '{right}' ?"
+                ),
+            )
+        }
+        _ => {
+            attrs.insert("twigil".to_string(), Value::str(twigil.to_string()));
+            (
+                "X::Parameter::Twigil",
+                format!(
+                    "Parameters with a '{twigil}' twigil, like '{parameter}', are not allowed in signatures."
+                ),
+            )
+        }
+    };
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern(class), attrs);
+    Err(PError::fatal_with_exception(msg, Box::new(ex)))
+}
+
 fn stmts_contain_whatever(stmts: &[Stmt]) -> bool {
     stmts.iter().any(stmt_contains_whatever)
 }
@@ -1329,6 +1398,14 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.optional_marker = opt_marker;
         return Ok((rest, p));
     }
+
+    // Reject placeholder/twigil variables in signatures:
+    //   $:x @:x %:x  -> X::Parameter::Placeholder (named, right => ':$x')
+    //   $^x          -> X::Parameter::Placeholder (positional, right => '$x')
+    //   $?x $=x $~x  -> X::Parameter::Twigil
+    // ($!x / $.x are attribute twigils, handled separately as X::Syntax::NoSelf
+    // or accessor params; $*x is a dynamic variable and is legal.)
+    reject_placeholder_or_twigil_param(rest)?;
 
     // Capture the original sigil before var_name strips it
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
