@@ -1964,7 +1964,11 @@ impl Compiler {
                         self.compile_stmt(inner);
                     }
                 }
-                self.code.emit(OpCode::CheckPhaser { is_pre: true });
+                let condition_idx = self.phaser_condition_idx(body);
+                self.code.emit(OpCode::CheckPhaser {
+                    is_pre: true,
+                    condition_idx,
+                });
             }
             Stmt::Phaser {
                 kind: PhaserKind::Post,
@@ -1984,7 +1988,11 @@ impl Compiler {
                         self.compile_stmt(inner);
                     }
                 }
-                self.code.emit(OpCode::CheckPhaser { is_pre: false });
+                let condition_idx = self.phaser_condition_idx(body);
+                self.code.emit(OpCode::CheckPhaser {
+                    is_pre: false,
+                    condition_idx,
+                });
             }
             Stmt::Phaser { .. } => {}
 
@@ -2421,6 +2429,31 @@ impl Compiler {
     }
 
     /// Compile PRE phasers in forward source order.
+    /// Add the source text of a PRE/POST phaser's condition as a constant and
+    /// return its index, for the X::Phaser::PrePost `condition`/message. The
+    /// condition is the phaser body's final expression (e.g. `0`); block-form
+    /// bodies and non-trivial expressions yield `None`.
+    fn phaser_condition_idx(&mut self, body: &[Stmt]) -> Option<u32> {
+        let last = body.last()?;
+        let Stmt::Expr(expr) = last else { return None };
+        let src = Self::deparse_phaser_condition(expr)?;
+        Some(self.code.add_constant(Value::str(src)))
+    }
+
+    /// Best-effort source reconstruction of a phaser condition expression,
+    /// covering the common literal/variable forms (e.g. statement-form
+    /// `PRE 0`). Non-trivial expressions yield `None`.
+    fn deparse_phaser_condition(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Literal(v) => Some(v.to_string_value()),
+            Expr::Var(name) => Some(format!("${}", name)),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::BareWord(name) => Some(name.to_string()),
+            _ => None,
+        }
+    }
+
     /// Each PRE body is compiled, followed by a CheckPhaser { is_pre: true }.
     pub(super) fn compile_pre_phasers(compiler: &mut Compiler, stmts: &[Stmt]) {
         for s in stmts {
@@ -2444,7 +2477,11 @@ impl Compiler {
                         compiler.compile_stmt(inner);
                     }
                 }
-                compiler.code.emit(OpCode::CheckPhaser { is_pre: true });
+                let condition_idx = compiler.phaser_condition_idx(body);
+                compiler.code.emit(OpCode::CheckPhaser {
+                    is_pre: true,
+                    condition_idx,
+                });
             }
         }
     }
@@ -2471,7 +2508,11 @@ impl Compiler {
                         compiler.compile_stmt(inner);
                     }
                 }
-                compiler.code.emit(OpCode::CheckPhaser { is_pre: false });
+                let condition_idx = compiler.phaser_condition_idx(body);
+                compiler.code.emit(OpCode::CheckPhaser {
+                    is_pre: false,
+                    condition_idx,
+                });
             }
         }
     }

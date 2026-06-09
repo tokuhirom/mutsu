@@ -3739,8 +3739,12 @@ impl VM {
             OpCode::BlockLocalScope { body_end } => {
                 self.exec_block_local_scope_op(code, *body_end, ip, compiled_fns)?;
             }
-            OpCode::CheckPhaser { is_pre } => {
-                self.exec_check_phaser_op(*is_pre)?;
+            OpCode::CheckPhaser {
+                is_pre,
+                condition_idx,
+            } => {
+                let condition = condition_idx.map(|idx| Self::const_str(code, idx).to_string());
+                self.exec_check_phaser_op(*is_pre, condition)?;
                 *ip += 1;
             }
             OpCode::LeaveGuard { .. } => {
