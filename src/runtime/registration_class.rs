@@ -910,15 +910,34 @@ impl Interpreter {
                     return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
                 }
                 {
-                    let msg = format!(
-                        "class '{}' specifies unknown parent class '{}'",
+                    // Suggest close known type names (Did-you-mean).
+                    let suggestions = self.suggest_type_names(resolved_parent_name.as_str());
+                    let mut msg = format!(
+                        "'{}' cannot inherit from '{}' because it is unknown.",
                         name, resolved_parent_name
                     );
+                    if suggestions.len() == 1 {
+                        msg.push_str(&format!("\nDid you mean '{}'?", suggestions[0]));
+                    } else if suggestions.len() > 1 {
+                        msg.push_str("\nDid you mean one of these?\n");
+                        for s in &suggestions {
+                            msg.push_str(&format!("    '{}'\n", s));
+                        }
+                    }
                     let mut attrs = HashMap::new();
                     attrs.insert("child-name".to_string(), Value::str(name.to_string()));
+                    attrs.insert("child".to_string(), Value::str(name.to_string()));
                     attrs.insert(
                         "parent-name".to_string(),
                         Value::str(resolved_parent_name.to_string()),
+                    );
+                    attrs.insert(
+                        "parent".to_string(),
+                        Value::str(resolved_parent_name.to_string()),
+                    );
+                    attrs.insert(
+                        "suggestions".to_string(),
+                        Value::array(suggestions.into_iter().map(Value::str).collect()),
                     );
                     attrs.insert("message".to_string(), Value::str(msg));
                     return Err(RuntimeError::typed("X::Inheritance::UnknownParent", attrs));

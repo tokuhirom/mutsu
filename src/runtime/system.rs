@@ -1,6 +1,74 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Core built-in type names used as candidates for type-name "Did you mean"
+/// suggestions (in addition to user-registered classes).
+pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
+    "Mu",
+    "Any",
+    "Cool",
+    "Int",
+    "Num",
+    "Rat",
+    "FatRat",
+    "Complex",
+    "Str",
+    "Bool",
+    "Array",
+    "Hash",
+    "List",
+    "Map",
+    "Set",
+    "Bag",
+    "Mix",
+    "SetHash",
+    "BagHash",
+    "MixHash",
+    "Range",
+    "Pair",
+    "Seq",
+    "Slip",
+    "Junction",
+    "Regex",
+    "Match",
+    "Grammar",
+    "Exception",
+    "Failure",
+    "Version",
+    "Nil",
+    "Block",
+    "Code",
+    "Routine",
+    "Sub",
+    "Method",
+    "Whatever",
+    "WhateverCode",
+    "Callable",
+    "Numeric",
+    "Real",
+    "Stringy",
+    "Positional",
+    "Associative",
+    "Iterable",
+    "Iterator",
+    "Capture",
+    "Signature",
+    "Parameter",
+    "Date",
+    "DateTime",
+    "Instant",
+    "Duration",
+    "Buf",
+    "Blob",
+    "Promise",
+    "Supply",
+    "Channel",
+    "Thread",
+    "Proc",
+    "IO",
+    "Scalar",
+];
+
 impl Interpreter {
     fn parse_and_eval_with_operators(
         &mut self,
@@ -522,19 +590,18 @@ impl Interpreter {
     /// Suggest close type names (registered classes/roles) for an undeclared
     /// type `name`. Used for X::Undeclared::Symbols `.type_suggestion`.
     pub(crate) fn suggest_type_names(&self, name: &str) -> Vec<String> {
-        let candidates: Vec<String> = self.registry().classes.keys().cloned().collect();
+        let mut candidates: Vec<String> = self.registry().classes.keys().cloned().collect();
+        candidates.extend(CORE_TYPE_NAMES.iter().map(|s| s.to_string()));
         Self::suggest_from_candidates(name, &candidates)
     }
 
     fn suggest_from_candidates(name: &str, candidates: &[String]) -> Vec<String> {
         use crate::runtime::did_you_mean::levenshtein_distance;
-        let max_distance = if name.len() <= 3 {
-            1
-        } else if name.len() <= 6 {
-            2
-        } else {
-            3
-        };
+        // Rakudo accepts a candidate whose Levenshtein distance from the typo
+        // is at most `chars div 3` (e.g. a 4-char name tolerates 1 edit, a
+        // 9-char name 3 edits), with a floor of 1 for names of length >= 3.
+        let max_distance =
+            (name.chars().count() / 3).max(if name.chars().count() >= 3 { 1 } else { 0 });
         let mut scored: Vec<(usize, String)> = Vec::new();
         let mut seen = HashSet::new();
         for cand in candidates {

@@ -2588,14 +2588,41 @@ impl VM {
                 .is_none()
             {
                 // Unknown user-defined type — reject it.
-                // Include "Malformed my" in the message to match Raku's error output
-                // (raku reports both "Type '...' is not declared" and "Malformed my").
-                let msg = format!("Type '{}' is not declared. Malformed my", constraint);
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("what".to_string(), Value::str("type".to_string()));
-                attrs.insert("symbol".to_string(), Value::str(constraint.to_string()));
-                attrs.insert("message".to_string(), Value::str(msg.clone()));
-                return Err(RuntimeError::typed("X::Undeclared", attrs));
+                // In Raku this is a compile-time failure grouped into an
+                // X::Comp::Group whose `.sorrows` holds the underlying
+                // X::Undeclared (with type "Did you mean" suggestions).
+                let suggestions = self.interpreter.suggest_type_names(constraint);
+                let mut undecl_msg = format!("Type '{}' is not declared.", constraint);
+                if suggestions.len() == 1 {
+                    undecl_msg.push_str(&format!(" Did you mean '{}'?", suggestions[0]));
+                } else if suggestions.len() > 1 {
+                    let quoted: Vec<String> =
+                        suggestions.iter().map(|s| format!("'{}'", s)).collect();
+                    undecl_msg.push_str(&format!(
+                        " Did you mean any of these: {}?",
+                        quoted.join(", ")
+                    ));
+                }
+                let mut undecl_attrs = std::collections::HashMap::new();
+                undecl_attrs.insert("what".to_string(), Value::str("type".to_string()));
+                undecl_attrs.insert("symbol".to_string(), Value::str(constraint.to_string()));
+                undecl_attrs.insert(
+                    "suggestions".to_string(),
+                    Value::array(suggestions.iter().cloned().map(Value::str).collect()),
+                );
+                undecl_attrs.insert("message".to_string(), Value::str(undecl_msg.clone()));
+                let sorrow = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Undeclared"),
+                    undecl_attrs,
+                );
+                // Group message mirrors Raku: the sorrow message plus "Malformed my".
+                let group_msg = format!("{}\nMalformed my", undecl_msg);
+                let mut group_attrs = std::collections::HashMap::new();
+                group_attrs.insert("sorrows".to_string(), Value::array(vec![sorrow]));
+                group_attrs.insert("worries".to_string(), Value::array(vec![]));
+                group_attrs.insert("panic".to_string(), Value::Nil);
+                group_attrs.insert("message".to_string(), Value::str(group_msg));
+                return Err(RuntimeError::typed("X::Comp::Group", group_attrs));
             }
         }
         if !matches!(value, Value::Nil)
