@@ -301,7 +301,14 @@ impl VM {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if args.iter().any(|arg| matches!(arg, Value::Instance { .. })) {
-            return None;
+            // Junction constructors wrap their arguments verbatim regardless of
+            // type, so an Instance argument is safe to handle natively; every
+            // other native function bails out on Instance args (they may need
+            // method dispatch) and falls through to the interpreter.
+            let name = name_sym.resolve();
+            if !matches!(name.as_str(), "any" | "all" | "one" | "none") {
+                return None;
+            }
         }
         // For functions that need to iterate their arguments (e.g. flat),
         // force any LazyList arguments first so the pure builtin can process them.
