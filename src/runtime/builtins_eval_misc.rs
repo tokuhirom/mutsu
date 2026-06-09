@@ -281,10 +281,17 @@ impl Interpreter {
         if let Some(lang) = Self::named_value(args, "lang") {
             let lang = lang.to_string_value();
             if !lang.eq_ignore_ascii_case("raku") && !lang.eq_ignore_ascii_case("perl6") {
-                return Err(RuntimeError::new(format!(
-                    "EVAL with :lang<{}> is not supported",
-                    lang
-                )));
+                let message = format!("No compiler available for language '{}'", lang);
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("lang".to_string(), Value::str(lang));
+                attrs.insert("message".to_string(), Value::str(message.clone()));
+                let ex = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Eval::NoSuchLang"),
+                    attrs,
+                );
+                let mut err = RuntimeError::new(message);
+                err.exception = Some(Box::new(ex));
+                return Err(err);
             }
         }
         if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
