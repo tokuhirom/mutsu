@@ -470,6 +470,25 @@ pub(crate) enum ForMode {
     Lazy,
 }
 
+/// The declarator keyword used for a `Stmt::Package`. Determines the
+/// `package-kind` reported by X::Attribute::Package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum PackageKind {
+    Module,
+    Package,
+    Grammar,
+}
+
+impl PackageKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            PackageKind::Module => "module",
+            PackageKind::Package => "package",
+            PackageKind::Grammar => "grammar",
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
@@ -538,6 +557,10 @@ pub(crate) enum Stmt {
     Package {
         name: Symbol,
         body: Vec<Stmt>,
+        /// The declarator keyword used (`module`, `package`, `grammar`), which
+        /// determines `package-kind` in the X::Attribute::Package error raised
+        /// when a `has` attribute is declared in this package's body.
+        kind: PackageKind,
         /// True for `unit module Foo;` / `unit package Foo;` where the scope
         /// extends to the rest of the enclosing scope, false for brace-scoped
         /// `package Foo { ... }`.

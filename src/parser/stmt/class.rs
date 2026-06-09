@@ -1729,6 +1729,7 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let package_stmt = Stmt::Package {
         name: Symbol::intern(&name),
         body,
+        kind: crate::ast::PackageKind::Module,
         is_unit: false,
         is_my: false,
     };
@@ -1945,9 +1946,13 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
     // Accept both `unit module Foo;` and `unit package Foo;`
-    let rest = keyword("module", rest)
-        .or_else(|| keyword("package", rest))
-        .ok_or_else(|| PError::expected("'module' or 'package' after 'unit'"))?;
+    let (rest, kind) = if let Some(r) = keyword("module", rest) {
+        (r, crate::ast::PackageKind::Module)
+    } else if let Some(r) = keyword("package", rest) {
+        (r, crate::ast::PackageKind::Package)
+    } else {
+        return Err(PError::expected("'module' or 'package' after 'unit'"));
+    };
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     check_pseudo_package_in_decl(&name)?;
@@ -1958,6 +1963,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         Stmt::Package {
             name: Symbol::intern(&name),
             body: Vec::new(),
+            kind,
             is_unit: true,
             is_my: false,
         },
@@ -1987,6 +1993,7 @@ fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, Stmt> {
         Stmt::Package {
             name: Symbol::intern(&name),
             body,
+            kind: crate::ast::PackageKind::Package,
             is_unit: false,
             is_my,
         },
