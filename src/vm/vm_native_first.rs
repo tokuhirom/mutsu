@@ -75,4 +75,62 @@ impl VM {
             Err(e) => Some(Err(e)),
         }
     }
+
+    /// Lazy `.first` over a gather-sourced `LazyList`: pull elements
+    /// incrementally via the coroutine and test the matcher, instead of forcing
+    /// the whole (possibly infinite) list. Returns `Some` when handled, `None`
+    /// to fall back to the eager full-force path (adverbs / `Bool` matcher).
+    pub(super) fn try_lazy_gather_first(
+        &mut self,
+        list: &crate::value::LazyList,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        // Mirror `try_native_first` gating: at most one positional matcher and
+        // no adverbs / `Bool` matcher (those keep interpreter semantics).
+        let mut func: Option<Value> = None;
+        for arg in args {
+            match arg {
+                Value::Pair(..) | Value::Bool(_) => return None,
+                _ if func.is_none() => func = Some(arg.clone()),
+                _ => return None,
+            }
+        }
+
+        // No matcher: `.first` is just the first element.
+        let Some(func) = func else {
+            return match self.force_lazy_list_vm_n(list, 1) {
+                Ok(items) => Some(Ok(items.into_iter().next().unwrap_or(Value::Nil))),
+                Err(e) => Some(Err(e)),
+            };
+        };
+
+        // Pull one element at a time and test it. Pulling singly (rather than in
+        // chunks) keeps the gather body's side effects in step with the match
+        // position, matching Rakudo (`.first(* >= 3)` runs the body exactly as
+        // far as the first match, no further).
+        let mut idx = 0usize;
+        loop {
+            let items = match self.force_lazy_list_vm_n(list, idx + 1) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            // Fewer items than requested => the gather body finished (finite
+            // source) without a match.
+            if items.len() <= idx {
+                return Some(Ok(Value::Nil));
+            }
+            let item = items[idx].clone();
+            let matched = {
+                let mut matcher = VmFirstMatcher(self);
+                match matcher.item_matches(&func, &item) {
+                    Ok(b) => b,
+                    Err(e) => return Some(Err(e)),
+                }
+            };
+            if matched {
+                return Some(Ok(item));
+            }
+            idx += 1;
+        }
+    }
 }

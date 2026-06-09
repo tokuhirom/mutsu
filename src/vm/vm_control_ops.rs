@@ -190,6 +190,16 @@ impl VM {
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
+        // When resuming a gather coroutine that suspended inside this loop, the
+        // marker is consumed here; the loop's state lives in locals/env so
+        // re-entering from the top (cond re-check) continues correctly.
+        if matches!(
+            self.gather_for_loop_resume,
+            Some(crate::value::ForLoopResumeState::CStyleLoop)
+        ) {
+            self.gather_for_loop_resume = None;
+        }
+
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures, incl. `while my $x = ...` condition declarations).
         // Balanced by pop on every exit path.
@@ -290,6 +300,19 @@ impl VM {
                         }
                         break 'body_redo;
                     }
+                    Err(e)
+                        if e.message
+                            == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
+                    {
+                        // Gather coroutine suspend inside a `while`/`until` loop.
+                        // Park a marker so the outer forcer keeps `*ip` on this
+                        // loop opcode (it stays unchanged on this Err path),
+                        // letting us re-enter and continue from locals/env state.
+                        self.gather_for_loop_resume =
+                            Some(crate::value::ForLoopResumeState::CStyleLoop);
+                        self.pop_loop_local_scope(code);
+                        return Err(e);
+                    }
                     Err(e) => {
                         self.pop_loop_local_scope(code);
                         return Err(e);
@@ -315,8 +338,13 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        // Check for gather coroutine resume state.
-        if let Some(resume) = self.gather_for_loop_resume.take() {
+        // Check for gather coroutine resume state. A `CStyleLoop` marker belongs
+        // to a `loop`/`while` opcode, not this for-loop, so leave it in place.
+        if !matches!(
+            self.gather_for_loop_resume,
+            Some(crate::value::ForLoopResumeState::CStyleLoop)
+        ) && let Some(resume) = self.gather_for_loop_resume.take()
+        {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
             match resume {
@@ -367,6 +395,8 @@ impl VM {
                     *ip = loop_end;
                     return Ok(());
                 }
+                // Guarded out above: a CStyleLoop marker is never taken here.
+                crate::value::ForLoopResumeState::CStyleLoop => unreachable!(),
             }
         }
 
@@ -2012,6 +2042,16 @@ impl VM {
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
+        // When resuming a gather coroutine that suspended inside this loop, the
+        // marker is consumed here; the loop's actual state lives in locals/env
+        // so re-entering from the top (cond re-check) continues correctly.
+        if matches!(
+            self.gather_for_loop_resume,
+            Some(crate::value::ForLoopResumeState::CStyleLoop)
+        ) {
+            self.gather_for_loop_resume = None;
+        }
+
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit path.
         self.push_loop_local_scope();
@@ -2069,6 +2109,28 @@ impl VM {
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
+                    }
+                    Err(e)
+                        if e.message
+                            == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
+                    {
+                        // Gather coroutine suspend inside a `loop`/`while`/C-style
+                        // loop. Run this iteration's step now (it would otherwise
+                        // run after the body's normal completion below), so that
+                        // re-entering the loop opcode on resume continues at the
+                        // condition check exactly where normal flow would. Then
+                        // park a marker so the outer forcer keeps `*ip` on this
+                        // loop opcode (it stays unchanged on this Err path).
+                        if let Err(step_err) =
+                            self.run_range(code, step_begin, loop_end, compiled_fns)
+                        {
+                            self.pop_loop_local_scope(code);
+                            return Err(step_err);
+                        }
+                        self.gather_for_loop_resume =
+                            Some(crate::value::ForLoopResumeState::CStyleLoop);
+                        self.pop_loop_local_scope(code);
+                        return Err(e);
                     }
                     Err(e) => {
                         self.pop_loop_local_scope(code);

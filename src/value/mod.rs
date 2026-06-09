@@ -1174,6 +1174,11 @@ pub(crate) enum ForLoopResumeState {
         lazy_list: Arc<LazyList>,
         next_index: usize,
     },
+    /// Resume a C-style / `loop` / `while` loop. These loops carry no iteration
+    /// index — their state lives entirely in locals/env — so the marker only
+    /// signals "we suspended inside this loop; re-enter it" and keeps the VM ip
+    /// parked on the loop opcode across a gather coroutine suspend.
+    CStyleLoop,
 }
 
 /// Saved VM state for a suspended gather coroutine.
