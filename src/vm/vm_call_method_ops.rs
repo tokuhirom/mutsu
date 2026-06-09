@@ -480,15 +480,29 @@ impl VM {
             )
             && Self::lazy_list_needs_forcing(method)
             && !(ll.coroutine.is_some() && matches!(method, "List" | "values"))
+            // A chained `.map`/`.grep` on a lazy pipeline appends another stage
+            // (interpreter dispatch); laziness-preserving coercions return the
+            // pipeline unchanged (native dispatch) — neither forces.
+            && !(ll.lazy_pipe.is_some()
+                && (matches!(method, "map" | "grep") || Self::lazy_pipe_preserving_coercion(method)))
         {
             let saved_env = self.interpreter.env().clone();
             // `.head(n)` only needs the first `n` elements: pull them lazily so
             // an infinite gather does not hang.
             let items = match Self::gather_head_bound(method, &args) {
                 Some(n) => self.force_lazy_list_vm_n(ll, n)?,
+                // A strict force of an infinite lazy pipeline cannot terminate:
+                // raise X::Cannot::Lazy with this method's name.
+                None if ll.lazy_pipe.is_some() => {
+                    return Err(RuntimeError::cannot_lazy(method));
+                }
                 None => self.force_lazy_list_vm(ll)?,
             };
-            if !matches!(method, "elems" | "hyper" | "race") {
+            // Restoring the pre-force env undoes captured-variable corruption
+            // from gather coroutine forcing. A lazy map/grep pipeline runs its
+            // callback via `vm_call_on_value` in this VM, so its side effects on
+            // enclosing variables are legitimate and must persist.
+            if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.interpreter.env_mut() = saved_env;
             }
             Value::Seq(std::sync::Arc::new(items))

@@ -877,6 +877,17 @@ impl Interpreter {
     }
 
     pub(super) fn force_lazy_list(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
+        // A lazy map/grep pipeline is rooted at an infinite source; a strict
+        // force cannot terminate. Match raku (and the VM path) and throw
+        // X::Cannot::Lazy. Bounded pulls go through the VM's `force_lazy_pipe`.
+        // (Its cache is seeded empty, so the early cache return below would
+        // otherwise yield a wrong partial/empty result.)
+        if list.lazy_pipe.is_some() {
+            return Err(RuntimeError::typed_msg(
+                "X::Cannot::Lazy",
+                "Cannot coerce an infinite lazy list to a strict list",
+            ));
+        }
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }
@@ -1611,6 +1622,10 @@ impl Interpreter {
                             .coroutine
                             .as_ref()
                             .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        lazy_pipe: list
+                            .lazy_pipe
+                            .as_ref()
+                            .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
                     }))
                 } else {
                     v

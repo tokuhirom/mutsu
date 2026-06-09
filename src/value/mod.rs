@@ -1155,6 +1155,26 @@ pub(crate) struct ScanSpec {
     pub(crate) computed_count: usize,
 }
 
+/// A single lazy `map`/`grep` stage applied to a source, pulled element by
+/// element. Chains nest: the `source` of one [`MapGrepSpec`] can itself be a
+/// `LazyList` carrying another [`MapGrepSpec`], so `(1..Inf).map(...).grep(...)`
+/// becomes a grep stage whose source is the map stage. See
+/// [`crate::value::LazyList::lazy_pipe`].
+#[derive(Debug, Clone)]
+pub(crate) struct MapGrepSpec {
+    /// The source to pull elements from (infinite `Range`, or another lazy
+    /// `LazyList`). Pulled one element at a time via the VM.
+    pub(crate) source: Value,
+    /// The `map`/`grep` callback (a `Sub`, `WhateverCode`, regex, …).
+    pub(crate) func: Value,
+    /// `true` for `grep` (filter), `false` for `map` (transform).
+    pub(crate) is_grep: bool,
+    /// Index of the next element to pull from `source`.
+    pub(crate) source_idx: usize,
+    /// `true` once `source` reported exhaustion (finite source ran out).
+    pub(crate) done: bool,
+}
+
 /// Saved for-loop state for resuming a gather coroutine mid-iteration.
 #[derive(Debug, Clone)]
 pub(crate) enum ForLoopResumeState {
@@ -1214,6 +1234,11 @@ pub(crate) struct LazyList {
     /// Suspended coroutine state for lazy gather/take.
     /// When present, the gather body can be resumed from where `take` paused it.
     pub(crate) coroutine: Option<Mutex<GatherCoroutineState>>,
+    /// Lazy `map`/`grep` pipeline stage. When present, elements are produced by
+    /// pulling from `lazy_pipe.source` and applying the stage's callback on
+    /// demand, so `(1..Inf).map(...)`/`.grep(...)` stay truly lazy instead of
+    /// materializing the (possibly infinite) source.
+    pub(crate) lazy_pipe: Option<Mutex<MapGrepSpec>>,
 }
 
 impl std::fmt::Debug for LazyList {
@@ -1222,6 +1247,7 @@ impl std::fmt::Debug for LazyList {
             .field("body_len", &self.body.len())
             .field("has_compiled_code", &self.compiled_code.is_some())
             .field("has_coroutine", &self.coroutine.is_some())
+            .field("has_lazy_pipe", &self.lazy_pipe.is_some())
             .finish()
     }
 }
@@ -1244,6 +1270,10 @@ impl Clone for LazyList {
                 .coroutine
                 .as_ref()
                 .map(|c| Mutex::new(c.lock().unwrap().clone())),
+            lazy_pipe: self
+                .lazy_pipe
+                .as_ref()
+                .map(|p| Mutex::new(p.lock().unwrap().clone())),
         }
     }
 }
@@ -1261,6 +1291,7 @@ impl LazyList {
             scan_spec: None,
             sequence_spec: None,
             coroutine: None,
+            lazy_pipe: None,
         }
     }
 
@@ -1276,6 +1307,7 @@ impl LazyList {
             scan_spec: None,
             sequence_spec: Some(spec),
             coroutine: None,
+            lazy_pipe: None,
         }
     }
 
@@ -1291,6 +1323,39 @@ impl LazyList {
             scan_spec: Some(Mutex::new(spec)),
             sequence_spec: None,
             coroutine: None,
+            lazy_pipe: None,
+        }
+    }
+
+    /// Create a lazy `map`/`grep` pipeline stage over `source`.
+    ///
+    /// The result stays lazy: its elements are produced on demand by pulling
+    /// from `source` and applying `func`. The `__mutsu_lazylist_from_gather`
+    /// marker is set so the VM's `.head`/`.first`/index dispatch routes through
+    /// the bounded incremental-pull path.
+    pub(crate) fn new_pipe(source: Value, func: Value, is_grep: bool) -> Self {
+        let mut env = crate::env::Env::new();
+        env.insert(
+            "__mutsu_lazylist_from_gather".to_string(),
+            Value::Bool(true),
+        );
+        Self {
+            body: Vec::new(),
+            env,
+            cache: Mutex::new(Some(Vec::new())),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: None,
+            sequence_spec: None,
+            coroutine: None,
+            lazy_pipe: Some(Mutex::new(MapGrepSpec {
+                source,
+                func,
+                is_grep,
+                source_idx: 0,
+                done: false,
+            })),
         }
     }
 

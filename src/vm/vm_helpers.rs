@@ -283,6 +283,17 @@ impl VM {
     }
 
     /// Check if a method on LazyList requires forcing the list first.
+    /// Methods that coerce a lazy `Seq` to another lazy view and so must
+    /// preserve the laziness of a map/grep pipeline (return it unchanged)
+    /// instead of forcing it. `.eager`/`.elems`/`.sort`/… are NOT here — those
+    /// genuinely need the whole list and correctly raise X::Cannot::Lazy.
+    pub(crate) fn lazy_pipe_preserving_coercion(method: &str) -> bool {
+        matches!(
+            method,
+            "Seq" | "List" | "list" | "cache" | "values" | "lazy"
+        )
+    }
+
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
         matches!(
             method,
@@ -362,6 +373,18 @@ impl VM {
         // Handle scan-based lazy lists: compute elements on demand
         if list.scan_spec.is_some() {
             return self.force_scan_lazy_list(list, 200_000);
+        }
+
+        // A lazy map/grep pipeline is rooted at an infinite source, so a full
+        // (strict) force can never terminate. Match raku and throw
+        // X::Cannot::Lazy rather than spinning forever. Methods that know their
+        // own name (e.g. `.elems`/`.sort`) raise a more specific message at the
+        // dispatch site before reaching here.
+        if list.lazy_pipe.is_some() {
+            return Err(RuntimeError::typed_msg(
+                "X::Cannot::Lazy",
+                "Cannot coerce an infinite lazy list to a strict list",
+            ));
         }
 
         // For sequence-spec lazy lists, return current cache (infinite lists
@@ -541,6 +564,13 @@ impl VM {
         // For sequence-spec lazy lists, generate more elements on demand
         if let Some(ref spec) = list.sequence_spec {
             return Self::extend_sequence_cache(list, spec, needed);
+        }
+
+        // Lazy map/grep pipeline: pull from the source and apply the stage on
+        // demand (one source element at a time), so an infinite source stays
+        // lazy instead of materializing.
+        if list.lazy_pipe.is_some() {
+            return self.force_lazy_pipe(list, needed);
         }
 
         // Check if coroutine is finished (body completed, all elements produced)
@@ -762,6 +792,133 @@ impl VM {
             items
         };
         Ok(result)
+    }
+
+    /// Produce at least `needed` output elements of a lazy `map`/`grep` pipeline
+    /// (a `LazyList` carrying a [`crate::value::MapGrepSpec`]).
+    ///
+    /// Elements are produced by pulling from the stage's source one at a time
+    /// and applying the `map`/`grep` callback, accumulating outputs in the
+    /// list's cache. A `grep` stage filters (0 or 1 output per source element);
+    /// a `map` stage transforms (a `Slip` result contributes multiple). The
+    /// source itself may be another lazy pipeline, so chains nest.
+    pub(super) fn force_lazy_pipe(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        loop {
+            // Fast path: enough already cached, or the source is exhausted.
+            {
+                let cache = list.cache.lock().unwrap();
+                let done = list
+                    .lazy_pipe
+                    .as_ref()
+                    .map(|p| p.lock().unwrap().done)
+                    .unwrap_or(true);
+                if let Some(c) = cache.as_ref()
+                    && (c.len() >= needed || done)
+                {
+                    let n = needed.min(c.len());
+                    return Ok(c[..n].to_vec());
+                }
+            }
+
+            // Snapshot the stage so no pipe lock is held across the pull/apply
+            // (which may recursively pull from a nested pipe source).
+            let (source, func, is_grep, source_idx) = {
+                let spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+                (
+                    spec.source.clone(),
+                    spec.func.clone(),
+                    spec.is_grep,
+                    spec.source_idx,
+                )
+            };
+
+            match self.pull_source_element(&source, source_idx)? {
+                None => {
+                    // Source exhausted: mark done and return what we have.
+                    let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+                    spec.done = true;
+                    drop(spec);
+                    let cache = list.cache.lock().unwrap();
+                    let c = cache.as_ref().cloned().unwrap_or_default();
+                    let n = needed.min(c.len());
+                    return Ok(c[..n].to_vec());
+                }
+                Some(elem) => {
+                    // Apply the stage with VM-native dispatch so the callback
+                    // runs in *this* VM (keeping locals/env coherent and letting
+                    // side effects reach the enclosing scope). A `grep` keeps the
+                    // element when the matcher is truthy; a `map` transforms it (a
+                    // `Slip` result contributes multiple elements).
+                    let produced: Vec<Value> = if is_grep {
+                        if self.vm_grep_item_matches(&func, &elem)? {
+                            vec![elem]
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        match self.vm_call_on_value(func, vec![elem], None)? {
+                            Value::Slip(items) => items.as_ref().clone(),
+                            v => vec![v],
+                        }
+                    };
+                    {
+                        let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+                        spec.source_idx = source_idx + 1;
+                    }
+                    let mut cache = list.cache.lock().unwrap();
+                    cache.get_or_insert_with(Vec::new).extend(produced);
+                }
+            }
+        }
+    }
+
+    /// Pull the `idx`-th element of a pipeline source, or `None` when the source
+    /// has fewer than `idx + 1` elements (finite source exhausted). Infinite
+    /// integer ranges always produce. Nested lazy pipelines / gathers are pulled
+    /// incrementally via [`Self::force_lazy_list_vm_n`].
+    fn pull_source_element(
+        &mut self,
+        source: &Value,
+        idx: usize,
+    ) -> Result<Option<Value>, RuntimeError> {
+        match source {
+            Value::Range(a, b)
+            | Value::RangeExcl(a, b)
+            | Value::RangeExclStart(a, b)
+            | Value::RangeExclBoth(a, b) => {
+                let start = match source {
+                    Value::RangeExclStart(..) | Value::RangeExclBoth(..) => a.saturating_add(1),
+                    _ => *a,
+                };
+                let inclusive = matches!(source, Value::Range(..) | Value::RangeExclStart(..));
+                let cur = match start.checked_add(idx as i64) {
+                    Some(v) => v,
+                    None => return Ok(None),
+                };
+                let in_bounds = if inclusive { cur <= *b } else { cur < *b };
+                if in_bounds {
+                    Ok(Some(Value::Int(cur)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => Ok(items.get(idx).cloned()),
+            Value::Array(items, _) => Ok(items.get(idx).cloned()),
+            Value::LazyList(ll) => {
+                let items = self.force_lazy_list_vm_n(ll, idx + 1)?;
+                Ok(items.get(idx).cloned())
+            }
+            // Other sources (GenericRange, etc.) are not gated into the lazy
+            // pipeline; materialize once and index.
+            other => {
+                let items = crate::runtime::value_to_list(other);
+                Ok(items.get(idx).cloned())
+            }
+        }
     }
 
     /// Force a LazyList into a Seq by evaluating the gather body.

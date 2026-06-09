@@ -306,6 +306,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                             scan_spec: None,
                             sequence_spec: None,
                             coroutine: None,
+                            lazy_pipe: None,
                         };
                         return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
                     }
@@ -329,6 +330,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                     scan_spec: None,
                     sequence_spec: None,
                     coroutine: None,
+                    lazy_pipe: None,
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }

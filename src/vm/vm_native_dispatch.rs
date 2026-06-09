@@ -20,6 +20,24 @@ impl VM {
             }
         }
         let method_name = method_sym.resolve();
+        // A chained `.map`/`.grep` on a lazy map/grep pipeline must append
+        // another lazy stage (interpreter `dispatch_map_method`/`dispatch_grep`),
+        // not run the native impl over the pipeline's (empty) cache. Defer.
+        if let Value::LazyList(ll) = target
+            && ll.lazy_pipe.is_some()
+            && matches!(method_name.as_str(), "map" | "grep")
+        {
+            return None;
+        }
+        // A laziness-preserving coercion on a lazy map/grep pipeline returns the
+        // pipeline unchanged (it stays pullable). Intercept before the native
+        // impl, which would otherwise wrap/empty the pipeline's (empty) cache.
+        if let Value::LazyList(ll) = target
+            && ll.lazy_pipe.is_some()
+            && Self::lazy_pipe_preserving_coercion(method_name.as_str())
+        {
+            return Some(Ok(target.clone()));
+        }
         // Eager list operations cannot run on a lazy/infinite source: throw
         // X::Cannot::Lazy instead of hanging while the native impl materializes
         // it (matches raku). Shared with the interpreter dispatch path.
