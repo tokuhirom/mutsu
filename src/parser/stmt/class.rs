@@ -260,6 +260,16 @@ fn no_self_error() -> PError {
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
+/// `X::Syntax::Regex::NullRegex` — an empty `token`/`regex`/`rule` body (e.g.
+/// `regex foo { }`) is a null regex, rejected by Raku at parse time.
+fn null_regex_error() -> PError {
+    let msg = "Null regex not allowed".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::NullRegex"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 fn expr_is_bare_ident(expr: &Expr, ident: &str) -> bool {
     matches!(expr, Expr::Var(name) | Expr::BareWord(name) if name == ident)
 }
@@ -1600,6 +1610,10 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
     let (rest, mut pattern) = parse_raw_braced_regex_body(rest)?;
+    // An empty `token`/`regex`/`rule` body is a null regex.
+    if pattern.trim().is_empty() {
+        return Err(null_regex_error());
+    }
     pattern = normalize_token_pattern(&pattern);
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);
