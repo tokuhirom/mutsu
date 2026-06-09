@@ -122,6 +122,10 @@ pub(super) fn dispatch(
                                 .coroutine
                                 .as_ref()
                                 .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                            lazy_pipe: list
+                                .lazy_pipe
+                                .as_ref()
+                                .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
                         },
                     )))));
                 }
@@ -165,6 +169,7 @@ pub(super) fn dispatch(
                     scan_spec: None,
                     sequence_spec: None,
                     coroutine: None,
+                    lazy_pipe: None,
                 },
             )))))
         }

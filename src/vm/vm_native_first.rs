@@ -35,6 +35,20 @@ impl FirstMatcher for VmFirstMatcher<'_> {
 }
 
 impl VM {
+    /// Test a `grep`/`first`-style matcher against a single `item` using
+    /// VM-native dispatch (a `Sub` block via `vm_call_on_value`, any other
+    /// pattern via the shared `smart_match`). Used by the lazy map/grep
+    /// pipeline (`force_lazy_pipe`) so the matcher runs in this VM and keeps
+    /// locals/env coherent (the interpreter's `eval_grep_over_items` spins up a
+    /// nested VM via `mem::take`, which would discard the surrounding frame).
+    pub(super) fn vm_grep_item_matches(
+        &mut self,
+        pattern: &Value,
+        item: &Value,
+    ) -> Result<bool, RuntimeError> {
+        VmFirstMatcher(self).item_matches(pattern, item)
+    }
+
     /// Try to run `target.first(...)` natively. Returns `Some(result)` when
     /// handled in the VM, `None` to fall back unchanged.
     pub(super) fn try_native_first(

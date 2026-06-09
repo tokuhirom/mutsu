@@ -51,6 +51,7 @@ impl VM {
                     finished: false,
                     for_loop_resume: None,
                 })),
+                lazy_pipe: None,
             };
             let val = Value::LazyList(std::sync::Arc::new(list));
             self.stack.push(val);

@@ -2954,6 +2954,13 @@ impl Interpreter {
         // Force LazyList and re-dispatch as Seq
         if let Value::LazyList(ll) = &target
             && Self::should_force_lazy_list(method)
+            // A chained `.map`/`.grep` on a lazy map/grep pipeline appends
+            // another lazy stage (`dispatch_map_method`/`dispatch_grep`); a
+            // laziness-preserving coercion returns the pipeline unchanged.
+            // Neither forces the (possibly infinite) pipeline.
+            && !(ll.lazy_pipe.is_some()
+                && (matches!(method, "map" | "grep")
+                    || crate::vm::VM::lazy_pipe_preserving_coercion(method)))
         {
             let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(ll)?;

@@ -224,6 +224,18 @@ impl Interpreter {
         };
         let args = &positional_args;
 
+        // Infinite/lazy source with the default (`:v`) adverb: return a truly
+        // lazy `grep` pipeline stage instead of materializing the (possibly
+        // infinite) source. Adverbed greps (`:k`/`:kv`/`:p`) need positional
+        // indices over the whole result, so they keep the eager path.
+        if matches!(grep_adverb, GrepAdverb::V)
+            && Self::is_lazy_pipe_source(&target)
+            && let Some(func) = args.first().cloned()
+            && let Some(pipe) = Self::make_lazy_pipe(target.clone(), func, true)
+        {
+            return Ok(pipe);
+        }
+
         match target {
             Value::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
                 "Cannot call .grep on a Supply type object",

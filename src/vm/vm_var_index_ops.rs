@@ -337,9 +337,9 @@ impl VM {
                     Some(n) => self.force_scan_lazy_list(ll, n)?,
                     None => self.force_lazy_list_vm(ll)?,
                 }
-            } else if ll.coroutine.is_some() {
-                // Gather-based lazy list with coroutine support:
-                // force only as many elements as needed via VM coroutine.
+            } else if ll.coroutine.is_some() || ll.lazy_pipe.is_some() {
+                // Gather-based lazy list / lazy map-grep pipeline: force only as
+                // many elements as needed via bounded incremental pull.
                 match &index {
                     Value::Int(i) if *i >= 0 => {
                         self.force_lazy_list_vm_n(ll, (*i as usize).saturating_add(1))?

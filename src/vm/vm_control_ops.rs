@@ -464,10 +464,11 @@ impl VM {
             }
         }
 
-        // For gather-based or sequence-spec LazyList iterables, iterate lazily
-        // by pulling items one at a time. This avoids materializing infinite sequences.
+        // For gather-based, sequence-spec, or lazy map/grep pipeline LazyList
+        // iterables, iterate lazily by pulling items one at a time. This avoids
+        // materializing infinite sequences.
         if let Value::LazyList(ref ll) = iterable
-            && (ll.coroutine.is_some() || ll.sequence_spec.is_some())
+            && (ll.coroutine.is_some() || ll.sequence_spec.is_some() || ll.lazy_pipe.is_some())
         {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;

@@ -456,6 +456,16 @@ impl Interpreter {
                 return Err(err);
             }
         }
+        // Infinite/lazy source: return a truly lazy `map` pipeline stage instead
+        // of materializing the (possibly infinite) source. Falls back to the
+        // eager path for callbacks that need chunked binding (multi-arity /
+        // slurpy). See `is_lazy_pipe_source` / `make_lazy_pipe`.
+        if Self::is_lazy_pipe_source(&target)
+            && let Some(func) = args.first().cloned()
+            && let Some(pipe) = Self::make_lazy_pipe(target.clone(), func, false)
+        {
+            return Ok(pipe);
+        }
         let items = if crate::runtime::utils::is_shaped_array(&target) {
             crate::runtime::utils::shaped_array_leaves(&target)
         } else {
@@ -522,6 +532,7 @@ impl Interpreter {
             scan_spec: None,
             sequence_spec: None,
             coroutine: None,
+            lazy_pipe: None,
         };
         Value::LazyList(std::sync::Arc::new(list))
     }
