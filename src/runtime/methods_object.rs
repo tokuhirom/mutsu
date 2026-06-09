@@ -38,12 +38,15 @@ fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
 impl Interpreter {
     /// Returns `true` if `class_name` (and every user class in its MRO) can be
     /// default-constructed (`Foo.new(...)`) without running any user code:
-    /// no BUILD/TWEAK/BUILDALL/custom-new, only public `$`-sigiled attributes
-    /// with no required/type/where constraints, and no native methods. Parents
-    /// must themselves be either `Any`/`Mu`/`Cool` or another such simple class
-    /// (so a plain inheritance chain like `Dog is Animal` still qualifies).
-    /// Construction is then pure data: assign named args to attributes and
-    /// evaluate attribute defaults.
+    /// no BUILD/TWEAK/BUILDALL/custom-new and no custom per-attribute build
+    /// closure, no native methods, and only public attributes that are either a
+    /// `$`-scalar (optionally with a simple `type_matches_value`-checkable class
+    /// constraint) or an untyped `@`/`%` without an `is Type` trait, none of
+    /// them required or `where`-constrained. Parents must themselves be
+    /// `Any`/`Mu`/`Cool` or another such simple class (so a plain inheritance
+    /// chain like `Dog is Animal` still qualifies). Construction is then pure
+    /// data: assign (sigil-coerced) named args to attributes and evaluate
+    /// attribute defaults.
     pub(crate) fn is_native_default_constructible(&self, cn_resolved: &str) -> bool {
         if cn_resolved.contains('[') || cn_resolved.contains("::") {
             return false;
@@ -81,21 +84,32 @@ impl Interpreter {
                     p == "Any" || p == "Mu" || p == "Cool" || registry.classes.contains_key(p)
                 })
                 && class_def.attributes.iter().all(
-                    |(_, _, _, is_required, type_constraint, sigil, where_constraint)| {
-                        // `$`-scalar, not required, no `where` clause. A type
-                        // constraint is allowed only when it is a plain
-                        // `type_matches_value`-checkable class/role/subset type
-                        // (see `is_simple_native_ctor_constraint`); native /
-                        // coercion / parametric types keep the interpreter's
-                        // richer construction (coercion, native defaults).
-                        *sigil == '$'
-                            && !is_required
+                    |(name, _, _, is_required, type_constraint, sigil, where_constraint)| {
+                        // Not required, no `where` clause, and a constructible
+                        // sigil/type shape:
+                        // - `$`: a type constraint is allowed only when it is a
+                        //   plain `type_matches_value`-checkable class/role/subset
+                        //   type (see `is_simple_native_ctor_constraint`); native /
+                        //   coercion / parametric types keep the interpreter.
+                        // - `@`/`%`: only untyped with no `is Type` trait — typed
+                        //   elements need container type metadata and `is Type`
+                        //   builds a typed container, both interpreter-owned.
+                        !is_required
                             && where_constraint.is_none()
-                            && match type_constraint {
-                                None => true,
-                                Some(inner) => inner
-                                    .as_deref()
-                                    .is_some_and(Self::is_simple_native_ctor_constraint),
+                            && match sigil {
+                                '$' => match type_constraint {
+                                    None => true,
+                                    Some(inner) => inner
+                                        .as_deref()
+                                        .is_some_and(Self::is_simple_native_ctor_constraint),
+                                },
+                                '@' | '%' => {
+                                    !class_def.attribute_types.contains_key(name)
+                                        && !registry
+                                            .class_attribute_is_types
+                                            .contains_key(&(cls.clone(), name.clone()))
+                                }
+                                _ => false,
                             }
                     },
                 )
@@ -158,23 +172,44 @@ impl Interpreter {
         // type. Owned map, so it can be read while `self` is borrowed mutably.
         let type_constraints = self.collect_attribute_type_constraints(cn_resolved);
 
+        let sigil_of = |name: &str| -> char {
+            class_attrs
+                .iter()
+                .find(|(n, ..)| n == name)
+                .map(|(_, _, _, _, _, s, _)| *s)
+                .unwrap_or('$')
+        };
+
         let mut attrs = HashMap::new();
         for arg in args {
             if let Value::Pair(key, val) = arg
                 && self.is_attribute_buildable(cn_resolved, key)
             {
-                // A provided value that does not already match its attribute's
-                // type constraint needs the interpreter (coercion or a proper
-                // X::TypeCheck::Assignment) — fall through.
-                if let Some(c) = type_constraints.get(key)
-                    && !self.type_matches_value(c, val)
-                {
-                    return None;
+                match sigil_of(key) {
+                    '@' | '%' => {
+                        // Coerce exactly as the interpreter's shared helper does
+                        // (List/Range -> Array, array-of-Pairs -> Hash, …).
+                        attrs.insert(
+                            key.clone(),
+                            Self::coerce_attr_value_by_sigil(*val.clone(), sigil_of(key)),
+                        );
+                    }
+                    _ => {
+                        // A provided value that does not already match its
+                        // attribute's type constraint needs the interpreter
+                        // (coercion or a proper X::TypeCheck::Assignment) — fall
+                        // through.
+                        if let Some(c) = type_constraints.get(key)
+                            && !self.type_matches_value(c, val)
+                        {
+                            return None;
+                        }
+                        attrs.insert(key.clone(), *val.clone());
+                    }
                 }
-                attrs.insert(key.clone(), *val.clone());
             }
         }
-        // A typed attribute that is neither provided nor defaulted is
+        // A typed `$` attribute that is neither provided nor defaulted is
         // initialized to its *type object* (e.g. `Int`), not `Nil`. Let the
         // interpreter synthesize it.
         for (attr_name, _, default_expr, _, _, _, _) in &class_attrs {
@@ -182,6 +217,16 @@ impl Interpreter {
                 && !attrs.contains_key(attr_name)
                 && type_constraints.contains_key(attr_name)
             {
+                return None;
+            }
+        }
+        // An `@`/`%` attribute with a default expression may be shaped (the
+        // shape is encoded in the default, e.g. `has @.a[2]`) or otherwise need
+        // the interpreter's construction — fall through whether or not it was
+        // provided (a shaped attribute must stay shaped even when assigned).
+        // Only the empty-default `@`/`%` case (handled below) is native.
+        for (_attr_name, _, default_expr, _, _, sigil, _) in &class_attrs {
+            if matches!(sigil, '@' | '%') && default_expr.is_some() {
                 return None;
             }
         }
@@ -212,11 +257,13 @@ impl Interpreter {
         }
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
-        for (attr_name, _is_public, default_expr, _, _, _, _) in &class_attrs {
+        for (attr_name, _is_public, default_expr, _, _, sigil, _) in &class_attrs {
             if attrs.contains_key(attr_name) {
                 continue;
             }
             if let Some(expr) = default_expr {
+                // Only `$` attributes reach here with a default — `@`/`%` defaults
+                // fell through above.
                 let val = match self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())]) {
                     Ok(val) => val,
                     Err(e) => {
@@ -240,7 +287,14 @@ impl Interpreter {
                 self.env.insert(format!("!{}", attr_name), val.clone());
                 self.env.insert(format!(".{}", attr_name), val);
             } else {
-                attrs.insert(attr_name.clone(), Value::Nil);
+                // Uninitialized: `@` -> empty Array, `%` -> empty Hash, `$` -> Nil
+                // (an untyped `$`; typed `$` fell through above).
+                let empty = match sigil {
+                    '@' => Value::real_array(Vec::new()),
+                    '%' => Value::hash(HashMap::new()),
+                    _ => Value::Nil,
+                };
+                attrs.insert(attr_name.clone(), empty);
             }
         }
         // Restore package and env after default evaluation (on every exit path).

@@ -279,6 +279,20 @@
   型不一致 dies/native int は interpreter/ループ構築)。S12/S14/S03-binding/roles whitelist 184 件全緑、cargo test 458/0。
   **残: typed `@`/`%` 属性・required・where・coercion 型・native 型は依然 interpreter（本丸 ③ env 実行の手前で止める保守設計）。**
 
+- **2026-06-10 (③ PR-12, §1 = native construction を untyped `@`/`%` 属性へ拡張)**: PR-11 の続きで native default
+  構築を **untyped `@`/`%`-sigil 属性**（`has @.items`/`has %.map`）へ拡張。**behavior-invariance の対象は raku ではなく
+  現 interpreter**（実測で `items => 5`→`5`〔scalar を wrap せず〕、typed `@.nums` の不正要素→NODIE〔構築時に要素型
+  チェックしない〕＝raku と異なる pre-existing 挙動）。interpreter 共有の `coerce_attr_value_by_sigil` を再利用するので
+  提供値 coercion（List/Range→Array, array-of-Pairs→Hash）が完全一致。未提供 default = 空 Array/Hash（型オブジェクト
+  合成不要＝`$` typed より単純）。**保守的フォールスルー**: typed 要素（`Int @.nums`＝container type metadata 登録が
+  必要・Arc-keying ハザード）/ `is Type` トレイト（`class_attribute_is_types`）/ **default_expr を持つ `@`/`%`**（shape は
+  default に encode＝`has @.a[2]`、提供有無に関わらず fallthrough）は interpreter 維持。**roast が shaped 落とし穴を捕捉**:
+  当初「default 持ち＋未提供」のみ fallthrough としたが、shaped `@.a[2]` が**提供された**場合 coerce で shape 喪失
+  （`S12-introspection/attributes.t` の `.a.shape`=(2,) 回帰）→「`@`/`%` が default_expr 持ちなら無条件 fallthrough」へ修正。
+  pin `t/native-ctor-array-attrs.t`(27, 空 default/list・array・range 提供/hash・pairs 提供/mixed typed-$/継承/defaulted
+  fallthrough/typed-element fallthrough/ループ構築)。S12/S14/binding/roles 184 件全緑、cargo test 458/0、make test PASS。
+  **残: typed `@`/`%`・`is Type`・shaped・required・where・coercion 型・native 型は依然 interpreter。**
+
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
 すべて構造的ブロッカー（②宣言レジストリ / ③state 所有移管 / 第一級コンテナ Phase 2 / lever B）が前提であり、
