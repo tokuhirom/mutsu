@@ -181,17 +181,21 @@
 - **2026-06-09 (③ PR-6, §2 catch-all 末端の実測 + junction constructor の builtins 降ろし)**: `vm_call_dispatch.rs:79`
   の `call_function_compiled_first` 末端（`call_function` final else）に `END:` プレフィックス計装を入れ、whitelist sample
   全体で**末端到達集合を実測**。結論: **末端はほぼ枯渇**（PR-1〜4 ＋ line 63-67 の「resolve できた def は全て OTF compile」
-  により、ユーザー関数はもう末端に来ない）。sample 全体で末端到達は合計 ~760 と少なく diffuse、内訳は ①`any`/`all`/`one`/`none`
-  junction constructor（pure builtin・本 PR で降ろし）, ②**lexical-alias-to-builtin**（`my &junction = ::("&any"); junction(|$_)`
-  ＝S03-junctions/autothreading.t の `END:junction=56`; Routine 束縛を名前経由で呼ぶため末端で lexical 解決＝正しく動作・niche）,
-  ③`__mutsu_*` 内部（CAS 等・並行は lever B）, ④no-match エラー生成（`notthere`＝末端で正規例外を投げるのが正しい）。
+  により、ユーザー関数はもう末端に来ない）。sample 全体で末端到達は diffuse で少量、内訳は ①`any`/`all`/`one`/`none`
+  junction constructor（pure builtin・本 PR で降ろし）, ②**lexical `&`-変数の名前経由呼び出し**（末端残余の*最大*カテゴリ。
+  `-> &op { … op(…) }` ＝S03-operators/set_*.t の `END:op`〔各348等〕で集合演算子 Callable をパラメータ束縛して呼ぶ、
+  および `my &junction = ::("&any"); junction(|$_)` ＝S03-junctions/autothreading.t の `END:junction=56`。束縛された Callable
+  〔user sub / 演算子 / builtin Routine〕を bareword 名で呼ぶため末端で lexical 解決＝正しく動作。将来スライス: VM 側で
+  lexical `&`-var 束縛を検出し既存 Routine/compiled dispatch へ寄せる）, ③`__mutsu_*` 内部（CAS 等・並行は lever B）,
+  ④no-match エラー生成（`notthere`＝末端で正規例外を投げるのが正しい）。
   **高トラフィックの builtin は末端に残っていない**（`split`/`index`/`comb` 等は既に native か、他4サイト〔vm_call_func_ops〕
   経由で Instance-guard fallback）。本 PR は唯一の pure-builtin カテゴリ＝**junction constructor を `builtins/functions.rs::build_junction`
   へ降ろし**（one-arg flatten rule 込み・state 不使用）、`native_function` で any/all/one/none を全 arity ルート、interpreter の
   `builtin_junction` も同 fn へ委譲して**重複実装を解消**（[[feedback_dedup_over_perf]]/[[feedback_placement_audit]]）。
   junction 構築は型非依存で安全なので `try_native_function` の Instance-arg ガードを any/all/one/none に限り bypass
   （`any($instance)` も native）。pin `t/native-junction-ctor.t`(24, Instance-arg 含む)。S03-junctions whitelist 全緑、make test PASS。
-  **結論: §2 末端は「高トラフィック撲滅」フェーズを終え、残りは③ state 所有（並行 CAS）/ lexical-alias-niche / エラー生成 carrier。**
+  **結論: §2 末端は「高トラフィック撲滅」フェーズを終えた。残る最大カテゴリは lexical `&`-var の名前呼び出し（正しく動作・将来 VM 寄せ候補）、
+  他は③ state 所有〔並行 CAS〕/ エラー生成 carrier。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
