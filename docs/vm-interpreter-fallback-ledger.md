@@ -145,8 +145,15 @@
   compile 時 state_group で 1 セル共有するが、OTF は body fingerprint＝per-alternate-sig キーで別 state になる）→
   **state 宣言を含む multi body は OTF 除外**（新ヘルパ `function_body_declares_state` 再帰スキャン。`t/multi-signature-alternates.t`
   回帰を発見・修正）。slip 経路（`exec_call_func_slip_op`）の multi は **既存の別バグで `|ms()` が Nil を返す**ため
-  本 PR では対象外（follow-up）。pin `t/multi-otf-dispatch.t`(24)。実測 multi-probe で fallback 5→2（残2=nextsame/callsame
-  builtin 自体）。S06-multi whitelist 全緑、make test PASS。
+  本 PR では対象外（follow-up）。**③ 既存 flaky バグも修正**: `push_multi_dispatch_frame`（`accessors.rs`）が
+  callsame/nextsame の「remaining 候補」frame の current を `resolve_all_matching_candidates().first()`＝**HashMap 順
+  first match**で決めていたため、最狭候補が後宣言だと callsame が誤候補（or 同一候補）へ再ディスパッチし、
+  プロセスのハッシュシードで ~50% flake（`roast/S06-advanced/callsame.t` 等 whitelist が間欠 fail。CI #2788 の
+  失敗の実体）。**interpreter の inline frame と同じ決定的 winner（`resolve_function_with_alias`）で current を特定**する
+  よう修正（全 VM 経路 = Path A / otf cache / compile_and_call を一括で決定化）。これで callsame は OTF 候補からでも
+  正しく動くため redispatch 除外は不要に。pin `t/multi-otf-dispatch.t`(25, callsame-when-winner-declared-last 含む)。
+  実測 multi-probe で fallback 5→2（残2=nextsame/callsame builtin 自体）。S06/S12/S14 whitelist 全緑（10x 決定的）、
+  make test PASS。**教訓: 「自分の PR の CI fail」が既存 flaky の顕在化のこともある — シード依存の非決定性を実測で確定せよ。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

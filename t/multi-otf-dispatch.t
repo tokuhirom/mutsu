@@ -6,7 +6,7 @@ use Test;
 # Regression-guards the cases that must stay on the interpreter: ambiguity,
 # no-match, and redispatch (nextsame/callsame/callwith) correctness.
 
-plan 24;
+plan 25;
 
 # --- type dispatch ---
 {
@@ -57,6 +57,17 @@ plan 24;
     multi sub m(Int $x) { 'm-int+' ~ callsame() }
     multi sub m(Any $x) { 'm-any' }
     is m(9), 'm-int+m-any', 'callsame redispatch from compiled candidate';
+}
+
+# --- callsame when the winning candidate is declared LAST ---
+# (regression guard: the multi-dispatch frame must exclude the *actual* winner,
+# not the HashMap-ordered first match — see roast S06-advanced/callsame.t)
+{
+    my @called;
+    multi sub cs(Numeric $x) { @called.push: 'Numeric' }
+    multi sub cs(Int $x)     { @called.push: 'Int'; callsame }
+    cs(42);
+    is @called.join(','), 'Int,Numeric', 'callsame redispatches to next when winner declared last';
 }
 
 # --- callwith redispatches with new args ---
