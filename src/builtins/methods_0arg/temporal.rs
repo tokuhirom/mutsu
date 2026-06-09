@@ -297,13 +297,31 @@ fn format_timezone(timezone: i64) -> String {
     }
 }
 
+/// Build a structured X::Temporal::InvalidFormat error carrying `invalid-str`
+/// (the offending input) and `target` (the type being constructed, e.g.
+/// 'DateTime' / 'Date').
+fn temporal_invalid_format_error(invalid_str: &str, target: &str, message: String) -> RuntimeError {
+    let mut attrs = HashMap::new();
+    attrs.insert(
+        "invalid-str".to_string(),
+        Value::str(invalid_str.to_string()),
+    );
+    attrs.insert("target".to_string(), Value::str(target.to_string()));
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Temporal::InvalidFormat"), attrs);
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Parse an ISO 8601 date string (YYYY-MM-DD, -YYYY-MM-DD, +YYYY-MM-DD).
 pub fn parse_date_string(s: &str) -> Result<(i64, i64, i64), RuntimeError> {
     let make_err = || {
-        RuntimeError::new(format!(
-            "X::Temporal::InvalidFormat: Invalid Date string '{}'; use yyyy-mm-dd",
-            s
-        ))
+        temporal_invalid_format_error(
+            s,
+            "Date",
+            format!("Invalid Date string '{}'; use yyyy-mm-dd", s),
+        )
     };
 
     // Handle leading sign
@@ -341,11 +359,15 @@ pub fn parse_datetime_string(s: &str) -> Result<DateTimeParts, RuntimeError> {
     let s = s.strip_prefix('+').unwrap_or(s);
 
     let make_err = || {
-        RuntimeError::new(format!(
-            "X::Temporal::InvalidFormat: Invalid DateTime string '{}'; \
-             use yyyy-mm-ddThh:mm:ss±hhmm or bg an abbreviation",
-            s
-        ))
+        temporal_invalid_format_error(
+            s,
+            "DateTime",
+            format!(
+                "Invalid DateTime string '{}'; \
+                 use yyyy-mm-ddThh:mm:ss±hhmm or bg an abbreviation",
+                s
+            ),
+        )
     };
 
     // Split on T/t
