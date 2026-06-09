@@ -399,6 +399,19 @@ impl Compiler {
         self.code.emit(OpCode::GetLocal(acc_slot));
     }
 
+    /// Load `self` for a `$.attr` accessor: emit `GetLocal` when `self` is a
+    /// direct local (method body), otherwise `GetSelfOrNoSelf` which resolves
+    /// `self` from the captured environment and raises X::Syntax::NoSelf
+    /// (carrying the accessor's display name) when it is unavailable.
+    pub(super) fn emit_load_self_for_accessor(&mut self, var_display: &str) {
+        if let Some(&slot) = self.local_map.get("self") {
+            self.code.emit(OpCode::GetLocal(slot));
+        } else {
+            let name_idx = self.code.add_constant(Value::str(var_display.to_string()));
+            self.code.emit(OpCode::GetSelfOrNoSelf(name_idx));
+        }
+    }
+
     /// Compile Expr::Var -- variable access with all special cases.
     pub(super) fn compile_expr_var(&mut self, name: &str) {
         // $.attr (public twigil) — compile as self.attr() method call.
@@ -406,14 +419,9 @@ impl Compiler {
         if let Some(attr_name) = name.strip_prefix('.')
             && !attr_name.is_empty()
         {
-            // Load self — use GetLocal when available (method bodies)
-            if let Some(&slot) = self.local_map.get("self") {
-                self.code.emit(OpCode::GetLocal(slot));
-            } else {
-                let self_name = self.qualify_variable_name("self");
-                let self_idx = self.code.add_constant(Value::str(self_name));
-                self.code.emit(OpCode::GetGlobal(self_idx));
-            }
+            // Load self (or raise X::Syntax::NoSelf when unavailable, e.g. in
+            // the mainline or a bare statement in a class body).
+            self.emit_load_self_for_accessor(&format!("${}", name));
             // Call method
             let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
             self.code.emit(OpCode::CallMethod {

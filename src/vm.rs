@@ -1073,6 +1073,27 @@ impl VM {
                 self.stack.push(val);
                 *ip += 1;
             }
+            OpCode::GetSelfOrNoSelf(name_idx) => {
+                // Load `self` for a `$.attr` accessor from the captured env.
+                if let Some(self_val) = self.get_env_with_main_alias("self") {
+                    self.stack.push(self_val);
+                    *ip += 1;
+                } else {
+                    // No enclosing method/submethod: X::Syntax::NoSelf.
+                    let variable = Self::const_str(code, *name_idx).to_string();
+                    let message =
+                        format!("Variable {} used where no 'self' is available", variable);
+                    let mut err = RuntimeError::new(message.clone());
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("variable".to_string(), Value::str(variable));
+                    attrs.insert("message".to_string(), Value::str(message));
+                    err.exception = Some(Box::new(Value::make_instance(
+                        Symbol::intern("X::Syntax::NoSelf"),
+                        attrs,
+                    )));
+                    return Err(err);
+                }
+            }
             OpCode::GetArrayVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 // Reject @!attr (private attribute twigil) when no self is available
