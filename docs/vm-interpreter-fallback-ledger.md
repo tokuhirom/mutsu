@@ -246,6 +246,22 @@
   （gather.t の Failed:1 は BLOCKERS.md 記載の pre-existing take-rw〔test 38〕で本変更と無関係。）
   **次候補: `AT-POS` native、coercion 以外の broad な §1、または本丸 `new`（③ ctor）の設計。**
 
+- **2026-06-09 (③ PR-10, §1 catch-all = plain `@`-array `splice` の VM ネイティブ化)**: PR-5 の
+  `try_native_array_mut`（append/prepend/unshift/pop/shift）の姉妹として `vm_call_method_mut_ops.rs` に
+  `try_native_array_splice` を追加し、**plain untyped `@`-array（`ArrayKind::Array`）への `splice` の単純形**を VM
+  ネイティブに。interpreter の `methods_mut.rs` の `splice` 枝と同一の `drain`+`insert`（削除要素を `Value::real_array`
+  で返す）＋ `Arc::make_mut` writeback＋make_mut 再確保後の stale type-metadata 防御除去で behavior-invariant。
+  **保守的フォールスルー**（`None`→interpreter）: offset/count が plain 非負 `Int` 以外（WhateverCode/`Whatever`/
+  `Str`/`Num`）・offset 範囲外（`X::OutOfRange`）・count 負（`X::OutOfRange`）・lazy 置換（`X::Cannot::Lazy`）・
+  typed（`var_type_constraint` Some）/ shaped / shared（`shared_vars_active`）/ metadata 持ち配列。**実証**:
+  splice_check で 16 形全て raku 一致、`@j := @i` エイリアスは **interpreter splice 経路（WhateverCode offset で
+  fallthrough）も同じく `[1 2 3 4]`** ＝ pre-existing な container-identity ギャップ（🟣第一級コンテナ Phase 2）で
+  splice 固有でなく挙動不変。pin `t/native-array-splice.t`(28, 置換平坦化・末尾 splice・count クランプ・独立 removed
+  list・fallthrough X::OutOfRange/X::Cannot::Lazy 含む)。`S32-array/splice.t` の untyped 領域（最初60サブテスト）
+  not-ok ゼロ・push/pop/shift/unshift/S03-binding/arrays/S09-multidim/methods 全緑、cargo test 458/0、make test PASS。
+  （splice.t 全体は非whitelist の pre-existing fail＝`array[int]`/`array[int8]` typed-array メタデータ問題で、native
+  経路は typed array で必ず bail＝interpreter 維持のためカウント不変。）
+
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
 すべて構造的ブロッカー（②宣言レジストリ / ③state 所有移管 / 第一級コンテナ Phase 2 / lever B）が前提であり、

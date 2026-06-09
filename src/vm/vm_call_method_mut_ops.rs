@@ -1203,6 +1203,17 @@ impl VM {
                     self.env_dirty = true;
                     return Ok(());
                 }
+                // Native fast path for the simple (non-erroring) forms of `splice`
+                // on a plain, untyped `@`-array (ledger §1: native receiver
+                // dispatch -> VM-native).
+                if modifier.is_none()
+                    && let Some(result) =
+                        self.try_native_array_splice(&target_name, &target, &method, &args)
+                {
+                    self.stack.push(result?);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
                 // Native fast path for mutating Buf write methods on a mutable Buf
                 // instance (ledger §1: native receiver dispatch -> VM-native).
                 if modifier.is_none()
@@ -1503,6 +1514,108 @@ impl VM {
             self.interpreter.unregister_container_type_metadata(&stored);
         }
         Some(Ok(result))
+    }
+
+    /// VM-native `splice` on a plain, untyped `@`-array bound to `target_name`
+    /// (ledger §1: native receiver dispatch -> VM-native). Mirrors the
+    /// interpreter's `splice` branch in `methods_mut.rs` exactly (`drain` +
+    /// `insert`, returning the removed elements as a real array), so the result
+    /// is behavior-invariant.
+    ///
+    /// Conservatively handles only the simple, non-erroring forms: the offset
+    /// and count arguments must be plain non-negative `Int`s (or absent) and any
+    /// replacement values must be non-lazy. Returns `None` (fall through to the
+    /// interpreter) for every richer case the interpreter owns: a
+    /// WhateverCode/`Whatever`/`Str`/`Num` offset or count, an out-of-range
+    /// offset (`X::OutOfRange`), a lazy replacement (`X::Cannot::Lazy`), and
+    /// typed/shaped/shared/metadata-bearing arrays.
+    fn try_native_array_splice(
+        &mut self,
+        target_name: &str,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "splice" {
+            return None;
+        }
+        // Only a plain `@`-sigiled variable whose value is a real `[...]` array
+        // (ArrayKind::Array). This excludes List/Item/Shaped/Lazy kinds.
+        if !target_name.starts_with('@')
+            || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
+        {
+            return None;
+        }
+        // Shared / type-constrained / metadata-bearing containers need the
+        // interpreter's element checks, native-array semantics, and identity
+        // sharing; let it own those.
+        if self.interpreter.shared_vars_active
+            || self.interpreter.var_type_constraint(target_name).is_some()
+            || self.interpreter.container_type_metadata(target).is_some()
+        {
+            return None;
+        }
+        // Offset (arg 0) and count (arg 1): plain non-negative `Int`, or absent.
+        // Anything else (Whatever/Str/Num/Callable) goes to the interpreter,
+        // which also owns the `X::OutOfRange` error for a negative offset/count.
+        let raw_start = match args.first() {
+            None => None,
+            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            _ => return None,
+        };
+        let raw_count = match args.get(1) {
+            None => None,
+            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            _ => return None,
+        };
+        // Replacement values (args[2..]): reject lazy values (the interpreter
+        // raises `X::Cannot::Lazy`); flatten `Array` args exactly as the
+        // interpreter's `do_splice` does.
+        let mut replacement: Vec<Value> = Vec::new();
+        for arg in args.iter().skip(2) {
+            match arg {
+                Value::Array(arr, ..) => {
+                    if arr.iter().any(crate::builtins::methods_0arg::is_value_lazy) {
+                        return None;
+                    }
+                    replacement.extend(arr.iter().cloned());
+                }
+                other => {
+                    if crate::builtins::methods_0arg::is_value_lazy(other) {
+                        return None;
+                    }
+                    replacement.push(other.clone());
+                }
+            }
+        }
+        // The receiver must be exactly the array currently bound to this name, so
+        // an in-place `Arc::make_mut` writeback is correct. Compute the splice
+        // bounds from the live binding's length (not `target`).
+        let Some(Value::Array(arc_items, crate::value::ArrayKind::Array)) =
+            self.interpreter.env_mut().get_mut(target_name)
+        else {
+            return None;
+        };
+        let len = arc_items.len();
+        let start = raw_start.unwrap_or(0);
+        // An offset past the end is `X::OutOfRange` in the interpreter.
+        if start > len {
+            return None;
+        }
+        let count = raw_count.unwrap_or(len - start);
+        let end = (start + count).min(len);
+        let items = Arc::make_mut(arc_items);
+        let removed: Vec<Value> = items.drain(start..end).collect();
+        for (i, item) in replacement.into_iter().enumerate() {
+            items.insert(start + i, item);
+        }
+        // `Arc::make_mut` may reallocate the backing buffer; drop any stale
+        // pointer-keyed type metadata that could alias the fresh pointer (same
+        // hazard handled in `try_native_array_mut`).
+        if let Some(stored @ Value::Array(..)) = self.interpreter.env().get(target_name).cloned() {
+            self.interpreter.unregister_container_type_metadata(&stored);
+        }
+        Some(Ok(Value::real_array(removed)))
     }
 
     /// VM-native mutating Buf write methods (`write-bits`/`write-ubits`/
