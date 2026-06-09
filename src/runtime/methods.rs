@@ -675,7 +675,7 @@ impl Interpreter {
         // instance form (e.g. `(my $b := buf8.new).write-num32(0, 42e0)`).
         // For instances we mutate the underlying instance id so that any
         // bindings observing the same instance see the change.
-        if super::buf_write_num::write_num_size(method).is_some() {
+        if crate::builtins::buf_write_num::write_num_size(method).is_some() {
             let (is_inst, cn_opt, base_bytes, class_sym_opt, id_opt, attrs_opt) = match &target {
                 Value::Package(name) => {
                     let cn = name.resolve();
@@ -737,12 +737,12 @@ impl Interpreter {
                     _ => 0,
                 };
                 let endian_val = if args.len() == 3 {
-                    super::buf_write_num::decode_endian(&args[2])
+                    crate::builtins::buf_write_num::decode_endian(&args[2])
                 } else {
                     0
                 };
                 let mut bytes = base_bytes;
-                super::buf_write_num::apply_write_num(
+                crate::builtins::buf_write_num::apply_write_num(
                     &mut bytes, method, offset_i64, &args[1], endian_val,
                 )?;
                 if is_inst {
@@ -757,14 +757,17 @@ impl Interpreter {
                     return Ok(Value::make_instance_with_id(class_sym, updated_attrs, id));
                 }
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(super::buf_write_num::make_buf_value(&normalized, bytes));
+                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                    &normalized,
+                    bytes,
+                ));
             }
         }
 
         // Buf/Blob write-int / write-uint -- non-mut entry point.
         // Handles both type object (e.g. `buf8.write-uint8(0, 42)`) and
         // instance form (e.g. `(my $b := buf8.new).write-uint8(0, 42)`).
-        if super::buf_write_int::write_int_info(method).is_some() {
+        if crate::builtins::buf_write_int::write_int_info(method).is_some() {
             let (is_inst, cn_opt, base_bytes, class_sym_opt, id_opt, attrs_opt) = match &target {
                 Value::Package(name) => {
                     let cn = name.resolve();
@@ -826,12 +829,12 @@ impl Interpreter {
                     _ => 0,
                 };
                 let endian_val = if args.len() == 3 {
-                    super::buf_write_num::decode_endian(&args[2])
+                    crate::builtins::buf_write_num::decode_endian(&args[2])
                 } else {
                     0
                 };
                 let mut bytes = base_bytes;
-                super::buf_write_int::apply_write_int(
+                crate::builtins::buf_write_int::apply_write_int(
                     &mut bytes, method, offset_i64, &args[1], endian_val,
                 )?;
                 if is_inst {
@@ -846,7 +849,10 @@ impl Interpreter {
                     return Ok(Value::make_instance_with_id(class_sym, updated_attrs, id));
                 }
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(super::buf_write_num::make_buf_value(&normalized, bytes));
+                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                    &normalized,
+                    bytes,
+                ));
             }
         }
 

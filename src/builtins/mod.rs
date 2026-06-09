@@ -1,6 +1,9 @@
 #![allow(clippy::result_large_err)]
 
 pub(crate) mod arith;
+pub(crate) mod buf_bits;
+pub(crate) mod buf_write_int;
+pub(crate) mod buf_write_num;
 pub(crate) mod collation;
 pub(crate) mod comb;
 pub(crate) mod exception_message;
