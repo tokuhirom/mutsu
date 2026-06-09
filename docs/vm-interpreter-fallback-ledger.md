@@ -293,6 +293,18 @@
   fallthrough/typed-element fallthrough/ループ構築)。S12/S14/binding/roles 184 件全緑、cargo test 458/0、make test PASS。
   **残: typed `@`/`%`・`is Type`・shaped・required・where・coercion 型・native 型は依然 interpreter。**
 
+- **2026-06-10 (③ PR-13, §1 = native construction を `is required` 属性へ拡張)**: PR-11/12 の続きで native default
+  構築を **`is required` 属性**へ拡張（従来ゲートが `!is_required` で reject）。提供された required 属性は native 構築
+  （`$` typed は型チェック込み）、**未提供の required 属性は fallthrough**（interpreter が `X::Attribute::Required`）。
+  ゲートから `!is_required` を外し、build 先頭に「required かつ未 provided → None」検査を追加。**behavior-invariant**:
+  required `$` 未提供は interpreter が die（raku 一致）、required `@`/`%` 未提供は interpreter が **enforce しない**
+  （NODIE＝raku と異なる pre-existing ギャップだが native は fallthrough で interpreter 挙動に一致）。pin
+  `t/native-ctor-required-attrs.t`(14, 全 required 提供→build / 未提供 `$`→dies / 型不一致→dies / required `@`/`%`
+  提供→build / 継承 required)。S12/S14/binding/roles 184 件全緑、cargo test 458/0、make test PASS。
+  （pin 作成中に **連続 bare block `} { ` のパース不可**と **クラス名 `Q` のクォート演算子衝突**という 2 つの
+  pre-existing パーサ制約に遭遇＝テストをトップレベル構造＋非衝突名に変更して回避。本 slice とは無関係。）
+  **残: where・coercion 型・native 型・typed `@`/`%`・`is Type`・shaped は依然 interpreter。**
+
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
 すべて構造的ブロッカー（②宣言レジストリ / ③state 所有移管 / 第一級コンテナ Phase 2 / lever B）が前提であり、
