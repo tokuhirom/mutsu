@@ -255,6 +255,40 @@ fn make_non_quantifiable_error() -> RuntimeError {
     err
 }
 
+/// `X::Syntax::Regex::NullRegex` — a regex (or one of its alternation /
+/// conjunction branches, or a group body) that matches nothing syntactically,
+/// e.g. `/ /`, `/ a | /`, `/ () /`, `s//b/`. Raku rejects these at parse time.
+/// A *single leading* empty alternation branch is allowed for alignment
+/// (`/ | a /`), so callers pass `allow_leading_empty` accordingly.
+fn make_null_regex_error() -> RuntimeError {
+    let msg = "Null regex not allowed";
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::NullRegex"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+/// Detect a null branch among a split alternation/conjunction. Returns the
+/// NullRegex error if any branch is empty/whitespace-only, except that a single
+/// leading empty branch is permitted when `allow_leading_empty` is set (Raku
+/// allows `/ | a /` and `/ || a /` for visual alignment).
+fn null_regex_if_empty_branch(
+    branches: &[String],
+    allow_leading_empty: bool,
+) -> Option<RuntimeError> {
+    for (i, b) in branches.iter().enumerate() {
+        if b.trim().is_empty() {
+            if allow_leading_empty && i == 0 {
+                continue;
+            }
+            return Some(make_null_regex_error());
+        }
+    }
+    None
+}
+
 fn make_unrecognized_metachar_error(metachar: char) -> RuntimeError {
     let msg =
         format!("Unrecognized regex metacharacter {metachar} (must be quoted to match literally)");
@@ -1710,14 +1744,31 @@ impl Interpreter {
 
         if sep_mode.is_none() {
             return match max {
-                Some(max) if max == min => repeat_atom(min),
+                // `**0` matches exactly zero repetitions — an empty match, not a
+                // null regex. Emit an empty string literal (a zero-width atom)
+                // rather than a bare empty pattern, which would be rejected as
+                // X::Syntax::Regex::NullRegex.
+                Some(max) if max == min => {
+                    if min == 0 {
+                        "''".to_string()
+                    } else {
+                        repeat_atom(min)
+                    }
+                }
                 Some(max) => {
-                    let alts: Vec<String> = (min..=max).rev().map(repeat_atom).collect();
-                    if alts.len() == 1 {
+                    // For `**0..max`, build the 1..=max alternatives and make the
+                    // whole group optional (`[...]?`) for the zero-rep case,
+                    // instead of appending an empty trailing alternation branch
+                    // like `(aa|a|)` — that empty branch would be misdetected as
+                    // a null regex.
+                    let lo = if min == 0 { 1 } else { min };
+                    let alts: Vec<String> = (lo..=max).rev().map(repeat_atom).collect();
+                    let core = if alts.len() == 1 {
                         alts.into_iter().next().unwrap_or_default()
                     } else {
                         format!("({})", alts.join("|"))
-                    }
+                    };
+                    if min == 0 { format!("[{core}]?") } else { core }
                 }
                 None => format!("{}[{sp}{atom}]*", repeat_atom(min)),
             };
@@ -1966,9 +2017,24 @@ impl Interpreter {
         if sigspace && source.contains('\n') {
             source = source.trim_end();
         }
+        // A regex whose entire body (or a recursed branch/group body) is empty
+        // or whitespace-only is a null regex; Raku rejects these at parse time
+        // with X::Syntax::Regex::NullRegex (e.g. `/ /`, `s//b/`, an empty
+        // `regex foo { }` body, or an empty `()`/`[]` group).
+        if source.trim().is_empty() {
+            PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
+            return None;
+        }
         // Handle top-level alternation (| or ||)
         let (top_alts, is_sequential) = Self::split_top_level_alternation(source);
         if top_alts.len() > 1 {
+            // A trailing or interior empty branch (`/ a | /`, `/ | /`) is a null
+            // regex. A single leading empty branch is allowed for alignment
+            // (`/ | a /`, `/ || a /`).
+            if let Some(err) = null_regex_if_empty_branch(&top_alts, true) {
+                PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                return None;
+            }
             let mut alt_patterns = Vec::new();
             for alt in &top_alts {
                 let alt_src = alt.trim();
@@ -2023,6 +2089,12 @@ impl Interpreter {
         // after alternation splitting found no `|`.
         let conj_parts = Self::split_top_level_conjunction(source);
         if conj_parts.len() > 1 {
+            // As with alternation, a trailing/interior empty conjunct (`/ a & /`)
+            // is null; a single leading empty conjunct is allowed (`/ & a /`).
+            if let Some(err) = null_regex_if_empty_branch(&conj_parts, true) {
+                PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                return None;
+            }
             let mut conj_patterns = Vec::new();
             for part in &conj_parts {
                 let part_src = part.trim();
@@ -3961,8 +4033,22 @@ impl Interpreter {
                         });
                         return None;
                     }
+                    // An empty capture group `()` is a null regex.
+                    if group_pattern.trim().is_empty() {
+                        PENDING_REGEX_ERROR
+                            .with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
+                        return None;
+                    }
                     let (alternatives, cap_is_sequential) =
                         Self::split_top_level_alternation(&group_pattern);
+                    // A trailing/interior empty branch inside the group (`(a|)`)
+                    // is null; a leading empty branch is allowed (`(|a)`).
+                    if alternatives.len() > 1
+                        && let Some(err) = null_regex_if_empty_branch(&alternatives, true)
+                    {
+                        PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                        return None;
+                    }
                     let needs_capture_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
@@ -4080,9 +4166,23 @@ impl Interpreter {
                             group_pattern.push(ch);
                         }
                     }
+                    // An empty non-capturing group `[]` is a null regex.
+                    if group_pattern.trim().is_empty() {
+                        PENDING_REGEX_ERROR
+                            .with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
+                        return None;
+                    }
                     // Parse the group as top-level alternation, including `||`.
                     let (alternatives, bracket_is_sequential) =
                         Self::split_top_level_alternation(&group_pattern);
+                    // A trailing/interior empty branch inside the group (`[a|]`)
+                    // is null; a leading empty branch is allowed (`[|a]`).
+                    if alternatives.len() > 1
+                        && let Some(err) = null_regex_if_empty_branch(&alternatives, true)
+                    {
+                        PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                        return None;
+                    }
                     let needs_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
