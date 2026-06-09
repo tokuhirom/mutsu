@@ -38,7 +38,11 @@ impl Interpreter {
                                 },
                             );
                         if !caller_allowed {
-                            return Err(make_private_permission_error(pm_name, owner_class));
+                            return Err(make_private_permission_error(
+                                pm_name,
+                                owner_class,
+                                caller_class.as_deref().unwrap_or("GLOBAL"),
+                            ));
                         }
                         (
                             pm_name,
@@ -74,6 +78,7 @@ impl Interpreter {
                         return Err(make_private_permission_error(
                             pm_name,
                             &class_name.resolve(),
+                            caller_class.as_deref().unwrap_or("GLOBAL"),
                         ));
                     }
                     let (result, updated) = self.run_instance_method_resolved(
@@ -1034,7 +1039,11 @@ impl Interpreter {
                                 },
                             );
                     if !caller_allowed {
-                        return Err(make_private_permission_error(pm_name, owner_class));
+                        return Err(make_private_permission_error(
+                            pm_name,
+                            owner_class,
+                            caller_class.as_deref().unwrap_or("GLOBAL"),
+                        ));
                     }
                     (
                         pm_name,
@@ -1063,7 +1072,11 @@ impl Interpreter {
                                     .is_some_and(|caller| trusted.contains(caller))
                             });
                     if !caller_allowed {
-                        return Err(make_private_permission_error(pm_name, &name.resolve()));
+                        return Err(make_private_permission_error(
+                            pm_name,
+                            &name.resolve(),
+                            caller_class.as_deref().unwrap_or("GLOBAL"),
+                        ));
                     }
                     let attrs = HashMap::new();
                     let (result, _updated) = self.run_instance_method_resolved(
