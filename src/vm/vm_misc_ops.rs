@@ -3031,19 +3031,34 @@ impl VM {
     }
 
     /// Execute the CheckPhaser opcode: pop TOS, throw X::Phaser::PrePost if falsy.
-    pub(super) fn exec_check_phaser_op(&mut self, is_pre: bool) -> Result<(), RuntimeError> {
+    /// `condition` is the phaser condition's source text (e.g. `0`) when known.
+    pub(super) fn exec_check_phaser_op(
+        &mut self,
+        is_pre: bool,
+        condition: Option<String>,
+    ) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap_or(Value::Nil);
         if !val.truthy() {
             let phaser_name = if is_pre { "PRE" } else { "POST" };
+            let condition = condition.unwrap_or_default();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "phaser".to_string(),
                 Value::Str(Arc::new(phaser_name.to_string())),
             );
-            attrs.insert("condition".to_string(), Value::Str(Arc::new(String::new())));
+            attrs.insert(
+                "condition".to_string(),
+                Value::Str(Arc::new(condition.clone())),
+            );
             let exception =
                 Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::PrePost"), attrs);
-            let mut err = RuntimeError::new(format!("Precondition '{}' failed", phaser_name,));
+            // raku: "Precondition '<cond>' failed" / "Postcondition '<cond>' failed".
+            let kind = if is_pre {
+                "Precondition"
+            } else {
+                "Postcondition"
+            };
+            let mut err = RuntimeError::new(format!("{} '{}' failed", kind, condition));
             err.exception = Some(Box::new(exception));
             return Err(err);
         }

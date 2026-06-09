@@ -439,9 +439,12 @@ pub(crate) enum OpCode {
         body_end: u32,
     },
     /// Check the top-of-stack value; if falsy, throw X::Phaser::PrePost.
-    /// `is_pre` distinguishes PRE (true) from POST (false).
+    /// `is_pre` distinguishes PRE (true) from POST (false). `condition_idx` is
+    /// the constant index of the condition's source text (e.g. `0`), used for
+    /// the exception's `condition` attribute and message; `None` when unknown.
     CheckPhaser {
         is_pre: bool,
+        condition_idx: Option<u32>,
     },
     /// Marks the start of an individual LEAVE phaser body within the
     /// KEEP/UNDO queue. `next` points to the start of the next LEAVE
