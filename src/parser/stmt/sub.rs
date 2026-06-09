@@ -299,6 +299,36 @@ pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
     Ok(())
 }
 
+/// If a routine body uses a placeholder variable (`$^x`, `@_`, `$:named`, ...)
+/// that is not captured by a nested signature-capable block, build the fatal
+/// `X::Signature::Placeholder` error. The placeholder is reported with its
+/// display name and the source line on which it appears.
+fn placeholder_overrides_signature_error(body: &[Stmt]) -> Option<PError> {
+    let mut line: i64 = 0;
+    for stmt in body {
+        if let Stmt::SetLine(l) = stmt {
+            line = *l;
+            continue;
+        }
+        if let Some(ph) = crate::ast::collect_unattached_placeholders(std::slice::from_ref(stmt))
+            .into_iter()
+            .next()
+        {
+            let message = format!(
+                "Placeholder variable '{}' cannot override existing signature",
+                ph
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("placeholder".to_string(), Value::str(ph));
+            attrs.insert("line".to_string(), Value::Int(line));
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Signature::Placeholder"), attrs);
+            return Some(PError::fatal_with_exception(message, Box::new(ex)));
+        }
+    }
+    None
+}
+
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
 pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
@@ -1079,6 +1109,12 @@ pub(super) fn sub_decl_body(
             Err(err) => return Err(err),
         }
     };
+    // A routine declared with an explicit signature (`sub f() { ... }`, even an
+    // empty one) cannot also use placeholder variables in its body — that would
+    // override the existing signature. This is X::Signature::Placeholder.
+    if has_explicit_signature && let Some(err) = placeholder_overrides_signature_error(&body) {
+        return Err(err);
+    }
     // When no explicit signature is given, collect placeholder variables
     // ($^a, $^b, &^c, etc.) from the body as implicit parameters.
     let (params, param_defs) = if params.is_empty() && param_defs.is_empty() {
