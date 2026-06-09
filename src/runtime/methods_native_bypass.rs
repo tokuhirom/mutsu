@@ -283,7 +283,7 @@ impl Interpreter {
             );
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg.clone()));
-            attrs.insert("target".to_string(), Value::str_from("Num"));
+            attrs.insert("target".to_string(), Value::Package(Symbol::intern("Num")));
             attrs.insert("source".to_string(), target.clone());
             let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
             let mut err = RuntimeError::new(msg);

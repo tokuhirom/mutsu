@@ -595,7 +595,7 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
                     }
                 )),
             );
-            attrs.insert("target".to_string(), Value::str_from("Real"));
+            attrs.insert("target".to_string(), Value::Package(Symbol::intern("Real")));
             attrs.insert("source".to_string(), target.clone());
             let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
             let mut err =
