@@ -32,6 +32,7 @@
 | `vm_data_ops.rs` shaped push | shaped 配列 push | MEDIUM | shaped 次元メタ検査の VM 化 |
 | `vm_data_ops.rs` non-simple push | closure-captured / 非Array push | MEDIUM | 第一級コンテナ Phase 2（ContainerRef） |
 | ~~`vm_smart_match.rs` key-method~~ | ~~smartmatch のキーメソッド抽出~~ | — | **✅消化 (PR2)**: 統一 compiled-first へ |
+| ~~`vm_call_method_compiled.rs` QuantHash coercion~~ | ~~`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`（list-like 受け手）~~ | — | **✅消化 (③ PR-8)**: `try_native_quanthash_coerce` で VM ネイティブ。pure 折り畳みは `builtins/quanthash_coerce` に一本化。`.MixHash`（型メタ登録）/ Instance/Package 受け手は interpreter 維持 |
 | `vm_call_helpers.rs` hyper temp | temp-bind した item への hyper メソッド | MEDIUM | 第一級コンテナ Phase 2 |
 | `vm_register_ops.rs` react loop | `run_react_event_loop[_drain]` | HARD | lever B（async state 所有） |
 
@@ -211,6 +212,22 @@
   実測: `read-write-bits.t` の write-bits/write-ubits fallback 3123→3（残3=type-object 形式）。pin `t/native-buf-mut.t`(23,
   エイリアス/buf 伸長/Blob dies 含む)。S03-buf/S03-operators/S32-container/S02-types/signed-unsigned-native 全緑、cargo test 458/0。
   （write-int.t は 128-bit 未対応の既知 pre-existing blocker＝非whitelist、本変更と無関係。）
+
+- **2026-06-09 (③ PR-8, §1 = QuantHash coercion の VM ネイティブ化 + builtins 降ろし)**: フォールバックの**広がり実測**
+  （whitelist 145 ファイル・distinct ファイル数）で `new`(63 files・③ ctor) に次ぐ tractable な pure カテゴリ＝
+  **`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`（~11 files）** を確認し着手。`vm_call_method_compiled.rs` の
+  catch-all 直前に `try_native_quanthash_coerce` を追加（PR-7/PR-5 と同位置＝ユーザーメソッド解決後なので shadow しない）。
+  **dedup/placement 降ろし**: `dispatch_to_set`/`dispatch_to_bag_with_what`/`dispatch_to_mix`（+ helpers `pair_weight`/
+  `mix_pair_weight`/`mix_add_item_with_keys`/nested `add_item`/`flatten_into`）を `impl Interpreter` の `&self` メソッド
+  （実体は self 非依存・相互再帰のみ）から **`src/builtins/quanthash_coerce.rs` の pure free fn** へ降ろし
+  （`to_set`/`to_bag`/`to_mix`）。interpreter の `dispatch_method_by_name_2` と `methods_dispatch_new`（mix_pair_weight）は
+  builtins へ委譲＝単一実装。`is_lazy_for_coerce`/`is_lazy_for_set_ops` は他 6 ファイルでも使うので runtime 据え置き
+  （`pub(crate)` 化して builtins から参照）。methods_collection.rs 961→315 行。**保守的フォールスルー**: `.MixHash`
+  （`register_container_type_metadata`＝interpreter 所有の型メタ登録が必要）/ Instance（`__baggy_data__`・user coercion）/
+  Package（型オブジェクト）受け手は interpreter 維持＝behavior-invariant。実測: set-op テストで Set/Bag/Mix fallback → 0。
+  pin `t/native-quanthash-coerce.t`(26)。whitelisted set/bag/mix 29 件全緑、cargo test 458/0。（set.t/bag.t の既知 fail は
+  BLOCKERS.md 記載の pre-existing〔bag.t 215=BigInt weight・252=Foo instance union, set.t 226=typed-hash bind〕で本変更と無関係。）
+  **次候補: iterator protocol（pull-one/skip-one/push-exactly）の VM ネイティブ化、または `AT-POS` native。本丸は `new`（③ ctor）。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

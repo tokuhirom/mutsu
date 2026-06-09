@@ -198,8 +198,14 @@ impl Interpreter {
                 let mut weights: HashMap<String, f64> = HashMap::new();
                 for item in &items {
                     let (key, weight) = match item {
-                        Value::Pair(k, v) => (k.clone(), Self::mix_pair_weight(v)?),
-                        Value::ValuePair(k, v) => (k.to_string_value(), Self::mix_pair_weight(v)?),
+                        Value::Pair(k, v) => (
+                            k.clone(),
+                            crate::builtins::quanthash_coerce::mix_pair_weight(v)?,
+                        ),
+                        Value::ValuePair(k, v) => (
+                            k.to_string_value(),
+                            crate::builtins::quanthash_coerce::mix_pair_weight(v)?,
+                        ),
                         other => (other.to_string_value(), 1.0),
                     };
                     *weights.entry(key).or_insert(0.0) += weight;
