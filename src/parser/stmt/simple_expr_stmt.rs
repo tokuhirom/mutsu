@@ -1265,6 +1265,28 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let stmt = Stmt::SyntheticBlock(stmts);
             return parse_statement_modifier(r, stmt);
         }
+        // Reject binding to a zen slice: `@a[] := ...` / `%a{} := ...` → X::Bind::ZenSlice
+        if let Expr::ZenSlice(inner) = &expr {
+            let type_name = match inner.as_ref() {
+                Expr::HashVar(_) => "Hash",
+                _ => "Array",
+            };
+            let message = format!("Cannot bind to {} zen slice", type_name);
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Bind::ZenSlice"),
+                std::collections::HashMap::from([
+                    (
+                        "type".to_string(),
+                        crate::value::Value::Package(crate::symbol::Symbol::intern(type_name)),
+                    ),
+                    (
+                        "message".to_string(),
+                        crate::value::Value::str(message.clone()),
+                    ),
+                ]),
+            );
+            return Err(PError::fatal_with_exception(message, Box::new(ex)));
+        }
         // Reject binding to a literal: `0 := 1` → X::Bind
         if is_literal_expr(&expr) {
             let ex = crate::value::Value::make_instance(

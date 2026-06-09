@@ -2226,6 +2226,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     rest = after;
                     continue;
                 }
+                // Binding to an array zen slice (`@a[] := ...`) is illegal; keep
+                // the ZenSlice wrapper so the bind site can raise
+                // X::Bind::ZenSlice instead of silently dropping the subscript.
+                if r_adv.starts_with(":=") || r_adv.starts_with("::=") {
+                    expr = Expr::ZenSlice(Box::new(expr));
+                    rest = after;
+                    continue;
+                }
                 rest = after;
                 continue;
             }
