@@ -1556,6 +1556,13 @@ impl Interpreter {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // A non-numeric Str operand in numeric context (arithmetic/comparison)
+        // raises X::Str::Numeric — Raku never silently coerces "5 foo" to 0.
+        if let Value::Str(s) = &value
+            && let Some((pos, reason)) = crate::runtime::str_numeric::str_numeric_failure(s)
+        {
+            return Err(crate::runtime::utils::str_numeric_error(s, pos, &reason));
+        }
         if !matches!(value, Value::Instance { .. }) {
             return Ok(value);
         }

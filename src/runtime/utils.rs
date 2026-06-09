@@ -2856,6 +2856,25 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
     }
 }
 
+/// Build an `X::Str::Numeric` error for a string that cannot be used as a
+/// number, carrying rakudo's `source`, `pos` and `reason` attributes.
+pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> RuntimeError {
+    let msg = format!(
+        "Cannot convert string to number: {} in '{}'",
+        reason, source
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("source".to_string(), Value::str(source.to_string()));
+    attrs.insert("pos".to_string(), Value::Int(pos as i64));
+    attrs.insert("reason".to_string(), Value::str(reason.to_string()));
+    attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Str::Numeric"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     // Unwrap allomorphic types (Mixin) to their inner numeric value
     let left = unwrap_mixin(left);
