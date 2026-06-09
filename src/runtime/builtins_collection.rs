@@ -1190,6 +1190,13 @@ impl Interpreter {
             }
         }
 
+        // A lazy/infinite source cannot be sorted: throw X::Cannot::Lazy instead
+        // of materializing it (matches raku). The comparator (a Sub) is never
+        // lazy, so scanning all positionals is safe.
+        if positional.iter().any(Self::is_lazy_for_coerce) {
+            return Err(RuntimeError::cannot_lazy("sort"));
+        }
+
         // sort(comparator, list, ...) or sort(list, ...) or sort(items...)
         if positional.len() >= 2 {
             let first = &positional[0];

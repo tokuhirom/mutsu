@@ -20,6 +20,14 @@ impl VM {
             }
         }
         let method_name = method_sym.resolve();
+        // Eager list operations cannot run on a lazy/infinite source: throw
+        // X::Cannot::Lazy instead of hanging while the native impl materializes
+        // it (matches raku). Shared with the interpreter dispatch path.
+        if let Some(err) =
+            crate::runtime::Interpreter::lazy_guard_error(method_name.as_str(), target)
+        {
+            return Some(Err(err));
+        }
         // Early exit for Proxy containers
         if matches!(target, Value::Proxy { .. })
             && !matches!(

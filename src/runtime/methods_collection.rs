@@ -178,6 +178,25 @@ impl Interpreter {
         }
     }
 
+    /// Operations that need the full (finite) list cannot run on a lazy or
+    /// infinite source. Returns `Some(X::Cannot::Lazy)` when `method` is such an
+    /// operation and `target` is lazy/infinite, else `None`. Matches raku, which
+    /// throws rather than hanging while materializing the whole sequence.
+    /// `.head`/`.first`/`.map`/`[]` handle laziness and are NOT listed here.
+    pub(crate) fn lazy_guard_error(method: &str, target: &Value) -> Option<RuntimeError> {
+        if !Self::is_lazy_for_coerce(target) {
+            return None;
+        }
+        match method {
+            "classify" | "categorize" => Some(RuntimeError::cannot_lazy_with_action(
+                method,
+                "Hash[Any,Mu]",
+            )),
+            "sort" | "combinations" | "permutations" => Some(RuntimeError::cannot_lazy(method)),
+            _ => None,
+        }
+    }
+
     fn is_infinite_endpoint(v: &Value) -> bool {
         match v {
             Value::Num(n) => n.is_infinite(),
