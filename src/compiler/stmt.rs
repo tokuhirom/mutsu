@@ -1786,14 +1786,29 @@ impl Compiler {
                     *sigil
                 };
                 let full_name = format!("{}{}{}", sigil_ch, twigil, bare);
-                let message = format!(
-                    "You cannot declare attribute '{}' here; maybe you'd like a class or a role?",
-                    full_name
-                );
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert("name".to_string(), Value::str(full_name));
-                attrs.insert("message".to_string(), Value::str(message));
-                let err = Value::make_instance(Symbol::intern("X::Attribute::NoPackage"), attrs);
+                let err = if let Some(pkg_kind) = self.current_package_kind {
+                    // Inside a `module`/`package` body: a package cannot hold
+                    // attributes — X::Attribute::Package.
+                    let kind_str = pkg_kind.as_str();
+                    let message = format!(
+                        "A {} cannot have attributes, but you tried to declare '{}'",
+                        kind_str, full_name
+                    );
+                    attrs.insert("name".to_string(), Value::str(full_name));
+                    attrs.insert("package-kind".to_string(), Value::str(kind_str.to_string()));
+                    attrs.insert("message".to_string(), Value::str(message));
+                    Value::make_instance(Symbol::intern("X::Attribute::Package"), attrs)
+                } else {
+                    // Mainline: no enclosing package at all — X::Attribute::NoPackage.
+                    let message = format!(
+                        "You cannot declare attribute '{}' here; maybe you'd like a class or a role?",
+                        full_name
+                    );
+                    attrs.insert("name".to_string(), Value::str(full_name));
+                    attrs.insert("message".to_string(), Value::str(message));
+                    Value::make_instance(Symbol::intern("X::Attribute::NoPackage"), attrs)
+                };
                 let idx = self.code.add_constant(err);
                 self.code.emit(OpCode::LoadConst(idx));
                 self.code.emit(OpCode::Die);
@@ -1820,6 +1835,7 @@ impl Compiler {
             Stmt::Package {
                 name,
                 body,
+                kind,
                 is_unit,
                 is_my,
             } => {
@@ -1839,6 +1855,11 @@ impl Compiler {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();
                     self.in_unit_package = true;
+                    // A `grammar` body legitimately holds attributes; only
+                    // `module`/`package` bodies reject `has`.
+                    if !matches!(kind, crate::ast::PackageKind::Grammar) {
+                        self.current_package_kind = Some(*kind);
+                    }
                     // Register the package name so it's accessible as a value
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
@@ -1863,16 +1884,26 @@ impl Compiler {
                     });
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
+                    let saved_package_kind = self.current_package_kind;
                     self.current_package = qualified_name;
                     // Inside a non-unit `module Foo { ... }` block, runtime
                     // PackageScope handles the package context, so we must
                     // not pre-qualify nested class/role decls here.
                     self.in_unit_package = false;
+                    // A `grammar` body legitimately holds attributes; only
+                    // `module`/`package` bodies reject `has`.
+                    self.current_package_kind = if matches!(kind, crate::ast::PackageKind::Grammar)
+                    {
+                        None
+                    } else {
+                        Some(*kind)
+                    };
                     for s in body {
                         self.compile_stmt(s);
                     }
                     self.current_package = saved_package;
                     self.in_unit_package = saved_in_unit;
+                    self.current_package_kind = saved_package_kind;
                     self.code.patch_body_end(pkg_idx);
                 }
             }

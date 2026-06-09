@@ -44,6 +44,11 @@ pub(crate) struct Compiler {
     /// prefix at compile time, since the runtime does not get a
     /// PackageScope opcode for unit declarations.
     pub(crate) in_unit_package: bool,
+    /// The kind of package (`module`/`package`/`grammar`) whose body is
+    /// currently being compiled, or `None` in the mainline. Used to raise
+    /// X::Attribute::Package when a `has` attribute is declared in a
+    /// module/package body (which cannot hold attributes).
+    pub(crate) current_package_kind: Option<crate::ast::PackageKind>,
     /// The enclosing package name before closure mangling. Used for `$?PACKAGE`
     /// so that methods inside a class report the class name, not the internal
     /// closure package name.
@@ -114,6 +119,7 @@ impl Compiler {
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
+            current_package_kind: None,
             enclosing_package: None,
             tmp_counter: 0,
             dynamic_scope_all: false,

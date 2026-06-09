@@ -1706,6 +1706,7 @@ pub(super) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
         Expr::DoStmt(Box::new(Stmt::Package {
             name: Symbol::intern(&name),
             body,
+            kind: crate::ast::PackageKind::Grammar,
             is_unit: false,
             is_my: false,
         })),
