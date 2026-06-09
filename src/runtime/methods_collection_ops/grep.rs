@@ -302,20 +302,19 @@ impl Interpreter {
                 }
                 grep_adverb.transform_result(filtered, &indices)
             }
-            Value::Range(a, b) => {
-                let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
-            }
-            Value::RangeExcl(a, b) => {
-                let items: Vec<Value> = (a..b).map(Value::Int).collect();
-                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
-            }
-            Value::RangeExclStart(a, b) => {
-                let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
-            }
-            Value::RangeExclBoth(a, b) => {
-                let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..) => {
+                // Route integer ranges through the unified pull iterator so an
+                // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
+                // truncated at the cap instead of panicking with
+                // `capacity overflow` (ANALYSIS §8.2). This matches the cap the
+                // `GenericRange` arm already uses via `value_to_list`.
+                let items = crate::runtime::value_iterator::materialize_capped(
+                    &target,
+                    crate::runtime::utils::MAX_RANGE_EXPAND as usize,
+                );
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             Value::GenericRange { .. } => {
