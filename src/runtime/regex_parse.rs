@@ -1744,14 +1744,31 @@ impl Interpreter {
 
         if sep_mode.is_none() {
             return match max {
-                Some(max) if max == min => repeat_atom(min),
+                // `**0` matches exactly zero repetitions — an empty match, not a
+                // null regex. Emit an empty string literal (a zero-width atom)
+                // rather than a bare empty pattern, which would be rejected as
+                // X::Syntax::Regex::NullRegex.
+                Some(max) if max == min => {
+                    if min == 0 {
+                        "''".to_string()
+                    } else {
+                        repeat_atom(min)
+                    }
+                }
                 Some(max) => {
-                    let alts: Vec<String> = (min..=max).rev().map(repeat_atom).collect();
-                    if alts.len() == 1 {
+                    // For `**0..max`, build the 1..=max alternatives and make the
+                    // whole group optional (`[...]?`) for the zero-rep case,
+                    // instead of appending an empty trailing alternation branch
+                    // like `(aa|a|)` — that empty branch would be misdetected as
+                    // a null regex.
+                    let lo = if min == 0 { 1 } else { min };
+                    let alts: Vec<String> = (lo..=max).rev().map(repeat_atom).collect();
+                    let core = if alts.len() == 1 {
                         alts.into_iter().next().unwrap_or_default()
                     } else {
                         format!("({})", alts.join("|"))
-                    }
+                    };
+                    if min == 0 { format!("[{core}]?") } else { core }
                 }
                 None => format!("{}[{sp}{atom}]*", repeat_atom(min)),
             };
