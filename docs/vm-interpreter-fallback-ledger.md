@@ -154,6 +154,10 @@
   正しく動くため redispatch 除外は不要に。pin `t/multi-otf-dispatch.t`(25, callsame-when-winner-declared-last 含む)。
   実測 multi-probe で fallback 5→2（残2=nextsame/callsame builtin 自体）。S06/S12/S14 whitelist 全緑（10x 決定的）、
   make test PASS。**教訓: 「自分の PR の CI fail」が既存 flaky の顕在化のこともある — シード依存の非決定性を実測で確定せよ。**
+  **さらに回帰を1件発見・修正（PR-2 の轍）**: multi fork が **native Test ルーチン**（is-eqv/is-deeply 等。Rust 実装だが
+  multi stub が registry に登録されている）を OTF compile し、native handler を迂回して `S16-io/words.t`・`S32-io/slurp.t` を
+  決定的に破壊（is-eqv 経由）。非-builtin OTF パスと同じ `!is_interpreter_handled_function(name)` ガードを multi fork にも
+  追加して解消（is-eqv は call_function_fallback → native test handler へ正しく回る）。ローカル full make roast PASS で確認。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

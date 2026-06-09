@@ -730,8 +730,16 @@ impl VM {
                     // The selected candidate's own redispatch (`nextsame`/`callsame`/
                     // `callwith`) still works because compile_and_call_function_def
                     // pushes the same multi-dispatch frame the interpreter would.
+                    // Skip names the interpreter must handle natively even when a
+                    // multi candidate is registered for them: native Test routines
+                    // (is-eqv/is-deeply/…) register multi stubs but are implemented
+                    // in Rust, so OTF-compiling the stub bypasses the native handler
+                    // and corrupts behaviour (regressed S16-io/words.t,
+                    // S32-io/slurp.t via is-eqv). Mirrors the non-builtin OTF path's
+                    // is_interpreter_handled_function gate below.
                     let _ = self.interpreter.take_pending_dispatch_error();
-                    if let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+                    if !self.is_interpreter_handled_function(name)
+                        && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
                         && Self::def_is_otf_compilable(&def)
                         && !Self::function_body_declares_state(&def.body)
                     {
