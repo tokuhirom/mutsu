@@ -69,18 +69,40 @@ impl Interpreter {
                 && !class_def.methods.contains_key("BUILDALL")
                 && !class_def.methods.contains_key("new")
                 && class_def.native_methods.is_empty()
+                // No custom per-attribute build closure (`is built` trait or a
+                // MOP `Attribute.set_build`): those replace plain data assignment
+                // and must run through the full constructor.
+                && class_def.attribute_built.is_empty()
+                && !registry
+                    .attribute_build_overrides
+                    .keys()
+                    .any(|(owner, _)| owner == &cls)
                 && class_def.parents.iter().all(|p| {
                     p == "Any" || p == "Mu" || p == "Cool" || registry.classes.contains_key(p)
                 })
                 && class_def.attributes.iter().all(
                     |(_, _, _, is_required, type_constraint, sigil, where_constraint)| {
+                        // `$`-scalar, not required, no `where` clause. A type
+                        // constraint is allowed only when it is a plain
+                        // `type_matches_value`-checkable class/role/subset type
+                        // (see `is_simple_native_ctor_constraint`); native /
+                        // coercion / parametric types keep the interpreter's
+                        // richer construction (coercion, native defaults).
                         *sigil == '$'
                             && !is_required
-                            && type_constraint.is_none()
                             && where_constraint.is_none()
+                            && match type_constraint {
+                                None => true,
+                                Some(inner) => inner
+                                    .as_deref()
+                                    .is_some_and(Self::is_simple_native_ctor_constraint),
+                            }
                     },
                 )
-                && class_def.attribute_types.is_empty()
+                && class_def
+                    .attribute_types
+                    .values()
+                    .all(|tc| Self::is_simple_native_ctor_constraint(tc))
                 && class_def.attribute_smileys.is_empty();
             if !simple {
                 return false;
@@ -88,6 +110,16 @@ impl Interpreter {
             has_attribute |= !class_def.attributes.is_empty();
         }
         has_attribute
+    }
+
+    /// A type constraint the native default constructor can enforce with a plain
+    /// `type_matches_value` check: a normal class/role/subset type (starts
+    /// uppercase). Excludes native lowercase types (`int`/`num`/`str` — they
+    /// coerce and default to `0`/`""`, not a type object), coercion types
+    /// (`Int()`), and parametric types (`Positional[Int]`). Everything excluded
+    /// keeps the interpreter's richer construction semantics.
+    fn is_simple_native_ctor_constraint(tc: &str) -> bool {
+        tc.starts_with(char::is_uppercase) && !tc.contains('(') && !tc.contains('[')
     }
 
     /// Default-construct `class_name` natively when it is eligible (see
@@ -103,29 +135,62 @@ impl Interpreter {
         if !self.is_native_default_constructible(&cn_resolved) {
             return None;
         }
-        Some(self.build_native_default_instance(class_name, &cn_resolved, args))
+        self.build_native_default_instance(class_name, &cn_resolved, args)
     }
 
+    /// Returns `None` to fall through to the full constructor dispatch when a
+    /// case needs the interpreter's richer semantics: a provided value that does
+    /// not match its attribute's type constraint (interpreter raises
+    /// `X::TypeCheck::Assignment`), a typed attribute left uninitialized (its
+    /// default is the *type object*, which the interpreter synthesizes), or a
+    /// typed default whose value does not match. Otherwise builds the instance as
+    /// pure data and returns `Some(Ok(..))`.
     fn build_native_default_instance(
         &mut self,
         class_name: Symbol,
         cn_resolved: &str,
         args: &[Value],
-    ) -> Result<Value, RuntimeError> {
+    ) -> Option<Result<Value, RuntimeError>> {
+        let class_attrs = self.collect_class_attributes(cn_resolved);
+        // Attribute type constraints (MRO-wide) live in `attribute_types`, not in
+        // the `ClassAttributeDef` tuple's constraint slot — and the gate already
+        // guaranteed every one is a simple `type_matches_value`-checkable class
+        // type. Owned map, so it can be read while `self` is borrowed mutably.
+        let type_constraints = self.collect_attribute_type_constraints(cn_resolved);
+
         let mut attrs = HashMap::new();
         for arg in args {
             if let Value::Pair(key, val) = arg
                 && self.is_attribute_buildable(cn_resolved, key)
             {
+                // A provided value that does not already match its attribute's
+                // type constraint needs the interpreter (coercion or a proper
+                // X::TypeCheck::Assignment) — fall through.
+                if let Some(c) = type_constraints.get(key)
+                    && !self.type_matches_value(c, val)
+                {
+                    return None;
+                }
                 attrs.insert(key.clone(), *val.clone());
             }
         }
-        // Fill defaults for missing attributes (including Nil for uninitialized ones).
-        // Set up `self` as the partially-constructed instance so that
-        // default expressions referencing `self` (e.g. `has $.x = self.y`)
-        // work correctly. Update `self` after each default so that later
-        // defaults can see earlier defaults' values.
-        let class_attrs = self.collect_class_attributes(cn_resolved);
+        // A typed attribute that is neither provided nor defaulted is
+        // initialized to its *type object* (e.g. `Int`), not `Nil`. Let the
+        // interpreter synthesize it.
+        for (attr_name, _, default_expr, _, _, _, _) in &class_attrs {
+            if default_expr.is_none()
+                && !attrs.contains_key(attr_name)
+                && type_constraints.contains_key(attr_name)
+            {
+                return None;
+            }
+        }
+
+        // Fill defaults for missing attributes (including Nil for uninitialized
+        // ones). Set up `self` as the partially-constructed instance so that
+        // default expressions referencing `self` (e.g. `has $.x = self.y`) work
+        // correctly. Update `self` after each default so that later defaults can
+        // see earlier defaults' values.
         let has_defaults = class_attrs.iter().any(|(_, _, d, ..)| d.is_some());
         if has_defaults {
             let partial = Value::make_instance(class_name, attrs.clone());
@@ -145,23 +210,40 @@ impl Interpreter {
         if self.has_class_scoped_subs(cn_resolved) {
             self.current_package = cn_resolved.to_string();
         }
+        let mut eval_error: Option<RuntimeError> = None;
+        let mut typed_default_mismatch = false;
         for (attr_name, _is_public, default_expr, _, _, _, _) in &class_attrs {
-            if !attrs.contains_key(attr_name) {
-                if let Some(expr) = default_expr {
-                    let val = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
-                    attrs.insert(attr_name.clone(), val.clone());
-                    // Update self and !attr/.attr so later defaults see this value
-                    let updated = Value::make_instance(class_name, attrs.clone());
-                    self.env.insert("self".to_string(), updated.clone());
-                    self.env.insert("__ANON_STATE__".to_string(), updated);
-                    self.env.insert(format!("!{}", attr_name), val.clone());
-                    self.env.insert(format!(".{}", attr_name), val);
-                } else {
-                    attrs.insert(attr_name.clone(), Value::Nil);
+            if attrs.contains_key(attr_name) {
+                continue;
+            }
+            if let Some(expr) = default_expr {
+                let val = match self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())]) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        eval_error = Some(e);
+                        break;
+                    }
+                };
+                // A default whose value does not match the attribute's type
+                // constraint needs the interpreter's handling — fall through.
+                if let Some(c) = type_constraints.get(attr_name)
+                    && !self.type_matches_value(c, &val)
+                {
+                    typed_default_mismatch = true;
+                    break;
                 }
+                attrs.insert(attr_name.clone(), val.clone());
+                // Update self and !attr/.attr so later defaults see this value
+                let updated = Value::make_instance(class_name, attrs.clone());
+                self.env.insert("self".to_string(), updated.clone());
+                self.env.insert("__ANON_STATE__".to_string(), updated);
+                self.env.insert(format!("!{}", attr_name), val.clone());
+                self.env.insert(format!(".{}", attr_name), val);
+            } else {
+                attrs.insert(attr_name.clone(), Value::Nil);
             }
         }
-        // Restore package after default evaluation
+        // Restore package and env after default evaluation (on every exit path).
         self.current_package = saved_package;
         if has_defaults {
             self.env.remove("self");
@@ -172,9 +254,15 @@ impl Interpreter {
                 self.env.remove(&format!(".{}", k));
             }
         }
+        if let Some(e) = eval_error {
+            return Some(Err(e));
+        }
+        if typed_default_mismatch {
+            return None;
+        }
         // Add alias metadata for `has $x` (no twigil) attributes
         self.add_alias_attribute_metadata(cn_resolved, &mut attrs);
-        Ok(Value::make_instance(class_name, attrs))
+        Some(Ok(Value::make_instance(class_name, attrs)))
     }
 
     pub(super) fn dispatch_new(

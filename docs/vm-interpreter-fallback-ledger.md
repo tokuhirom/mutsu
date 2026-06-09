@@ -262,6 +262,23 @@
   （splice.t 全体は非whitelist の pre-existing fail＝`array[int]`/`array[int8]` typed-array メタデータ問題で、native
   経路は typed array で必ず bail＝interpreter 維持のためカウント不変。）
 
+- **2026-06-10 (③ PR-11, §1 = native default construction を typed `$` 属性へ拡張)**: §1 catch-all 最大カテゴリ
+  `Package.new`（コンストラクタ）の native 化範囲を拡張。`is_native_default_constructible`/`build_native_default_instance`
+  （`methods_object.rs`、VM の `try_compiled_method_or_interpret` と interpreter の `dispatch_new` が共有）が従来
+  **untyped `$` 属性のみ**だったのを、**simple class 制約付き `$` 属性**（`has Int $.x` 等）へ拡張。**保守的フォールスルー**で
+  divergence を全て interpreter に委ね behavior-invariant に保つ: ① 提供値が型不一致（`!type_matches_value`）→ None
+  （interpreter が `X::TypeCheck::Assignment`／coercion）、② arg も default も無い typed 属性 → None（未初期化 typed 属性は
+  **型オブジェクト**＝`Int` であり Nil でない。合成は interpreter）、③ typed default の値が型不一致 → None。ゲートは
+  **native/coercion/parametric 型を除外**（`is_simple_native_ctor_constraint`＝大文字始まり・`(` `[` なし）し、native
+  lowercase（`int`/`num`/`str`、default 0/""）は interpreter 維持。**重要な落とし穴を roast が捕捉**: 型制約の source of truth は
+  `ClassAttributeDef` tuple の制約スロットではなく `attribute_types` map（tuple 側は None）＝当初 tuple を読んで型チェックが
+  効かず `Int $.x = "str"` を受理する回帰 → `collect_attribute_type_constraints` 由来に修正。さらに **`is built` トレイト／MOP
+  `Attribute.set_build`**（カスタム build closure。`attribute_built` map ＋ registry `attribute_build_overrides`）を持つクラスは
+  pure-data 構築不可なのでゲートで除外（`S12-attributes/defaults.t` の set_build 実行時型チェック回帰を捕捉・修正）。
+  pin `t/native-ctor-typed-attrs.t`(30, 提供値/型オブジェクト未初期化/Str/Real/mixed/継承/相互参照 default/subset 型/
+  型不一致 dies/native int は interpreter/ループ構築)。S12/S14/S03-binding/roles whitelist 184 件全緑、cargo test 458/0。
+  **残: typed `@`/`%` 属性・required・where・coercion 型・native 型は依然 interpreter（本丸 ③ env 実行の手前で止める保守設計）。**
+
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
 すべて構造的ブロッカー（②宣言レジストリ / ③state 所有移管 / 第一級コンテナ Phase 2 / lever B）が前提であり、
