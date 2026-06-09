@@ -454,6 +454,16 @@ impl VM {
         if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
+        // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
+        // over a list-like receiver (ledger §1: native receiver dispatch ->
+        // VM-native). Pure element-folding shared with the interpreter via
+        // `builtins::quanthash_coerce`. `.MixHash` falls through (it registers
+        // container type metadata, which is interpreter-owned state).
+        if args.is_empty()
+            && let Some(result) = Self::try_native_quanthash_coerce(&target, method)
+        {
+            return result;
+        }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
         // User-defined Instance methods now always run as bytecode (compiled at
         // registration, or on demand above via `populate_uncompiled_method`), so
@@ -463,6 +473,63 @@ impl VM {
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
+    }
+
+    /// VM-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
+    /// over a list-like receiver (List/Array/Seq/Slip/Hash/Set/Bag/Mix/Pair/Range).
+    /// Delegates the element folding to the single authoritative pure
+    /// implementation in `builtins::quanthash_coerce`, the same one the
+    /// interpreter's `dispatch_method_by_name_2` uses, so the result is
+    /// behavior-invariant. The `*Hash` variants flip the mutable flag exactly as
+    /// the interpreter does.
+    ///
+    /// Returns `None` (fall through to the interpreter) for `.MixHash` (it
+    /// registers container type metadata — interpreter-owned state) and for
+    /// non-list-like receivers (`Instance`/`Package`/scalars), leaving those rarer
+    /// cases — `__baggy_data__` instances, type objects, user coercion — to the
+    /// interpreter.
+    fn try_native_quanthash_coerce(
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "Set" | "SetHash" | "Bag" | "BagHash" | "Mix") {
+            return None;
+        }
+        // Only list-like / QuantHash receivers go native; everything else
+        // (Instance/Package/scalars) keeps the interpreter's richer handling.
+        let list_like = matches!(
+            target,
+            Value::Array(..)
+                | Value::Seq(_)
+                | Value::Slip(_)
+                | Value::Hash(_)
+                | Value::Set(..)
+                | Value::Bag(..)
+                | Value::Mix(..)
+                | Value::Pair(..)
+                | Value::ValuePair(..)
+        ) || target.is_range();
+        if !list_like {
+            return None;
+        }
+        let target = target.clone();
+        let result = match method {
+            "Set" => crate::builtins::quanthash_coerce::to_set(target),
+            "SetHash" => crate::builtins::quanthash_coerce::to_set(target).map(|r| match r {
+                Value::Set(items, _) => Value::Set(items, true),
+                other => other,
+            }),
+            "Bag" => crate::builtins::quanthash_coerce::to_bag(target, "Bag"),
+            "BagHash" => {
+                crate::builtins::quanthash_coerce::to_bag(target, "BagHash").map(|r| match r {
+                    Value::Bag(items, _) => Value::Bag(items, true),
+                    other => other,
+                })
+            }
+            "Mix" => crate::builtins::quanthash_coerce::to_mix(target),
+            _ => unreachable!(),
+        };
+        Some(result)
     }
 
     /// Compile a resolved user method's body on demand when it lacks bytecode,
