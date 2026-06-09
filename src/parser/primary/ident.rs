@@ -1384,9 +1384,97 @@ fn try_extend_colon_name<'a>(input: &'a str, base: &str) -> (&'a str, String) {
     (rest, name)
 }
 
+/// Given input beginning with `(`, skip the balanced parenthesised group and
+/// return true if the next non-whitespace character is `{` (the start of a
+/// block). Used to distinguish `if() {}` (keyword-as-function) from `if(5)`
+/// (undeclared routine). A simple paren-depth counter is sufficient here.
+fn parens_then_block(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    debug_assert_eq!(bytes.first(), Some(&b'('));
+    let mut depth = 0usize;
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        match bytes[idx] {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    idx += 1;
+                    break;
+                }
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+    if depth != 0 {
+        return false;
+    }
+    input[idx..].trim_start().starts_with('{')
+}
+
+/// Build the X::Comp::Group error for a statement-control keyword used as a
+/// function call (`if() {}`). The group's first sorrow is an
+/// X::Syntax::KeywordAsFunction instance carrying the offending word.
+fn keyword_as_function_error(word: &str) -> PError {
+    let msg = format!(
+        "The word '{}' is interpreted as a '{}()' function call. \
+         Please use whitespace instead of parentheses.",
+        word, word
+    );
+    let mut sorrow_attrs = std::collections::HashMap::new();
+    sorrow_attrs.insert(
+        "word".to_string(),
+        crate::value::Value::str(word.to_string()),
+    );
+    sorrow_attrs.insert("needparens".to_string(), crate::value::Value::Bool(false));
+    sorrow_attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    let sorrow = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::KeywordAsFunction"),
+        sorrow_attrs,
+    );
+    let mut group_attrs = std::collections::HashMap::new();
+    group_attrs.insert(
+        "sorrows".to_string(),
+        crate::value::Value::array(vec![sorrow]),
+    );
+    group_attrs.insert("worries".to_string(), crate::value::Value::array(vec![]));
+    group_attrs.insert("panic".to_string(), crate::value::Value::Nil);
+    group_attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    let exception = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Comp::Group"),
+        group_attrs,
+    );
+    PError::fatal_with_exception(msg, Box::new(exception))
+}
+
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
+
+    // A statement-control keyword immediately followed by `(...) { ... }` (no
+    // whitespace before the parens) is a `keyword()`-as-function mistake
+    // (`if() {}`, `with() {}`). Raku rejects this with an X::Comp::Group whose
+    // first sorrow is X::Syntax::KeywordAsFunction. Without a trailing block
+    // (`loop(5)`) Raku instead reports an undeclared routine, so we only flag
+    // the block form here.
+    if rest.starts_with('(')
+        && matches!(
+            name.as_str(),
+            "if" | "unless"
+                | "while"
+                | "until"
+                | "for"
+                | "given"
+                | "when"
+                | "with"
+                | "without"
+                | "loop"
+        )
+        && parens_then_block(rest)
+    {
+        return Err(keyword_as_function_error(&name));
+    }
 
     // If the identifier is followed by `=>` (fat arrow), treat it as a pair
     // key regardless of whether it would otherwise be a declarator keyword.
