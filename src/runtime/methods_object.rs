@@ -84,9 +84,8 @@ impl Interpreter {
                     p == "Any" || p == "Mu" || p == "Cool" || registry.classes.contains_key(p)
                 })
                 && class_def.attributes.iter().all(
-                    |(name, _, _, is_required, type_constraint, sigil, where_constraint)| {
-                        // Not required, no `where` clause, and a constructible
-                        // sigil/type shape:
+                    |(name, _, _, _is_required, type_constraint, sigil, where_constraint)| {
+                        // No `where` clause, and a constructible sigil/type shape:
                         // - `$`: a type constraint is allowed only when it is a
                         //   plain `type_matches_value`-checkable class/role/subset
                         //   type (see `is_simple_native_ctor_constraint`); native /
@@ -94,8 +93,10 @@ impl Interpreter {
                         // - `@`/`%`: only untyped with no `is Type` trait — typed
                         //   elements need container type metadata and `is Type`
                         //   builds a typed container, both interpreter-owned.
-                        !is_required
-                            && where_constraint.is_none()
+                        // `is required` is allowed through: an unprovided required
+                        // attribute falls through at build time (the interpreter
+                        // raises X::Attribute::Required).
+                        where_constraint.is_none()
                             && match sigil {
                                 '$' => match type_constraint {
                                     None => true,
@@ -207,6 +208,13 @@ impl Interpreter {
                         attrs.insert(key.clone(), *val.clone());
                     }
                 }
+            }
+        }
+        // A required attribute that was not provided is `X::Attribute::Required`
+        // — let the interpreter raise it.
+        for (attr_name, _, _, is_required, _, _, _) in &class_attrs {
+            if *is_required && !attrs.contains_key(attr_name) {
+                return None;
             }
         }
         // A typed `$` attribute that is neither provided nor defaulted is
