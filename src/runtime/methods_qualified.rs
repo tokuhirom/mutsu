@@ -1,4 +1,6 @@
-use super::methods_signature::{make_method_not_found_error, make_private_permission_error};
+use super::methods_signature::{
+    make_method_not_found_error, make_private_permission_error, make_private_unqualified_error,
+};
 use super::*;
 
 impl Interpreter {
@@ -37,17 +39,16 @@ impl Interpreter {
                 return Some(Err(make_private_permission_error(
                     private_name,
                     owner_class,
+                    caller_class.as_deref().unwrap_or("GLOBAL"),
                 )));
             }
+            // Owner trusts the caller but the value is not an instance of it:
+            // the private method genuinely does not exist on this invocant.
+            return Some(Err(make_method_not_found_error(private_name, "Any", true)));
         }
-        // Unqualified private method on non-Instance — not found
-        Some(Err(make_method_not_found_error(
-            private_rest
-                .split_once("::")
-                .map_or(private_rest, |(_o, m)| m),
-            "Any",
-            true,
-        )))
+        // An unqualified private call (`$o!meth`) on something other than `self`
+        // must name the defining package; Raku reports X::Method::Private::Unqualified.
+        Some(Err(make_private_unqualified_error(private_rest)))
     }
 
     /// Handle qualified method names: Class::method (e.g., $o.Parent::x).

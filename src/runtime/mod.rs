@@ -2797,6 +2797,7 @@ impl Interpreter {
 
         // X::Method::Private::Permission
         register_x("X::Method::Private::Permission", "Exception");
+        register_x("X::Method::Private::Unqualified", "Exception");
 
         // X::ParametricConstant
         register_x("X::ParametricConstant", "Exception");
