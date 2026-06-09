@@ -845,20 +845,28 @@ impl Interpreter {
     /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
     /// Returns true if a frame was pushed (i.e. there are remaining candidates).
     pub(crate) fn push_multi_dispatch_frame(&mut self, name: &str, args: &[Value]) -> bool {
-        // Collect matching candidates (used to identify the current winner)
-        let matching_candidates = self.resolve_all_matching_candidates(name, args);
-        // Also collect ALL multi candidates regardless of arg matching.
-        // This is needed because callwith() can re-dispatch with different args,
-        // so candidates that don't match the original args may match the new ones.
+        // Collect ALL multi candidates regardless of arg matching. This is
+        // needed because callwith() can re-dispatch with different args, so
+        // candidates that don't match the original args may match the new ones.
         let all_candidates = self.resolve_all_multi_candidates(name);
-        if matching_candidates.is_empty() && all_candidates.len() <= 1 {
+        if all_candidates.len() <= 1 {
             return false;
         }
-        // The first matching candidate is the one currently being called;
-        // remaining are all OTHER candidates (matching or not).
-        let current_fp = matching_candidates.first().map(|def| {
+        // Identify the candidate currently being called by the DETERMINISTIC
+        // dispatch winner (the same resolver the interpreter's inline frame uses),
+        // NOT a HashMap-ordered first match. `resolve_all_matching_candidates` is
+        // HashMap-ordered, so its `.first()` is not reliably the winner: when the
+        // narrowest candidate is declared after a broader one, callsame/nextsame
+        // would redispatch to the wrong (or the same) candidate, flaking ~50% of
+        // the time with the process hash seed. The winner is excluded from
+        // `remaining` so redispatch targets the OTHER candidates.
+        let saved_err = self.take_pending_dispatch_error();
+        let current_fp = self.resolve_function_with_alias(name, args).map(|def| {
             crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
         });
+        if let Some(err) = saved_err {
+            self.set_pending_dispatch_error(err);
+        }
         let remaining: Vec<super::FunctionDef> = all_candidates
             .into_iter()
             .filter(|c| {

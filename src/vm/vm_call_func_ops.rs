@@ -118,7 +118,13 @@ impl VM {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = Symbol::intern(name_str);
             if self.otf_call_cache_gen == self.fn_resolve_gen {
-                if let Some(cf) = self.otf_call_cache.remove(&name_sym)
+                // Skip this type-blind name-keyed fast cache for multi names: the
+                // right candidate depends on argument types, which this cache
+                // does not key on (the multi fork resolves per-call via
+                // resolve_function_with_types instead). Guard the lookup, not the
+                // gen check, so a multi call never clears the whole cache.
+                if !self.has_multi_candidates_cached(name_str)
+                    && let Some(cf) = self.otf_call_cache.remove(&name_sym)
                     && !cf.has_inner_subs
                 {
                     let arity_usize = arity as usize;
@@ -709,15 +715,42 @@ impl VM {
                 self.env_dirty = true;
                 if self.has_multi_candidates_cached(name) && !self.interpreter.has_proto(name) {
                     // User-defined multi candidates take priority over builtins.
-                    // Call call_function_fallback directly to bypass the builtin match
-                    // in call_function, which would shadow user-defined multi subs.
-                    // TODO: compile to bytecode — multi-dispatch sub fork, blocked-by:
-                    // VM-side multi-candidate resolution (ledger §2).
-                    crate::vm::vm_stats::record_function_fallback(name);
-                    self.interpreter.set_pending_call_arg_sources(arg_sources);
-                    let result = self.interpreter.call_function_fallback(name, &args);
-                    self.interpreter.set_pending_call_arg_sources(None);
-                    self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                    // Resolve the winning candidate VM-side via the same resolver
+                    // call_function_fallback uses (③ PR-3, ledger §2). When the
+                    // winner is unambiguous and OTF-compilable, run it as compiled
+                    // bytecode instead of tree-walking through the interpreter.
+                    // For functions, ambiguity is signalled by returning None +
+                    // a pending_dispatch_error (dispatch.rs choose_best_matching_
+                    // candidate), so a Some(def) here is already an unambiguous
+                    // winner. Clear any stale pending error first (mirrors
+                    // resolve_function_with_alias) so a prior call's ambiguity
+                    // can't leak. Non-otf-compilable (where/default/code-param) and
+                    // no-match/ambiguous all fall through to call_function_fallback,
+                    // which re-resolves and raises X::Multi::Ambiguous / NoMatch.
+                    // The selected candidate's own redispatch (`nextsame`/`callsame`/
+                    // `callwith`) still works because compile_and_call_function_def
+                    // pushes the same multi-dispatch frame the interpreter would.
+                    // Skip names the interpreter must handle natively even when a
+                    // multi candidate is registered for them: native Test routines
+                    // (is-eqv/is-deeply/…) register multi stubs but are implemented
+                    // in Rust, so OTF-compiling the stub bypasses the native handler
+                    // and corrupts behaviour (regressed S16-io/words.t,
+                    // S32-io/slurp.t via is-eqv). Mirrors the non-builtin OTF path's
+                    // is_interpreter_handled_function gate below.
+                    let _ = self.interpreter.take_pending_dispatch_error();
+                    if !self.is_interpreter_handled_function(name)
+                        && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+                        && Self::def_is_otf_compilable(&def)
+                        && !Self::function_body_declares_state(&def.body)
+                    {
+                        self.compile_and_call_function_def(&def, args, compiled_fns)
+                    } else {
+                        crate::vm::vm_stats::record_function_fallback(name);
+                        self.interpreter.set_pending_call_arg_sources(arg_sources);
+                        let result = self.interpreter.call_function_fallback(name, &args);
+                        self.interpreter.set_pending_call_arg_sources(None);
+                        self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                    }
                 } else if self.interpreter.user_function_matches_call(name, &args) {
                     // A user-defined sub shadows a same-named builtin (③ PR-2). When
                     // the resolved def is a plain single candidate that is
@@ -837,6 +870,57 @@ impl VM {
                 // start blocks need the interpreter for proper thread spawning
                 name.resolve() == "start" || args.iter().any(Self::expr_needs_interpreter)
             }
+            _ => false,
+        }
+    }
+
+    /// True if the body declares a `state` variable anywhere (recursing through
+    /// nested blocks). A multi candidate whose body uses `state` must NOT be
+    /// OTF-compiled in the multi fork: signature alternates
+    /// `(A) | (B) { state $x }` share one state cell via a compile-time
+    /// state_group, but the OTF cache keys on the body fingerprint (which
+    /// includes the per-alternate signature), so each alternate would get its
+    /// own state and the sharing would break. Keep those on the interpreter,
+    /// which honors the shared state_group. (Single-candidate OTF subs are
+    /// unaffected — their fingerprint is stable across calls — but excluding any
+    /// state-bearing multi body is the safe, simple guard.)
+    pub(super) fn function_body_declares_state(body: &[crate::ast::Stmt]) -> bool {
+        body.iter().any(Self::stmt_declares_state)
+    }
+
+    fn stmt_declares_state(stmt: &crate::ast::Stmt) -> bool {
+        use crate::ast::Stmt;
+        match stmt {
+            Stmt::VarDecl { is_state, .. } => *is_state,
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::function_body_declares_state(then_branch)
+                    || Self::function_body_declares_state(else_branch)
+            }
+            Stmt::While { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Loop { body, .. }
+            | Stmt::Given { body, .. }
+            | Stmt::When { body, .. }
+            | Stmt::Whenever { body, .. }
+            | Stmt::React { body, .. }
+            | Stmt::Subtest { body, .. } => Self::function_body_declares_state(body),
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Default(body) => {
+                Self::function_body_declares_state(body)
+            }
+            Stmt::Expr(e) => Self::expr_declares_state(e),
+            _ => false,
+        }
+    }
+
+    fn expr_declares_state(expr: &crate::ast::Expr) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            Expr::Block(body) => Self::function_body_declares_state(body),
+            Expr::DoStmt(stmt) => Self::stmt_declares_state(stmt),
             _ => false,
         }
     }

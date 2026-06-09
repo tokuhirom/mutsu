@@ -159,10 +159,16 @@ impl VM {
             cf
         };
 
-        // Cache by name for fast lookup in exec_call_func_op
-        let name_sym = Symbol::intern(&name);
-        self.otf_call_cache.insert(name_sym, cf.clone());
-        self.otf_call_cache_gen = self.fn_resolve_gen;
+        // Cache by name for fast lookup in exec_call_func_op — but never for a
+        // multi name. The name-keyed cache is type-blind, so caching one multi
+        // candidate under the bare name would make a later call with different
+        // argument types wrongly reuse it. Multi candidates are still cached by
+        // body fingerprint in `otf_compile_cache` above (safe, per-candidate).
+        if !self.has_multi_candidates_cached(&name) {
+            let name_sym = Symbol::intern(&name);
+            self.otf_call_cache.insert(name_sym, cf.clone());
+            self.otf_call_cache_gen = self.fn_resolve_gen;
+        }
 
         // Set up samewith and multi-dispatch context that call_compiled_function_named
         // expects the caller to manage (mirrors exec_call_fn_op).
