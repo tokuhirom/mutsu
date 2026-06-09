@@ -2811,6 +2811,21 @@ impl Interpreter {
         register_x("X::Channel::SendOnClosed", "Exception");
         register_x("X::Channel::ReceiveOnClosed", "Exception");
 
+        // X::Comp::AdHoc does both X::Comp and X::AdHoc in rakudo (it is the
+        // compile-time wrapper around an ad-hoc die), so `$e ~~ X::AdHoc` must
+        // also be True. register_x only threads a single parent, so splice
+        // X::AdHoc into the MRO here (after the closure's borrow of `classes`
+        // has ended).
+        if let Some(def) = classes.get_mut("X::Comp::AdHoc") {
+            if !def.parents.iter().any(|p| p == "X::AdHoc") {
+                def.parents.push("X::AdHoc".to_string());
+            }
+            if !def.mro.iter().any(|m| m == "X::AdHoc") {
+                let insert_at = def.mro.len().saturating_sub(1);
+                def.mro.insert(insert_at, "X::AdHoc".to_string());
+            }
+        }
+
         let mut interpreter = Self {
             env: Env::from(env),
             output: String::new(),

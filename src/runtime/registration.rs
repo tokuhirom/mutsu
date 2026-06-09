@@ -712,15 +712,26 @@ impl Interpreter {
         self.args_match_param_types(args, &def.param_defs)
     }
 
-    pub(super) fn malformed_return_value_compile_error() -> RuntimeError {
-        let mut err = RuntimeError::new("Malformed return value");
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert(
-            "message".to_string(),
-            Value::str_from("Malformed return value"),
+    /// A routine whose signature already pins the return value (`--> Nil`,
+    /// `--> 42`, `--> "foo"`) may not also `return` an argument. Raku rejects
+    /// this at compile time with an X::Comp::AdHoc carrying the offending value
+    /// in its `payload`. `spec` is the verbatim return-type source (e.g. `Nil`,
+    /// `42`, `"foo"`).
+    pub(super) fn malformed_return_value_compile_error(spec: &str) -> RuntimeError {
+        let message = format!(
+            "No return arguments allowed when return value {} is already specified in the signature",
+            spec.trim()
         );
+        let mut err = RuntimeError::new(&message);
+        err.code = Some(crate::value::RuntimeErrorCode::ParseGeneric);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        attrs.insert("payload".to_string(), Value::str(message));
+        // X::Comp::AdHoc does both X::Comp and X::AdHoc in rakudo, so this
+        // satisfies both `~~ X::Comp` (misc2.t:326-329) and `~~ X::AdHoc`
+        // (S06-signature/definite-return.t "even a Failure").
         err.exception = Some(Box::new(Value::make_instance(
-            Symbol::intern("X::AdHoc"),
+            Symbol::intern("X::Comp::AdHoc"),
             attrs,
         )));
         err

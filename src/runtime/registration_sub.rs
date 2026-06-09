@@ -237,7 +237,7 @@ impl Interpreter {
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)
         {
-            return Err(Self::malformed_return_value_compile_error());
+            return Err(Self::malformed_return_value_compile_error(spec));
         }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
         let (effective_param_defs, empty_sig) = if param_defs.is_empty() && params.is_empty() {
@@ -721,7 +721,7 @@ impl Interpreter {
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)
         {
-            return Err(Self::malformed_return_value_compile_error());
+            return Err(Self::malformed_return_value_compile_error(spec));
         }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
         let (effective_param_defs, empty_sig) = if param_defs.is_empty() && params.is_empty() {

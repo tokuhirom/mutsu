@@ -7,8 +7,9 @@ is return-two(), 2, 'definite return value overrides implicit final expression';
 
 throws-like
     'my sub bad(--> Nil) { return 1 }',
-    X::AdHoc,
-    'return with a value is rejected for definite return specs';
+    X::Comp,
+    'return with a value is rejected for definite return specs',
+    payload => /Nil/;
 
 my $sunk = False;
 my sub return-empty(--> Empty) { 1, { ++$sunk; last } ... * }
