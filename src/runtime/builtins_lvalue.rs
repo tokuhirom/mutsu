@@ -408,7 +408,15 @@ impl Interpreter {
         self.assign_callable_lvalue_with_values(callable, call_args, value)
     }
 
-    pub(super) fn builtin_assignment_ro(&mut self, _args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_assignment_ro(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // When the read-only left-hand side value is supplied (e.g. assigning to
+        // a literal `120 = 3`), report its type and representation to match
+        // rakudo: "Cannot modify an immutable Int (120)".
+        if let Some(lhs) = args.first() {
+            let typename = crate::runtime::utils::value_type_name(lhs);
+            let repr = lhs.to_string_value();
+            return Err(RuntimeError::assignment_ro_typename(typename, &repr));
+        }
         Err(RuntimeError::assignment_ro(None))
     }
 

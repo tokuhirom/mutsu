@@ -1117,9 +1117,20 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(r, stmt);
         }
         let stmt = match expr {
-            Expr::Literal(_) | Expr::BareWord(_) => {
-                Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
-            }
+            // Assigning to an immutable literal (`120 = 3`, `"a" = 3`, `1.0 = 3`)
+            // is illegal: Raku throws X::Assignment::RO. Pass the literal to
+            // `__mutsu_assignment_ro` so it can report the value's type and repr.
+            Expr::Literal(_) => Stmt::Expr(Expr::DoBlock {
+                body: vec![
+                    Stmt::Expr(rhs),
+                    Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_assignment_ro"),
+                        args: vec![expr],
+                    }),
+                ],
+                label: None,
+            }),
+            Expr::BareWord(_) => Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]),
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
                 sigil,
                 expr: inner,
