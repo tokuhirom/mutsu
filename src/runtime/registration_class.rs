@@ -1521,6 +1521,11 @@ impl Interpreter {
                 class_own_attrs.insert(attr_name.resolve());
             }
         }
+        let class_attr_ctx = AttrValidationCtx {
+            attrs: &class_own_attrs,
+            pkg_name: name,
+            pkg_kind: "class",
+        };
         let saved_functions_keys: HashSet<String> = self
             .registry()
             .functions
@@ -1746,7 +1751,7 @@ impl Interpreter {
                     export_tags: method_export_tags,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
-                    Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
+                    Self::validate_attr_declared_in_class(&class_attr_ctx, method_body)?;
                     // In BUILD/TWEAK submethods, :$!attr parameters must refer
                     // to declared attributes; reject undeclared ones with
                     // X::Attribute::Undeclared.
@@ -1757,33 +1762,11 @@ impl Interpreter {
                                 if pd.name.starts_with('!') && pd.name != "!" {
                                     let attr_name = &pd.name[1..]; // strip '!'
                                     if !class_own_attrs.contains(attr_name) {
-                                        let variable = format!("$!{}", attr_name);
-                                        let message = format!(
-                                            "Attribute {} not declared in class {}",
-                                            variable, name
+                                        let err = Self::undeclared_attr_error(
+                                            &class_attr_ctx,
+                                            attr_name,
+                                            "!",
                                         );
-                                        let mut attrs = HashMap::new();
-                                        attrs.insert(
-                                            "name".to_string(),
-                                            Value::str(variable.clone()),
-                                        );
-                                        attrs.insert(
-                                            "package-name".to_string(),
-                                            Value::str(name.to_string()),
-                                        );
-                                        attrs.insert(
-                                            "message".to_string(),
-                                            Value::str(message.clone()),
-                                        );
-                                        let ex = Value::make_instance(
-                                            Symbol::intern("X::Attribute::Undeclared"),
-                                            attrs,
-                                        );
-                                        let mut err = RuntimeError::new(format!(
-                                            "X::Attribute::Undeclared: {}",
-                                            message
-                                        ));
-                                        err.exception = Some(Box::new(ex));
                                         self.current_package = saved_package;
                                         self.env = saved_env;
                                         return Err(err);
@@ -2808,6 +2791,11 @@ impl Interpreter {
                 role_own_attrs.insert(attr_name.resolve());
             }
         }
+        let role_attr_ctx = AttrValidationCtx {
+            attrs: &role_own_attrs,
+            pkg_name: name,
+            pkg_kind: "role",
+        };
         for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl {
@@ -3089,7 +3077,7 @@ impl Interpreter {
                 } => {
                     // Validate that $!attr references in the method body are declared
                     // in this role (same check as for class methods).
-                    Self::validate_attr_declared_in_class(&role_own_attrs, method_body)?;
+                    Self::validate_attr_declared_in_class(&role_attr_ctx, method_body)?;
                     // Validate that type constraints in method parameters are resolvable.
                     // Undeclared types like A::C should throw X::Parameter::InvalidType.
                     for pd in param_defs {
@@ -3570,39 +3558,36 @@ impl Interpreter {
     /// declared directly in the current class (not inherited from a parent).
     /// In Raku, private attributes are scoped to the declaring class.
     fn validate_attr_declared_in_class(
-        class_own_attrs: &HashSet<String>,
+        ctx: &AttrValidationCtx<'_>,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
         for stmt in stmts {
-            Self::validate_attr_in_stmt(class_own_attrs, stmt)?;
+            Self::validate_attr_in_stmt(ctx, stmt)?;
         }
         Ok(())
     }
 
-    fn validate_attr_in_stmt(
-        class_own_attrs: &HashSet<String>,
-        stmt: &Stmt,
-    ) -> Result<(), RuntimeError> {
+    fn validate_attr_in_stmt(ctx: &AttrValidationCtx<'_>, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
             Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
-                Self::validate_attr_in_expr(class_own_attrs, e)?;
+                Self::validate_attr_in_expr(ctx, e)?;
             }
             Stmt::VarDecl { expr, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+                Self::validate_attr_in_expr(ctx, expr)?;
             }
             Stmt::Assign { name, expr, .. } => {
                 // Check if assigning to an undeclared private attribute ($!attr = ...)
                 if let Some(attr_name) = name.strip_prefix('!')
                     && !attr_name.is_empty()
-                    && !class_own_attrs.contains(attr_name)
+                    && !ctx.attrs.contains(attr_name)
                 {
-                    return Err(Self::undeclared_attr_error(attr_name, "!"));
+                    return Err(Self::undeclared_attr_error(ctx, attr_name, "!"));
                 }
-                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+                Self::validate_attr_in_expr(ctx, expr)?;
             }
             Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
                 for e in exprs {
-                    Self::validate_attr_in_expr(class_own_attrs, e)?;
+                    Self::validate_attr_in_expr(ctx, e)?;
                 }
             }
             Stmt::If {
@@ -3611,17 +3596,17 @@ impl Interpreter {
                 else_branch,
                 ..
             } => {
-                Self::validate_attr_in_expr(class_own_attrs, cond)?;
-                Self::validate_attr_declared_in_class(class_own_attrs, then_branch)?;
-                Self::validate_attr_declared_in_class(class_own_attrs, else_branch)?;
+                Self::validate_attr_in_expr(ctx, cond)?;
+                Self::validate_attr_declared_in_class(ctx, then_branch)?;
+                Self::validate_attr_declared_in_class(ctx, else_branch)?;
             }
             Stmt::While { cond, body, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, cond)?;
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                Self::validate_attr_in_expr(ctx, cond)?;
+                Self::validate_attr_declared_in_class(ctx, body)?;
             }
             Stmt::For { iterable, body, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, iterable)?;
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                Self::validate_attr_in_expr(ctx, iterable)?;
+                Self::validate_attr_declared_in_class(ctx, body)?;
             }
             Stmt::Loop {
                 init,
@@ -3631,67 +3616,77 @@ impl Interpreter {
                 ..
             } => {
                 if let Some(init) = init.as_ref() {
-                    Self::validate_attr_in_stmt(class_own_attrs, init)?;
+                    Self::validate_attr_in_stmt(ctx, init)?;
                 }
                 if let Some(cond) = cond.as_ref() {
-                    Self::validate_attr_in_expr(class_own_attrs, cond)?;
+                    Self::validate_attr_in_expr(ctx, cond)?;
                 }
                 if let Some(step) = step.as_ref() {
-                    Self::validate_attr_in_expr(class_own_attrs, step)?;
+                    Self::validate_attr_in_expr(ctx, step)?;
                 }
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                Self::validate_attr_declared_in_class(ctx, body)?;
             }
             Stmt::Given { topic, body, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, topic)?;
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                Self::validate_attr_in_expr(ctx, topic)?;
+                Self::validate_attr_declared_in_class(ctx, body)?;
             }
             Stmt::When { cond, body, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, cond)?;
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                Self::validate_attr_in_expr(ctx, cond)?;
+                Self::validate_attr_declared_in_class(ctx, body)?;
             }
             Stmt::Default(body) => {
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                Self::validate_attr_declared_in_class(ctx, body)?;
             }
             _ => {}
         }
         Ok(())
     }
 
-    fn undeclared_attr_error(attr_name: &str, twigil: &str) -> RuntimeError {
-        let mut attrs = HashMap::new();
-        attrs.insert(
-            "name".to_string(),
-            Value::str(format!("${}{}", twigil, attr_name)),
+    fn undeclared_attr_error(
+        ctx: &AttrValidationCtx<'_>,
+        attr_name: &str,
+        twigil: &str,
+    ) -> RuntimeError {
+        let symbol = format!("${}{}", twigil, attr_name);
+        let message = format!(
+            "Attribute {} not declared in {} {}",
+            symbol, ctx.pkg_kind, ctx.pkg_name
         );
+        let mut attrs = HashMap::new();
+        attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
+        attrs.insert(
+            "package-name".to_string(),
+            Value::str(ctx.pkg_name.to_string()),
+        );
+        attrs.insert(
+            "package-kind".to_string(),
+            Value::str(ctx.pkg_kind.to_string()),
+        );
+        attrs.insert("what".to_string(), Value::str("attribute".to_string()));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
         let ex = Value::make_instance(Symbol::intern("X::Attribute::Undeclared"), attrs);
-        let mut err = RuntimeError::new(format!(
-            "Attribute ${}{} not declared in class",
-            twigil, attr_name
-        ));
+        let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(ex));
         err
     }
 
-    fn validate_attr_in_expr(
-        class_own_attrs: &HashSet<String>,
-        expr: &Expr,
-    ) -> Result<(), RuntimeError> {
+    fn validate_attr_in_expr(ctx: &AttrValidationCtx<'_>, expr: &Expr) -> Result<(), RuntimeError> {
         match expr {
             Expr::Var(name) => {
                 // $! by itself is the error variable, not an attribute
                 if let Some(attr_name) = name.strip_prefix('!')
                     && !attr_name.is_empty()
-                    && !class_own_attrs.contains(attr_name)
+                    && !ctx.attrs.contains(attr_name)
                 {
-                    return Err(Self::undeclared_attr_error(attr_name, "!"));
+                    return Err(Self::undeclared_attr_error(ctx, attr_name, "!"));
                 }
                 // $.attr is compiled as self.attr() — undeclared attributes will
                 // fail at runtime with "No such method", no compile-time check needed.
             }
             Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, target)?;
+                Self::validate_attr_in_expr(ctx, target)?;
                 for arg in args {
-                    Self::validate_attr_in_expr(class_own_attrs, arg)?;
+                    Self::validate_attr_in_expr(ctx, arg)?;
                 }
             }
             Expr::Call { args, .. }
@@ -3699,32 +3694,32 @@ impl Interpreter {
             | Expr::BracketArray(args, _)
             | Expr::StringInterpolation(args) => {
                 for arg in args {
-                    Self::validate_attr_in_expr(class_own_attrs, arg)?;
+                    Self::validate_attr_in_expr(ctx, arg)?;
                 }
             }
             Expr::Unary { expr, .. }
             | Expr::PostfixOp { expr, .. }
             | Expr::Reduction { expr, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+                Self::validate_attr_in_expr(ctx, expr)?;
             }
             Expr::Binary { left, right, .. }
             | Expr::MetaOp { left, right, .. }
             | Expr::HyperOp { left, right, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, left)?;
-                Self::validate_attr_in_expr(class_own_attrs, right)?;
+                Self::validate_attr_in_expr(ctx, left)?;
+                Self::validate_attr_in_expr(ctx, right)?;
             }
             Expr::Ternary {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                Self::validate_attr_in_expr(class_own_attrs, cond)?;
-                Self::validate_attr_in_expr(class_own_attrs, then_expr)?;
-                Self::validate_attr_in_expr(class_own_attrs, else_expr)?;
+                Self::validate_attr_in_expr(ctx, cond)?;
+                Self::validate_attr_in_expr(ctx, then_expr)?;
+                Self::validate_attr_in_expr(ctx, else_expr)?;
             }
             Expr::Index { target, index, .. } => {
-                Self::validate_attr_in_expr(class_own_attrs, target)?;
-                Self::validate_attr_in_expr(class_own_attrs, index)?;
+                Self::validate_attr_in_expr(ctx, target)?;
+                Self::validate_attr_in_expr(ctx, index)?;
             }
             Expr::IndexAssign {
                 target,
@@ -3732,21 +3727,21 @@ impl Interpreter {
                 value,
                 ..
             } => {
-                Self::validate_attr_in_expr(class_own_attrs, target)?;
-                Self::validate_attr_in_expr(class_own_attrs, index)?;
-                Self::validate_attr_in_expr(class_own_attrs, value)?;
+                Self::validate_attr_in_expr(ctx, target)?;
+                Self::validate_attr_in_expr(ctx, index)?;
+                Self::validate_attr_in_expr(ctx, value)?;
             }
             Expr::AssignExpr { name, expr, .. } => {
                 // Check if assigning to an undeclared private attribute ($!attr = ...)
                 if let Some(attr_name) = name.strip_prefix('!')
                     && !attr_name.is_empty()
-                    && !class_own_attrs.contains(attr_name)
+                    && !ctx.attrs.contains(attr_name)
                 {
-                    return Err(Self::undeclared_attr_error(attr_name, "!"));
+                    return Err(Self::undeclared_attr_error(ctx, attr_name, "!"));
                 }
                 // $.attr assignment is compiled as self.attr = ... — undeclared
                 // attributes will fail at runtime, no compile-time check needed.
-                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+                Self::validate_attr_in_expr(ctx, expr)?;
             }
             Expr::DoBlock { body, .. }
             | Expr::Block(body)
@@ -3754,18 +3749,18 @@ impl Interpreter {
             | Expr::AnonSub { body, .. }
             | Expr::AnonSubParams { body, .. }
             | Expr::Lambda { body, .. } => {
-                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                Self::validate_attr_declared_in_class(ctx, body)?;
             }
             Expr::Try { body: _, catch } => {
                 // Skip attribute validation inside try blocks — accessing an
                 // undeclared attribute will produce a runtime error that the
                 // try block can catch.
                 if let Some(catch) = catch.as_ref() {
-                    Self::validate_attr_declared_in_class(class_own_attrs, catch)?;
+                    Self::validate_attr_declared_in_class(ctx, catch)?;
                 }
             }
             Expr::DoStmt(stmt) => {
-                Self::validate_attr_in_stmt(class_own_attrs, stmt)?;
+                Self::validate_attr_in_stmt(ctx, stmt)?;
             }
             _ => {}
         }
@@ -3778,6 +3773,15 @@ impl Interpreter {
         let meta = self.type_metadata.entry(name.to_string()).or_default();
         meta.insert("language-revision".to_string(), Value::str(revision));
     }
+}
+
+/// Context threaded through the `$!attr` declaration validators so that an
+/// undeclared private attribute can be reported as a fully-populated
+/// `X::Attribute::Undeclared` (with `package-name`/`package-kind`).
+struct AttrValidationCtx<'a> {
+    attrs: &'a HashSet<String>,
+    pkg_name: &'a str,
+    pkg_kind: &'a str,
 }
 
 /// Extract the language revision letter from a version string like "6.c", "6.d", "6.e".
