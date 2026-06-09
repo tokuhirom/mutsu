@@ -2,6 +2,20 @@ use super::*;
 use crate::symbol::Symbol;
 use num_traits::ToPrimitive;
 
+/// Whether an ISO 8601 datetime string carries a numeric timezone offset
+/// (`+HHMM` / `-HH:MM`, including `+0000`). The bare `Z` UTC designator is not
+/// a numeric offset. Only the time portion (after `T`/`t`) is inspected so the
+/// `-` separators in the date part are not mistaken for an offset sign.
+fn string_has_numeric_tz_offset(s: &str) -> bool {
+    match s.find(['T', 't']) {
+        Some(pos) => {
+            let time_part = &s[pos + 1..];
+            time_part.contains('+') || time_part.contains('-')
+        }
+        None => false,
+    }
+}
+
 fn is_datetime_constructor_named_arg(key: &str) -> bool {
     matches!(
         key,
@@ -1322,6 +1336,25 @@ impl Interpreter {
                     } else if let Some(v) = positional.first() {
                         match v {
                             Value::Str(s) => {
+                                // X::DateTime::TimezoneClash: a numeric timestamp
+                                // offset in the string (e.g. `+0200`, even `+0000`)
+                                // cannot be combined with an explicit `:timezone`
+                                // argument. A bare `Z` (UTC designator) is exempt.
+                                if timezone_set && string_has_numeric_tz_offset(s) {
+                                    let message =
+                                        "DateTime.new(Str): :timezone argument not allowed with a timestamp offset"
+                                            .to_string();
+                                    let mut attrs = std::collections::HashMap::new();
+                                    attrs
+                                        .insert("message".to_string(), Value::str(message.clone()));
+                                    let ex = Value::make_instance(
+                                        crate::symbol::Symbol::intern("X::DateTime::TimezoneClash"),
+                                        attrs,
+                                    );
+                                    let mut err = RuntimeError::new(message);
+                                    err.exception = Some(Box::new(ex));
+                                    return Err(err);
+                                }
                                 let (y, mo, d, h, mi, sec, tz) =
                                     temporal::parse_datetime_string(s)?;
                                 year = y;
