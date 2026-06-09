@@ -48,6 +48,27 @@ impl VM {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Create a Failure wrapping X::OutOfRange for indexing a scalar value (a
+    /// single-element list) past index 0, e.g. `"foo"[2]`. Raku reports
+    /// `what => "Index"`, `range => "0..0"` and the offending index as `got`.
+    fn make_scalar_index_out_of_range_failure(index: i64) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str_from(&format!(
+                "Index out of range. Is: {}, should be in 0..0",
+                index
+            )),
+        );
+        attrs.insert("what".to_string(), Value::str_from("Index"));
+        attrs.insert("got".to_string(), Value::Int(index));
+        attrs.insert("range".to_string(), Value::str_from("0..0"));
+        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// Auto-vivifying index: creates intermediate Hash/Array entries and returns
     /// a `HashSlotRef` or `ArraySlotRef` so that `:=` bind to nested elements works.
     /// Stack: [target, key] -> [HashSlotRef | ArraySlotRef]
@@ -1638,7 +1659,7 @@ impl VM {
             (ref val, Value::Int(i))
                 if !matches!(val, Value::Array(..) | Value::Hash(_)) && i > 0 =>
             {
-                Self::make_out_of_range_failure(i)
+                Self::make_scalar_index_out_of_range_failure(i)
             }
             // Scalar value with WhateverCode index: treat as single-element list
             (ref val, Value::Sub(ref data))
