@@ -1715,6 +1715,10 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    // Two `is export` declarations of the same symbol in one module clash.
+    if let Some(clash) = find_export_name_clash(&body) {
+        return Err(export_name_clash_error(&clash));
+    }
     // Record exported subs from inline module so `import` can register them at parse time.
     let exported = extract_exported_subs(&body);
     if !exported.is_empty() {
@@ -1765,6 +1769,51 @@ fn extract_exported_subs(stmts: &[Stmt]) -> Vec<super::simple::InlineModuleExpor
         }
     }
     names
+}
+
+/// Recursively collect exported sub names (descending into nested blocks),
+/// returning the first symbol that is exported more than once. In Raku two
+/// `is export` declarations of the same symbol within one package raise
+/// X::Export::NameClash at compile time.
+fn find_export_name_clash(stmts: &[Stmt]) -> Option<String> {
+    let mut seen = std::collections::HashSet::new();
+    fn walk(stmts: &[Stmt], seen: &mut std::collections::HashSet<String>) -> Option<String> {
+        for stmt in stmts {
+            match stmt {
+                // `multi` candidates legitimately share a name, so only a
+                // non-multi (`only`) exported sub can clash.
+                Stmt::SubDecl {
+                    name,
+                    is_export,
+                    multi,
+                    ..
+                } if *is_export && !*multi => {
+                    if !seen.insert(name.to_string()) {
+                        return Some(name.to_string());
+                    }
+                }
+                Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                    if let Some(clash) = walk(inner, seen) {
+                        return Some(clash);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+    walk(stmts, &mut seen)
+}
+
+/// Build an X::Export::NameClash parse error for a symbol exported twice.
+fn export_name_clash_error(name: &str) -> PError {
+    let symbol = format!("&{}", name);
+    let msg = format!("A symbol '{}' has already been exported", symbol);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("symbol".to_string(), Value::str(symbol));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Export::NameClash"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
 }
 
 /// Check if a declaration name is a pseudo-package and return an error if so.
