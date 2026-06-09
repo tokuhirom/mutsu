@@ -1203,6 +1203,16 @@ impl VM {
                     self.env_dirty = true;
                     return Ok(());
                 }
+                // Native fast path for mutating Buf write methods on a mutable Buf
+                // instance (ledger §1: native receiver dispatch -> VM-native).
+                if modifier.is_none()
+                    && let Some(result) =
+                        self.try_native_buf_mut(&target_name, &target, &method, &args)
+                {
+                    self.stack.push(result?);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
                 // Array-subclass instance delegation (mut path): when the Instance's
                 // class inherits from Array, delegate mutating Array methods to the
                 // backing __mutsu_array_storage attribute and write back.
@@ -1482,5 +1492,128 @@ impl VM {
             self.interpreter.unregister_container_type_metadata(&stored);
         }
         Some(Ok(result))
+    }
+
+    /// VM-native mutating Buf write methods (`write-bits`/`write-ubits`/
+    /// `write-num*`/`write-int*`/`write-uint*`) on a mutable `Buf` instance bound
+    /// to `target_name` (ledger §1: native receiver dispatch -> VM-native). Mirrors
+    /// the interpreter's instance-mutate branches in `methods_mut.rs` exactly: the
+    /// byte transforms are the single shared pure implementations in `builtins/`
+    /// (`buf_bits`/`buf_write_num`/`buf_write_int`), and the writeback uses the
+    /// same identity-based `overwrite_instance_bindings_by_identity` so aliases of
+    /// the same buf observe the mutation — so the result is behavior-invariant.
+    ///
+    /// Returns `None` (fall through to the interpreter) for type-object receivers
+    /// (`buf8.write-...` on the type returns a fresh buf), immutable `Blob`, and
+    /// malformed arity/arguments, leaving the interpreter to own those
+    /// error/construction semantics.
+    fn try_native_buf_mut(
+        &mut self,
+        target_name: &str,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let is_write_bits = matches!(method, "write-ubits" | "write-bits");
+        let is_write_num = crate::builtins::buf_write_num::write_num_size(method).is_some();
+        let is_write_int = crate::builtins::buf_write_int::write_int_info(method).is_some();
+        if !(is_write_bits || is_write_num || is_write_int) {
+            return None;
+        }
+        let Value::Instance {
+            class_name,
+            attributes,
+            id,
+        } = target
+        else {
+            return None;
+        };
+        let cn = class_name.resolve();
+        if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
+            return None;
+        }
+        // Immutable Blob: let the interpreter raise "Cannot modify immutable Blob".
+        if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+            return None;
+        }
+        // Extract the current bytes (same clamping the interpreter uses).
+        let mut bytes: Vec<u8> = Vec::new();
+        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+            bytes.reserve(items.len());
+            for it in items.iter() {
+                bytes.push(match it {
+                    Value::Int(i) => (*i).clamp(0, 255) as u8,
+                    Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
+                    Value::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi.as_ref())
+                        .unwrap_or(0)
+                        .clamp(0, 255) as u8,
+                    _ => 0,
+                });
+            }
+        }
+        // Compute the new bytes via the shared pure transform.
+        let new_bytes: Vec<u8> = if is_write_bits {
+            if args.len() != 3 {
+                return None; // interpreter handles non-3-arg forms
+            }
+            let (Some(from), Some(bits)) = (
+                crate::runtime::Interpreter::value_to_non_negative_i64(&args[0]),
+                crate::runtime::Interpreter::value_to_non_negative_i64(&args[1]),
+            ) else {
+                return None; // let the interpreter raise the offset/bits parse error
+            };
+            match crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2]) {
+                Ok(b) => b,
+                Err(e) => return Some(Err(e)),
+            }
+        } else {
+            // write-num* / write-int*: 2 or 3 args (interpreter raises on others).
+            if args.len() < 2 || args.len() > 3 {
+                return None;
+            }
+            let offset_i64 = match &args[0] {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                _ => 0,
+            };
+            let endian_val = if args.len() == 3 {
+                crate::builtins::buf_write_num::decode_endian(&args[2])
+            } else {
+                0
+            };
+            let res = if is_write_num {
+                crate::builtins::buf_write_num::apply_write_num(
+                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                )
+            } else {
+                crate::builtins::buf_write_int::apply_write_int(
+                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                )
+            };
+            if let Err(e) = res {
+                return Some(Err(e));
+            }
+            bytes
+        };
+        // Build updated attributes and write back by instance identity (so aliases
+        // observing the same buf see the mutation), then refresh the receiver
+        // binding to match the interpreter's `env.insert(target_var, ...)`.
+        let mut updated_attrs = attributes.as_ref().clone();
+        updated_attrs.insert(
+            "bytes".to_string(),
+            Value::array(
+                new_bytes
+                    .into_iter()
+                    .map(|b| Value::Int(b as i64))
+                    .collect(),
+            ),
+        );
+        self.interpreter
+            .overwrite_instance_bindings_by_identity(&cn, *id, updated_attrs.clone());
+        let updated = Value::make_instance_with_id(*class_name, updated_attrs, *id);
+        self.interpreter
+            .env_mut()
+            .insert(target_name.to_string(), updated.clone());
+        Some(Ok(updated))
     }
 }

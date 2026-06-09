@@ -196,101 +196,13 @@ impl Interpreter {
         }
     }
 
-    fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
+    pub(crate) fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
         match value {
             Value::Int(i) => Some(*i),
             Value::Num(f) => Some(*f as i64),
             Value::BigInt(i) => num_traits::ToPrimitive::to_i64(i.as_ref()),
             _ => None,
         }
-    }
-
-    fn buf_blob_read_bits(
-        bytes: &[u8],
-        from: i64,
-        bits: i64,
-        signed: bool,
-    ) -> Result<Value, RuntimeError> {
-        if from < 0 || bits < 0 {
-            return Err(RuntimeError::new(
-                "read from out of range. Is: negative offset/length",
-            ));
-        }
-        let from_u = from as usize;
-        let bits_u = bits as usize;
-        let total_bits = bytes.len().saturating_mul(8);
-        if from_u
-            .checked_add(bits_u)
-            .is_none_or(|end| end > total_bits)
-        {
-            return Err(RuntimeError::new(format!(
-                "read from out of range. Is: {}, should be in 0..{}",
-                from, total_bits
-            )));
-        }
-        let mut out = num_bigint::BigInt::from(0u8);
-        for i in 0..bits_u {
-            let bit_index = from_u + i;
-            let byte_index = bit_index / 8;
-            let bit_in_byte = 7 - (bit_index % 8);
-            let bit = (bytes[byte_index] >> bit_in_byte) & 1;
-            out = (out << 1) + num_bigint::BigInt::from(bit);
-        }
-        if !signed || bits_u == 0 {
-            return Ok(Value::from_bigint(out));
-        }
-        let sign_mask = num_bigint::BigInt::from(1u8) << (bits_u - 1);
-        if (&out & &sign_mask) != num_bigint::BigInt::from(0u8) {
-            let modulus = num_bigint::BigInt::from(1u8) << bits_u;
-            Ok(Value::from_bigint(out - modulus))
-        } else {
-            Ok(Value::from_bigint(out))
-        }
-    }
-
-    fn buf_blob_write_bits(
-        bytes: &[u8],
-        from: i64,
-        bits: i64,
-        value: &Value,
-    ) -> Result<Vec<u8>, RuntimeError> {
-        if from < 0 || bits < 0 {
-            return Err(RuntimeError::new(
-                "write out of range. Is: negative offset/length",
-            ));
-        }
-        let from_u = from as usize;
-        let bits_u = bits as usize;
-        let required_bits = from_u.saturating_add(bits_u);
-        let required_bytes = required_bits.div_ceil(8);
-
-        let mut out = bytes.to_vec();
-        if out.len() < required_bytes {
-            out.resize(required_bytes, 0);
-        }
-
-        if bits_u == 0 {
-            return Ok(out);
-        }
-
-        let modulus = num_bigint::BigInt::from(1u8) << bits_u;
-        let mut encoded = value.to_bigint();
-        encoded = ((encoded % &modulus) + &modulus) % &modulus;
-
-        for i in 0..bits_u {
-            let shift = bits_u - 1 - i;
-            let bit_is_set = ((&encoded >> shift) & num_bigint::BigInt::from(1u8))
-                != num_bigint::BigInt::from(0u8);
-            let bit_index = from_u + i;
-            let byte_index = bit_index / 8;
-            let bit_in_byte = 7 - (bit_index % 8);
-            if bit_is_set {
-                out[byte_index] |= 1u8 << bit_in_byte;
-            } else {
-                out[byte_index] &= !(1u8 << bit_in_byte);
-            }
-        }
-        Ok(out)
     }
 
     pub(crate) fn overwrite_array_bindings_by_identity(
@@ -1923,7 +1835,12 @@ impl Interpreter {
                         "read-ubits/read-bits expects Int bit count",
                     ));
                 };
-                return Self::buf_blob_read_bits(&bytes, from, bits, method == "read-bits");
+                return crate::builtins::buf_bits::read_bits(
+                    &bytes,
+                    from,
+                    bits,
+                    method == "read-bits",
+                );
             }
 
             if (method == "write-ubits" || method == "write-bits") && args.len() == 3 {
@@ -1942,7 +1859,7 @@ impl Interpreter {
                         "write-ubits/write-bits expects Int bit count",
                     ));
                 };
-                let written = Self::buf_blob_write_bits(&bytes, from, bits, &args[2])?;
+                let written = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
                 let mut updated_attrs = attributes.as_ref().clone();
                 updated_attrs.insert(
                     "bytes".to_string(),
@@ -1967,7 +1884,7 @@ impl Interpreter {
         }
 
         // Buf/Blob write-num32 / write-num64 — mutate an existing instance.
-        if super::buf_write_num::write_num_size(method).is_some()
+        if crate::builtins::buf_write_num::write_num_size(method).is_some()
             && let Value::Instance {
                 class_name,
                 attributes,
@@ -1992,7 +1909,7 @@ impl Interpreter {
             let offset_val = &args[0];
             let value_val = &args[1];
             let endian_val = if args.len() == 3 {
-                super::buf_write_num::decode_endian(&args[2])
+                crate::builtins::buf_write_num::decode_endian(&args[2])
             } else {
                 0
             };
@@ -2015,7 +1932,7 @@ impl Interpreter {
                 }
                 v
             };
-            super::buf_write_num::apply_write_num(
+            crate::builtins::buf_write_num::apply_write_num(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
             let mut updated_attrs = attributes.as_ref().clone();
@@ -2034,7 +1951,7 @@ impl Interpreter {
         }
 
         // Buf/Blob write-num on type object: returns a fresh buf.
-        if super::buf_write_num::write_num_size(method).is_some()
+        if crate::builtins::buf_write_num::write_num_size(method).is_some()
             && let Value::Package(name) = &target
         {
             let cn = name.resolve();
@@ -2052,21 +1969,24 @@ impl Interpreter {
                     _ => 0,
                 };
                 let endian_val = if args.len() == 3 {
-                    super::buf_write_num::decode_endian(&args[2])
+                    crate::builtins::buf_write_num::decode_endian(&args[2])
                 } else {
                     0
                 };
                 let mut bytes: Vec<u8> = Vec::new();
-                super::buf_write_num::apply_write_num(
+                crate::builtins::buf_write_num::apply_write_num(
                     &mut bytes, method, offset_i64, &args[1], endian_val,
                 )?;
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(super::buf_write_num::make_buf_value(&normalized, bytes));
+                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                    &normalized,
+                    bytes,
+                ));
             }
         }
 
         // Buf/Blob write-int / write-uint -- mutate an existing instance.
-        if super::buf_write_int::write_int_info(method).is_some()
+        if crate::builtins::buf_write_int::write_int_info(method).is_some()
             && let Value::Instance {
                 class_name,
                 attributes,
@@ -2091,7 +2011,7 @@ impl Interpreter {
             let offset_val = &args[0];
             let value_val = &args[1];
             let endian_val = if args.len() == 3 {
-                super::buf_write_num::decode_endian(&args[2])
+                crate::builtins::buf_write_num::decode_endian(&args[2])
             } else {
                 0
             };
@@ -2114,7 +2034,7 @@ impl Interpreter {
                 }
                 v
             };
-            super::buf_write_int::apply_write_int(
+            crate::builtins::buf_write_int::apply_write_int(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
             let mut updated_attrs = attributes.as_ref().clone();
@@ -2133,7 +2053,7 @@ impl Interpreter {
         }
 
         // Buf/Blob write-int on type object: returns a fresh buf.
-        if super::buf_write_int::write_int_info(method).is_some()
+        if crate::builtins::buf_write_int::write_int_info(method).is_some()
             && let Value::Package(name) = &target
         {
             let cn = name.resolve();
@@ -2151,16 +2071,19 @@ impl Interpreter {
                     _ => 0,
                 };
                 let endian_val = if args.len() == 3 {
-                    super::buf_write_num::decode_endian(&args[2])
+                    crate::builtins::buf_write_num::decode_endian(&args[2])
                 } else {
                     0
                 };
                 let mut bytes: Vec<u8> = Vec::new();
-                super::buf_write_int::apply_write_int(
+                crate::builtins::buf_write_int::apply_write_int(
                     &mut bytes, method, offset_i64, &args[1], endian_val,
                 )?;
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(super::buf_write_num::make_buf_value(&normalized, bytes));
+                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                    &normalized,
+                    bytes,
+                ));
             }
         }
 

@@ -24,8 +24,9 @@
 | `vm_call_method_compiled.rs` catch-all (非mut) | **native/Buf/Failure/MOP のみ**（ユーザーメソッドは全て bytecode 化済） | HARD | ③ state 所有移管。**③ PR-3 で実測訂正**: ここはユーザーメソッド tree-walk では**なかった** |
 | `vm_call_method_compiled.rs` native-method (mut) | 同上 mut | HARD | ③（同上） |
 | `vm_call_method_compiled.rs` catch-all (mut) | 同上 mut（native/Buf/Failure/MOP のみ） | HARD | ③ |
-| `vm_call_method_mut_ops.rs` catch-all | generic mut メソッド（plain untyped `@`-array の append/prepend/unshift/pop/shift は除く） | HARD | ③ |
+| `vm_call_method_mut_ops.rs` catch-all | generic mut メソッド（plain untyped `@`-array mutators ＋ mutable Buf write methods は除く） | HARD | ③ |
 | ~~`vm_call_method_mut_ops.rs` plain `@`-array mutators~~ | ~~append/prepend/unshift/pop/shift~~ | — | **✅消化 (③ PR-5)**: `try_native_array_mut` で VM ネイティブ。typed/shaped/lazy/shared/constrained は interpreter 維持 |
+| ~~`vm_call_method_mut_ops.rs` mutable Buf write methods~~ | ~~write-bits/write-ubits/write-num*/write-int*/write-uint*~~ | — | **✅消化 (③ PR-7)**: `try_native_buf_mut` で VM ネイティブ。pure 変換は `builtins/{buf_bits,buf_write_num,buf_write_int}` に一本化。type-object/Blob/malformed-arity は interpreter 維持 |
 | `vm_call_method_mut_ops.rs` array-backed instance | `is Array` storage の push/pop/shift | MEDIUM | 第一級コンテナ Phase 2 |
 | `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B（共有セル所有） |
 | `vm_data_ops.rs` shaped push | shaped 配列 push | MEDIUM | shaped 次元メタ検査の VM 化 |
@@ -196,6 +197,20 @@
   （`any($instance)` も native）。pin `t/native-junction-ctor.t`(24, Instance-arg 含む)。S03-junctions whitelist 全緑、make test PASS。
   **結論: §2 末端は「高トラフィック撲滅」フェーズを終えた。残る最大カテゴリは lexical `&`-var の名前呼び出し（正しく動作・将来 VM 寄せ候補）、
   他は③ state 所有〔並行 CAS〕/ エラー生成 carrier。**
+
+- **2026-06-09 (③ PR-7, §1 catch-all = mutable Buf write methods の VM ネイティブ化 + builtins 降ろし)**: PR-5 と同型で
+  `vm_call_method_mut_ops.rs::exec_call_method_mut_op` に `try_native_buf_mut` を追加し、**mutable `Buf` インスタンスへの
+  `write-bits`/`write-ubits`/`write-num32|64`/`write-int8..128`/`write-uint8..128`** を VM ネイティブに（`overwrite_instance_bindings_by_identity`
+  ＋ `env.insert` ＝ interpreter の instance-mutate ブランチと同一 writeback。エイリアス〔同一 instance id を複数変数が保持〕も
+  正しく観測）。**保守的フォールスルー**: type-object 受け手（`buf8.write-...` は fresh buf を返す別経路）/ immutable `Blob`
+  （interpreter が "Cannot modify immutable Blob" を投げる）/ malformed arity・offset/bits parse 失敗は interpreter 維持＝
+  behavior-invariant。**dedup/placement（[[feedback_dedup_over_perf]]/[[feedback_placement_audit]]）**: 純粋バイト変換を
+  builtins へ一本化＝`src/builtins/buf_bits.rs` 新設（`read_bits`/`write_bits` を `impl Interpreter` から降ろし、methods_mut の
+  read-bits 重複も解消）＋ `buf_write_num.rs`/`buf_write_int.rs` を `runtime/` → `builtins/` へ移設（22 call-site path 更新）。
+  これで Buf バイナリ read/write 変換の authoritative home は `builtins/` に統一され、VM と interpreter が単一実装を共有。
+  実測: `read-write-bits.t` の write-bits/write-ubits fallback 3123→3（残3=type-object 形式）。pin `t/native-buf-mut.t`(23,
+  エイリアス/buf 伸長/Blob dies 含む)。S03-buf/S03-operators/S32-container/S02-types/signed-unsigned-native 全緑、cargo test 458/0。
+  （write-int.t は 128-bit 未対応の既知 pre-existing blocker＝非whitelist、本変更と無関係。）
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
