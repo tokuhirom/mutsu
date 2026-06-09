@@ -2,6 +2,18 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
+/// Build a structured `X::Routine::Unwrap` error (`&f.unwrap($bad-handle)`).
+fn routine_unwrap_error(message: &str) -> RuntimeError {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.to_string()));
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern("X::Routine::Unwrap"),
+        attrs,
+    )));
+    err
+}
+
 impl Interpreter {
     /// Dispatch methods on callable values (Routine, Sub, WeakSub).
     /// Returns Some(result) if handled, None to fall through to common dispatch.
@@ -802,8 +814,8 @@ impl Interpreter {
             if args.is_empty() {
                 // unwrap with no args on a never-wrapped sub should error
                 if !self.wrap_chains.contains_key(&sub_id) || self.wrap_chains[&sub_id].is_empty() {
-                    return Some(Err(RuntimeError::new(
-                        "Cannot unwrap a sub that has not been wrapped",
+                    return Some(Err(routine_unwrap_error(
+                        "Cannot unwrap routine: not wrapped",
                     )));
                 }
                 // Pop the outermost wrapper
@@ -819,8 +831,8 @@ impl Interpreter {
             let handle = &args[0];
             let handle_id = self.extract_wrap_handle_id(handle);
             let Some(handle_id) = handle_id else {
-                return Some(Err(RuntimeError::new(
-                    "unwrap requires a valid WrapHandle argument",
+                return Some(Err(routine_unwrap_error(
+                    "Cannot unwrap routine: invalid wrap handle",
                 )));
             };
             let chain = self.wrap_chains.get_mut(&sub_id);
@@ -828,8 +840,8 @@ impl Interpreter {
                 let before_len = chain.len();
                 chain.retain(|(hid, _)| *hid != handle_id);
                 if chain.len() == before_len {
-                    return Some(Err(RuntimeError::new(
-                        "Cannot unwrap: handle not found (already unwrapped?)",
+                    return Some(Err(routine_unwrap_error(
+                        "Cannot unwrap routine: invalid wrap handle",
                     )));
                 }
                 if chain.is_empty() {
