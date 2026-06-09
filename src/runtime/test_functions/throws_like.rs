@@ -294,6 +294,15 @@ impl Interpreter {
             Value::Regex(pattern) => self
                 .regex_match_with_captures(pattern, actual_str)
                 .is_some(),
+            // `rx:i/.../` and friends carry adverbs, so route through the full
+            // smart-match engine (which honours `:i`, `:m`, ...) rather than the
+            // bare-pattern matcher above.
+            Value::RegexWithAdverbs { .. } => {
+                let topic = actual_val
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(actual_str.to_string()));
+                self.smart_match_values(&topic, matcher)
+            }
             Value::Sub(_) | Value::Routine { .. } => {
                 let call_arg = actual_val.cloned().unwrap_or(Value::Nil);
                 match self.call_sub_value(matcher.clone(), vec![call_arg], false) {
