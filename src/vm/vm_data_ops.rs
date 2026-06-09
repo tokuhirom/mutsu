@@ -424,7 +424,7 @@ impl VM {
                 if !self.interpreter.type_matches_value(&type_name, item) {
                     return Err(RuntimeError::typecheck_assignment(
                         &type_name,
-                        crate::runtime::value_type_name(item),
+                        item,
                         Some(target_name),
                     ));
                 }

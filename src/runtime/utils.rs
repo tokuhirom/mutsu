@@ -3363,11 +3363,16 @@ pub(crate) fn type_check_assignment_typed_error(
     val: &Value,
 ) -> RuntimeError {
     let msg = type_check_assignment_error(var_name, expected, val);
-    let got_type = value_type_name(val);
     let display_name = format_var_name_for_error(var_name);
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("expected".to_string(), Value::str(expected.to_string()));
-    attrs.insert("got".to_string(), Value::str(got_type.to_string()));
+    // raku exposes `.expected` as the expected type OBJECT and `.got` as the
+    // offending VALUE (not its type name), so `throws-like` matchers like
+    // `expected => Int` / `got => 'foo'` succeed.
+    attrs.insert(
+        "expected".to_string(),
+        Value::Package(crate::symbol::Symbol::intern(expected)),
+    );
+    attrs.insert("got".to_string(), val.clone());
     attrs.insert("symbol".to_string(), Value::str(display_name));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     RuntimeError::typed("X::TypeCheck::Assignment", attrs)
