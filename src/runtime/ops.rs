@@ -1660,7 +1660,8 @@ impl Interpreter {
                 })
                 .collect(),
             Value::Slip(items) => items.to_vec(),
-            Value::Nil => vec![],
+            // Nil is a single scalar item in list context (e.g. `for Nil { }`
+            // does one iteration); it is not an empty list.
             other => vec![other.clone()],
         }
     }

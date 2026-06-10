@@ -7,22 +7,38 @@ impl Interpreter {
         if pending.is_empty() {
             return Ok(());
         }
-        let is_6e = crate::parser::current_language_version().starts_with("6.e");
         // Set reentrancy guard to prevent infinite DESTROY recursion:
         // instances created during DESTROY execution should not queue new DESTROYs.
         crate::value::set_in_destroy_handler(true);
-        let result = self.run_pending_instance_destroys_inner(&pending, is_6e);
+        let result = self.run_pending_instance_destroys_inner(&pending);
         crate::value::set_in_destroy_handler(false);
         result
+    }
+
+    /// Whether a type was declared under Raku 6.e+ semantics, keyed on the
+    /// type's *declaration* revision (captured as type metadata). DESTROY/BUILD
+    /// run long after parsing, when the globally-current language version may
+    /// have been reset to the default, so reading that global would be wrong.
+    pub(crate) fn type_decl_is_6e(&self, name: &str) -> bool {
+        match self
+            .type_metadata
+            .get(name)
+            .and_then(|meta| meta.get("language-revision"))
+        {
+            Some(Value::Str(rev)) => rev.as_str() >= "e",
+            _ => crate::parser::current_language_version().starts_with("6.e"),
+        }
     }
 
     fn run_pending_instance_destroys_inner(
         &mut self,
         pending: &[crate::value::PendingInstanceDestroy],
-        is_6e: bool,
     ) -> Result<(), RuntimeError> {
         for item in pending {
             let instance_class = item.class_name.resolve();
+            // 6.e role-submethod DESTROY dispatch is keyed on the instance's
+            // class declaration revision, not the globally-current version.
+            let is_6e = self.type_decl_is_6e(&instance_class);
             // Collect the MRO so we call DESTROY on each class in order (child → parent).
             let mro: Vec<String> = self
                 .registry()

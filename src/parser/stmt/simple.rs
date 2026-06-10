@@ -77,7 +77,7 @@ thread_local! {
     /// should see as declared (so e.g. `first.uc` can parse as
     /// `first().uc` when a user sub `first` shadows the `first` listop).
     static EVAL_USER_SUB_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.e".to_string());
+    static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.d".to_string());
     /// `use attributes :D/:U/:_` pragma — tracks the smiley to apply to unsmileyed attribute types.
     /// Empty string means no pragma active.
     static ATTRIBUTES_PRAGMA: RefCell<String> = const { RefCell::new(String::new()) };
@@ -464,7 +464,11 @@ pub(in crate::parser) fn reset_user_subs() {
         });
     });
     CURRENT_LANGUAGE_VERSION.with(|v| {
-        *v.borrow_mut() = "6.e".to_string();
+        // Default to 6.d (rakudo's default for a file with no `use vX` pragma).
+        // Version-gated behaviors (subset Nil-reset nominalization, grammar
+        // `.parse` Failure, class DESTROY / role BUILD submethod dispatch) thus
+        // match rakudo's pragma-less default, which is what roast tests assume.
+        *v.borrow_mut() = "6.d".to_string();
     });
 }
 

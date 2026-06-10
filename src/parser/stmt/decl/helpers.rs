@@ -204,10 +204,11 @@ pub(super) fn register_term_symbol_from_decl_name(name: &str) {
 pub(super) fn normalize_language_version(version_token: &str) -> String {
     if version_token.starts_with("v6.c") {
         "6.c".to_string()
-    } else if version_token.starts_with("v6.d") {
-        "6.d".to_string()
-    } else {
+    } else if version_token.starts_with("v6.e") {
         "6.e".to_string()
+    } else {
+        // `use v6.d` and bare `use v6` both select 6.d (rakudo's default).
+        "6.d".to_string()
     }
 }
 

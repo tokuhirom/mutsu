@@ -142,6 +142,7 @@ roast/S02-types/nan.t
 roast/S02-types/native.t
 roast/S02-types/nested_arrays.t
 roast/S02-types/nested_pairs.t
+roast/S02-types/nil.t
 roast/S02-types/nominalizables.t
 roast/S02-types/num.t
 roast/S02-types/parsing-bool.t
