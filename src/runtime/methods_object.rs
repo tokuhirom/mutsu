@@ -274,89 +274,119 @@ impl Interpreter {
             }
         }
 
-        // Fill defaults for missing attributes (including Nil for uninitialized
-        // ones). Set up `self` as the partially-constructed instance so that
-        // default expressions referencing `self` (e.g. `has $.x = self.y`) work
-        // correctly. Update `self` after each default so that later defaults can
-        // see earlier defaults' values.
-        let has_defaults = class_attrs.iter().any(|(_, _, d, ..)| d.is_some());
-        if has_defaults {
-            let partial = Value::make_instance(class_name, attrs.clone());
-            self.env.insert("self".to_string(), partial.clone());
-            self.env.insert("__ANON_STATE__".to_string(), partial);
-            // Also set !attr and .attr in env so that default expressions
-            // like `has $.c = $!a + $!b` can reference earlier attributes.
-            for (k, v) in &attrs {
-                self.env.insert(format!("!{}", k), v.clone());
-                self.env.insert(format!(".{}", k), v.clone());
-            }
-        }
-        // Switch package to class scope so class-scoped subs are accessible
-        // in default expressions (e.g. `has $.inner = inner()` where `inner`
-        // is a sub defined inside the class body).
-        let saved_package = self.current_package.clone();
-        if self.has_class_scoped_subs(cn_resolved) {
-            self.current_package = cn_resolved.to_string();
-        }
+        // Fill defaults for missing attributes. Mirror the interpreter's
+        // constructor structure: a *literal* default — the common case, since the
+        // parser hands every native-typed attribute a `Literal` zero — takes a
+        // fast path with no `self`/env binding, while a non-literal default binds
+        // `self` and the already-initialized `$!attr`/`$.attr` (so expressions
+        // like `has $.c = $!a + $!b` resolve) only for the duration of that one
+        // evaluation. Rebuilding `self` from the current `attrs` inside the
+        // non-literal branch keeps earlier (literal or computed) defaults visible
+        // to later ones without paying per-construction env churn — the absence of
+        // that fast path made a 20k-iteration native-attr loop time out.
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
         for (attr_name, _is_public, default_expr, _, _, sigil, _) in &class_attrs {
             if attrs.contains_key(attr_name) {
                 continue;
             }
-            if let Some(expr) = default_expr {
-                // Only `$` attributes reach here with a default — `@`/`%` defaults
-                // fell through above.
-                let val = match self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())]) {
-                    Ok(val) => val,
-                    Err(e) => {
-                        eval_error = Some(e);
+            match default_expr {
+                // Fast path: a literal default needs no evaluation or binding.
+                // The interpreter stores it without a type check, so we do too.
+                Some(Expr::Literal(lit_val)) => {
+                    attrs.insert(
+                        attr_name.clone(),
+                        Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil),
+                    );
+                }
+                Some(expr) => {
+                    // Bind `self` and the already-set attributes, switch to the
+                    // class package for class-scoped sub lookups, evaluate, then
+                    // restore everything — per the interpreter's per-default setup.
+                    let temp_self = Value::make_instance(class_name, attrs.clone());
+                    let old_self = self.env.get("self").cloned();
+                    let old_anon = self.env.get("__ANON_STATE__").cloned();
+                    self.env.insert("self".to_string(), temp_self.clone());
+                    self.env.insert("__ANON_STATE__".to_string(), temp_self);
+                    let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
+                    for (a_name, a_val) in &attrs {
+                        let bang = format!("!{}", a_name);
+                        let dot = format!(".{}", a_name);
+                        saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
+                        saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
+                        self.env.insert(bang, a_val.clone());
+                        self.env.insert(dot, a_val.clone());
+                    }
+                    let saved_package = self.current_package.clone();
+                    if self.has_class_scoped_subs(cn_resolved) {
+                        self.current_package = cn_resolved.to_string();
+                    }
+                    let result = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())]);
+                    self.current_package = saved_package;
+                    for (key, old_val) in saved_attr_env {
+                        match old_val {
+                            Some(v) => {
+                                self.env.insert(key, v);
+                            }
+                            None => {
+                                self.env.remove(&key);
+                            }
+                        }
+                    }
+                    match old_self {
+                        Some(v) => {
+                            self.env.insert("self".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("self");
+                        }
+                    }
+                    match old_anon {
+                        Some(v) => {
+                            self.env.insert("__ANON_STATE__".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("__ANON_STATE__");
+                        }
+                    }
+                    let val = match result {
+                        Ok(val) => val,
+                        Err(e) => {
+                            eval_error = Some(e);
+                            break;
+                        }
+                    };
+                    // A non-native default whose value does not match the
+                    // attribute's type constraint needs the interpreter — fall
+                    // through. Native-typed attributes are exempt (their default
+                    // is stored without a type check).
+                    if let Some(c) = type_constraints.get(attr_name)
+                        && Self::native_scalar_default(c).is_none()
+                        && !self.type_matches_value(c, &val)
+                    {
+                        typed_default_mismatch = true;
                         break;
                     }
-                };
-                // A default whose value does not match the attribute's type
-                // constraint needs the interpreter's handling — fall through.
-                // Native-typed attributes are exempt (the interpreter evaluates
-                // and stores their default without a type check).
-                if let Some(c) = type_constraints.get(attr_name)
-                    && Self::native_scalar_default(c).is_none()
-                    && !self.type_matches_value(c, &val)
-                {
-                    typed_default_mismatch = true;
-                    break;
+                    attrs.insert(
+                        attr_name.clone(),
+                        Self::coerce_attr_value_by_sigil(val, *sigil),
+                    );
                 }
-                attrs.insert(attr_name.clone(), val.clone());
-                // Update self and !attr/.attr so later defaults see this value
-                let updated = Value::make_instance(class_name, attrs.clone());
-                self.env.insert("self".to_string(), updated.clone());
-                self.env.insert("__ANON_STATE__".to_string(), updated);
-                self.env.insert(format!("!{}", attr_name), val.clone());
-                self.env.insert(format!(".{}", attr_name), val);
-            } else {
-                // Uninitialized: `@` -> empty Array, `%` -> empty Hash. For `$`:
-                // a native-typed scalar gets its native zero (`int` -> 0,
-                // `num` -> 0e0, `str` -> ""); an untyped `$` gets Nil. A
-                // class-typed `$` cannot reach here — it fell through above.
-                let empty = match sigil {
-                    '@' => Value::real_array(Vec::new()),
-                    '%' => Value::hash(HashMap::new()),
-                    _ => type_constraints
-                        .get(attr_name)
-                        .and_then(|c| Self::native_scalar_default(c))
-                        .unwrap_or(Value::Nil),
-                };
-                attrs.insert(attr_name.clone(), empty);
-            }
-        }
-        // Restore package and env after default evaluation (on every exit path).
-        self.current_package = saved_package;
-        if has_defaults {
-            self.env.remove("self");
-            self.env.remove("__ANON_STATE__");
-            // Clean up the !attr/.attr env entries we added
-            for k in attrs.keys() {
-                self.env.remove(&format!("!{}", k));
-                self.env.remove(&format!(".{}", k));
+                None => {
+                    // Uninitialized: `@` -> empty Array, `%` -> empty Hash. For
+                    // `$`: a native-typed scalar gets its native zero (`int` -> 0,
+                    // `num` -> 0e0, `str` -> ""); an untyped `$` gets Nil. A
+                    // class-typed `$` cannot reach here — it fell through above.
+                    let empty = match sigil {
+                        '@' => Value::real_array(Vec::new()),
+                        '%' => Value::hash(HashMap::new()),
+                        _ => type_constraints
+                            .get(attr_name)
+                            .and_then(|c| Self::native_scalar_default(c))
+                            .unwrap_or(Value::Nil),
+                    };
+                    attrs.insert(attr_name.clone(), empty);
+                }
             }
         }
         if let Some(e) = eval_error {
