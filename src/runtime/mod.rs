@@ -2702,6 +2702,8 @@ impl Interpreter {
         register_x("X::Comp::AdHoc", "X::Comp");
         register_x("X::Comp::NYI", "X::Comp");
         register_x("X::Composition::NotComposable", "Exception");
+        register_x("X::Value", "Exception");
+        register_x("X::Value::Dynamic", "X::Value");
 
         // X::Syntax hierarchy (syntax errors, subtypes of X::Comp)
         register_x("X::Syntax", "X::Comp");
