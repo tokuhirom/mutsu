@@ -2845,7 +2845,18 @@ impl VM {
                 arity,
                 modifier_idx,
             } => {
-                self.exec_call_method_dynamic_op(code, *arity, *modifier_idx)?;
+                match self.exec_call_method_dynamic_op(code, *arity, *modifier_idx) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // Record a resume point so a method that raises a
+                        // control signal (e.g. a resumable `warn`) can be
+                        // resumed after the call site by `.resume`.
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::CallMethodDynamicMut {
@@ -2854,12 +2865,20 @@ impl VM {
                 modifier_idx,
             } => {
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
-                self.exec_call_method_dynamic_mut_op(
+                match self.exec_call_method_dynamic_mut_op(
                     code,
                     *arity,
                     *target_name_idx,
                     *modifier_idx,
-                )?;
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
@@ -2878,7 +2897,7 @@ impl VM {
                 arg_sources_idx,
             } => {
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
-                self.exec_call_method_mut_op(
+                match self.exec_call_method_mut_op(
                     code,
                     *name_idx,
                     *arity,
@@ -2886,7 +2905,15 @@ impl VM {
                     *modifier_idx,
                     *quoted,
                     *arg_sources_idx,
-                )?;
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
@@ -3623,14 +3650,39 @@ impl VM {
                 modifier_idx,
                 quoted,
             } => {
-                self.exec_hyper_method_call_op(code, *name_idx, *arity, *modifier_idx, *quoted)?;
+                match self.exec_hyper_method_call_op(
+                    code,
+                    *name_idx,
+                    *arity,
+                    *modifier_idx,
+                    *quoted,
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // A per-element method may raise a resumable warn (the
+                        // hyper op re-raises it carrying the full result); record
+                        // the resume point so `.resume` continues after the call.
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::HyperMethodCallDynamic {
                 arity,
                 modifier_idx,
             } => {
-                self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx)?;
+                match self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
 

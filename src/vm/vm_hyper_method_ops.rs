@@ -67,6 +67,19 @@ impl VM {
         // .reverse/.sort/.elems) operates on each node rather than recursing to
         // leaves, and its hyper result is a List rather than an Array.
         let mut method_is_nodal = false;
+        // A per-element native method may raise a *resumable* warn (e.g.
+        // `.indent(-N)` when asked to outdent more than exists). We cannot
+        // suspend the Rust loop to let an enclosing `CONTROL { .resume }` resume
+        // mid-iteration, so for the plain Array/List result path we collect the
+        // first such warn, use each element's carried resume value, and re-raise
+        // once after the loop with the *whole* result as the resume value. That
+        // lets the outer CONTROL (or the default warn handler) resume the entire
+        // hyper expression instead of aborting it. Container targets
+        // (Hash/Set/Bag/Mix) take their own early-return paths, so we leave their
+        // warns propagating as before.
+        let collect_warns = hash_keys.is_none()
+            && !matches!(&target, Value::Mix(..) | Value::Bag(..) | Value::Set(..));
+        let mut pending_warn: Option<RuntimeError> = None;
         for (idx, item) in items.iter_mut().enumerate() {
             let method = Self::rewrite_method_name(method_raw, modifier);
             // Special case: CALL-ME on callable items (from >>.(args) syntax).
@@ -312,7 +325,20 @@ impl VM {
                             if let Some(native_result) =
                                 self.try_native_method(item, Symbol::intern(&method), &item_args)
                             {
-                                native_result?
+                                match native_result {
+                                    Ok(v) => v,
+                                    // Resumable warn from a per-element native
+                                    // method: use its carried resume value and
+                                    // remember the warn to re-raise after the loop.
+                                    Err(e) if collect_warns && e.is_warn => {
+                                        let rv = e.return_value.clone().unwrap_or(Value::Nil);
+                                        if pending_warn.is_none() {
+                                            pending_warn = Some(e);
+                                        }
+                                        rv
+                                    }
+                                    Err(e) => return Err(e),
+                                }
                             } else {
                                 let (v, updated) = self.call_method_mut_with_temp_target(
                                     item, &method, item_args, idx,
@@ -460,8 +486,16 @@ impl VM {
             Value::Array(_, kind) if kind.is_real_array() && !method_is_nodal => ArrayKind::Array,
             _ => ArrayKind::List,
         };
-        self.stack
-            .push(Value::Array(std::sync::Arc::new(results), result_kind));
+        let result = Value::Array(std::sync::Arc::new(results), result_kind);
+        // A per-element native method raised a resumable warn: re-raise it once,
+        // carrying the whole hyper result as the resume value, so an enclosing
+        // `CONTROL { .resume }` (or the default warn handler) resumes the entire
+        // expression. The HyperMethodCall opcode records the resume point.
+        if let Some(mut warn) = pending_warn {
+            warn.return_value = Some(result);
+            return Err(warn);
+        }
+        self.stack.push(result);
         Ok(())
     }
 
