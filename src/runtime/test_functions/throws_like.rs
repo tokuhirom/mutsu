@@ -74,7 +74,26 @@ impl Interpreter {
                             .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
-                        Err(e) => Err(e),
+                        Err(mut e) => {
+                            // A compile-time exception raised while parsing the
+                            // EVAL'd code reports the EVAL pseudo-file and the
+                            // line within that source (Raku exposes `.filename`
+                            // matching /EVAL/ and `.line`).
+                            if let Some(ref mut exc_box) = e.exception
+                                && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                            {
+                                let line = e.line.unwrap_or(1) as i64;
+                                let attrs = std::sync::Arc::make_mut(attributes);
+                                attrs.entry("line".to_string()).or_insert(Value::Int(line));
+                                attrs
+                                    .entry("filename".to_string())
+                                    .or_insert(Value::str("EVAL_0".to_string()));
+                                attrs
+                                    .entry("file".to_string())
+                                    .or_insert(Value::str("EVAL_0".to_string()));
+                            }
+                            Err(e)
+                        }
                     }
                 };
                 if let Err(e) = pre_check_result {
@@ -403,7 +422,26 @@ impl Interpreter {
                             .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
-                        Err(e) => Err(e),
+                        Err(mut e) => {
+                            // A compile-time exception raised while parsing the
+                            // EVAL'd code reports the EVAL pseudo-file and the
+                            // line within that source (Raku exposes `.filename`
+                            // matching /EVAL/ and `.line`).
+                            if let Some(ref mut exc_box) = e.exception
+                                && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                            {
+                                let line = e.line.unwrap_or(1) as i64;
+                                let attrs = std::sync::Arc::make_mut(attributes);
+                                attrs.entry("line".to_string()).or_insert(Value::Int(line));
+                                attrs
+                                    .entry("filename".to_string())
+                                    .or_insert(Value::str("EVAL_0".to_string()));
+                                attrs
+                                    .entry("file".to_string())
+                                    .or_insert(Value::str("EVAL_0".to_string()));
+                            }
+                            Err(e)
+                        }
                     }
                 };
                 if let Err(e) = pre_check_result {
