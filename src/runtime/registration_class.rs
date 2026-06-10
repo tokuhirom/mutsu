@@ -4,25 +4,17 @@ use crate::symbol::Symbol;
 
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
 
-/// Whether a built-in type may be `does`-composed by a class. Composable
-/// built-ins are roles (Real/Numeric/Stringy/Positional/...) plus Bool; concrete
-/// built-in classes (Int/Str/Num/Cool/Any/Mu/...) are NOT composable and trigger
-/// X::Composition::NotComposable.
-fn is_composable_builtin(name: &str) -> bool {
+/// Whether a built-in type is a concrete (non-composable) class that cannot be
+/// `does`-composed by a class — `class B does Int {}` is
+/// X::Composition::NotComposable. This is a denylist of the concrete value/object
+/// types; everything else built-in that is `does`-able is a role
+/// (Real/Numeric/Positional/Baggy/Setty/Stringy/...) and composes fine. A
+/// denylist is used (rather than an allowlist of composable roles) so new or
+/// uncommon built-in roles like Baggy/Setty/Mixy are not wrongly rejected.
+fn is_non_composable_builtin(name: &str) -> bool {
     matches!(
         name,
-        "Bool"
-            | "Real"
-            | "Numeric"
-            | "Rational"
-            | "Stringy"
-            | "Positional"
-            | "Associative"
-            | "Iterable"
-            | "Callable"
-            | "Sequence"
-            | "Blob"
-            | "Buf"
+        "Int" | "UInt" | "Str" | "Num" | "Rat" | "FatRat" | "Complex" | "Cool" | "Any" | "Mu"
     )
 }
 
@@ -972,7 +964,7 @@ impl Interpreter {
             if does_parents.contains(parent)
                 && !self.registry().roles.contains_key(resolved_parent)
                 && BUILTIN_TYPES.contains(&resolved_parent)
-                && !is_composable_builtin(resolved_parent)
+                && is_non_composable_builtin(resolved_parent)
             {
                 let msg = format!(
                     "{} is not composable, so {} cannot compose it",
