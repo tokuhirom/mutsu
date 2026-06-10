@@ -211,8 +211,41 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
         identity と alias 可視性を保つ）— これを怠ると `t/lvalue-method-rw.t` の temp 復元が壊れる（実際に踏んで修正）。
   - 検証: cross-frame note/closure mutation・alias 共有・`.clone` 独立・`===`/`.WHICH`/`eqv` identity・DESTROY(1回)・
         temp/let 復元 すべて raku 一致。clippy 緑。
-- [ ] **Stage 2 — 伝播ハック全廃**: `overwrite_instance_bindings_by_identity` と by-id scan、CoW `make_mut` 16 箇所を
-      削除（変異が by-reference で可視になったので不要）。dual-store の instance writeback 経路も縮小。
+- [ ] **Stage 2 — cell を唯一の真実源に（keystone）＋ 伝播ハック全廃**: ユーザー判断 (2026-06-10) で**一括 PR**。
+
+  #### 現状メカニズム（CI 調査で確定したフルマップ）
+  method frame は instance attr を **env/locals コピー**で持ち、cell は writeback でしか同期されない:
+  - **materialize（method entry）**: `vm_method_dispatch.rs:~380-430` が attr ごとに env `!attr`/`.attr`/`@!attr`/`@.attr`/
+    `%!attr`/`%.attr` を **value コピー**で挿入。private は `qualified_key = "{owner_class}\0{attr}"` を優先
+    （継承の Parent/Child 同名 disambiguation）。`is default(...)` は `set_var_default("!attr")` で登録。
+    sigilless alias（trait handles）は `__mutsu_sigilless_alias::` で双方向。
+  - **read（body）**: `$!attr` は **plain `Var("!x")`** にコンパイル → `exec_get_local_op`（`vm_var_assign_ops.rs:4131`）が
+    `locals[idx]`（env `!attr` から dual-store sync 済み）を返す。cas dirty は env 優先（4147 コメント）。
+  - **write（body）**: `exec_set_local_op`（4281）/`exec_assign_expr_local_op`（5480）。type-object への `$!attr=` は die。
+    bind/rebind/constant/vardecl/decont-marker など多数の context と絡む。
+  - **writeback（method exit）**: `writeback_attributes_from_locals`/`writeback_attributes`
+    （`vm_method_dispatch.rs:586/607/1088/1105`）が locals/env の `!attr` を instance attrs へ集約 → 再構築。
+  - **cas 側道**: `$!attr` の cas は env `!attr` + `shared_vars`（`__mutsu_atomic`/`__mutsu_instance::`）が真実源、
+    cell は `make_instance_detached` で別途同期（Stage 1 で race 回避のため detached 化）。
+
+  #### keystone（実装方針）
+  `$!attr`/`$.attr`/`@!`/`@.`/`%!`/`%.` の read/write を **self の cell 直結**にする:
+  - var handler に attr-twigil 判定（`attr_twigil_base(name) -> Option<&str>`: `!x`/`.x`/`@!x`/… → `x`）を入れ、
+    env `self`(Instance) の cell から read / cell へ write。継承 qualified key は cell 側に `owner\0attr` を保持するか、
+    owner_class を frame に持たせて解決（materialize と同じ優先順位を cell read で再現）。
+  - **materialize 撤去**（env コピー挿入をやめる）、**writeback 撤去**（`writeback_attributes*`）、
+    **cas を cell-CAS 化**（cell の write-lock を atomic primitive に。Stage 1 で livelock したのは read が env コピー経由
+    だったから＝cell 直結後は解消する。これが cell-direct read の検証ケース）。
+  - これらが入れば **`overwrite_instance_bindings_by_identity` + by-id scan（17ファイル~50サイト）/ `instance_cells`
+    レジストリ / `HELD_READ_CELLS`+deferred-write / `make_instance_detached` / `update_instance_cell` / CoW `make_mut`16**
+    を全廃。`temp`/`let` の cell 書き戻しも素直化。
+
+  #### リスク / 検証
+  - hot path（var read/write）と dual-store（locals↔env sync）の中核を触る＝Stage 1 級の blast radius。CI 反復前提。
+  - 必須検証: 継承同名 attr（Parent/Child `$!priv`）、`@!`/`%!` の container type metadata、sigilless alias（trait handles）、
+    `is default`/`.VAR.default`、rw accessor、cas（cell-CAS で 4000）、cross-frame、temp/let、DESTROY。
+  - perf: cell read は env コピー読みより重い（self 取得 + read-lock + clone）。Stage 3 の escape 解析で非エスケープ
+    instance を bare 値に戻して救済。
 - [ ] **Stage 3 — 仕上げ / perf**: escape 解析で「捕捉も `.clone` もされない instance はセル省略」（hot path 救済。
       Phase 1 のスカラーと同型）。型メタ副テーブルの Arc-ptr keying もセルに載せて廃止（Q2 flaky 吸収）。
 
