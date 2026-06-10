@@ -1042,8 +1042,9 @@ fn parse_quote_word_list<'a>(
     };
     let content = &input[..end];
     let rest = &input[end + close.len()..];
-    // A bare empty `<>` is the obsolete Perl diamond, not an empty word list.
-    if reject_lt_operators && content.trim().is_empty() {
+    // A bare *empty* `<>` is the obsolete Perl diamond. `< >` (with whitespace)
+    // is a legal empty `List`, so only the truly-empty form errors.
+    if reject_lt_operators && content.is_empty() {
         return Err(crate::parser::stmt::control::make_obsolete_error(
             "<>",
             None,
