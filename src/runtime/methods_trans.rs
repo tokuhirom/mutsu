@@ -234,6 +234,16 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                         | Value::GenericRange { .. }
                 ) {
+                    // A from-side element that is neither a Str nor a Regex
+                    // (e.g. an `Any` object via `[Any.new]`) is an illegal
+                    // substitution key.
+                    if let Value::Array(items, ..) = key.as_ref()
+                        && let Some(bad) = items
+                            .iter()
+                            .find(|v| matches!(v, Value::Instance { .. } | Value::Package(_)))
+                    {
+                        return Err(self.str_trans_illegal_key_error(bad));
+                    }
                     // Check if the to-side array contains any closures.
                     let has_closures = if let Value::Array(items, ..) = value.as_ref() {
                         items.iter().any(is_closure)
@@ -338,6 +348,10 @@ impl Interpreter {
                     let key_str = key.to_string_value();
                     rules.push(self.parse_trans_pair(&key_str, value));
                 }
+            } else {
+                // Only Pair objects are valid positional arguments to .trans
+                // (e.g. `"a".trans(rx/a/)` passes a bare Regex).
+                return Err(self.str_trans_invalid_arg_error(arg));
             }
         }
 
@@ -347,6 +361,47 @@ impl Interpreter {
 
         let result = self.apply_trans_rules(&text, &rules, squash, delete, complement)?;
         Ok(Value::str(result))
+    }
+
+    /// Build an X::Str::Trans::InvalidArg error for a non-Pair argument passed
+    /// to `.trans`. `got` is the offending value's type object.
+    fn str_trans_invalid_arg_error(&self, arg: &Value) -> RuntimeError {
+        let type_name = crate::value::types::what_type_name(arg);
+        let msg = format!(
+            "Only Pair objects are allowed as arguments to Str.trans, got {}",
+            type_name
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "got".to_string(),
+            Value::Package(crate::symbol::Symbol::intern(&type_name)),
+        );
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let mut err = RuntimeError::new(&msg);
+        err.exception = Some(Box::new(Value::make_instance(
+            crate::symbol::Symbol::intern("X::Str::Trans::InvalidArg"),
+            attrs,
+        )));
+        err
+    }
+
+    /// Build an X::Str::Trans::IllegalKey error for a substitution key element
+    /// that is not a Str or Regex. `key` is the offending value.
+    fn str_trans_illegal_key_error(&self, key: &Value) -> RuntimeError {
+        let type_name = crate::value::types::what_type_name(key);
+        let msg = format!(
+            "in Str.trans, got illegal substitution key of type {} (should be a Regex or Str)",
+            type_name
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("key".to_string(), key.clone());
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let mut err = RuntimeError::new(&msg);
+        err.exception = Some(Box::new(Value::make_instance(
+            crate::symbol::Symbol::intern("X::Str::Trans::IllegalKey"),
+            attrs,
+        )));
+        err
     }
 
     fn parse_trans_pair(&self, key: &str, value: &Value) -> TransRule {
