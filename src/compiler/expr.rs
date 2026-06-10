@@ -191,6 +191,24 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str_from("Nil"));
                 self.code.emit(OpCode::LoadConst(idx));
             }
+            // `Nil.push` / `.append` / `.unshift` / `.prepend` on a *literal* Nil
+            // is illegal in Raku ("Use of Nil.<method> not allowed"). This must be
+            // distinguished from autovivification of a runtime-undefined container
+            // element (`@a[5].push`) or variable (`$x.push`), which is legal -- so
+            // we only reject the literal `Nil` keyword here, matching the gist/raku
+            // fold above.
+            Expr::MethodCall { target, name, .. }
+                if matches!(target.as_ref(), Expr::Literal(Value::Nil))
+                    && matches!(
+                        name.resolve().as_str(),
+                        "push" | "append" | "unshift" | "prepend"
+                    ) =>
+            {
+                let msg = format!("Use of Nil.{} not allowed", name.resolve());
+                let idx = self.code.add_constant(Value::str(msg));
+                self.code.emit(OpCode::LoadConst(idx));
+                self.code.emit(OpCode::Die);
+            }
             // Method call on nested-index target with mutating method -- writeback via IndexAssign.
             // e.g. %h<a><b>.push(1, 2) => %h<a><b> = %h<a><b>.push(1, 2)
             Expr::MethodCall {

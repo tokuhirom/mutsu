@@ -139,28 +139,51 @@ impl Compiler {
                             self.code.emit(OpCode::Dup);
                             self.emit_set_named_var(name);
                         } else {
-                            // Enforce a scalar type constraint in expression
-                            // position too (e.g. a bare `my Str $x := 3` whose
-                            // value is the program result). Skip uninitialized
-                            // typed decls (`my Str $x` -> Nil).
+                            let is_nil_literal = matches!(expr, Expr::Literal(Value::Nil));
                             if let Some(tc) = type_constraint
-                                && !matches!(expr, Expr::Literal(Value::Nil))
+                                && is_nil_literal
                             {
+                                // `my T $x = Nil` (or an uninitialized `my T $x`)
+                                // in expression position: register the constraint
+                                // and store, so SetLocal resets Nil to the
+                                // constraint's nominal type object, then read the
+                                // stored value back as the expression result
+                                // (e.g. `(my Str $x = Nil)` evaluates to `(Str)`).
+                                // Routing through SetLocal's reset (rather than a
+                                // TypeCheck on the stack) avoids evaluating a
+                                // subset's `where` predicate against Nil.
+                                let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                                let display_name = format!("${}", name);
-                                let var_name_idx = self.code.add_constant(Value::str(display_name));
-                                let is_bind =
-                                    custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
-                                if is_bind {
-                                    self.code
-                                        .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
-                                } else {
-                                    self.code
-                                        .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                                self.code.emit(OpCode::SetVarType {
+                                    name_idx: name_idx2,
+                                    tc_idx,
+                                });
+                                self.emit_set_named_var(name);
+                                self.emit_get_named_var(name);
+                            } else {
+                                // Enforce a scalar type constraint in expression
+                                // position too (e.g. a bare `my Str $x := 3` whose
+                                // value is the program result).
+                                if let Some(tc) = type_constraint {
+                                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                                    let display_name = format!("${}", name);
+                                    let var_name_idx =
+                                        self.code.add_constant(Value::str(display_name));
+                                    let is_bind =
+                                        custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                                    if is_bind {
+                                        self.code.emit(OpCode::TypeCheckBind(
+                                            tc_idx,
+                                            Some(var_name_idx),
+                                        ));
+                                    } else {
+                                        self.code
+                                            .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                                    }
                                 }
+                                self.code.emit(OpCode::Dup);
+                                self.emit_set_named_var(name);
                             }
-                            self.code.emit(OpCode::Dup);
-                            self.emit_set_named_var(name);
                         }
                     }
                 }

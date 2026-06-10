@@ -494,6 +494,10 @@ impl VM {
             }
         }
         let result = match (target, index) {
+            // Any subscript (positional or associative) on Nil yields Nil again,
+            // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps
+            // returning Nil rather than an out-of-range Failure.
+            (Value::Nil, _) => Value::Nil,
             // Whatever (*) index on Array: @a[*] returns all elements as a List
             (Value::Array(items, _is_arr), Value::Whatever) => {
                 Value::Array(items, crate::value::ArrayKind::List)

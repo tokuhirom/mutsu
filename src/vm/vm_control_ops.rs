@@ -2670,6 +2670,20 @@ impl VM {
                             } else {
                                 self.interpreter.env_mut().remove("_");
                             }
+                            // A resumable *warn* raised mid-expression (e.g. a Nil
+                            // coercion: `Nil.ords`, `Nil.Int`) carries the value
+                            // the suspended call should evaluate to. The stack was
+                            // truncated to the block base above, so push that value
+                            // back so execution continues from the call site with
+                            // the call's result in place. Gate strictly on `is_warn`:
+                            // other control signals (take/emit/done) also carry a
+                            // `return_value` for their own machinery, which must NOT
+                            // land on the VM operand stack here.
+                            if pending_err.is_warn
+                                && let Some(rv) = pending_err.return_value.take()
+                            {
+                                self.stack.push(rv);
+                            }
                             if has_control {
                                 self.interpreter.control_handler_depth += 1;
                             }
