@@ -1727,6 +1727,25 @@ fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
         if p.named
             && let Some(sub_params) = &p.sub_signature
         {
+            // The outer param's rename name (e.g. `:in` in `:in(:$in)`) is an
+            // external named-argument key. If a sub-param is ALSO named with the
+            // same key (`:$in` -> external name "in"), the key is used for more
+            // than one named parameter -> X::Signature::NameClash (not a plain
+            // variable Redeclaration).
+            let outer_base = strip_param_sigil(&p.name);
+            for sp in sub_params {
+                if sp.named && !outer_base.is_empty() && strip_param_sigil(&sp.name) == outer_base {
+                    let msg = format!(
+                        "X::Signature::NameClash: Name {} used for more than one named parameter",
+                        outer_base
+                    );
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("name".to_string(), Value::str(outer_base.to_string()));
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(Symbol::intern("X::Signature::NameClash"), attrs);
+                    return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+                }
+            }
             for sp in sub_params {
                 let sp_name = &sp.name;
                 let sp_without_sigil = strip_param_sigil(sp_name);
