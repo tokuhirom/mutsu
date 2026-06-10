@@ -229,6 +229,22 @@ fn is_pure_value_expr(expr: &Expr) -> bool {
     )
 }
 
+/// Extract the writeback variable name from a declaration used in expression
+/// position as an lvalue-method target, e.g. `(my $o = $s).substr-rw(...) = ...`.
+/// Without this the assignment would target a detached value and the mutation
+/// would be lost. Handles both a bare `VarDecl` and the `SyntheticBlock`-wrapped
+/// declarations the parser produces for `:=` binds and readonly scalar binds.
+pub(crate) fn decl_target_var_name(stmt: &crate::ast::Stmt) -> Option<String> {
+    match stmt {
+        crate::ast::Stmt::VarDecl { name, .. } => Some(name.clone()),
+        crate::ast::Stmt::SyntheticBlock(inner) => inner.iter().find_map(|s| match s {
+            crate::ast::Stmt::VarDecl { name, .. } => Some(name.clone()),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
 fn method_lvalue_assign_expr(
     target: Expr,
     target_var_name: Option<String>,
@@ -997,6 +1013,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 Expr::Var(var_name) => Some(var_name.clone()),
                 Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
                 Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                Expr::DoStmt(s) => decl_target_var_name(s),
                 _ => None,
             };
             let method_name = if *modifier == Some('!') {
@@ -1108,6 +1125,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::Var(var_name) => Some(var_name.clone()),
                     Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
                     Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                    Expr::DoStmt(s) => decl_target_var_name(s),
                     _ => None,
                 };
                 let method_name = if *modifier == Some('!') {

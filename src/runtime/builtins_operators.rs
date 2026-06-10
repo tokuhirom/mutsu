@@ -1371,10 +1371,33 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
-        Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
-            items,
-        )))
+    /// Build a lazy-cached repeat list that records the repeat's *logical* element
+    /// count (which may far exceed the materialized cache, or be infinite), so
+    /// `.elems` / `.iterator.count-only` report the true count of `LHS xx N`
+    /// without materializing N elements.
+    pub(crate) fn make_repeat_lazy_cache_counted(items: Vec<Value>, count: Value) -> Value {
+        let mut ll = crate::value::LazyList::new_cached(items);
+        ll.elems_count = Some(count);
+        Value::LazyList(std::sync::Arc::new(ll))
+    }
+
+    /// The logical element count of `LHS xx right` when the result is lazy
+    /// (`right` exceeded the eager limit or is infinite). `*`/`∞`/`Inf` map to
+    /// `Inf`; a finite count keeps its exact (possibly big) integer value.
+    pub(crate) fn repeat_logical_count(right: &Value) -> Value {
+        match right {
+            Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
+            Value::Num(n) if n.is_infinite() => Value::Num(*n),
+            Value::Int(_) | Value::BigInt(_) => right.clone(),
+            other => {
+                let f = other.to_f64();
+                if f.is_infinite() {
+                    Value::Num(f)
+                } else {
+                    Value::Int(f as i64)
+                }
+            }
+        }
     }
 
     pub(crate) fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
@@ -1518,7 +1541,8 @@ impl Interpreter {
                         }
                     }
                     acc = if lazy {
-                        Self::make_repeat_lazy_cache(items)
+                        let count = Self::repeat_logical_count(rhs);
+                        Self::make_repeat_lazy_cache_counted(items, count)
                     } else {
                         Value::Seq(std::sync::Arc::new(items))
                     };

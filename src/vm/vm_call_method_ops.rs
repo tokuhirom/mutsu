@@ -940,6 +940,18 @@ impl VM {
                         | "clone" | "item" | "self" | "sink" | "pending" => {
                             // Fall through to normal dispatch
                         }
+                        // List/iteration methods inherited from Any: Nil behaves
+                        // like a single undefined item (e.g. `Nil.grep(*.defined)`
+                        // is an empty Seq, `Nil.map(*.so)` is `(False)`), NOT a
+                        // Nil-absorbing no-op. Falling through routes these to the
+                        // normal dispatch, which treats Nil as a 1-element list.
+                        // This matters now that `for Nil { }` runs one iteration:
+                        // a Nil-returning `.grep` would otherwise iterate once over
+                        // Nil instead of zero times over an empty Seq.
+                        "grep" | "map" | "first" | "sort" | "reverse" | "list" | "List"
+                        | "Slip" | "flat" | "Seq" | "cache" | "head" | "tail" | "elems" => {
+                            // Fall through to normal dispatch
+                        }
                         // Numeric coercion on Nil (an undefined value) warns and
                         // yields the corresponding numeric type object, e.g.
                         // `Nil.Rat` is `(Rat)` which numifies to 0.

@@ -315,6 +315,54 @@ impl Compiler {
             Stmt::SyntheticBlock(inner) if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) => {
                 self.compile_block_inline(inner);
             }
+            // A `my @x := LIST` / `my %h := ...` declaration used in expression
+            // position (e.g. `+my @x := 1,2,3` or `plan +my @x := ...`). Its
+            // synthetic block carries a `__mutsu_record_bound_array_len` marker.
+            // Like the other declaration synthetic blocks above, compile it
+            // inline (NOT scope-isolated) so the `my` declaration leaks into the
+            // enclosing lexical scope — a `my` always declares in the current
+            // block regardless of expression nesting. Scope-isolating it (the
+            // generic arm below) would confine the binding to the synthetic
+            // block, leaving the outer `@x` undeclared (read as Nil).
+            Stmt::SyntheticBlock(inner)
+                if inner.iter().any(|s| {
+                    matches!(s,
+                        Stmt::Expr(Expr::Call { name, .. })
+                        if name.resolve() == "__mutsu_record_bound_array_len"
+                    )
+                }) =>
+            {
+                self.compile_block_inline(inner);
+            }
+            // A scalar bind to a readonly RHS used in expression position
+            // (`f(my $c := "lit")`): the synthetic block is
+            // `[MarkReadonly(name), VarDecl{__scalar_bind}]`. As with the other
+            // declaration synthetic blocks, the `my` must leak into the enclosing
+            // scope. The block-final VarDecl helper does a plain assign (which a
+            // preceding MarkReadonly would reject), so instead compile the
+            // statements as ordinary statements (the statement-position path binds
+            // correctly and leaks) and then push the bound variable as the
+            // expression's value.
+            Stmt::SyntheticBlock(inner)
+                if matches!(inner.first(), Some(Stmt::MarkReadonly(_)))
+                    && inner.iter().any(|s| {
+                        matches!(s, Stmt::VarDecl { custom_traits, .. }
+                            if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"))
+                    }) =>
+            {
+                let bound_name = inner.iter().find_map(|s| match s {
+                    Stmt::VarDecl { name, .. } => Some(name.clone()),
+                    _ => None,
+                });
+                for s in inner {
+                    self.compile_stmt(s);
+                }
+                if let Some(name) = bound_name {
+                    self.compile_expr(&Expr::Var(name));
+                } else {
+                    self.code.emit(OpCode::LoadNil);
+                }
+            }
             Stmt::SyntheticBlock(inner) => {
                 self.compile_do_block_expr_scoped(inner, &None);
             }

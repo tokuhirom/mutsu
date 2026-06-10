@@ -318,10 +318,22 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_open(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let path = args
-            .first()
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
+        // `open` takes an `IO()`-coercible path. When handed an IO::Handle
+        // (e.g. `open(IO::Handle.new(:path($p)))`), coerce it to its `.path`
+        // so the underlying file is opened, matching rakudo.
+        let path = match args.first() {
+            Some(Value::Instance {
+                class_name,
+                attributes,
+                ..
+            }) if class_name.resolve() == "IO::Handle" => attributes
+                .as_map()
+                .get("path")
+                .map(|p| p.to_string_value())
+                .unwrap_or_default(),
+            Some(v) => v.to_string_value(),
+            None => return Err(RuntimeError::new("open requires a path argument")),
+        };
         check_null_in_path(&path)?;
         let (
             read,
@@ -334,6 +346,7 @@ impl Interpreter {
             nl_out,
             enc,
             create,
+            exclusive,
         ) = self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
         match self.open_file_handle(
@@ -348,6 +361,7 @@ impl Interpreter {
             nl_out,
             enc,
             create,
+            exclusive,
         ) {
             Ok(handle) => Ok(handle),
             // Raku returns a Failure (wrapping the exception) when open() fails,

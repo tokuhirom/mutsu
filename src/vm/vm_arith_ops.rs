@@ -962,7 +962,8 @@ impl VM {
         }
 
         let result = if lazy {
-            crate::runtime::Interpreter::make_repeat_lazy_cache(items)
+            let count = crate::runtime::Interpreter::repeat_logical_count(&right);
+            crate::runtime::Interpreter::make_repeat_lazy_cache_counted(items, count)
         } else {
             Value::Seq(Arc::new(items))
         };

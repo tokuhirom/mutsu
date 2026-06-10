@@ -20,4 +20,7 @@ nok S-Int.isa(S-Str), 'subset isa unrelated subset is false';
 my subset MyInt of Int where { True };
 my MyInt $x = 5;
 $x = Nil;
-ok $x === Int, 'assigning Nil to subset-typed scalar resets to nominal base type object';
+# Under the default (6.d) language version, assigning Nil to a subset-typed
+# scalar resets it to the *subset* type object (not the nominal base). The 6.e
+# nominalization-to-base behavior is covered by roast/S02-types/subset-6e.t.
+ok $x === MyInt, 'assigning Nil to subset-typed scalar resets to the subset type object';

@@ -3235,6 +3235,10 @@ impl Interpreter {
                     _ => 0,
                 };
                 let len = items.len();
+                // A known logical count (set for `LHS xx N` lazy repeats) overrides
+                // the materialized prefix length, so `.count-only` / `.bool-only`
+                // on a stored iterator report the true (possibly infinite) count.
+                let known_count = updated.as_map().get("known_count").cloned();
 
                 let mut append_to_first_array_arg = |vals: &[Value]| {
                     if vals.is_empty() {
@@ -3249,8 +3253,13 @@ impl Interpreter {
                 };
 
                 let ret = match method {
-                    "count-only" => Value::Int(len.saturating_sub(index) as i64),
-                    "bool-only" => Value::Bool(index < len),
+                    "count-only" => known_count
+                        .clone()
+                        .unwrap_or_else(|| Value::Int(len.saturating_sub(index) as i64)),
+                    "bool-only" => match &known_count {
+                        Some(c) => Value::Bool(c.to_f64() > 0.0),
+                        None => Value::Bool(index < len),
+                    },
                     "pull-one" => {
                         if index < len {
                             let out = items[index].clone();

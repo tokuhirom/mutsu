@@ -302,10 +302,22 @@ impl Interpreter {
         } else {
             self.env.remove("made");
         }
-        // In Raku 6.c, Grammar.parse/parsefile returns Nil on failure.
-        // In 6.e+, it returns a Failure object.
+        // In Raku 6.c/6.d, Grammar.parse/parsefile returns Nil on failure.
+        // In 6.e+, it returns a Failure object. The decision is keyed on the
+        // grammar's *declaration* revision (captured as type metadata), not the
+        // globally-current language version: the latter is a mutable thread-local
+        // that gets reset to the default whenever the parser re-enters (e.g. while
+        // compiling a regex during the parse), so reading it here is unreliable.
+        let grammar_is_6e = match self
+            .type_metadata
+            .get(package_name)
+            .and_then(|meta| meta.get("language-revision"))
+        {
+            Some(Value::Str(rev)) => rev.as_str() >= "e",
+            _ => crate::parser::current_language_version().starts_with("6.e"),
+        };
         if is_full_parse
-            && !crate::parser::current_language_version().starts_with("6.e")
+            && !grammar_is_6e
             && let Ok(Value::Instance { class_name, .. }) = &result
             && class_name == "Failure"
         {
