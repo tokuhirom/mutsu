@@ -2799,6 +2799,8 @@ impl Interpreter {
         register_x("X::Method::Private::Permission", "Exception");
         register_x("X::Method::Private::Unqualified", "Exception");
         register_x("X::Routine::Unwrap", "Exception");
+        register_x("X::Str::Trans::InvalidArg", "Exception");
+        register_x("X::Str::Trans::IllegalKey", "Exception");
 
         // X::ParametricConstant
         register_x("X::ParametricConstant", "Exception");
