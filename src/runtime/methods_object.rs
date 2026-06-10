@@ -113,10 +113,26 @@ impl Interpreter {
                                     }),
                                 },
                                 '@' | '%' => {
-                                    !class_def.attribute_types.contains_key(name)
-                                        && !registry
-                                            .class_attribute_is_types
-                                            .contains_key(&(cls.clone(), name.clone()))
+                                    // An `is Type` container (`has @.a is Buf`)
+                                    // builds a special typed container — keep the
+                                    // interpreter. Otherwise: untyped is fine, and
+                                    // a typed element is allowed only when it is a
+                                    // plain `type_matches_value`-checkable class
+                                    // type (`has Int @.nums`); a native element
+                                    // (`has int @.x` -> packed `array[int]`) or a
+                                    // parametric/coercion element keeps the
+                                    // interpreter's richer construction.
+                                    if registry
+                                        .class_attribute_is_types
+                                        .contains_key(&(cls.clone(), name.clone()))
+                                    {
+                                        false
+                                    } else {
+                                        match class_def.attribute_types.get(name) {
+                                            None => true,
+                                            Some(et) => Self::is_simple_native_ctor_constraint(et),
+                                        }
+                                    }
                                 }
                                 _ => false,
                             }
@@ -436,6 +452,27 @@ impl Interpreter {
             {
                 let coerced = self.coerce_value_for_constraint(tc, val);
                 attrs.insert(attr_name.clone(), coerced);
+            }
+        }
+        // Tag typed `@`/`%` attributes (`has Int @.nums`) with element-type
+        // metadata and type-check their elements, exactly as `dispatch_new` does
+        // (shared `finalize_typed_container_attr`). A failing element raises the
+        // same `X::TypeCheck::Assignment` the interpreter would, so the native
+        // path is byte-identical. The gate already excluded `is Type` containers
+        // and native/parametric element types, so only plain class elements reach
+        // here. Done against the final `attrs` Arcs that move into the instance.
+        for (attr_name, _, _, _, _, sigil, _) in &class_attrs {
+            if !matches!(sigil, '@' | '%') {
+                continue;
+            }
+            let Some(elem_type) = type_constraints.get(attr_name).cloned() else {
+                continue;
+            };
+            if let Some(val) = attrs.get(attr_name).cloned()
+                && let Err(e) =
+                    self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, &val)
+            {
+                return Some(Err(e));
             }
         }
         // Add alias metadata for `has $x` (no twigil) attributes
@@ -3813,6 +3850,38 @@ impl Interpreter {
                         "__mutsu_array_storage".to_string(),
                         Value::real_array(Vec::new()),
                     );
+                }
+                // Tag typed `@`/`%` attributes (`has Int @.nums`) with
+                // element-type metadata and type-check their elements (the
+                // variable path `my Int @a` does the same). The element type
+                // lives in `attribute_types`; `is Type` containers carry their
+                // own metadata and are skipped. Done here against the final
+                // `attrs` so the Arc-pointer-keyed metadata survives into the
+                // instance (a clone shares the same backing Arc).
+                for (attr_name, _, _, _, _, sigil, _) in &class_attrs_info {
+                    if !matches!(sigil, '@' | '%') {
+                        continue;
+                    }
+                    let Some(elem_type) = attr_type_constraints.get(attr_name).cloned() else {
+                        continue;
+                    };
+                    // Only plain class element types (`has Int @.nums`). Native
+                    // (`has int @.x` -> packed `array[int]`), coercion, and
+                    // parametric elements keep their pre-existing construction
+                    // (the uninit branch already tags native packed arrays).
+                    if !Self::is_simple_native_ctor_constraint(&elem_type) {
+                        continue;
+                    }
+                    if self
+                        .registry()
+                        .class_attribute_is_types
+                        .contains_key(&(class_key.to_string(), attr_name.clone()))
+                    {
+                        continue;
+                    }
+                    if let Some(val) = attrs.get(attr_name).cloned() {
+                        self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, &val)?;
+                    }
                 }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
