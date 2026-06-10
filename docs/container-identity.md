@@ -254,9 +254,24 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
               ~40 call site churn 回避のため signature 維持（後続 slice で撤去）。検証: make test 6247・S12/S14/S17 whitelist
               106 ファイル 2111 テスト PASS（cross-thread cas・全 role/mixin・cross-frame note/closure・nested・escaping-closure
               scalar-holding-instance すべて緑）、clippy 緑。net -108 行。
-        - [ ] **slice 2（残）**: `instance_cells` registry + `make_instance_detached`/`update_instance_cell` の撤去
-              （callers が `self` の Arc を直接 in-place 変異する形へ。compiled-method の `(Value, attributes)` 戻り規約を変える）+
-              materialize の env コピー挿入撤去 + CAS の cell-CAS 化再検討。
+        - **materialize/reconcile 撤去（ユーザー選択 2026-06-11、段階 PR）**: reconcile は `attributes`(entry snapshot) を最終値へ
+              書き換え、cell 非経由の2経路を merge する: (a) attributive param (`method m($!x)`)、(b) sigilless `has $x`（bare `Var("x")`
+              にコンパイルされ実行時 alias テーブルのみが属性と判別）。`is rw` accessor 等は既に cell に届く。reconcile を単純撤去すると
+              caller の cell writeback が snapshot で cell を巻き戻すため、最終的に `reconcile → attributes = base.cell.to_map()`（cell 単一源）
+              へ置換する。exit-mirror は 2b 実証の stale-clobber を起こすため write-time の cell routing が必須。→ (i) attributive param、
+              (ii) sigilless cell-direct（2a 相当）、(iii) reconcile/materialize 撤去、の3段に分割。
+          - [x] **(i) attributive param → cell（landed: branch `phase3-stage2c-registry-removal`）**: binding 直後に
+                `mirror_attributive_params_to_cell`（`mirror_attr_value_to_cell_by_name` 再利用、scalar/array/hash 全 twigil）で param を
+                self の cell へ。**併せて read-only fast path から attributive param を除外**（`attr_twigil_base(pd.name).is_some()` を
+                `has_complex_params` に追加）—— attributive param は属性を変異させるのに fast path は writeback を落とすため `$obj.m($!x)`
+                後に変異が消えるバグ（`method set-and-read($!x){ say $!x }` が in-body 7 でなく stale cell 99 を読み属性も 99 のまま）を修正。
+                検証: make test 6247、S12/S14/S17/S06 whitelist 140 ファイル 2890 テスト PASS、named `:$!x`/BUILD/array/hash param・
+                in-body read・cross-frame すべて raku 一致。reconcile は (ii)(iii) まで維持（attributive param 経路は今や mirror で冗長だが無害）。
+          - [ ] **(ii) sigilless `has $x` を cell-direct 化**（2a 相当・bare `Var("x")` を実行時 alias テーブル参照で cell に回す）。
+          - [ ] **(iii) reconcile を `cell.to_map()` 置換 + materialize の attr-value env コピー撤去**。
+        - [ ] **registry 撤去（別 slice・後回し）**: `instance_cells` + `make_instance_detached`/`update_instance_cell` 撤去
+              （callers が `self` の Arc を直接 in-place 変異する形へ。~50 の make_instance_with_id rebuild を全変換する all-or-nothing 大改修）+
+              CAS の cell-CAS 化。
   - 旧「一括」設計（下記）は Stage 2a/2b/2c に分割。以下は参照マップ。
 
   #### 現状メカニズム（CI 調査で確定したフルマップ）
