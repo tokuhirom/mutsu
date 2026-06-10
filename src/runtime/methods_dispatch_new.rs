@@ -622,7 +622,7 @@ impl Interpreter {
                 id,
             } = dt
         {
-            let mut attrs = (**attributes).clone();
+            let mut attrs = attributes.to_map();
             attrs.insert("formatter".to_string(), formatter_value.clone());
             let dt_with_formatter = Value::make_instance_with_id(class_name, attrs, id);
             let saved_env = self.env().clone();
@@ -642,7 +642,11 @@ impl Interpreter {
             {
                 let mut updated = (*attributes).clone();
                 updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
-                return Some(Ok(Value::make_instance_with_id(class_name, updated, id)));
+                return Some(Ok(Value::make_instance_with_id(
+                    class_name,
+                    (updated).to_map(),
+                    id,
+                )));
             }
         }
         if class_name.resolve() != "DateTime" {

@@ -429,7 +429,7 @@ impl Interpreter {
                     {
                         let mut attrs = attributes.as_ref().clone();
                         attrs.insert("ast".to_string(), ast.clone());
-                        Value::make_instance(class_name, attrs)
+                        Value::make_instance(class_name, (attrs).to_map())
                     } else {
                         match_obj
                     }

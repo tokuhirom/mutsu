@@ -216,9 +216,9 @@ impl Value {
                 && b_attrs.contains_key("timezone") =>
             {
                 let (ay, am, ad, ah, amin, asec, atz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs(a_attrs);
+                    crate::builtins::methods_0arg::temporal::datetime_attrs((a_attrs).as_map());
                 let (by, bm, bd, bh, bmin, bsec, btz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs(b_attrs);
+                    crate::builtins::methods_0arg::temporal::datetime_attrs((b_attrs).as_map());
                 ay == by
                     && am == bm
                     && ad == bd
@@ -249,8 +249,10 @@ impl Value {
                 && b_attrs.contains_key("day")
                 && !b_attrs.contains_key("hour") =>
             {
-                let (ay, am, ad) = crate::builtins::methods_0arg::temporal::date_attrs(a_attrs);
-                let (by, bm, bd) = crate::builtins::methods_0arg::temporal::date_attrs(b_attrs);
+                let (ay, am, ad) =
+                    crate::builtins::methods_0arg::temporal::date_attrs((a_attrs).as_map());
+                let (by, bm, bd) =
+                    crate::builtins::methods_0arg::temporal::date_attrs((b_attrs).as_map());
                 ay == by && am == bm && ad == bd
             }
             // StrDistance instances: structural equality on before/after

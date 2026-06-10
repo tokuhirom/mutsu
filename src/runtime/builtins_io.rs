@@ -204,7 +204,7 @@ impl Interpreter {
             let method_args = std::iter::once(content_value)
                 .chain(args.iter().skip(2).cloned())
                 .collect();
-            return self.native_io_handle(attributes, "spurt", method_args);
+            return self.native_io_handle((attributes).as_map(), "spurt", method_args);
         }
         let path = args
             .first()

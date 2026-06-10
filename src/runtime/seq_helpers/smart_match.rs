@@ -50,8 +50,9 @@ impl Interpreter {
                 },
             ) if left_class == "DateTime" && right_class == "Date" => {
                 let (y, m, d, _, _, _, _) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs(left_attrs);
-                let (ry, rm, rd) = crate::builtins::methods_0arg::temporal::date_attrs(right_attrs);
+                    crate::builtins::methods_0arg::temporal::datetime_attrs((left_attrs).as_map());
+                let (ry, rm, rd) =
+                    crate::builtins::methods_0arg::temporal::date_attrs((right_attrs).as_map());
                 y == ry && m == rm && d == rd
             }
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {

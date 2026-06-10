@@ -3026,7 +3026,7 @@ impl VM {
                         let display = format!("{}()", cn);
                         return Err(RuntimeError::assignment_ro_typename(&cn, &display));
                     }
-                    let hash_map: HashMap<String, Value> = HashMap::clone(&**attributes);
+                    let hash_map: HashMap<String, Value> = HashMap::clone(attributes.as_map());
                     let hash_val = Value::hash(hash_map);
                     self.interpreter
                         .env_mut()

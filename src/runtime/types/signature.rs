@@ -186,7 +186,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
             out.insert("value".to_string(), *val.clone());
             out
         }
-        Value::Instance { attributes, .. } => (**attributes).clone(),
+        Value::Instance { attributes, .. } => attributes.to_map(),
         _ => std::collections::HashMap::new(),
     }
 }

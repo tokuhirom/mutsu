@@ -63,7 +63,7 @@ fn value_raku_repr(val: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => match_raku_repr(attributes),
+        } if class_name == "Match" => match_raku_repr((attributes).as_map()),
         Value::Array(items, ..) => {
             let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
             format!("[{}]", items_raku.join(", "))

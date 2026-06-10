@@ -867,9 +867,9 @@ impl VM {
                 && right_attrs.contains_key("timezone") =>
             {
                 let (ly, lm, ld, lh, lmin, ls, ltz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs(left_attrs);
+                    crate::builtins::methods_0arg::temporal::datetime_attrs((left_attrs).as_map());
                 let (ry, rm, rd, rh, rmin, rs, rtz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs(right_attrs);
+                    crate::builtins::methods_0arg::temporal::datetime_attrs((right_attrs).as_map());
                 let left_instant =
                     crate::builtins::methods_0arg::temporal::datetime_to_instant_leap_aware(
                         ly, lm, ld, lh, lmin, ls, ltz,

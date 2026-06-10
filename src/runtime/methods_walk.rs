@@ -89,7 +89,7 @@ impl Interpreter {
                 self.lookup_own_walk_method(kind, owner, &receiver_class_name, &method_name)
             {
                 let attributes = match target {
-                    Value::Instance { attributes, .. } => (**attributes).clone(),
+                    Value::Instance { attributes, .. } => attributes.to_map(),
                     _ => std::collections::HashMap::new(),
                 };
                 let result = self.run_instance_method_resolved(

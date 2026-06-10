@@ -732,7 +732,8 @@ impl Interpreter {
         {
             let mut new_attrs = (*attributes).clone();
             new_attrs.insert(attr_name.to_string(), new_val.clone());
-            let updated_instance = Value::make_instance_with_id(class_name, new_attrs, id);
+            let updated_instance =
+                Value::make_instance_with_id(class_name, (new_attrs).to_map(), id);
             self.env
                 .insert("self".to_string(), updated_instance.clone());
             self.env

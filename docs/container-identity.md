@@ -185,10 +185,13 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
 
 #### 段階導入（big-bang を避ける。各段 CI を安全網に）
 
-- [ ] **Stage 0 — compat read API（挙動不変・最大の機械的下準備）**: `InstanceAttrs` に内部表現非依存の
-      メソッドを足す（`get(&self,k)->Option<Value>`〔cloned〕/`contains_key`/`iter` 代替の `snapshot()->HashMap`/
-      `keys`/`len` 等）。**内部表現は HashMap のまま**で 127 read サイトを Deref から API へ移行＝byte-identical。
-      これで Stage 1 の表現切替が局所化される。最も大きく退屈だが低リスク。
+- [x] **Stage 0 — カプセル化境界の確立（挙動不変）完了 (#2856)**: `InstanceAttrs` から `Deref`/`DerefMut` を撤去し、
+      代わりに `HashMap` と同シグネチャの inherent メソッド（`get`/`contains_key`/`insert`/`get_mut`/`entry`/`iter`/
+      `keys`/`values`）＋owned アクセサ `as_map()->&HashMap` / `to_map()->HashMap` を追加。これで属性ストレージへの
+      全アクセスがメソッド境界を通る（Deref 漏れを排除）。**内部表現は HashMap のまま**＝byte-identical。
+      Deref 撤去でコンパイラが ~197 サイトを列挙：deref-coercion（`fn(&HashMap)` へ `&Arc<InstanceAttrs>` 渡し）は
+      `.as_map()` へ、`(**attributes).clone()` は `.to_map()` へ機械置換。make test 6112 全緑・cargo test 458/0・
+      clippy 緑。これで Stage 1（内部を共有可変セルへ）の表現切替が局所化された。
 - [ ] **Stage 1 — 表現切替（共有セル化）**: `InstanceAttrs` 内部を `Arc<RwLock<HashMap>>` に。read は Stage 0 の
       API（read-lock + clone）、変異は **in-place（write-lock で書く）**。clone は **セルを共有**（Arc clone）。
       これで closure 跨ぎの変異が caller に可視になり、note/$*ERR バグが解消。

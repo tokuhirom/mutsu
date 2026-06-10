@@ -27,7 +27,7 @@ impl Interpreter {
             "set" => {
                 // .set accepts named arguments: primary, secondary, tertiary, quaternary
                 // Each can be -1, 0, 1, or Bool (False=0, True=1)
-                let mut new_attrs = (**attributes).clone();
+                let mut new_attrs = attributes.to_map();
 
                 for arg in args {
                     if let Value::Pair(key, val) = arg {

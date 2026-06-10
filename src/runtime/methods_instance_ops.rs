@@ -85,7 +85,7 @@ impl Interpreter {
                         &class_name.resolve(),
                         &resolved_owner,
                         method_def,
-                        (**attributes).clone(),
+                        attributes.to_map(),
                         args,
                         Some(target.clone()),
                     )?;
@@ -136,7 +136,7 @@ impl Interpreter {
                     }
                 };
                 let mut update_items = |new_items: Vec<Value>| {
-                    let mut updated_attrs = (**attributes).clone();
+                    let mut updated_attrs = attributes.to_map();
                     updated_attrs.insert(
                         "__mutsu_iterationbuffer_items".to_string(),
                         Value::real_array(new_items),
@@ -307,7 +307,7 @@ impl Interpreter {
                             self.overwrite_instance_bindings_by_identity(
                                 &obj_class.resolve(),
                                 *obj_id,
-                                updated,
+                                (updated).to_map(),
                             );
                         }
                         return Ok(Value::Nil);
@@ -382,7 +382,7 @@ impl Interpreter {
             if class_name.resolve().starts_with("Distribution::")
                 && let Some(result) = self.dispatch_distribution_method(
                     &class_name.resolve(),
-                    attributes,
+                    (attributes).as_map(),
                     method,
                     args.clone(),
                 )
@@ -390,8 +390,11 @@ impl Interpreter {
                 return result;
             }
             if class_name == "CompUnit::Repository::Installation"
-                && let Some(result) =
-                    self.dispatch_cur_installation_method(attributes, method, args.clone())
+                && let Some(result) = self.dispatch_cur_installation_method(
+                    (attributes).as_map(),
+                    method,
+                    args.clone(),
+                )
             {
                 return result;
             }
@@ -592,7 +595,7 @@ impl Interpreter {
                 ) {
                     let (result, updated) = self.call_native_instance_method_mut(
                         &class_name.resolve(),
-                        (**attributes).clone(),
+                        attributes.to_map(),
                         method,
                         args,
                     )?;
@@ -609,7 +612,7 @@ impl Interpreter {
                 ) {
                     return self.call_native_instance_method(
                         &class_name.resolve(),
-                        attributes,
+                        (attributes).as_map(),
                         method,
                         args,
                     );
@@ -618,7 +621,7 @@ impl Interpreter {
             if self.is_native_method(&class_name.resolve(), method) {
                 return self.call_native_instance_method(
                     &class_name.resolve(),
-                    attributes,
+                    (attributes).as_map(),
                     method,
                     args,
                 );
@@ -654,7 +657,7 @@ impl Interpreter {
                 if let Some(formatted) =
                     crate::builtins::exception_message::format_exception_message(
                         &class_name.resolve(),
-                        attributes,
+                        (attributes).as_map(),
                     )
                 {
                     return Ok(Value::str(formatted));
@@ -679,7 +682,8 @@ impl Interpreter {
                 }
                 // Collect public attributes for .raku representation
                 let class_key = class_name.resolve();
-                let public_attrs = self.collect_public_raku_attrs(&class_key, attributes);
+                let public_attrs =
+                    self.collect_public_raku_attrs(&class_key, (attributes).as_map());
                 if public_attrs.is_empty() {
                     return Ok(Value::str(format!("{}.new", class_name)));
                 }
@@ -693,7 +697,7 @@ impl Interpreter {
                 return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
             }
             if method == "clone" {
-                let mut attrs: HashMap<String, Value> = (**attributes).clone();
+                let mut attrs: HashMap<String, Value> = attributes.to_map();
                 // Build sigil map from class attributes to coerce values properly
                 let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
                 let sigil_map: HashMap<String, char> = class_attrs_info
@@ -773,7 +777,7 @@ impl Interpreter {
             if self.has_user_method(&class_name.resolve(), method) {
                 let (result, updated) = self.run_instance_method(
                     &class_name.resolve(),
-                    (**attributes).clone(),
+                    attributes.to_map(),
                     method,
                     args,
                     Some(target.clone()),
@@ -1313,7 +1317,7 @@ impl Interpreter {
                                 .resolve_method_with_owner(&class_name.resolve(), "raku", &[])
                                 .is_some()
                         {
-                            let attrs_map = (**attributes).clone();
+                            let attrs_map = attributes.to_map();
                             if let Ok((rendered, _)) = self.run_instance_method(
                                 &class_name.resolve(),
                                 attrs_map,

@@ -122,7 +122,7 @@ impl Interpreter {
                 named.insert(k.clone(), *v.clone());
                 Some((Vec::new(), named))
             }
-            Value::Instance { attributes, .. } => Some((Vec::new(), (**attributes).clone())),
+            Value::Instance { attributes, .. } => Some((Vec::new(), (attributes.to_map()))),
             Value::Mixin(inner, _) => Self::signature_capture_like(inner),
             _ => None,
         }

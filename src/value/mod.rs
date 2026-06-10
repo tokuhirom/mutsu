@@ -477,22 +477,63 @@ impl InstanceAttrs {
         }
     }
 
-    pub(crate) fn clone(&self) -> HashMap<String, Value> {
-        self.attributes.clone()
-    }
-}
+    // --- Attribute access API (Phase 3, Stage 0 — encapsulation boundary) ---
+    //
+    // The attribute map used to be exposed via `Deref<Target = HashMap>`, which
+    // leaked the storage representation to ~150 call sites. Phase 3 (option C)
+    // will make the storage a *shared mutable cell* so an instance mutation is
+    // visible by-reference across call frames (see docs/container-identity.md).
+    // A locked cell cannot `Deref` to `&HashMap` (guard lifetime), so all access
+    // now goes through these inherent methods. Stage 0 keeps the plain `HashMap`
+    // backing and mirrors `HashMap`'s signatures, so this change is
+    // behaviour-identical; Stage 1 swaps the backing and adjusts the few methods
+    // that must return owned values.
 
-impl Deref for InstanceAttrs {
-    type Target = HashMap<String, Value>;
-
-    fn deref(&self) -> &Self::Target {
+    /// Borrow the backing map. Stage 1 will remove this (a locked cell cannot
+    /// hand out a `&HashMap`); the remaining users are owned-snapshot consumers
+    /// that become [`Self::to_map`].
+    pub(crate) fn as_map(&self) -> &HashMap<String, Value> {
         &self.attributes
     }
-}
 
-impl DerefMut for InstanceAttrs {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.attributes
+    /// An owned clone of the backing map (the old `attributes.to_map()`).
+    pub(crate) fn to_map(&self) -> HashMap<String, Value> {
+        self.attributes.clone()
+    }
+
+    pub(crate) fn get(&self, key: &str) -> Option<&Value> {
+        self.attributes.get(key)
+    }
+
+    pub(crate) fn contains_key(&self, key: &str) -> bool {
+        self.attributes.contains_key(key)
+    }
+
+    pub(crate) fn insert(&mut self, key: String, value: Value) -> Option<Value> {
+        self.attributes.insert(key, value)
+    }
+
+    pub(crate) fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
+        self.attributes.get_mut(key)
+    }
+
+    pub(crate) fn entry(
+        &mut self,
+        key: String,
+    ) -> std::collections::hash_map::Entry<'_, String, Value> {
+        self.attributes.entry(key)
+    }
+
+    pub(crate) fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Value> {
+        self.attributes.iter()
+    }
+
+    pub(crate) fn keys(&self) -> std::collections::hash_map::Keys<'_, String, Value> {
+        self.attributes.keys()
+    }
+
+    pub(crate) fn values(&self) -> std::collections::hash_map::Values<'_, String, Value> {
+        self.attributes.values()
     }
 }
 

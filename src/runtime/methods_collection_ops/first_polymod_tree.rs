@@ -91,7 +91,7 @@ impl Interpreter {
         } = &target
             && class_name == "Supply"
         {
-            return self.dispatch_supply_first(attributes, func, has_end);
+            return self.dispatch_supply_first((attributes).as_map(), func, has_end);
         }
 
         let items = crate::runtime::utils::value_to_list(&target);

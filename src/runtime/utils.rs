@@ -925,7 +925,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => match_gist(attributes, 0),
+        } if class_name == "Match" => match_gist((attributes).as_map(), 0),
         _ => value.to_string_value(),
     }
 }
@@ -965,7 +965,11 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                 attributes,
                 ..
             } if class_name == "Match" => {
-                entries.push((match_from(attributes), label.to_string(), value.clone()));
+                entries.push((
+                    match_from((attributes).as_map()),
+                    label.to_string(),
+                    value.clone(),
+                ));
             }
             // Quantified capture: a list of Match values under one index.
             Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
@@ -977,7 +981,11 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                     } = item
                         && class_name == "Match"
                     {
-                        entries.push((match_from(attributes), label.to_string(), item.clone()));
+                        entries.push((
+                            match_from((attributes).as_map()),
+                            label.to_string(),
+                            item.clone(),
+                        ));
                     }
                 }
             }
@@ -1008,7 +1016,7 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                 "\n{}{} => {}",
                 indent,
                 label,
-                match_gist(attributes, depth + 1)
+                match_gist((attributes).as_map(), depth + 1)
             ));
         }
     }
@@ -1999,13 +2007,13 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                             };
                             let (sy, sm, sd) =
                                 if let Value::Instance { attributes, .. } = start.as_ref() {
-                                    date_attrs(attributes)
+                                    date_attrs((attributes).as_map())
                                 } else {
                                     unreachable!()
                                 };
                             let (ey, em, ed) =
                                 if let Value::Instance { attributes, .. } = end.as_ref() {
-                                    date_attrs(attributes)
+                                    date_attrs((attributes).as_map())
                                 } else {
                                     unreachable!()
                                 };
@@ -2299,7 +2307,8 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             ref attributes,
             ..
         } if class_name == "Date" => {
-            let (y, m, d) = crate::builtins::methods_0arg::temporal::date_attrs(attributes);
+            let (y, m, d) =
+                crate::builtins::methods_0arg::temporal::date_attrs((attributes).as_map());
             let epoch = crate::builtins::methods_0arg::temporal::civil_to_epoch_days(y, m, d);
             Value::Int(epoch * 86400)
         }
@@ -2309,7 +2318,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             ..
         } if class_name == "DateTime" => {
             let (y, mo, d, h, mi, s, tz) =
-                crate::builtins::methods_0arg::temporal::datetime_attrs(attributes);
+                crate::builtins::methods_0arg::temporal::datetime_attrs((attributes).as_map());
             Value::Num(crate::builtins::methods_0arg::temporal::datetime_to_posix(
                 y, mo, d, h, mi, s, tz,
             ))

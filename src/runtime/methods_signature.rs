@@ -1119,7 +1119,7 @@ impl Interpreter {
                         &class_name.resolve(),
                         &resolved_owner,
                         method_def,
-                        (**attributes).clone(),
+                        attributes.to_map(),
                         args,
                         Some(target.clone()),
                     )?;
@@ -1142,7 +1142,7 @@ impl Interpreter {
             let candidates =
                 self.resolve_methods_per_mro_level(&class_name.resolve(), method, &args);
             if !candidates.is_empty() {
-                let mut attrs = (**attributes).clone();
+                let mut attrs = attributes.to_map();
                 let mut out = Vec::with_capacity(candidates.len());
                 for (resolved_owner, method_def) in candidates {
                     // Build an invocant with the latest attributes so that

@@ -168,7 +168,7 @@ impl Interpreter {
         {
             let (coerced, _) = self.run_instance_method(
                 &class_name.resolve(),
-                (**attributes).clone(),
+                attributes.to_map(),
                 base_target,
                 vec![],
                 Some(value.clone()),
