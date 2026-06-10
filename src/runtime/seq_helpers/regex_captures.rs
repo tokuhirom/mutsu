@@ -152,6 +152,37 @@ impl Interpreter {
 
     /// Parse :x(...) style repeat bounds.
     /// Returns (min_required, max_to_return). `max_to_return = None` means unbounded.
+    /// The `:x` adverb to `.match` / `s///` must be an Int or a Range. Anything
+    /// else (e.g. an Array) is an X::Str::Match::x error.
+    pub(in crate::runtime) fn is_valid_match_x_arg(value: &Value) -> bool {
+        matches!(
+            value,
+            Value::Int(_)
+                | Value::Num(_)
+                | Value::Str(_)
+                | Value::Whatever
+                | Value::Range(_, _)
+                | Value::RangeExcl(_, _)
+                | Value::RangeExclStart(_, _)
+                | Value::RangeExclBoth(_, _)
+                | Value::GenericRange { .. }
+        )
+    }
+
+    /// Build the X::Str::Match::x error for an invalid `:x` adverb value.
+    pub(in crate::runtime) fn str_match_x_error(routine: &str, got: &Value) -> RuntimeError {
+        let type_name = crate::value::types::what_type_name(got);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("got".to_string(), got.clone());
+        let message = format!(
+            "in Str.{}, got invalid value of type {} for :x, must be Int or Range",
+            routine, type_name
+        );
+        attrs.insert("message".to_string(), Value::str(message));
+        let ex = Value::make_instance(Symbol::intern("X::Str::Match::x"), attrs);
+        RuntimeError::from_exception_value(ex)
+    }
+
     pub(in crate::runtime) fn parse_match_repeat_bounds(
         value: &Value,
     ) -> Option<(usize, Option<usize>)> {

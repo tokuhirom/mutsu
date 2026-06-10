@@ -29,6 +29,9 @@ impl Interpreter {
                 } else if (key == "g" || key == "global") && value.truthy() {
                     global = true;
                 } else if key == "x" {
+                    if !Self::is_valid_match_x_arg(value) {
+                        return Err(Self::str_match_x_error("match", value));
+                    }
                     repeat_bounds = Self::parse_match_repeat_bounds(value);
                 } else if key == "nth" {
                     nth_arg = Some(*value.clone());
