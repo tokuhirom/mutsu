@@ -904,7 +904,12 @@ impl VM {
                             )));
                         }
                         // Any:U autovivification: push/append/unshift/prepend on
-                        // an undefined value creates a new Array.
+                        // a runtime-undefined value (e.g. an out-of-range array
+                        // element `@a[5]` or an uninitialised variable) creates a
+                        // new Array, which the indexed-method writeback path then
+                        // stores back. A *literal* `Nil.push` is rejected at
+                        // compile time (see compile_expr in the compiler), so this
+                        // path only sees autovivifiable Nils.
                         "push" | "append" | "unshift" | "prepend" => {
                             let arr: Vec<Value> = match method {
                                 "append" | "prepend" => {
@@ -943,6 +948,21 @@ impl VM {
                             return Err(RuntimeError::warn_signal_with_resume(
                                 msg,
                                 Value::Package(Symbol::intern(method)),
+                            ));
+                        }
+                        // `Nil.ords` warns ("Use of Nil in string context") and
+                        // resumes to an empty Seq; `Nil.chrs` warns and resumes
+                        // to a single null byte.
+                        "ords" if args.is_empty() => {
+                            return Err(RuntimeError::warn_signal_with_resume(
+                                "Use of Nil in string context".to_string(),
+                                Value::Seq(Arc::new(vec![])),
+                            ));
+                        }
+                        "chrs" if args.is_empty() => {
+                            return Err(RuntimeError::warn_signal_with_resume(
+                                "Use of Nil in string context".to_string(),
+                                Value::str("\0".to_string()),
                             ));
                         }
                         _ => {
