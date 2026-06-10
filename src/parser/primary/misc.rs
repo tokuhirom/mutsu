@@ -776,6 +776,16 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     // :!name (negated boolean pair)
     if let Some(after_bang) = r.strip_prefix('!') {
         let (rest, name) = parse_ident_with_hyphens(after_bang)?;
+        // A negated pair may not carry an argument: `:!foo(3)` is
+        // X::Syntax::NegatedPair ("Argument not allowed on negated pair").
+        if rest.starts_with('(') {
+            let message = format!("Argument not allowed on negated pair with key '{}'", name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("key".to_string(), Value::str(name.to_string()));
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Syntax::NegatedPair"), attrs);
+            return Err(PError::fatal_with_exception(message, Box::new(ex)));
+        }
         return Ok((
             rest,
             Expr::Binary {

@@ -2711,6 +2711,7 @@ impl Interpreter {
         register_x("X::Syntax::Extension::Null", "X::Syntax");
         register_x("X::Syntax::Missing", "X::Syntax");
         register_x("X::Syntax::VirtualCall", "X::Syntax");
+        register_x("X::Syntax::NegatedPair", "X::Syntax");
         register_x("X::Syntax::Malformed", "X::Syntax");
         register_x("X::Syntax::Variable::Numeric", "X::Syntax");
         register_x("X::Syntax::Variable::Initializer", "X::Syntax");
