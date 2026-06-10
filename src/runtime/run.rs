@@ -1025,16 +1025,20 @@ impl Interpreter {
             return Ok(());
         }
         if let Some(state) = self.tap.state() {
-            let plan_mismatch = matches!(state.planned, Some(planned) if planned != state.ran);
+            // Use the shared-atomic-aware count: tests run on a spawned thread
+            // (start blocks, Promise callbacks) bump the shared counter but not
+            // this state's local `ran` field.
+            let ran = state.effective_ran();
+            let plan_mismatch = matches!(state.planned, Some(planned) if planned != ran);
             if state.failed > 0 {
-                self.emit_test_summary_diag(state.planned, state.ran, state.failed);
+                self.emit_test_summary_diag(state.planned, ran, state.failed);
                 return Err(RuntimeError::new("Test failures"));
             }
             if plan_mismatch {
                 if let Some(planned) = state.planned {
                     self.stderr_output.push_str(&format!(
                         "# You planned {} test, but ran {}\n",
-                        planned, state.ran
+                        planned, ran
                     ));
                 }
                 // Dubious: exit code 255

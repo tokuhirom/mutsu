@@ -71,7 +71,10 @@ impl Interpreter {
         let mut subtest_output = std::mem::take(&mut self.output);
         let subtest_state = self.tap.take_state();
         let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
-        let subtest_ran = subtest_state.as_ref().map(|s| s.ran).unwrap_or(0);
+        let subtest_ran = subtest_state
+            .as_ref()
+            .map(|s| s.effective_ran())
+            .unwrap_or(0);
         let has_plan = subtest_state.as_ref().and_then(|s| s.planned).is_some();
 
         self.tap.set_state(ctx.parent_test_state);
