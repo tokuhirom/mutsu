@@ -53,6 +53,7 @@ impl Interpreter {
                 ..
             } if class_name.resolve() == "Format" => Some(
                 attributes
+                    .as_map()
                     .get("format")
                     .map(Value::to_string_value)
                     .unwrap_or_default(),

@@ -620,6 +620,7 @@ impl Interpreter {
             } = *ex
             {
                 let mut new_attrs: std::collections::HashMap<String, Value> = attributes
+                    .as_map()
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();

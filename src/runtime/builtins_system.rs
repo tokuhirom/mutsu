@@ -195,7 +195,8 @@ impl Interpreter {
         if class_name != "Failure" {
             return None;
         }
-        let exception = attributes.get("exception")?;
+        let map = attributes.as_map();
+        let exception = map.get("exception")?;
         let Value::Instance {
             attributes: ex_attrs,
             ..
@@ -203,7 +204,7 @@ impl Interpreter {
         else {
             return None;
         };
-        let message = ex_attrs.get("message")?.to_string_value();
+        let message = ex_attrs.as_map().get("message")?.to_string_value();
         let prefix = "No such symbol '";
         let rest = message.strip_prefix(prefix)?;
         let symbol = rest.strip_suffix('\'')?;
@@ -715,7 +716,7 @@ impl Interpreter {
             if let Value::Instance {
                 attributes: ref a, ..
             } = pipe
-                && let Some(Value::Int(id)) = a.get("pipe-id")
+                && let Some(Value::Int(id)) = a.as_map().get("pipe-id")
             {
                 pipe_ids.push(*id);
             }
@@ -726,7 +727,7 @@ impl Interpreter {
             if let Value::Instance {
                 attributes: ref a, ..
             } = pipe
-                && let Some(Value::Int(id)) = a.get("pipe-id")
+                && let Some(Value::Int(id)) = a.as_map().get("pipe-id")
             {
                 pipe_ids.push(*id);
             }
@@ -854,15 +855,15 @@ impl Interpreter {
             && class_name.resolve() == "IO::Pipe"
         {
             opts.capture_in = true;
-            if let Some(Value::Int(pid)) = attributes.get("live-pid") {
+            if let Some(Value::Int(pid)) = attributes.as_map().get("live-pid") {
                 opts.in_pipe_pid = Some(*pid);
                 return;
             }
-            if let Some(Value::Int(pid)) = attributes.get("proc-pid") {
+            if let Some(Value::Int(pid)) = attributes.as_map().get("proc-pid") {
                 opts.in_pipe_pid = Some(*pid);
                 return;
             }
-            let content = if let Some(Value::Int(id)) = attributes.get("pipe-id")
+            let content = if let Some(Value::Int(id)) = attributes.as_map().get("pipe-id")
                 && let Ok(mut map) = io_pipe_state_map().lock()
                 && let Some(state) = map.get_mut(id)
             {
@@ -871,6 +872,7 @@ impl Interpreter {
                 c
             } else {
                 attributes
+                    .as_map()
                     .get("content")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default()
@@ -889,7 +891,7 @@ impl Interpreter {
             ..
         } = value
             && class_name.resolve() == "IO::Handle"
-            && let Some(Value::Int(id)) = attributes.get("handle")
+            && let Some(Value::Int(id)) = attributes.as_map().get("handle")
         {
             opts.out_handle_id = Some(*id as usize);
             return;
@@ -949,7 +951,8 @@ impl Interpreter {
                     ..
                 } if idx == 0 && class_name.resolve() == "IO::Path" => {
                     first_arg_io_path = true;
-                    if let Some(path) = attributes.get("path").map(Value::to_string_value) {
+                    if let Some(path) = attributes.as_map().get("path").map(Value::to_string_value)
+                    {
                         positional.push(path);
                     } else {
                         positional.push(arg.to_string_value());
@@ -1265,8 +1268,7 @@ impl Interpreter {
     /// produces "exit code: -1, ... OS error = No such file or directory").
     fn attach_proc_os_error(proc: &mut Value, os_error: &str) {
         if let Value::Instance { attributes, .. } = proc {
-            let attrs = std::sync::Arc::make_mut(attributes);
-            attrs.insert("os-error".to_string(), Value::str(os_error.to_string()));
+            attributes.insert("os-error".to_string(), Value::str(os_error.to_string()));
         }
     }
 
@@ -1394,7 +1396,7 @@ impl Interpreter {
         let proc_value = self.builtin_shell(&shell_args)?;
 
         if let Value::Instance { attributes, .. } = proc_value {
-            if let Some(err_pipe) = attributes.get("err") {
+            if let Some(err_pipe) = attributes.as_map().get("err") {
                 let stderr = self.call_method_with_values(err_pipe.clone(), "slurp", vec![])?;
                 let stderr_text = stderr.to_string_value();
                 if !stderr_text.is_empty() {
@@ -1402,7 +1404,7 @@ impl Interpreter {
                     let _ = std::io::Write::flush(&mut std::io::stderr());
                 }
             }
-            if let Some(out_pipe) = attributes.get("out") {
+            if let Some(out_pipe) = attributes.as_map().get("out") {
                 return self.call_method_with_values(out_pipe.clone(), "slurp", vec![]);
             }
         }
@@ -1524,6 +1526,7 @@ impl Interpreter {
             }) if class_name.resolve() == "Instant" => {
                 // Instant stores TAI time; convert back to POSIX
                 attributes
+                    .as_map()
                     .get("value")
                     .and_then(super::to_float_value)
                     .map(crate::builtins::methods_0arg::temporal::instant_to_posix)
@@ -1536,7 +1539,7 @@ impl Interpreter {
                 // Compute posix from DateTime attributes
                 use crate::builtins::methods_0arg::temporal::{datetime_attrs, datetime_to_posix};
                 let (year, month, day, hour, minute, second, timezone) =
-                    datetime_attrs((attributes).as_map());
+                    datetime_attrs(&(attributes).as_map());
                 Some(datetime_to_posix(
                     year, month, day, hour, minute, second, timezone,
                 ))
@@ -1649,7 +1652,11 @@ impl Interpreter {
                     attributes,
                     ..
                 } if class_name == "Promise" => {
-                    let result = attributes.get("result").cloned().unwrap_or(Value::Nil);
+                    let result = attributes
+                        .as_map()
+                        .get("result")
+                        .cloned()
+                        .unwrap_or(Value::Nil);
                     results.push(result);
                 }
                 Value::Array(elems, ..) => {
@@ -1672,8 +1679,11 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "Promise" => {
-                                let result =
-                                    attributes.get("result").cloned().unwrap_or(Value::Nil);
+                                let result = attributes
+                                    .as_map()
+                                    .get("result")
+                                    .cloned()
+                                    .unwrap_or(Value::Nil);
                                 results.push(result);
                             }
                             _ => results.push(elem.clone()),
@@ -1721,13 +1731,22 @@ impl Interpreter {
             && class_name == "IO::Socket::Async::StatusResult"
         {
             let status = attributes
+                .as_map()
                 .get("status")
                 .map(Value::to_string_value)
                 .unwrap_or_else(|| "Broken".to_string());
             if status == "Kept" {
-                return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
+                return Ok(attributes
+                    .as_map()
+                    .get("result")
+                    .cloned()
+                    .unwrap_or(Value::Nil));
             }
-            let cause = attributes.get("cause").cloned().unwrap_or(Value::Nil);
+            let cause = attributes
+                .as_map()
+                .get("cause")
+                .cloned()
+                .unwrap_or(Value::Nil);
             let message = cause.to_string_value();
             let mut err = RuntimeError::new(message.clone());
             if matches!(cause, Value::Instance { .. }) {

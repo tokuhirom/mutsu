@@ -144,7 +144,8 @@ fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamInfo>> {
     if class_name != "Signature" {
         return None;
     }
-    let params = attributes.get("params")?;
+    let map = attributes.as_map();
+    let params = map.get("params")?;
     let Value::Array(param_list, ..) = params else {
         return None;
     };
@@ -158,12 +159,12 @@ fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamInfo>> {
             });
             continue;
         };
-        let sigiled_name = match attributes.get("name") {
+        let sigiled_name = match attributes.as_map().get("name") {
             Some(Value::Str(name)) => name.to_string(),
             _ => String::new(),
         };
-        let is_named = matches!(attributes.get("named"), Some(Value::Bool(true)));
-        let named_keys = match attributes.get("named_names") {
+        let is_named = matches!(attributes.as_map().get("named"), Some(Value::Bool(true)));
+        let named_keys = match attributes.as_map().get("named_names") {
             Some(Value::Array(arr, ..)) => arr
                 .iter()
                 .filter_map(|v| match v {

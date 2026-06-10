@@ -8,10 +8,12 @@ impl Interpreter {
         attrs: &std::sync::Arc<crate::value::InstanceAttrs>,
     ) -> (String, String) {
         let path = attrs
+            .as_map()
             .get("path")
             .map(|v: &Value| v.to_string_value())
             .unwrap_or_default();
         let cwd = attrs
+            .as_map()
             .get("cwd")
             .map(|v: &Value| v.to_string_value())
             .unwrap_or_else(|| {
@@ -50,9 +52,9 @@ impl Interpreter {
                 },
             ) if left_class == "DateTime" && right_class == "Date" => {
                 let (y, m, d, _, _, _, _) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs((left_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(&(left_attrs).as_map());
                 let (ry, rm, rd) =
-                    crate::builtins::methods_0arg::temporal::date_attrs((right_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::date_attrs(&(right_attrs).as_map());
                 y == ry && m == rm && d == rd
             }
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
@@ -709,21 +711,22 @@ impl Interpreter {
                             ref mut attributes, ..
                         } = match_obj
                     {
-                        let attrs = std::sync::Arc::make_mut(attributes);
-                        if let Some(Value::Hash(named_hash)) = attrs.get_mut("named") {
-                            let named_hash = std::sync::Arc::make_mut(named_hash);
-                            for (hash_name, entries) in &captures.hash_captures {
-                                let mut hash_map: HashMap<String, Value> = HashMap::new();
-                                for (key, value) in entries {
-                                    let val = match value {
-                                        Some(v) => Value::str(v.clone()),
-                                        None => Value::Nil,
-                                    };
-                                    hash_map.insert(key.clone(), val);
+                        attributes.with_attr_mut("named", |named| {
+                            if let Value::Hash(named_hash) = named {
+                                let named_hash = std::sync::Arc::make_mut(named_hash);
+                                for (hash_name, entries) in &captures.hash_captures {
+                                    let mut hash_map: HashMap<String, Value> = HashMap::new();
+                                    for (key, value) in entries {
+                                        let val = match value {
+                                            Some(v) => Value::str(v.clone()),
+                                            None => Value::Nil,
+                                        };
+                                        hash_map.insert(key.clone(), val);
+                                    }
+                                    named_hash.insert(hash_name.clone(), Value::hash(hash_map));
                                 }
-                                named_hash.insert(hash_name.clone(), Value::hash(hash_map));
                             }
-                        }
+                        });
                     }
                     // If the original value is not a Str, store the original value
                     // as the `orig` attribute so .orig preserves the type
@@ -732,8 +735,7 @@ impl Interpreter {
                             ref mut attributes, ..
                         } = match_obj
                     {
-                        let attrs = std::sync::Arc::make_mut(attributes);
-                        attrs.insert("orig".to_string(), left.clone());
+                        attributes.insert("orig".to_string(), left.clone());
                     }
                     // If `make` was called in a code block, set the ast attribute
                     if let Some(made_val) = self.env.get("made").cloned()
@@ -741,12 +743,11 @@ impl Interpreter {
                             ref mut attributes, ..
                         } = match_obj
                     {
-                        let attrs = std::sync::Arc::make_mut(attributes);
-                        attrs.insert("ast".to_string(), made_val);
+                        attributes.insert("ast".to_string(), made_val);
                     }
                     // Upgrade positional capture env vars ($0, $1, ...) to Match objects
                     if let Value::Instance { ref attributes, .. } = match_obj
-                        && let Some(Value::Array(list, _)) = attributes.get("list")
+                        && let Some(Value::Array(list, _)) = attributes.as_map().get("list")
                     {
                         for (i, v) in list.iter().enumerate() {
                             self.env.insert(i.to_string(), v.clone());
@@ -755,7 +756,7 @@ impl Interpreter {
                     // Set named capture env vars from the match object's named hash
                     // so subcapture-aware Match objects are used (not plain strings)
                     if let Value::Instance { ref attributes, .. } = match_obj
-                        && let Some(Value::Hash(named_hash)) = attributes.get("named")
+                        && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
                     {
                         for (k, v) in named_hash.iter() {
                             self.env.insert(format!("<{}>", k), v.clone());
@@ -819,7 +820,7 @@ impl Interpreter {
                 ) =>
             {
                 let negated = matches!(val.as_ref(), Value::Bool(false));
-                let path_str = attributes.get("path").map(|v| v.to_string_value());
+                let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
                 if let Some(p) = path_str {
                     let path = std::path::Path::new(&p);
                     let result = match key.as_str() {
@@ -1512,7 +1513,7 @@ impl Interpreter {
                 },
                 _,
             ) if class_name == "X::AdHoc" => {
-                if let Some(payload) = attributes.get("payload") {
+                if let Some(payload) = attributes.as_map().get("payload") {
                     self.smart_match(payload, right)
                 } else {
                     false

@@ -146,6 +146,7 @@ impl RuntimeError {
     pub(crate) fn from_exception_value(ex: Value) -> Self {
         let msg = if let Value::Instance { attributes, .. } = &ex {
             attributes
+                .as_map()
                 .get("message")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| ex.to_string_value())
@@ -932,6 +933,7 @@ impl RuntimeError {
                 } => (
                     class_name.resolve(),
                     attributes
+                        .as_map()
                         .iter()
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),

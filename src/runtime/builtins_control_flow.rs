@@ -37,6 +37,7 @@ impl Interpreter {
 
         let msg = if let Value::Instance { attributes, .. } = value {
             attributes
+                .as_map()
                 .get("message")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| {
@@ -131,7 +132,7 @@ impl Interpreter {
                 ..
             } = &v
                 && class_name.resolve() == "Failure"
-                && let Some(exc) = attributes.get("exception").cloned()
+                && let Some(exc) = attributes.as_map().get("exception").cloned()
             {
                 return Err(self.runtime_error_from_die_value(&exc, "Failed", true));
             }

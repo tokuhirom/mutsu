@@ -176,7 +176,7 @@ fn instance_days(value: &Value) -> Option<i64> {
             class_name,
             attributes,
             ..
-        } if class_name == "Date" => match attributes.get("days") {
+        } if class_name == "Date" => match attributes.as_map().get("days") {
             Some(Value::Int(days)) => Some(*days),
             _ => None,
         },
@@ -190,7 +190,10 @@ fn instance_instant_value(value: &Value) -> Option<f64> {
             class_name,
             attributes,
             ..
-        } if class_name == "Instant" => attributes.get("value").and_then(runtime::to_float_value),
+        } if class_name == "Instant" => attributes
+            .as_map()
+            .get("value")
+            .and_then(runtime::to_float_value),
         _ => None,
     }
 }
@@ -200,7 +203,7 @@ fn instance_instant_raw(value: &Value) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "Instant" => attributes.get("value").cloned(),
+        } if class_name == "Instant" => attributes.as_map().get("value").cloned(),
         _ => None,
     }
 }
@@ -220,7 +223,10 @@ fn instance_duration_value(value: &Value) -> Option<f64> {
             class_name,
             attributes,
             ..
-        } if class_name == "Duration" => attributes.get("value").and_then(runtime::to_float_value),
+        } if class_name == "Duration" => attributes
+            .as_map()
+            .get("value")
+            .and_then(runtime::to_float_value),
         _ => None,
     }
 }
@@ -232,7 +238,7 @@ fn instance_duration_raw_value(value: &Value) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "Duration" => attributes.get("value").cloned(),
+        } if class_name == "Duration" => attributes.as_map().get("value").cloned(),
         _ => None,
     }
 }
@@ -298,7 +304,7 @@ fn instance_datetime_parts(value: &Value) -> Option<(i64, i64, i64, i64, i64, f6
                 && attributes.contains_key("timezone") =>
         {
             Some(crate::builtins::methods_0arg::temporal::datetime_attrs(
-                (attributes).as_map(),
+                &(attributes).as_map(),
             ))
         }
         _ => None,

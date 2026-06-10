@@ -103,7 +103,7 @@ impl Interpreter {
             ..
         } = value
             && (class_name == "IO::Handle" || class_name == "IO::Socket::INET")
-            && let Some(Value::Int(id)) = attributes.get("handle")
+            && let Some(Value::Int(id)) = attributes.as_map().get("handle")
             && *id >= 0
         {
             return Some(*id as usize);

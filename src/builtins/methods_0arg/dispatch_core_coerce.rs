@@ -22,7 +22,7 @@ pub(super) fn dispatch(
             } = target
                 && class_name == "Failure"
                 && !target.is_failure_handled()
-                && let Some(ex) = attributes.get("exception")
+                && let Some(ex) = attributes.as_map().get("exception")
             {
                 let msg = ex.to_string_value();
                 let mut err = crate::value::RuntimeError::new(msg);
@@ -288,7 +288,7 @@ pub(super) fn dispatch(
                 ..
             } if class_name == "Failure" => {
                 // Using a Failure in string context throws the wrapped exception.
-                if let Some(ex) = attributes.get("exception") {
+                if let Some(ex) = attributes.as_map().get("exception") {
                     Some(Err(RuntimeError::from_exception_value(ex.clone())))
                 } else {
                     Some(Err(RuntimeError::new("Failed")))
@@ -343,6 +343,7 @@ pub(super) fn dispatch(
                     ..
                 } if class_name == "Instant" || class_name == "Duration" => {
                     let numeric = attributes
+                        .as_map()
                         .get("value")
                         .and_then(|v| match v {
                             Value::Int(i) => Some(*i as f64),
@@ -422,7 +423,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                         Value::Int(bytes.len() as i64)
                     } else {
                         Value::Int(0)
@@ -508,6 +509,7 @@ pub(super) fn dispatch(
                     ..
                 } if class_name == "Instant" || class_name == "Duration" => {
                     let numeric = attributes
+                        .as_map()
                         .get("value")
                         .and_then(|v| match v {
                             Value::Int(i) => Some(*i as f64),
@@ -653,6 +655,7 @@ pub(super) fn dispatch(
                     ..
                 } if class_name == "Instant" || class_name == "Duration" => {
                     let numeric = attributes
+                        .as_map()
                         .get("value")
                         .and_then(|v| match v {
                             Value::Int(i) => Some(*i as f64),
@@ -688,7 +691,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                         Value::Int(bytes.len() as i64)
                     } else {
                         Value::Int(0)
@@ -699,7 +702,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if class_name == "Stash" => {
-                    let count = match attributes.get("symbols") {
+                    let count = match attributes.as_map().get("symbols") {
                         Some(Value::Hash(map)) => map.len() as i64,
                         _ => 0,
                     };
@@ -724,6 +727,7 @@ pub(super) fn dispatch(
                     ..
                 } if class_name == "Instant" || class_name == "Duration" => {
                     let bridged = attributes
+                        .as_map()
                         .get("value")
                         .and_then(|v| match v {
                             Value::Int(i) => Some(*i as f64),

@@ -189,10 +189,10 @@ impl Interpreter {
                         ..
                     } if class_name == "Supply" => {
                         // Find the supply channel
-                        let supply_id = self.resolve_supply_channel_id((attributes).as_map());
+                        let supply_id = self.resolve_supply_channel_id(&(attributes).as_map());
                         let is_lines =
-                            matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
-                        let head_limit = Self::extract_head_limit((attributes).as_map());
+                            matches!(attributes.as_map().get("is_lines"), Some(Value::Bool(true)));
+                        let head_limit = Self::extract_head_limit(&(attributes).as_map());
                         if let Some(sid) = supply_id
                             && let Some(rx) = take_supply_channel(sid)
                         {
@@ -210,7 +210,7 @@ impl Interpreter {
                                 supplier_next_index: 0,
                                 callback,
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
-                                    (attributes).as_map(),
+                                    &(attributes).as_map(),
                                 ),
                                 last_callbacks,
                                 quit_callbacks,
@@ -224,7 +224,9 @@ impl Interpreter {
                             });
                             continue;
                         }
-                        if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                        if let Some(Value::Int(supplier_id)) =
+                            attributes.as_map().get("supplier_id")
+                        {
                             let last_callbacks = items
                                 .get(2)
                                 .and_then(Self::value_array_items)
@@ -239,7 +241,7 @@ impl Interpreter {
                                 supplier_next_index: 0,
                                 callback,
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
-                                    (attributes).as_map(),
+                                    &(attributes).as_map(),
                                 ),
                                 last_callbacks,
                                 quit_callbacks,
@@ -254,7 +256,7 @@ impl Interpreter {
                             continue;
                         }
                         // Handle on-demand supplies: execute the callback to produce values
-                        if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+                        if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
                             let mut emitter_attrs = HashMap::new();
                             emitter_attrs.insert("emitted".to_string(), Value::array(Vec::new()));
                             emitter_attrs.insert("done".to_string(), Value::Bool(false));
@@ -285,7 +287,7 @@ impl Interpreter {
                             }
                         } else {
                             // No channel, no on-demand - replay static values
-                            self.replay_static_supply((attributes).as_map(), &callback)?;
+                            self.replay_static_supply(&(attributes).as_map(), &callback)?;
                         }
                         // Fire LAST callbacks after static/on-demand supply completes
                         let last_cbs = items
@@ -731,14 +733,14 @@ impl Interpreter {
             } = &supply_val
                 && class_name == "Supply"
             {
-                if let Some(Value::Int(sid)) = attributes.get("supply_id") {
+                if let Some(Value::Int(sid)) = attributes.as_map().get("supply_id") {
                     crate::runtime::native_methods::register_supply_tap(
                         *sid as u64,
                         callback.clone(),
                     );
                 }
                 // Also register on parent for lines supplies
-                if let Some(Value::Int(pid)) = attributes.get("parent_supply_id") {
+                if let Some(Value::Int(pid)) = attributes.as_map().get("parent_supply_id") {
                     crate::runtime::native_methods::register_supply_tap(
                         *pid as u64,
                         callback.clone(),

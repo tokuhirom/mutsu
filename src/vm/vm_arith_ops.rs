@@ -681,7 +681,7 @@ impl VM {
 
     pub fn extract_buf_bytes(val: &Value) -> Vec<u8> {
         if let Value::Instance { attributes, .. } = val
-            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+            && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
         {
             return items
                 .iter()

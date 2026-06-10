@@ -28,7 +28,8 @@ pub(super) fn dispatch(
                     || cn.starts_with("blob")
             } =>
             {
-                let elems = if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                let elems = if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes")
+                {
                     bytes.len() as i64
                 } else {
                     0

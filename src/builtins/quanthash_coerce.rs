@@ -151,7 +151,7 @@ pub(crate) fn to_set(target: Value) -> Result<Value, RuntimeError> {
         }
         // Instance types composing Baggy: delegate to internal bag data
         Value::Instance { ref attributes, .. } if attributes.contains_key("__baggy_data__") => {
-            let bag_data = attributes.get("__baggy_data__").unwrap().clone();
+            let bag_data = attributes.as_map().get("__baggy_data__").unwrap().clone();
             return to_set(bag_data);
         }
         other if other.is_range() => {

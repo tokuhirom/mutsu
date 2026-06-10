@@ -38,11 +38,11 @@ fn rebless_datetime_result(
     if class_name != "DateTime" {
         return result;
     }
-    let mut merged = (**original_attrs).clone();
+    let merged = (**original_attrs).clone();
     for key in [
         "year", "month", "day", "hour", "minute", "second", "timezone",
     ] {
-        if let Some(value) = attributes.get(key) {
+        if let Some(value) = attributes.as_map().get(key) {
             merged.insert(key.to_string(), value.clone());
         }
     }
@@ -78,9 +78,9 @@ fn rebless_date_result(
     if class_name != "Date" {
         return result;
     }
-    let mut merged = (**original_attrs).clone();
+    let merged = (**original_attrs).clone();
     for key in ["year", "month", "day"] {
-        if let Some(value) = attributes.get(key) {
+        if let Some(value) = attributes.as_map().get(key) {
             merged.insert(key.to_string(), value.clone());
         }
     }
@@ -109,14 +109,14 @@ pub(super) fn dispatch_temporal_method(
             attributes,
             ..
         } if has_date_attrs(attributes) && !has_datetime_attrs(attributes) => {
-            let (year, month, day) = temporal::date_attrs((attributes).as_map());
+            let (year, month, day) = temporal::date_attrs(&(attributes).as_map());
             match method {
                 "later" | "earlier" => Some(
                     date_later_earlier(year, month, day, args, method)
                         .map(|v| rebless_date_result(v, *class_name, attributes)),
                 ),
                 "clone" => {
-                    let existing_formatter = attributes.get("formatter").cloned();
+                    let existing_formatter = attributes.as_map().get("formatter").cloned();
                     Some(
                         date_clone(year, month, day, existing_formatter, args)
                             .map(|v| rebless_date_result(v, *class_name, attributes)),
@@ -136,14 +136,14 @@ pub(super) fn dispatch_temporal_method(
                     }
                 }
                 "first-date-in-month" if args.is_empty() => {
-                    let formatter = attributes.get("formatter").cloned();
+                    let formatter = attributes.as_map().get("formatter").cloned();
                     Some(Ok(temporal::make_date_with_formatter(
                         year, month, 1, formatter,
                     )))
                 }
                 "last-date-in-month" if args.is_empty() => {
                     let last_day = temporal::days_in_month(year, month);
-                    let formatter = attributes.get("formatter").cloned();
+                    let formatter = attributes.as_map().get("formatter").cloned();
                     Some(Ok(temporal::make_date_with_formatter(
                         year, month, last_day, formatter,
                     )))
@@ -157,7 +157,7 @@ pub(super) fn dispatch_temporal_method(
             ..
         } if has_datetime_attrs(attributes) => {
             let (year, month, day, hour, minute, second, timezone) =
-                temporal::datetime_attrs((attributes).as_map());
+                temporal::datetime_attrs(&(attributes).as_map());
             match method {
                 "later" | "earlier" => Some(
                     datetime_later_earlier(

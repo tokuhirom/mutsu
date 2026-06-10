@@ -651,7 +651,7 @@ pub(crate) fn native_method_1arg(
     let target = target.descalarize();
     // Instance with __baggy_data__: delegate to the inner Bag/Set for collection methods
     if let Value::Instance { attributes, .. } = target
-        && let Some(inner) = attributes.get("__baggy_data__")
+        && let Some(inner) = attributes.as_map().get("__baggy_data__")
         && !matches!(
             method,
             "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
@@ -1055,7 +1055,8 @@ pub(crate) fn native_method_1arg(
                         attributes,
                         ..
                     } if class_name == "Match" => {
-                        if let Some(Value::Array(positional, ..)) = attributes.get("list") {
+                        if let Some(Value::Array(positional, ..)) = attributes.as_map().get("list")
+                        {
                             return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::Nil)));
                         }
                         Some(Ok(Value::Nil))
@@ -1065,7 +1066,7 @@ pub(crate) fn native_method_1arg(
                         attributes,
                         ..
                     } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                        if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                             return Some(Ok(bytes.get(idx).cloned().unwrap_or(Value::Int(0))));
                         }
                         Some(Ok(Value::Int(0)))
@@ -1617,7 +1618,7 @@ pub(crate) fn native_method_1arg(
                     Ok(r) => r,
                     Err(_) => return Some(Ok(out_of_range_failure("base requires radix 2..36"))),
                 };
-                if let Some(val) = attributes.get("value") {
+                if let Some(val) = attributes.as_map().get("value") {
                     match val {
                         Value::Int(i) => {
                             Some(Ok(Value::str(rat_to_base(*i, 1, radix, BaseDigits::Auto))))
@@ -2505,7 +2506,7 @@ fn buf_class_name(val: &Value) -> String {
 
 fn buf_get_int_items(target: &Value) -> Option<Vec<Value>> {
     if let Value::Instance { attributes, .. } = target
-        && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
     {
         Some(items.to_vec())
     } else {
@@ -2617,7 +2618,7 @@ fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
         ..
     } = target
         && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
-        && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
     {
         return Some(
             items
@@ -2944,7 +2945,7 @@ pub(crate) fn native_method_2arg(
                     Some(Ok(Value::str(rat_to_base(*n, *d, radix, digits_mode))))
                 }
                 Value::Instance { attributes, .. } => {
-                    if let Some(val) = attributes.get("value") {
+                    if let Some(val) = attributes.as_map().get("value") {
                         match val {
                             Value::Int(i) => {
                                 Some(Ok(Value::str(rat_to_base(*i, 1, radix, digits_mode))))

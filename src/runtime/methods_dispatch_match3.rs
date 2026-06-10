@@ -298,7 +298,7 @@ impl Interpreter {
         } = target
             && class_name == "Supply"
         {
-            return Some(self.dispatch_supply_grab((attributes).as_map(), &args));
+            return Some(self.dispatch_supply_grab(&(attributes).as_map(), &args));
         }
         if let Value::Package(ref class_name) = target
             && class_name == "Supply"
@@ -490,7 +490,7 @@ impl Interpreter {
         } = target
             && class_name == "Supply"
         {
-            return self.dispatch_supply_skip((attributes).as_map(), &args);
+            return self.dispatch_supply_skip(&(attributes).as_map(), &args);
         }
         let items = crate::runtime::utils::value_to_list(&target);
         let n = if args.is_empty() {
@@ -602,7 +602,7 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "Stash" => {
-                let keys = match attributes.get("symbols") {
+                let keys = match attributes.as_map().get("symbols") {
                     Some(Value::Hash(map)) => {
                         map.keys().cloned().map(Value::str).collect::<Vec<Value>>()
                     }
@@ -692,7 +692,7 @@ impl Interpreter {
                 },
                 idx,
             ) if class_name == "Stash" => {
-                if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
+                if let Some(Value::Hash(symbols)) = attributes.as_map().get("symbols") {
                     let stash_lookup = |raw_key: &str| {
                         if let Some(value) = symbols.get(raw_key) {
                             return Some(value.clone());

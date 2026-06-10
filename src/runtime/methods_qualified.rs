@@ -120,6 +120,7 @@ impl Interpreter {
             for (attr_name, is_public, ..) in &class_attrs {
                 if *is_public && attr_name == actual_method {
                     return Some(Ok(attributes
+                        .as_map()
                         .get(actual_method)
                         .cloned()
                         .unwrap_or(Value::Nil)));

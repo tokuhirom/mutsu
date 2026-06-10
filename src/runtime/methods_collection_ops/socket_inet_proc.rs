@@ -255,45 +255,45 @@ impl Interpreter {
         &mut self,
         attributes: &Arc<crate::value::InstanceAttrs>,
     ) {
-        let mut stdout_taps = match attributes.get("stdout_taps") {
+        let mut stdout_taps = match attributes.as_map().get("stdout_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        let mut stderr_taps = match attributes.get("stderr_taps") {
+        let mut stderr_taps = match attributes.as_map().get("stderr_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        if let Some(Value::Int(sid)) = attributes.get("stdout_supply_id") {
+        if let Some(Value::Int(sid)) = attributes.as_map().get("stdout_supply_id") {
             let live = super::super::native_methods::get_supply_taps(*sid as u64);
             if !live.is_empty() {
                 stdout_taps = live;
             }
         }
-        if let Some(Value::Int(sid)) = attributes.get("stderr_supply_id") {
+        if let Some(Value::Int(sid)) = attributes.as_map().get("stderr_supply_id") {
             let live = super::super::native_methods::get_supply_taps(*sid as u64);
             if !live.is_empty() {
                 stderr_taps = live;
             }
         }
-        let collected_stdout = match attributes.get("collected_stdout") {
+        let collected_stdout = match attributes.as_map().get("collected_stdout") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        let collected_stderr = match attributes.get("collected_stderr") {
+        let collected_stderr = match attributes.as_map().get("collected_stderr") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        let mut supply_taps = match attributes.get("supply_taps") {
+        let mut supply_taps = match attributes.as_map().get("supply_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        if let Some(Value::Int(sid)) = attributes.get("supply_id") {
+        if let Some(Value::Int(sid)) = attributes.as_map().get("supply_id") {
             let live = super::super::native_methods::get_supply_taps(*sid as u64);
             if !live.is_empty() {
                 supply_taps = live;
             }
         }
-        let collected_merged = match attributes.get("collected_merged") {
+        let collected_merged = match attributes.as_map().get("collected_merged") {
             Some(Value::Str(s)) => s.to_string(),
             _ => format!("{}{}", collected_stdout, collected_stderr),
         };

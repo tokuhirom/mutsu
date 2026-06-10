@@ -289,7 +289,7 @@ impl VM {
         }) = stack.last_mut()
             && *class_name == "Failure"
         {
-            Arc::make_mut(attributes).insert("handled".to_string(), Value::Bool(true));
+            attributes.insert("handled".to_string(), Value::Bool(true));
             crate::value::mark_failure_handled(*id);
         }
     }
@@ -335,6 +335,7 @@ impl VM {
 
         let message = if let Value::Instance { attributes, .. } = &value {
             attributes
+                .as_map()
                 .get("message")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| {
@@ -1127,7 +1128,7 @@ impl VM {
                         }
                         let self_val = self.get_env_with_main_alias("self")?;
                         if let Value::Instance { attributes, .. } = &self_val {
-                            attributes.get(attr_name).cloned()
+                            attributes.as_map().get(attr_name).cloned()
                         } else {
                             None
                         }
@@ -1193,7 +1194,7 @@ impl VM {
                         }
                         let self_val = self.get_env_with_main_alias("self")?;
                         if let Value::Instance { attributes, .. } = &self_val {
-                            attributes.get(attr_name).cloned()
+                            attributes.as_map().get(attr_name).cloned()
                         } else {
                             None
                         }
@@ -2598,21 +2599,24 @@ impl VM {
                             } = &val
                                 && class_name.resolve() == "Proc"
                             {
-                                let exitcode = match attributes.get("exitcode") {
+                                let exitcode = match attributes.as_map().get("exitcode") {
                                     Some(Value::Int(i)) => *i,
                                     _ => 0,
                                 };
                                 // A still-"live" Proc (from `run(:in, ...)`)
                                 // carries a placeholder exitcode of -1 until it
                                 // is finalized; sinking it must not throw.
-                                let is_live =
-                                    matches!(attributes.get("live"), Some(Value::Bool(true)));
+                                let is_live = matches!(
+                                    attributes.as_map().get("live"),
+                                    Some(Value::Bool(true))
+                                );
                                 if exitcode != 0 && !is_live {
-                                    let signal = match attributes.get("signal") {
+                                    let signal = match attributes.as_map().get("signal") {
                                         Some(Value::Int(i)) => *i,
                                         _ => 0,
                                     };
                                     let command = attributes
+                                        .as_map()
                                         .get("command")
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
@@ -2620,6 +2624,7 @@ impl VM {
                                     // (exit code -1), rakudo reports the underlying
                                     // OS error in the message.
                                     let os_error = attributes
+                                        .as_map()
                                         .get("os-error")
                                         .map(|v| v.to_string_value())
                                         .filter(|s| !s.is_empty());
@@ -3295,17 +3300,12 @@ impl VM {
                 if let Some(ref mut exc_box) = err.exception
                     && let Value::Instance { attributes, .. } = exc_box.as_mut()
                 {
-                    let attrs = std::sync::Arc::make_mut(attributes);
-                    attrs.insert("backtrace".to_string(), backtrace_val);
+                    attributes.insert("backtrace".to_string(), backtrace_val);
                     if let Some(line) = current_line {
-                        attrs
-                            .entry("line".to_string())
-                            .or_insert(Value::Int(line as i64));
+                        attributes.insert_if_absent("line".to_string(), Value::Int(line as i64));
                     }
                     if let Some(ref file) = current_file {
-                        attrs
-                            .entry("file".to_string())
-                            .or_insert(Value::str_from(file));
+                        attributes.insert_if_absent("file".to_string(), Value::str_from(file));
                     }
                 }
                 return Err(err);
@@ -3321,7 +3321,7 @@ impl VM {
                 } = &val
                     && class_name.resolve() == "Failure"
                 {
-                    if let Some(exc) = attributes.get("exception") {
+                    if let Some(exc) = attributes.as_map().get("exception") {
                         exc.clone()
                     } else {
                         val
@@ -3339,17 +3339,12 @@ impl VM {
                 if let Some(ref mut exc_box) = err.exception
                     && let Value::Instance { attributes, .. } = exc_box.as_mut()
                 {
-                    let attrs = std::sync::Arc::make_mut(attributes);
-                    attrs.insert("backtrace".to_string(), backtrace_val);
+                    attributes.insert("backtrace".to_string(), backtrace_val);
                     if let Some(line) = current_line {
-                        attrs
-                            .entry("line".to_string())
-                            .or_insert(Value::Int(line as i64));
+                        attributes.insert_if_absent("line".to_string(), Value::Int(line as i64));
                     }
                     if let Some(ref file) = current_file {
-                        attrs
-                            .entry("file".to_string())
-                            .or_insert(Value::str_from(file));
+                        attributes.insert_if_absent("file".to_string(), Value::str_from(file));
                     }
                 }
                 return Err(err);

@@ -78,14 +78,22 @@ impl Interpreter {
                 ..
             } if class_name.resolve() == "CompUnit::DependencySpecification" => {
                 let sn = attributes
+                    .as_map()
                     .get("short-name")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let auth = attributes.get("auth-matcher").map(|v| v.to_string_value());
+                let auth = attributes
+                    .as_map()
+                    .get("auth-matcher")
+                    .map(|v| v.to_string_value());
                 let ver = attributes
+                    .as_map()
                     .get("version-matcher")
                     .map(|v| v.to_string_value());
-                let api = attributes.get("api-matcher").map(|v| v.to_string_value());
+                let api = attributes
+                    .as_map()
+                    .get("api-matcher")
+                    .map(|v| v.to_string_value());
                 (sn, auth, ver, api)
             }
             Value::Str(s) => (s.to_string(), None, None, None),
@@ -346,8 +354,13 @@ impl Interpreter {
         }
         let (meta, dist_prefix) = match dist {
             Value::Instance { attributes, .. } => {
-                let m = attributes.get("meta").cloned().unwrap_or(Value::Nil);
+                let m = attributes
+                    .as_map()
+                    .get("meta")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 let p = attributes
+                    .as_map()
                     .get("prefix")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
@@ -488,6 +501,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let dist_id = match dist {
             Value::Instance { attributes, .. } => attributes
+                .as_map()
                 .get("dist-id")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default(),
@@ -564,7 +578,9 @@ impl Interpreter {
     /// resolvable through `::('Name')`. Used by `GLOBALish.WHO.merge-symbols`.
     pub(crate) fn merge_global_symbols(&mut self, pkg: &Value) -> Value {
         let symbols = match pkg {
-            Value::Instance { attributes, .. } => attributes.get("globalish-symbols").cloned(),
+            Value::Instance { attributes, .. } => {
+                attributes.as_map().get("globalish-symbols").cloned()
+            }
             _ => pkg.hash_get_str("globalish-symbols"),
         };
         if let Some(Value::Array(syms, _)) = symbols {
@@ -601,9 +617,11 @@ impl Interpreter {
         };
         let dist_meta = |dist: &Value| -> Value {
             match dist {
-                Value::Instance { attributes, .. } => {
-                    attributes.get("meta").cloned().unwrap_or(Value::Nil)
-                }
+                Value::Instance { attributes, .. } => attributes
+                    .as_map()
+                    .get("meta")
+                    .cloned()
+                    .unwrap_or(Value::Nil),
                 _ => Value::Nil,
             }
         };

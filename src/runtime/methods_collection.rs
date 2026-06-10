@@ -226,7 +226,7 @@ impl Interpreter {
                 ..
             } if class_name == "Match" => {
                 // %($/) returns the named captures hash
-                if let Some(named) = attributes.get("named") {
+                if let Some(named) = attributes.as_map().get("named") {
                     Ok(named.clone())
                 } else {
                     Ok(Value::hash(HashMap::new()))

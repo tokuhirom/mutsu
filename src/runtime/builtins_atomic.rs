@@ -730,10 +730,17 @@ impl Interpreter {
             id,
         }) = self.env.get("self").cloned()
         {
-            let mut new_attrs = (*attributes).clone();
+            let new_attrs = (*attributes).clone();
             new_attrs.insert(attr_name.to_string(), new_val.clone());
+            // Build a *detached* instance (fresh, unregistered cell) for the
+            // cross-thread sync. Using the cell-reusing `make_instance_with_id`
+            // here would let concurrent CAS winners write the shared cell out of
+            // order (the writes happen outside the CAS critical section),
+            // dropping updates. The atomic source of truth is shared_vars; the
+            // parent picks this instance up via the `__mutsu_instance::` key
+            // after `await`.
             let updated_instance =
-                Value::make_instance_with_id(class_name, (new_attrs).to_map(), id);
+                Value::make_instance_detached(class_name, new_attrs.to_map(), id);
             self.env
                 .insert("self".to_string(), updated_instance.clone());
             self.env

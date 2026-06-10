@@ -218,7 +218,7 @@ impl Interpreter {
             ..
         } = target
             && class_name == "Stash"
-            && let Some(Value::Hash(symbols)) = attributes.get("symbols")
+            && let Some(Value::Hash(symbols)) = attributes.as_map().get("symbols")
         {
             let stash_exists = |idx: &Value| {
                 let key = idx.to_string_value();

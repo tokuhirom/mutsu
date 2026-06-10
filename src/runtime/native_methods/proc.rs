@@ -33,11 +33,11 @@ impl Interpreter {
         else {
             return Ok((Value::Bool(false), attributes));
         };
-        let new_pid = match new_attrs.get("pid") {
+        let new_pid = match new_attrs.as_map().get("pid") {
             Some(Value::Int(p)) => *p,
             _ => 0,
         };
-        let exitcode = match new_attrs.get("exitcode") {
+        let exitcode = match new_attrs.as_map().get("exitcode") {
             Some(Value::Int(c)) => *c,
             _ => -1,
         };
@@ -46,15 +46,15 @@ impl Interpreter {
         // previous pid in that case (matches rakudo's `.spawn` semantics).
         if new_pid != 0 {
             for key in ["pid", "command", "out", "err"] {
-                if let Some(v) = new_attrs.get(key) {
+                if let Some(v) = new_attrs.as_map().get(key) {
                     updated.insert(key.to_string(), v.clone());
                 }
             }
         }
-        if let Some(v) = new_attrs.get("exitcode") {
+        if let Some(v) = new_attrs.as_map().get("exitcode") {
             updated.insert("exitcode".to_string(), v.clone());
         }
-        if let Some(v) = new_attrs.get("signal") {
+        if let Some(v) = new_attrs.as_map().get("signal") {
             updated.insert("signal".to_string(), v.clone());
         }
         Ok((Value::Bool(exitcode == 0), updated))

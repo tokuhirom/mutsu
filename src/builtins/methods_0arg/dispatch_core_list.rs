@@ -26,7 +26,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                         Some(Ok(Value::Int(bytes.len() as i64 - 1)))
                     } else {
                         Some(Ok(Value::Int(-1)))
@@ -142,11 +142,12 @@ pub(super) fn dispatch(
                 attributes,
                 ..
             } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                let mut bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                    items.to_vec()
-                } else {
-                    Vec::new()
-                };
+                let mut bytes =
+                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                        items.to_vec()
+                    } else {
+                        Vec::new()
+                    };
                 bytes.reverse();
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));

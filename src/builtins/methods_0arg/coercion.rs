@@ -147,9 +147,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Pair" => {
-                Some(Ok(attributes.get("key").cloned().unwrap_or(Value::Nil)))
-            }
+            } if class_name == "Pair" => Some(Ok(attributes
+                .as_map()
+                .get("key")
+                .cloned()
+                .unwrap_or(Value::Nil))),
             Value::Bool(true) => Some(Ok(Value::str_from("True"))),
             Value::Bool(false) => Some(Ok(Value::str_from("False"))),
             _ => None,
@@ -161,12 +163,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 attributes,
                 ..
             } if class_name == "Pair" => {
-                if let (Some(Value::Hash(hash)), Some(Value::Str(key))) =
-                    (attributes.get("__mutsu_hash_ref"), attributes.get("key"))
-                {
+                if let (Some(Value::Hash(hash)), Some(Value::Str(key))) = (
+                    attributes.as_map().get("__mutsu_hash_ref"),
+                    attributes.as_map().get("key"),
+                ) {
                     Some(Ok(hash.get(key.as_str()).cloned().unwrap_or(Value::Nil)))
                 } else {
-                    Some(Ok(attributes.get("value").cloned().unwrap_or(Value::Nil)))
+                    Some(Ok(attributes
+                        .as_map()
+                        .get("value")
+                        .cloned()
+                        .unwrap_or(Value::Nil)))
                 }
             }
             Value::Bool(b) => Some(Ok(Value::Int(if *b { 1 } else { 0 }))),
@@ -230,7 +237,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     || cn.starts_with("blob")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     Some(Ok(Value::Array(
                         items.clone(),
                         crate::value::ArrayKind::List,
@@ -360,7 +367,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 attributes,
                 ..
             } if class_name == "Supply" => {
-                let items = match attributes.get("values") {
+                let items = match attributes.as_map().get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
@@ -415,7 +422,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     || cn.starts_with("blob")
             } =>
             {
-                let bytes = match attributes.get("bytes") {
+                let bytes = match attributes.as_map().get("bytes") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };

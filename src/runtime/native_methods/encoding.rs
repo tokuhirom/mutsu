@@ -21,7 +21,7 @@ fn extend_buffer_from_value(out: &mut Vec<u8>, v: &Value) {
             }
         }
         Value::Instance { attributes, .. } => {
-            if let Some(bytes_val) = attributes.get("bytes") {
+            if let Some(bytes_val) = attributes.as_map().get("bytes") {
                 extend_buffer_from_value(out, bytes_val);
             }
         }

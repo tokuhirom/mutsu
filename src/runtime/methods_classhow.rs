@@ -744,6 +744,7 @@ impl Interpreter {
                     && attr_class.resolve() == "Attribute"
                 {
                     let attr_name_raw = attr_attrs
+                        .as_map()
                         .get("name")
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
@@ -752,11 +753,16 @@ impl Interpreter {
                         .trim_start_matches(|c: char| "$.!@%&".contains(c))
                         .to_string();
                     let has_accessor = attr_attrs
+                        .as_map()
                         .get("has_accessor")
                         .map(|v| v.truthy())
                         .unwrap_or(false);
-                    let is_rw = attr_attrs.get("rw").map(|v| v.truthy()).unwrap_or(false);
-                    let type_constraint = attr_attrs.get("type").and_then(|v| match v {
+                    let is_rw = attr_attrs
+                        .as_map()
+                        .get("rw")
+                        .map(|v| v.truthy())
+                        .unwrap_or(false);
+                    let type_constraint = attr_attrs.as_map().get("type").and_then(|v| match v {
                         Value::Package(name) => Some(name.resolve()),
                         _ => None,
                     });
@@ -997,7 +1003,7 @@ impl Interpreter {
                 // Check for per-candidate language revision embedded as an
                 // attribute (set by ^candidates for role candidate instances).
                 if let Value::Instance { attributes, .. } = &args[0]
-                    && let Some(rev) = attributes.get("__mutsu_language_revision")
+                    && let Some(rev) = attributes.as_map().get("__mutsu_language_revision")
                 {
                     return Ok(rev.clone());
                 }
@@ -1733,6 +1739,7 @@ impl Interpreter {
             if !result.iter().any(|v| {
                 if let Value::Instance { attributes, .. } = v {
                     attributes
+                        .as_map()
                         .get("name")
                         .map(|n| n.to_string_value())
                         .as_deref()

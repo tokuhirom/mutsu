@@ -83,14 +83,15 @@ impl Interpreter {
                                 && let Value::Instance { attributes, .. } = exc_box.as_mut()
                             {
                                 let line = e.line.unwrap_or(1) as i64;
-                                let attrs = std::sync::Arc::make_mut(attributes);
-                                attrs.entry("line".to_string()).or_insert(Value::Int(line));
-                                attrs
-                                    .entry("filename".to_string())
-                                    .or_insert(Value::str("EVAL_0".to_string()));
-                                attrs
-                                    .entry("file".to_string())
-                                    .or_insert(Value::str("EVAL_0".to_string()));
+                                attributes.insert_if_absent("line".to_string(), Value::Int(line));
+                                attributes.insert_if_absent(
+                                    "filename".to_string(),
+                                    Value::str("EVAL_0".to_string()),
+                                );
+                                attributes.insert_if_absent(
+                                    "file".to_string(),
+                                    Value::str("EVAL_0".to_string()),
+                                );
                             }
                             Err(e)
                         }
@@ -253,7 +254,7 @@ impl Interpreter {
         for (attr_name, expected_val) in &named_checks {
             let actual_val = exception_val.as_ref().and_then(|ex| {
                 if let Value::Instance { attributes, .. } = ex {
-                    attributes.get(attr_name).cloned()
+                    attributes.as_map().get(attr_name).cloned()
                 } else {
                     None
                 }
@@ -431,14 +432,15 @@ impl Interpreter {
                                 && let Value::Instance { attributes, .. } = exc_box.as_mut()
                             {
                                 let line = e.line.unwrap_or(1) as i64;
-                                let attrs = std::sync::Arc::make_mut(attributes);
-                                attrs.entry("line".to_string()).or_insert(Value::Int(line));
-                                attrs
-                                    .entry("filename".to_string())
-                                    .or_insert(Value::str("EVAL_0".to_string()));
-                                attrs
-                                    .entry("file".to_string())
-                                    .or_insert(Value::str("EVAL_0".to_string()));
+                                attributes.insert_if_absent("line".to_string(), Value::Int(line));
+                                attributes.insert_if_absent(
+                                    "filename".to_string(),
+                                    Value::str("EVAL_0".to_string()),
+                                );
+                                attributes.insert_if_absent(
+                                    "file".to_string(),
+                                    Value::str("EVAL_0".to_string()),
+                                );
                             }
                             Err(e)
                         }

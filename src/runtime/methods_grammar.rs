@@ -237,7 +237,7 @@ impl Interpreter {
                 ..
             } = &match_obj
             {
-                let mut attrs = attributes.as_ref().clone();
+                let attrs = attributes.as_ref().clone();
                 if let Some(ast) = self.env.get("made").cloned() {
                     attrs.insert("ast".to_string(), ast);
                 }
@@ -257,7 +257,7 @@ impl Interpreter {
             };
             // Set named capture env vars from match object
             if let Value::Instance { attributes, .. } = &match_obj
-                && let Some(Value::Hash(named_hash)) = attributes.get("named")
+                && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
             {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());
@@ -277,7 +277,7 @@ impl Interpreter {
                     ..
                 } = &result
                 {
-                    let mut attrs = attributes.as_ref().clone();
+                    let attrs = attributes.as_ref().clone();
                     attrs.insert("actions".to_string(), actions.clone());
                     Value::make_instance_with_id(*class_name, (attrs).to_map(), *id)
                 } else {
@@ -317,7 +317,7 @@ impl Interpreter {
     /// Extract `action_name` from a Match object (set for aliased captures).
     fn get_action_name(match_obj: &Value) -> Option<String> {
         if let Value::Instance { attributes, .. } = match_obj
-            && let Some(Value::Str(action_name)) = attributes.get("action_name")
+            && let Some(Value::Str(action_name)) = attributes.as_map().get("action_name")
         {
             return Some(action_name.to_string());
         }
@@ -343,8 +343,8 @@ impl Interpreter {
         };
 
         // First, recursively process child named captures (bottom-up order)
-        let mut updated_attrs = attributes.clone();
-        if let Some(Value::Hash(named_hash)) = attributes.get("named") {
+        let updated_attrs = attributes.clone();
+        if let Some(Value::Hash(named_hash)) = attributes.as_map().get("named") {
             let mut updated_named = named_hash.as_ref().clone();
             let mut children: Vec<(String, Value)> = named_hash
                 .iter()
@@ -352,7 +352,7 @@ impl Interpreter {
                 .collect();
             children.sort_by_key(|(_, v)| {
                 if let Value::Instance { attributes, .. } = v
-                    && let Some(Value::Int(from)) = attributes.get("from")
+                    && let Some(Value::Int(from)) = attributes.as_map().get("from")
                 {
                     return *from;
                 }
@@ -398,7 +398,7 @@ impl Interpreter {
             self.env.remove_sym(*k);
         }
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
-        if let Some(Value::Hash(named_hash)) = updated_attrs.get("named") {
+        if let Some(Value::Hash(named_hash)) = updated_attrs.as_map().get("named") {
             for (k, v) in named_hash.iter() {
                 self.env.insert(format!("<{}>", k), v.clone());
             }
@@ -411,7 +411,7 @@ impl Interpreter {
             let key = i.to_string();
             saved_positional.push((i, self.env.remove(&key)));
         }
-        if let Some(Value::Array(pos_arr, _)) = updated_attrs.get("list") {
+        if let Some(Value::Array(pos_arr, _)) = updated_attrs.as_map().get("list") {
             for (i, v) in pos_arr.iter().enumerate() {
                 self.env.insert(i.to_string(), v.clone());
             }
@@ -422,17 +422,18 @@ impl Interpreter {
 
         // For protoregex :sym<> variants, try dispatching to the specific
         // action method (e.g., alt:sym<baz>) first.
-        let sym_method_name = if let Some(Value::Str(sym_val)) = updated_attrs.get("sym_variant") {
-            // Use «» delimiters when the sym value contains '<' or '>'
-            // to match method names stored with French-quote delimiters
-            if sym_val.contains('<') || sym_val.contains('>') {
-                Some(format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}"))
+        let sym_method_name =
+            if let Some(Value::Str(sym_val)) = updated_attrs.as_map().get("sym_variant") {
+                // Use «» delimiters when the sym value contains '<' or '>'
+                // to match method names stored with French-quote delimiters
+                if sym_val.contains('<') || sym_val.contains('>') {
+                    Some(format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}"))
+                } else {
+                    Some(format!("{rule_name}:sym<{sym_val}>"))
+                }
             } else {
-                Some(format!("{rule_name}:sym<{sym_val}>"))
-            }
-        } else {
-            None
-        };
+                None
+            };
         let method_result = if let Some(ref sym_name) = sym_method_name {
             let result =
                 self.call_method_with_values(actions.clone(), sym_name, vec![match_obj.clone()]);
@@ -523,10 +524,10 @@ impl Interpreter {
         // If make() was called (via action_made which persists across env restore),
         // update .ast on match
         let final_obj = if let Some(ast) = self.action_made.take() {
-            let mut attrs = updated_attrs;
+            let attrs = updated_attrs;
             attrs.insert("ast".to_string(), ast);
             // Preserve actions attribute if present
-            if let Some(act_val) = attributes.get("actions") {
+            if let Some(act_val) = attributes.as_map().get("actions") {
                 attrs.insert("actions".to_string(), act_val.clone());
             }
             Value::make_instance(class_name, (attrs).to_map())

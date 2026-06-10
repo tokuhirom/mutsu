@@ -1037,7 +1037,7 @@ fn native_function_2arg(
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Failure" => attributes.get("exception").cloned(),
+            } if class_name == "Failure" => attributes.as_map().get("exception").cloned(),
             Value::Mixin(inner, mixins) => {
                 if let Some(mixed) = mixins.get("Failure")
                     && let Some(ex) = failure_exception(mixed)

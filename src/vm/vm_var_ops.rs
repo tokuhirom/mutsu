@@ -378,6 +378,7 @@ impl VM {
     fn failure_to_error(exception: &Value) -> RuntimeError {
         let message = if let Value::Instance { attributes, .. } = exception {
             attributes
+                .as_map()
                 .get("message")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| "Died".to_string())
@@ -397,7 +398,7 @@ impl VM {
                 attributes,
                 ..
             } if class_name == "Failure" => {
-                if let Some(ex) = attributes.get("exception") {
+                if let Some(ex) = attributes.as_map().get("exception") {
                     return Err(Self::failure_to_error(ex));
                 }
             }

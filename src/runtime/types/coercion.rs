@@ -187,7 +187,7 @@ impl Interpreter {
                 .class_mro(&class_name.resolve())
                 .iter()
                 .any(|c| c == "Str")
-            && let Some(inner) = attributes.get("value").cloned()
+            && let Some(inner) = attributes.as_map().get("value").cloned()
             && !matches!(inner, Value::Nil)
             && let Ok(coerced) = self.try_coerce_value_with_method(target, inner)
             && self.type_matches_value(base_target, &coerced)

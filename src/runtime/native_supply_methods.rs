@@ -18,7 +18,7 @@ impl Interpreter {
             ..
         } = &done_cb
             && *class_name == "__WheneverDoneGroup"
-            && let Some(Value::Int(group_id)) = attributes.get("group_id")
+            && let Some(Value::Int(group_id)) = attributes.as_map().get("group_id")
         {
             if let Some(real_done_cb) = whenever_done_group_decrement(*group_id as u64) {
                 let _ = self.call_sub_value(real_done_cb, vec![], true);
@@ -630,7 +630,8 @@ impl Interpreter {
                                 attributes: inner_attrs,
                                 ..
                             } = inner_supply
-                                && let Some(Value::Int(sid)) = inner_attrs.get("supplier_id")
+                                && let Some(Value::Int(sid)) =
+                                    inner_attrs.as_map().get("supplier_id")
                             {
                                 let supplier_id = *sid as u64;
                                 // Register the body callback as a tap on the
@@ -665,14 +666,12 @@ impl Interpreter {
                             } else {
                                 // Non-supplier supply: run body_cb for each
                                 // value synchronously (cold supply path).
-                                let empty_attrs = HashMap::new();
-                                let inner_attrs_ref =
+                                let inner_vals =
                                     if let Value::Instance { attributes: a, .. } = inner_supply {
-                                        a.as_map()
+                                        self.supply_list_values(&a.as_map(), true)?
                                     } else {
-                                        &empty_attrs
+                                        self.supply_list_values(&HashMap::new(), true)?
                                     };
-                                let inner_vals = self.supply_list_values(inner_attrs_ref, true)?;
                                 for v in inner_vals {
                                     match self.call_sub_value(body_cb.clone(), vec![v], true) {
                                         Ok(_) => {}
@@ -927,7 +926,7 @@ impl Interpreter {
                 }
                 for arg in &args {
                     if let Value::Instance { attributes, .. } = arg
-                        && let Some(Value::Array(items, ..)) = attributes.get("values")
+                        && let Some(Value::Array(items, ..)) = attributes.as_map().get("values")
                     {
                         all_values.extend(items.iter().cloned());
                     }
@@ -1359,7 +1358,7 @@ impl Interpreter {
                 let any_live = self_is_live
                     || other_supplies.iter().any(|s| {
                         if let Value::Instance { attributes, .. } = s {
-                            supplier_id_from_attrs((attributes).as_map()).is_some()
+                            supplier_id_from_attrs(&(attributes).as_map()).is_some()
                                 || attributes.contains_key("supply_id")
                         } else {
                             false
@@ -1392,11 +1391,13 @@ impl Interpreter {
                             Static(Vec<Value>),
                         }
 
-                        // Collect all sources (self + others)
-                        let mut all_supplies: Vec<&HashMap<String, Value>> = vec![attributes];
+                        // Collect all sources (self + others). Own each map so we
+                        // don't hold attribute read guards across the loop below.
+                        let mut all_supplies: Vec<HashMap<String, Value>> =
+                            vec![attributes.clone()];
                         for supply in &other_supplies {
                             if let Value::Instance { attributes: a, .. } = supply {
-                                all_supplies.push((a).as_map());
+                                all_supplies.push(a.to_map());
                             }
                         }
 
@@ -1506,7 +1507,7 @@ impl Interpreter {
                             } = supply
                             {
                                 let source_index = i + 1;
-                                if let Some(sid) = supplier_id_from_attrs((other_attrs).as_map()) {
+                                if let Some(sid) = supplier_id_from_attrs(&(other_attrs).as_map()) {
                                     register_supplier_zip_latest_tap(
                                         sid,
                                         zip_latest_state_id,
@@ -1528,7 +1529,7 @@ impl Interpreter {
                             } = supply
                             {
                                 let source_index = i + 1;
-                                if let Some(sid) = supplier_id_from_attrs((other_attrs).as_map()) {
+                                if let Some(sid) = supplier_id_from_attrs(&(other_attrs).as_map()) {
                                     register_supplier_zip_tap(sid, zip_state_id, source_index);
                                 }
                             }
@@ -1556,7 +1557,7 @@ impl Interpreter {
                         } = arg
                             && class_name == "Supply"
                         {
-                            other_values.push(self.supply_get_values((attributes).as_map())?);
+                            other_values.push(self.supply_get_values(&(attributes).as_map())?);
                         }
                     }
                     let min_len = std::iter::once(source_values.len())
@@ -2598,7 +2599,8 @@ impl Interpreter {
                                 attributes: inner_attrs,
                                 ..
                             } = inner_supply
-                                && let Some(Value::Int(sid)) = inner_attrs.get("supplier_id")
+                                && let Some(Value::Int(sid)) =
+                                    inner_attrs.as_map().get("supplier_id")
                             {
                                 let supplier_id = *sid as u64;
                                 register_supplier_tap(supplier_id, body_cb, 0.0);
@@ -2625,14 +2627,12 @@ impl Interpreter {
                                     register_supplier_done_callback(supplier_id, marker.clone());
                                 }
                             } else {
-                                let empty_attrs = HashMap::new();
-                                let inner_attrs_ref =
+                                let inner_vals =
                                     if let Value::Instance { attributes: a, .. } = inner_supply {
-                                        a.as_map()
+                                        self.supply_list_values(&a.as_map(), true)?
                                     } else {
-                                        &empty_attrs
+                                        self.supply_list_values(&HashMap::new(), true)?
                                     };
-                                let inner_vals = self.supply_list_values(inner_attrs_ref, true)?;
                                 for v in inner_vals {
                                     match self.call_sub_value(body_cb.clone(), vec![v], true) {
                                         Ok(_) => {}
@@ -3290,9 +3290,10 @@ impl Interpreter {
                 } = source
                 {
                     // Try to get channel via supply_id (or parent_supply_id for lines)
-                    let supply_id = inner_attrs
+                    let inner_map = inner_attrs.as_map();
+                    let supply_id = inner_map
                         .get("parent_supply_id")
-                        .or_else(|| inner_attrs.get("supply_id"))
+                        .or_else(|| inner_map.get("supply_id"))
                         .and_then(|v| {
                             if let Value::Int(id) = v {
                                 Some(*id as u64)
@@ -3393,14 +3394,14 @@ impl Interpreter {
         }
         let control_supplier_id = Self::named_value(&args, "control").and_then(|v| {
             if let Value::Instance { attributes, .. } = &v {
-                supplier_id_from_attrs((attributes).as_map())
+                supplier_id_from_attrs(&(attributes).as_map())
             } else {
                 None
             }
         });
         let status_supplier_id = Self::named_value(&args, "status").and_then(|v| {
             if let Value::Instance { attributes, .. } = &v {
-                supplier_id_from_attrs((attributes).as_map())
+                supplier_id_from_attrs(&(attributes).as_map())
             } else {
                 None
             }
@@ -3603,7 +3604,7 @@ impl Interpreter {
         } = &target
             && class_name == "Supply"
         {
-            self.native_supply((attributes).as_map(), method, args.to_vec())
+            self.native_supply(&(attributes).as_map(), method, args.to_vec())
         } else {
             Err(RuntimeError::new(format!(
                 "Cannot call .{} on non-Supply",

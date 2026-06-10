@@ -100,7 +100,7 @@ impl Interpreter {
                 // In Raku, `$obj!Owner::attr` accesses the private attribute `$!attr`
                 // directly when no explicit private method is defined.
                 if args.is_empty()
-                    && let Some(val) = attributes.get(pm_name)
+                    && let Some(val) = attributes.as_map().get(pm_name)
                 {
                     return Ok(val.clone());
                 }
@@ -112,7 +112,7 @@ impl Interpreter {
             }
 
             if class_name == "IterationBuffer" {
-                let mut items = match attributes.get("__mutsu_iterationbuffer_items") {
+                let mut items = match attributes.as_map().get("__mutsu_iterationbuffer_items") {
                     Some(Value::Array(values, ..))
                     | Some(Value::Seq(values))
                     | Some(Value::Slip(values)) => values.to_vec(),
@@ -125,7 +125,7 @@ impl Interpreter {
                             attributes,
                             ..
                         } if class_name == "IterationBuffer" => {
-                            match attributes.get("__mutsu_iterationbuffer_items") {
+                            match attributes.as_map().get("__mutsu_iterationbuffer_items") {
                                 Some(Value::Array(values, ..))
                                 | Some(Value::Seq(values))
                                 | Some(Value::Slip(values)) => values.to_vec(),
@@ -211,13 +211,14 @@ impl Interpreter {
                         let build = args.first().cloned().ok_or_else(|| {
                             RuntimeError::new("Attribute.set_build expects a build callback")
                         })?;
-                        let owner = attributes
+                        let map = attributes.as_map();
+                        let owner = map
                             .get("__mutsu_attr_owner")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        let attr_name = attributes
+                        let attr_name = map
                             .get("__mutsu_attr_name")
-                            .or_else(|| attributes.get("name"))
+                            .or_else(|| map.get("name"))
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         if owner.is_empty() || attr_name.is_empty() {
@@ -231,35 +232,47 @@ impl Interpreter {
                         return Ok(target.clone());
                     }
                     "name" => {
-                        return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
+                        return Ok(attributes
+                            .as_map()
+                            .get("name")
+                            .cloned()
+                            .unwrap_or(Value::Nil));
                     }
                     "type" => {
                         return Ok(attributes
+                            .as_map()
                             .get("type")
                             .cloned()
                             .unwrap_or(Value::Package(crate::symbol::Symbol::intern("Mu"))));
                     }
                     "has_accessor" => {
                         return Ok(attributes
+                            .as_map()
                             .get("has_accessor")
                             .cloned()
                             .unwrap_or(Value::Bool(false)));
                     }
                     "rw" => {
                         return Ok(attributes
+                            .as_map()
                             .get("is_rw")
                             .cloned()
                             .unwrap_or(Value::Bool(false)));
                     }
                     "readonly" => {
-                        let is_rw = attributes.get("is_rw").map(|v| v.truthy()).unwrap_or(false);
+                        let is_rw = attributes
+                            .as_map()
+                            .get("is_rw")
+                            .map(|v| v.truthy())
+                            .unwrap_or(false);
                         return Ok(Value::Bool(!is_rw));
                     }
                     "build" => {
-                        if let Some(build_val) = attributes.get("build") {
+                        if let Some(build_val) = attributes.as_map().get("build") {
                             return Ok(build_val.clone());
                         }
                         if attributes
+                            .as_map()
                             .get("__mutsu_has_build")
                             .map(|v| v.truthy())
                             .unwrap_or(false)
@@ -273,6 +286,7 @@ impl Interpreter {
                             RuntimeError::new("Attribute.get_value expects an object argument")
                         })?;
                         let attr_name = attributes
+                            .as_map()
                             .get("__mutsu_attr_name")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
@@ -281,7 +295,11 @@ impl Interpreter {
                             ..
                         } = obj
                         {
-                            return Ok(obj_attrs.get(&attr_name).cloned().unwrap_or(Value::Nil));
+                            return Ok(obj_attrs
+                                .as_map()
+                                .get(&attr_name)
+                                .cloned()
+                                .unwrap_or(Value::Nil));
                         }
                         return Ok(Value::Nil);
                     }
@@ -293,6 +311,7 @@ impl Interpreter {
                         }
                         let new_val = args[1].clone();
                         let attr_name = attributes
+                            .as_map()
                             .get("__mutsu_attr_name")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
@@ -302,7 +321,7 @@ impl Interpreter {
                             id: obj_id,
                         } = &args[0]
                         {
-                            let mut updated = (**obj_attrs).clone();
+                            let updated = (**obj_attrs).clone();
                             updated.insert(attr_name, new_val);
                             self.overwrite_instance_bindings_by_identity(
                                 &obj_class.resolve(),
@@ -314,6 +333,7 @@ impl Interpreter {
                     }
                     "gist" | "Str" => {
                         let type_name = attributes
+                            .as_map()
                             .get("type")
                             .map(|v| match v {
                                 Value::Package(name) => name.resolve(),
@@ -321,6 +341,7 @@ impl Interpreter {
                             })
                             .unwrap_or_else(|| "Mu".to_string());
                         let name = attributes
+                            .as_map()
                             .get("name")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
@@ -331,6 +352,7 @@ impl Interpreter {
                     }
                     "raku" => {
                         let is_bootstrap = attributes
+                            .as_map()
                             .get("__mutsu_is_bootstrapattr")
                             .is_some_and(|v| v.truthy());
                         if is_bootstrap {
@@ -340,6 +362,7 @@ impl Interpreter {
                     }
                     "package" => {
                         let owner = attributes
+                            .as_map()
                             .get("__mutsu_attr_owner")
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "Any".to_string());
@@ -349,6 +372,7 @@ impl Interpreter {
                         // TODO: Return the actual container descriptor
                         // For now, return a basic array/hash container or Nil
                         let sigil = attributes
+                            .as_map()
                             .get("sigil")
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "$".to_string());
@@ -382,7 +406,7 @@ impl Interpreter {
             if class_name.resolve().starts_with("Distribution::")
                 && let Some(result) = self.dispatch_distribution_method(
                     &class_name.resolve(),
-                    (attributes).as_map(),
+                    &(attributes).as_map(),
                     method,
                     args.clone(),
                 )
@@ -391,7 +415,7 @@ impl Interpreter {
             }
             if class_name == "CompUnit::Repository::Installation"
                 && let Some(result) = self.dispatch_cur_installation_method(
-                    (attributes).as_map(),
+                    &(attributes).as_map(),
                     method,
                     args.clone(),
                 )
@@ -401,28 +425,39 @@ impl Interpreter {
             if class_name == "CompUnit::DependencySpecification" {
                 match method {
                     "short-name" => {
-                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                        return Ok(attributes
+                            .as_map()
+                            .get("short-name")
+                            .cloned()
+                            .unwrap_or(Value::Nil));
                     }
                     "auth-matcher" => {
                         return Ok(attributes
+                            .as_map()
                             .get("auth-matcher")
                             .cloned()
                             .unwrap_or(Value::Bool(true)));
                     }
                     "version-matcher" => {
                         return Ok(attributes
+                            .as_map()
                             .get("version-matcher")
                             .cloned()
                             .unwrap_or(Value::Bool(true)));
                     }
                     "api-matcher" => {
                         return Ok(attributes
+                            .as_map()
                             .get("api-matcher")
                             .cloned()
                             .unwrap_or(Value::Bool(true)));
                     }
                     "Str" | "gist" => {
-                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                        return Ok(attributes
+                            .as_map()
+                            .get("short-name")
+                            .cloned()
+                            .unwrap_or(Value::Nil));
                     }
                     _ => {}
                 }
@@ -431,6 +466,7 @@ impl Interpreter {
                 match method {
                     "candidates" => {
                         let prefix = attributes
+                            .as_map()
                             .get("prefix")
                             .map(Value::to_string_value)
                             .unwrap_or_default();
@@ -447,6 +483,7 @@ impl Interpreter {
                         };
                         let short_name_str = short_name.resolve();
                         let prefix = attributes
+                            .as_map()
                             .get("prefix")
                             .map(Value::to_string_value)
                             .unwrap_or_default();
@@ -479,6 +516,7 @@ impl Interpreter {
                             return Ok(Value::Nil);
                         };
                         let repo_precomp_enabled = attributes
+                            .as_map()
                             .get("__mutsu_precomp_enabled")
                             .is_none_or(Value::truthy);
                         // Load the module, using precompilation cache when available.
@@ -531,20 +569,32 @@ impl Interpreter {
             if class_name == "CompUnit" {
                 match method {
                     "short-name" => {
-                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                        return Ok(attributes
+                            .as_map()
+                            .get("short-name")
+                            .cloned()
+                            .unwrap_or(Value::Nil));
                     }
                     "name" => {
-                        return Ok(attributes.get("short-name").cloned().unwrap_or(Value::Nil));
+                        return Ok(attributes
+                            .as_map()
+                            .get("short-name")
+                            .cloned()
+                            .unwrap_or(Value::Nil));
                     }
                     "version" => {
-                        return Ok(attributes.get("version").cloned().unwrap_or(Value::Nil));
+                        return Ok(attributes
+                            .as_map()
+                            .get("version")
+                            .cloned()
+                            .unwrap_or(Value::Nil));
                     }
                     // Rakudo exposes a handle object that can answer .globalish-package.
                     // For mutsu, the handle carries the symbols this CompUnit loaded so
                     // they can later be merged into GLOBAL via `merge-symbols`.
                     "handle" => {
                         let mut handle_attrs = HashMap::new();
-                        if let Some(syms) = attributes.get("globalish-symbols") {
+                        if let Some(syms) = attributes.as_map().get("globalish-symbols") {
                             handle_attrs.insert("globalish-symbols".to_string(), syms.clone());
                         }
                         return Ok(Value::make_instance(
@@ -553,13 +603,16 @@ impl Interpreter {
                         ));
                     }
                     "globalish-package" => {
-                        return Ok(self.make_globalish_package(attributes.get("globalish-symbols")));
+                        return Ok(self
+                            .make_globalish_package(attributes.as_map().get("globalish-symbols")));
                     }
                     _ => {}
                 }
             }
             if class_name == "CompUnit::Handle" && method == "globalish-package" {
-                return Ok(self.make_globalish_package(attributes.get("globalish-symbols")));
+                return Ok(
+                    self.make_globalish_package(attributes.as_map().get("globalish-symbols"))
+                );
             }
             if class_name == "Stash" && method == "merge-symbols" {
                 let pkg = args.first().cloned().unwrap_or(Value::Nil);
@@ -612,7 +665,7 @@ impl Interpreter {
                 ) {
                     return self.call_native_instance_method(
                         &class_name.resolve(),
-                        (attributes).as_map(),
+                        &(attributes).as_map(),
                         method,
                         args,
                     );
@@ -621,7 +674,7 @@ impl Interpreter {
             if self.is_native_method(&class_name.resolve(), method) {
                 return self.call_native_instance_method(
                     &class_name.resolve(),
-                    (attributes).as_map(),
+                    &(attributes).as_map(),
                     method,
                     args,
                 );
@@ -651,13 +704,13 @@ impl Interpreter {
                     || class_name == "Exception"
                     || class_name.resolve().ends_with("Exception"))
             {
-                if let Some(msg) = attributes.get("message") {
+                if let Some(msg) = attributes.as_map().get("message") {
                     return Ok(Value::str(msg.to_string_value()));
                 }
                 if let Some(formatted) =
                     crate::builtins::exception_message::format_exception_message(
                         &class_name.resolve(),
-                        (attributes).as_map(),
+                        &(attributes).as_map(),
                     )
                 {
                     return Ok(Value::str(formatted));
@@ -671,6 +724,7 @@ impl Interpreter {
                     || *class_name == Symbol::intern("ValueObjAt")
                 {
                     let which = attributes
+                        .as_map()
                         .get("WHICH")
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
@@ -683,7 +737,7 @@ impl Interpreter {
                 // Collect public attributes for .raku representation
                 let class_key = class_name.resolve();
                 let public_attrs =
-                    self.collect_public_raku_attrs(&class_key, (attributes).as_map());
+                    self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
                 if public_attrs.is_empty() {
                     return Ok(Value::str(format!("{}.new", class_name)));
                 }
@@ -694,7 +748,11 @@ impl Interpreter {
                 )));
             }
             if method == "name" && args.is_empty() {
-                return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
+                return Ok(attributes
+                    .as_map()
+                    .get("name")
+                    .cloned()
+                    .unwrap_or(Value::Nil));
             }
             if method == "clone" {
                 let mut attrs: HashMap<String, Value> = attributes.to_map();
@@ -806,7 +864,7 @@ impl Interpreter {
                 let cn = class_name.resolve();
                 let class_attrs = self.collect_class_attributes(&cn);
                 if class_attrs.is_empty() {
-                    if let Some(val) = attributes.get(method) {
+                    if let Some(val) = attributes.as_map().get(method) {
                         // Check for deprecated attribute accessor
                         if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                             self.check_deprecation_for_method(method, &cn, &msg);
@@ -820,7 +878,11 @@ impl Interpreter {
                             if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                                 self.check_deprecation_for_method(method, &cn, &msg);
                             }
-                            let val = attributes.get(method).cloned().unwrap_or(Value::Nil);
+                            let val = attributes
+                                .as_map()
+                                .get(method)
+                                .cloned()
+                                .unwrap_or(Value::Nil);
                             // For typed @/% attributes, register type metadata on the
                             // returned value so push/insert type enforcement works.
                             if (*sigil == '@' || *sigil == '%')
@@ -854,7 +916,8 @@ impl Interpreter {
                         && variants.iter().any(|(vname, _)| vname == method)
                     {
                         // Get the stored enum value from the instance attribute
-                        let stored = attributes.get(enum_name);
+                        let map = attributes.as_map();
+                        let stored = map.get(enum_name);
                         if let Some(Value::Enum { key, .. }) = stored {
                             return Ok(Value::Bool(key.resolve() == method));
                         }
@@ -1191,16 +1254,23 @@ impl Interpreter {
                             let pattern = &attr_var[regex_idx + ":regex:".len()..];
                             let attr_key =
                                 real_attr.trim_start_matches('!').trim_start_matches('.');
-                            // Check if method name matches the regex pattern
-                            if let Ok(re) = fancy_regex::Regex::new(pattern)
-                                && re.is_match(method).unwrap_or(false)
-                                && let Some(delegate) = attributes.get(attr_key)
-                            {
-                                match self.call_method_with_values(
-                                    delegate.clone(),
-                                    method,
-                                    args.clone(),
-                                ) {
+                            // Check if method name matches the regex pattern. Clone
+                            // the delegate out *in its own statement* so the
+                            // attribute read guard is released before the
+                            // (re-entrant) method call below — a let-chain
+                            // condition keeps its temporaries (the guard) alive for
+                            // the whole `if` body, which would deadlock when the
+                            // callee writes back to this same instance's cell.
+                            let matches = fancy_regex::Regex::new(pattern)
+                                .map(|re| re.is_match(method).unwrap_or(false))
+                                .unwrap_or(false);
+                            let delegate = if matches {
+                                attributes.as_map().get(attr_key).cloned()
+                            } else {
+                                None
+                            };
+                            if let Some(delegate) = delegate {
+                                match self.call_method_with_values(delegate, method, args.clone()) {
                                     Ok(val) => return Ok(val),
                                     Err(_) => continue,
                                 }
@@ -1208,13 +1278,11 @@ impl Interpreter {
                             continue;
                         }
                         let attr_key = attr_var.trim_start_matches('!').trim_start_matches('.');
-                        if let Some(delegate) = attributes.get(attr_key) {
+                        // Clone out before calling (release the read guard first).
+                        let delegate = attributes.as_map().get(attr_key).cloned();
+                        if let Some(delegate) = delegate {
                             // Try calling the method on the delegate; if it succeeds, return
-                            match self.call_method_with_values(
-                                delegate.clone(),
-                                method,
-                                args.clone(),
-                            ) {
+                            match self.call_method_with_values(delegate, method, args.clone()) {
                                 Ok(val) => return Ok(val),
                                 Err(_) => continue, // delegate doesn't handle it either
                             }

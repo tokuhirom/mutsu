@@ -540,7 +540,7 @@ impl VM {
             } = &target
             && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
         {
-            let lock_id = match attributes.get("lock-id") {
+            let lock_id = match attributes.as_map().get("lock-id") {
                 Some(Value::Int(id)) if *id > 0 => *id as u64,
                 _ => {
                     return Err(RuntimeError::new(
@@ -693,7 +693,7 @@ impl VM {
                 id,
             } = target
             {
-                let mut attrs = crate::value::InstanceAttrs::clone(&attributes);
+                let attrs = crate::value::InstanceAttrs::clone(&attributes);
                 attrs.insert("ast".to_string(), value.clone());
                 let updated = Value::Instance {
                     class_name,
@@ -1291,6 +1291,7 @@ impl VM {
                             .any(|n| n == "Array")
                     {
                         let mut storage = attributes
+                            .as_map()
                             .get("__mutsu_array_storage")
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
@@ -1322,7 +1323,7 @@ impl VM {
                         }
                         self.interpreter.env_mut().remove("__mutsu_array_tmp");
                         // Update the instance with the new storage
-                        let mut new_attrs = crate::value::InstanceAttrs::clone(attributes);
+                        let new_attrs = crate::value::InstanceAttrs::clone(attributes);
                         new_attrs.insert("__mutsu_array_storage".to_string(), storage);
                         let updated_instance = Value::Instance {
                             class_name: *inst_class,
@@ -1665,7 +1666,7 @@ impl VM {
         }
         // Extract the current bytes (same clamping the interpreter uses).
         let mut bytes: Vec<u8> = Vec::new();
-        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
             bytes.reserve(items.len());
             for it in items.iter() {
                 bytes.push(match it {
@@ -1725,7 +1726,7 @@ impl VM {
         // Build updated attributes and write back by instance identity (so aliases
         // observing the same buf see the mutation), then refresh the receiver
         // binding to match the interpreter's `env.insert(target_var, ...)`.
-        let mut updated_attrs = attributes.as_ref().clone();
+        let updated_attrs = attributes.as_ref().clone();
         updated_attrs.insert(
             "bytes".to_string(),
             Value::array(

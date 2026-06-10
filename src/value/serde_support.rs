@@ -246,6 +246,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             id,
         } => {
             let ser_attrs: Result<HashMap<_, _>, _> = attributes
+                .as_map()
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
                 .collect();

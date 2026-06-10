@@ -631,7 +631,11 @@ impl Interpreter {
         };
 
         let attr_key = attr_name.clone();
-        let current = attributes.get(&attr_key).cloned().unwrap_or(Value::Nil);
+        let current = attributes
+            .as_map()
+            .get(&attr_key)
+            .cloned()
+            .unwrap_or(Value::Nil);
         let old_array_arc = match &current {
             Value::Array(arc, ..) => Some(arc.clone()),
             _ => None,

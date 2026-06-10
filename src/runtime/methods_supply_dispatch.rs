@@ -35,7 +35,7 @@ impl Interpreter {
         let mut all_values = Vec::new();
         for arg in args {
             if let Value::Instance { attributes, .. } = arg
-                && let Some(Value::Array(items, ..)) = attributes.get("values")
+                && let Some(Value::Array(items, ..)) = attributes.as_map().get("values")
             {
                 all_values.extend(items.iter().cloned());
             }
@@ -129,7 +129,7 @@ impl Interpreter {
         let mut supply_values: Vec<Vec<Value>> = Vec::new();
         for arg in &supplies {
             if let Value::Instance { attributes, .. } = arg {
-                let items = match attributes.get("values") {
+                let items = match attributes.as_map().get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
@@ -176,13 +176,13 @@ impl Interpreter {
 
         for supply in supplies {
             if let Value::Instance { attributes, .. } = supply {
-                if let Some(Value::Int(sid)) = attributes.get("supply_id")
+                if let Some(Value::Int(sid)) = attributes.as_map().get("supply_id")
                     && let Some(rx) = take_supply_channel(*sid as u64)
                 {
                     sources.push(SourceKind::Channel(rx));
                     continue;
                 }
-                let items = match attributes.get("values") {
+                let items = match attributes.as_map().get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
@@ -578,7 +578,7 @@ impl Interpreter {
                     Box::new(Value::array(init)),
                 ));
             }
-            self.native_supply((attributes).as_map(), "zip-latest", method_args)
+            self.native_supply(&(attributes).as_map(), "zip-latest", method_args)
         } else {
             Err(RuntimeError::new(
                 "Cannot call zip-latest on non-Supply".to_string(),

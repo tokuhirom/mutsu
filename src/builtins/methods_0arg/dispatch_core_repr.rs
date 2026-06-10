@@ -141,6 +141,7 @@ pub(super) fn dispatch(
         } if class_name == "Signature" => {
             let attr_key = if method == "gist" { "gist" } else { "raku" };
             Some(Ok(attributes
+                .as_map()
                 .get(attr_key)
                 .cloned()
                 .unwrap_or_else(|| Value::str(format!("{}()", class_name)))))
@@ -151,7 +152,7 @@ pub(super) fn dispatch(
             ..
         } if class_name == "Parameter" && (method == "raku" || method == "perl") => {
             Some(Ok(Value::str(crate::value::signature::parameter_to_raku(
-                (attributes).as_map(),
+                &(attributes).as_map(),
             ))))
         }
         Value::Instance {
@@ -160,6 +161,7 @@ pub(super) fn dispatch(
             ..
         } if class_name == "Failure" => {
             let msg = attributes
+                .as_map()
                 .get("exception")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| "Failed".to_string());
@@ -177,7 +179,7 @@ pub(super) fn dispatch(
             } else {
                 // Str, Numeric, Int, etc. -- using a Failure in a value
                 // context throws the wrapped exception.
-                if let Some(ex) = attributes.get("exception") {
+                if let Some(ex) = attributes.as_map().get("exception") {
                     Some(Err(RuntimeError::from_exception_value(ex.clone())))
                 } else {
                     Some(Err(RuntimeError::new(&msg)))
@@ -191,10 +193,12 @@ pub(super) fn dispatch(
         } if class_name == "CallFrame" => {
             if method == "gist" {
                 let file = attributes
+                    .as_map()
                     .get("file")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let line = attributes
+                    .as_map()
                     .get("line")
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "0".to_string());
@@ -202,10 +206,12 @@ pub(super) fn dispatch(
             } else {
                 // .raku: CallFrame.new(...)
                 let file = attributes
+                    .as_map()
                     .get("file")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let line = attributes
+                    .as_map()
                     .get("line")
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "0".to_string());
@@ -220,7 +226,7 @@ pub(super) fn dispatch(
             attributes,
             ..
         } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-            if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+            if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                 if method == "raku" || method == "perl" {
                     let elems: Vec<String> = bytes
                         .iter()
@@ -295,7 +301,11 @@ pub(super) fn dispatch(
             attributes,
             ..
         } if class_name == "Instant" && (method == "raku" || method == "perl") => {
-            let tai = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+            let tai = attributes
+                .as_map()
+                .get("value")
+                .map(|v| v.to_f64())
+                .unwrap_or(0.0);
             let posix = crate::builtins::methods_0arg::temporal::instant_to_posix(tai);
             Some(Ok(Value::str(format!(
                 "Instant.from-posix({})",
@@ -307,7 +317,11 @@ pub(super) fn dispatch(
             attributes,
             ..
         } if class_name == "Duration" && (method == "raku" || method == "perl") => {
-            let val = attributes.get("value").cloned().unwrap_or(Value::Num(0.0));
+            let val = attributes
+                .as_map()
+                .get("value")
+                .cloned()
+                .unwrap_or(Value::Num(0.0));
             Some(Ok(Value::str(format!(
                 "Duration.new({})",
                 format_temporal_num(val.to_f64())
@@ -428,7 +442,7 @@ pub(super) fn dispatch(
             ..
         } if class_name == "Stash" && (method == "gist" || method == "Str") => {
             // Stash.gist and Stash.Str return the package name
-            if let Some(Value::Str(name)) = attributes.get("name") {
+            if let Some(Value::Str(name)) = attributes.as_map().get("name") {
                 Some(Ok(Value::str(name.to_string())))
             } else {
                 Some(Ok(Value::str(String::new())))
@@ -519,7 +533,7 @@ pub(super) fn dispatch(
                         attributes,
                         ..
                     } if class_name == "Match" => {
-                        crate::runtime::utils::match_gist((attributes).as_map(), 0)
+                        crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
                     }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
@@ -577,7 +591,7 @@ pub(super) fn dispatch(
                         attributes,
                         ..
                     } if class_name == "Match" => {
-                        crate::runtime::utils::match_gist((attributes).as_map(), 0)
+                        crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
                     }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),

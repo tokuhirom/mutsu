@@ -760,7 +760,7 @@ impl Interpreter {
 
     fn extract_buf_bytes(val: &Value) -> Vec<u8> {
         if let Value::Instance { attributes, .. } = val
-            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+            && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
         {
             items
                 .iter()
@@ -1324,11 +1324,11 @@ impl Interpreter {
                     {
                         let (ly, lm, ld, lh, lmin, ls, ltz) =
                             crate::builtins::methods_0arg::temporal::datetime_attrs(
-                                (left_attrs).as_map(),
+                                &(left_attrs).as_map(),
                             );
                         let (ry, rm, rd, rh, rmin, rs, rtz) =
                             crate::builtins::methods_0arg::temporal::datetime_attrs(
-                                (right_attrs).as_map(),
+                                &(right_attrs).as_map(),
                             );
                         let left_instant =
                             crate::builtins::methods_0arg::temporal::datetime_to_instant_leap_aware(
@@ -1434,10 +1434,10 @@ impl Interpreter {
                 {
                     let (y, m, d, _, _, _, _) =
                         crate::builtins::methods_0arg::temporal::datetime_attrs(
-                            (dt_attrs).as_map(),
+                            &(dt_attrs).as_map(),
                         );
                     let (dy, dm, dd) =
-                        crate::builtins::methods_0arg::temporal::date_attrs((d_attrs).as_map());
+                        crate::builtins::methods_0arg::temporal::date_attrs(&(d_attrs).as_map());
                     return Ok(Value::Bool(y == dy && m == dm && d == dd));
                 }
                 // Basic smartmatch fallback: value equality

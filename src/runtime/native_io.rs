@@ -2231,6 +2231,7 @@ impl Interpreter {
                             attributes,
                             ..
                         } if class_name == "IO::Path" => attributes
+                            .as_map()
                             .get("path")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default(),
@@ -2251,6 +2252,7 @@ impl Interpreter {
                             attributes,
                             ..
                         } if class_name == "IO::Path" => attributes
+                            .as_map()
                             .get("path")
                             .map(|p| p.to_string_value())
                             .unwrap_or_default(),
@@ -3048,8 +3050,8 @@ impl Interpreter {
                                 ) =>
                                 {
                                     // Try "bytes" first (make_buf), then "data"
-                                    let bytes_arr =
-                                        attributes.get("bytes").or_else(|| attributes.get("data"));
+                                    let map = attributes.as_map();
+                                    let bytes_arr = map.get("bytes").or_else(|| map.get("data"));
                                     if let Some(Value::Array(bytes, _)) = bytes_arr {
                                         let data: Vec<u8> =
                                             bytes.iter().map(|v| v.to_f64() as u8).collect();

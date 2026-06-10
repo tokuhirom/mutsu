@@ -204,7 +204,7 @@ impl Interpreter {
             let method_args = std::iter::once(content_value)
                 .chain(args.iter().skip(2).cloned())
                 .collect();
-            return self.native_io_handle((attributes).as_map(), "spurt", method_args);
+            return self.native_io_handle(&(attributes).as_map(), "spurt", method_args);
         }
         let path = args
             .first()
@@ -396,11 +396,12 @@ impl Interpreter {
                 {
                     requested_opt = Some(
                         attributes
+                            .as_map()
                             .get("path")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default(),
                     );
-                    requested_cwd_opt = attributes.get("cwd").map(|v| v.to_string_value());
+                    requested_cwd_opt = attributes.as_map().get("cwd").map(|v| v.to_string_value());
                 } else {
                     requested_opt = Some(arg.to_string_value());
                 }
@@ -677,10 +678,11 @@ impl Interpreter {
             && class_name == "IO::Path"
         {
             requested = attributes
+                .as_map()
                 .get("path")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            requested_cwd_opt = attributes.get("cwd").map(|v| v.to_string_value());
+            requested_cwd_opt = attributes.as_map().get("cwd").map(|v| v.to_string_value());
         }
         check_null_in_path(&requested)?;
         let path_buf = if Path::new(&requested).is_absolute() {
@@ -754,10 +756,11 @@ impl Interpreter {
             && class_name == "IO::Path"
         {
             requested = attributes
+                .as_map()
                 .get("path")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            requested_cwd_opt = attributes.get("cwd").map(|v| v.to_string_value());
+            requested_cwd_opt = attributes.as_map().get("cwd").map(|v| v.to_string_value());
         }
         check_null_in_path(&requested)?;
         let path_buf = if Path::new(&requested).is_absolute() {

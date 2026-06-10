@@ -257,7 +257,7 @@ impl Interpreter {
                     ..
                 } if crate::runtime::utils::is_buf_like_class(&class_name.resolve()) => {
                     // Buf argument: decode as UTF-8
-                    if let Some(Value::Array(items, _)) = attributes.get("bytes") {
+                    if let Some(Value::Array(items, _)) = attributes.as_map().get("bytes") {
                         let bytes: Vec<u8> = items
                             .iter()
                             .map(|v| match v {

@@ -168,7 +168,7 @@ impl Interpreter {
             );
             // Set positional capture env vars ($0, $1, ...) from match object
             if let Value::Instance { ref attributes, .. } = match_obj
-                && let Some(Value::Array(list, _)) = attributes.get("list")
+                && let Some(Value::Array(list, _)) = attributes.as_map().get("list")
             {
                 for (i, v) in list.iter().enumerate() {
                     self.env.insert(i.to_string(), v.clone());
@@ -176,7 +176,7 @@ impl Interpreter {
             }
             // Set named capture env vars from match object
             if let Value::Instance { ref attributes, .. } = match_obj
-                && let Some(Value::Hash(named_hash)) = attributes.get("named")
+                && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
             {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());

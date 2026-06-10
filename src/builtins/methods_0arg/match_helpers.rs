@@ -63,7 +63,7 @@ fn value_raku_repr(val: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => match_raku_repr((attributes).as_map()),
+        } if class_name == "Match" => match_raku_repr(&(attributes).as_map()),
         Value::Array(items, ..) => {
             let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
             format!("[{}]", items_raku.join(", "))
@@ -78,7 +78,7 @@ fn value_raku_repr(val: &Value) -> String {
 /// Extract the `from` position from a Match object value.
 pub(super) fn match_value_from(val: &Value) -> i64 {
     if let Value::Instance { attributes, .. } = val
-        && let Some(Value::Int(n)) = attributes.get("from")
+        && let Some(Value::Int(n)) = attributes.as_map().get("from")
     {
         return *n;
     }
@@ -88,7 +88,7 @@ pub(super) fn match_value_from(val: &Value) -> i64 {
 /// Extract the `to` position from a Match object value.
 pub(super) fn match_value_to(val: &Value) -> i64 {
     if let Value::Instance { attributes, .. } = val
-        && let Some(Value::Int(n)) = attributes.get("to")
+        && let Some(Value::Int(n)) = attributes.as_map().get("to")
     {
         return *n;
     }

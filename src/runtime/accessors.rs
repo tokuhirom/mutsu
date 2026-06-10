@@ -131,6 +131,7 @@ impl Interpreter {
     fn failure_value_to_error(exception: &Value) -> RuntimeError {
         let message = if let Value::Instance { attributes, .. } = exception {
             attributes
+                .as_map()
                 .get("message")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| "Died".to_string())
@@ -160,7 +161,7 @@ impl Interpreter {
         if value.is_failure_handled() {
             return None;
         }
-        if let Some(exception) = attributes.get("exception") {
+        if let Some(exception) = attributes.as_map().get("exception") {
             return Some(Self::failure_value_to_error(exception));
         }
         Some(RuntimeError::new("Failed"))
@@ -192,7 +193,7 @@ impl Interpreter {
             ..
         } = value
             && class_name == "Failure"
-            && let Some(ex) = attributes.get("exception")
+            && let Some(ex) = attributes.as_map().get("exception")
         {
             return Self::failure_value_to_error(ex);
         }
@@ -986,6 +987,7 @@ impl Interpreter {
                 {
                     let msg = if let Value::Instance { attributes, .. } = &err_val {
                         attributes
+                            .as_map()
                             .get("message")
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "Cannot assign to readonly variable".to_string())
@@ -1552,7 +1554,8 @@ impl Interpreter {
         if class_name != "Stash" {
             return None;
         }
-        let Value::Hash(symbols) = attributes.get("symbols")? else {
+        let map = attributes.as_map();
+        let Value::Hash(symbols) = map.get("symbols")? else {
             return None;
         };
         if let Some(value) = symbols.get(key) {
@@ -2083,7 +2086,29 @@ impl Interpreter {
     /// Push a saved variable value for `let`/`temp` scope management.
     /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).
     pub(crate) fn let_saves_push(&mut self, name: String, value: Value, is_temp: bool) {
-        self.let_saves.push((name, value, is_temp));
+        // Take an independent snapshot: an instance value must be deep-copied so
+        // a later in-place mutation through its shared cell does not corrupt the
+        // saved-for-restore value (Phase 3, Stage 1).
+        self.let_saves
+            .push((name, value.into_temp_snapshot(), is_temp));
+    }
+
+    /// Restore one `let`/`temp` save. For an instance, write the saved
+    /// attributes back into the *live* shared cell (via cell reuse) so every
+    /// alias sees the restoration and object identity (id + cell) is preserved,
+    /// rather than rebinding the name to a detached copy.
+    fn restore_let_value(&mut self, name: String, restored: Value) {
+        if let Value::Instance {
+            class_name,
+            id,
+            attributes,
+        } = &restored
+        {
+            let inst = Value::make_instance_with_id(*class_name, attributes.to_map(), *id);
+            self.env.insert(name, inst);
+        } else {
+            self.env.insert(name, restored);
+        }
     }
 
     /// Current length of let_saves stack (used as a mark).
@@ -2106,7 +2131,7 @@ impl Interpreter {
         for i in (mark..self.let_saves.len()).rev() {
             let (name, old_val, _is_temp) = self.let_saves[i].clone();
             let restored = self.resolve_restore_value(&name, &old_val);
-            self.env.insert(name, restored);
+            self.restore_let_value(name, restored);
         }
         self.let_saves.truncate(mark);
     }
@@ -2128,7 +2153,7 @@ impl Interpreter {
             .collect();
         for (name, old_val) in restores {
             let restored = self.resolve_restore_value(&name, &old_val);
-            self.env.insert(name, restored);
+            self.restore_let_value(name, restored);
         }
         self.let_saves.truncate(mark);
     }
