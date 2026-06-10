@@ -1467,6 +1467,21 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // Phase 3 Stage 2: scalar attribute increments read-modify-write the cell.
+        let attr_name = Self::const_str(code, name_idx).to_string();
+        self.sync_attr_local_from_cell_by_name(code, &attr_name);
+        let r = self.exec_post_increment_op_inner(code, name_idx);
+        if r.is_ok() {
+            self.mirror_attr_local_to_cell_by_name(code, &attr_name);
+        }
+        r
+    }
+
+    fn exec_post_increment_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         // Lazily convert pending alias bind names into local_bind_pairs.
         self.resolve_pending_alias_binds(code);
         let name = Self::const_str(code, name_idx);
@@ -1613,6 +1628,21 @@ impl VM {
     }
 
     pub(super) fn exec_post_decrement_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        // Phase 3 Stage 2: scalar attribute decrements read-modify-write the cell.
+        let attr_name = Self::const_str(code, name_idx).to_string();
+        self.sync_attr_local_from_cell_by_name(code, &attr_name);
+        let r = self.exec_post_decrement_op_inner(code, name_idx);
+        if r.is_ok() {
+            self.mirror_attr_local_to_cell_by_name(code, &attr_name);
+        }
+        r
+    }
+
+    fn exec_post_decrement_op_inner(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
@@ -4119,6 +4149,176 @@ impl VM {
         Ok(())
     }
 
+    // --- Phase 3 Stage 2: scalar instance attributes as cell-direct (slice 1) ---
+    //
+    // For scalar attribute-twigil locals (`$!x` -> `!x`, `$.x` -> `.x`) the
+    // instance's shared attribute cell is the single source of truth. Reads come
+    // straight from the cell (so a mutation made in a nested method frame is
+    // visible to the caller — the cross-frame bug), and every write mirrors the
+    // local back into the cell. This lets the scalar writeback be dropped
+    // (`writeback_attributes*` skip scalar attrs). Array/hash attributes still
+    // use the materialize+writeback path for now (later slices).
+
+    /// If `name` is a scalar attribute-twigil local (`!x` or `.x`), return the
+    /// bare attribute name. Excludes special vars (`!`, `.`) and internal names.
+    pub(super) fn scalar_attr_twigil_base(name: &str) -> Option<&str> {
+        let bare = name.strip_prefix('!').or_else(|| name.strip_prefix('.'))?;
+        // Attribute names are ordinary identifiers (start alpha/underscore). This
+        // filters out `!=`, the bare `!`/`.` special vars, and `__mutsu_` keys
+        // (which never begin with `!`/`.` anyway).
+        let mut chars = bare.chars();
+        match chars.next() {
+            Some(c) if c.is_alphabetic() || c == '_' => Some(bare),
+            _ => None,
+        }
+    }
+
+    /// Resolve the cell key for a scalar attribute on the given instance,
+    /// preferring the method owner class's qualified private key when present
+    /// (Parent/Child same-named `$!priv` disambiguation), matching the order used
+    /// when method frames materialize attributes. Returns `None` when the
+    /// attribute does not exist in the cell (so non-attribute `.foo`/`!foo`
+    /// lvalues fall through to the normal local/env handling).
+    fn resolve_attr_cell_key(
+        &self,
+        name: &str,
+        attrs: &crate::value::InstanceAttrs,
+    ) -> Option<String> {
+        let bare = Self::scalar_attr_twigil_base(name)?;
+        let map = attrs.as_map();
+        if name.starts_with('!')
+            && let Some(owner) = self.interpreter.method_class_stack_top()
+        {
+            let qkey = format!("{}\0{}", owner, bare);
+            if map.contains_key(&qkey) {
+                return Some(qkey);
+            }
+        }
+        if map.contains_key(bare) {
+            Some(bare.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Read a scalar attribute straight from `self`'s shared cell. `Some` only
+    /// when `name` is a scalar attr-twigil, `self` is a concrete instance, and
+    /// the attribute exists in the cell.
+    pub(super) fn read_self_attr_cell(&self, name: &str) -> Option<Value> {
+        Self::scalar_attr_twigil_base(name)?;
+        let self_val = self.get_env_with_main_alias("self")?;
+        let Value::Instance { attributes, .. } = &self_val else {
+            return None;
+        };
+        let key = self.resolve_attr_cell_key(name, attributes)?;
+        attributes.as_map().get(&key).cloned()
+    }
+
+    /// Skip mirroring slot values that keep their legacy handling (`:=` bindings,
+    /// Proxy accessors, hash/array slot refs, deferred hash access).
+    fn is_non_mirrorable_attr_value(val: &Value) -> bool {
+        matches!(
+            val,
+            Value::ContainerRef(_)
+                | Value::Proxy { .. }
+                | Value::HashSlotRef { .. }
+                | Value::ArraySlotRef { .. }
+                | Value::DeferredHashAccess { .. }
+        )
+    }
+
+    /// Write `val` into `self`'s shared cell for the scalar attribute named
+    /// `name` (`!x`/`.x`), resolving the qualified private key when present.
+    /// No-op when `name` is not a scalar attr-twigil, `self` is not a concrete
+    /// instance, or the attribute does not exist on `self`.
+    fn write_self_attr_cell(&self, name: &str, val: Value) {
+        if Self::scalar_attr_twigil_base(name).is_none() {
+            return;
+        }
+        let Some(self_val) = self.get_env_with_main_alias("self") else {
+            return;
+        };
+        let Value::Instance { attributes, .. } = &self_val else {
+            return;
+        };
+        if let Some(key) = self.resolve_attr_cell_key(name, attributes) {
+            attributes.insert(key, val);
+        }
+    }
+
+    /// Mirror the current local slot value into `self`'s shared cell for a scalar
+    /// attribute, after the normal write logic has finalized the slot.
+    pub(super) fn mirror_attr_local_to_cell(&self, code: &CompiledCode, idx: usize) {
+        let Some(name) = code.locals.get(idx) else {
+            return;
+        };
+        if Self::scalar_attr_twigil_base(name).is_none()
+            || Self::is_non_mirrorable_attr_value(&self.locals[idx])
+        {
+            return;
+        }
+        self.write_self_attr_cell(&name.clone(), self.locals[idx].clone());
+    }
+
+    /// Mirror the finalized value of the variable named `name` into `self`'s
+    /// shared cell, for write ops that dispatch by name (e.g. the name-based
+    /// `AssignExpr`). Reads the value back from the local slot or env after the
+    /// op completed.
+    pub(super) fn mirror_attr_value_to_cell_by_name(&self, code: &CompiledCode, name: &str) {
+        if Self::scalar_attr_twigil_base(name).is_none() {
+            return;
+        }
+        let val = self
+            .find_local_slot(code, name)
+            .map(|slot| self.locals[slot].clone())
+            .or_else(|| self.get_env_with_main_alias(name));
+        let Some(val) = val else {
+            return;
+        };
+        if Self::is_non_mirrorable_attr_value(&val) {
+            return;
+        }
+        self.write_self_attr_cell(name, val);
+    }
+
+    /// Refresh the local slot from `self`'s cell before a read-modify-write on a
+    /// scalar attribute (increment/decrement), so the operation sees a mutation
+    /// made in a nested frame rather than the materialized snapshot.
+    fn sync_attr_local_from_cell(&mut self, code: &CompiledCode, idx: usize) {
+        if self.locals[idx].is_container_ref() {
+            return;
+        }
+        let Some(name) = code.locals.get(idx).cloned() else {
+            return;
+        };
+        if let Some(cell_val) = self.read_self_attr_cell(&name) {
+            self.locals[idx] = cell_val;
+        }
+    }
+
+    /// Name-based wrapper: refresh the slot named `name` from `self`'s cell before
+    /// a read-modify-write (used by the increment/decrement ops, which dispatch
+    /// by name rather than slot index).
+    pub(super) fn sync_attr_local_from_cell_by_name(&mut self, code: &CompiledCode, name: &str) {
+        if Self::scalar_attr_twigil_base(name).is_none() {
+            return;
+        }
+        if let Some(slot) = self.find_local_slot(code, name) {
+            self.sync_attr_local_from_cell(code, slot);
+        }
+    }
+
+    /// Name-based wrapper: mirror the slot named `name` into `self`'s cell after a
+    /// read-modify-write.
+    pub(super) fn mirror_attr_local_to_cell_by_name(&self, code: &CompiledCode, name: &str) {
+        if Self::scalar_attr_twigil_base(name).is_none() {
+            return;
+        }
+        if let Some(slot) = self.find_local_slot(code, name) {
+            self.mirror_attr_local_to_cell(code, slot);
+        }
+    }
+
     /// Like `exec_get_local_op` but does NOT resolve DeferredHashAccess/HashSlotRef.
     /// Pushes the raw local value, preserving container references for `=:=` checks.
     pub(super) fn exec_get_local_raw_op(&mut self, code: &CompiledCode, idx: u32) {
@@ -4213,6 +4413,18 @@ impl VM {
         {
             self.locals[idx] = Value::ContainerRef(arc);
         }
+        // Phase 3 Stage 2 (scalar slice): scalar instance attributes read straight
+        // from `self`'s shared cell, so a mutation made in a nested method frame
+        // is visible here. Gated on a non-container slot so `$!x := outer`
+        // bindings keep their ContainerRef handling. The cell lookup returns None
+        // for non-attribute names and when `self` is not an instance.
+        if !self.locals[idx].is_container_ref()
+            && let Some(cell_val) = self.read_self_attr_cell(&name)
+        {
+            self.locals[idx] = cell_val.clone();
+            self.stack.push(cell_val);
+            return Ok(());
+        }
         let val = self.locals[idx].clone();
         // Resolve DeferredHashAccess to its current value (Any if path doesn't exist)
         if let Value::DeferredHashAccess { .. } = &val {
@@ -4279,6 +4491,19 @@ impl VM {
     }
 
     pub(super) fn exec_set_local_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let r = self.exec_set_local_op_inner(code, idx);
+        // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
+        if r.is_ok() {
+            self.mirror_attr_local_to_cell(code, idx as usize);
+        }
+        r
+    }
+
+    fn exec_set_local_op_inner(
         &mut self,
         code: &CompiledCode,
         idx: u32,
@@ -5478,6 +5703,19 @@ impl VM {
     }
 
     pub(super) fn exec_assign_expr_local_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let r = self.exec_assign_expr_local_op_inner(code, idx);
+        // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
+        if r.is_ok() {
+            self.mirror_attr_local_to_cell(code, idx as usize);
+        }
+        r
+    }
+
+    fn exec_assign_expr_local_op_inner(
         &mut self,
         code: &CompiledCode,
         idx: u32,

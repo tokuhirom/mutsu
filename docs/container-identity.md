@@ -211,7 +211,25 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
         identity と alias 可視性を保つ）— これを怠ると `t/lvalue-method-rw.t` の temp 復元が壊れる（実際に踏んで修正）。
   - 検証: cross-frame note/closure mutation・alias 共有・`.clone` 独立・`===`/`.WHICH`/`eqv` identity・DESTROY(1回)・
         temp/let 復元 すべて raku 一致。clippy 緑。
-- [ ] **Stage 2 — cell を唯一の真実源に（keystone）＋ 伝播ハック全廃**: ユーザー判断 (2026-06-10) で**一括 PR**。
+- [ ] **Stage 2 — cell を唯一の真実源に（keystone）＋ 伝播ハック全廃**: ユーザー判断 (2026-06-10) で当初**一括 PR** 想定 →
+      **配列/ハッシュ属性の in-place 変異（`@!a.push`/`%!h<k>=`）の cell 書き戻し配線が別プロジェクト規模**と判明したため、
+      ユーザー再判断 (2026-06-10) で **sigil でスライス**（スカラー先行）に変更。
+  - [x] **Stage 2a — スカラー属性 (`$!x`/`$.x`) を cell 直結（landed: branch `phase3-stage2-scalar-cell`）**:
+        `Var("!x")`/`Var(".x")` の read を `self` の共有 cell 直読に（`read_self_attr_cell`、atomic/CAS チェックの後段＝CAS は
+        従来 `shared_vars` 維持で livelock 回避）。write 経路 — `exec_set_local_op`/`exec_assign_expr_local_op`（ラッパーで
+        `mirror_attr_local_to_cell`）、名前ベース `exec_assign_expr_op`（`$.x = v`/`$!x = v`、`mirror_attr_value_to_cell_by_name`）、
+        post/pre inc・dec（`sync_attr_local_from_cell_by_name` → 実行 → mirror）— を全て cell 書き込みに。**スカラー writeback
+        撤去**（`writeback_attributes*` を array/hash 専用化、`AttrSlots::private/public` 削除）。代わりに method exit の
+        live env/locals 段階で `reconcile_scalar_attrs`：「env/local が entry スナップショットから変化 → その値、不変 → live cell
+        値（cross-frame/cell-direct 変異を採用）」で attr マップを確定し make_instance_with_id へ。これが **attributive param
+        (`method m($!s)`)・no-twigil sigilless attr (`has $x`)・`is rw` accessor 書き込み**（cell 非経由で env を書く 3 経路）を
+        cell に届ける。**cross-frame スカラー変異バグ修正**（`self.bump` が caller の `$!x` に可視、11 vs 旧 10）。配列/ハッシュ属性・
+        CAS・registry/scan/detached/`instance_cells` は Stage 2b まで維持（まだ削除不可）。
+        検証: make test 全緑、S12-attributes/instance・native、S12-methods/{attribute-params,lastcall,defer-call,defer-next}・
+        S17-lowlevel/cas（whitelist）PASS。継承同名 private（Parent/Child `$!p`）は main と同挙動の pre-existing バグで非回帰。
+  - [ ] **Stage 2b — 配列/ハッシュ属性 (`@!a`/`%!h`) を cell 直結**: in-place 変異 op（push/pop/要素代入/`.=`）の cell 書き戻し配線。
+        これが入れば materialize の array/hash 挿入 + array/hash writeback + by-id scan + registry + detached を全廃できる。
+  - 旧「一括」設計（下記）は Stage 2a+2b に分割。以下は引き続き 2b の参照マップ。
 
   #### 現状メカニズム（CI 調査で確定したフルマップ）
   method frame は instance attr を **env/locals コピー**で持ち、cell は writeback でしか同期されない:
