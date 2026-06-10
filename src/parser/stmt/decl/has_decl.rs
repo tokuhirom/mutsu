@@ -179,6 +179,21 @@ pub(in crate::parser::stmt) fn scope_declaration_error(scope: &str, rest: &str) 
     None
 }
 
+/// If `tc` is a coercion type constraint (`Int()`, `Int(Str)`), return its
+/// target type name (`Int`). A parametric type such as `Positional[Int]` (which
+/// contains `[`) is not a coercion type.
+fn coercion_target_type(tc: &str) -> Option<&str> {
+    if tc.ends_with(')')
+        && !tc.contains('[')
+        && let Some(open) = tc.find('(')
+        && open > 0
+    {
+        Some(&tc[..open])
+    } else {
+        None
+    }
+}
+
 /// Parse `has` attribute declaration.
 pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
@@ -734,6 +749,12 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             default = Some(Expr::Var("?CLASS".to_string()));
         } else if tc == "::?ROLE" {
             default = Some(Expr::Var("?ROLE".to_string()));
+        } else if let Some(target) = coercion_target_type(tc) {
+            // A coercion type (`Int()`, `Int(Str)`): an uninitialized attribute
+            // defaults to the *target* type object (`Int`), not a bareword of the
+            // whole coercion spec. (The provided-value coercion happens at
+            // construction time.)
+            default = Some(Expr::BareWord(target.to_string()));
         } else {
             default = Some(match tc.as_str() {
                 "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
