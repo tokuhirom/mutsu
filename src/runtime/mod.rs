@@ -1178,7 +1178,14 @@ pub(crate) type RoutineRegistrySnapshot = (
     HashSet<Symbol>,
 );
 
-pub(crate) type ImportScopeSnapshot = (HashSet<Symbol>, HashSet<String>, NewlineMode, bool, bool);
+pub(crate) type ImportScopeSnapshot = (
+    HashSet<Symbol>,
+    HashSet<String>,
+    NewlineMode,
+    bool,
+    bool,
+    bool,
+);
 
 impl Default for Interpreter {
     fn default() -> Self {
@@ -3444,14 +3451,21 @@ impl Interpreter {
             self.newline_mode,
             self.strict_mode,
             self.fatal_mode,
+            self.monkey_typing,
         ));
     }
 
     /// Restore function/class registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {
-        if let Some((func_snapshot, class_snapshot, newline_mode, strict_mode, fatal_mode)) =
-            self.import_scope_stack.pop()
+        if let Some((
+            func_snapshot,
+            class_snapshot,
+            newline_mode,
+            strict_mode,
+            fatal_mode,
+            monkey_typing,
+        )) = self.import_scope_stack.pop()
         {
             self.registry_mut()
                 .functions
@@ -3462,6 +3476,7 @@ impl Interpreter {
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;
+            self.monkey_typing = monkey_typing;
         }
     }
 
