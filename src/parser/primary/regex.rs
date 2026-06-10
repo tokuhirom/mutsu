@@ -45,12 +45,16 @@ fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
     })
 }
 
-fn regex_adverb_error(adverb: &str, message: impl Into<String>) -> PError {
-    let err = RuntimeError::typed_msg("X::Syntax::Regex::Adverb", message);
-    let message = err.message;
-    let exception = err.exception.expect("typed regex adverb error");
-    let _ = adverb;
-    PError::fatal_with_exception(message, exception)
+fn regex_adverb_error(adverb: &str, construct: Option<&str>, message: impl Into<String>) -> PError {
+    let message = message.into();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("adverb".to_string(), Value::str(adverb.to_string()));
+    if let Some(c) = construct {
+        attrs.insert("construct".to_string(), Value::str(c.to_string()));
+    }
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Adverb"), attrs);
+    PError::fatal_with_exception(message, Box::new(ex))
 }
 
 /// Reject adverbs that make no sense on a substitution. `:overlap`/`:ov` and
@@ -60,13 +64,18 @@ fn regex_adverb_error(adverb: &str, message: impl Into<String>) -> PError {
 fn reject_subst_only_adverbs(adverbs: &MatchAdverbs) -> Result<(), PError> {
     if adverbs.overlap {
         return Err(regex_adverb_error(
-            "overlap",
+            adverbs.first_match_adverb.as_deref().unwrap_or("overlap"),
+            Some("substitution"),
             "Adverb overlap not allowed on substitution",
         ));
     }
     if adverbs.exhaustive {
         return Err(regex_adverb_error(
-            "exhaustive",
+            adverbs
+                .first_match_adverb
+                .as_deref()
+                .unwrap_or("exhaustive"),
+            Some("substitution"),
             "Adverb exhaustive not allowed on substitution",
         ));
     }
@@ -145,6 +154,10 @@ struct MatchAdverbs {
     pos: bool,
     continue_: bool,
     nth: Option<String>,
+    /// The first match-time adverb name as written by the user (`g`, `global`,
+    /// `ov`, `ex`, ...). Used to report X::Syntax::Regex::Adverb.adverb when a
+    /// match-time adverb appears where it is not allowed (rx// / substitution).
+    first_match_adverb: Option<String>,
 }
 
 fn is_regex_quote_open(ch: char) -> bool {
@@ -257,6 +270,26 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             return Err(PError::fatal_with_exception(message, Box::new(ex)));
         }
 
+        // Record the first match-time adverb (those not allowed on rx// or
+        // substitution) under its written name, for error reporting.
+        if adverbs.first_match_adverb.is_none()
+            && matches!(
+                name.as_str(),
+                "g" | "global"
+                    | "ex"
+                    | "exhaustive"
+                    | "ov"
+                    | "overlap"
+                    | "p"
+                    | "pos"
+                    | "c"
+                    | "continue"
+                    | "nth"
+                    | "x"
+            )
+        {
+            adverbs.first_match_adverb = Some(name.clone());
+        }
         if name == "g" || name == "global" {
             adverbs.global = true;
         } else if name == "ex" || name == "exhaustive" {
@@ -319,6 +352,7 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         } else {
             return Err(regex_adverb_error(
                 &name,
+                None,
                 format!("Unsupported regex adverb :{}", name),
             ));
         }
@@ -1156,7 +1190,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             || adverbs.continue_
         {
             return Err(regex_adverb_error(
-                "rx",
+                adverbs.first_match_adverb.as_deref().unwrap_or("g"),
+                Some("rx"),
                 "Match-time adverbs are not allowed on rx// regex literals",
             ));
         }
