@@ -1131,7 +1131,9 @@ fn collect_virtual_call_stmt(stmt: &Stmt, out: &mut Option<String>) {
         | Stmt::Fail(e)
         | Stmt::Take(e)
         | Stmt::Goto(e) => collect_virtual_call_expr(e, out),
-        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_virtual_call_expr(expr, out),
+        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+            collect_virtual_call_expr(expr, out)
+        }
         Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
             for e in es {
                 collect_virtual_call_expr(e, out);
