@@ -462,50 +462,87 @@ thread_local! {
     /// *cross-thread* contention (which must block and write — e.g. concurrent
     /// `cas` on a shared instance attribute). See [`write_cell_respecting_reads`].
     static HELD_READ_CELLS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+
+    /// Writes to instance cells that were deferred because this thread held a
+    /// read guard on the cell at write time (a self-deadlock hazard). Applied —
+    /// in order — when the last read guard on that cell is dropped. This keeps a
+    /// legacy write-back that runs inside an outstanding `as_map()` borrow (e.g.
+    /// the `$obj.attr = v` accessor, whose let-chain condition holds the guard
+    /// across the write-back) from either deadlocking *or* silently dropping a
+    /// real mutation.
+    static PENDING_CELL_WRITES: RefCell<Vec<PendingCellWrite>> = const { RefCell::new(Vec::new()) };
 }
+
+/// A deferred cell write: `(cell address, cell, new map)`. See
+/// [`PENDING_CELL_WRITES`].
+type PendingCellWrite = (usize, AttrCell, HashMap<String, Value>);
 
 fn cell_addr(cell: &RwLock<HashMap<String, Value>>) -> usize {
     cell as *const RwLock<HashMap<String, Value>> as usize
 }
 
-/// True if the current thread already holds a read guard on `cell`.
-fn this_thread_reads(cell: &RwLock<HashMap<String, Value>>) -> bool {
-    let addr = cell_addr(cell);
-    HELD_READ_CELLS.with(|c| c.borrow().contains(&addr))
-}
-
 /// A read guard over an instance's attribute map. Derefs to `&HashMap`, so the
 /// vast majority of read sites (`.get`, `.iter`, `.len`, `for (k, v) in ...`)
 /// and `&guard` argument coercions to `&HashMap` keep working unchanged. On
-/// construction it records the cell address in [`HELD_READ_CELLS`] and removes
-/// it on drop, so the writeback can avoid a self-deadlocking blocking write.
+/// construction it records the cell address in [`HELD_READ_CELLS`]; on drop it
+/// removes it and, when this was the last read guard on the cell, applies any
+/// write that was deferred while the cell was read-locked.
 pub(crate) struct AttrReadGuard<'a> {
-    guard: std::sync::RwLockReadGuard<'a, HashMap<String, Value>>,
+    // `Option` so `Drop` can release the read lock *before* flushing deferred
+    // writes — otherwise the flush's blocking write lock would deadlock against
+    // this guard's own still-held read lock (struct fields drop after `drop`).
+    guard: Option<std::sync::RwLockReadGuard<'a, HashMap<String, Value>>>,
     addr: usize,
 }
 
 impl<'a> AttrReadGuard<'a> {
     fn new(guard: std::sync::RwLockReadGuard<'a, HashMap<String, Value>>, addr: usize) -> Self {
         HELD_READ_CELLS.with(|c| c.borrow_mut().push(addr));
-        Self { guard, addr }
+        Self {
+            guard: Some(guard),
+            addr,
+        }
     }
 }
 
 impl std::ops::Deref for AttrReadGuard<'_> {
     type Target = HashMap<String, Value>;
     fn deref(&self) -> &Self::Target {
-        &self.guard
+        self.guard.as_ref().expect("attr read guard live")
     }
 }
 
 impl Drop for AttrReadGuard<'_> {
     fn drop(&mut self) {
-        HELD_READ_CELLS.with(|c| {
+        let still_held = HELD_READ_CELLS.with(|c| {
             let mut v = c.borrow_mut();
             if let Some(pos) = v.iter().rposition(|&a| a == self.addr) {
                 v.swap_remove(pos);
             }
+            v.contains(&self.addr)
         });
+        // Release this read lock before flushing, so a deferred blocking write
+        // does not deadlock against it.
+        self.guard = None;
+        if still_held {
+            return;
+        }
+        let flush = PENDING_CELL_WRITES.with(|p| {
+            let mut v = p.borrow_mut();
+            let mut mine: Vec<(AttrCell, HashMap<String, Value>)> = Vec::new();
+            v.retain(|(a, cell, map)| {
+                if *a == self.addr {
+                    mine.push((cell.clone(), map.clone()));
+                    false
+                } else {
+                    true
+                }
+            });
+            mine
+        });
+        for (cell, map) in flush {
+            *write_attrs(&cell) = map;
+        }
     }
 }
 
@@ -573,25 +610,26 @@ impl Clone for InstanceAttrs {
     }
 }
 
-/// Write `map` into `cell`, unless the current thread already holds a read guard
-/// on it.
+/// Write `map` into `cell`, deferring if the current thread already holds a read
+/// guard on it.
 ///
 /// If this thread is mid-read of the cell, a blocking write would self-deadlock
 /// (the `RwLock` is not reentrant): this happens when the legacy writeback runs
-/// while an outer call frame on the same thread still reads this instance (e.g.
-/// a read-only method invoked from inside `if let … = $obj.attr`, whose
-/// mut-dispatch writes the invocant back). In that case we skip the in-place
-/// write — the contended writeback is almost always a *read-only* invocant
-/// write-back where `map` already equals the cell, and the legacy by-identity
-/// env scan still propagates the value either way.
+/// while an outer call frame on the same thread still holds an `as_map()` borrow
+/// on this instance (e.g. the `$obj.attr = v` accessor, whose let-chain
+/// condition keeps the guard alive across the write-back). We can't skip the
+/// write (it may be a real mutation, not a no-op), so we *defer* it: queue it in
+/// `PENDING_CELL_WRITES` and apply it when the last read guard on the cell drops.
 ///
 /// When this thread is *not* reading the cell we take a blocking write lock,
 /// which is required for correctness under genuine cross-thread contention
 /// (e.g. concurrent `cas` on a shared instance attribute must not drop updates).
 /// Stage 2 replaces this writeback with a mutate-at-the-source model where the
 /// guard is never held across the write.
-fn write_cell_respecting_reads(cell: &RwLock<HashMap<String, Value>>, map: HashMap<String, Value>) {
-    if this_thread_reads(cell) {
+fn write_cell_respecting_reads(cell: &AttrCell, map: HashMap<String, Value>) {
+    let addr = cell_addr(cell);
+    if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
+        PENDING_CELL_WRITES.with(|p| p.borrow_mut().push((addr, cell.clone(), map)));
         return;
     }
     *write_attrs(cell) = map;

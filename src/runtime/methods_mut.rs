@@ -3059,9 +3059,12 @@ impl Interpreter {
 
             if class_name == "Iterator" {
                 let updated = (*attributes).clone();
-                if let Some(Value::Array(source, ..)) =
-                    updated.as_map().get("squish_source").cloned()
-                {
+                // Bind the source out in its own statement so the `as_map()` read
+                // guard is released before the body mutates `updated` in place
+                // (`updated.insert` below) — an `if let … = updated.as_map()…`
+                // would hold the guard for the whole body and self-deadlock.
+                let squish_source = updated.as_map().get("squish_source").cloned();
+                if let Some(Value::Array(source, ..)) = squish_source {
                     let mut scan_index = match updated.as_map().get("squish_scan_index") {
                         Some(Value::Int(i)) if *i >= 0 => *i as usize,
                         _ => 0,
