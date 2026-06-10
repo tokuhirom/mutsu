@@ -43,6 +43,11 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         register_term_symbol_from_decl_name(&n);
         (r, n)
     };
+    // A constant with a `?` twigil (e.g. `constant $?FILE = ...`) is not
+    // implemented; Raku rejects it at compile time with X::Comp::NYI.
+    if name.starts_with('?') || name.starts_with("@?") || name.starts_with("%?") {
+        return Err(constant_twigil_nyi_error('?'));
+    }
     // Record the source sigil so the compiler can distinguish a scalar
     // `constant $x` from a sigilless `constant x` for X::Redeclaration purposes
     // (the VarDecl `name` strips the `$`, so both would otherwise collide).
@@ -180,6 +185,20 @@ fn missing_initializer_error() -> PError {
     attrs.insert("what".to_string(), Value::str("initializer".to_string()));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
+/// `constant $?FILE = ...` — a constant declared with a twigil is not yet
+/// implemented; Raku rejects it at compile time with X::Comp::NYI.
+fn constant_twigil_nyi_error(twigil: char) -> PError {
+    let msg = format!(
+        "Constants with a '{}' twigil not yet implemented. Sorry.",
+        twigil
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("feature".to_string(), Value::str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Comp::NYI"), attrs);
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
