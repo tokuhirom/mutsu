@@ -455,6 +455,10 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     // Check which loop keyword follows
     if let Some(r) = keyword("for", rest) {
         let (r, _) = ws1(r)?;
+        // Perl 5 `for my $x (LIST) { }` foreach syntax.
+        if looks_like_p5_foreach(r) {
+            return Err(p5_foreach_error());
+        }
         let (r, iterable) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, (param, param_def, params, rw_block, explicit_zero_params)) = parse_for_params(r)?;
@@ -1095,9 +1099,49 @@ fn find_rw_pointy_block(input: &str) -> Option<usize> {
     None
 }
 
+/// Detect the Perl 5 `for my $x (LIST) { }` foreach pattern: a `my`/`our`/
+/// `state` declaration of a single variable immediately followed by a
+/// parenthesized list. In Raku the topic variable goes in a pointy block
+/// (`for LIST -> $x { }`), so this is X::Syntax::P5.
+fn looks_like_p5_foreach(input: &str) -> bool {
+    let rest = keyword("my", input)
+        .or_else(|| keyword("our", input))
+        .or_else(|| keyword("state", input));
+    let Some(rest) = rest else { return false };
+    let Ok((rest, _)) = ws1(rest) else {
+        return false;
+    };
+    // A single sigil-variable: `$x`, `@x`, `%x`.
+    let Some(after_sigil) = rest
+        .strip_prefix('$')
+        .or_else(|| rest.strip_prefix('@'))
+        .or_else(|| rest.strip_prefix('%'))
+    else {
+        return false;
+    };
+    let Ok((rest, _name)) = ident(after_sigil) else {
+        return false;
+    };
+    let (rest, _) = ws(rest).unwrap_or((rest, ()));
+    rest.starts_with('(')
+}
+
+fn p5_foreach_error() -> PError {
+    let msg = "This appears to be Perl code".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    let ex =
+        crate::value::Value::make_instance(crate::symbol::Symbol::intern("X::Syntax::P5"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stmt> {
     let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
     let (rest, _) = ws1(rest)?;
+    // Perl 5 `for my $x (LIST) { }` foreach syntax.
+    if looks_like_p5_foreach(rest) {
+        return Err(p5_foreach_error());
+    }
     // C-style `for (init; test; incr) { }` is obsolete — Raku uses `loop`.
     // Detected by a top-level `;` inside the parenthesized iterable.
     if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) {
