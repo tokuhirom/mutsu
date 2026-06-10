@@ -454,10 +454,60 @@ fn live_instance_refcounts() -> &'static Mutex<HashMap<u64, usize>> {
 /// The shared mutable attribute cell of an instance (Phase 3, Stage 1).
 pub(crate) type AttrCell = Arc<RwLock<HashMap<String, Value>>>;
 
+thread_local! {
+    /// Addresses of attribute cells this thread is currently holding a read
+    /// guard on (with nesting; the same cell can be read-locked recursively).
+    /// The writeback consults this to tell apart a *same-thread* read-then-write
+    /// (which would self-deadlock on the non-reentrant `RwLock`) from legitimate
+    /// *cross-thread* contention (which must block and write — e.g. concurrent
+    /// `cas` on a shared instance attribute). See [`write_cell_respecting_reads`].
+    static HELD_READ_CELLS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+fn cell_addr(cell: &RwLock<HashMap<String, Value>>) -> usize {
+    cell as *const RwLock<HashMap<String, Value>> as usize
+}
+
+/// True if the current thread already holds a read guard on `cell`.
+fn this_thread_reads(cell: &RwLock<HashMap<String, Value>>) -> bool {
+    let addr = cell_addr(cell);
+    HELD_READ_CELLS.with(|c| c.borrow().contains(&addr))
+}
+
 /// A read guard over an instance's attribute map. Derefs to `&HashMap`, so the
 /// vast majority of read sites (`.get`, `.iter`, `.len`, `for (k, v) in ...`)
-/// and `&guard` argument coercions to `&HashMap` keep working unchanged.
-pub(crate) type AttrReadGuard<'a> = std::sync::RwLockReadGuard<'a, HashMap<String, Value>>;
+/// and `&guard` argument coercions to `&HashMap` keep working unchanged. On
+/// construction it records the cell address in [`HELD_READ_CELLS`] and removes
+/// it on drop, so the writeback can avoid a self-deadlocking blocking write.
+pub(crate) struct AttrReadGuard<'a> {
+    guard: std::sync::RwLockReadGuard<'a, HashMap<String, Value>>,
+    addr: usize,
+}
+
+impl<'a> AttrReadGuard<'a> {
+    fn new(guard: std::sync::RwLockReadGuard<'a, HashMap<String, Value>>, addr: usize) -> Self {
+        HELD_READ_CELLS.with(|c| c.borrow_mut().push(addr));
+        Self { guard, addr }
+    }
+}
+
+impl std::ops::Deref for AttrReadGuard<'_> {
+    type Target = HashMap<String, Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl Drop for AttrReadGuard<'_> {
+    fn drop(&mut self) {
+        HELD_READ_CELLS.with(|c| {
+            let mut v = c.borrow_mut();
+            if let Some(pos) = v.iter().rposition(|&a| a == self.addr) {
+                v.swap_remove(pos);
+            }
+        });
+    }
+}
 
 /// Registry mapping an instance id to its live attribute cell.
 ///
@@ -523,29 +573,33 @@ impl Clone for InstanceAttrs {
     }
 }
 
-/// Try to write `map` into the live shared cell for `id` without blocking.
+/// Write `map` into `cell`, unless the current thread already holds a read guard
+/// on it.
 ///
-/// Returns true if the cell was found and updated. Uses `try_write` so it never
-/// deadlocks: the legacy writeback can run while an outer call frame still holds
-/// a read guard on this very instance (e.g. a method invoked from inside an
-/// `if let … = $obj.attr` whose mut-dispatch then writes the invocant back).
-/// In that same-thread read-then-write situation a blocking write would hang
-/// forever. When the cell is contended we skip the in-place write — the legacy
-/// by-identity env scan still propagates the value, and the common contended
-/// case is a *read-only* invocant write-back where `map` already equals the
-/// cell's contents (a no-op). Stage 2 replaces this writeback with a
-/// mutate-at-the-source model where the guard is never held across the write.
-pub(crate) fn try_write_attrs(cell: &RwLock<HashMap<String, Value>>, map: HashMap<String, Value>) {
-    match cell.try_write() {
-        Ok(mut g) => *g = map,
-        Err(std::sync::TryLockError::Poisoned(e)) => *e.into_inner() = map,
-        Err(std::sync::TryLockError::WouldBlock) => {}
+/// If this thread is mid-read of the cell, a blocking write would self-deadlock
+/// (the `RwLock` is not reentrant): this happens when the legacy writeback runs
+/// while an outer call frame on the same thread still reads this instance (e.g.
+/// a read-only method invoked from inside `if let … = $obj.attr`, whose
+/// mut-dispatch writes the invocant back). In that case we skip the in-place
+/// write — the contended writeback is almost always a *read-only* invocant
+/// write-back where `map` already equals the cell, and the legacy by-identity
+/// env scan still propagates the value either way.
+///
+/// When this thread is *not* reading the cell we take a blocking write lock,
+/// which is required for correctness under genuine cross-thread contention
+/// (e.g. concurrent `cas` on a shared instance attribute must not drop updates).
+/// Stage 2 replaces this writeback with a mutate-at-the-source model where the
+/// guard is never held across the write.
+fn write_cell_respecting_reads(cell: &RwLock<HashMap<String, Value>>, map: HashMap<String, Value>) {
+    if this_thread_reads(cell) {
+        return;
     }
+    *write_attrs(cell) = map;
 }
 
 pub(crate) fn update_instance_cell(id: u64, map: &HashMap<String, Value>) -> bool {
     if let Some(cell) = lookup_instance_cell(id) {
-        try_write_attrs(&cell, map.clone());
+        write_cell_respecting_reads(&cell, map.clone());
         true
     } else {
         false
@@ -557,7 +611,8 @@ pub(crate) fn update_instance_cell(id: u64, map: &HashMap<String, Value>) -> boo
 /// map itself is still a valid `HashMap`, and matching the codebase's other
 /// `lock().unwrap()` sites would just turn a poison into a second panic.
 fn read_attrs(cell: &RwLock<HashMap<String, Value>>) -> AttrReadGuard<'_> {
-    cell.read().unwrap_or_else(|e| e.into_inner())
+    let guard = cell.read().unwrap_or_else(|e| e.into_inner());
+    AttrReadGuard::new(guard, cell_addr(cell))
 }
 
 fn write_attrs(
@@ -2830,11 +2885,10 @@ impl Value {
         // an instance aliasing it, so every other holder of the instance — even
         // ones in caller frames the scan never visits — sees the mutation.
         if let Some(cell) = lookup_instance_cell(id) {
-            // Non-blocking: see `try_write_attrs`. If the cell is read-locked by
-            // an outer frame on this thread we keep its current contents and just
-            // share it (preserving identity + cross-frame visibility) rather than
-            // deadlocking on a blocking write.
-            try_write_attrs(&cell, attributes);
+            // Reuse the live cell. The write respects an outstanding same-thread
+            // read guard (see `write_cell_respecting_reads`) to avoid a
+            // self-deadlock, while still blocking for cross-thread contention.
+            write_cell_respecting_reads(&cell, attributes);
             return Value::Instance {
                 class_name,
                 attributes: Arc::new(InstanceAttrs::from_cell(class_name, cell, id, true)),
@@ -2844,6 +2898,30 @@ impl Value {
         Value::Instance {
             class_name,
             attributes: Arc::new(InstanceAttrs::new(class_name, attributes, id, true)),
+            id,
+        }
+    }
+
+    /// Build an instance with the given id but a *fresh, unregistered* cell.
+    ///
+    /// Unlike [`Self::make_instance_with_id`], this does NOT reuse or register
+    /// the live shared cell for `id`, so it produces a value that is independent
+    /// of the in-flight instance. Used by the cross-thread atomic write-back,
+    /// where the authoritative store is `shared_vars` and reusing the shared
+    /// cell would let concurrent writers clobber it out of order.
+    pub(crate) fn make_instance_detached(
+        class_name: Symbol,
+        attributes: HashMap<String, Value>,
+        id: u64,
+    ) -> Self {
+        Value::Instance {
+            class_name,
+            attributes: Arc::new(InstanceAttrs::from_cell(
+                class_name,
+                Arc::new(RwLock::new(attributes)),
+                id,
+                true,
+            )),
             id,
         }
     }
