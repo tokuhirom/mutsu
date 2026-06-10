@@ -2777,6 +2777,7 @@ impl Interpreter {
 
         // X::Bind
         register_x("X::Bind", "Exception");
+        register_x("X::Bind::NativeType", "X::Bind");
 
         // X::StubCode
         register_x("X::StubCode", "Exception");
