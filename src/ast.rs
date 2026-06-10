@@ -800,6 +800,9 @@ pub(crate) enum Stmt {
     AugmentClass {
         name: Symbol,
         body: Vec<Stmt>,
+        /// True when declared with `augment role ...` (roles are always closed,
+        /// so augmenting one is illegal); false for `augment class ...`.
+        is_role: bool,
     },
     SubsetDecl {
         name: Symbol,

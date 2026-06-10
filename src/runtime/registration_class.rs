@@ -2422,6 +2422,57 @@ impl Interpreter {
         Ok(deferred_custom_traits)
     }
 
+    /// Build the error for `augment role RoleName { ... }`. Roles are always
+    /// closed, so augmenting one is illegal — but if the role does not exist at
+    /// all, Raku reports that first (X::Augment::NoSuchType), matching the
+    /// ordering used for `augment class`.
+    pub(crate) fn augment_role_error(&self, name: &str) -> RuntimeError {
+        // Built-in roles that are closed but not present in the user registry.
+        const BUILTIN_ROLES: &[&str] = &[
+            "Positional",
+            "Associative",
+            "Callable",
+            "Iterable",
+            "Numeric",
+            "Real",
+            "Stringy",
+            "Mixy",
+            "Setty",
+            "Baggy",
+            "Blob",
+            "Buf",
+        ];
+        let exists = self.registry().roles.contains_key(name)
+            || self.registry().classes.contains_key(name)
+            || crate::runtime::utils::is_known_type_constraint(name)
+            || BUILTIN_ROLES.contains(&name);
+        if exists {
+            let message = format!("Cannot augment {} because it is closed", name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(
+                crate::symbol::Symbol::intern("X::Syntax::Augment::Illegal"),
+                attrs,
+            );
+            let mut err = RuntimeError::new(message);
+            err.exception = Some(Box::new(ex));
+            err
+        } else {
+            let message = format!("You tried to augment role {}, but it does not exist", name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            attrs.insert("package-kind".to_string(), Value::str("role".to_string()));
+            attrs.insert("package".to_string(), Value::str(name.to_string()));
+            let ex = Value::make_instance(
+                crate::symbol::Symbol::intern("X::Augment::NoSuchType"),
+                attrs,
+            );
+            let mut err = RuntimeError::new(message);
+            err.exception = Some(Box::new(ex));
+            err
+        }
+    }
+
     /// Augment an existing class by adding methods (and attributes) from the body.
     /// This implements `augment class ClassName { ... }` (monkey-patching).
     pub(crate) fn augment_class(&mut self, name: &str, body: &[Stmt]) -> Result<(), RuntimeError> {

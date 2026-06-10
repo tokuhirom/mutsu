@@ -806,12 +806,34 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse `augment class ClassName { ... }` declaration (monkey-patching).
+/// Also handles `augment role RoleName { ... }` (always illegal — roles are
+/// closed) and the anonymous form `augment class { ... }` (X::Anon::Augment).
 pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest =
         keyword("augment", input).ok_or_else(|| PError::expected("augment class declaration"))?;
     let (rest, _) = ws1(rest)?;
-    let rest = keyword("class", rest).ok_or_else(|| PError::expected("'class' after 'augment'"))?;
+    let (rest, is_role) = if let Some(r) = keyword("class", rest) {
+        (r, false)
+    } else if let Some(r) = keyword("role", rest) {
+        (r, true)
+    } else {
+        return Err(PError::expected("'class' or 'role' after 'augment'"));
+    };
     let (rest, _) = ws1(rest)?;
+    // Anonymous augment (`augment class { }` / `augment role { }`) — no name
+    // follows the package kind. Raku rejects this with X::Anon::Augment.
+    let package_kind = if is_role { "role" } else { "class" };
+    if rest.starts_with('{') {
+        let msg = format!("Cannot augment anonymous {}", package_kind);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert(
+            "package-kind".to_string(),
+            Value::str(package_kind.to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Anon::Augment"), attrs);
+        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+    }
     let (rest, name) = qualified_ident(rest)?;
     // Check for type adverbs (:D, :U, :auth, :ver, :api) which are not allowed on augment
     if rest.starts_with(':') && !rest.starts_with("::") {
@@ -837,6 +859,7 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
         Stmt::AugmentClass {
             name: Symbol::intern(&name),
             body,
+            is_role,
         },
     ))
 }

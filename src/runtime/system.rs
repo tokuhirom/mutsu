@@ -325,7 +325,7 @@ impl Interpreter {
 
             // `augment class C { class Nested {} }` redeclares a nested type that
             // the original declaration of C already declared.
-            if let Stmt::AugmentClass { name, body } = stmt {
+            if let Stmt::AugmentClass { name, body, .. } = stmt {
                 let cname = name.resolve().to_string();
                 if let Some(existing) = class_nested.get(&cname) {
                     for nested in collect_nested(body) {
