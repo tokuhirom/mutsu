@@ -4847,11 +4847,31 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if elem_type != "Mu" && elem_type != "Any" {
             let display = format!("{}!{}", sigil, attr_name);
-            let elems: Vec<&Value> = match value {
-                Value::Array(items, _) => items.iter().collect(),
-                Value::Hash(map) => map.values().collect(),
-                _ => Vec::new(),
-            };
+            // Collect the values to type-check. A shaped array (`has Int @.g[2;2]`)
+            // nests its leaves inside per-dimension sub-arrays, so descend to the
+            // leaves; a plain array checks its direct elements (a `has Array @.x`
+            // legitimately holds array elements, so do not descend into those).
+            fn collect_leaves<'a>(v: &'a Value, descend: bool, out: &mut Vec<&'a Value>) {
+                match v {
+                    Value::Array(items, kind) if descend || matches!(kind, ArrayKind::Shaped) => {
+                        for it in items.iter() {
+                            collect_leaves(it, true, out);
+                        }
+                    }
+                    _ => out.push(v),
+                }
+            }
+            let mut elems: Vec<&Value> = Vec::new();
+            match value {
+                Value::Array(items, ArrayKind::Shaped) => {
+                    for it in items.iter() {
+                        collect_leaves(it, true, &mut elems);
+                    }
+                }
+                Value::Array(items, _) => elems.extend(items.iter()),
+                Value::Hash(map) => elems.extend(map.values()),
+                _ => {}
+            }
             for it in elems {
                 if !matches!(it, Value::Nil) && !self.type_matches_value(elem_type, it) {
                     return Err(crate::runtime::utils::type_check_element_typed_error(
