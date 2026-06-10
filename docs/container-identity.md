@@ -280,7 +280,17 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
                 検証: make test 6247、S12/S14/S17/S06/S32-num whitelist 171 ファイル 6432・S02/S03/S04 318 ファイル 32004 PASS、
                 int.t perf 0.085s（回帰なし）、nested-read/same-method write-read/inc-dec/closure/multi-attr すべて raku 一致。
                 reconcile は (iii) まで維持（sigilless 経路は今や cell 直結で reconcile case-2 は冗長だが無害）。
-          - [ ] **(iii) reconcile を `cell.to_map()` 置換 + materialize の attr-value env コピー撤去**。
+          - [x] **(iii-a) reconcile を cell 単一源に簡素化（landed: branch `phase3-stage2c-reconcile-removal`）**: `reconcile_attrs` の
+                entry-snapshot-vs-env の値比較（case-1 cell-changed / case-2 env-changed の優先判定 + sigil-by-type twigil 推定）を撤去し、
+                `*attributes = base.cell.to_map()`（cell が単一源）に。全 plain write（2a/2b/2c-i/ii）は write-time で cell に着地済みなので
+                cell snapshot が最終値。**例外 = `:=` 束縛属性**（`$!x := $outer`）: 外部 ContainerRef を env/locals に持ち cell を経由しない
+                **第3の bypass**（has-attr-binding.t で発覚）。cell.to_map() 後に env/locals の各 attr key（bare sigilless + 6 twigil）を走査し
+                ContainerRef なら優先採用して `:=` alias を method exit 越しに保全。検証: make test 6260、S12/S14/S17/S03-binding/S06 144 ファイル
+                2994 PASS、has-attr-binding 6/6、全 bypass/sigilless/attrparam テスト raku 一致。（S32-temporal/DateTime.t の 2 失敗は
+                `Date.today`=UTC vs `DateTime.now.Date`=local の pre-existing timezone バグで、変更退避した baseline でも同一＝非関連・
+                ローカル JST のみの artifact、CI=UTC では両者一致でパス。）
+          - [ ] **(iii-b) materialize の attr-value env コピー撤去**（reads は全 cell-direct なので冗長だが、env コピーの他消費者
+                — locals init / closure 捕捉 / `:=` ContainerRef 経路 — の監査が必要でより高リスク。別 PR）。
         - [ ] **registry 撤去（別 slice・後回し）**: `instance_cells` + `make_instance_detached`/`update_instance_cell` 撤去
               （callers が `self` の Arc を直接 in-place 変異する形へ。~50 の make_instance_with_id rebuild を全変換する all-or-nothing 大改修）+
               CAS の cell-CAS 化。

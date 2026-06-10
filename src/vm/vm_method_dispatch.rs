@@ -754,24 +754,21 @@ impl VM {
         })
     }
 
-    /// Phase 3 Stage 2: reconcile the entry-time attribute snapshot against the
-    /// two possible sources of an in-method change, while the method's
-    /// locals/env are still live. Covers scalar, array, and hash attributes.
+    /// Phase 3 Stage 2c (iii): the shared attribute cell is the source of truth
+    /// for ordinary attribute writes, so the post-method attribute map is its
+    /// current contents.
     ///
-    /// An attribute may have been changed two ways during the method:
-    /// 1. through the shared cell — cell-direct scalar writes (`$!x = v`),
-    ///    per-op mirrored array/hash mutations (`@!a.push`, `%!h<k>=`), and any
-    ///    mutation made in a nested method frame all land in the live cell, or
-    /// 2. through an env/local copy that never reached the cell — attributive
-    ///    params (`method m($!s)`/`method m(@!a)`), no-twigil sigilless aliases
-    ///    (`has $x; ... $x = v`), or `is rw` accessor stores.
+    /// Every plain in-method attribute change now lands in the cell at write time:
+    /// cell-direct scalar writes (`$!x = v`, Stage 2a), per-op mirrored array/hash
+    /// mutations (`@!a.push`, `%!h<k>=`, Stage 2b), attributive params
+    /// (`method m($!s)`, Stage 2c (i)), and sigilless aliases (`has $x`, Stage 2c
+    /// (ii)); cross-frame and nested-frame mutations are visible through the same
+    /// shared cell. The former entry-snapshot-vs-env value reconcile is gone.
     ///
-    /// Precedence: the cell wins when it changed from the entry snapshot (it is
-    /// the authoritative store and includes cross-frame mutations); otherwise an
-    /// env/local write that changed wins (case 2); otherwise the value is
-    /// unchanged. `attributes[k]` is the entry snapshot here because writeback no
-    /// longer mutates it. The result is written back through the cell by the
-    /// caller.
+    /// The one exception is a `:=`-bound attribute (`$!x := $outer`), which aliases
+    /// an external `ContainerRef` held in env/locals rather than the cell. The
+    /// cell-direct write path does not carry that binding, so recover it from
+    /// env/locals here and let it win, keeping the alias alive past method exit.
     fn reconcile_attrs(
         &self,
         base: &Value,
@@ -784,44 +781,44 @@ impl VM {
         else {
             return;
         };
-        // Snapshot the cell once (single read lock) rather than per attribute.
-        let cell_snapshot = cell.to_map();
+        *attributes = cell.to_map();
+        // Preserve `:=`-bound attributes: their authoritative value is the shared
+        // ContainerRef in env/locals, not the cell snapshot.
         let keys: Vec<String> = attributes.keys().cloned().collect();
         for k in keys {
             if k.starts_with(ATTR_ALIAS_META_PREFIX) {
                 continue;
             }
-            let original = attributes.get(&k).cloned().unwrap_or(Value::Nil);
-            let cell_val = cell_snapshot.get(&k).cloned();
-            // (1) The cell is authoritative when it changed from the entry value.
-            if let Some(cv) = &cell_val
-                && *cv != original
-            {
-                attributes.insert(k, cv.clone());
-                continue;
-            }
-            // (2) Otherwise an env/local write that bypassed the cell wins. Pick
-            // the twigil keys by the attribute's sigil (inferred from its value
-            // type). Qualified private key (`Owner\0attr`) maps to bare `!attr`.
             let bare = k.rsplit('\0').next().unwrap_or(&k);
-            let (priv_key, pub_key) = match cell_val.as_ref().unwrap_or(&original) {
-                Value::Array(..) => (format!("@!{}", bare), format!("@.{}", bare)),
-                Value::Hash(..) => (format!("%!{}", bare), format!("%.{}", bare)),
-                _ => (format!("!{}", bare), format!(".{}", bare)),
-            };
-            let env_changed = self
-                .attr_env_or_local(code, &priv_key)
-                .filter(|v| *v != original)
-                .or_else(|| {
-                    self.attr_env_or_local(code, &pub_key)
-                        .filter(|v| *v != original)
-                });
-            if let Some(v) = env_changed {
-                attributes.insert(k, v);
-            } else if let Some(cv) = cell_val {
-                attributes.insert(k, cv);
+            // Sigilless (`has $x` → bare `x`) and twigil (`$!x`/`@.x`/…) keys may
+            // hold the `:=` ContainerRef alias.
+            let candidates = [
+                bare.to_string(),
+                format!("!{}", bare),
+                format!(".{}", bare),
+                format!("@!{}", bare),
+                format!("@.{}", bare),
+                format!("%!{}", bare),
+                format!("%.{}", bare),
+            ];
+            for key in candidates {
+                if let Some(v) = self.attr_env_or_local(code, &key)
+                    && v.is_container_ref()
+                {
+                    attributes.insert(k.clone(), v);
+                    break;
+                }
             }
         }
+    }
+
+    /// Read the current value of `name` from the method's local slot if present,
+    /// else from env.
+    fn attr_env_or_local(&self, code: &CompiledCode, name: &str) -> Option<Value> {
+        if let Some(slot) = code.locals.iter().position(|n| n == name) {
+            return Some(self.locals[slot].clone());
+        }
+        self.interpreter.env().get(name).cloned()
     }
 
     /// Phase 3 Stage 2c (i): mirror attributive parameters (`$!x`/`@!a`/`%!h`)
@@ -843,15 +840,6 @@ impl VM {
                 self.mirror_attr_value_to_cell_by_name(code, &pd.name);
             }
         }
-    }
-
-    /// Read the current value of `name` from the method's local slot if present,
-    /// else from env.
-    fn attr_env_or_local(&self, code: &CompiledCode, name: &str) -> Option<Value> {
-        if let Some(slot) = code.locals.iter().position(|n| n == name) {
-            return Some(self.locals[slot].clone());
-        }
-        self.interpreter.env().get(name).cloned()
     }
 
     /// Fast path for read-only compiled methods. Bypasses all env_mut() calls
