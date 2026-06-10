@@ -80,8 +80,9 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             },
         ) if left_class == "DateTime" && right_class == "Date" => {
             let (y, m, d, _, _, _, _) =
-                crate::builtins::methods_0arg::temporal::datetime_attrs(left_attrs);
-            let (ry, rm, rd) = crate::builtins::methods_0arg::temporal::date_attrs(right_attrs);
+                crate::builtins::methods_0arg::temporal::datetime_attrs((left_attrs).as_map());
+            let (ry, rm, rd) =
+                crate::builtins::methods_0arg::temporal::date_attrs((right_attrs).as_map());
             Some(y == ry && m == rm && d == rd)
         }
 

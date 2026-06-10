@@ -201,7 +201,7 @@ impl VM {
                             _ => None,
                         };
                         let attributes = match &target {
-                            Value::Instance { attributes, .. } => (**attributes).clone(),
+                            Value::Instance { attributes, .. } => attributes.to_map(),
                             _ => std::collections::HashMap::new(),
                         };
                         let invocant_for_dispatch = if attributes.is_empty() {
@@ -644,9 +644,12 @@ impl VM {
             updated.insert("index".to_string(), Value::Int(index as i64));
             let cn = class_name.resolve();
             let inst_id = *id;
-            self.interpreter
-                .overwrite_instance_bindings_by_identity(&cn, inst_id, updated.clone());
-            self.overwrite_instance_in_locals(&cn, inst_id, &updated);
+            self.interpreter.overwrite_instance_bindings_by_identity(
+                &cn,
+                inst_id,
+                (updated.clone()).to_map(),
+            );
+            self.overwrite_instance_in_locals(&cn, inst_id, updated.as_map());
             self.env_dirty = true;
         }
         Some(Ok(ret))
@@ -704,7 +707,7 @@ impl VM {
             _ => None,
         };
         let attributes = match &target {
-            Value::Instance { attributes, .. } => (**attributes).clone(),
+            Value::Instance { attributes, .. } => attributes.to_map(),
             _ => std::collections::HashMap::new(),
         };
         let empty_fns = HashMap::new();
@@ -947,7 +950,7 @@ impl VM {
                             _ => None,
                         };
                         let attributes = match &target {
-                            Value::Instance { attributes, .. } => (**attributes).clone(),
+                            Value::Instance { attributes, .. } => attributes.to_map(),
                             _ => std::collections::HashMap::new(),
                         };
                         let invocant_for_dispatch = if attributes.is_empty() {
@@ -1046,7 +1049,7 @@ impl VM {
                     _ => None,
                 };
                 let attributes = match &target {
-                    Value::Instance { attributes, .. } => (**attributes).clone(),
+                    Value::Instance { attributes, .. } => attributes.to_map(),
                     _ => std::collections::HashMap::new(),
                 };
                 let invocant_for_dispatch = if attributes.is_empty() {

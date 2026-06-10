@@ -1535,7 +1535,8 @@ impl Interpreter {
             }) if class_name.resolve() == "DateTime" => {
                 // Compute posix from DateTime attributes
                 use crate::builtins::methods_0arg::temporal::{datetime_attrs, datetime_to_posix};
-                let (year, month, day, hour, minute, second, timezone) = datetime_attrs(attributes);
+                let (year, month, day, hour, minute, second, timezone) =
+                    datetime_attrs((attributes).as_map());
                 Some(datetime_to_posix(
                     year, month, day, hour, minute, second, timezone,
                 ))

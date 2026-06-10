@@ -753,8 +753,16 @@ impl Interpreter {
                         "bytes".to_string(),
                         Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
                     );
-                    self.overwrite_instance_bindings_by_identity(&cn, id, updated_attrs.clone());
-                    return Ok(Value::make_instance_with_id(class_sym, updated_attrs, id));
+                    self.overwrite_instance_bindings_by_identity(
+                        &cn,
+                        id,
+                        (updated_attrs.clone()).to_map(),
+                    );
+                    return Ok(Value::make_instance_with_id(
+                        class_sym,
+                        (updated_attrs).to_map(),
+                        id,
+                    ));
                 }
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
                 return Ok(crate::builtins::buf_write_num::make_buf_value(
@@ -845,8 +853,16 @@ impl Interpreter {
                         "bytes".to_string(),
                         Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
                     );
-                    self.overwrite_instance_bindings_by_identity(&cn, id, updated_attrs.clone());
-                    return Ok(Value::make_instance_with_id(class_sym, updated_attrs, id));
+                    self.overwrite_instance_bindings_by_identity(
+                        &cn,
+                        id,
+                        (updated_attrs.clone()).to_map(),
+                    );
+                    return Ok(Value::make_instance_with_id(
+                        class_sym,
+                        (updated_attrs).to_map(),
+                        id,
+                    ));
                 }
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
                 return Ok(crate::builtins::buf_write_num::make_buf_value(
@@ -885,18 +901,24 @@ impl Interpreter {
         {
             match method {
                 "count-only" if args.is_empty() => {
-                    if let Some(value) = self.iterator_count_only_from_attrs(attributes.as_ref())? {
+                    if let Some(value) =
+                        self.iterator_count_only_from_attrs((attributes.as_ref()).as_map())?
+                    {
                         return Ok(value);
                     }
                 }
                 "bool-only" if args.is_empty() => {
-                    if let Some(value) = self.iterator_bool_only_from_attrs(attributes.as_ref())? {
+                    if let Some(value) =
+                        self.iterator_bool_only_from_attrs((attributes.as_ref()).as_map())?
+                    {
                         return Ok(value);
                     }
                 }
                 "can"
                     if args.len() == 1
-                        && Self::iterator_supports_predictive_methods(attributes.as_ref()) =>
+                        && Self::iterator_supports_predictive_methods(
+                            (attributes.as_ref()).as_map(),
+                        ) =>
                 {
                     let method_name = args[0].to_string_value();
                     if matches!(method_name.as_str(), "count-only" | "bool-only") {
@@ -1994,7 +2016,7 @@ impl Interpreter {
                 class_name: *class_name,
                 attributes: std::sync::Arc::new(crate::value::InstanceAttrs::new(
                     *class_name,
-                    attrs,
+                    (attrs).to_map(),
                     *id,
                     false,
                 )),
@@ -3186,7 +3208,7 @@ impl Interpreter {
         } = &target
             && class_name.resolve() == "Promise::Vow"
         {
-            return self.dispatch_promise_vow_method(attributes, method, args);
+            return self.dispatch_promise_vow_method((attributes).as_map(), method, args);
         }
 
         // Mixin fallback: check __mutsu_attr__ and delegate to inner

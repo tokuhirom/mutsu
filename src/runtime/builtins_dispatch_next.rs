@@ -176,7 +176,7 @@ impl Interpreter {
                         &receiver_class,
                         &owner_class,
                         method_def,
-                        (**attributes).clone(),
+                        attributes.to_map(),
                         call_args,
                         Some(invocant.clone()),
                     )?;

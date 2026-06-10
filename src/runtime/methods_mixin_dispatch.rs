@@ -114,11 +114,7 @@ impl Interpreter {
                         class_name,
                         attributes,
                         id,
-                    } => (
-                        Some(class_name.resolve()),
-                        Some(*id),
-                        (**attributes).clone(),
-                    ),
+                    } => (Some(class_name.resolve()), Some(*id), attributes.to_map()),
                     _ => (None, None, HashMap::new()),
                 };
                 for (key, value) in mixins.iter() {

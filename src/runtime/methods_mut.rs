@@ -271,7 +271,7 @@ impl Interpreter {
         }
         for (var_name, class_name, id, attr_key) in updates {
             if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
-                let mut updated = (**attributes).clone();
+                let mut updated = attributes.to_map();
                 updated.insert(attr_key, replacement.clone());
                 self.env.insert_sym(
                     var_name,
@@ -306,7 +306,7 @@ impl Interpreter {
         }
         for (var_name, class_name, id, attr_key) in updates {
             if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
-                let mut updated = (**attributes).clone();
+                let mut updated = attributes.to_map();
                 updated.insert(attr_key, replacement.clone());
                 self.env.insert_sym(
                     var_name,
@@ -457,7 +457,7 @@ impl Interpreter {
                     });
                     if has_target {
                         let mut new_attrs: std::collections::HashMap<String, Value> =
-                            (**attributes).clone();
+                            attributes.to_map();
                         for attr_val in new_attrs.values_mut() {
                             Self::overwrite_instance_recursive(attr_val, class_name, id, updated);
                         }
@@ -847,7 +847,7 @@ impl Interpreter {
                 state.line_chomp = new_chomp;
             }
             // Also update instance attribute so .open can inherit it
-            let mut new_attrs = (**attributes).clone();
+            let mut new_attrs = attributes.to_map();
             new_attrs.insert("chomp".to_string(), Value::Bool(new_chomp));
             let tid = *inst_id;
             self.overwrite_instance_bindings_by_identity(
@@ -1087,7 +1087,7 @@ impl Interpreter {
                     caller_class.as_deref().unwrap_or("GLOBAL")
                 )));
             }
-            let mut updated = (**attributes).clone();
+            let mut updated = attributes.to_map();
             updated.insert(attr_name, value.clone());
             let cn = *class_name;
             if let Some(var_name) = target_var {
@@ -1126,7 +1126,7 @@ impl Interpreter {
                     )));
                 }
                 if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
-                    let mut updated = (**attributes).clone();
+                    let mut updated = attributes.to_map();
                     let current = if method_args.is_empty() {
                         self.call_method_with_values(target.clone(), actual_method, Vec::new())
                             .ok()
@@ -1178,7 +1178,7 @@ impl Interpreter {
                     }
                 }
                 if found_rw {
-                    let mut updated = (**attributes).clone();
+                    let mut updated = attributes.to_map();
                     let current = if method_args.is_empty() {
                         self.call_method_with_values(target.clone(), actual_method, Vec::new())
                             .ok()
@@ -1432,12 +1432,12 @@ impl Interpreter {
                 self.overwrite_instance_bindings_by_identity(
                     &class_name.resolve(),
                     target_id,
-                    updated.clone(),
+                    (updated.clone()).to_map(),
                 );
                 if let Some(var_name) = target_var {
                     self.env.insert(
                         var_name.to_string(),
-                        Value::make_instance_with_id(class_name, updated, target_id),
+                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
                     );
                     // Also update attribute env variables so compiled method
                     // writeback picks up the change (e.g. $.cnt += 4 inside a method)
@@ -1454,7 +1454,7 @@ impl Interpreter {
                 all_args.push(value.clone());
                 match self.call_native_instance_method_mut(
                     &class_name.resolve(),
-                    (*attributes).clone(),
+                    ((*attributes).clone()).to_map(),
                     method,
                     all_args,
                 ) {
@@ -1514,11 +1514,11 @@ impl Interpreter {
                     self.overwrite_instance_bindings_by_identity(
                         &class_name.resolve(),
                         target_id,
-                        updated.clone(),
+                        (updated.clone()).to_map(),
                     );
                     self.env.insert(
                         var_name.to_string(),
-                        Value::make_instance_with_id(class_name, updated, target_id),
+                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
                     );
                 }
                 return Ok(result);
@@ -1563,11 +1563,11 @@ impl Interpreter {
                 self.overwrite_instance_bindings_by_identity(
                     &class_name.resolve(),
                     target_id,
-                    updated.clone(),
+                    (updated.clone()).to_map(),
                 );
                 self.env.insert(
                     var_name.to_string(),
-                    Value::make_instance_with_id(class_name, updated, target_id),
+                    Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
                 );
             }
             return Ok(assigned_value);
@@ -1603,11 +1603,11 @@ impl Interpreter {
                     self.overwrite_instance_bindings_by_identity(
                         &class_name.resolve(),
                         target_id,
-                        updated.clone(),
+                        (updated.clone()).to_map(),
                     );
                     self.env.insert(
                         var_name.to_string(),
-                        Value::make_instance_with_id(class_name, updated, target_id),
+                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
                     );
                 }
                 return Ok(result);
@@ -1620,8 +1620,13 @@ impl Interpreter {
         let was_lvalue = self.in_lvalue_assignment;
         self.in_lvalue_assignment = true;
         let attrs_map = (*attributes).clone();
-        let method_result =
-            self.run_instance_method(&class_name.resolve(), attrs_map, method, method_args, None);
+        let method_result = self.run_instance_method(
+            &class_name.resolve(),
+            (attrs_map).to_map(),
+            method,
+            method_args,
+            None,
+        );
         self.in_lvalue_assignment = was_lvalue;
         let (method_result, updated_attrs) = method_result?;
         if let Value::Proxy { storer, .. } = &method_result {
@@ -1873,11 +1878,11 @@ impl Interpreter {
                 self.overwrite_instance_bindings_by_identity(
                     &class_name.resolve(),
                     *id,
-                    updated_attrs.clone(),
+                    (updated_attrs.clone()).to_map(),
                 );
                 return Ok(Value::make_instance_with_id(
                     *class_name,
-                    updated_attrs,
+                    (updated_attrs).to_map(),
                     *id,
                 ));
             }
@@ -1943,9 +1948,9 @@ impl Interpreter {
             self.overwrite_instance_bindings_by_identity(
                 &class_name.resolve(),
                 *id,
-                updated_attrs.clone(),
+                (updated_attrs.clone()).to_map(),
             );
-            let updated = Value::make_instance_with_id(*class_name, updated_attrs, *id);
+            let updated = Value::make_instance_with_id(*class_name, (updated_attrs).to_map(), *id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
@@ -2045,9 +2050,9 @@ impl Interpreter {
             self.overwrite_instance_bindings_by_identity(
                 &class_name.resolve(),
                 *id,
-                updated_attrs.clone(),
+                (updated_attrs.clone()).to_map(),
             );
-            let updated = Value::make_instance_with_id(*class_name, updated_attrs, *id);
+            let updated = Value::make_instance_with_id(*class_name, (updated_attrs).to_map(), *id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
@@ -3002,9 +3007,10 @@ impl Interpreter {
                 self.overwrite_instance_bindings_by_identity(
                     &class_name.resolve(),
                     target_id,
-                    updated.clone(),
+                    (updated.clone()).to_map(),
                 );
-                let updated_instance = Value::make_instance_with_id(class_name, updated, target_id);
+                let updated_instance =
+                    Value::make_instance_with_id(class_name, (updated).to_map(), target_id);
                 self.env
                     .insert(target_var.to_string(), updated_instance.clone());
                 return Ok(updated_instance);
@@ -3076,10 +3082,10 @@ impl Interpreter {
 
                     let ret = match method {
                         "count-only" => self
-                            .iterator_count_only_from_attrs(&updated)?
+                            .iterator_count_only_from_attrs(updated.as_map())?
                             .unwrap_or_else(|| Value::Int(0)),
                         "bool-only" => self
-                            .iterator_bool_only_from_attrs(&updated)?
+                            .iterator_bool_only_from_attrs(updated.as_map())?
                             .unwrap_or(Value::Bool(false)),
                         "pull-one" => pull_one_squish(self)?,
                         "push-all" | "push-until-lazy" => {
@@ -3140,7 +3146,7 @@ impl Interpreter {
                                     self.overwrite_instance_bindings_by_identity(
                                         &class_name.resolve(),
                                         target_id,
-                                        updated.clone(),
+                                        (updated.clone()).to_map(),
                                     );
                                     return Ok(Value::str_from("IterationEnd"));
                                 }
@@ -3220,10 +3226,10 @@ impl Interpreter {
                     self.overwrite_instance_bindings_by_identity(
                         &class_name.resolve(),
                         target_id,
-                        updated.clone(),
+                        (updated.clone()).to_map(),
                     );
                     let updated_instance =
-                        Value::make_instance_with_id(class_name, updated, target_id);
+                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id);
                     self.env
                         .insert(target_var.to_string(), updated_instance.clone());
                     return Ok(ret);
@@ -3356,11 +3362,11 @@ impl Interpreter {
                 self.overwrite_instance_bindings_by_identity(
                     &class_name.resolve(),
                     target_id,
-                    updated.clone(),
+                    (updated.clone()).to_map(),
                 );
                 self.env.insert(
                     target_var.to_string(),
-                    Value::make_instance_with_id(class_name, updated, target_id),
+                    Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
                 );
                 return Ok(ret);
             }
@@ -3381,8 +3387,11 @@ impl Interpreter {
                     .trim_start_matches('!');
                 let delegate = if is_method_based {
                     let source_method = attr_var_name.trim_start_matches('&').to_string();
-                    let invocant_val =
-                        Value::make_instance_with_id(class_name, (*attributes).clone(), target_id);
+                    let invocant_val = Value::make_instance_with_id(
+                        class_name,
+                        ((*attributes).clone()).to_map(),
+                        target_id,
+                    );
                     self.call_method_with_values(invocant_val, &source_method, Vec::new())?
                 } else {
                     attributes.get(attr_key).cloned().unwrap_or(Value::Nil)
@@ -3414,11 +3423,11 @@ impl Interpreter {
                     self.overwrite_instance_bindings_by_identity(
                         &class_name.resolve(),
                         target_id,
-                        updated.clone(),
+                        (updated.clone()).to_map(),
                     );
                     self.env.insert(
                         target_var.to_string(),
-                        Value::make_instance_with_id(class_name, updated, target_id),
+                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
                     );
                 }
                 // Restore skip_pseudo for the outer caller.
@@ -3449,11 +3458,11 @@ impl Interpreter {
                         self.overwrite_instance_bindings_by_identity(
                             &class_name.resolve(),
                             target_id,
-                            updated.clone(),
+                            (updated.clone()).to_map(),
                         );
                         self.env.insert(
                             target_var.to_string(),
-                            Value::make_instance_with_id(class_name, updated, target_id),
+                            Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
                         );
                         return Ok(assigned);
                     }
@@ -3490,7 +3499,7 @@ impl Interpreter {
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut(
                     &class_name.resolve(),
-                    (*attributes).clone(),
+                    ((*attributes).clone()).to_map(),
                     method,
                     args.clone(),
                 ) {
@@ -3510,7 +3519,7 @@ impl Interpreter {
                         if err.message.starts_with("No native mutable method") {
                             return self.call_native_instance_method(
                                 &class_name.resolve(),
-                                &attributes,
+                                attributes.as_map(),
                                 method,
                                 args,
                             );
@@ -3535,7 +3544,7 @@ impl Interpreter {
             {
                 let (result, updated) = self.run_instance_method(
                     &class_name.resolve(),
-                    (*attributes).clone(),
+                    ((*attributes).clone()).to_map(),
                     method,
                     args,
                     Some(target.clone()),

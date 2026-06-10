@@ -85,9 +85,9 @@ impl Interpreter {
             if class_name != "Supply" {
                 return None;
             }
-            let supply_id = self.resolve_supply_channel_id_for_react(attributes);
+            let supply_id = self.resolve_supply_channel_id_for_react((attributes).as_map());
             let is_lines = matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
-            let head_limit = Self::extract_supply_head_limit(attributes);
+            let head_limit = Self::extract_supply_head_limit((attributes).as_map());
             if let Some(sid) = supply_id
                 && let Some(rx) = take_supply_channel(sid)
             {
@@ -104,7 +104,7 @@ impl Interpreter {
                     supplier_id: None,
                     supplier_next_index: 0,
                     callback,
-                    close_callbacks: Self::extract_supply_on_close_cbs(attributes),
+                    close_callbacks: Self::extract_supply_on_close_cbs((attributes).as_map()),
                     last_callbacks: last_cbs,
                     quit_callbacks: quit_cbs,
                     done: false,
@@ -130,7 +130,7 @@ impl Interpreter {
                     supplier_id: Some(*sid as u64),
                     supplier_next_index: 0,
                     callback,
-                    close_callbacks: Self::extract_supply_on_close_cbs(attributes),
+                    close_callbacks: Self::extract_supply_on_close_cbs((attributes).as_map()),
                     last_callbacks: last_cbs,
                     quit_callbacks: quit_cbs,
                     done: false,

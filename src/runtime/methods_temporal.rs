@@ -50,7 +50,7 @@ fn rebless_datetime_result(
         class_name: target_class_name,
         attributes: Arc::new(crate::value::InstanceAttrs::new(
             target_class_name,
-            merged,
+            (merged).to_map(),
             *id,
             true,
         )),
@@ -88,7 +88,7 @@ fn rebless_date_result(
         class_name: target_class_name,
         attributes: Arc::new(crate::value::InstanceAttrs::new(
             target_class_name,
-            merged,
+            (merged).to_map(),
             *id,
             true,
         )),
@@ -109,7 +109,7 @@ pub(super) fn dispatch_temporal_method(
             attributes,
             ..
         } if has_date_attrs(attributes) && !has_datetime_attrs(attributes) => {
-            let (year, month, day) = temporal::date_attrs(attributes);
+            let (year, month, day) = temporal::date_attrs((attributes).as_map());
             match method {
                 "later" | "earlier" => Some(
                     date_later_earlier(year, month, day, args, method)
@@ -157,7 +157,7 @@ pub(super) fn dispatch_temporal_method(
             ..
         } if has_datetime_attrs(attributes) => {
             let (year, month, day, hour, minute, second, timezone) =
-                temporal::datetime_attrs(attributes);
+                temporal::datetime_attrs((attributes).as_map());
             match method {
                 "later" | "earlier" => Some(
                     datetime_later_earlier(

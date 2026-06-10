@@ -298,7 +298,7 @@ fn instance_datetime_parts(value: &Value) -> Option<(i64, i64, i64, i64, i64, f6
                 && attributes.contains_key("timezone") =>
         {
             Some(crate::builtins::methods_0arg::temporal::datetime_attrs(
-                attributes,
+                (attributes).as_map(),
             ))
         }
         _ => None,

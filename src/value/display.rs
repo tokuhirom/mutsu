@@ -763,7 +763,8 @@ impl Value {
                 if let Some(Value::Str(s)) = attributes.get("__formatter_rendered") {
                     return s.to_string();
                 }
-                let (y, m, d) = crate::builtins::methods_0arg::temporal::date_attrs(attributes);
+                let (y, m, d) =
+                    crate::builtins::methods_0arg::temporal::date_attrs((attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_date(y, m, d)
             }
             Value::Instance { attributes, .. }
@@ -779,7 +780,7 @@ impl Value {
                     return s.to_string();
                 }
                 let (y, mo, d, h, mi, s, tz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs(attributes);
+                    crate::builtins::methods_0arg::temporal::datetime_attrs((attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
             }
             Value::Instance {

@@ -1573,7 +1573,8 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "DateTime" => {
-                                let (y, m, d, _, _, _, _) = temporal::datetime_attrs(attributes);
+                                let (y, m, d, _, _, _, _) =
+                                    temporal::datetime_attrs((attributes).as_map());
                                 year = y;
                                 month = m;
                                 day = d;
@@ -1675,7 +1676,7 @@ impl Interpreter {
                                     } = value.as_ref()
                                         && class_name == "Date"
                                     {
-                                        let (y, m, d) = temporal::date_attrs(attributes);
+                                        let (y, m, d) = temporal::date_attrs((attributes).as_map());
                                         year = y;
                                         month = m;
                                         day = d;
@@ -1803,7 +1804,7 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "Date" => {
-                                let (y, m, d) = temporal::date_attrs(attributes);
+                                let (y, m, d) = temporal::date_attrs((attributes).as_map());
                                 year = y;
                                 month = m;
                                 day = d;
@@ -1872,7 +1873,7 @@ impl Interpreter {
                                 id,
                             } = dt
                         {
-                            let mut attrs = (**attributes).clone();
+                            let mut attrs = attributes.to_map();
                             attrs.insert("formatter".to_string(), formatter_value.clone());
                             let dt_with_formatter =
                                 Value::make_instance_with_id(class_name, attrs, id);
@@ -1897,7 +1898,11 @@ impl Interpreter {
                                     "__formatter_rendered".to_string(),
                                     Value::str(rendered),
                                 );
-                                return Ok(Value::make_instance_with_id(class_name, updated, id));
+                                return Ok(Value::make_instance_with_id(
+                                    class_name,
+                                    (updated).to_map(),
+                                    id,
+                                ));
                             }
                         }
                         return Ok(dt);
@@ -4430,7 +4435,7 @@ impl Interpreter {
                 .to_string_value();
             *self.env_mut() = saved_env;
             self.restore_readonly_vars(saved_readonly);
-            let mut updated = (**attributes).clone();
+            let mut updated = attributes.to_map();
             updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
             Ok(Value::make_instance_with_id(class_name, updated, id))
         } else {

@@ -130,7 +130,7 @@ impl Interpreter {
         if let Some((_owner, method_def)) =
             self.resolve_method_with_owner(qualifier, actual_method, &args)
         {
-            let attrs_map = (**attributes).clone();
+            let attrs_map = attributes.to_map();
             let inst_cn = inst_cn_str.to_string();
             let tid = *target_id;
             let (result, updated) = match self.run_instance_method(
@@ -148,13 +148,7 @@ impl Interpreter {
                 && let Value::Proxy { ref fetcher, .. } = result
             {
                 let _ = method_def;
-                return Some(self.proxy_fetch(
-                    fetcher,
-                    None,
-                    qualifier,
-                    &(**attributes).clone(),
-                    0,
-                ));
+                return Some(self.proxy_fetch(fetcher, None, qualifier, &attributes.to_map(), 0));
             }
             return Some(Ok(result));
         }
@@ -172,7 +166,7 @@ impl Interpreter {
                     && !def.is_private
                     && self.method_args_match(&args, &def.param_defs)
                 {
-                    let attrs_map = (**attributes).clone();
+                    let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str.to_string();
                     let tid = *target_id;
                     let (result, updated) = match self.run_instance_method_resolved(
@@ -206,7 +200,7 @@ impl Interpreter {
         {
             for def in overloads {
                 if !def.is_private && self.method_args_match(&args, &def.param_defs) {
-                    let attrs_map = (**attributes).clone();
+                    let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str.to_string();
                     let tid = *target_id;
                     let (result, updated) = match self.run_instance_method_resolved(
@@ -348,7 +342,7 @@ impl Interpreter {
                 // role attributes on top (for run-time-applied roles).
                 let mut role_attrs: HashMap<String, Value> =
                     if let Value::Instance { attributes, .. } = inner.as_ref() {
-                        (**attributes).clone()
+                        attributes.to_map()
                     } else {
                         HashMap::new()
                     };
@@ -418,7 +412,7 @@ impl Interpreter {
                 // Use the inner instance's attributes so the method body can read
                 // attributes, but run with the Mixin target as the invocant.
                 let attrs_map = if let Value::Instance { attributes, .. } = inner.as_ref() {
-                    (**attributes).clone()
+                    attributes.to_map()
                 } else {
                     HashMap::new()
                 };

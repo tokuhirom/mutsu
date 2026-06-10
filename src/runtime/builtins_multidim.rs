@@ -650,7 +650,7 @@ impl Interpreter {
         self.env.remove(&temp_var);
 
         // Update the instance attribute
-        let mut updated = (**attributes).clone();
+        let mut updated = attributes.to_map();
         updated.insert(attr_key, new_value.clone());
         let cn = *class_name;
         let tid = *target_id;

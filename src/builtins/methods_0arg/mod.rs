@@ -879,12 +879,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // Date/DateTime 0-arg methods
     match target {
         Value::Instance { attributes, .. } if has_datetime_attrs(attributes) => {
-            if let Some(result) = temporal_dispatch::datetime_method_0arg(attributes, method) {
+            if let Some(result) =
+                temporal_dispatch::datetime_method_0arg((attributes).as_map(), method)
+            {
                 return Some(result);
             }
         }
         Value::Instance { attributes, .. } if has_date_attrs(attributes) => {
-            if let Some(result) = temporal_dispatch::date_method_0arg(attributes, method) {
+            if let Some(result) = temporal_dispatch::date_method_0arg((attributes).as_map(), method)
+            {
                 return Some(result);
             }
         }
@@ -1142,7 +1145,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     // Construct message from typed exception attributes
                     if let Some(formatted) =
                         crate::builtins::exception_message::format_exception_message(
-                            &cn, attributes,
+                            &cn,
+                            (attributes).as_map(),
                         )
                     {
                         return Some(Ok(Value::str(append_bt(formatted))));
@@ -1162,7 +1166,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     // Construct message from typed exception attributes
                     if let Some(formatted) =
                         crate::builtins::exception_message::format_exception_message(
-                            &cn, attributes,
+                            &cn,
+                            (attributes).as_map(),
                         )
                     {
                         return Some(Ok(Value::str(formatted)));
@@ -1181,7 +1186,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     // Construct message from typed exception attributes
                     if let Some(formatted) =
                         crate::builtins::exception_message::format_exception_message(
-                            &cn, attributes,
+                            &cn,
+                            (attributes).as_map(),
                         )
                     {
                         return Some(Ok(Value::str(formatted)));
@@ -1390,7 +1396,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "gist" => {
                 // Full Match gist: corner-quoted text plus positional/named
                 // sub-captures, ordered by position and nested recursively.
-                let gist = crate::runtime::utils::match_gist(attributes, 0);
+                let gist = crate::runtime::utils::match_gist((attributes).as_map(), 0);
                 return Some(Ok(Value::str(gist)));
             }
             "Str" => {
@@ -1407,7 +1413,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .unwrap_or(Value::str(String::new()))));
             }
             "raku" | "perl" => {
-                return Some(Ok(Value::str(match_helpers::match_raku_repr(attributes))));
+                return Some(Ok(Value::str(match_helpers::match_raku_repr(
+                    (attributes).as_map(),
+                ))));
             }
             "list" | "Array" => {
                 return Some(Ok(attributes
@@ -1525,10 +1533,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(attributes.get("actions").cloned().unwrap_or(Value::Nil)));
             }
             "caps" => {
-                return Some(Ok(match_helpers::match_caps(attributes)));
+                return Some(Ok(match_helpers::match_caps((attributes).as_map())));
             }
             "chunks" => {
-                return Some(Ok(match_helpers::match_chunks(attributes)));
+                return Some(Ok(match_helpers::match_chunks((attributes).as_map())));
             }
             "Capture" => {
                 // Match.Capture returns self

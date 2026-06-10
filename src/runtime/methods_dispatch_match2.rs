@@ -21,7 +21,10 @@ impl Interpreter {
                 } = &target
                     && class_name == "Supply"
                 {
-                    return Some(self.supply_list_values(attributes, true).map(Value::array));
+                    return Some(
+                        self.supply_list_values((attributes).as_map(), true)
+                            .map(Value::array),
+                    );
                 }
                 None
             }
@@ -380,7 +383,7 @@ impl Interpreter {
         } = target
             && class_name == "Supply"
         {
-            let attrs_clone = (**attributes).clone();
+            let attrs_clone = attributes.to_map();
             return self.dispatch_supply_reduce(target, &attrs_clone, callable);
         }
         let items = Self::value_to_list(&target);
@@ -400,7 +403,7 @@ impl Interpreter {
         } = target
             && class_name == "Supply"
         {
-            return Some(self.dispatch_supply_elems(attributes, &args));
+            return Some(self.dispatch_supply_elems((attributes).as_map(), &args));
         }
         // .elems on a Seq caches it (makes it available for multiple calls)
         if let Value::Seq(items) = &target {
@@ -422,7 +425,7 @@ impl Interpreter {
         } = target
             && class_name == "Supply"
         {
-            return self.dispatch_supply_map(attributes, &args);
+            return self.dispatch_supply_map((attributes).as_map(), &args);
         }
         // Validate that the map argument is callable (X::Cannot::Map)
         if let Some(func) = args.first() {

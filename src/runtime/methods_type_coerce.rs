@@ -24,7 +24,7 @@ impl Interpreter {
                     let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
                     self.supply_emit_buffer.pop().unwrap_or_default()
                 } else if attributes.get("values").is_some() {
-                    self.supply_list_values(&attributes, true)?
+                    self.supply_list_values(attributes.as_map(), true)?
                 } else {
                     Vec::new()
                 };

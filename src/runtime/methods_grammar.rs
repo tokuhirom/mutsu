@@ -251,7 +251,7 @@ impl Interpreter {
                         .collect();
                     attrs.insert("capture_alias_map".to_string(), Value::hash(alias_hash));
                 }
-                Value::make_instance(*class_name, attrs)
+                Value::make_instance(*class_name, (attrs).to_map())
             } else {
                 match_obj
             };
@@ -279,7 +279,7 @@ impl Interpreter {
                 {
                     let mut attrs = attributes.as_ref().clone();
                     attrs.insert("actions".to_string(), actions.clone());
-                    Value::make_instance_with_id(*class_name, attrs, *id)
+                    Value::make_instance_with_id(*class_name, (attrs).to_map(), *id)
                 } else {
                     result
                 }
@@ -381,7 +381,7 @@ impl Interpreter {
         }
 
         // Rebuild match_obj with updated children
-        let match_obj = Value::make_instance(class_name, updated_attrs.clone());
+        let match_obj = Value::make_instance(class_name, (updated_attrs.clone()).to_map());
 
         // Set $/ to this match and try calling actions.{rule_name}(match)
         self.env.insert("/".to_string(), match_obj.clone());
@@ -529,7 +529,7 @@ impl Interpreter {
             if let Some(act_val) = attributes.get("actions") {
                 attrs.insert("actions".to_string(), act_val.clone());
             }
-            Value::make_instance(class_name, attrs)
+            Value::make_instance(class_name, (attrs).to_map())
         } else {
             match_obj
         };

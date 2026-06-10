@@ -698,7 +698,10 @@ impl VM {
                 let updated = Value::Instance {
                     class_name,
                     attributes: Arc::new(crate::value::InstanceAttrs::new(
-                        class_name, attrs, id, false,
+                        class_name,
+                        (attrs).to_map(),
+                        id,
+                        false,
                     )),
                     id,
                 };
@@ -1325,7 +1328,7 @@ impl VM {
                             class_name: *inst_class,
                             attributes: Arc::new(crate::value::InstanceAttrs::new(
                                 *inst_class,
-                                new_attrs,
+                                (new_attrs).to_map(),
                                 inst_id,
                                 true,
                             )),
@@ -1732,9 +1735,12 @@ impl VM {
                     .collect(),
             ),
         );
-        self.interpreter
-            .overwrite_instance_bindings_by_identity(&cn, *id, updated_attrs.clone());
-        let updated = Value::make_instance_with_id(*class_name, updated_attrs, *id);
+        self.interpreter.overwrite_instance_bindings_by_identity(
+            &cn,
+            *id,
+            (updated_attrs.clone()).to_map(),
+        );
+        let updated = Value::make_instance_with_id(*class_name, (updated_attrs).to_map(), *id);
         self.interpreter
             .env_mut()
             .insert(target_name.to_string(), updated.clone());

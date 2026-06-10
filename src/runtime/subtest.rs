@@ -189,10 +189,10 @@ impl Interpreter {
                         ..
                     } if class_name == "Supply" => {
                         // Find the supply channel
-                        let supply_id = self.resolve_supply_channel_id(attributes);
+                        let supply_id = self.resolve_supply_channel_id((attributes).as_map());
                         let is_lines =
                             matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
-                        let head_limit = Self::extract_head_limit(attributes);
+                        let head_limit = Self::extract_head_limit((attributes).as_map());
                         if let Some(sid) = supply_id
                             && let Some(rx) = take_supply_channel(sid)
                         {
@@ -210,7 +210,7 @@ impl Interpreter {
                                 supplier_next_index: 0,
                                 callback,
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
-                                    attributes,
+                                    (attributes).as_map(),
                                 ),
                                 last_callbacks,
                                 quit_callbacks,
@@ -239,7 +239,7 @@ impl Interpreter {
                                 supplier_next_index: 0,
                                 callback,
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
-                                    attributes,
+                                    (attributes).as_map(),
                                 ),
                                 last_callbacks,
                                 quit_callbacks,
@@ -285,7 +285,7 @@ impl Interpreter {
                             }
                         } else {
                             // No channel, no on-demand - replay static values
-                            self.replay_static_supply(attributes, &callback)?;
+                            self.replay_static_supply((attributes).as_map(), &callback)?;
                         }
                         // Fire LAST callbacks after static/on-demand supply completes
                         let last_cbs = items

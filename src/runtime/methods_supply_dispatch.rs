@@ -578,7 +578,7 @@ impl Interpreter {
                     Box::new(Value::array(init)),
                 ));
             }
-            self.native_supply(attributes, "zip-latest", method_args)
+            self.native_supply((attributes).as_map(), "zip-latest", method_args)
         } else {
             Err(RuntimeError::new(
                 "Cannot call zip-latest on non-Supply".to_string(),

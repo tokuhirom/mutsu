@@ -668,7 +668,7 @@ impl Interpreter {
                                 let empty_attrs = HashMap::new();
                                 let inner_attrs_ref =
                                     if let Value::Instance { attributes: a, .. } = inner_supply {
-                                        a
+                                        a.as_map()
                                     } else {
                                         &empty_attrs
                                     };
@@ -1359,7 +1359,7 @@ impl Interpreter {
                 let any_live = self_is_live
                     || other_supplies.iter().any(|s| {
                         if let Value::Instance { attributes, .. } = s {
-                            supplier_id_from_attrs(attributes).is_some()
+                            supplier_id_from_attrs((attributes).as_map()).is_some()
                                 || attributes.contains_key("supply_id")
                         } else {
                             false
@@ -1396,7 +1396,7 @@ impl Interpreter {
                         let mut all_supplies: Vec<&HashMap<String, Value>> = vec![attributes];
                         for supply in &other_supplies {
                             if let Value::Instance { attributes: a, .. } = supply {
-                                all_supplies.push(a);
+                                all_supplies.push((a).as_map());
                             }
                         }
 
@@ -1506,7 +1506,7 @@ impl Interpreter {
                             } = supply
                             {
                                 let source_index = i + 1;
-                                if let Some(sid) = supplier_id_from_attrs(other_attrs) {
+                                if let Some(sid) = supplier_id_from_attrs((other_attrs).as_map()) {
                                     register_supplier_zip_latest_tap(
                                         sid,
                                         zip_latest_state_id,
@@ -1528,7 +1528,7 @@ impl Interpreter {
                             } = supply
                             {
                                 let source_index = i + 1;
-                                if let Some(sid) = supplier_id_from_attrs(other_attrs) {
+                                if let Some(sid) = supplier_id_from_attrs((other_attrs).as_map()) {
                                     register_supplier_zip_tap(sid, zip_state_id, source_index);
                                 }
                             }
@@ -1556,7 +1556,7 @@ impl Interpreter {
                         } = arg
                             && class_name == "Supply"
                         {
-                            other_values.push(self.supply_get_values(attributes)?);
+                            other_values.push(self.supply_get_values((attributes).as_map())?);
                         }
                     }
                     let min_len = std::iter::once(source_values.len())
@@ -2628,7 +2628,7 @@ impl Interpreter {
                                 let empty_attrs = HashMap::new();
                                 let inner_attrs_ref =
                                     if let Value::Instance { attributes: a, .. } = inner_supply {
-                                        a
+                                        a.as_map()
                                     } else {
                                         &empty_attrs
                                     };
@@ -3393,14 +3393,14 @@ impl Interpreter {
         }
         let control_supplier_id = Self::named_value(&args, "control").and_then(|v| {
             if let Value::Instance { attributes, .. } = &v {
-                supplier_id_from_attrs(attributes)
+                supplier_id_from_attrs((attributes).as_map())
             } else {
                 None
             }
         });
         let status_supplier_id = Self::named_value(&args, "status").and_then(|v| {
             if let Value::Instance { attributes, .. } = &v {
-                supplier_id_from_attrs(attributes)
+                supplier_id_from_attrs((attributes).as_map())
             } else {
                 None
             }
@@ -3603,7 +3603,7 @@ impl Interpreter {
         } = &target
             && class_name == "Supply"
         {
-            self.native_supply(attributes, method, args.to_vec())
+            self.native_supply((attributes).as_map(), method, args.to_vec())
         } else {
             Err(RuntimeError::new(format!(
                 "Cannot call .{} on non-Supply",

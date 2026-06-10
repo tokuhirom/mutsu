@@ -149,9 +149,11 @@ pub(super) fn dispatch(
             class_name,
             attributes,
             ..
-        } if class_name == "Parameter" && (method == "raku" || method == "perl") => Some(Ok(
-            Value::str(crate::value::signature::parameter_to_raku(attributes)),
-        )),
+        } if class_name == "Parameter" && (method == "raku" || method == "perl") => {
+            Some(Ok(Value::str(crate::value::signature::parameter_to_raku(
+                (attributes).as_map(),
+            ))))
+        }
         Value::Instance {
             class_name,
             attributes,
@@ -516,7 +518,9 @@ pub(super) fn dispatch(
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Match" => crate::runtime::utils::match_gist(attributes, 0),
+                    } if class_name == "Match" => {
+                        crate::runtime::utils::match_gist((attributes).as_map(), 0)
+                    }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
@@ -572,7 +576,9 @@ pub(super) fn dispatch(
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Match" => crate::runtime::utils::match_gist(attributes, 0),
+                    } if class_name == "Match" => {
+                        crate::runtime::utils::match_gist((attributes).as_map(), 0)
+                    }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }

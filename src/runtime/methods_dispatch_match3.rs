@@ -298,7 +298,7 @@ impl Interpreter {
         } = target
             && class_name == "Supply"
         {
-            return Some(self.dispatch_supply_grab(attributes, &args));
+            return Some(self.dispatch_supply_grab((attributes).as_map(), &args));
         }
         if let Value::Package(ref class_name) = target
             && class_name == "Supply"
@@ -490,7 +490,7 @@ impl Interpreter {
         } = target
             && class_name == "Supply"
         {
-            return self.dispatch_supply_skip(attributes, &args);
+            return self.dispatch_supply_skip((attributes).as_map(), &args);
         }
         let items = crate::runtime::utils::value_to_list(&target);
         let n = if args.is_empty() {

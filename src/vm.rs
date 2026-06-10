@@ -2410,7 +2410,7 @@ impl VM {
                     // Call user method directly, bypassing native method dispatch
                     let cn = class_name.unwrap();
                     let attrs = match &val {
-                        Value::Instance { attributes, .. } => (**attributes).clone(),
+                        Value::Instance { attributes, .. } => attributes.to_map(),
                         _ => std::collections::HashMap::new(),
                     };
                     match self.interpreter.run_instance_method(
