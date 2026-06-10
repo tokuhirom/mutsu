@@ -227,9 +227,25 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
         CAS・registry/scan/detached/`instance_cells` は Stage 2b まで維持（まだ削除不可）。
         検証: make test 全緑、S12-attributes/instance・native、S12-methods/{attribute-params,lastcall,defer-call,defer-next}・
         S17-lowlevel/cas（whitelist）PASS。継承同名 private（Parent/Child `$!p`）は main と同挙動の pre-existing バグで非回帰。
-  - [ ] **Stage 2b — 配列/ハッシュ属性 (`@!a`/`%!h`) を cell 直結**: in-place 変異 op（push/pop/要素代入/`.=`）の cell 書き戻し配線。
-        これが入れば materialize の array/hash 挿入 + array/hash writeback + by-id scan + registry + detached を全廃できる。
-  - 旧「一括」設計（下記）は Stage 2a+2b に分割。以下は引き続き 2b の参照マップ。
+  - [x] **Stage 2b — 配列/ハッシュ属性 (`@!a`/`%!h`) を cell 直結（landed: branch `phase3-stage2b-array-hash-cell`）**:
+        read を `GetArrayVar`/`GetHashVar` で `self` の cell 直読（`read_self_attr_cell` を全6 twigil 対応に一般化＝
+        `scalar_attr_twigil_base`→`attr_twigil_base`、`(bare, is_private)` 返却）。各変異 op の **後**に env→cell ミラー
+        （`mirror_array_hash_attr_to_cell`）を配線: `CallMethodMut`/`CallMethodDynamicMut`/`ArrayPush`/`IndexAssignExprNamed`/
+        `MultiDimIndexAssign`/名前ベース `AssignExpr`。**重要＝op 前に env スナップショット**（`array_hash_attr_env_snapshot`）を取り、
+        env が実際に変化したときだけミラー：非変異メソッド（`@!a.join`）も `CallMethodMut` で来るため、stale env コピーを
+        無条件ミラーすると cross-frame の cell 変異を clobber する（cf3 で実証・修正）。**スカラー reconcile を全 sigil 統一**
+        （`reconcile_scalar_attrs`→`reconcile_attrs`、ルール「cell が entry から変化→cell 優先、でなければ env 変化を採用」＝
+        cross-frame/per-op ミラーは cell が勝ち、attributive array param `method m(@!a)`・sigilless は env が勝つ）。
+        これで **array/hash writeback (`writeback_attributes*`) を完全撤去**（`AttrSlots` 構造体 + `compute_attr_slots` も削除、net -115 行）。
+        **cross-frame 配列/ハッシュ変異バグ修正**（nested method の `@!a.push`/`%!h<k>=` が caller に可視）。
+        検証: make test 全緑、S12-attributes/methods・S14-traits・S17/cas（whitelist）PASS、Stage 2b edge 21/21
+        （push/pop/shift/unshift/要素代入/`:delete`以外/whole-assign/cross-frame array+hash/attributive param/`.=`/chain/read-no-clobber）。
+        既知の非対応（pre-existing・非回帰）: `%!h<x>:delete`（DELETE-KEY が Index target 経由でミラー外）、`@b[0]=v` のスペース無し
+        パース、継承同名 private。**materialize の array/hash 挿入 / by-id scan (`overwrite_instance_bindings_by_identity`) /
+        registry (`instance_cells`) / detached は未撤去**＝Stage 2c（次）で cell 単一源を根拠に全廃。
+  - [ ] **Stage 2c — 伝播ハック全廃**: cell が全 attr の単一源になったので by-id scan + `instance_cells` registry +
+        `make_instance_detached`/`update_instance_cell` + materialize の env コピー挿入を撤去。CAS の cell-CAS 化を再検討。
+  - 旧「一括」設計（下記）は Stage 2a/2b/2c に分割。以下は参照マップ。
 
   #### 現状メカニズム（CI 調査で確定したフルマップ）
   method frame は instance attr を **env/locals コピー**で持ち、cell は writeback でしか同期されない:
