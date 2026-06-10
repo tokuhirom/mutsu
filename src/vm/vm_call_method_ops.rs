@@ -3,6 +3,56 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    /// Build an X::Multi::NoMatch error for a `print`/`say`/`put`/`note` call
+    /// made with a positional argument on an invocant whose only candidate is
+    /// the default `(Mu: *%_)` one. The `capture` attribute carries the full
+    /// call capture (invocant + arguments) so a `capture => { ... }` matcher
+    /// can inspect it (e.g. `$_[0] ~~ Failure`).
+    pub(super) fn print_routine_no_match_error(
+        method: &str,
+        target: &Value,
+        args: &[Value],
+    ) -> RuntimeError {
+        let invocant_type = crate::value::types::what_type_name(target);
+        let arg_profile: Vec<String> = args
+            .iter()
+            .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+            .map(|a| {
+                let tn = crate::value::types::what_type_name(a);
+                if matches!(a, Value::Nil) {
+                    tn
+                } else {
+                    format!("{}:D", tn)
+                }
+            })
+            .collect();
+        let message = format!(
+            "Cannot resolve caller {}({}:D: {}); none of these signatures matches:\n    (Mu: *%_)",
+            method,
+            invocant_type,
+            arg_profile.join(", ")
+        );
+        let mut positional = vec![target.clone()];
+        for a in args {
+            if !matches!(a, Value::Pair(..) | Value::ValuePair(..)) {
+                positional.push(a.clone());
+            }
+        }
+        let capture = Value::Capture {
+            positional,
+            named: std::collections::HashMap::new(),
+        };
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        attrs.insert("capture".to_string(), capture);
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Multi::NoMatch"),
+            attrs,
+        )));
+        err
+    }
+
     /// Fast path for a 0-arg public attribute-accessor read on an Instance
     /// (`$obj.x`). Returns `Some(value)` to push when it handled the call, or
     /// `None` to fall through to full method dispatch.
@@ -712,6 +762,22 @@ impl VM {
             }
             self.env_dirty = true;
             return Ok(());
+        }
+        // `.print(arg)` / `.say(arg)` / `.put(arg)` / `.note(arg)` on a Failure
+        // invocant: the default Mu candidates for these routines take only a
+        // slurpy named hash (`(Mu: *%_)`), so a positional argument fails to
+        // resolve and Raku throws X::Multi::NoMatch (rather than exploding the
+        // Failure). IO::Handle / user classes override these with a positional
+        // signature and are dispatched normally before reaching this point.
+        if matches!(method, "print" | "say" | "put" | "note")
+            && args
+                .iter()
+                .any(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+            && let Value::Instance { class_name, .. } = &target
+            && class_name.resolve() == "Failure"
+            && !target.is_failure_handled()
+        {
+            return Err(Self::print_routine_no_match_error(method, &target, &args));
         }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).

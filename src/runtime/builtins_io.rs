@@ -336,7 +336,7 @@ impl Interpreter {
             create,
         ) = self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
-        self.open_file_handle(
+        match self.open_file_handle(
             &path_buf,
             read,
             write,
@@ -348,7 +348,24 @@ impl Interpreter {
             nl_out,
             enc,
             create,
-        )
+        ) {
+            Ok(handle) => Ok(handle),
+            // Raku returns a Failure (wrapping the exception) when open() fails,
+            // rather than dying immediately. Sinking/using the Failure later
+            // throws the exception. Preserve any specific exception type the
+            // error already carries; otherwise default to X::AdHoc.
+            Err(err) => {
+                let class_name = err
+                    .exception
+                    .as_deref()
+                    .and_then(|ex| match ex {
+                        Value::Instance { class_name, .. } => Some(class_name.to_string()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "X::AdHoc".to_string());
+                Ok(io_exception_failure(&class_name, err.message))
+            }
+        }
     }
 
     pub(super) fn builtin_close(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
