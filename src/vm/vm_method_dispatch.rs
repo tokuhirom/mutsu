@@ -357,6 +357,9 @@ impl VM {
             }
             if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
                 if let Value::Str(source_name) = attr_val {
+                    // A sigilless attribute is in play — enable the cell-direct
+                    // routing's alias-table lookup (Phase 3 Stage 2c (ii)).
+                    self.interpreter.sigilless_attrs_active = true;
                     // Set up bidirectional alias: !x ↔ alias_name
                     self.interpreter.env_mut().insert(
                         format!("__mutsu_sigilless_alias::!{}", actual_attr),

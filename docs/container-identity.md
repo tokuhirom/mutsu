@@ -267,7 +267,19 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
                 後に変異が消えるバグ（`method set-and-read($!x){ say $!x }` が in-body 7 でなく stale cell 99 を読み属性も 99 のまま）を修正。
                 検証: make test 6247、S12/S14/S17/S06 whitelist 140 ファイル 2890 テスト PASS、named `:$!x`/BUILD/array/hash param・
                 in-body read・cross-frame すべて raku 一致。reconcile は (ii)(iii) まで維持（attributive param 経路は今や mirror で冗長だが無害）。
-          - [ ] **(ii) sigilless `has $x` を cell-direct 化**（2a 相当・bare `Var("x")` を実行時 alias テーブル参照で cell に回す）。
+          - [x] **(ii) sigilless `has $x` を cell-direct 化（landed: branch `phase3-stage2c-sigilless-cell`）**: bare `Var("x")`
+                （sigilless attr）を実行時 `__mutsu_sigilless_alias::` テーブル参照で cell に回す。**read**: `read_self_attr_cell` を
+                `canonical_attr_twigil`（直接 twigil → そのまま / bare sigilless → alias chain 辿って `!x` twigil 解決）経由に拡張。
+                sigilless `$x` は method local 宣言でないため **GetGlobal** で読まれる（GetLocal でない）と判明 → vm.rs の GetGlobal handler
+                にも cell-direct read を追加（env read の前）。**write**: 6つの alias-chain 伝播ループ（inc/dec 4 + name-based assign 1 +
+                SetGlobal 1）の各 alias target に `write_self_attr_cell` を追加し attr-twigil alias (`!x`) を cell へミラー。inc/dec の
+                4ループは重複していたので共通ヘルパ `propagate_sigilless_alias_chain` に factor（cell mirror 込み）。**perf**: read 経路は
+                hot なので新フラグ `Interpreter::sigilless_attrs_active`（materialize で sigilless alias 設定時に立てる process-sticky bool）で
+                ゲート → 非 sigilless プログラム（大多数）は string check のみ。**修正バグ**: 同フレーム/nested-frame の sigilless read が
+                entry env コピー（stale）を読んでいた（`method outer { self.inner; $y }` が inner の変異後 10 でなく 99 を返すべき所で 10）。
+                検証: make test 6247、S12/S14/S17/S06/S32-num whitelist 171 ファイル 6432・S02/S03/S04 318 ファイル 32004 PASS、
+                int.t perf 0.085s（回帰なし）、nested-read/same-method write-read/inc-dec/closure/multi-attr すべて raku 一致。
+                reconcile は (iii) まで維持（sigilless 経路は今や cell 直結で reconcile case-2 は冗長だが無害）。
           - [ ] **(iii) reconcile を `cell.to_map()` 置換 + materialize の attr-value env コピー撤去**。
         - [ ] **registry 撤去（別 slice・後回し）**: `instance_cells` + `make_instance_detached`/`update_instance_cell` 撤去
               （callers が `self` の Arc を直接 in-place 変異する形へ。~50 の make_instance_with_id rebuild を全変換する all-or-nothing 大改修）+
