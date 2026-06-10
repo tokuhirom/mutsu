@@ -4,7 +4,7 @@ use crate::value::{RuntimeError, Value};
 use num_traits::{Signed, Zero};
 use std::sync::Arc;
 
-use super::{flatten_deep_value, is_infinite_range, raku_round, raku_round_to_value};
+use super::{is_infinite_range, raku_round, raku_round_to_value};
 
 pub(super) fn dispatch(
     target: &Value,
@@ -37,29 +37,22 @@ pub(super) fn dispatch(
             })
         }
         "flat" => Some(match target {
-            Value::Array(items, kind) => {
-                if *kind == crate::value::ArrayKind::Shaped {
-                    let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                    return Some(Some(Ok(Value::Seq(Arc::new(leaves)))));
-                }
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    flatten_deep_value(item, &mut result, false);
-                }
-                Some(Ok(Value::Seq(Arc::new(result))))
-            }
-            Value::Seq(items) | Value::Slip(items) => {
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    flatten_deep_value(item, &mut result, false);
-                }
-                Some(Ok(Value::Seq(Arc::new(result))))
+            Value::Array(_, crate::value::ArrayKind::Shaped) => {
+                let leaves = crate::runtime::utils::shaped_array_leaves(target);
+                Some(Ok(Value::Seq(Arc::new(leaves))))
             }
             other if is_infinite_range(other) => Some(Ok(other.clone())),
             Value::LazyList(_) => Some(Ok(target.clone())), // flat of a lazy list is still lazy
             _ => {
+                // Single source of truth: delegate to `flat_val` (also used by
+                // the `flat()` function) with List context (flatten_arrays =
+                // true). A Seq/List of nested arrays then descends one level --
+                // e.g. `(@a xx 4).flat` flattens its element arrays to match
+                // raku -- while a top-level real Array still itemizes its `[..]`
+                // children. The old per-method `flatten_deep_value` passed
+                // `false` for Seq children and so left them un-flattened.
                 let mut result = Vec::new();
-                flatten_deep_value(target, &mut result, false);
+                crate::builtins::flat_val(target, &mut result, true);
                 Some(Ok(Value::Seq(Arc::new(result))))
             }
         }),

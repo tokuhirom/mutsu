@@ -670,27 +670,6 @@ pub(crate) fn is_value_lazy(value: &Value) -> bool {
         || matches!(value, Value::Seq(items) if crate::value::seq_is_lazy(items))
 }
 
-fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
-    match value {
-        Value::Array(items, kind) if *kind == ArrayKind::List || flatten_arrays => {
-            for item in items.iter() {
-                flatten_deep_value(item, out, flatten_arrays);
-            }
-        }
-        Value::Seq(items) | Value::Slip(items) => {
-            for item in items.iter() {
-                flatten_deep_value(item, out, flatten_arrays);
-            }
-        }
-        Value::Range(..)
-        | Value::RangeExcl(..)
-        | Value::RangeExclStart(..)
-        | Value::RangeExclBoth(..)
-        | Value::GenericRange { .. } => out.extend(crate::runtime::utils::value_to_list(value)),
-        other => out.push(other.clone()),
-    }
-}
-
 /// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.
 fn range_endpoint_display(v: i64) -> String {
     if v == i64::MAX {
