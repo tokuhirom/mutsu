@@ -881,6 +881,7 @@ pub(crate) fn build_compound_assign_expr(
                 Expr::ArrayVar(name) => Some(format!("@{}", name)),
                 Expr::HashVar(name) => Some(format!("%{}", name)),
                 Expr::BareWord(name) => Some(name.clone()),
+                Expr::DoStmt(s) => crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s),
                 _ => None,
             };
             let current_value = Expr::MethodCall {
@@ -1360,6 +1361,9 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::ArrayVar(name) => Some(format!("@{}", name)),
                     Expr::HashVar(name) => Some(format!("%{}", name)),
                     Expr::BareWord(name) => Some(name.clone()),
+                    Expr::DoStmt(s) => {
+                        crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s)
+                    }
                     _ => None,
                 };
                 let method_name = if modifier == Some('!') {

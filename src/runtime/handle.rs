@@ -1031,6 +1031,7 @@ impl Interpreter {
         Option<String>,
         Option<String>,
         bool,
+        bool,
     ) {
         let mut read = false;
         let mut write = false;
@@ -1038,6 +1039,7 @@ impl Interpreter {
         let mut bin = false;
         let mut chomp = true;
         let mut create = false;
+        let mut exclusive = false;
         let mut nl_in: Option<Vec<Vec<u8>>> = None;
         let mut out_buffer: Option<usize> = None;
         let mut nl_out: Option<String> = None;
@@ -1048,11 +1050,50 @@ impl Interpreter {
                 match name.as_str() {
                     "r" => read = truthy,
                     "w" => write = truthy,
+                    // `:rw` == `:mode<rw>, :create` — unlike a bare `:mode<rw>`
+                    // (== `:update`), the `:rw` flag creates the file if missing.
                     "rw" => {
                         read = truthy;
                         write = truthy;
+                        if truthy {
+                            create = true;
+                        }
                     }
-                    "a" => append = truthy,
+                    "a" | "append" => append = truthy,
+                    // `:update` == `:mode<rw>`; `:ra` == :mode<rw>,:create,:append;
+                    // `:rx` == :mode<rw>,:create,:exclusive; `:x` == :mode<wo>,
+                    // :create,:exclusive (named-flag spellings of the open modes).
+                    "update" => {
+                        if truthy {
+                            read = true;
+                            write = true;
+                        }
+                    }
+                    "ra" => {
+                        if truthy {
+                            read = true;
+                            write = true;
+                            create = true;
+                            append = true;
+                        }
+                    }
+                    "rx" => {
+                        if truthy {
+                            read = true;
+                            write = true;
+                            create = true;
+                            exclusive = true;
+                        }
+                    }
+                    "x" => {
+                        if truthy {
+                            write = true;
+                            create = true;
+                            exclusive = true;
+                        }
+                    }
+                    "exclusive" => exclusive = truthy,
+                    "truncate" => {}
                     "bin" => bin = truthy,
                     "chomp" => chomp = truthy,
                     "create" => create = truthy,
@@ -1093,6 +1134,7 @@ impl Interpreter {
             nl_out,
             enc,
             create,
+            exclusive,
         )
     }
 
@@ -1110,6 +1152,7 @@ impl Interpreter {
         nl_out: Option<String>,
         enc: Option<String>,
         create: bool,
+        exclusive: bool,
     ) -> Result<Value, RuntimeError> {
         // Opening a directory as a file handle is an error in Raku
         if path.is_dir() {
@@ -1130,12 +1173,19 @@ impl Interpreter {
             } else {
                 options.create(true).truncate(true);
             }
-        } else if write && read {
-            options.create(true);
         }
-        // Explicit :create flag ensures the file is created if it doesn't exist
+        // Read-write (`:mode<rw>` / `:update`) does NOT create the file on its
+        // own — only `:create` (i.e. `:rw`) does. Opening a missing file for
+        // read-write without `:create` must fail (return a Failure), matching
+        // rakudo. So creation is driven solely by the explicit `:create` flag.
         if create {
             options.create(true);
+        }
+        // :exclusive / :x — fail if the file already exists (O_EXCL). Takes
+        // precedence over plain :create so `open(:create, :exclusive)` errors
+        // on an existing file instead of opening it.
+        if exclusive {
+            options.create(false).create_new(true);
         }
         let file = options.open(path).map_err(|err| {
             RuntimeError::new(format!("Failed to open '{}': {}", path.display(), err))

@@ -729,7 +729,7 @@ impl Interpreter {
                 let content = super::utils::strip_utf8_bom(content);
 
                 // Parse nl-in / chomp named args
-                let (_, _, _, _, chomp, nl_in, _, _, _, _) = self.parse_io_flags_values(&args);
+                let (_, _, _, _, chomp, nl_in, _, _, _, _, _) = self.parse_io_flags_values(&args);
                 let mut parts = Self::split_content_by_separators(&content, &nl_in, chomp);
 
                 // Check for a positional limit argument
@@ -784,7 +784,7 @@ impl Interpreter {
                 }
             }
             "slurp" => {
-                let (_, _, _, bin, _, _, _, _, enc, _) = self.parse_io_flags_values(&args);
+                let (_, _, _, bin, _, _, _, _, enc, _, _) = self.parse_io_flags_values(&args);
                 if bin {
                     let bytes = fs::read(&path_buf).map_err(|err| {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
@@ -829,8 +829,9 @@ impl Interpreter {
                     nl_out,
                     enc,
                     create,
+                    exclusive,
                 ) = self.parse_io_flags_values(&args);
-                self.open_file_handle(
+                match self.open_file_handle(
                     &path_buf,
                     read,
                     write,
@@ -842,7 +843,23 @@ impl Interpreter {
                     nl_out,
                     enc,
                     create,
-                )
+                    exclusive,
+                ) {
+                    Ok(handle) => Ok(handle),
+                    // Like the `open` sub, `IO::Path.open` returns a Failure
+                    // (wrapping the exception) on error rather than throwing.
+                    Err(err) => {
+                        let class_name = err
+                            .exception
+                            .as_deref()
+                            .and_then(|ex| match ex {
+                                Value::Instance { class_name, .. } => Some(class_name.to_string()),
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| "X::AdHoc".to_string());
+                        Ok(io_exception_failure(&class_name, err.message))
+                    }
+                }
             }
             "copy" => {
                 let dest = args
@@ -2293,8 +2310,9 @@ impl Interpreter {
                     nl_out,
                     enc,
                     create,
+                    exclusive,
                 ) = self.parse_io_flags_values(&merged_args);
-                self.open_file_handle(
+                match self.open_file_handle(
                     &path_buf,
                     read,
                     write,
@@ -2306,7 +2324,23 @@ impl Interpreter {
                     nl_out,
                     enc,
                     create,
-                )
+                    exclusive,
+                ) {
+                    Ok(handle) => Ok(handle),
+                    // Like the `open` sub, `IO::Handle.open` returns a Failure
+                    // (wrapping the exception) on error rather than throwing.
+                    Err(err) => {
+                        let class_name = err
+                            .exception
+                            .as_deref()
+                            .and_then(|ex| match ex {
+                                Value::Instance { class_name, .. } => Some(class_name.to_string()),
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| "X::AdHoc".to_string());
+                        Ok(io_exception_failure(&class_name, err.message))
+                    }
+                }
             }
             "nl-out" => {
                 if let Some(arg) = args.first() {
