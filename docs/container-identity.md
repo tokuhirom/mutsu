@@ -243,8 +243,20 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
         既知の非対応（pre-existing・非回帰）: `%!h<x>:delete`（DELETE-KEY が Index target 経由でミラー外）、`@b[0]=v` のスペース無し
         パース、継承同名 private。**materialize の array/hash 挿入 / by-id scan (`overwrite_instance_bindings_by_identity`) /
         registry (`instance_cells`) / detached は未撤去**＝Stage 2c（次）で cell 単一源を根拠に全廃。
-  - [ ] **Stage 2c — 伝播ハック全廃**: cell が全 attr の単一源になったので by-id scan + `instance_cells` registry +
-        `make_instance_detached`/`update_instance_cell` + materialize の env コピー挿入を撤去。CAS の cell-CAS 化を再検討。
+  - [~] **Stage 2c — 伝播ハック全廃（着手・slice 1 done）**: cell が全 attr の単一源になったので伝播スキャンを撤去。
+        - [x] **slice 1 — by-id env/locals scan 撤去（branch `phase3-stage2c-drop-byid-scan`）**: `overwrite_instance_bindings_by_identity`
+              の `for bound in self.env.values_mut()` 走査 + 再帰ヘルパ `overwrite_instance_recursive`（Instance/nested-attr/Mixin/
+              ContainerRef の各 arm）と、locals 走査 `overwrite_instance_in_locals`（+ 6 call sites）を**全削除**。伝播は単一の
+              `update_instance_cell(id, &updated)`（live shared cell への直書き）に集約。**根拠**: Stage 1/2a/2b 後、instance の
+              全 alias（同一フレーム・caller フレーム・`ContainerRef` boxed capture・role `Mixin`・他 instance のネスト属性）は
+              `Arc<InstanceAttrs>` 参照共有で**同一 cell を見る**（deep-copy は明示 `.clone` のみ）→ scan が rebuild していた
+              holder は元から同じ cell を共有しており scan は観測上 no-op。`_class_name` は vestigial（cell は id keying）だが
+              ~40 call site churn 回避のため signature 維持（後続 slice で撤去）。検証: make test 6247・S12/S14/S17 whitelist
+              106 ファイル 2111 テスト PASS（cross-thread cas・全 role/mixin・cross-frame note/closure・nested・escaping-closure
+              scalar-holding-instance すべて緑）、clippy 緑。net -108 行。
+        - [ ] **slice 2（残）**: `instance_cells` registry + `make_instance_detached`/`update_instance_cell` の撤去
+              （callers が `self` の Arc を直接 in-place 変異する形へ。compiled-method の `(Value, attributes)` 戻り規約を変える）+
+              materialize の env コピー挿入撤去 + CAS の cell-CAS 化再検討。
   - 旧「一括」設計（下記）は Stage 2a/2b/2c に分割。以下は参照マップ。
 
   #### 現状メカニズム（CI 調査で確定したフルマップ）

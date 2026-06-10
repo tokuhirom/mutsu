@@ -414,84 +414,24 @@ impl Interpreter {
 
     pub(crate) fn overwrite_instance_bindings_by_identity(
         &mut self,
-        class_name: &str,
+        _class_name: &str,
         id: u64,
         updated: std::collections::HashMap<String, Value>,
     ) {
-        // Phase 3, Stage 1: write the new attributes straight into the live
-        // shared cell. Because every alias of this instance (in this frame and
-        // any caller frame the scan below never visits) shares that cell, this
-        // single write is what makes the mutation visible across call frames —
-        // the fix for the long-standing closure-frame mutation bug. The
-        // by-identity scan that follows is now redundant (it rebuilds bindings
-        // that already share the updated cell) and is removed in Stage 2.
+        // Phase 3, Stage 2c: write the new attributes straight into the live
+        // shared cell. Because every alias of this instance — in this frame, any
+        // caller frame, a `ContainerRef`-boxed capture, a role `Mixin`, or a
+        // nested attribute of another instance — shares that cell (the
+        // `Arc<InstanceAttrs>` is cloned by reference, never deep-copied except
+        // for an explicit `.clone`), this single write makes the mutation visible
+        // everywhere. The former by-identity scan over `self.env`/`self.locals`
+        // that rebuilt each holder via `make_instance_with_id` is now redundant —
+        // those rebuilds reused the very same cell — and has been removed.
+        //
+        // `_class_name` is vestigial (the cell is keyed by `id` alone); it is kept
+        // on the signature to avoid churning ~40 call sites in this slice and will
+        // be dropped when this choke point is retired in a later Stage 2c slice.
         crate::value::update_instance_cell(id, &updated);
-        for bound in self.env.values_mut() {
-            Self::overwrite_instance_recursive(bound, class_name, id, &updated);
-        }
-    }
-
-    /// Recursively update all occurrences of an instance (identified by class_name + id)
-    /// in a value tree. This handles instances stored as attributes of other instances.
-    fn overwrite_instance_recursive(
-        value: &mut Value,
-        class_name: &str,
-        id: u64,
-        updated: &std::collections::HashMap<String, Value>,
-    ) {
-        match value {
-            Value::Instance {
-                class_name: existing_class,
-                id: existing_id,
-                ..
-            } if existing_class.resolve() == class_name && *existing_id == id => {
-                *value =
-                    Value::make_instance_with_id(Symbol::intern(class_name), updated.clone(), id);
-            }
-            Value::Instance {
-                attributes,
-                id: this_id,
-                class_name: this_class,
-                ..
-            } => {
-                // Recurse into this instance's attributes, but only if it's a different
-                // instance (avoid infinite recursion on self-referential structures).
-                let this_id_val = *this_id;
-                if this_id_val != id {
-                    // Check if any attribute contains the target instance
-                    let has_target = attributes.as_map().values().any(|v| {
-                        matches!(v, Value::Instance { class_name: cn, id: vid, .. }
-                            if cn.resolve() == class_name && *vid == id)
-                    });
-                    if has_target {
-                        let mut new_attrs: std::collections::HashMap<String, Value> =
-                            attributes.to_map();
-                        for attr_val in new_attrs.values_mut() {
-                            Self::overwrite_instance_recursive(attr_val, class_name, id, updated);
-                        }
-                        *value = Value::make_instance_with_id(*this_class, new_attrs, this_id_val);
-                    }
-                }
-            }
-            // A value mixed in with a role (`$obj does Role`) wraps the original
-            // instance inside a Mixin. Recurse into the inner value so that
-            // mutations to the instance's attributes propagate through the Mixin.
-            Value::Mixin(inner, mixins) => {
-                let mut new_inner = (**inner).clone();
-                Self::overwrite_instance_recursive(&mut new_inner, class_name, id, updated);
-                *value = Value::Mixin(std::sync::Arc::new(new_inner), mixins.clone());
-            }
-            // A captured-and-mutated `$` scalar may be boxed into a shared
-            // `ContainerRef` cell (see box_captured_lexicals). When a mutating
-            // method runs on the instance it holds, write the update THROUGH the
-            // cell in place so all holders of the shared Arc (the outer variable
-            // and any sibling/escaping closure snapshot) observe the mutation.
-            Value::ContainerRef(arc) => {
-                let mut inner = arc.lock().unwrap();
-                Self::overwrite_instance_recursive(&mut inner, class_name, id, updated);
-            }
-            _ => {}
-        }
     }
 
     /// Call a Proxy callback (FETCH or STORE) in the context of an instance's attributes.
