@@ -109,6 +109,7 @@ impl Interpreter {
                                     Some(inner) => inner.as_deref().is_some_and(|tc| {
                                         Self::is_simple_native_ctor_constraint(tc)
                                             || Self::native_scalar_default(tc).is_some()
+                                            || Self::is_native_coercion_ctor_constraint(tc)
                                     }),
                                 },
                                 '@' | '%' => {
@@ -122,13 +123,15 @@ impl Interpreter {
                     },
                 )
                 && class_def.attribute_types.values().all(|tc| {
-                    // A typed scalar `$` constraint: either a plain class type
-                    // (`type_matches_value`-checkable) or a native scalar type
-                    // (`int`/`num`/`str`, which defaults to a native zero rather
-                    // than a type object). Typed `@`/`%` containers are already
-                    // rejected by the per-attribute sigil branch above.
+                    // A typed scalar `$` constraint: a plain class type
+                    // (`type_matches_value`-checkable), a native scalar type
+                    // (`int`/`num`/`str`, defaulting to a native zero rather than a
+                    // type object), or a built-in-target coercion type (`Int()`).
+                    // Typed `@`/`%` containers are already rejected by the
+                    // per-attribute sigil branch above.
                     Self::is_simple_native_ctor_constraint(tc)
                         || Self::native_scalar_default(tc).is_some()
+                        || Self::is_native_coercion_ctor_constraint(tc)
                 })
                 && class_def.attribute_smileys.is_empty();
             if !simple {
@@ -147,6 +150,22 @@ impl Interpreter {
     /// keeps the interpreter's richer construction semantics.
     fn is_simple_native_ctor_constraint(tc: &str) -> bool {
         tc.starts_with(char::is_uppercase) && !tc.contains('(') && !tc.contains('[')
+    }
+
+    /// A coercion-type constraint (`Int()`, `Int(Str)`) whose target is a
+    /// built-in scalar type the native constructor can coerce to without running
+    /// user-defined code. A user-class coercion target (with a `COERCE` method)
+    /// keeps the interpreter, which runs that method. Coercion itself is routed
+    /// through the shared `coerce_value_for_constraint`, so a native-coerced value
+    /// is identical to the interpreter's.
+    fn is_native_coercion_ctor_constraint(tc: &str) -> bool {
+        match crate::runtime::types::parse_coercion_type(tc) {
+            Some((target, _src)) => matches!(
+                target,
+                "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "Str" | "Bool" | "Numeric" | "Real"
+            ),
+            None => false,
+        }
     }
 
     /// The default value for an uninitialized native-typed scalar attribute
@@ -229,9 +248,12 @@ impl Interpreter {
                         // through. Native-typed attributes (`int`/`num`/`str`)
                         // are exempt: the interpreter stores the provided value
                         // as-is without coercing or type-checking it, so we do
-                        // the same and never fall through on them.
+                        // the same and never fall through on them. Coercion-typed
+                        // attributes (`Int()`) are also exempt — their provided
+                        // value is coerced in the final pass below, not checked.
                         if let Some(c) = type_constraints.get(key)
                             && Self::native_scalar_default(c).is_none()
+                            && !Self::is_native_coercion_ctor_constraint(c)
                             && !self.type_matches_value(c, val)
                         {
                             return None;
@@ -359,9 +381,11 @@ impl Interpreter {
                     // A non-native default whose value does not match the
                     // attribute's type constraint needs the interpreter — fall
                     // through. Native-typed attributes are exempt (their default
-                    // is stored without a type check).
+                    // is stored without a type check); coercion-typed attributes
+                    // are exempt too (their default is coerced in the final pass).
                     if let Some(c) = type_constraints.get(attr_name)
                         && Self::native_scalar_default(c).is_none()
+                        && !Self::is_native_coercion_ctor_constraint(c)
                         && !self.type_matches_value(c, &val)
                     {
                         typed_default_mismatch = true;
@@ -394,6 +418,25 @@ impl Interpreter {
         }
         if typed_default_mismatch {
             return None;
+        }
+        // Final pass: coerce every coercion-typed `$` attribute (`has Int() $.x`)
+        // through its target type. This uniformly covers a provided value, a
+        // literal/computed default, and the bare type-object default of an
+        // uninitialized attribute (which coerces to itself). The shared
+        // `coerce_value_for_constraint` is the exact path the interpreter uses, so
+        // the result is identical; the gate already excluded user-class targets,
+        // so only built-in coercion logic runs here.
+        for (attr_name, _, _, _, _, sigil, _) in &class_attrs {
+            if *sigil != '$' {
+                continue;
+            }
+            if let Some(tc) = type_constraints.get(attr_name)
+                && Self::is_native_coercion_ctor_constraint(tc)
+                && let Some(val) = attrs.remove(attr_name)
+            {
+                let coerced = self.coerce_value_for_constraint(tc, val);
+                attrs.insert(attr_name.clone(), coerced);
+            }
         }
         // Add alias metadata for `has $x` (no twigil) attributes
         self.add_alias_attribute_metadata(cn_resolved, &mut attrs);
@@ -3119,6 +3162,9 @@ impl Interpreter {
                     .iter()
                     .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
                     .collect();
+                // Attribute type constraints (MRO-wide), used to coerce a provided
+                // value for a coercion-typed attribute (`has Int() $.x`).
+                let attr_type_constraints = self.collect_attribute_type_constraints(class_key);
                 // First, collect constructor args into attrs
                 self.env = saved_default_env.clone();
                 let class_mro = self.class_mro(class_key);
@@ -3138,10 +3184,18 @@ impl Interpreter {
                     match val {
                         Value::Pair(k, v) => {
                             if !any_build && self.is_attribute_buildable(class_key, k) {
-                                let coerced = Self::coerce_attr_value_by_sigil(
-                                    *v.clone(),
-                                    sigil_map.get(k).copied().unwrap_or('$'),
-                                );
+                                let sigil = sigil_map.get(k).copied().unwrap_or('$');
+                                let mut value = *v.clone();
+                                // A coercion-typed attribute (`has Int() $.x`)
+                                // coerces its provided value through the target
+                                // type (built-in coercion or a user COERCE method).
+                                if sigil == '$'
+                                    && let Some(tc) = attr_type_constraints.get(k)
+                                    && crate::runtime::types::is_coercion_constraint(tc)
+                                {
+                                    value = self.coerce_value_for_constraint(tc, value);
+                                }
+                                let coerced = Self::coerce_attr_value_by_sigil(value, sigil);
                                 attrs.insert(k.clone(), coerced);
                             }
                             // When BUILD exists, named args are passed to BUILD
@@ -3406,6 +3460,18 @@ impl Interpreter {
                             }
                             _ => Value::Nil,
                         }
+                    };
+                    // A coercion-typed attribute (`has Int() $.x = "42"`) coerces
+                    // its evaluated default through the target type, just like a
+                    // provided value. (The bare type-object default for an
+                    // uninitialized coercion attribute coerces to itself.)
+                    let val = if sigil == '$'
+                        && let Some(tc) = attr_type_constraints.get(&attr_name)
+                        && crate::runtime::types::is_coercion_constraint(tc)
+                    {
+                        self.coerce_value_for_constraint(tc, val)
+                    } else {
+                        val
                     };
                     attrs.insert(attr_name, val);
                 }
