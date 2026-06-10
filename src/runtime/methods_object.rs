@@ -480,6 +480,76 @@ impl Interpreter {
         Some(Ok(Value::make_instance(class_name, attrs)))
     }
 
+    /// The `is Type` trait declared on an `@`/`%` attribute (`has @.a is Buf`),
+    /// searched across the class's MRO so an inherited typed-container attribute
+    /// is found. Returns the declared type name (e.g. `Buf`, `Array[Int]`).
+    pub(crate) fn attribute_is_type_in_mro(&self, class_name: &str, attr: &str) -> Option<String> {
+        for cls in self.mro_readonly(class_name) {
+            if let Some(t) = self
+                .registry()
+                .class_attribute_is_types
+                .get(&(cls.clone(), attr.to_string()))
+            {
+                return Some(t.clone());
+            }
+        }
+        None
+    }
+
+    /// Coerce a provided constructor value to an `is Type` container attribute
+    /// (`has @.a is Buf` / `has %.h is BagHash` / `has @.x is Array[Int]`). A
+    /// parameterized array type (`Array[T]`) is built as pure data (typed array +
+    /// element-type metadata + element type-check); any other container type is
+    /// produced by dispatching to that type's `.new`, mirroring the uninitialized
+    /// `is Type` path. A value that already matches the declared type is kept.
+    pub(crate) fn coerce_value_to_is_type(
+        &mut self,
+        type_name: &str,
+        sigil: char,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if self.type_matches_value(type_name, &value) {
+            return Ok(value);
+        }
+        if let Some(inner) = type_name
+            .strip_prefix("Array[")
+            .or_else(|| type_name.strip_prefix("array["))
+            .and_then(|s| s.strip_suffix(']'))
+        {
+            let inner = inner.trim().to_string();
+            let items = match Self::coerce_attr_value_by_sigil(value, '@') {
+                Value::Array(items, _) => (*items).clone(),
+                other => vec![other],
+            };
+            if inner.starts_with(char::is_uppercase) {
+                for it in &items {
+                    if !matches!(it, Value::Nil) && !self.type_matches_value(&inner, it) {
+                        return Err(crate::runtime::utils::type_check_element_typed_error(
+                            "", &inner, it,
+                        ));
+                    }
+                }
+            }
+            let arr = Value::real_array(items);
+            self.register_container_type_metadata(
+                &arr,
+                super::ContainerTypeInfo {
+                    value_type: inner,
+                    key_type: None,
+                    declared_type: Some(type_name.to_string()),
+                },
+            );
+            Ok(arr)
+        } else {
+            // A non-Array container type (Buf, BagHash, ...): dispatch to its
+            // `.new` with the provided (sigil-coerced) value, just like the
+            // uninitialized `is Type` path builds an empty one with `.new`.
+            let arg = Self::coerce_attr_value_by_sigil(value, sigil);
+            let type_obj = Value::Package(crate::symbol::Symbol::intern(type_name));
+            self.call_method_with_values(type_obj, "new", vec![arg])
+        }
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,
@@ -3233,6 +3303,17 @@ impl Interpreter {
                                     value = self.coerce_value_for_constraint(tc, value);
                                 }
                                 let coerced = Self::coerce_attr_value_by_sigil(value, sigil);
+                                // An `is Type` container attribute (`has @.a is
+                                // Buf`) coerces its provided value to the declared
+                                // container type (Buf, BagHash, Array[T], ...).
+                                let coerced = if matches!(sigil, '@' | '%')
+                                    && let Some(type_name) =
+                                        self.attribute_is_type_in_mro(class_key, k)
+                                {
+                                    self.coerce_value_to_is_type(&type_name, sigil, coerced)?
+                                } else {
+                                    coerced
+                                };
                                 attrs.insert(k.clone(), coerced);
                             }
                             // When BUILD exists, named args are passed to BUILD
