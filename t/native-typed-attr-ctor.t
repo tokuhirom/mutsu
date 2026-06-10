@@ -5,7 +5,7 @@ use Test;
 # zero (0 / 0e0 / "") rather than a type object, and a provided value is
 # stored as-is (the constructor neither coerces nor type-checks it).
 
-plan 18;
+plan 21;
 
 # --- defaults ---
 {
@@ -60,4 +60,18 @@ plan 18;
     my $b = B5.new(x => 3);
     is $b.x, 3,  'inherited native int provided value kept';
     is $b.y, '', 'native str default in subclass';
+}
+
+# --- repr('CUnion') native fields stay on the byte-overlay constructor, not
+#     the native default fast path (the fields share memory) ---
+{
+    class Overlap is repr('CUnion') {
+        has uint32 $.u32;
+        has uint16 $.u16;
+        has uint8  $.u8;
+    }
+    my $o = Overlap.new(u32 => 1234567);
+    is $o.u32, 1234567, 'CUnion uint32 field';
+    is $o.u16,   54919, 'CUnion uint16 overlays low bytes';
+    is $o.u8,      135, 'CUnion uint8 overlays lowest byte';
 }

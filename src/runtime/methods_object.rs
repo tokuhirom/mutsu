@@ -54,6 +54,12 @@ impl Interpreter {
         if !self.registry().classes.contains_key(cn_resolved) {
             return false;
         }
+        // A `repr('CUnion')` class lays its native fields over shared memory, so
+        // construction is a byte overlay (`construct_cunion_instance`), not plain
+        // per-attribute data assignment. Keep it on the interpreter.
+        if self.registry().cunion_classes.contains(cn_resolved) {
+            return false;
+        }
         let mut has_attribute = false;
         for cls in self.mro_readonly(cn_resolved) {
             if cls == "Any" || cls == "Mu" || cls == "Cool" {
