@@ -926,7 +926,6 @@ impl Interpreter {
     fn compile_methods_for_map(
         methods: &mut HashMap<String, Vec<super::MethodDef>>,
         package_name: &str,
-        attr_names: &[String],
     ) {
         let mut to_compile = Vec::new();
         for (method_name, overloads) in methods.iter() {
@@ -952,7 +951,6 @@ impl Interpreter {
                         &def.body,
                     );
                     cc.compute_may_capture_outer_vars();
-                    cc.compute_attr_slots(attr_names);
                     cc.compute_needs_env_sync();
                     to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
                 }
@@ -1006,17 +1004,14 @@ impl Interpreter {
     /// Compile method bodies for a given class using the bytecode compiler.
     pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
         if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
-            let attr_names: Vec<String> =
-                class_def.attributes.iter().map(|a| a.0.clone()).collect();
-            Self::compile_methods_for_map(&mut class_def.methods, class_name, &attr_names);
+            Self::compile_methods_for_map(&mut class_def.methods, class_name);
         }
     }
 
     /// Compile method bodies for a given role.
     pub(crate) fn compile_role_methods(&mut self, role_name: &str) {
         if let Some(role_def) = self.registry_mut().roles.get_mut(role_name) {
-            let attr_names: Vec<String> = role_def.attributes.iter().map(|a| a.0.clone()).collect();
-            Self::compile_methods_for_map(&mut role_def.methods, role_name, &attr_names);
+            Self::compile_methods_for_map(&mut role_def.methods, role_name);
         }
     }
 

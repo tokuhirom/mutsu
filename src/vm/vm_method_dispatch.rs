@@ -582,11 +582,11 @@ impl VM {
         }
 
         if can_skip_merge {
-            // Write back attributes directly from locals (skip env round-trip).
-            writeback_attributes_from_locals(cc, &self.locals, &mut attributes, owner_class);
-            // Phase 3 Stage 2 (scalar slice): reconcile scalar attrs against the
-            // live cell + local/env writes before the env is torn down.
-            self.reconcile_scalar_attrs(&base, cc, &mut attributes);
+            // Phase 3 Stage 2: all attributes (scalar/array/hash) are reconciled
+            // against the live cell + local/env writes before the env is torn
+            // down. The cell-direct reads + per-op mirrors make the cell the
+            // single source; the legacy attribute writeback is gone.
+            self.reconcile_attrs(&base, cc, &mut attributes);
 
             let method_var_bindings = self.interpreter.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -607,10 +607,9 @@ impl VM {
                 }
             }
 
-            writeback_attributes(self.interpreter.env(), &mut attributes);
-            // Phase 3 Stage 2 (scalar slice): reconcile scalar attrs against the
-            // live cell + local/env writes before the env is merged away.
-            self.reconcile_scalar_attrs(&base, cc, &mut attributes);
+            // Phase 3 Stage 2: reconcile all attributes against the live cell +
+            // local/env writes before the env is merged away.
+            self.reconcile_attrs(&base, cc, &mut attributes);
             let mut method_local_keys: HashSet<String> = HashSet::from_iter([
                 "self".to_string(),
                 "__ANON_STATE__".to_string(),
@@ -738,24 +737,25 @@ impl VM {
         })
     }
 
-    /// Phase 3 Stage 2 (scalar slice): reconcile the entry-time writeback
-    /// snapshot's scalar attributes against the two possible sources of an
-    /// in-method change, while the method's locals/env are still live.
+    /// Phase 3 Stage 2: reconcile the entry-time attribute snapshot against the
+    /// two possible sources of an in-method change, while the method's
+    /// locals/env are still live. Covers scalar, array, and hash attributes.
     ///
-    /// A scalar attribute may have been changed two ways during the method:
-    /// 1. via the cell-direct var ops (`$!x = v`, `$!x++`) -> the live cell
-    ///    already holds the new value (and a nested-frame mutation lands here
-    ///    too), or
-    /// 2. via a path that writes the env/local copy but not the cell yet:
-    ///    attributive params (`method m($!s)`), no-twigil sigilless attribute
-    ///    aliases (`has $x; ... $x = v`), or `is rw` accessor stores.
+    /// An attribute may have been changed two ways during the method:
+    /// 1. through the shared cell — cell-direct scalar writes (`$!x = v`),
+    ///    per-op mirrored array/hash mutations (`@!a.push`, `%!h<k>=`), and any
+    ///    mutation made in a nested method frame all land in the live cell, or
+    /// 2. through an env/local copy that never reached the cell — attributive
+    ///    params (`method m($!s)`/`method m(@!a)`), no-twigil sigilless aliases
+    ///    (`has $x; ... $x = v`), or `is rw` accessor stores.
     ///
-    /// We detect (2) by comparing the current local/env value of `!bare`/`.bare`
-    /// against the entry snapshot (which is exactly `attributes[k]` here, since
-    /// scalar writeback was skipped). If it changed, that value wins; otherwise
-    /// the live cell value wins (covering case 1 and unchanged attrs). The
-    /// resulting map is then written back through the cell by the caller.
-    fn reconcile_scalar_attrs(
+    /// Precedence: the cell wins when it changed from the entry snapshot (it is
+    /// the authoritative store and includes cross-frame mutations); otherwise an
+    /// env/local write that changed wins (case 2); otherwise the value is
+    /// unchanged. `attributes[k]` is the entry snapshot here because writeback no
+    /// longer mutates it. The result is written back through the cell by the
+    /// caller.
+    fn reconcile_attrs(
         &self,
         base: &Value,
         code: &CompiledCode,
@@ -774,20 +774,29 @@ impl VM {
             if k.starts_with(ATTR_ALIAS_META_PREFIX) {
                 continue;
             }
+            let original = attributes.get(&k).cloned().unwrap_or(Value::Nil);
             let cell_val = cell_snapshot.get(&k).cloned();
-            // Only scalar attributes: array/hash attrs flow through writeback.
-            if matches!(cell_val, Some(Value::Array(..)) | Some(Value::Hash(..))) {
+            // (1) The cell is authoritative when it changed from the entry value.
+            if let Some(cv) = &cell_val
+                && *cv != original
+            {
+                attributes.insert(k, cv.clone());
                 continue;
             }
-            let original = attributes.get(&k).cloned().unwrap_or(Value::Nil);
-            // Qualified private key (`Owner\0attr`) maps to the bare env/local
-            // name `!attr` / `.attr`.
+            // (2) Otherwise an env/local write that bypassed the cell wins. Pick
+            // the twigil keys by the attribute's sigil (inferred from its value
+            // type). Qualified private key (`Owner\0attr`) maps to bare `!attr`.
             let bare = k.rsplit('\0').next().unwrap_or(&k);
+            let (priv_key, pub_key) = match cell_val.as_ref().unwrap_or(&original) {
+                Value::Array(..) => (format!("@!{}", bare), format!("@.{}", bare)),
+                Value::Hash(..) => (format!("%!{}", bare), format!("%.{}", bare)),
+                _ => (format!("!{}", bare), format!(".{}", bare)),
+            };
             let env_changed = self
-                .attr_env_or_local(code, &format!("!{}", bare))
+                .attr_env_or_local(code, &priv_key)
                 .filter(|v| *v != original)
                 .or_else(|| {
-                    self.attr_env_or_local(code, &format!(".{}", bare))
+                    self.attr_env_or_local(code, &pub_key)
                         .filter(|v| *v != original)
                 });
             if let Some(v) = env_changed {
@@ -1158,12 +1167,9 @@ impl VM {
             self.interpreter.set_state_var(key.clone(), val);
         }
 
-        if can_skip_merge {
-            // Writeback attributes directly from locals (no env involved)
-            writeback_attributes_from_locals(cc, &self.locals, &mut attributes, owner_class);
-        } else {
-            // Non-can_skip_merge: AssignExpr may have written attribute
-            // values to env. Sync locals→env first, then use env-based writeback.
+        if !can_skip_merge {
+            // Non-can_skip_merge: AssignExpr may have written attribute values to
+            // env. Sync locals→env first so the merge/reconcile sees them.
             for (i, local_name) in cc.locals.iter().enumerate() {
                 if local_name.starts_with('.')
                     || local_name.starts_with('!')
@@ -1177,11 +1183,10 @@ impl VM {
                         .insert(local_name.clone(), self.locals[i].clone());
                 }
             }
-            writeback_attributes(self.interpreter.env(), &mut attributes);
         }
-        // Phase 3 Stage 2 (scalar slice): reconcile scalar attrs against the
-        // live cell + local/env writes before the env is torn down.
-        self.reconcile_scalar_attrs(&base, cc, &mut attributes);
+        // Phase 3 Stage 2: reconcile all attributes against the live cell +
+        // local/env writes before the env is torn down.
+        self.reconcile_attrs(&base, cc, &mut attributes);
 
         let method_var_bindings = self.interpreter.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;
@@ -1284,198 +1289,6 @@ impl VM {
             };
             (adjusted, attributes)
         })
-    }
-}
-
-/// Write back attribute values from locals after fast-path method execution.
-/// Reads directly from the locals array instead of going through env.
-fn writeback_attributes_from_locals(
-    cc: &CompiledCode,
-    locals: &[Value],
-    attributes: &mut HashMap<String, Value>,
-    owner_class: &str,
-) {
-    // Fast path: use pre-computed slot indices when available
-    if !cc.attr_slots.is_empty() {
-        for slots in &cc.attr_slots {
-            let original = attributes
-                .get(&slots.attr_name)
-                .cloned()
-                .unwrap_or(Value::Nil);
-            // Phase 3 Stage 2 (scalar slice): scalar attributes are written
-            // through the cell directly by the var ops; only array/hash attrs
-            // still write back from locals here.
-            let arr_private_val = slots.arr_private.map(|i| &locals[i]);
-            let arr_public_val = slots.arr_public.map(|i| &locals[i]);
-            let hash_private_val = slots.hash_private.map(|i| &locals[i]);
-            let hash_public_val = slots.hash_public.map(|i| &locals[i]);
-
-            if let (Some(priv_val), Some(pub_val)) = (arr_private_val, arr_public_val) {
-                if *priv_val == original && *pub_val != original {
-                    attributes.insert(slots.attr_name.clone(), pub_val.clone());
-                } else {
-                    attributes.insert(slots.attr_name.clone(), priv_val.clone());
-                }
-                continue;
-            }
-            if let (Some(priv_val), Some(pub_val)) = (hash_private_val, hash_public_val) {
-                if *priv_val == original && *pub_val != original {
-                    attributes.insert(slots.attr_name.clone(), pub_val.clone());
-                } else {
-                    attributes.insert(slots.attr_name.clone(), priv_val.clone());
-                }
-                continue;
-            }
-            if let Some(val) = arr_private_val.or(hash_private_val) {
-                attributes.insert(slots.attr_name.clone(), val.clone());
-                continue;
-            }
-            if let Some(val) = arr_public_val.or(hash_public_val) {
-                attributes.insert(slots.attr_name.clone(), val.clone());
-            }
-        }
-    } else {
-        // Fallback: linear search (for methods compiled without attr info)
-        for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
-            if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) || attr_name.contains('\0') {
-                continue;
-            }
-            let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
-
-            // Phase 3 Stage 2 (scalar slice): scalar attributes are written
-            // through the cell directly; only array/hash attrs write back here.
-            let arr_private_key = format!("@!{}", attr_name);
-            let arr_public_key = format!("@.{}", attr_name);
-            let hash_private_key = format!("%!{}", attr_name);
-            let hash_public_key = format!("%.{}", attr_name);
-            let arr_private_val = cc
-                .locals
-                .iter()
-                .rposition(|n| n == &arr_private_key)
-                .map(|i| locals[i].clone());
-            let arr_public_val = cc
-                .locals
-                .iter()
-                .rposition(|n| n == &arr_public_key)
-                .map(|i| locals[i].clone());
-            let hash_private_val = cc
-                .locals
-                .iter()
-                .rposition(|n| n == &hash_private_key)
-                .map(|i| locals[i].clone());
-            let hash_public_val = cc
-                .locals
-                .iter()
-                .rposition(|n| n == &hash_public_key)
-                .map(|i| locals[i].clone());
-
-            if let (Some(priv_val), Some(pub_val)) = (&arr_private_val, &arr_public_val) {
-                if *priv_val == original && *pub_val != original {
-                    attributes.insert(attr_name.clone(), pub_val.clone());
-                } else {
-                    attributes.insert(attr_name.clone(), priv_val.clone());
-                }
-                continue;
-            }
-            if let (Some(priv_val), Some(pub_val)) = (&hash_private_val, &hash_public_val) {
-                if *priv_val == original && *pub_val != original {
-                    attributes.insert(attr_name.clone(), pub_val.clone());
-                } else {
-                    attributes.insert(attr_name.clone(), priv_val.clone());
-                }
-                continue;
-            }
-            if let Some(val) = arr_private_val.or(hash_private_val) {
-                attributes.insert(attr_name.clone(), val);
-                continue;
-            }
-            if let Some(val) = arr_public_val.or(hash_public_val) {
-                attributes.insert(attr_name, val);
-            }
-        }
-    }
-
-    // Write back class-qualified private array/hash attribute entries. Scalar
-    // qualified keys (`owner\0attr`) are written through the cell directly by the
-    // var ops (Phase 3 Stage 2), so only array/hash values are reconciled here.
-    for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
-        if !attr_name.contains('\0') {
-            continue;
-        }
-        if let Some(bare_attr) = attr_name.strip_prefix(&format!("{}\0", owner_class)) {
-            let arr_private_key = format!("@!{}", bare_attr);
-            let hash_private_key = format!("%!{}", bare_attr);
-            let idx = cc
-                .locals
-                .iter()
-                .rposition(|n| n == &arr_private_key)
-                .or_else(|| cc.locals.iter().rposition(|n| n == &hash_private_key));
-            if let Some(idx) = idx {
-                attributes.insert(attr_name, locals[idx].clone());
-            }
-        }
-    }
-}
-
-/// Write back attribute values from env after method execution.
-///
-/// Compares original attribute values with private (`!name`) and public (`.name`)
-/// env entries, preferring public when private is unchanged and public differs.
-fn writeback_attributes(env: &Env, attributes: &mut HashMap<String, Value>) {
-    for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
-        if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
-            continue;
-        }
-        // Skip class-qualified private attribute keys (ClassName\0attrName).
-        // These are written back separately below.
-        if attr_name.contains('\0') {
-            continue;
-        }
-        let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
-        // Phase 3 Stage 2 (scalar slice): scalar attributes (`!x`/`.x`) are
-        // written through the shared cell directly by the var ops, so they are no
-        // longer reconciled from the env here — doing so would clobber a mutation
-        // made in a nested method frame with this frame's stale snapshot (the
-        // cross-frame bug). Only array (`@!`/`@.`) and hash (`%!`/`%.`) attributes
-        // still use the materialize+writeback path.
-        let env_array_private_key = format!("@!{}", attr_name);
-        let env_array_public_key = format!("@.{}", attr_name);
-        let env_hash_private_key = format!("%!{}", attr_name);
-        let env_hash_public_key = format!("%.{}", attr_name);
-        let env_array_private = env.get(&env_array_private_key).cloned();
-        let env_array_public = env.get(&env_array_public_key).cloned();
-        let env_hash_private = env.get(&env_hash_private_key).cloned();
-        let env_hash_public = env.get(&env_hash_public_key).cloned();
-        if let (Some(private_val), Some(public_val)) = (&env_array_private, &env_array_public) {
-            if *private_val == original && *public_val != original {
-                attributes.insert(attr_name.clone(), public_val.clone());
-            } else {
-                attributes.insert(attr_name.clone(), private_val.clone());
-            }
-            continue;
-        }
-        if let (Some(private_val), Some(public_val)) = (&env_hash_private, &env_hash_public) {
-            if *private_val == original && *public_val != original {
-                attributes.insert(attr_name.clone(), public_val.clone());
-            } else {
-                attributes.insert(attr_name.clone(), private_val.clone());
-            }
-            continue;
-        }
-        if let Some(val) = env_array_private.or(env_hash_private) {
-            attributes.insert(attr_name.clone(), val);
-            continue;
-        }
-        if let Some(val) = env_array_public.or(env_hash_public) {
-            attributes.insert(attr_name.clone(), val);
-        }
-        let alias_env_key = format!("__mutsu_sigilless_alias::!{}", attr_name);
-        if let Some(Value::Str(alias_name)) = env.get(&alias_env_key) {
-            attributes.insert(
-                format!("{}{}", ATTR_ALIAS_META_PREFIX, attr_name),
-                Value::str(alias_name.to_string()),
-            );
-        }
     }
 }
 

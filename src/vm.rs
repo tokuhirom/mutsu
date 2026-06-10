@@ -1108,6 +1108,22 @@ impl VM {
                         name
                     )));
                 }
+                // Phase 3 Stage 2b: array attributes (`@!a`/`@.a`) read straight
+                // from `self`'s shared cell so a mutation in a nested method frame
+                // is visible here.
+                if let Some(cell_val) = self.read_self_attr_cell(name) {
+                    let val = match cell_val {
+                        Value::Hash(ref map) => Value::real_array(
+                            map.iter()
+                                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                                .collect(),
+                        ),
+                        other => other,
+                    };
+                    self.stack.push(val);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| self.get_local_by_bare_name(code, name))
@@ -1172,6 +1188,13 @@ impl VM {
                 if name == "%?RESOURCES" {
                     let resources = self.interpreter.build_resources_for_package();
                     self.stack.push(resources);
+                    *ip += 1;
+                    return Ok(());
+                }
+                // Phase 3 Stage 2b: hash attributes (`%!h`/`%.h`) read straight
+                // from `self`'s shared cell (cross-frame visibility).
+                if let Some(cell_val) = self.read_self_attr_cell(name) {
+                    self.stack.push(cell_val);
                     *ip += 1;
                     return Ok(());
                 }
@@ -2815,16 +2838,20 @@ impl VM {
                 target_name_idx,
                 modifier_idx,
             } => {
+                let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
                 self.exec_call_method_dynamic_mut_op(
                     code,
                     *arity,
                     *target_name_idx,
                     *modifier_idx,
                 )?;
+                self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
             OpCode::ArrayPush { target_name_idx } => {
+                let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
                 self.exec_array_push_op(code, *target_name_idx)?;
+                self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
             OpCode::CallMethodMut {
@@ -2835,6 +2862,7 @@ impl VM {
                 quoted,
                 arg_sources_idx,
             } => {
+                let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
                 self.exec_call_method_mut_op(
                     code,
                     *name_idx,
@@ -2844,6 +2872,7 @@ impl VM {
                     *quoted,
                     *arg_sources_idx,
                 )?;
+                self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
             OpCode::CallOnValue {
@@ -2936,7 +2965,9 @@ impl VM {
                 *ip += 1;
             }
             OpCode::MultiDimIndexAssign { name_idx, ndims } => {
+                let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
                 self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims)?;
+                self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::MultiDimIndexAssignGeneric(ndims) => {
@@ -3057,7 +3088,9 @@ impl VM {
                 name_idx,
                 is_positional,
             } => {
+                let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
                 self.exec_index_assign_expr_named_op(code, *name_idx, *is_positional)?;
+                self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::IndexAssignPseudoStashNamed {

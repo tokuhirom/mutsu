@@ -1081,10 +1081,6 @@ pub(crate) struct CompiledCode {
     /// that are NOT method-local (attributes, params, special vars).
     /// When true, the fast method path cannot use a fresh env.
     pub(crate) may_capture_outer_vars: bool,
-    /// Pre-computed attribute slot mapping for fast writeback on method exit.
-    /// Each entry: (attr_name, private_slot, public_slot, arr_private, arr_public, hash_private, hash_public).
-    /// Slots are `None` if not found in `locals`. Avoids 6 × N_attrs linear searches.
-    pub(crate) attr_slots: Vec<AttrSlots>,
     /// Bitmap: true if local[i] needs to be synced to env (because it's
     /// referenced by GetGlobal/SetGlobal in this code or closures exist).
     /// Locals that are only accessed via GetLocal don't need env sync,
@@ -1135,19 +1131,6 @@ pub(crate) struct CompiledCode {
     pub(crate) has_calls: bool,
 }
 
-/// Pre-computed local slot indices for a single attribute.
-#[derive(Debug, Clone)]
-pub(crate) struct AttrSlots {
-    pub(crate) attr_name: String,
-    // Phase 3 Stage 2 (scalar slice): scalar `!x`/`.x` slots are no longer used
-    // for writeback (scalar attributes are written through the cell directly), so
-    // only the array/hash slot indices remain.
-    pub(crate) arr_private: Option<usize>,
-    pub(crate) arr_public: Option<usize>,
-    pub(crate) hash_private: Option<usize>,
-    pub(crate) hash_public: Option<usize>,
-}
-
 impl CompiledCode {
     pub(crate) fn new() -> Self {
         Self {
@@ -1166,30 +1149,12 @@ impl CompiledCode {
             is_pointy_block: false,
             has_env_writes: false,
             may_capture_outer_vars: false,
-            attr_slots: Vec::new(),
             needs_env_sync: Vec::new(),
             free_var_syms: Vec::new(),
             free_var_writes: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
             has_calls: false,
-        }
-    }
-
-    pub(crate) fn compute_attr_slots(&mut self, attr_names: &[String]) {
-        self.attr_slots.clear();
-        for attr_name in attr_names {
-            let find = |prefix: &str| -> Option<usize> {
-                let key = format!("{}{}", prefix, attr_name);
-                self.locals.iter().rposition(|n| *n == key)
-            };
-            self.attr_slots.push(AttrSlots {
-                attr_name: attr_name.clone(),
-                arr_private: find("@!"),
-                arr_public: find("@."),
-                hash_private: find("%!"),
-                hash_public: find("%."),
-            });
         }
     }
 

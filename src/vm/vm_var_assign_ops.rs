@@ -4159,36 +4159,46 @@ impl VM {
     // (`writeback_attributes*` skip scalar attrs). Array/hash attributes still
     // use the materialize+writeback path for now (later slices).
 
-    /// If `name` is a scalar attribute-twigil local (`!x` or `.x`), return the
-    /// bare attribute name. Excludes special vars (`!`, `.`) and internal names.
-    pub(super) fn scalar_attr_twigil_base(name: &str) -> Option<&str> {
-        let bare = name.strip_prefix('!').or_else(|| name.strip_prefix('.'))?;
+    /// If `name` is an attribute-twigil local — scalar (`!x`/`.x`), array
+    /// (`@!x`/`@.x`) or hash (`%!x`/`%.x`) — return `(bare attribute name,
+    /// is_private)`. Excludes special vars (`!`, `.`) and internal names. The
+    /// cell stores attributes under the bare name, so all six twigil forms of an
+    /// attribute resolve to the same cell slot.
+    pub(super) fn attr_twigil_base(name: &str) -> Option<(&str, bool)> {
+        // Optional `@`/`%` sigil, then the `!` (private) / `.` (public) twigil.
+        let rest = name
+            .strip_prefix('@')
+            .or_else(|| name.strip_prefix('%'))
+            .unwrap_or(name);
+        let (bare, is_private) = if let Some(b) = rest.strip_prefix('!') {
+            (b, true)
+        } else if let Some(b) = rest.strip_prefix('.') {
+            (b, false)
+        } else {
+            return None;
+        };
         // Attribute names are ordinary identifiers (start alpha/underscore). This
-        // filters out `!=`, the bare `!`/`.` special vars, and `__mutsu_` keys
-        // (which never begin with `!`/`.` anyway).
-        let mut chars = bare.chars();
-        match chars.next() {
-            Some(c) if c.is_alphabetic() || c == '_' => Some(bare),
+        // filters out `!=`, the bare `!`/`.` special vars, and `__mutsu_` keys.
+        match bare.chars().next() {
+            Some(c) if c.is_alphabetic() || c == '_' => Some((bare, is_private)),
             _ => None,
         }
     }
 
-    /// Resolve the cell key for a scalar attribute on the given instance,
-    /// preferring the method owner class's qualified private key when present
-    /// (Parent/Child same-named `$!priv` disambiguation), matching the order used
-    /// when method frames materialize attributes. Returns `None` when the
-    /// attribute does not exist in the cell (so non-attribute `.foo`/`!foo`
-    /// lvalues fall through to the normal local/env handling).
+    /// Resolve the cell key for an attribute on the given instance, preferring
+    /// the method owner class's qualified private key when present (Parent/Child
+    /// same-named `$!priv` disambiguation), matching the order used when method
+    /// frames materialize attributes. Returns `None` when the attribute does not
+    /// exist in the cell (so non-attribute `.foo`/`!foo` lvalues fall through to
+    /// the normal local/env handling).
     fn resolve_attr_cell_key(
         &self,
         name: &str,
         attrs: &crate::value::InstanceAttrs,
     ) -> Option<String> {
-        let bare = Self::scalar_attr_twigil_base(name)?;
+        let (bare, is_private) = Self::attr_twigil_base(name)?;
         let map = attrs.as_map();
-        if name.starts_with('!')
-            && let Some(owner) = self.interpreter.method_class_stack_top()
-        {
+        if is_private && let Some(owner) = self.interpreter.method_class_stack_top() {
             let qkey = format!("{}\0{}", owner, bare);
             if map.contains_key(&qkey) {
                 return Some(qkey);
@@ -4205,7 +4215,7 @@ impl VM {
     /// when `name` is a scalar attr-twigil, `self` is a concrete instance, and
     /// the attribute exists in the cell.
     pub(super) fn read_self_attr_cell(&self, name: &str) -> Option<Value> {
-        Self::scalar_attr_twigil_base(name)?;
+        Self::attr_twigil_base(name)?;
         let self_val = self.get_env_with_main_alias("self")?;
         let Value::Instance { attributes, .. } = &self_val else {
             return None;
@@ -4232,7 +4242,7 @@ impl VM {
     /// No-op when `name` is not a scalar attr-twigil, `self` is not a concrete
     /// instance, or the attribute does not exist on `self`.
     fn write_self_attr_cell(&self, name: &str, val: Value) {
-        if Self::scalar_attr_twigil_base(name).is_none() {
+        if Self::attr_twigil_base(name).is_none() {
             return;
         }
         let Some(self_val) = self.get_env_with_main_alias("self") else {
@@ -4252,7 +4262,7 @@ impl VM {
         let Some(name) = code.locals.get(idx) else {
             return;
         };
-        if Self::scalar_attr_twigil_base(name).is_none()
+        if Self::attr_twigil_base(name).is_none()
             || Self::is_non_mirrorable_attr_value(&self.locals[idx])
         {
             return;
@@ -4265,7 +4275,7 @@ impl VM {
     /// `AssignExpr`). Reads the value back from the local slot or env after the
     /// op completed.
     pub(super) fn mirror_attr_value_to_cell_by_name(&self, code: &CompiledCode, name: &str) {
-        if Self::scalar_attr_twigil_base(name).is_none() {
+        if Self::attr_twigil_base(name).is_none() {
             return;
         }
         let val = self
@@ -4279,6 +4289,69 @@ impl VM {
             return;
         }
         self.write_self_attr_cell(name, val);
+    }
+
+    /// True if `name` is an array/hash attribute twigil (`@!`/`@.`/`%!`/`%.`).
+    fn is_array_hash_attr_twigil(name: &str) -> bool {
+        (name.starts_with("@!")
+            || name.starts_with("@.")
+            || name.starts_with("%!")
+            || name.starts_with("%."))
+            && Self::attr_twigil_base(name).is_some()
+    }
+
+    /// Snapshot the env/shared value of an array/hash attribute variable before a
+    /// mutating op, so [`mirror_array_hash_attr_to_cell`] can tell a genuine
+    /// mutation (env value changed) from a non-mutating method call (`@!a.join`)
+    /// on a stale env copy — mirroring the stale copy would clobber a cross-frame
+    /// cell mutation. Returns `None` for non-attribute targets (cheap fast path).
+    pub(super) fn array_hash_attr_env_snapshot(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Option<Value> {
+        let name = Self::const_str(code, name_idx);
+        if !Self::is_array_hash_attr_twigil(name) {
+            return None;
+        }
+        let name = name.to_string();
+        self.get_env_with_main_alias(&name)
+            .or_else(|| self.interpreter.get_shared_var(&name))
+    }
+
+    /// Mirror an array/hash attribute variable's post-mutation value into `self`'s
+    /// shared cell (Phase 3 Stage 2b). Used after the mutating array/hash ops
+    /// (`@!a.push`, `@!a[i]=`, `%!h<k>=`, …), which write the new container into
+    /// env/shared keyed by `name`. Only fires for `@!`/`@.`/`%!`/`%.` twigils and
+    /// only when the env value actually changed from `pre` (so a non-mutating
+    /// method like `@!a.join` on a stale env copy does not clobber the cell).
+    pub(super) fn mirror_array_hash_attr_to_cell(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+        pre: Option<Value>,
+    ) {
+        let name = Self::const_str(code, name_idx);
+        if !Self::is_array_hash_attr_twigil(name) {
+            return;
+        }
+        let name = name.to_string();
+        // The mutating ops write the new container into env (or shared_vars).
+        let val = self
+            .get_env_with_main_alias(&name)
+            .or_else(|| self.interpreter.get_shared_var(&name));
+        let Some(val) = val else {
+            return;
+        };
+        // No env change -> either a non-mutating method or a no-op; do not write
+        // a possibly-stale env copy over a cross-frame cell mutation.
+        if pre.as_ref() == Some(&val) {
+            return;
+        }
+        if Self::is_non_mirrorable_attr_value(&val) {
+            return;
+        }
+        self.write_self_attr_cell(&name, val);
     }
 
     /// Refresh the local slot from `self`'s cell before a read-modify-write on a
@@ -4300,7 +4373,7 @@ impl VM {
     /// a read-modify-write (used by the increment/decrement ops, which dispatch
     /// by name rather than slot index).
     pub(super) fn sync_attr_local_from_cell_by_name(&mut self, code: &CompiledCode, name: &str) {
-        if Self::scalar_attr_twigil_base(name).is_none() {
+        if Self::attr_twigil_base(name).is_none() {
             return;
         }
         if let Some(slot) = self.find_local_slot(code, name) {
@@ -4311,7 +4384,7 @@ impl VM {
     /// Name-based wrapper: mirror the slot named `name` into `self`'s cell after a
     /// read-modify-write.
     pub(super) fn mirror_attr_local_to_cell_by_name(&self, code: &CompiledCode, name: &str) {
-        if Self::scalar_attr_twigil_base(name).is_none() {
+        if Self::attr_twigil_base(name).is_none() {
             return;
         }
         if let Some(slot) = self.find_local_slot(code, name) {

@@ -1237,14 +1237,20 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // A whole array/hash assign (`@!a = (...)`) always replaces the value, so
+        // there is no stale-copy hazard; pass `None` as the pre-snapshot to force
+        // the mirror.
         let r = self.exec_assign_expr_op_inner(code, name_idx);
-        // Phase 3 Stage 2: mirror name-based scalar attribute writes (`$.x = v`,
-        // `$!x = v` via AssignExpr) into the shared cell.
+        // Phase 3 Stage 2: mirror name-based attribute writes into the shared cell.
         if r.is_ok()
             && let Value::Str(name) = &code.constants[name_idx as usize]
         {
-            let name = name.to_string();
-            self.mirror_attr_value_to_cell_by_name(code, &name);
+            if name.starts_with('@') || name.starts_with('%') {
+                self.mirror_array_hash_attr_to_cell(code, name_idx, None);
+            } else {
+                let name = name.to_string();
+                self.mirror_attr_value_to_cell_by_name(code, &name);
+            }
         }
         r
     }
