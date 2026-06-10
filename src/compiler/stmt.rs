@@ -839,7 +839,15 @@ impl Compiler {
                         self.code.emit(OpCode::StateVarInit(slot, key_idx));
                     }
                 } else {
-                    if *is_our {
+                    let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                    // For `our` we need a second copy of the value to store into the
+                    // global. Normally we `Dup` the raw initializer up front, but for
+                    // a constant the global store (`SetGlobalRaw`) coerces the value
+                    // (e.g. calling `.Map` on a `%`-sigil RHS) — coercing the raw
+                    // value a second time would invoke that side-effecting coercion
+                    // twice. Instead, for constants we re-read the already-coerced
+                    // value from the local slot via `GetLocal` after `SetLocal`.
+                    if *is_our && !is_constant {
                         self.code.emit(OpCode::Dup);
                     }
                     if self.bind_vardecl && (name.starts_with('@') || name.starts_with('%')) {
@@ -848,7 +856,6 @@ impl Compiler {
                     }
                     // Mark constant context so SetLocal uses List coercion for @ and
                     // skips Hash coercion for %, matching Raku's constant semantics.
-                    let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
                     if is_constant && (name.starts_with('@') || name.starts_with('%')) {
                         self.code.emit(OpCode::MarkConstantContext);
                     }
@@ -887,8 +894,11 @@ impl Compiler {
                         // Constants should not have their values coerced by the
                         // @/% container rules: `constant @x` stores a List,
                         // `constant %x` stores a Map (not Array/Hash).
-                        let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
                         if is_constant {
+                            // Re-read the value `SetLocal` already coerced (and
+                            // cached in the slot) so `SetGlobalRaw` does not run
+                            // the coercion — and its side effects — a second time.
+                            self.code.emit(OpCode::GetLocal(slot));
                             self.code.emit(OpCode::SetGlobalRaw(idx));
                         } else {
                             self.code.emit(OpCode::SetGlobal(idx));
