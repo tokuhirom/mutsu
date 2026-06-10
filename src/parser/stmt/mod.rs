@@ -241,6 +241,20 @@ fn var_name(input: &str) -> PResult<'_, String> {
                 return Ok((&after_bracket[end + 1..], format!("::<{symbol}>")));
             }
         }
+        // `$::(EXPR)` is an indirect (symbolic) variable name. It is a legal
+        // *lookup* as an rvalue, but declaring a variable by an indirect name
+        // (`my $::("foo")`) is rejected at compile time. var_name is only
+        // reached from declaration contexts, so flag it here.
+        if twigil.is_empty() && r.starts_with("::(") {
+            let message =
+                "Cannot declare a variable by indirect name (use a hash instead?)".to_string();
+            let attrs = std::collections::HashMap::new();
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Syntax::Variable::IndirectDeclaration"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(message, Box::new(ex)));
+        }
         // A fatal qualified-name error (e.g. a null component `$a::::b`) must
         // propagate, not fall through to the `$foo::` / anonymous-variable arms.
         if let Err(e) = qualified_ident(r)

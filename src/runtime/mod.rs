@@ -2714,6 +2714,7 @@ impl Interpreter {
         register_x("X::Syntax::Malformed", "X::Syntax");
         register_x("X::Syntax::Variable::Numeric", "X::Syntax");
         register_x("X::Syntax::Variable::Initializer", "X::Syntax");
+        register_x("X::Syntax::Variable::IndirectDeclaration", "X::Syntax");
         register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax");
         register_x("X::Syntax::Number::LiteralType", "X::Syntax");
         register_x("X::Syntax::Regex::Adverb", "X::Syntax");
