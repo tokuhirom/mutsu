@@ -689,6 +689,24 @@ impl Interpreter {
                 || matches!(inner, Value::Package(n) if matches!(n.resolve().as_str(), "Any" | "Mu"))
             {
                 let old_meta = self.container_type_metadata(inner).clone();
+                // Enforce the declared element type, so
+                // `my Str %a; %a.AT-KEY("K") = 1` raises X::TypeCheck::Assignment
+                // just like `%a<K> = 1` does.
+                let value_type = old_meta
+                    .as_ref()
+                    .map(|m| m.value_type.clone())
+                    .or_else(|| target_var.and_then(|v| self.var_type_constraint(v)));
+                if let Some(vt) = value_type.as_deref()
+                    && !matches!(vt, "Any" | "Mu" | "")
+                    && !matches!(&value, Value::Nil)
+                    && !self.type_matches_value(vt, &value)
+                {
+                    return Err(crate::runtime::utils::type_check_element_typed_error(
+                        target_var.unwrap_or("%"),
+                        vt,
+                        &value,
+                    ));
+                }
                 let key = method_args[0].to_string_value();
                 let mut hash = match inner {
                     Value::Hash(map) => (**map).clone(),

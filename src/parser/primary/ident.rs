@@ -1386,6 +1386,30 @@ fn try_extend_colon_name<'a>(input: &'a str, base: &str) -> (&'a str, String) {
     (rest, name)
 }
 
+/// Given input beginning with `(`, return the balanced parenthesised group
+/// including the surrounding parens (e.g. `(&)` from `(&) extra`), or None if
+/// unbalanced. Used to render the offending text in an X::Syntax::Adverb error.
+fn balanced_paren_text(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    if bytes.first() != Some(&b'(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (idx, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(input[..=idx].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Given input beginning with `(`, skip the balanced parenthesised group and
 /// return true if the next non-whitespace character is `{` (the start of a
 /// block). Used to distinguish `if() {}` (keyword-as-function) from `if(5)`
@@ -1557,6 +1581,17 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {
+            // `infix:(...)` adverbs the operator declarator with a signature
+            // literal, which is illegal -> X::Syntax::Adverb ("You can't adverb
+            // :(...)"). Operator names use `:<...>`/`:sym<...>`, never `:(...)`.
+            if rest.starts_with(":(") {
+                let adverb_text =
+                    balanced_paren_text(&rest[1..]).unwrap_or_else(|| "(...)".to_string());
+                return Err(PError::fatal(format!(
+                    "X::Syntax::Adverb: You can't adverb :{}",
+                    adverb_text
+                )));
+            }
             // infix:<OP>(args) — operator reference
             if rest.starts_with(":<") || rest.starts_with(":<<") {
                 let r = &rest[1..]; // skip ':'

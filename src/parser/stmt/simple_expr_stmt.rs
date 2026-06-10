@@ -81,6 +81,10 @@ fn starts_with_unambiguous_term(input: &str) -> bool {
                 | '\u{201C}'
                 | '\u{201D}'
                 | '\u{201E}'
+                // U+221E INFINITY: the `Inf` literal. A value directly followed
+                // by `∞` with no infix operator (`1∞`) is a bogus postfix in
+                // Raku -> X::Syntax::Confused.
+                | '\u{221E}'
         )
 }
 

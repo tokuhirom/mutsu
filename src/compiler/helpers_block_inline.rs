@@ -110,6 +110,7 @@ impl Compiler {
                         expr,
                         is_dynamic: ast_is_dynamic,
                         type_constraint,
+                        custom_traits,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
@@ -140,6 +141,29 @@ impl Compiler {
                             self.code.emit(OpCode::SetLocal(slot));
                         } else {
                             self.compile_expr(expr);
+                            // Enforce a scalar type constraint here too, so a
+                            // block-final `my Str $x := 3` raises
+                            // X::TypeCheck::Binding instead of silently storing
+                            // (or hitting the readonly check). Skip @/% and
+                            // uninitialized typed decls (`my Str $x` -> Nil).
+                            if let Some(tc) = type_constraint
+                                && !name.starts_with('@')
+                                && !name.starts_with('%')
+                                && !matches!(expr, Expr::Literal(Value::Nil))
+                            {
+                                let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                                let display_name = format!("${}", name);
+                                let var_name_idx = self.code.add_constant(Value::str(display_name));
+                                let is_bind =
+                                    custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                                if is_bind {
+                                    self.code
+                                        .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
+                                } else {
+                                    self.code
+                                        .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                                }
+                            }
                             self.code.emit(OpCode::Dup);
                             self.emit_set_named_var(name);
                         }

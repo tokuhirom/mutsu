@@ -426,7 +426,9 @@ impl Interpreter {
         for stmt in stmts {
             Self::check_self_referential_init(stmt)?;
             Self::collect_declared_vars(stmt, &mut declared);
-            if let Some((sigil, var_name)) = self.find_undeclared_var_in_stmt(stmt, &declared) {
+            if let Some((sigil, var_name, suggestions)) =
+                self.find_undeclared_var_in_stmt(stmt, &declared)
+            {
                 let symbol = format!("{}{}", sigil, var_name);
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("name".to_string(), Value::str(symbol.clone()));
@@ -438,8 +440,6 @@ impl Interpreter {
                 // still expecting at the eject point. For an undeclared variable
                 // there is nothing else expected, so it is an empty list.
                 attrs.insert("highexpect".to_string(), Value::array(vec![]));
-                // Suggest close lexically-declared names (Did-you-mean).
-                let suggestions = Self::suggest_declared_vars(&symbol, &declared);
                 let mut message = format!("Variable '{}' is not declared.", symbol);
                 if suggestions.len() == 1 {
                     message.push_str(&format!(" Did you mean '{}'?", suggestions[0]));
@@ -651,12 +651,12 @@ impl Interpreter {
     }
 
     /// Find an undeclared Var reference in a statement.
-    /// Returns (sigil, name) if undeclared, None otherwise.
+    /// Returns (sigil, name, suggestions) if undeclared, None otherwise.
     fn find_undeclared_var_in_stmt(
         &self,
         stmt: &Stmt,
         declared: &HashSet<String>,
-    ) -> Option<(&'static str, String)> {
+    ) -> Option<(&'static str, String, Vec<String>)> {
         match stmt {
             Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) | Stmt::Put(exprs) => {
                 for expr in exprs {
@@ -664,7 +664,9 @@ impl Interpreter {
                         && !self.has_function(name)
                         && !self.has_class(name)
                     {
-                        return Some(("$", name.clone()));
+                        let suggestions =
+                            Self::suggest_declared_vars(&format!("${}", name), declared);
+                        return Some(("$", name.clone(), suggestions));
                     }
                     if let Some(result) = self.find_undeclared_var_in_expr(expr, declared) {
                         return Some(result);
@@ -673,17 +675,90 @@ impl Interpreter {
                 None
             }
             Stmt::Expr(expr) => self.find_undeclared_var_in_expr(expr, declared),
+            // Descend into `sub`/`method` bodies so undeclared variables used
+            // inside them (e.g. `sub greet($name) { say "$nam" }`) are caught at
+            // EVAL/compile time. The body's lexical scope adds the routine's
+            // parameters (and, for methods inside a class, the attributes).
+            Stmt::SubDecl { params, body, .. } => {
+                let mut inner = declared.clone();
+                Self::add_routine_locals(params, body, &mut inner);
+                self.find_undeclared_var_in_body(body, &inner)
+            }
+            Stmt::MethodDecl { params, body, .. } => {
+                let mut inner = declared.clone();
+                Self::add_routine_locals(params, body, &mut inner);
+                self.find_undeclared_var_in_body(body, &inner)
+            }
+            Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
+                // Attributes become `$!x` / `$.x` (and a bare `$x` only for
+                // `has $x` aliases). Methods in the body see them in scope.
+                let mut inner = declared.clone();
+                Self::add_class_attributes(body, &mut inner);
+                // Class-body lexicals (`my @a`) are also in scope for sibling
+                // statements/methods; collect them all up front.
+                for s in body {
+                    Self::collect_declared_vars(s, &mut inner);
+                }
+                for s in body {
+                    if let Some(result) = self.find_undeclared_var_in_stmt(s, &inner) {
+                        return Some(result);
+                    }
+                }
+                None
+            }
             _ => None,
         }
     }
 
+    /// Seed a lexical scope with a routine's parameters and any variables its
+    /// body declares, so they are not flagged as undeclared.
+    fn add_routine_locals(params: &[String], body: &[Stmt], out: &mut HashSet<String>) {
+        for p in params {
+            out.insert(p.trim_start_matches(['$', '@', '%', '&']).to_string());
+        }
+        for s in body {
+            Self::collect_declared_vars(s, out);
+        }
+    }
+
+    /// Seed a scope with a class/role body's attributes. `has $.name` makes
+    /// `$!name` and `$.name` available (but not a bare `$name`); `has $x`
+    /// (alias form) additionally makes `$x` available.
+    fn add_class_attributes(body: &[Stmt], out: &mut HashSet<String>) {
+        for s in body {
+            if let Stmt::HasDecl { name, is_alias, .. } = s {
+                let attr = name.resolve();
+                // Rakudo's "did you mean" for a bare `$name` that refers to an
+                // attribute suggests `$!name` (the private accessor form).
+                out.insert(format!("!{}", attr));
+                if *is_alias {
+                    out.insert(attr);
+                }
+            }
+        }
+    }
+
+    /// Scan a routine body for the first undeclared variable reference.
+    fn find_undeclared_var_in_body(
+        &self,
+        body: &[Stmt],
+        declared: &HashSet<String>,
+    ) -> Option<(&'static str, String, Vec<String>)> {
+        for s in body {
+            if let Some(result) = self.find_undeclared_var_in_stmt(s, declared) {
+                return Some(result);
+            }
+        }
+        None
+    }
+
     /// Find an undeclared Var reference in an expression.
-    /// Returns (sigil, name) if undeclared, None otherwise.
+    /// Returns (sigil, name, suggestions) if undeclared, None otherwise.
     fn find_undeclared_var_in_expr(
         &self,
         expr: &Expr,
         declared: &HashSet<String>,
-    ) -> Option<(&'static str, String)> {
+    ) -> Option<(&'static str, String, Vec<String>)> {
         match expr {
             Expr::Var(name) => {
                 // Skip special variables, variables with twigils, and capture vars ($0, $1, ...)
@@ -723,7 +798,8 @@ impl Interpreter {
                 {
                     return None;
                 }
-                Some(("$", name.clone()))
+                let suggestions = Self::suggest_declared_vars(&sigiled, declared);
+                Some(("$", name.clone(), suggestions))
             }
             Expr::ArrayVar(name) => {
                 if name.starts_with("__ANON_") {
@@ -736,7 +812,8 @@ impl Interpreter {
                 if self.env.contains_key(&sigiled) || self.env.contains_key(name) {
                     return None;
                 }
-                Some(("@", name.clone()))
+                let suggestions = Self::suggest_declared_vars(&sigiled, declared);
+                Some(("@", name.clone(), suggestions))
             }
             Expr::HashVar(name) => {
                 if name.starts_with("__ANON_") {
@@ -749,7 +826,8 @@ impl Interpreter {
                 if self.env.contains_key(&sigiled) || self.env.contains_key(name) {
                     return None;
                 }
-                Some(("%", name.clone()))
+                let suggestions = Self::suggest_declared_vars(&sigiled, declared);
+                Some(("%", name.clone(), suggestions))
             }
             // Recurse into string interpolation, indexing, and method calls
             Expr::StringInterpolation(parts) => {

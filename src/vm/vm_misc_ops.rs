@@ -2384,6 +2384,27 @@ impl VM {
         tc_idx: u32,
         var_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, false)
+    }
+
+    /// Type check for `:=` binds to a typed scalar; raises X::TypeCheck::Binding
+    /// on mismatch instead of X::TypeCheck::Assignment.
+    pub(super) fn exec_type_check_bind_op(
+        &mut self,
+        code: &CompiledCode,
+        tc_idx: u32,
+        var_name_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true)
+    }
+
+    pub(super) fn exec_type_check_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        tc_idx: u32,
+        var_name_idx: Option<u32>,
+        bind_mode: bool,
+    ) -> Result<(), RuntimeError> {
         let raw_constraint = Self::const_str(code, tc_idx);
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
         // Apply `use variables :D/:U` pragma to the constraint
@@ -2568,6 +2589,12 @@ impl VM {
                     {
                         return Err(err);
                     }
+                    if bind_mode {
+                        return Err(crate::runtime::utils::type_check_binding_typed_error(
+                            base_constraint,
+                            &value,
+                        ));
+                    }
                     return Err(RuntimeError::typecheck_assignment(
                         base_constraint,
                         &value,
@@ -2629,6 +2656,11 @@ impl VM {
             && !self.interpreter.type_matches_value(constraint, &value)
             && !self.interpreter.is_container_subclass(constraint)
         {
+            if bind_mode {
+                return Err(crate::runtime::utils::type_check_binding_typed_error(
+                    constraint, &value,
+                ));
+            }
             return Err(RuntimeError::typecheck_assignment(
                 constraint, &value, var_name,
             ));

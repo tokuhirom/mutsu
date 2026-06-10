@@ -927,6 +927,12 @@ pub(crate) enum OpCode {
     /// Optional second u32 is a constant index for the variable name (for error messages).
     TypeCheck(u32, Option<u32>),
 
+    /// Like TypeCheck, but for `:=` binds to a typed scalar. On a type
+    /// mismatch this raises X::TypeCheck::Binding (e.g. `my Str $x := 3`)
+    /// instead of X::TypeCheck::Assignment. First u32 is the type name
+    /// constant index; optional second u32 is the variable name index.
+    TypeCheckBind(u32, Option<u32>),
+
     /// Set a pragma value. Pops the value from the stack.
     /// The u32 is a constant index for the pragma name.
     SetPragma(u32),
