@@ -90,64 +90,78 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 完了すると **env を任意名で書く唯一の存在＝interpreter ブリッジが消え**、`env_dirty`/`ensure_locals_synced`/
 `sync_locals_from_env`/`saved_env_dirty` の **dual-store 機構を削除**できる（レバー B 完遂）。
 
-着手順（依存順。各ステップは strangler-fig で段階的に、CI を安全網に）:
+進捗台帳: [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md)。
 
-- [ ] **① 残存する真の tree-walk フォールバックの撲滅**（ANALYSIS §1.1。これが「フォールバック率 0%」の本体）:
-      `call_method_with_values`（`vm/vm_call_method_compiled.rs`/`vm_call_method_mut_ops.rs`/`vm_data_ops.rs` の各サイト
-      ＝生きた Instance/Buf/Failure メソッド fork）、`run_instance_method`（`class.rs` ＝ユーザー定義クラスメソッド）、
-      `call_function`/`call_function_fallback`（`vm_call_func_ops.rs`/`vm_call_dispatch.rs`）、`run_react_event_loop` を
-      VM ネイティブ実行に置換。**残すフォールバックには規約どおり `// TODO: compile to bytecode` を付与**（現状 VM ツリー
-      に 0 件 ＝ 負債が不可視。まず可視化する）。**可視化済み（2026-06-08）**: 全サイトを `// TODO: compile to bytecode`
-      （真フォールバック）/ `// CARRIER:`（反射・MOP・EVAL・メタプロ hook）で注釈し、進捗台帳
-      [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) を新設。同 PR で `succ`/`pred` を
-      統一 compiled-first ディスパッチへ降ろし §1 から 2 サイト消化。以後は台帳の行を消す形で進める。
-- [x] **② 宣言レジストリの VM 所有化 — 完了（PR-A/B/C）**（設計: [docs/vm-registry-ownership.md](docs/vm-registry-ownership.md)）。
-      Arc<RwLock<Registry>>→plain field の最終畳み込みは Interpreter 撤去後（④/⑤）。次の戦略主作業は ③:
-      `class`/`role`/`enum`/`subset`/`token`/`sub` は現在 `Register*` opcode が `interpreter.register_*_decl()` を
-      呼び、レジストリ・MRO・role 合成が Interpreter 側。これらの宣言レジストリ ~30 フィールドを `Interpreter` から
-      切り出し、**遷移期は `Arc<RwLock<Registry>>` 足場**（VM と Interpreter が対等に共有。`Rc<RefCell>` は
-      `Interpreter` がスレッド境界を越えるため不可）で持ち上げる。**エンドステート＝Interpreter 撤去後（④/⑤）に
-      plain な VM フィールドへ畳む**（＝ Interpreter オブジェクト消滅）。登録は登録中にユーザコードへ再入する
-      （trait ハンドラ / 属性デフォルト / クラス本体）ため、**RwLock ガードを再入を跨いで保持しない**規律が肝。
-      `clone_for_thread` のスナップショット意味論は厳守（挙動不変）。②は③の前提。
-      - [x] **PR-A 完了（抽出フェーズ, #2760/2762/2763/2764/2767）**: 全宣言レジストリを `Registry` へ移行。
-            slice 1 enum/subset（機構確立）→ 2 class メタ群 → 3 classes（ホット経路・targeted 投影 clone 維持、
-            naive whole-clone 回避で perf 回帰なし）→ 4 roles 群 → 5 functions/subs/tokens。**結果**: `Interpreter`
-            から宣言レジストリが消え `clone_for_thread` は registry 全体 clone 1 行のみ（個別 clone ゼロ・snapshot 不変）。
-            参照返却アクセサは owned 化。再入安全規律（read→write/write→write 同一ロック deadlock を複数発見・修正、
-            Python ブレース対応スキャナ＋make roast タイムアウトで検出）を確立。詳細は docs/vm-registry-ownership.md。
-      - [x] **PR-B 完了（read 側, #2769/#2772）**: lookup/MRO/型マッチの registry 読み部を `impl Registry` の pure
-            メソッド化（`compute_class_mro`/`class_mro`/`get_method_overloads`/`composed_roles_seed` 等）。VM の
-            registry アクセスは accessor 経由（多くは owned 返し）。台帳 §2 の関数 dispatch fallback 撲滅の前提が整った。
-      - [x] **PR-C 完了（write-through）**: `register_class_decl` の連続 write/read クラスタを単一 guard ブロックへ整理
-            （prologue 5-read snapshot / `restore_previous_state` クロージャ / stub クリア）。**再入跨ぎ guard 無しを
-            実行時 guard で保証**: `registry()`/`registry_mut()` を再入検出ラッパ（debug 限定・ロックアドレスでキー付け）へ
-            差し替え、同一ロック再取得を `.read()`/`.write()` 手前で位置付き panic（サイレントデッドロックを即・明示化）。
-            台帳に②抽出/read/write-through 完了＋登録の CARRIER 性を記録。**②完了 → 次は ③（env/型/state 移管）**。
-- [~] **③ VM が借用している Interpreter 状態を VM 所有へ移管**（設計: [docs/vm-state-ownership.md](docs/vm-state-ownership.md)）:
-      env HashMap（変数ストア本体）・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・
-      `let`/`temp` 復元・multi 解決・state 変数・`current_package`。これが移れば **interpreter ブリッジ自体が
-      不要**になる。最大の山。**核心の確定**: ③は②と異なり**フォールバック撲滅駆動**（env は単一所有者で真の
-      同時共有が無く、終状態は plain VM field＝共有ハンドル `Arc<RwLock>` 方式は採れない／最ホットで perf 破綻。
-      かつ高価値 state は runtime/ tree-walk に浸透し §1/§2 フォールバック経由で読まれるため、フィールド再配置は
-      tree-walk 実行パス撲滅後にしかできない）。よって**③のスライス＝台帳 §1/§2 の撲滅**。
-      - [x] **PR-1（Routine dispatch）**: `vm_dispatch_helpers` の Routine 値解決を統一 compiled-first へ
-            （builtin 名 Routine は builtin 優先維持）。台帳 §2 Routine 行消化。pin `t/routine-value-dispatch.t`。
-      - [x] **PR-2（builtin-shadow fork）**: ユーザ sub が同名 builtin を shadow する関数 dispatch fork の
-            compilable な単一候補を OTF compile（bytecode 実行）へ。proto/multi はガードで fallback 維持
-            （回帰実証 → 修正）。pin `t/builtin-shadow-dispatch.t`。
-      - [ ] 次: §1 catch-all メソッド dispatch（本丸）/ §2 非proto multi fork（VM 側 multi 候補解決）。
-- [ ] **④ 本質的キャリアの扱いを確定**（消すのではなく分離 or 明示）: `EVAL`/`EVALFILE`（既に compile→サブ VM 実行で
-      tree-walk ではない＝env/レジストリ所有のため Interpreter を借りる**キャリア**）、正規表現の埋め込み `{}` ブロック
-      （interpreter regex エンジン経由で caller local を名前書き込み）、pseudo-package（`CALLER::`/`OUTER::` の reflective
-      lookup）。③で所有が VM に移れば、これらは「Interpreter 実行パス」ではなく単なる共有レジストリ参照になる。
-- [ ] **⑤ dual-store 機構の削除（レバー B 完遂）**: ①〜③でブリッジが消えた後、`env_dirty`/`ensure_locals_synced`/
-      `sync_locals_from_env`/`saved_env_dirty`/`VmCallFrame` の dirty/bind フィールド群を撤去。カウンタ自体は既に
-      ほぼ最適化済み（method-call 1 / bench-class 2 / fib 0、docs/vm-dual-store.md の resume map）で、残る `bench-array`
-      の closure コストは🟣第2優先「第一級コンテナ」Phase 1（#2751 で着手済み）に収斂する。
+#### 完了済み（詳細は [news/2026-06.md](news/2026-06.md)）
 
-関連: 🟣第2優先「第一級コンテナ」はこの最終ゴールと地続き（レバー C ＝ Phase 1 の一部、Q2 の Arc-pointer flaky を
-吸収）。本セクション①〜③（Interpreter 実行パス撤去）と並行 or 接続して進める。
+- [x] **① 真フォールバックの可視化 + 安いルーティング消化**（#2755〜）: 全サイトを `// TODO: compile to bytecode`
+      （真フォールバック）/ `// CARRIER:`（反射・MOP・EVAL・メタプロ hook）で注釈し台帳を新設。「生ディスパッチを
+      統一エントリへ降ろすだけ」の安いサイトは**枯渇**。
+- [x] **② 宣言レジストリの VM 所有化（PR-A/B/C, #2760-2772）**（設計: [docs/vm-registry-ownership.md](docs/vm-registry-ownership.md)）。
+      全宣言レジストリを `Arc<RwLock<Registry>>` 足場へ抽出 + read/MRO/型マッチを `impl Registry` メソッド化 +
+      write-through 整理 + 再入跨ぎ guard を debug 実行時 guard で強制。plain field への最終畳み込みは Interpreter 撤去後。
+- [x] **③ の pure-data カテゴリ消化（PR-1〜10 + ctor #2826-2844）**: Routine/builtin-shadow/multi dispatch 統一、
+      array mutators / Buf write / QuantHash coerce / Iterator protocol / splice の native 化、`Package.new`
+      コンストラクタを属性 shape 別に native 化（typed/untyped `$`・`@`/`%`・native 型・coercion 型・required）。
+      **§1/§2 の「pure-data で降ろせる」カテゴリは枯渇**。
+
+#### 現状認識（2026-06-10）: 残るフォールバックは 3 つの独立な構造ブロッカー前提
+
+台帳に残る §1/§2 の真フォールバックは、すべて以下のいずれかが前提であり、個別ルーティングでは消えない。
+そして **この 3 つは別サブシステム（ディスパッチ/状態・データ表現・並行）なので互いに独立 ＝ 並列実行できる**:
+
+| ブロッカー | これが塞いでいる台帳フォールバック |
+|---|---|
+| **A. ③ state 所有 + 残ディスパッチ** | §1 native-method（IO::Handle/Pipe）・catch-all（native/Buf/Failure 受け手）、§2 catch-all（lexical `&`-var 名呼び / `__mutsu_*` / no-match エラー生成） |
+| **B. 第一級コンテナ Phase 2（要素セル）** | §1 array-backed instance mut・shaped push・non-simple push・hyper temp（＋ take-rw / `@a[0]:=` / 深い `>>++`、Q2 の Arc-ptr flaky） |
+| **C. 並行 / lever B（共有セル）** | §1 shared push（threaded `@a.push`）・react loop（`run_react_event_loop`）（＋ ANALYSIS §2.3 unsafe aliasing） |
+
+#### Phase I（並列）: 3 トラックで全 §1/§2 tree-walk フォールバックを撲滅
+
+> **依存の核心**: env/型検査などの state フィールドは runtime/ tree-walk に浸透し §1/§2 フォールバック経由で
+> 読まれるため、**フィールド再配置（Phase II）は tree-walk 実行パス撲滅後にしかできない**。よって「env を VM 所有へ
+> 移す」より先に、まず全フォールバックを native 化する。A/B/C は独立に並列で進め、3 つ揃ったところで Phase II へ。
+
+- [ ] **トラック A — 残ディスパッチの native 化（③ の dispatch 部分）** ＝ 最長・ペース決定トラック
+      - [x] PR-1 Routine dispatch / PR-2 builtin-shadow fork / PR-3 catch-all ユーザーメソッド / PR-4 非proto multi fork
+      - [ ] **§2 catch-all 末端**: lexical `&`-var の名前経由呼び（`-> &op {...}` 等）を VM 側で Routine/compiled
+            dispatch へ寄せる、`__mutsu_*` 内部（並行は C へ）、no-match エラー生成は carrier 確定。
+      - [ ] **§1 native-method dispatch**: Buf/Failure/native 受け手のメソッドを native 実装に（または carrier 確定）。
+      - [ ] **§1 native IO**: `IO::Handle`/`IO::Pipe` 等。ファイルハンドル状態を VM 所有 or native IO 層へ。
+- [ ] **トラック B — 第一級コンテナ Phase 2（要素セル）** ＝ データ表現（A と完全独立）
+      設計・段階導入は 🟣第2優先「第一級コンテナ」セクション参照（Phase 1 = landed）。
+      - [ ] Phase 0.5 第2段（スタック不変条件 + lvalue opcode）を Phase 2 と同一 PR で。
+      - [ ] 配列/ハッシュ要素の COW セル化 → array-backed mut・shaped/non-simple push・hyper temp・take-rw・`@a[0]:=`・
+            深い `>>++` を解く。
+      - [ ] **Q2 の型メタ Arc-ptr keying をセルへ吸収**（間欠 flaky の根を構造的に除去）。レバー C 残（単一脱出/汎用捕捉）も合流。
+- [ ] **トラック C — 並行 / lever B（共有セル）** ＝ 並行（A と独立。要素セルは B と共有基盤なので B に弱依存）
+      - [ ] `clone_for_thread` のスナップショットコピー → 共有すべき lexical/state/global を `Arc<Mutex>` ライブセルへ
+            （ANALYSIS §8.3/§2.2。`start` 間で `$counter`/`state $n` 共有）。
+      - [ ] `run_react_event_loop[_drain]` を VM ネイティブ実行へ（react/supply の async 状態所有）。
+      - [ ] **unsafe aliasing 撤廃**（ANALYSIS §2.3, `Arc::as_ptr as *mut` 11 箇所）— B の要素セル基盤の上で。
+
+#### Phase II（収束・逐次）: state 移管 → carrier 確定 → dual-store 削除 → Interpreter 撤去
+
+> Phase I で 3 トラックが全フォールバックを撲滅したら、ここは比較的機械的に進む。
+
+- [ ] **③ の本丸: 借用 state を VM 所有へ再配置**（設計: [docs/vm-state-ownership.md](docs/vm-state-ownership.md)）:
+      env HashMap・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・`let`/`temp` 復元・multi 解決・
+      state 変数・`current_package`。終状態は **plain VM field**（env は単一所有者で同時共有が無く `Arc<RwLock>` は
+      最ホットで perf 破綻するため不可）。Phase I 完了後＝tree-walk が state を読まなくなって初めて再配置可能。
+- [ ] **④ キャリアの扱いを確定**（消すのではなく分離 or 明示）: `EVAL`/`EVALFILE`（compile→サブ VM 実行）・正規表現の
+      埋め込み `{}` ブロック・pseudo-package（`CALLER::`/`OUTER::`）・MOP 反射（`.^*`/`.WHAT`/`.VAR`）・call-chain
+      （callsame/nextsame）・Test ディスパッチ。③で所有が VM に移れば、これらは「Interpreter 実行パス」ではなく
+      単なる**共有レジストリ参照**になる（`// CARRIER:` のまま据え置き or 明示分離）。
+- [ ] **⑤ dual-store 機構の削除（レバー B 完遂）**: `env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/
+      `saved_env_dirty`/`VmCallFrame` の dirty/bind フィールド群を撤去。registry `Arc<RwLock>`→plain VM field 畳み込み。
+      **Interpreter オブジェクト自体を削除**。
+
+#### Phase I/II と並行で随時消化できる独立タスク（critical path 外）
+
+- [ ] **VM の panic→`X::` 変換境界を `run()` に設置**（ANALYSIS §2.1）— 安定性。依存なし・いつでも可（Q4 前倒し）。
+- [ ] **正規表現のコンパイル済みキャッシュ**（ANALYSIS §8.4）— perf（raku 比 8.6x 遅）。撤去とは独立。
+
+関連: 🟣第2優先「第一級コンテナ」＝トラック B の本体（レバー C ＝ Phase 1 の一部、Q2 の Arc-pointer flaky を吸収）。
 
 ---
 
