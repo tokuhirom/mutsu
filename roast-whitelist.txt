@@ -994,6 +994,7 @@ roast/S32-container/zip.t
 roast/S32-encoding/decoder.t
 roast/S32-encoding/encoder.t
 roast/S32-encoding/registry.t
+roast/S32-exceptions/misc2.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/delete-adverb.t
 roast/S32-hash/delete.t
