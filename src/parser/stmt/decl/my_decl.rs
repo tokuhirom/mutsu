@@ -257,6 +257,16 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
                 ));
             }
         }
+        // `my $::("foo")` — declaring a variable by an indirect (symbolic) name
+        // is illegal. The indirect form is a valid *lookup* as an rvalue/lvalue
+        // (`$::("foo")`, parsed elsewhere), but never a declarable name.
+        if (sigil == b'$' || is_array || is_hash || is_code) && rest[1..].starts_with("::(") {
+            return Err(illegal_my_var_error(
+                "X::Syntax::Variable::IndirectDeclaration",
+                "Cannot declare a variable by indirect name (use a hash instead?)",
+                &[],
+            ));
+        }
         let (r, n) = var_name(rest)?;
         // Reject `!`/`?` twigils in `my` scope: `my $!foo` / `my $?FILE` are
         // invalid. Bare special variables (`my $!`, `my $?`) are still allowed.
