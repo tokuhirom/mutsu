@@ -4,6 +4,28 @@ use crate::symbol::Symbol;
 
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
 
+/// Whether a built-in type may be `does`-composed by a class. Composable
+/// built-ins are roles (Real/Numeric/Stringy/Positional/...) plus Bool; concrete
+/// built-in classes (Int/Str/Num/Cool/Any/Mu/...) are NOT composable and trigger
+/// X::Composition::NotComposable.
+fn is_composable_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "Bool"
+            | "Real"
+            | "Numeric"
+            | "Rational"
+            | "Stringy"
+            | "Positional"
+            | "Associative"
+            | "Iterable"
+            | "Callable"
+            | "Sequence"
+            | "Blob"
+            | "Buf"
+    )
+}
+
 fn type_value_name(value: &Value) -> String {
     match value {
         Value::Package(name) => name.resolve(),
@@ -942,6 +964,34 @@ impl Interpreter {
                     attrs.insert("message".to_string(), Value::str(msg));
                     return Err(RuntimeError::typed("X::Inheritance::UnknownParent", attrs));
                 }
+            }
+            // A `does` target that is a non-composable built-in concrete class
+            // (Int, Str, Num, Cool, Any, Mu, ...) — as opposed to a composable
+            // built-in role (Real, Numeric, Positional, Iterable, ...) — raises
+            // X::Composition::NotComposable.
+            if does_parents.contains(parent)
+                && !self.registry().roles.contains_key(resolved_parent)
+                && BUILTIN_TYPES.contains(&resolved_parent)
+                && !is_composable_builtin(resolved_parent)
+            {
+                let msg = format!(
+                    "{} is not composable, so {} cannot compose it",
+                    resolved_parent, name
+                );
+                let mut attrs = HashMap::new();
+                attrs.insert("target-name".to_string(), Value::str(name.to_string()));
+                attrs.insert(
+                    "composer".to_string(),
+                    Value::Package(crate::symbol::Symbol::intern(resolved_parent)),
+                );
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                let ex = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Composition::NotComposable"),
+                    attrs,
+                );
+                let mut err = RuntimeError::new(&msg);
+                err.exception = Some(Box::new(ex));
+                return Err(err);
             }
             // Check that `does` targets are actually roles, not classes
             if does_parents.contains(parent)
