@@ -139,6 +139,26 @@ impl Compiler {
                             self.code.emit(OpCode::Dup);
                             self.emit_set_named_var(name);
                         } else {
+                            // Enforce a scalar type constraint in expression
+                            // position too (e.g. a bare `my Str $x := 3` whose
+                            // value is the program result). Skip uninitialized
+                            // typed decls (`my Str $x` -> Nil).
+                            if let Some(tc) = type_constraint
+                                && !matches!(expr, Expr::Literal(Value::Nil))
+                            {
+                                let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                                let display_name = format!("${}", name);
+                                let var_name_idx = self.code.add_constant(Value::str(display_name));
+                                let is_bind =
+                                    custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                                if is_bind {
+                                    self.code
+                                        .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
+                                } else {
+                                    self.code
+                                        .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                                }
+                            }
                             self.code.emit(OpCode::Dup);
                             self.emit_set_named_var(name);
                         }

@@ -553,6 +553,12 @@ fn is_block_ending_stmt(stmt: &Stmt) -> bool {
         // sub_decl does NOT call parse_statement_modifier, so trailing separators
         // remain in the rest for us to check.
         Stmt::SubDecl { body, .. } => !body.is_empty(),
+        // `when`/`default` block statements take a `{...}` body and, unlike
+        // `if`/`for`/etc., are not followed by any same-line continuation
+        // keyword (no `else`/`elsif`) and do not consume trailing statement
+        // modifiers. So `when 1 { } when 2 { }` on one line (no `;`) is a
+        // "Strange text after block" error in Raku, matching `given $x { ... }`.
+        Stmt::When { .. } | Stmt::Default(_) => true,
         // Note: MethodDecl is excluded because it can arrive via my_decl which calls
         // parse_statement_modifier, consuming the trailing separator before we see it.
         // Stmt::Block, Stmt::If, Stmt::For, ClassDecl, RoleDecl, Package, etc. are

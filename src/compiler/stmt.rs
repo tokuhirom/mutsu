@@ -810,8 +810,15 @@ impl Compiler {
                         format!("${}", name)
                     };
                     let var_name_idx = self.code.add_constant(Value::str(display_name));
-                    self.code
-                        .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                    // A `:=` bind to a typed scalar reports X::TypeCheck::Binding
+                    // on mismatch (e.g. `my Str $x := 3`), not Assignment.
+                    if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%') {
+                        self.code
+                            .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
+                    } else {
+                        self.code
+                            .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                    }
                 }
                 let slot = self.alloc_local(name);
                 if *is_state {

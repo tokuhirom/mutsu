@@ -3660,6 +3660,10 @@ impl VM {
                 self.exec_type_check_op(code, *tc_idx, *var_name_idx)?;
                 *ip += 1;
             }
+            OpCode::TypeCheckBind(tc_idx, var_name_idx) => {
+                self.exec_type_check_bind_op(code, *tc_idx, *var_name_idx)?;
+                *ip += 1;
+            }
             OpCode::SetPragma(name_idx) => {
                 let value = self.stack.pop().unwrap_or(Value::Nil);
                 let name = Self::const_str(code, *name_idx);

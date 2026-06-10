@@ -3405,6 +3405,34 @@ pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &
     }
 }
 
+/// Build a structured X::TypeCheck::Binding RuntimeError, for `:=` binds to a
+/// typed scalar (e.g. `my Str $x := 3`), matching Raku's format:
+/// `Type check failed in binding; expected Str but got Int (3)`
+pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> RuntimeError {
+    let got_type = value_type_name(val);
+    let repr = value_short_repr(val);
+    let msg = if repr.is_empty() {
+        format!(
+            "X::TypeCheck::Binding: Type check failed in binding; expected {} but got {}",
+            expected, got_type
+        )
+    } else {
+        format!(
+            "X::TypeCheck::Binding: Type check failed in binding; expected {} but got {} {}",
+            expected, got_type, repr
+        )
+    };
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        "expected".to_string(),
+        Value::Package(crate::symbol::Symbol::intern(expected)),
+    );
+    attrs.insert("got".to_string(), val.clone());
+    attrs.insert("operation".to_string(), Value::str("bind".to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    RuntimeError::typed("X::TypeCheck::Binding", attrs)
+}
+
 /// Build a structured X::TypeCheck::Assignment RuntimeError.
 /// This creates a proper exception object that `throws-like` can match.
 pub(crate) fn type_check_assignment_typed_error(
