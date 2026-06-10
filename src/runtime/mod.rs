@@ -2706,6 +2706,7 @@ impl Interpreter {
         // X::Syntax hierarchy (syntax errors, subtypes of X::Comp)
         register_x("X::Syntax", "X::Comp");
         register_x("X::Syntax::Confused", "X::Syntax");
+        register_x("X::Syntax::Extension::Null", "X::Syntax");
         register_x("X::Syntax::Missing", "X::Syntax");
         register_x("X::Syntax::VirtualCall", "X::Syntax");
         register_x("X::Syntax::Malformed", "X::Syntax");

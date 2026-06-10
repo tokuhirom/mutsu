@@ -364,6 +364,52 @@ fn placeholder_overrides_signature_error(body: &[Stmt], param_defs: &[ParamDef])
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
 pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
+    let (rest, name) = parse_sub_name_inner(input)?;
+    if let Some(err) = null_operator_error(&name) {
+        return Err(err);
+    }
+    Ok((rest, name))
+}
+
+/// Detect an operator declaration with an empty (whitespace-only) operator
+/// symbol, e.g. `infix:sym< >` or `infix:< >` -> X::Syntax::Extension::Null.
+fn null_operator_error(name: &str) -> Option<PError> {
+    const CATEGORIES: &[&str] = &[
+        "infix",
+        "prefix",
+        "postfix",
+        "term",
+        "circumfix",
+        "postcircumfix",
+        "trait_mod",
+        "trait_auxiliary",
+    ];
+    let colon = name.find(':')?;
+    let cat = &name[..colon];
+    if !CATEGORIES.contains(&cat) {
+        return None;
+    }
+    // After the category, the symbol is `<SYM>`, `«SYM»`, or `sym<SYM>`.
+    let after = &name[colon + 1..];
+    let after = after.strip_prefix("sym").unwrap_or(after);
+    let inner = if let Some(s) = after.strip_prefix('<') {
+        s.strip_suffix('>')?
+    } else if let Some(s) = after.strip_prefix('\u{ab}') {
+        s.strip_suffix('\u{bb}')?
+    } else {
+        return None;
+    };
+    if !inner.trim().is_empty() {
+        return None;
+    }
+    let message = "Null operator is not allowed".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Extension::Null"), attrs);
+    Some(PError::fatal_with_exception(message, Box::new(ex)))
+}
+
+fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {
     let (rest, base) = if let Ok((rest, base)) = ident(input) {
         (rest, base)
     } else {
