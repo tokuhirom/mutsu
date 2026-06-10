@@ -1161,6 +1161,9 @@ impl Interpreter {
             const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
             if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
                 if let Value::Str(source_name) = attr_val {
+                    // A sigilless attribute is in play — enable cell-direct
+                    // alias-table routing (Phase 3 Stage 2c (ii)).
+                    self.sigilless_attrs_active = true;
                     // Set up: !attr → source_name alias (for write propagation)
                     self.env.insert(
                         format!("__mutsu_sigilless_alias::!{}", actual_attr),

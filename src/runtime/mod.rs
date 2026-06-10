@@ -1032,6 +1032,14 @@ pub struct Interpreter {
     /// True when this interpreter participates in cross-thread variable sharing.
     /// Set by `clone_for_thread` on both parent and child.
     pub(crate) shared_vars_active: bool,
+    /// True once any sigilless attribute alias (`has $x`) has been materialized.
+    /// Sigilless attributes are read/written through a bare `Var("x")` that is
+    /// disambiguated only by the runtime `__mutsu_sigilless_alias::` table, so
+    /// the cell-direct read/write routing must consult that table. This flag
+    /// gates that extra lookup so programs without sigilless attributes (the vast
+    /// majority) pay nothing on the hot variable-read path. Process-sticky: set
+    /// true on first use, never reset (Phase 3 Stage 2c (ii)).
+    pub(crate) sigilless_attrs_active: bool,
     /// Keys in shared_vars that were explicitly updated (not just initialized by
     /// `clone_for_thread`). `sync_shared_vars_to_env` only syncs these keys so
     /// that function parameters aren't overwritten with stale values.
@@ -3127,6 +3135,7 @@ impl Interpreter {
             supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::new(RwLock::new(HashMap::new())),
             shared_vars_active: false,
+            sigilless_attrs_active: false,
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
@@ -5397,6 +5406,7 @@ impl Interpreter {
             supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             shared_vars_active: true,
+            sigilless_attrs_active: self.sigilless_attrs_active,
             shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,

@@ -1462,6 +1462,40 @@ impl VM {
         Ok(Self::decrement_value(val))
     }
 
+    /// Propagate a scalar write along the `__mutsu_sigilless_alias::` chain from
+    /// `name`: each alias target receives `val` in env and its local slot, and an
+    /// attribute-twigil alias (`!x`) is additionally mirrored into self's shared
+    /// cell so a sigilless attribute write (`has $x; $x = v`) reaches the cell
+    /// (Phase 3 Stage 2c (ii)). Shared by the inc/dec ops; the cycle guard copes
+    /// with the bidirectional `x ↔ !x` alias table.
+    fn propagate_sigilless_alias_chain(&mut self, code: &CompiledCode, name: &str, val: &Value) {
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(n) = v {
+                Some(n.to_string())
+            } else {
+                None
+            }
+        });
+        let mut seen_aliases = std::collections::HashSet::new();
+        while let Some(current_alias) = alias_name {
+            if !seen_aliases.insert(current_alias.clone()) {
+                break;
+            }
+            self.set_env_with_main_alias(&current_alias, val.clone());
+            self.update_local_if_exists(code, &current_alias, val);
+            self.write_self_attr_cell(&current_alias, val.clone());
+            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                if let Value::Str(n) = v {
+                    Some(n.to_string())
+                } else {
+                    None
+                }
+            });
+        }
+    }
+
     pub(super) fn exec_post_increment_op(
         &mut self,
         code: &CompiledCode,
@@ -1514,31 +1548,9 @@ impl VM {
             let new_val = self.increment_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
-            // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
-            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-                if let Value::Str(n) = v {
-                    Some(n.to_string())
-                } else {
-                    None
-                }
-            });
-            let mut seen_aliases = std::collections::HashSet::new();
-            while let Some(current_alias) = alias_name {
-                if !seen_aliases.insert(current_alias.clone()) {
-                    break;
-                }
-                self.set_env_with_main_alias(&current_alias, new_val.clone());
-                self.update_local_if_exists(code, &current_alias, &new_val);
-                let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                    if let Value::Str(n) = v {
-                        Some(n.to_string())
-                    } else {
-                        None
-                    }
-                });
-            }
+            // Propagate the new value along the sigilless alias chain and into
+            // self's shared cell for an attribute-twigil alias.
+            self.propagate_sigilless_alias_chain(code, name, &new_val);
             self.stack.push(val);
             return Ok(());
         }
@@ -1589,30 +1601,9 @@ impl VM {
                 self.set_env_with_main_alias(&target_name, val);
             }
         }
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
-        let mut seen_aliases = std::collections::HashSet::new();
-        while let Some(current_alias) = alias_name {
-            if !seen_aliases.insert(current_alias.clone()) {
-                break;
-            }
-            self.set_env_with_main_alias(&current_alias, new_val.clone());
-            self.update_local_if_exists(code, &current_alias, &new_val);
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            });
-        }
+        // Propagate the new value along the sigilless alias chain and into self's
+        // shared cell for an attribute-twigil alias.
+        self.propagate_sigilless_alias_chain(code, name, &new_val);
         // Write back to source variable when incrementing $_ bound to a container
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
@@ -1667,31 +1658,9 @@ impl VM {
             let new_val = self.decrement_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
-            // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
-            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-                if let Value::Str(n) = v {
-                    Some(n.to_string())
-                } else {
-                    None
-                }
-            });
-            let mut seen_aliases = std::collections::HashSet::new();
-            while let Some(current_alias) = alias_name {
-                if !seen_aliases.insert(current_alias.clone()) {
-                    break;
-                }
-                self.set_env_with_main_alias(&current_alias, new_val.clone());
-                self.update_local_if_exists(code, &current_alias, &new_val);
-                let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                    if let Value::Str(n) = v {
-                        Some(n.to_string())
-                    } else {
-                        None
-                    }
-                });
-            }
+            // Propagate the new value along the sigilless alias chain and into
+            // self's shared cell for an attribute-twigil alias.
+            self.propagate_sigilless_alias_chain(code, name, &new_val);
             self.stack.push(val);
             return Ok(());
         }
@@ -1715,30 +1684,9 @@ impl VM {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
-        let mut seen_aliases = std::collections::HashSet::new();
-        while let Some(current_alias) = alias_name {
-            if !seen_aliases.insert(current_alias.clone()) {
-                break;
-            }
-            self.set_env_with_main_alias(&current_alias, new_val.clone());
-            self.update_local_if_exists(code, &current_alias, &new_val);
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            });
-        }
+        // Propagate the new value along the sigilless alias chain and into self's
+        // shared cell for an attribute-twigil alias.
+        self.propagate_sigilless_alias_chain(code, name, &new_val);
         self.stack.push(val);
         Ok(())
     }
@@ -4215,13 +4163,52 @@ impl VM {
     /// when `name` is a scalar attr-twigil, `self` is a concrete instance, and
     /// the attribute exists in the cell.
     pub(super) fn read_self_attr_cell(&self, name: &str) -> Option<Value> {
-        Self::attr_twigil_base(name)?;
+        let twigil = self.canonical_attr_twigil(name)?;
         let self_val = self.get_env_with_main_alias("self")?;
         let Value::Instance { attributes, .. } = &self_val else {
             return None;
         };
-        let key = self.resolve_attr_cell_key(name, attributes)?;
+        let key = self.resolve_attr_cell_key(&twigil, attributes)?;
         attributes.as_map().get(&key).cloned()
+    }
+
+    /// Map a variable name to its canonical attribute-twigil form for cell access:
+    /// a direct twigil (`!x`/`@.y`/…) maps to itself; a bare sigilless name
+    /// (`has $x` → `Var("x")`) resolves through the runtime alias table to its
+    /// `!x` twigil. Returns `None` for ordinary (non-attribute) names. The
+    /// sigilless lookup is gated on `sigilless_attrs_active` so the common case
+    /// (no sigilless attributes) costs only a string check on the hot read path.
+    fn canonical_attr_twigil(&self, name: &str) -> Option<String> {
+        if Self::attr_twigil_base(name).is_some() {
+            return Some(name.to_string());
+        }
+        if !self.interpreter.sigilless_attrs_active {
+            return None;
+        }
+        self.sigilless_attr_twigil(name)
+    }
+
+    /// Follow the `__mutsu_sigilless_alias::` chain from a bare sigilless name
+    /// until it reaches an attribute twigil (`!x`), returning that twigil. The
+    /// alias table is bidirectional (`x ↔ !x`), so the `seen` guard prevents a
+    /// cycle; returns `None` if the chain has no attribute-twigil link.
+    fn sigilless_attr_twigil(&self, name: &str) -> Option<String> {
+        let mut current = name.to_string();
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(current.clone()) {
+            let key = format!("__mutsu_sigilless_alias::{}", current);
+            match self.interpreter.env().get(&key) {
+                Some(Value::Str(next)) => {
+                    let next = next.to_string();
+                    if Self::attr_twigil_base(&next).is_some() {
+                        return Some(next);
+                    }
+                    current = next;
+                }
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// Skip mirroring slot values that keep their legacy handling (`:=` bindings,
@@ -4241,7 +4228,7 @@ impl VM {
     /// `name` (`!x`/`.x`), resolving the qualified private key when present.
     /// No-op when `name` is not a scalar attr-twigil, `self` is not a concrete
     /// instance, or the attribute does not exist on `self`.
-    fn write_self_attr_cell(&self, name: &str, val: Value) {
+    pub(super) fn write_self_attr_cell(&self, name: &str, val: Value) {
         if Self::attr_twigil_base(name).is_none() {
             return;
         }
@@ -5607,6 +5594,9 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert(current_alias.clone(), val.clone());
+            // Sigilless attribute write: mirror an attr-twigil alias (`!x`) into
+            // self's shared cell (no-op for non-attribute aliases). Stage 2c (ii).
+            self.write_self_attr_cell(&current_alias, val.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
             alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
                 if let Value::Str(name) = v {

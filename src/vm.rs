@@ -885,6 +885,17 @@ impl VM {
                         return Ok(());
                     }
                 }
+                // Phase 3 Stage 2c (ii): a sigilless attribute (`has $x`) compiles
+                // to a bare `Var("x")` that reads via GetGlobal (it is not a method
+                // local), so route it to `self`'s shared cell here too — otherwise
+                // a read after a nested-frame mutation sees the stale entry copy.
+                // `read_self_attr_cell` is gated on `sigilless_attrs_active`, so
+                // non-sigilless programs pay only a string check.
+                if let Some(cell_val) = self.read_self_attr_cell(name) {
+                    self.stack.push(cell_val);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| {
@@ -1697,6 +1708,10 @@ impl VM {
                     }
                     self.set_env_with_main_alias(&current_alias, val.clone());
                     self.update_local_if_exists(code, &current_alias, &val);
+                    // Sigilless attribute write: mirror an attr-twigil alias (`!x`)
+                    // into self's shared cell so a same-method cell-direct read of
+                    // the sigilless attr sees the new value (Phase 3 Stage 2c (ii)).
+                    self.write_self_attr_cell(&current_alias, val.clone());
                     let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
                     alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
                         if let Value::Str(name) = v {
