@@ -258,7 +258,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::Bool(false));
@@ -301,7 +301,7 @@ impl VM {
         // It first evaluates == (which autothreads through junctions),
         // then negates the boolean-collapsed result, always returning Bool.
         let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::Bool(false));
@@ -348,7 +348,7 @@ impl VM {
         }
         // Fall through to standard != logic
         let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::Bool(false));
             }
@@ -389,7 +389,7 @@ impl VM {
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o < 0)
         })?;
         self.stack.push(result);
@@ -402,7 +402,7 @@ impl VM {
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o <= 0)
         })?;
         self.stack.push(result);
@@ -415,7 +415,7 @@ impl VM {
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o > 0)
         })?;
         self.stack.push(result);
@@ -428,7 +428,7 @@ impl VM {
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o >= 0)
         })?;
         self.stack.push(result);
@@ -438,7 +438,7 @@ impl VM {
     pub(super) fn exec_approx_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_numeric_bridge_pair_strict(left, right)?;
+        let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let tolerance = self
             .interpreter
             .get_dynamic_var("*TOLERANCE")
@@ -1023,7 +1023,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // NaN <=> anything produces Nil (unordered)
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::Nil);
