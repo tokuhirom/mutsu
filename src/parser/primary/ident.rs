@@ -1957,11 +1957,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
             }
             // sub not followed by { or ( in expression context — not valid.
-            // A bare `sub` with neither a signature nor a block is a missing block
-            // (`for () { sub }` → X::Syntax::Missing, what => 'block').
             if rest.starts_with('(') {
                 // Let generic identifier/call parsing handle `sub(...)` call syntax.
-            } else {
+            } else if super::super::stmt::parse_sub_name_pub(r).is_err() {
+                // A bare anonymous `sub` with neither a signature nor a block is a
+                // missing block (`for () { sub }` -> X::Syntax::Missing, what =>
+                // 'block'). A *named* forward sub without a body (`sub foo;`) is a
+                // separate X::UnitScope::Invalid handled by the statement path, so
+                // only fire here for the anonymous case.
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("what".to_string(), Value::str("block".to_string()));
                 attrs.insert(
@@ -1973,6 +1976,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     "X::Syntax::Missing: Missing block".to_string(),
                     Box::new(ex),
                 ));
+            } else {
+                return Err(PError::expected_at("anonymous sub body '{' or '('", r));
             }
         }
         "multi" => {
