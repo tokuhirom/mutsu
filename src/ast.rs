@@ -1025,6 +1025,122 @@ fn collect_unattached_ph_expr(expr: &Expr, out: &mut Vec<String>) {
     }
 }
 
+/// Find the first virtual accessor call (`$.attr` / `@.attr` / `%.attr`) used in
+/// an attribute initializer expression. Such a call dereferences the
+/// partially-constructed invocant and is X::Syntax::VirtualCall. Descends into
+/// bare blocks (block initializers) but stops at sub/method/class boundaries,
+/// which rebind the invocant.
+pub(crate) fn first_virtual_call_in_expr(expr: &Expr) -> Option<String> {
+    let mut found = None;
+    collect_virtual_call_expr(expr, &mut found);
+    found
+}
+
+fn collect_virtual_call_expr(expr: &Expr, out: &mut Option<String>) {
+    if out.is_some() {
+        return;
+    }
+    let hit = |sigil: char, name: &str, out: &mut Option<String>| {
+        if out.is_none() && name.starts_with('.') {
+            *out = Some(format!("{}{}", sigil, name));
+        }
+    };
+    match expr {
+        Expr::Var(name) => hit('$', name, out),
+        Expr::ArrayVar(name) => hit('@', name, out),
+        Expr::HashVar(name) => hit('%', name, out),
+        Expr::Binary { left, right, .. } => {
+            collect_virtual_call_expr(left, out);
+            collect_virtual_call_expr(right, out);
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
+            collect_virtual_call_expr(expr, out)
+        }
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            collect_virtual_call_expr(target, out);
+            for a in args {
+                collect_virtual_call_expr(a, out);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                collect_virtual_call_expr(a, out);
+            }
+        }
+        Expr::CallOn { target, args } => {
+            collect_virtual_call_expr(target, out);
+            for a in args {
+                collect_virtual_call_expr(a, out);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            collect_virtual_call_expr(target, out);
+            collect_virtual_call_expr(index, out);
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            collect_virtual_call_expr(cond, out);
+            collect_virtual_call_expr(then_expr, out);
+            collect_virtual_call_expr(else_expr, out);
+        }
+        Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
+            collect_virtual_call_expr(expr, out)
+        }
+        Expr::ArrayLiteral(es)
+        | Expr::BracketArray(es, _)
+        | Expr::StringInterpolation(es)
+        | Expr::CaptureLiteral(es) => {
+            for e in es {
+                collect_virtual_call_expr(e, out);
+            }
+        }
+        Expr::Hash(pairs) => {
+            for (_, v) in pairs {
+                if let Some(e) = v {
+                    collect_virtual_call_expr(e, out);
+                }
+            }
+        }
+        // A bare block initializer (`has $.x = { $.y }`) is still evaluated on the
+        // partially-constructed object, so descend into it.
+        Expr::AnonSub {
+            body,
+            is_block: true,
+            ..
+        } => {
+            for stmt in body {
+                collect_virtual_call_stmt(stmt, out);
+            }
+        }
+        // Real subs/methods/classes rebind the invocant: stop.
+        _ => {}
+    }
+}
+
+fn collect_virtual_call_stmt(stmt: &Stmt, out: &mut Option<String>) {
+    if out.is_some() {
+        return;
+    }
+    match stmt {
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e)
+        | Stmt::Goto(e) => collect_virtual_call_expr(e, out),
+        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_virtual_call_expr(expr, out),
+        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
+            for e in es {
+                collect_virtual_call_expr(e, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn placeholder_sort_key(name: &str) -> &str {
     let without_sigil = if let Some(first) = name.chars().next() {
         if matches!(first, '$' | '@' | '%' | '&') {

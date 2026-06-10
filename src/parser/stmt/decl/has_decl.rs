@@ -687,6 +687,24 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::fatal_with_exception(message, Box::new(ex)));
     }
 
+    // A virtual accessor call (`$.y`) in an attribute initializer dereferences the
+    // partially-constructed invocant -> X::Syntax::VirtualCall.
+    if let Some(def) = default.as_ref()
+        && let Some(call) = crate::ast::first_virtual_call_in_expr(def)
+    {
+        // suggest the $!attr direct-access form (e.g. `$.y` -> `$!y`)
+        let direct = format!("{}!{}", &call[..1], &call[2..]);
+        let message = format!(
+            "Virtual method call {} may not be used on partially constructed object (maybe you mean {} for direct attribute access here?)",
+            call, direct
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("call".to_string(), Value::str(call));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::Syntax::VirtualCall"), attrs);
+        return Err(PError::fatal_with_exception(message, Box::new(ex)));
+    }
+
     // Apply `use attributes :D/:U/:_` pragma if no explicit smiley on the type
     let smiley_from_pragma = type_smiley.is_none() && type_constraint.is_some() && {
         let pragma = super::super::simple::current_attributes_pragma();
