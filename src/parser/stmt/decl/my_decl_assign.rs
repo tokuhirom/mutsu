@@ -559,6 +559,23 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // would change the value when the bind is used as an expression).
     let is_scalar_bind =
         !s.is_array && !bound_name.starts_with('%') && !bound_name.starts_with('&');
+    // A natively-typed variable (`my int $x`, `my num $n`, `my str $s`) is not a
+    // container, so it cannot be bound with `:=` — Raku raises X::Bind::NativeType.
+    if is_scalar_bind
+        && let Some(tc) = s.type_constraint.as_deref()
+        && crate::runtime::native_types::is_native_array_element_type(tc)
+    {
+        let display = format!("${}", bound_name);
+        let msg = format!(
+            "Cannot bind to natively typed variable '{}'; use assignment instead",
+            display
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str(display));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::Bind::NativeType"), attrs);
+        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+    }
     let mut custom_traits = s.custom_traits.clone();
     if is_scalar_bind {
         custom_traits.push(("__scalar_bind".to_string(), None));
