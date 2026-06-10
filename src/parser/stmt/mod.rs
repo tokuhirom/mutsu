@@ -123,11 +123,29 @@ pub(super) fn parse_raku_ident<'a>(input: &'a str) -> PResult<'a, &'a str> {
 }
 
 /// Parse a qualified identifier (Foo::Bar::Baz).
+/// `X::Syntax::Name::Null` — a qualified name with an empty component, e.g.
+/// `Foo::::Bar` or `$a::::b`.
+fn name_null_error() -> PError {
+    let msg = "Name component may not be null".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    let ex = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::Name::Null"),
+        attrs,
+    );
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 fn qualified_ident(input: &str) -> PResult<'_, String> {
     let (mut rest, name) = ident(input)?;
     let mut full = name;
     while rest.starts_with("::") {
         let r = &rest[2..];
+        // `Foo::::Bar` / `$a::::b` — an empty component between `::` separators
+        // is a null name component, which Raku rejects at compile time.
+        if r.starts_with("::") {
+            return Err(name_null_error());
+        }
         // Handle ::<SYMBOL> subscript syntax (e.g., CORE::<&run>)
         if let Some(after_bracket) = r.strip_prefix('<')
             && let Some(end) = after_bracket.find('>')
@@ -222,6 +240,13 @@ fn var_name(input: &str) -> PResult<'_, String> {
             if !symbol.is_empty() {
                 return Ok((&after_bracket[end + 1..], format!("::<{symbol}>")));
             }
+        }
+        // A fatal qualified-name error (e.g. a null component `$a::::b`) must
+        // propagate, not fall through to the `$foo::` / anonymous-variable arms.
+        if let Err(e) = qualified_ident(r)
+            && e.is_fatal()
+        {
+            return Err(e);
         }
         // Handle bare $ (anonymous variable) — no name after sigil
         if let Ok((mut rest, mut name)) = qualified_ident(r) {
