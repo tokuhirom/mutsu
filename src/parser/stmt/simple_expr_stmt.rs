@@ -93,6 +93,27 @@ fn is_literal_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(_))
 }
 
+/// True for the Raku pseudo-package names (lexical/dynamic scope pseudo-stashes).
+/// Binding to one of these (`OUTER := 5`) is illegal → X::Bind.
+fn is_pseudo_package(name: &str) -> bool {
+    matches!(
+        name,
+        "MY" | "OUR"
+            | "CORE"
+            | "GLOBAL"
+            | "PROCESS"
+            | "UNIT"
+            | "SETTING"
+            | "OUTER"
+            | "CALLER"
+            | "CALLERS"
+            | "DYNAMIC"
+            | "COMPILING"
+            | "CLIENT"
+            | "LEXICAL"
+    )
+}
+
 /// Extract variable names from a Signature literal expression for signature binding.
 /// Returns None if the expression is not a Signature literal.
 /// Returns Some(Vec<String>) where each string is either a variable name (e.g., "f")
@@ -1287,8 +1308,29 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             );
             return Err(PError::fatal_with_exception(message, Box::new(ex)));
         }
-        // Reject binding to a literal: `0 := 1` → X::Bind
-        if is_literal_expr(&expr) {
+        // Reject binding to a pseudo-package (`OUTER := 5`) → X::Bind with target.
+        if let Expr::BareWord(name) = &expr
+            && is_pseudo_package(name)
+        {
+            let message = format!("Cannot bind to pseudo-package {}", name);
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Bind"),
+                std::collections::HashMap::from([
+                    (
+                        "message".to_string(),
+                        crate::value::Value::str(message.clone()),
+                    ),
+                    (
+                        "target".to_string(),
+                        crate::value::Value::str(name.to_string()),
+                    ),
+                ]),
+            );
+            return Err(PError::fatal_with_exception(message, Box::new(ex)));
+        }
+        // Reject binding to a literal (`0 := 1`) or a function call (`f() := 2`)
+        // — neither is a bindable container. → X::Bind
+        if is_literal_expr(&expr) || matches!(expr, Expr::Call { .. }) {
             let ex = crate::value::Value::make_instance(
                 crate::symbol::Symbol::intern("X::Bind"),
                 std::collections::HashMap::from([(
