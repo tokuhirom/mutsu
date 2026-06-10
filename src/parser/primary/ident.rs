@@ -1956,11 +1956,23 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     }
                 }
             }
-            // sub not followed by { or ( in expression context — not valid
+            // sub not followed by { or ( in expression context — not valid.
+            // A bare `sub` with neither a signature nor a block is a missing block
+            // (`for () { sub }` → X::Syntax::Missing, what => 'block').
             if rest.starts_with('(') {
                 // Let generic identifier/call parsing handle `sub(...)` call syntax.
             } else {
-                return Err(PError::expected_at("anonymous sub body '{' or '('", r));
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("what".to_string(), Value::str("block".to_string()));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str("Missing block".to_string()),
+                );
+                let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
+                return Err(PError::fatal_with_exception(
+                    "X::Syntax::Missing: Missing block".to_string(),
+                    Box::new(ex),
+                ));
             }
         }
         "multi" => {
