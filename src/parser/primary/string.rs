@@ -14,10 +14,7 @@ pub(super) fn unrecognized_backslash_perror(seq: char) -> PError {
     let msg = format!("Unrecognized backslash sequence: '\\{seq}'");
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("sequence".to_string(), Value::str(seq.to_string()));
-    let ex = Value::make_instance(
-        Symbol::intern("X::Backslash::UnrecognizedSequence"),
-        attrs,
-    );
+    let ex = Value::make_instance(Symbol::intern("X::Backslash::UnrecognizedSequence"), attrs);
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
