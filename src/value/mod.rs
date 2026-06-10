@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::env::Env;
@@ -451,12 +451,119 @@ fn live_instance_refcounts() -> &'static Mutex<HashMap<u64, usize>> {
     LIVE_INSTANCE_REFCOUNTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-#[derive(Debug, Clone)]
+/// The shared mutable attribute cell of an instance (Phase 3, Stage 1).
+pub(crate) type AttrCell = Arc<RwLock<HashMap<String, Value>>>;
+
+/// A read guard over an instance's attribute map. Derefs to `&HashMap`, so the
+/// vast majority of read sites (`.get`, `.iter`, `.len`, `for (k, v) in ...`)
+/// and `&guard` argument coercions to `&HashMap` keep working unchanged.
+pub(crate) type AttrReadGuard<'a> = std::sync::RwLockReadGuard<'a, HashMap<String, Value>>;
+
+/// Registry mapping an instance id to its live attribute cell.
+///
+/// Phase 3, Stage 1 scaffolding: the legacy mutation path computes an updated
+/// `HashMap` and then rebuilds the instance via [`Value::make_instance_with_id`]
+/// / `overwrite_instance_bindings_by_identity`. With shared cells, rebuilding
+/// must reuse the *existing* cell (not allocate a detached one), or aliases in
+/// other call frames would stop seeing mutations. This `id -> Weak<cell>` map
+/// lets `make_instance_with_id` find and write through the live cell, which is
+/// what makes the by-reference sharing visible across frames and fixes the
+/// cross-frame mutation bug (see docs/container-identity.md Phase 3). Stage 2
+/// removes the rebuild hacks and this registry along with them.
+type InstanceCellRegistry = HashMap<u64, Weak<RwLock<HashMap<String, Value>>>>;
+
+fn instance_cells() -> &'static Mutex<InstanceCellRegistry> {
+    static INSTANCE_CELLS: OnceLock<Mutex<InstanceCellRegistry>> = OnceLock::new();
+    INSTANCE_CELLS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Register a freshly created cell for `id`.
+fn register_instance_cell(id: u64, cell: &AttrCell) {
+    if let Ok(mut map) = instance_cells().lock() {
+        map.insert(id, Arc::downgrade(cell));
+    }
+}
+
+/// Return the live cell for `id`, if one still exists.
+fn lookup_instance_cell(id: u64) -> Option<AttrCell> {
+    instance_cells().lock().ok()?.get(&id)?.upgrade()
+}
+
+#[derive(Debug)]
 pub(crate) struct InstanceAttrs {
     class_name: Symbol,
-    attributes: HashMap<String, Value>,
+    /// Shared mutable attribute cell.
+    ///
+    /// Cross-frame *sharing* (the Raku object-identity semantics that makes an
+    /// in-place mutation visible to every alias) comes from cloning the
+    /// `Arc<InstanceAttrs>` held by `Value::Instance` — that aliases this same
+    /// struct and cell. An explicit `InstanceAttrs::clone` (see the manual
+    /// `Clone` impl below) instead makes an *independent* deep copy with a fresh
+    /// cell, preserving the long-standing semantics of the legacy writeback
+    /// sites that do `(*attributes).clone()` to build a detached "updated" map.
+    attributes: AttrCell,
     id: u64,
     queue_destroy: bool,
+}
+
+impl Clone for InstanceAttrs {
+    /// Deep, independent copy: a fresh cell with a snapshot of the map. This is
+    /// the rare explicit struct clone (writeback "updated" copies); it must NOT
+    /// share the cell — sharing flows through `Arc<InstanceAttrs>`. The copy is
+    /// transient, so it does not register in `instance_cells` (which must keep
+    /// pointing at the live shared cell) and does not participate in DESTROY
+    /// refcounting (`queue_destroy = false`).
+    fn clone(&self) -> Self {
+        Self {
+            class_name: self.class_name,
+            attributes: Arc::new(RwLock::new(read_attrs(&self.attributes).clone())),
+            id: self.id,
+            queue_destroy: false,
+        }
+    }
+}
+
+/// Try to write `map` into the live shared cell for `id` without blocking.
+///
+/// Returns true if the cell was found and updated. Uses `try_write` so it never
+/// deadlocks: the legacy writeback can run while an outer call frame still holds
+/// a read guard on this very instance (e.g. a method invoked from inside an
+/// `if let … = $obj.attr` whose mut-dispatch then writes the invocant back).
+/// In that same-thread read-then-write situation a blocking write would hang
+/// forever. When the cell is contended we skip the in-place write — the legacy
+/// by-identity env scan still propagates the value, and the common contended
+/// case is a *read-only* invocant write-back where `map` already equals the
+/// cell's contents (a no-op). Stage 2 replaces this writeback with a
+/// mutate-at-the-source model where the guard is never held across the write.
+pub(crate) fn try_write_attrs(cell: &RwLock<HashMap<String, Value>>, map: HashMap<String, Value>) {
+    match cell.try_write() {
+        Ok(mut g) => *g = map,
+        Err(std::sync::TryLockError::Poisoned(e)) => *e.into_inner() = map,
+        Err(std::sync::TryLockError::WouldBlock) => {}
+    }
+}
+
+pub(crate) fn update_instance_cell(id: u64, map: &HashMap<String, Value>) -> bool {
+    if let Some(cell) = lookup_instance_cell(id) {
+        try_write_attrs(&cell, map.clone());
+        true
+    } else {
+        false
+    }
+}
+
+/// Recover the map from a poisoned lock instead of propagating the panic. A
+/// poisoned attribute lock only means some thread panicked mid-mutation; the
+/// map itself is still a valid `HashMap`, and matching the codebase's other
+/// `lock().unwrap()` sites would just turn a poison into a second panic.
+fn read_attrs(cell: &RwLock<HashMap<String, Value>>) -> AttrReadGuard<'_> {
+    cell.read().unwrap_or_else(|e| e.into_inner())
+}
+
+fn write_attrs(
+    cell: &RwLock<HashMap<String, Value>>,
+) -> std::sync::RwLockWriteGuard<'_, HashMap<String, Value>> {
+    cell.write().unwrap_or_else(|e| e.into_inner())
 }
 
 impl InstanceAttrs {
@@ -469,77 +576,77 @@ impl InstanceAttrs {
         if queue_destroy && let Ok(mut counts) = live_instance_refcounts().lock() {
             *counts.entry(id).or_insert(0) += 1;
         }
+        let cell: AttrCell = Arc::new(RwLock::new(attributes));
+        register_instance_cell(id, &cell);
         Self {
             class_name,
-            attributes,
+            attributes: cell,
             id,
             queue_destroy,
         }
     }
 
-    // --- Attribute access API (Phase 3, Stage 0 — encapsulation boundary) ---
+    /// Build an `InstanceAttrs` that shares an existing cell (used by the cell
+    /// reuse path in `make_instance_with_id`).
+    fn from_cell(class_name: Symbol, cell: AttrCell, id: u64, queue_destroy: bool) -> Self {
+        if queue_destroy && let Ok(mut counts) = live_instance_refcounts().lock() {
+            *counts.entry(id).or_insert(0) += 1;
+        }
+        Self {
+            class_name,
+            attributes: cell,
+            id,
+            queue_destroy,
+        }
+    }
+
+    // --- Attribute access API (Phase 3 — encapsulation boundary) ---
     //
-    // The attribute map used to be exposed via `Deref<Target = HashMap>`, which
-    // leaked the storage representation to ~150 call sites. Phase 3 (option C)
-    // will make the storage a *shared mutable cell* so an instance mutation is
-    // visible by-reference across call frames (see docs/container-identity.md).
-    // A locked cell cannot `Deref` to `&HashMap` (guard lifetime), so all access
-    // now goes through these inherent methods. Stage 0 keeps the plain `HashMap`
-    // backing and mirrors `HashMap`'s signatures, so this change is
-    // behaviour-identical; Stage 1 swaps the backing and adjusts the few methods
-    // that must return owned values.
+    // The storage is a shared mutable cell (`Arc<RwLock<HashMap>>`). A locked
+    // cell cannot `Deref` to `&HashMap` (guard lifetime), so all access goes
+    // through these inherent methods. Reads take a read lock; mutations take a
+    // write lock and happen in place (visible to every alias).
 
-    /// Borrow the backing map. Stage 1 will remove this (a locked cell cannot
-    /// hand out a `&HashMap`); the remaining users are owned-snapshot consumers
-    /// that become [`Self::to_map`].
-    pub(crate) fn as_map(&self) -> &HashMap<String, Value> {
-        &self.attributes
+    /// Take a read lock over the attribute map. The guard derefs to `&HashMap`.
+    pub(crate) fn as_map(&self) -> AttrReadGuard<'_> {
+        read_attrs(&self.attributes)
     }
 
-    /// An owned clone of the backing map (the old `attributes.to_map()`).
+    /// An owned clone of the backing map.
     pub(crate) fn to_map(&self) -> HashMap<String, Value> {
-        self.attributes.clone()
-    }
-
-    pub(crate) fn get(&self, key: &str) -> Option<&Value> {
-        self.attributes.get(key)
+        self.as_map().clone()
     }
 
     pub(crate) fn contains_key(&self, key: &str) -> bool {
-        self.attributes.contains_key(key)
+        self.as_map().contains_key(key)
     }
 
-    pub(crate) fn insert(&mut self, key: String, value: Value) -> Option<Value> {
-        self.attributes.insert(key, value)
+    /// In-place insert through the shared cell (visible to all aliases).
+    pub(crate) fn insert(&self, key: String, value: Value) -> Option<Value> {
+        write_attrs(&self.attributes).insert(key, value)
     }
 
-    pub(crate) fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
-        self.attributes.get_mut(key)
+    /// Mutate one attribute in place under the write lock, returning the
+    /// closure's result. Returns `None` if the key is absent. Replaces the old
+    /// `get_mut` (which cannot hand out a `&mut` past the guard).
+    pub(crate) fn with_attr_mut<R>(&self, key: &str, f: impl FnOnce(&mut Value) -> R) -> Option<R> {
+        let mut guard = write_attrs(&self.attributes);
+        guard.get_mut(key).map(f)
     }
 
-    pub(crate) fn entry(
-        &mut self,
-        key: String,
-    ) -> std::collections::hash_map::Entry<'_, String, Value> {
-        self.attributes.entry(key)
-    }
-
-    pub(crate) fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Value> {
-        self.attributes.iter()
-    }
-
-    pub(crate) fn keys(&self) -> std::collections::hash_map::Keys<'_, String, Value> {
-        self.attributes.keys()
-    }
-
-    pub(crate) fn values(&self) -> std::collections::hash_map::Values<'_, String, Value> {
-        self.attributes.values()
+    /// Insert `value` only if `key` is absent (the `entry(..).or_insert(..)`
+    /// idiom), in place under the write lock.
+    pub(crate) fn insert_if_absent(&self, key: String, value: Value) {
+        write_attrs(&self.attributes).entry(key).or_insert(value);
     }
 }
 
 impl PartialEq for InstanceAttrs {
     fn eq(&self, other: &Self) -> bool {
-        self.attributes == other.attributes
+        if Arc::ptr_eq(&self.attributes, &other.attributes) {
+            return true;
+        }
+        *read_attrs(&self.attributes) == *read_attrs(&other.attributes)
     }
 }
 
@@ -573,7 +680,7 @@ impl Drop for InstanceAttrs {
         let _ = PENDING_INSTANCE_DESTROYS.try_with(|pending| {
             pending.borrow_mut().push(PendingInstanceDestroy {
                 class_name: self.class_name,
-                attributes: self.attributes.clone(),
+                attributes: read_attrs(&self.attributes).clone(),
             });
         });
     }
@@ -1844,10 +1951,8 @@ impl PartialEq for Value {
             if arr.len() != 2 {
                 return false;
             }
-            let Some(from) = attrs.get("from") else {
-                return false;
-            };
-            let Some(matched) = attrs.get("str") else {
+            let map = attrs.as_map();
+            let (Some(from), Some(matched)) = (map.get("from"), map.get("str")) else {
                 return false;
             };
             arr[0] == *from && arr[1] == *matched
@@ -2719,10 +2824,48 @@ impl Value {
         attributes: HashMap<String, Value>,
         id: u64,
     ) -> Self {
+        // Phase 3, Stage 1: if a live cell already exists for this id, this is a
+        // rebuild of an existing logical instance (the legacy writeback path).
+        // Write the new attributes through the *existing* shared cell and return
+        // an instance aliasing it, so every other holder of the instance — even
+        // ones in caller frames the scan never visits — sees the mutation.
+        if let Some(cell) = lookup_instance_cell(id) {
+            // Non-blocking: see `try_write_attrs`. If the cell is read-locked by
+            // an outer frame on this thread we keep its current contents and just
+            // share it (preserving identity + cross-frame visibility) rather than
+            // deadlocking on a blocking write.
+            try_write_attrs(&cell, attributes);
+            return Value::Instance {
+                class_name,
+                attributes: Arc::new(InstanceAttrs::from_cell(class_name, cell, id, true)),
+                id,
+            };
+        }
         Value::Instance {
             class_name,
             attributes: Arc::new(InstanceAttrs::new(class_name, attributes, id, true)),
             id,
+        }
+    }
+
+    /// An independent snapshot for `temp`/`let` saves. An instance is deep-copied
+    /// into a fresh, *unregistered* cell, so a later in-place mutation through
+    /// the live shared cell does not alter the saved value (pre-Stage-1 this
+    /// independence came for free from copy-on-write). Arrays/hashes keep their
+    /// CoW `Arc` (forked on first mutation), so a plain clone is already
+    /// independent for them.
+    pub(crate) fn into_temp_snapshot(self) -> Value {
+        match self {
+            Value::Instance {
+                class_name,
+                attributes,
+                id,
+            } => Value::Instance {
+                class_name,
+                attributes: Arc::new((*attributes).clone()),
+                id,
+            },
+            other => other,
         }
     }
 
@@ -3114,13 +3257,16 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Instant" || class_name == "Duration" => {
-                attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0)
-            }
+            } if class_name == "Instant" || class_name == "Duration" => attributes
+                .as_map()
+                .get("value")
+                .map(|v| v.to_f64())
+                .unwrap_or(0.0),
             // A subclass of native Int (e.g. `class Foo is Int`) carries its
             // integer payload in the reserved `__mutsu_int_value` attribute.
             Value::Instance { attributes, .. } if attributes.contains_key("__mutsu_int_value") => {
                 attributes
+                    .as_map()
                     .get("__mutsu_int_value")
                     .map(|v| v.to_f64())
                     .unwrap_or(0.0)
@@ -3131,6 +3277,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Match" => attributes
+                .as_map()
                 .get("str")
                 .map(|v| v.to_string_value().trim().parse::<f64>().unwrap_or(0.0))
                 .unwrap_or(0.0),
@@ -3164,6 +3311,7 @@ impl Value {
             // A subclass of native Int (e.g. `class Foo is Int`) carries its
             // integer payload in the reserved `__mutsu_int_value` attribute.
             Value::Instance { attributes, .. } => attributes
+                .as_map()
                 .get("__mutsu_int_value")
                 .map(|v| v.to_bigint())
                 .unwrap_or_else(|| NumBigInt::from(0)),

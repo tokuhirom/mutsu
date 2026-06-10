@@ -196,7 +196,7 @@ impl Interpreter {
                     || cn.starts_with("Blob[")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     return items
                         .iter()
                         .map(|v| match v {
@@ -212,7 +212,7 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "utf16" => {
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     let use_be = normalized == "utf-16be";
                     let mut bytes = Vec::with_capacity(items.len() * 2);
                     for item in items.iter() {

@@ -1523,9 +1523,9 @@ impl Interpreter {
             Value::Instance { attributes, .. } => {
                 // Try "meta" first (Distribution::Installation from detect_inst_distribution),
                 // then fall back to "$!meta" (plain Distribution from detect_distribution).
-                attributes
-                    .get("meta")
-                    .or_else(|| attributes.get("$!meta"))
+                let map = attributes.as_map();
+                map.get("meta")
+                    .or_else(|| map.get("$!meta"))
                     .cloned()
                     .unwrap_or(Value::Nil)
             }

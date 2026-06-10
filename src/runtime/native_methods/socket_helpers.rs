@@ -20,7 +20,7 @@ impl Interpreter {
                     || cn.starts_with("Blob[")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     Some(
                         items
                             .iter()

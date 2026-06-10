@@ -176,6 +176,7 @@ impl Interpreter {
                     self.call_method_with_values(candidates[0].clone(), "signature", Vec::new())
                 {
                     attributes
+                        .as_map()
                         .get("gist")
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|| "()".to_string())
@@ -216,6 +217,7 @@ impl Interpreter {
                 let sig = make_signature_value(info);
                 if let Value::Instance { attributes, .. } = &sig {
                     attributes
+                        .as_map()
                         .get("gist")
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|| "()".to_string())
@@ -617,6 +619,7 @@ impl Interpreter {
             let sig = self.sub_signature_value(data);
             let sig_gist = if let Value::Instance { attributes, .. } = &sig {
                 attributes
+                    .as_map()
                     .get("gist")
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "()".to_string())
@@ -890,7 +893,7 @@ impl Interpreter {
     fn extract_wrap_handle_id(&self, handle: &Value) -> Option<u64> {
         match handle {
             Value::Instance { attributes, .. } => {
-                if let Some(Value::Int(id)) = attributes.get("handle-id") {
+                if let Some(Value::Int(id)) = attributes.as_map().get("handle-id") {
                     Some(*id as u64)
                 } else {
                     None

@@ -108,7 +108,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                         Value::Int(bytes.len() as i64)
                     } else {
                         Value::Int(0)
@@ -146,7 +146,7 @@ pub(super) fn dispatch(
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Stash" => match attributes.get("symbols") {
+                } if class_name == "Stash" => match attributes.as_map().get("symbols") {
                     Some(Value::Hash(map)) => Value::Int(map.len() as i64),
                     _ => Value::Int(0),
                 },

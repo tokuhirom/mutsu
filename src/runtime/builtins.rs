@@ -862,7 +862,7 @@ impl Interpreter {
                         ..
                     } = &value
                         && class_name == "Failure"
-                        && let Some(ex) = attributes.get("exception")
+                        && let Some(ex) = attributes.as_map().get("exception")
                     {
                         let mut err = RuntimeError::new(ex.to_string_value());
                         err.exception = Some(Box::new(ex.clone()));
@@ -874,7 +874,7 @@ impl Interpreter {
                     ..
                 }) = args.first()
                     && class_name == "Failure"
-                    && let Some(ex) = attributes.get("exception")
+                    && let Some(ex) = attributes.as_map().get("exception")
                 {
                     let mut err = RuntimeError::new(ex.to_string_value());
                     err.exception = Some(Box::new(ex.clone()));

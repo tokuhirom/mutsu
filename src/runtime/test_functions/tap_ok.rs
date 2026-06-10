@@ -33,7 +33,11 @@ impl Interpreter {
 
         // 2. Check .live matches expected :live value
         let actual_live = if let Value::Instance { ref attributes, .. } = supply {
-            attributes.get("live").map(|v| v.truthy()).unwrap_or(false)
+            attributes
+                .as_map()
+                .get("live")
+                .map(|v| v.truthy())
+                .unwrap_or(false)
         } else {
             true
         };
@@ -59,19 +63,25 @@ impl Interpreter {
             // Scheduler-based Supply: register counter cue and let after-tap
             // drive emissions via progress-by
             if let Value::Instance { ref attributes, .. } = supply {
-                let scheduler = attributes.get("scheduler").cloned().unwrap_or(Value::Nil);
+                let scheduler = attributes
+                    .as_map()
+                    .get("scheduler")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 let interval = attributes
+                    .as_map()
                     .get("scheduler_interval")
                     .map(|v| v.to_f64())
                     .unwrap_or(1.0);
                 let delay = attributes
+                    .as_map()
                     .get("scheduler_delay")
                     .map(|v| v.to_f64())
                     .unwrap_or(0.0);
 
                 // Get scheduler_id from the scheduler instance
                 let scheduler_id = if let Value::Instance { ref attributes, .. } = scheduler {
-                    match attributes.get("scheduler_id") {
+                    match attributes.as_map().get("scheduler_id") {
                         Some(Value::Int(id)) => *id as u64,
                         _ => 0,
                     }
@@ -105,7 +115,7 @@ impl Interpreter {
             // Non-scheduler supply: original logic
             if let Value::Instance { ref attributes, .. } = supply {
                 // For on-demand supplies, execute the callback to produce values
-                if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+                if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
@@ -118,13 +128,28 @@ impl Interpreter {
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
                     let _ = self.supply_emit_timed_buffer.pop();
                 } else {
-                    let values = if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
-                        let (snap_values, _, _) =
-                            crate::runtime::native_methods::supplier_snapshot(*sid as u64);
-                        if !snap_values.is_empty() {
-                            snap_values
+                    let values =
+                        if let Some(Value::Int(sid)) = attributes.as_map().get("supplier_id") {
+                            let (snap_values, _, _) =
+                                crate::runtime::native_methods::supplier_snapshot(*sid as u64);
+                            if !snap_values.is_empty() {
+                                snap_values
+                            } else {
+                                attributes
+                                    .as_map()
+                                    .get("values")
+                                    .and_then(|v| {
+                                        if let Value::Array(a, ..) = v {
+                                            Some(a.to_vec())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .unwrap_or_default()
+                            }
                         } else {
                             attributes
+                                .as_map()
                                 .get("values")
                                 .and_then(|v| {
                                     if let Value::Array(a, ..) = v {
@@ -134,20 +159,9 @@ impl Interpreter {
                                     }
                                 })
                                 .unwrap_or_default()
-                        }
-                    } else {
-                        attributes
-                            .get("values")
-                            .and_then(|v| {
-                                if let Value::Array(a, ..) = v {
-                                    Some(a.to_vec())
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or_default()
-                    };
+                        };
                     let do_cbs = attributes
+                        .as_map()
                         .get("do_callbacks")
                         .and_then(|v| {
                             if let Value::Array(a, ..) = v {
@@ -183,7 +197,7 @@ impl Interpreter {
                 // etc.) are emitted to the downstream supplier. Use the downstream
                 // supplier snapshot instead of raw emissions.
                 let emitted = if let Value::Instance { ref attributes, .. } = supply
-                    && let Some(Value::Int(sid)) = attributes.get("supplier_id")
+                    && let Some(Value::Int(sid)) = attributes.as_map().get("supplier_id")
                 {
                     let (snap_values, _, _) =
                         crate::runtime::native_methods::supplier_snapshot(*sid as u64);
@@ -197,12 +211,17 @@ impl Interpreter {
                 };
 
                 let emitted = if let Value::Instance { ref attributes, .. } = supply {
-                    if matches!(attributes.get("elems_filter"), Some(Value::Bool(true))) {
+                    if matches!(
+                        attributes.as_map().get("elems_filter"),
+                        Some(Value::Bool(true))
+                    ) {
                         let interval = attributes
+                            .as_map()
                             .get("elems_interval")
                             .map(Value::to_f64)
                             .unwrap_or(0.0);
                         let initial_count = attributes
+                            .as_map()
                             .get("elems_initial_count")
                             .and_then(|v| match v {
                                 Value::Int(i) => Some(*i),
@@ -237,10 +256,14 @@ impl Interpreter {
                             }
                             out
                         }
-                    } else if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
-                        let as_fn = attributes.get("unique_as").cloned();
-                        let with_fn = attributes.get("unique_with").cloned();
-                        let expires_secs = attributes.get("unique_expires").map(Value::to_f64);
+                    } else if matches!(
+                        attributes.as_map().get("unique_filter"),
+                        Some(Value::Bool(true))
+                    ) {
+                        let as_fn = attributes.as_map().get("unique_as").cloned();
+                        let with_fn = attributes.as_map().get("unique_with").cloned();
+                        let expires_secs =
+                            attributes.as_map().get("unique_expires").map(Value::to_f64);
                         let mut seen: Vec<(Value, std::time::Instant)> = Vec::new();
                         let mut unique = Vec::new();
                         let events = if timed_emitted.is_empty() {
@@ -292,11 +315,12 @@ impl Interpreter {
                 } = supply
                 {
                     let is_lines = class_name == "Supply"
-                        && matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                        && matches!(attributes.as_map().get("is_lines"), Some(Value::Bool(true)));
                     let is_words = class_name == "Supply"
-                        && matches!(attributes.get("is_words"), Some(Value::Bool(true)));
+                        && matches!(attributes.as_map().get("is_words"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attributes
+                            .as_map()
                             .get("line_chomp")
                             .map(Value::truthy)
                             .unwrap_or(true);
@@ -318,7 +342,7 @@ impl Interpreter {
         // Supply.reduce produces a derived Supply that carries reducer metadata
         // for live sources. Apply the same reduction over collected tap values.
         if let Value::Instance { ref attributes, .. } = supply
-            && let Some(reduce_callable) = attributes.get("reduce_callable").cloned()
+            && let Some(reduce_callable) = attributes.as_map().get("reduce_callable").cloned()
             && tap_values.len() > 1
         {
             let reduced = self.reduce_items(reduce_callable, tap_values)?;
@@ -333,7 +357,7 @@ impl Interpreter {
         // values computed by the produce_callable. For live sources, tap-ok
         // snapshots raw emissions, so we must apply the scan here.
         if let Value::Instance { ref attributes, .. } = supply
-            && let Some(produce_callable) = attributes.get("produce_callable").cloned()
+            && let Some(produce_callable) = attributes.as_map().get("produce_callable").cloned()
             && !tap_values.is_empty()
         {
             let mut scanned = Vec::with_capacity(tap_values.len());

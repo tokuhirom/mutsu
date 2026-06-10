@@ -917,7 +917,7 @@ impl VM {
                         .collect(),
                     Value::Instance { attributes, .. } => {
                         // Extract items from an existing Buf/Blob instance
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                             items
                                 .iter()
                                 .map(|v| Value::Int(crate::runtime::to_int(v)))

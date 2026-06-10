@@ -126,14 +126,17 @@ fn cool_instance_numeric(target: &Value) -> Option<f64> {
     match class_name.resolve().as_str() {
         "IO::Path" => target.to_string_value().trim().parse::<f64>().ok(),
         "Match" => attributes
+            .as_map()
             .get("str")
             .and_then(|v| v.to_string_value().trim().parse::<f64>().ok()),
         "StrDistance" => {
             let before = attributes
+                .as_map()
                 .get("before")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
             let after = attributes
+                .as_map()
                 .get("after")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
@@ -415,7 +418,7 @@ pub(super) fn dispatch(
                 attributes,
                 ..
             } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                match attributes.get("value") {
+                match attributes.as_map().get("value") {
                     Some(inner) => match dispatch(inner, "Rat") {
                         Some(Some(r)) => Some(r),
                         _ => Some(Ok(make_rat(0, 1))),
@@ -572,7 +575,7 @@ pub(super) fn dispatch(
                 attributes,
                 ..
             } if class_name == "Failure" => {
-                if let Some(ex) = attributes.get("exception") {
+                if let Some(ex) = attributes.as_map().get("exception") {
                     let mut err = RuntimeError::new(ex.to_string_value());
                     err.exception = Some(Box::new(ex.clone()));
                     Some(Err(err))

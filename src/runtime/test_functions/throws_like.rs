@@ -253,7 +253,7 @@ impl Interpreter {
         for (attr_name, expected_val) in &named_checks {
             let actual_val = exception_val.as_ref().and_then(|ex| {
                 if let Value::Instance { attributes, .. } = ex {
-                    attributes.get(attr_name).cloned()
+                    attributes.as_map().get(attr_name).cloned()
                 } else {
                     None
                 }

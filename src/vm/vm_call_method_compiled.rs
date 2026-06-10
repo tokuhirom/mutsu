@@ -307,6 +307,7 @@ impl VM {
                     };
                 let has_attr_aliases = match &target {
                     Value::Instance { attributes, .. } => attributes
+                        .as_map()
                         .keys()
                         .any(|k| k.starts_with(super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX)),
                     _ => false,
@@ -576,15 +577,21 @@ impl VM {
             return None;
         }
         // Only a concrete array-backed iterator (excludes predictive/coroutine
-        // iterators whose state lives off the instance).
-        let Some(Value::Array(items, ..)) = attributes.get("items") else {
-            return None;
+        // iterators whose state lives off the instance). Snapshot the (cheap Arc
+        // clone of the) backing array and the start index, then drop the read
+        // guard before the writeback below write-locks the same cell.
+        let (items, start_index) = {
+            let map = attributes.as_map();
+            let Some(Value::Array(items, ..)) = map.get("items") else {
+                return None;
+            };
+            let start_index = match map.get("index") {
+                Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                _ => 0,
+            };
+            (items.clone(), start_index)
         };
         let len = items.len();
-        let start_index = match attributes.get("index") {
-            Some(Value::Int(i)) if *i >= 0 => *i as usize,
-            _ => 0,
-        };
         let mut index = start_index;
         let ret = match method {
             "pull-one" => {
@@ -640,16 +647,20 @@ impl VM {
         // the interpreter's mutating iterator dispatch does, so the receiver
         // variable and aliases see the advance.
         if index != start_index {
-            let mut updated = attributes.as_ref().clone();
-            updated.insert("index".to_string(), Value::Int(index as i64));
+            // Write through the shared cell in place: every alias of this
+            // iterator instance (caller var, locals) sees the advance directly.
+            attributes.insert("index".to_string(), Value::Int(index as i64));
             let cn = class_name.resolve();
             let inst_id = *id;
+            let snapshot = attributes.to_map();
+            // Legacy by-identity propagation (redundant now that the cell is
+            // shared; removed in Stage 2).
             self.interpreter.overwrite_instance_bindings_by_identity(
                 &cn,
                 inst_id,
-                (updated.clone()).to_map(),
+                snapshot.clone(),
             );
-            self.overwrite_instance_in_locals(&cn, inst_id, updated.as_map());
+            self.overwrite_instance_in_locals(&cn, inst_id, &snapshot);
             self.env_dirty = true;
         }
         Some(Ok(ret))

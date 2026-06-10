@@ -270,7 +270,8 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
         return None;
     }
 
-    let Value::Array(items, ..) = attributes.get("bytes")? else {
+    let map = attributes.as_map();
+    let Value::Array(items, ..) = map.get("bytes")? else {
         return Some(Vec::new());
     };
 

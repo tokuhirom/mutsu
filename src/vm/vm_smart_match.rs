@@ -19,10 +19,12 @@ fn io_path_cleanup_absolute(path: &str, cwd: &str) -> String {
 /// Extract path and CWD from IO::Path attributes.
 fn io_path_attrs(attrs: &std::sync::Arc<crate::value::InstanceAttrs>) -> (String, String) {
     let path = attrs
+        .as_map()
         .get("path")
         .map(|v: &Value| v.to_string_value())
         .unwrap_or_default();
     let cwd = attrs
+        .as_map()
         .get("cwd")
         .map(|v: &Value| v.to_string_value())
         .unwrap_or_else(|| {
@@ -80,9 +82,9 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             },
         ) if left_class == "DateTime" && right_class == "Date" => {
             let (y, m, d, _, _, _, _) =
-                crate::builtins::methods_0arg::temporal::datetime_attrs((left_attrs).as_map());
+                crate::builtins::methods_0arg::temporal::datetime_attrs(&(left_attrs).as_map());
             let (ry, rm, rd) =
-                crate::builtins::methods_0arg::temporal::date_attrs((right_attrs).as_map());
+                crate::builtins::methods_0arg::temporal::date_attrs(&(right_attrs).as_map());
             Some(y == ry && m == rm && d == rd)
         }
 
@@ -432,7 +434,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             ) =>
         {
             let negated = matches!(val.as_ref(), Value::Bool(false));
-            let path_str = attributes.get("path").map(|v| v.to_string_value());
+            let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
             if let Some(p) = path_str {
                 let path = std::path::Path::new(&p);
                 let result = match key.as_str() {

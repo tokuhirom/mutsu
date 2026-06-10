@@ -177,12 +177,12 @@ impl Value {
                 },
             ) if cn_a == "Signature" && cn_b == "Signature" => {
                 let raku_a = if let Value::Instance { attributes, .. } = self {
-                    attributes.get("raku").map(|v| v.to_string_value())
+                    attributes.as_map().get("raku").map(|v| v.to_string_value())
                 } else {
                     None
                 };
                 let raku_b = if let Value::Instance { attributes, .. } = other {
-                    attributes.get("raku").map(|v| v.to_string_value())
+                    attributes.as_map().get("raku").map(|v| v.to_string_value())
                 } else {
                     None
                 };
@@ -216,9 +216,9 @@ impl Value {
                 && b_attrs.contains_key("timezone") =>
             {
                 let (ay, am, ad, ah, amin, asec, atz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs((a_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(&(a_attrs).as_map());
                 let (by, bm, bd, bh, bmin, bsec, btz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs((b_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(&(b_attrs).as_map());
                 ay == by
                     && am == bm
                     && ad == bd
@@ -250,9 +250,9 @@ impl Value {
                 && !b_attrs.contains_key("hour") =>
             {
                 let (ay, am, ad) =
-                    crate::builtins::methods_0arg::temporal::date_attrs((a_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::date_attrs(&(a_attrs).as_map());
                 let (by, bm, bd) =
-                    crate::builtins::methods_0arg::temporal::date_attrs((b_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::date_attrs(&(b_attrs).as_map());
                 ay == by && am == bm && ad == bd
             }
             // StrDistance instances: structural equality on before/after
@@ -268,12 +268,16 @@ impl Value {
                     ..
                 },
             ) if cn_a == "StrDistance" && cn_b == "StrDistance" => {
-                let before_eq = match (a_attrs.get("before"), b_attrs.get("before")) {
+                let before_eq = match (
+                    a_attrs.as_map().get("before"),
+                    b_attrs.as_map().get("before"),
+                ) {
                     (Some(a), Some(b)) => a.eqv(b),
                     (None, None) => true,
                     _ => false,
                 };
-                let after_eq = match (a_attrs.get("after"), b_attrs.get("after")) {
+                let after_eq = match (a_attrs.as_map().get("after"), b_attrs.as_map().get("after"))
+                {
                     (Some(a), Some(b)) => a.eqv(b),
                     (None, None) => true,
                     _ => false,
@@ -350,7 +354,10 @@ impl Value {
                 return handled;
             }
             // Fall back to the attribute
-            attributes.get("handled").is_some_and(|v| v.truthy())
+            attributes
+                .as_map()
+                .get("handled")
+                .is_some_and(|v| v.truthy())
         } else {
             false
         }
@@ -401,7 +408,7 @@ impl Value {
             } => {
                 if class_name == "Proc" {
                     // Proc is truthy when exitcode == 0
-                    return match attributes.get("exitcode") {
+                    return match attributes.as_map().get("exitcode") {
                         Some(Value::Int(code)) => *code == 0,
                         _ => false,
                     };
@@ -418,7 +425,7 @@ impl Value {
                     || cn.starts_with("buf")
                     || cn.starts_with("blob")
                 {
-                    return match attributes.get("bytes") {
+                    return match attributes.as_map().get("bytes") {
                         Some(Value::Array(items, ..)) => !items.is_empty(),
                         _ => false,
                     };

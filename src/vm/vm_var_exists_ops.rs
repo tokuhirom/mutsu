@@ -63,7 +63,7 @@ impl VM {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Stash" => match attributes.get("symbols") {
+                } if class_name == "Stash" => match attributes.as_map().get("symbols") {
                     Some(Value::Hash(map)) => Some(map.clone()),
                     _ => None,
                 },
@@ -477,7 +477,7 @@ impl VM {
                             },
                             Value::Str(key),
                         ) if class_name == "Stash" => {
-                            if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
+                            if let Some(Value::Hash(symbols)) = attributes.as_map().get("symbols") {
                                 symbols.contains_key(key.as_str())
                             } else {
                                 false
@@ -491,7 +491,7 @@ impl VM {
                             },
                             other,
                         ) if class_name == "Stash" => {
-                            if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
+                            if let Some(Value::Hash(symbols)) = attributes.as_map().get("symbols") {
                                 symbols.contains_key(&other.to_string_value())
                             } else {
                                 false

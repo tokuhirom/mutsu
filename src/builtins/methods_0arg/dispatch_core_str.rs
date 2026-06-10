@@ -84,7 +84,7 @@ pub(super) fn dispatch(
             } = target
                 && class_name == "Iterator"
             {
-                let lazy = matches!(attributes.get("is_lazy"), Some(Value::Bool(true)));
+                let lazy = matches!(attributes.as_map().get("is_lazy"), Some(Value::Bool(true)));
                 return Some(Some(Ok(Value::Bool(lazy))));
             }
             // A consumed gather-based LazyList throws X::Seq::Consumed on .is-lazy

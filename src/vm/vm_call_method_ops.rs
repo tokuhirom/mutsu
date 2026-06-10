@@ -146,9 +146,9 @@ impl VM {
         // type); extending it to the mut path means an accessor read on a
         // *variable* (`$obj.x`, compiled as CallMethodMut) no longer falls back
         // to the interpreter.
-        let val = attributes
-            .get(method)
-            .or_else(|| attributes.get(&format!("{}!", method)));
+        let map = attributes.as_map();
+        let priv_key = format!("{}!", method);
+        let val = map.get(method).or_else(|| map.get(&priv_key));
         match val {
             Some(v) => {
                 let out = v.clone();
@@ -362,7 +362,7 @@ impl VM {
             } = &target
             && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
         {
-            let lock_id = match attributes.get("lock-id") {
+            let lock_id = match attributes.as_map().get("lock-id") {
                 Some(Value::Int(id)) if *id > 0 => *id as u64,
                 _ => {
                     return Err(RuntimeError::new(
@@ -865,6 +865,7 @@ impl VM {
                             .any(|n| n == "Array")
                     {
                         let storage = attributes
+                            .as_map()
                             .get("__mutsu_array_storage")
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));

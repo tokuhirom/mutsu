@@ -73,7 +73,7 @@ impl Interpreter {
                 // Get stdout/stderr supply IDs
                 let stdout_supply_id = attrs.get("stdout").and_then(|v| {
                     if let Value::Instance { attributes, .. } = v
-                        && let Some(Value::Int(id)) = attributes.get("supply_id")
+                        && let Some(Value::Int(id)) = attributes.as_map().get("supply_id")
                     {
                         return Some(*id as u64);
                     }
@@ -81,7 +81,7 @@ impl Interpreter {
                 });
                 let stderr_supply_id = attrs.get("stderr").and_then(|v| {
                     if let Value::Instance { attributes, .. } = v
-                        && let Some(Value::Int(id)) = attributes.get("supply_id")
+                        && let Some(Value::Int(id)) = attributes.as_map().get("supply_id")
                     {
                         return Some(*id as u64);
                     }
@@ -89,7 +89,7 @@ impl Interpreter {
                 });
                 let merged_supply_id = attrs.get("supply").and_then(|v| {
                     if let Value::Instance { attributes, .. } = v
-                        && let Some(Value::Int(id)) = attributes.get("supply_id")
+                        && let Some(Value::Int(id)) = attributes.as_map().get("supply_id")
                     {
                         return Some(*id as u64);
                     }
@@ -181,7 +181,7 @@ impl Interpreter {
                     ..
                 }) = attrs.get("stdout")
                     && let Some(Value::Promise(promise)) =
-                        stdout_attrs.get("native_descriptor_promise")
+                        stdout_attrs.as_map().get("native_descriptor_promise")
                 {
                     promise.try_keep(Value::Int(1)).ok();
                 }
@@ -190,7 +190,7 @@ impl Interpreter {
                     ..
                 }) = attrs.get("stderr")
                     && let Some(Value::Promise(promise)) =
-                        stderr_attrs.get("native_descriptor_promise")
+                        stderr_attrs.as_map().get("native_descriptor_promise")
                 {
                     promise.try_keep(Value::Int(2)).ok();
                 }
@@ -532,7 +532,7 @@ impl Interpreter {
                             || cn.starts_with("Blob[")
                     } =>
                     {
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                             items
                                 .iter()
                                 .map(|v| match v {
@@ -827,7 +827,7 @@ impl Interpreter {
             ..
         } = value
             && class_name == "Supply"
-            && let Some(Value::Int(sid)) = attributes.get("supply_id")
+            && let Some(Value::Int(sid)) = attributes.as_map().get("supply_id")
             && *sid >= 0
         {
             return Some(*sid as u64);

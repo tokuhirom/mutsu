@@ -640,7 +640,7 @@ impl Interpreter {
                 id,
             } = dt_with_formatter
             {
-                let mut updated = (*attributes).clone();
+                let updated = (*attributes).clone();
                 updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
                 return Some(Ok(Value::make_instance_with_id(
                     class_name,

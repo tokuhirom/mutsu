@@ -108,7 +108,7 @@ impl Interpreter {
         }
         // Set named capture env vars from the match object's named hash
         if let Value::Instance { ref attributes, .. } = match_obj
-            && let Some(Value::Hash(named_hash)) = attributes.get("named")
+            && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
         {
             for (k, v) in named_hash.iter() {
                 self.env.insert(format!("<{}>", k), v.clone());
@@ -377,7 +377,7 @@ impl Interpreter {
     /// Get the match continuation position from `$/.to`, defaulting to 0.
     pub(in crate::runtime) fn get_match_to_position(&self) -> usize {
         if let Some(Value::Instance { attributes, .. }) = self.env.get("/")
-            && let Some(Value::Int(to)) = attributes.get("to")
+            && let Some(Value::Int(to)) = attributes.as_map().get("to")
         {
             return *to as usize;
         }

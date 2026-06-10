@@ -482,6 +482,7 @@ impl Interpreter {
                 }
                 // throw / rethrow: build a RuntimeError carrying this exception.
                 let msg = attributes
+                    .as_map()
                     .get("message")
                     .map(|v| v.to_string_value())
                     .or_else(|| {
@@ -568,7 +569,7 @@ impl Interpreter {
                     attributes,
                     ..
                 }) if crate::runtime::utils::is_buf_like_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(items, _)) = attributes.get("bytes") {
+                    if let Some(Value::Array(items, _)) = attributes.as_map().get("bytes") {
                         let bytes: Vec<u8> = items
                             .iter()
                             .map(|v| match v {
@@ -693,7 +694,7 @@ impl Interpreter {
                     let cn = class_name.resolve();
                     if crate::runtime::utils::is_buf_or_blob_class(&cn) {
                         let mut v: Vec<u8> = Vec::new();
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                             v.reserve(items.len());
                             for it in items.iter() {
                                 v.push(match it {
@@ -748,7 +749,7 @@ impl Interpreter {
                 if is_inst {
                     let class_sym = class_sym_opt.unwrap();
                     let id = id_opt.unwrap();
-                    let mut updated_attrs = attrs_opt.unwrap();
+                    let updated_attrs = attrs_opt.unwrap();
                     updated_attrs.insert(
                         "bytes".to_string(),
                         Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
@@ -793,7 +794,7 @@ impl Interpreter {
                     let cn = class_name.resolve();
                     if crate::runtime::utils::is_buf_or_blob_class(&cn) {
                         let mut v: Vec<u8> = Vec::new();
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                             v.reserve(items.len());
                             for it in items.iter() {
                                 v.push(match it {
@@ -848,7 +849,7 @@ impl Interpreter {
                 if is_inst {
                     let class_sym = class_sym_opt.unwrap();
                     let id = id_opt.unwrap();
-                    let mut updated_attrs = attrs_opt.unwrap();
+                    let updated_attrs = attrs_opt.unwrap();
                     updated_attrs.insert(
                         "bytes".to_string(),
                         Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
@@ -902,14 +903,14 @@ impl Interpreter {
             match method {
                 "count-only" if args.is_empty() => {
                     if let Some(value) =
-                        self.iterator_count_only_from_attrs((attributes.as_ref()).as_map())?
+                        self.iterator_count_only_from_attrs(&(attributes.as_ref()).as_map())?
                     {
                         return Ok(value);
                     }
                 }
                 "bool-only" if args.is_empty() => {
                     if let Some(value) =
-                        self.iterator_bool_only_from_attrs((attributes.as_ref()).as_map())?
+                        self.iterator_bool_only_from_attrs(&(attributes.as_ref()).as_map())?
                     {
                         return Ok(value);
                     }
@@ -917,7 +918,7 @@ impl Interpreter {
                 "can"
                     if args.len() == 1
                         && Self::iterator_supports_predictive_methods(
-                            (attributes.as_ref()).as_map(),
+                            &(attributes.as_ref()).as_map(),
                         ) =>
                 {
                     let method_name = args[0].to_string_value();
@@ -928,11 +929,11 @@ impl Interpreter {
                 // pull-one on a temporary iterator (no variable): read from items at current index.
                 // Since the iterator is a temporary, index is always 0 or whatever is in attrs.
                 "pull-one" if args.is_empty() => {
-                    let items = match attributes.get("items") {
+                    let items = match attributes.as_map().get("items") {
                         Some(Value::Array(values, ..)) => values.to_vec(),
                         _ => Vec::new(),
                     };
-                    let index = match attributes.get("index") {
+                    let index = match attributes.as_map().get("index") {
                         Some(Value::Int(i)) if *i >= 0 => *i as usize,
                         _ => 0,
                     };
@@ -957,7 +958,7 @@ impl Interpreter {
                 .class_mro(&class_name.resolve())
                 .iter()
                 .any(|name| name == "DateTime" || name == "Date")
-            && let Some(formatter) = attributes.get("formatter")
+            && let Some(formatter) = attributes.as_map().get("formatter")
         {
             let saved_env = self.env().clone();
             let saved_readonly = self.save_readonly_vars();
@@ -1744,11 +1745,12 @@ impl Interpreter {
                     Some(v) => super::to_int(v) as usize,
                     None => 0,
                 };
-                let mut bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                    items.to_vec()
-                } else {
-                    Vec::new()
-                };
+                let mut bytes =
+                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                        items.to_vec()
+                    } else {
+                        Vec::new()
+                    };
                 // When growing, fill with zeros; when shrinking, truncate
                 // After reallocate(0).reallocate(N), the new bytes should be zeros
                 bytes.resize(new_size, Value::Int(0));
@@ -1799,7 +1801,8 @@ impl Interpreter {
                         cn, method
                     )));
                 }
-                let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                let bytes = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+                {
                     items.to_vec()
                 } else {
                     Vec::new()
@@ -1895,6 +1898,7 @@ impl Interpreter {
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
             if is_exception {
                 let msg = attributes
+                    .as_map()
                     .get("message")
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| target.to_string_value());
@@ -1983,7 +1987,7 @@ impl Interpreter {
                 && attributes.contains_key("formatter")
                 && !attributes.contains_key("__formatter_rendered")
             {
-                let formatter = attributes.get("formatter").unwrap().clone();
+                let formatter = attributes.as_map().get("formatter").unwrap().clone();
                 return self.render_date_formatter(val, formatter);
             }
             return Ok(val);
@@ -2010,7 +2014,7 @@ impl Interpreter {
             && method == "make"
         {
             let value = args.first().cloned().unwrap_or(Value::Nil);
-            let mut attrs = crate::value::InstanceAttrs::clone(attributes);
+            let attrs = crate::value::InstanceAttrs::clone(attributes);
             attrs.insert("ast".to_string(), value.clone());
             let updated = Value::Instance {
                 class_name: *class_name,
@@ -2037,14 +2041,14 @@ impl Interpreter {
             && class_name.resolve() == "Routine::WrapHandle"
             && method == "restore"
         {
-            let sub_id = attributes.get("sub-id").and_then(|v| {
+            let sub_id = attributes.as_map().get("sub-id").and_then(|v| {
                 if let Value::Int(i) = v {
                     Some(*i as u64)
                 } else {
                     None
                 }
             });
-            let handle_id = attributes.get("handle-id").and_then(|v| {
+            let handle_id = attributes.as_map().get("handle-id").and_then(|v| {
                 if let Value::Int(i) = v {
                     Some(*i as u64)
                 } else {
@@ -3066,7 +3070,7 @@ impl Interpreter {
                     | Some(Value::Instance { .. })
                     | Some(Value::ParametricRole { .. })
                     | Some(Value::Mixin(_, _))
-            ) && let Some(Value::Str(type_name)) = attributes.get("name")
+            ) && let Some(Value::Str(type_name)) = attributes.as_map().get("name")
             {
                 how_args.insert(0, Value::Package(Symbol::intern(type_name)));
             }
@@ -3084,6 +3088,7 @@ impl Interpreter {
             && args.is_empty()
         {
             return Ok(attributes
+                .as_map()
                 .get("composable")
                 .cloned()
                 .unwrap_or(Value::Bool(false)));
@@ -3208,7 +3213,7 @@ impl Interpreter {
         } = &target
             && class_name.resolve() == "Promise::Vow"
         {
-            return self.dispatch_promise_vow_method((attributes).as_map(), method, args);
+            return self.dispatch_promise_vow_method(&(attributes).as_map(), method, args);
         }
 
         // Mixin fallback: check __mutsu_attr__ and delegate to inner

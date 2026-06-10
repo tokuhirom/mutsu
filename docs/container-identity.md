@@ -192,9 +192,25 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
       Deref 撤去でコンパイラが ~197 サイトを列挙：deref-coercion（`fn(&HashMap)` へ `&Arc<InstanceAttrs>` 渡し）は
       `.as_map()` へ、`(**attributes).clone()` は `.to_map()` へ機械置換。make test 6112 全緑・cargo test 458/0・
       clippy 緑。これで Stage 1（内部を共有可変セルへ）の表現切替が局所化された。
-- [ ] **Stage 1 — 表現切替（共有セル化）**: `InstanceAttrs` 内部を `Arc<RwLock<HashMap>>` に。read は Stage 0 の
-      API（read-lock + clone）、変異は **in-place（write-lock で書く）**。clone は **セルを共有**（Arc clone）。
-      これで closure 跨ぎの変異が caller に可視になり、note/$*ERR バグが解消。
+- [x] **Stage 1 — 表現切替（共有セル化）完了**: `InstanceAttrs.attributes` を `HashMap` → `Arc<RwLock<HashMap>>`
+      （`AttrCell`）に。`Value::Instance` は従来どおり `Arc<InstanceAttrs>` を保持。
+  - **read API**: `as_map()` は `RwLockReadGuard`（`Deref`→`&HashMap`）を返す。チェーン呼び（`.get`/`.iter`/`for`）は
+        無改変、`fn(&HashMap)` へ渡す ~87 サイトは `&` 付与のみ。`get()`（owned 化は `*x`/`.cloned()`/`and_then(fn(&Value))`
+        を全部壊す）は**削除**し、全 `.get()` を `.as_map().get()` へ降ろして借用セマンティクスを温存（504 サイト機械置換）。
+  - **mutation**: `insert`/`insert_if_absent`/`with_attr_mut` は `&self`（write-lock で in-place）。`make_mut(attributes)`
+        サイトは直接 `&self` 変異へ。
+  - **クロスフレーム可視化（バグ修正の本体）**: `id→Weak<cell>` レジストリ（`instance_cells`）を新設。
+        `make_instance_with_id` は既存の生きたセルを**再利用**（map を書き込んで alias 共有のインスタンスを返す）。
+        `overwrite_instance_bindings_by_identity` はスキャン前に `update_instance_cell(id, &updated)` で**生きたセルへ
+        直接書き込む** → スキャンが訪れない caller フレームの alias にも変異が届く。これで `note`/$*ERR・closure 経由
+        instance mutation が解消。レジストリは Stage 2 で scan ごと撤去するための足場。
+  - **`.clone`（Raku 独立コピー）保全**: `InstanceAttrs::clone` を手書きで**deep copy（新セル・queue_destroy=false・
+        非登録）**に。共有は `Arc<InstanceAttrs>`（Value clone）経由のみ。これで ~30 の `(*attributes).clone()`
+        writeback サイトは無改変で独立コピー意味論を維持。`temp`/`let` save も同型の独立スナップショットが必要だった
+        （`into_temp_snapshot` で instance を deep copy、restore は `make_instance_with_id` で**生きたセルへ書き戻し**
+        identity と alias 可視性を保つ）— これを怠ると `t/lvalue-method-rw.t` の temp 復元が壊れる（実際に踏んで修正）。
+  - 検証: cross-frame note/closure mutation・alias 共有・`.clone` 独立・`===`/`.WHICH`/`eqv` identity・DESTROY(1回)・
+        temp/let 復元 すべて raku 一致。clippy 緑。
 - [ ] **Stage 2 — 伝播ハック全廃**: `overwrite_instance_bindings_by_identity` と by-id scan、CoW `make_mut` 16 箇所を
       削除（変異が by-reference で可視になったので不要）。dual-store の instance writeback 経路も縮小。
 - [ ] **Stage 3 — 仕上げ / perf**: escape 解析で「捕捉も `.clone` もされない instance はセル省略」（hot path 救済。

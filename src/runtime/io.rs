@@ -3179,7 +3179,7 @@ impl Interpreter {
             Value::Str(s) => Some(s.to_string()),
             Value::Instance { attributes, .. } => {
                 // Support IO::Path instances (e.g., $*CWD)
-                attributes.get("path").map(|v| v.to_string_value())
+                attributes.as_map().get("path").map(|v| v.to_string_value())
             }
             _ => None,
         })

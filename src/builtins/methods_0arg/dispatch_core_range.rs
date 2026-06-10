@@ -574,7 +574,7 @@ pub(super) fn dispatch(
                 attributes,
                 ..
             } => {
-                if let Some(constraint) = attributes.get("__keyof_constraint") {
+                if let Some(constraint) = attributes.as_map().get("__keyof_constraint") {
                     return Some(Some(Ok(constraint.clone())));
                 }
                 let cn = class_name.resolve();

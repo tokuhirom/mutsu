@@ -113,7 +113,7 @@ impl Interpreter {
                 }
                 if let Some(updated_iter) = self.env.get(iter_slot).cloned() {
                     if let Value::Instance { attributes, .. } = &updated_iter {
-                        for (meta_key, source_name) in attributes.iter() {
+                        for (meta_key, source_name) in attributes.as_map().iter() {
                             let Some(attr_name) = meta_key.strip_prefix("__mutsu_attr_alias::")
                             else {
                                 continue;
@@ -121,7 +121,7 @@ impl Interpreter {
                             let Value::Str(source_name) = source_name else {
                                 continue;
                             };
-                            if let Some(attr_value) = attributes.get(attr_name).cloned() {
+                            if let Some(attr_value) = attributes.as_map().get(attr_name).cloned() {
                                 self.env.insert(source_name.to_string(), attr_value);
                             }
                         }

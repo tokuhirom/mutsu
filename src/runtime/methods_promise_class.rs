@@ -62,7 +62,11 @@ impl Interpreter {
                     attributes,
                     ..
                 }) if class_name == "Instant" => {
-                    let tai = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+                    let tai = attributes
+                        .as_map()
+                        .get("value")
+                        .map(|v| v.to_f64())
+                        .unwrap_or(0.0);
                     crate::builtins::methods_0arg::temporal::instant_to_posix(tai)
                 }
                 Some(v) => v.to_f64(),

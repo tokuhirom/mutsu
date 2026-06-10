@@ -925,7 +925,7 @@ impl Interpreter {
                 self.env.insert("0".to_string(), Value::Nil);
             }
             if let Value::Instance { ref attributes, .. } = match_obj
-                && let Some(Value::Hash(named_hash)) = attributes.get("named")
+                && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
             {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());

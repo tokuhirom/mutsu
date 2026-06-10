@@ -1301,6 +1301,7 @@ impl Interpreter {
         }) = self.env.get("self")
         {
             let self_attrs_snapshot: Vec<(String, Value)> = self_attrs
+                .as_map()
                 .iter()
                 .filter(|(k, _)| !k.contains('\0'))
                 .map(|(k, v)| (k.clone(), v.clone()))

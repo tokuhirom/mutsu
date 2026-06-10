@@ -554,7 +554,7 @@ impl VM {
             && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
             && let Some(Value::Instance { attributes, .. }) =
                 self.get_env_with_main_alias("self").as_ref()
-            && let Some(attr_val) = attributes.get(attr_name)
+            && let Some(attr_val) = attributes.as_map().get(attr_name)
         {
             target = attr_val.clone();
         }

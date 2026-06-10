@@ -22,7 +22,11 @@ impl Interpreter {
 
         match method {
             "primary" | "secondary" | "tertiary" | "quaternary" if args.is_empty() => {
-                Ok(attributes.get(method).cloned().unwrap_or(Value::Int(1)))
+                Ok(attributes
+                    .as_map()
+                    .get(method)
+                    .cloned()
+                    .unwrap_or(Value::Int(1)))
             }
             "set" => {
                 // .set accepts named arguments: primary, secondary, tertiary, quaternary
@@ -97,7 +101,7 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "Supply" => {
-                let values = match attributes.get("values") {
+                let values = match attributes.as_map().get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };

@@ -607,6 +607,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Backtrace" => attributes
+                .as_map()
                 .get("text")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
@@ -616,6 +617,7 @@ impl Value {
                 ..
             } if class_name == "IO::Path" || class_name.resolve().starts_with("IO::Path::") => {
                 attributes
+                    .as_map()
                     .get("path")
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_else(|| format!("{}()", class_name))
@@ -629,6 +631,7 @@ impl Value {
                 || class_name.resolve().starts_with("CX::") =>
             {
                 attributes
+                    .as_map()
                     .get("message")
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_else(|| format!("{}()", class_name))
@@ -638,6 +641,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "ObjAt" || class_name == "ValueObjAt" => attributes
+                .as_map()
                 .get("WHICH")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
@@ -646,6 +650,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Match" => attributes
+                .as_map()
                 .get("str")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
@@ -654,6 +659,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Proc" => attributes
+                .as_map()
                 .get("exitcode")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
@@ -662,7 +668,7 @@ impl Value {
                 attributes,
                 ..
             } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                     if bytes.is_empty() {
                         format!("{}()", class_name)
                     } else {
@@ -705,7 +711,11 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Instant" => {
-                let val = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+                let val = attributes
+                    .as_map()
+                    .get("value")
+                    .map(|v| v.to_f64())
+                    .unwrap_or(0.0);
                 format!("Instant:{}", val)
             }
             Value::Instance {
@@ -713,7 +723,11 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Duration" => {
-                let val = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+                let val = attributes
+                    .as_map()
+                    .get("value")
+                    .map(|v| v.to_f64())
+                    .unwrap_or(0.0);
                 if val == val.floor() {
                     format!("{}", val as i64)
                 } else {
@@ -725,6 +739,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Signature" => attributes
+                .as_map()
                 .get("gist")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
@@ -733,6 +748,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Stash" => attributes
+                .as_map()
                 .get("name")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
@@ -742,6 +758,7 @@ impl Value {
                 ..
             } if class_name == "Method" || class_name == "Sub" || class_name == "Routine" => {
                 attributes
+                    .as_map()
                     .get("name")
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_else(|| format!("{}()", class_name))
@@ -751,6 +768,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Format" => attributes
+                .as_map()
                 .get("format")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
@@ -760,11 +778,11 @@ impl Value {
                     && attributes.contains_key("day")
                     && !attributes.contains_key("hour") =>
             {
-                if let Some(Value::Str(s)) = attributes.get("__formatter_rendered") {
+                if let Some(Value::Str(s)) = attributes.as_map().get("__formatter_rendered") {
                     return s.to_string();
                 }
                 let (y, m, d) =
-                    crate::builtins::methods_0arg::temporal::date_attrs((attributes).as_map());
+                    crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_date(y, m, d)
             }
             Value::Instance { attributes, .. }
@@ -776,11 +794,11 @@ impl Value {
                     && attributes.contains_key("second")
                     && attributes.contains_key("timezone") =>
             {
-                if let Some(Value::Str(s)) = attributes.get("__formatter_rendered") {
+                if let Some(Value::Str(s)) = attributes.as_map().get("__formatter_rendered") {
                     return s.to_string();
                 }
                 let (y, mo, d, h, mi, s, tz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs((attributes).as_map());
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
             }
             Value::Instance {
@@ -788,6 +806,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Pod::Block::Declarator" => attributes
+                .as_map()
                 .get("contents")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
@@ -796,6 +815,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "StrDistance" => attributes
+                .as_map()
                 .get("after")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),

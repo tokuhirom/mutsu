@@ -867,9 +867,11 @@ impl VM {
                 && right_attrs.contains_key("timezone") =>
             {
                 let (ly, lm, ld, lh, lmin, ls, ltz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs((left_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(&(left_attrs).as_map());
                 let (ry, rm, rd, rh, rmin, rs, rtz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs((right_attrs).as_map());
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(
+                        &(right_attrs).as_map(),
+                    );
                 let left_instant =
                     crate::builtins::methods_0arg::temporal::datetime_to_instant_leap_aware(
                         ly, lm, ld, lh, lmin, ls, ltz,
@@ -1324,7 +1326,7 @@ impl VM {
                 attributes,
                 ..
             } if class_name == "Match" => {
-                if let Some(Value::Array(items, _)) = attributes.get("list") {
+                if let Some(Value::Array(items, _)) = attributes.as_map().get("list") {
                     Value::Int(items.len() as i64)
                 } else {
                     Value::Int(1)

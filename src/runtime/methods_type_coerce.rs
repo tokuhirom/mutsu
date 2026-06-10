@@ -13,21 +13,22 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "Supply" => {
-                let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-                    let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                        let mut a = HashMap::new();
-                        a.insert("emitted".to_string(), Value::array(Vec::new()));
-                        a.insert("done".to_string(), Value::Bool(false));
-                        a
-                    });
-                    self.supply_emit_buffer.push(Vec::new());
-                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                    self.supply_emit_buffer.pop().unwrap_or_default()
-                } else if attributes.get("values").is_some() {
-                    self.supply_list_values(attributes.as_map(), true)?
-                } else {
-                    Vec::new()
-                };
+                let values =
+                    if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
+                        let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+                            let mut a = HashMap::new();
+                            a.insert("emitted".to_string(), Value::array(Vec::new()));
+                            a.insert("done".to_string(), Value::Bool(false));
+                            a
+                        });
+                        self.supply_emit_buffer.push(Vec::new());
+                        let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                        self.supply_emit_buffer.pop().unwrap_or_default()
+                    } else if attributes.as_map().get("values").is_some() {
+                        self.supply_list_values(&attributes.as_map(), true)?
+                    } else {
+                        Vec::new()
+                    };
                 Value::Seq(std::sync::Arc::new(values))
             }
             Value::LazyList(ll) => {
@@ -58,7 +59,7 @@ impl Interpreter {
                     || cn.starts_with("blob")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     Value::Seq(items.clone())
                 } else {
                     Value::Seq(std::sync::Arc::new(Vec::new()))
@@ -86,7 +87,7 @@ impl Interpreter {
                 || cn.starts_with("buf")
                 || cn.starts_with("blob")
             {
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     return Ok(Value::Array(items.clone(), crate::value::ArrayKind::List));
                 }
                 return Ok(Value::Array(

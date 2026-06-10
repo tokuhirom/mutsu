@@ -38,6 +38,7 @@ impl CollationSettings {
             Value::Instance { attributes, .. } => {
                 let get_i64 = |name: &str| -> i64 {
                     attributes
+                        .as_map()
                         .get(name)
                         .map(|v| match v {
                             Value::Int(n) => *n,

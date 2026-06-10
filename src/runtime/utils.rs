@@ -397,8 +397,8 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 left.eqv(right)
             } else if a_name == b_name && (a_name == "ObjAt" || a_name == "ValueObjAt") {
                 // ObjAt/ValueObjAt instances are === when their WHICH content matches
-                let a_val = a_attrs.get("WHICH").map(|v| v.to_string_value());
-                let b_val = b_attrs.get("WHICH").map(|v| v.to_string_value());
+                let a_val = a_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
+                let b_val = b_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
                 a_val == b_val
             } else {
                 a_id == b_id
@@ -649,7 +649,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             ..
         } if class_name == "Match" => {
             // %($/) returns the named captures hash
-            if let Some(named) = attributes.get("named") {
+            if let Some(named) = attributes.as_map().get("named") {
                 named.clone()
             } else {
                 Value::hash(HashMap::new())
@@ -925,7 +925,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => match_gist((attributes).as_map(), 0),
+        } if class_name == "Match" => match_gist(&(attributes).as_map(), 0),
         _ => value.to_string_value(),
     }
 }
@@ -966,7 +966,7 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                 ..
             } if class_name == "Match" => {
                 entries.push((
-                    match_from((attributes).as_map()),
+                    match_from(&(attributes).as_map()),
                     label.to_string(),
                     value.clone(),
                 ));
@@ -982,7 +982,7 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                         && class_name == "Match"
                     {
                         entries.push((
-                            match_from((attributes).as_map()),
+                            match_from(&(attributes).as_map()),
                             label.to_string(),
                             item.clone(),
                         ));
@@ -1016,7 +1016,7 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                 "\n{}{} => {}",
                 indent,
                 label,
-                match_gist((attributes).as_map(), depth + 1)
+                match_gist(&(attributes).as_map(), depth + 1)
             ));
         }
     }
@@ -2007,13 +2007,13 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                             };
                             let (sy, sm, sd) =
                                 if let Value::Instance { attributes, .. } = start.as_ref() {
-                                    date_attrs((attributes).as_map())
+                                    date_attrs(&(attributes).as_map())
                                 } else {
                                     unreachable!()
                                 };
                             let (ey, em, ed) =
                                 if let Value::Instance { attributes, .. } = end.as_ref() {
-                                    date_attrs((attributes).as_map())
+                                    date_attrs(&(attributes).as_map())
                                 } else {
                                     unreachable!()
                                 };
@@ -2021,7 +2021,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                             let end_days = civil_to_epoch_days(ey, em, ed);
                             let formatter =
                                 if let Value::Instance { attributes, .. } = start.as_ref() {
-                                    attributes.get("formatter").cloned()
+                                    attributes.as_map().get("formatter").cloned()
                                 } else {
                                     None
                                 };
@@ -2091,7 +2091,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .collect(),
         Value::Slip(items) => items.to_vec(),
         Value::Instance { attributes, .. } => {
-            if let Some(Value::Array(items, ..)) = attributes.get("__array_items") {
+            if let Some(Value::Array(items, ..)) = attributes.as_map().get("__array_items") {
                 return items.to_vec();
             }
             vec![val.clone()]
@@ -2294,21 +2294,27 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             ref class_name,
             ref attributes,
             ..
-        } if class_name == "Instant" => attributes.get("value").cloned().unwrap_or(Value::Num(0.0)),
+        } if class_name == "Instant" => attributes
+            .as_map()
+            .get("value")
+            .cloned()
+            .unwrap_or(Value::Num(0.0)),
         Value::Instance {
             ref class_name,
             ref attributes,
             ..
-        } if class_name == "Duration" => {
-            attributes.get("value").cloned().unwrap_or(Value::Num(0.0))
-        }
+        } if class_name == "Duration" => attributes
+            .as_map()
+            .get("value")
+            .cloned()
+            .unwrap_or(Value::Num(0.0)),
         Value::Instance {
             ref class_name,
             ref attributes,
             ..
         } if class_name == "Date" => {
             let (y, m, d) =
-                crate::builtins::methods_0arg::temporal::date_attrs((attributes).as_map());
+                crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
             let epoch = crate::builtins::methods_0arg::temporal::civil_to_epoch_days(y, m, d);
             Value::Int(epoch * 86400)
         }
@@ -2318,7 +2324,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             ..
         } if class_name == "DateTime" => {
             let (y, mo, d, h, mi, s, tz) =
-                crate::builtins::methods_0arg::temporal::datetime_attrs((attributes).as_map());
+                crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
             Value::Num(crate::builtins::methods_0arg::temporal::datetime_to_posix(
                 y, mo, d, h, mi, s, tz,
             ))
@@ -3126,15 +3132,16 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             class_name,
             attributes,
             ..
-        } if class_name == "Instant" => attributes.get("value").and_then(to_float_value),
+        } if class_name == "Instant" => attributes.as_map().get("value").and_then(to_float_value),
         Value::Instance {
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => attributes.get("str").and_then(to_float_value),
-        Value::Instance { attributes, .. } => {
-            attributes.get("__mutsu_int_value").and_then(to_float_value)
-        }
+        } if class_name == "Match" => attributes.as_map().get("str").and_then(to_float_value),
+        Value::Instance { attributes, .. } => attributes
+            .as_map()
+            .get("__mutsu_int_value")
+            .and_then(to_float_value),
         // A numeric type object (e.g. `Rat`, `FatRat`, `Int`) numifies to 0 in
         // numeric context (Raku warns "Use of uninitialized value"). This makes
         // `(Rat) == 0` true, matching Rakudo.
@@ -3343,7 +3350,10 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => items.len() as i64,
         Value::Slip(items) => items.len() as i64,
         Value::Capture { positional, .. } => positional.len() as i64,
-        Value::Instance { attributes, .. } => attributes.get("__mutsu_int_value").map_or(0, to_int),
+        Value::Instance { attributes, .. } => attributes
+            .as_map()
+            .get("__mutsu_int_value")
+            .map_or(0, to_int),
         _ => 0,
     }
 }

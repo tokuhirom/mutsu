@@ -207,10 +207,12 @@ impl Interpreter {
     fn var_target_name_from_value(value: &Value) -> Option<String> {
         match value {
             Value::Mixin(inner, _) => Self::var_target_name_from_value(inner),
-            Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
-                Some(Value::Str(name)) => Some(name.to_string()),
-                _ => None,
-            },
+            Value::Instance { attributes, .. } => {
+                match attributes.as_map().get("__mutsu_var_target") {
+                    Some(Value::Str(name)) => Some(name.to_string()),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -218,10 +220,12 @@ impl Interpreter {
     /// Check if a value is a HOW meta-object and return the target class name.
     fn how_target_from_value(value: &Value) -> Option<String> {
         match value {
-            Value::Instance { attributes, .. } => match attributes.get("__mutsu_how_target") {
-                Some(Value::Str(name)) => Some(name.to_string()),
-                _ => None,
-            },
+            Value::Instance { attributes, .. } => {
+                match attributes.as_map().get("__mutsu_how_target") {
+                    Some(Value::Str(name)) => Some(name.to_string()),
+                    _ => None,
+                }
+            }
             Value::Mixin(inner, _) => Self::how_target_from_value(inner),
             _ => None,
         }

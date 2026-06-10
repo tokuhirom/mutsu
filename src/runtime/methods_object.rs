@@ -911,7 +911,7 @@ impl Interpreter {
                 if let Value::Instance { attributes, .. } = &date {
                     // Now build the subclass instance with all Date attrs plus any custom named attrs
                     let mut new_args = Vec::new();
-                    for (k, v) in attributes.iter() {
+                    for (k, v) in attributes.as_map().iter() {
                         new_args.push(Value::Pair(k.clone(), Box::new(v.clone())));
                     }
                     // Add any non-Date named args from the original call
@@ -966,12 +966,14 @@ impl Interpreter {
                         {
                             positional_path = Some(
                                 attributes
+                                    .as_map()
                                     .get("path")
                                     .map(|v| v.to_string_value())
                                     .unwrap_or_default(),
                             );
                             if cwd_attr.is_none() {
-                                cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
+                                cwd_attr =
+                                    attributes.as_map().get("cwd").map(|v| v.to_string_value());
                             }
                         }
                         Value::Pair(_, _) => {}
@@ -1062,7 +1064,7 @@ impl Interpreter {
                             } if class_name == "IterationBuffer" => {
                                 if let Some(
                                     Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals),
-                                ) = attributes.get("__mutsu_iterationbuffer_items")
+                                ) = attributes.as_map().get("__mutsu_iterationbuffer_items")
                                 {
                                     items.extend(vals.iter().cloned());
                                 }
@@ -1427,11 +1429,13 @@ impl Interpreter {
                             }
                             return Ok(seq);
                         }
-                        if let Value::Instance { attributes, .. } = iterator
-                            && let Some(Value::Array(items, ..)) =
-                                attributes.get("items").or_else(|| attributes.get("stuff"))
-                        {
-                            return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
+                        if let Value::Instance { attributes, .. } = iterator {
+                            let map = attributes.as_map();
+                            if let Some(Value::Array(items, ..)) =
+                                map.get("items").or_else(|| map.get("stuff"))
+                            {
+                                return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
+                            }
                         }
                         // Register deferred iterator: don't pull eagerly.
                         // Raku's Seq.new(iterator) creates a lazy Seq; pulling
@@ -1574,7 +1578,7 @@ impl Interpreter {
                                 ..
                             } if class_name == "DateTime" => {
                                 let (y, m, d, _, _, _, _) =
-                                    temporal::datetime_attrs((attributes).as_map());
+                                    temporal::datetime_attrs(&(attributes).as_map());
                                 year = y;
                                 month = m;
                                 day = d;
@@ -1585,6 +1589,7 @@ impl Interpreter {
                                 ..
                             } if class_name == "Instant" => {
                                 let tai = attributes
+                                    .as_map()
                                     .get("value")
                                     .and_then(crate::runtime::to_float_value)
                                     .unwrap_or(0.0);
@@ -1676,7 +1681,8 @@ impl Interpreter {
                                     } = value.as_ref()
                                         && class_name == "Date"
                                     {
-                                        let (y, m, d) = temporal::date_attrs((attributes).as_map());
+                                        let (y, m, d) =
+                                            temporal::date_attrs(&(attributes).as_map());
                                         year = y;
                                         month = m;
                                         day = d;
@@ -1804,7 +1810,7 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "Date" => {
-                                let (y, m, d) = temporal::date_attrs((attributes).as_map());
+                                let (y, m, d) = temporal::date_attrs(&(attributes).as_map());
                                 year = y;
                                 month = m;
                                 day = d;
@@ -1818,7 +1824,11 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "Instant" => {
-                                let val = attributes.get("value").cloned().unwrap_or(Value::Int(0));
+                                let val = attributes
+                                    .as_map()
+                                    .get("value")
+                                    .cloned()
+                                    .unwrap_or(Value::Int(0));
                                 let (tai_int, tai_frac) = match &val {
                                     Value::Rat(n, d) if *d != 0 => {
                                         (*n / *d, (*n % *d) as f64 / *d as f64)
@@ -1893,7 +1903,7 @@ impl Interpreter {
                                 id,
                             } = dt_with_formatter
                             {
-                                let mut updated = (*attributes).clone();
+                                let updated = (*attributes).clone();
                                 updated.insert(
                                     "__formatter_rendered".to_string(),
                                     Value::str(rendered),
@@ -2214,7 +2224,7 @@ impl Interpreter {
                                 attributes: ia,
                                 ..
                             } if crate::runtime::utils::is_buf_or_blob_class(&cn.resolve()) => {
-                                if let Some(Value::Array(items, ..)) = ia.get("bytes") {
+                                if let Some(Value::Array(items, ..)) = ia.as_map().get("bytes") {
                                     items.to_vec()
                                 } else {
                                     vec![]
@@ -2254,7 +2264,9 @@ impl Interpreter {
                                 || class_name.resolve().starts_with("buf")
                                 || class_name.resolve().starts_with("blob") =>
                             {
-                                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                                if let Some(Value::Array(items, ..)) =
+                                    attributes.as_map().get("bytes")
+                                {
                                     items.to_vec()
                                 } else {
                                     Vec::new()
@@ -3329,7 +3341,7 @@ impl Interpreter {
                             attributes: src_attrs,
                             ..
                         } if class_mro.iter().any(|name| name == &src_class.resolve()) => {
-                            for (attr, value) in src_attrs.iter() {
+                            for (attr, value) in src_attrs.as_map().iter() {
                                 attrs.insert(attr.clone(), value.clone());
                             }
                         }

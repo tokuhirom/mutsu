@@ -1588,7 +1588,7 @@ impl Interpreter {
             ..
         } = &value
             && class_name == "Match"
-            && let Some(str_val) = attributes.get("str")
+            && let Some(str_val) = attributes.as_map().get("str")
         {
             let s = str_val.to_string_value();
             let s = s.trim();

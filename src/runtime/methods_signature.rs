@@ -683,10 +683,12 @@ impl Interpreter {
     pub(super) fn var_target_from_meta_value(value: &Value) -> Option<String> {
         match value {
             Value::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
-            Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
-                Some(Value::Str(name)) => Some(name.to_string()),
-                _ => None,
-            },
+            Value::Instance { attributes, .. } => {
+                match attributes.as_map().get("__mutsu_var_target") {
+                    Some(Value::Str(name)) => Some(name.to_string()),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }

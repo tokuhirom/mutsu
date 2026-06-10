@@ -54,7 +54,7 @@ impl VM {
         } = &target
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
-            if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+            if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                 bytes.to_vec()
             } else {
                 Vec::new()

@@ -260,7 +260,7 @@ impl Interpreter {
                 id,
             } = value
             {
-                for (attr_key, attr_val) in attributes.iter() {
+                for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let Value::Array(arc, ..) = attr_val
                         && std::sync::Arc::ptr_eq(arc, needle)
                     {
@@ -295,7 +295,7 @@ impl Interpreter {
                 id,
             } = value
             {
-                for (attr_key, attr_val) in attributes.iter() {
+                for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let Value::Hash(arc) = attr_val
                         && std::sync::Arc::ptr_eq(arc, needle)
                     {
@@ -418,6 +418,14 @@ impl Interpreter {
         id: u64,
         updated: std::collections::HashMap<String, Value>,
     ) {
+        // Phase 3, Stage 1: write the new attributes straight into the live
+        // shared cell. Because every alias of this instance (in this frame and
+        // any caller frame the scan below never visits) shares that cell, this
+        // single write is what makes the mutation visible across call frames —
+        // the fix for the long-standing closure-frame mutation bug. The
+        // by-identity scan that follows is now redundant (it rebuilds bindings
+        // that already share the updated cell) and is removed in Stage 2.
+        crate::value::update_instance_cell(id, &updated);
         for bound in self.env.values_mut() {
             Self::overwrite_instance_recursive(bound, class_name, id, &updated);
         }
@@ -451,7 +459,7 @@ impl Interpreter {
                 let this_id_val = *this_id;
                 if this_id_val != id {
                     // Check if any attribute contains the target instance
-                    let has_target = attributes.values().any(|v| {
+                    let has_target = attributes.as_map().values().any(|v| {
                         matches!(v, Value::Instance { class_name: cn, id: vid, .. }
                             if cn.resolve() == class_name && *vid == id)
                     });
@@ -816,7 +824,7 @@ impl Interpreter {
                 ..
             } = &target
             && (class_name == "IO::Socket::INET" || class_name == "IO::Handle")
-            && let Some(Value::Int(handle_id)) = attributes.get("handle")
+            && let Some(Value::Int(handle_id)) = attributes.as_map().get("handle")
         {
             let id = *handle_id as usize;
             let new_seps = match &value {
@@ -840,7 +848,7 @@ impl Interpreter {
                 ..
             } = &target
             && class_name == "IO::Handle"
-            && let Some(Value::Int(handle_id)) = attributes.get("handle")
+            && let Some(Value::Int(handle_id)) = attributes.as_map().get("handle")
         {
             let id = *handle_id as usize;
             let new_nl_out = value.to_string_value();
@@ -857,7 +865,7 @@ impl Interpreter {
                 id: inst_id,
             } = &target
             && class_name == "IO::Handle"
-            && let Some(Value::Int(handle_id)) = attributes.get("handle")
+            && let Some(Value::Int(handle_id)) = attributes.as_map().get("handle")
         {
             let hid = *handle_id as usize;
             let new_chomp = value.truthy();
@@ -888,8 +896,8 @@ impl Interpreter {
                 ..
             } = &target
             && class_name == "Pair"
-            && let Some(Value::Str(key)) = attributes.get("key")
-            && let Some(Value::Hash(source_hash)) = attributes.get("__mutsu_hash_ref")
+            && let Some(Value::Str(key)) = attributes.as_map().get("key")
+            && let Some(Value::Hash(source_hash)) = attributes.as_map().get("__mutsu_hash_ref")
         {
             let mut updated = (**source_hash).clone();
             updated.insert(key.to_string(), value.clone());
@@ -1423,9 +1431,11 @@ impl Interpreter {
                 } else {
                     method.to_string()
                 };
-                let mut updated = (*attributes).clone();
-                let mut assigned_value =
-                    Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
+                let updated = (*attributes).clone();
+                let mut assigned_value = Self::normalize_rw_accessor_assignment(
+                    updated.as_map().get(&attr_key).cloned(),
+                    value,
+                );
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
                 if matches!(assigned_value, Value::Nil)
@@ -1508,7 +1518,11 @@ impl Interpreter {
             let attr_key = attr_var_name
                 .trim_start_matches('.')
                 .trim_start_matches('!');
-            let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
+            let delegate = attributes
+                .as_map()
+                .get(attr_key)
+                .cloned()
+                .unwrap_or(Value::Nil);
             if delegate != Value::Nil {
                 let sigil = match &delegate {
                     Value::Array(..) => "@",
@@ -1526,7 +1540,7 @@ impl Interpreter {
                 )?;
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
                 self.env.remove(&temp_var);
-                let mut updated = (*attributes).clone();
+                let updated = (*attributes).clone();
                 updated.insert(attr_key.to_string(), updated_delegate);
                 if let Some(var_name) = target_var {
                     self.overwrite_instance_bindings_by_identity(
@@ -1549,7 +1563,7 @@ impl Interpreter {
             )));
         }
         if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
-            let mut updated = (*attributes).clone();
+            let updated = (*attributes).clone();
             let current = if method_args.is_empty() {
                 self.call_method_with_values(
                     Value::Instance {
@@ -1598,7 +1612,11 @@ impl Interpreter {
             let attr_key = attr_var_name
                 .trim_start_matches('.')
                 .trim_start_matches('!');
-            let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
+            let delegate = attributes
+                .as_map()
+                .get(attr_key)
+                .cloned()
+                .unwrap_or(Value::Nil);
             if delegate != Value::Nil {
                 // Temporarily bind the delegate to an env variable for update tracking
                 let temp_var = "__mutsu_delegation_tmp__".to_string();
@@ -1615,7 +1633,7 @@ impl Interpreter {
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
                 self.env.remove(&temp_var);
                 // Write the updated delegate back into the frontend's attributes
-                let mut updated = (*attributes).clone();
+                let updated = (*attributes).clone();
                 updated.insert(attr_key.to_string(), updated_delegate);
                 if let Some(var_name) = target_var {
                     self.overwrite_instance_bindings_by_identity(
@@ -1728,7 +1746,10 @@ impl Interpreter {
                 return Ok(Value::proxy_var_object(target, target_var.to_string()));
             }
             if let Value::Instance { attributes, .. } = &target
-                && matches!(attributes.get("__mutsu_var_target"), Some(Value::Str(_)))
+                && matches!(
+                    attributes.as_map().get("__mutsu_var_target"),
+                    Some(Value::Str(_))
+                )
             {
                 return Ok(target);
             }
@@ -1829,6 +1850,7 @@ impl Interpreter {
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
             let bytes = attributes
+                .as_map()
                 .get("bytes")
                 .and_then(|v| match v {
                     Value::Array(items, ..) => Some(
@@ -1883,7 +1905,7 @@ impl Interpreter {
                     ));
                 };
                 let written = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
-                let mut updated_attrs = attributes.as_ref().clone();
+                let updated_attrs = attributes.as_ref().clone();
                 updated_attrs.insert(
                     "bytes".to_string(),
                     Value::array(
@@ -1943,7 +1965,7 @@ impl Interpreter {
             };
             let mut bytes = {
                 let mut v: Vec<u8> = Vec::new();
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     v.reserve(items.len());
                     for it in items.iter() {
                         v.push(match it {
@@ -1958,7 +1980,7 @@ impl Interpreter {
             crate::builtins::buf_write_num::apply_write_num(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
-            let mut updated_attrs = attributes.as_ref().clone();
+            let updated_attrs = attributes.as_ref().clone();
             updated_attrs.insert(
                 "bytes".to_string(),
                 Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
@@ -2045,7 +2067,7 @@ impl Interpreter {
             };
             let mut bytes = {
                 let mut v: Vec<u8> = Vec::new();
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     v.reserve(items.len());
                     for it in items.iter() {
                         v.push(match it {
@@ -2060,7 +2082,7 @@ impl Interpreter {
             crate::builtins::buf_write_int::apply_write_int(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
-            let mut updated_attrs = attributes.as_ref().clone();
+            let updated_attrs = attributes.as_ref().clone();
             updated_attrs.insert(
                 "bytes".to_string(),
                 Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
@@ -2997,8 +3019,9 @@ impl Interpreter {
                 }
                 let from = from as usize;
                 let bits = bits as usize;
-                let mut updated = (*attributes).clone();
-                let mut bytes = if let Some(Value::Array(items, ..)) = updated.get("bytes") {
+                let updated = (*attributes).clone();
+                let mut bytes = if let Some(Value::Array(items, ..)) = updated.as_map().get("bytes")
+                {
                     items
                         .iter()
                         .map(|v| match v {
@@ -3035,23 +3058,30 @@ impl Interpreter {
             }
 
             if class_name == "Iterator" {
-                let mut updated = (*attributes).clone();
-                if let Some(Value::Array(source, ..)) = updated.get("squish_source").cloned() {
-                    let mut scan_index = match updated.get("squish_scan_index") {
+                let updated = (*attributes).clone();
+                if let Some(Value::Array(source, ..)) =
+                    updated.as_map().get("squish_source").cloned()
+                {
+                    let mut scan_index = match updated.as_map().get("squish_scan_index") {
                         Some(Value::Int(i)) if *i >= 0 => *i as usize,
                         _ => 0,
                     };
                     let mut prev_key = updated
+                        .as_map()
                         .get("squish_prev_key")
                         .cloned()
                         .unwrap_or(Value::Nil);
-                    let mut initialized =
-                        matches!(updated.get("squish_initialized"), Some(Value::Bool(true)));
+                    let mut initialized = matches!(
+                        updated.as_map().get("squish_initialized"),
+                        Some(Value::Bool(true))
+                    );
                     let as_func = updated
+                        .as_map()
                         .get("squish_as")
                         .cloned()
                         .filter(|v| !matches!(v, Value::Nil));
                     let with_func = updated
+                        .as_map()
                         .get("squish_with")
                         .cloned()
                         .filter(|v| !matches!(v, Value::Nil));
@@ -3100,10 +3130,10 @@ impl Interpreter {
 
                     let ret = match method {
                         "count-only" => self
-                            .iterator_count_only_from_attrs(updated.as_map())?
+                            .iterator_count_only_from_attrs(&updated.as_map())?
                             .unwrap_or_else(|| Value::Int(0)),
                         "bool-only" => self
-                            .iterator_bool_only_from_attrs(updated.as_map())?
+                            .iterator_bool_only_from_attrs(&updated.as_map())?
                             .unwrap_or(Value::Bool(false)),
                         "pull-one" => pull_one_squish(self)?,
                         "push-all" | "push-until-lazy" => {
@@ -3253,11 +3283,11 @@ impl Interpreter {
                     return Ok(ret);
                 }
 
-                let items = match updated.get("items") {
+                let items = match updated.as_map().get("items") {
                     Some(Value::Array(values, ..)) => values.to_vec(),
                     _ => Vec::new(),
                 };
-                let mut index = match updated.get("index") {
+                let mut index = match updated.as_map().get("index") {
                     Some(Value::Int(i)) if *i >= 0 => *i as usize,
                     _ => 0,
                 };
@@ -3412,7 +3442,11 @@ impl Interpreter {
                     );
                     self.call_method_with_values(invocant_val, &source_method, Vec::new())?
                 } else {
-                    attributes.get(attr_key).cloned().unwrap_or(Value::Nil)
+                    attributes
+                        .as_map()
+                        .get(attr_key)
+                        .cloned()
+                        .unwrap_or(Value::Nil)
                 };
                 if delegate == Value::Nil {
                     return Err(RuntimeError::new(format!(
@@ -3436,7 +3470,7 @@ impl Interpreter {
                 self.env.remove(&temp_var);
                 if !is_method_based {
                     // Write the updated delegate back into the frontend's attributes
-                    let mut updated = (*attributes).clone();
+                    let updated = (*attributes).clone();
                     updated.insert(attr_key.to_string(), updated_delegate);
                     self.overwrite_instance_bindings_by_identity(
                         &class_name.resolve(),
@@ -3470,7 +3504,7 @@ impl Interpreter {
                         .resolve_method(&class_name.resolve(), method, &[])
                         .is_some_and(|m| m.is_rw);
                     if !has_rw_method {
-                        let mut updated = (*attributes).clone();
+                        let updated = (*attributes).clone();
                         let assigned = args[0].clone();
                         updated.insert(method.to_string(), assigned.clone());
                         self.overwrite_instance_bindings_by_identity(
@@ -3504,7 +3538,11 @@ impl Interpreter {
                             .any(|(attr_name, is_public, ..)| *is_public && attr_name == method)
                     };
                     if is_public_accessor {
-                        let current = attributes.get(method).cloned().unwrap_or(Value::Nil);
+                        let current = attributes
+                            .as_map()
+                            .get(method)
+                            .cloned()
+                            .unwrap_or(Value::Nil);
                         return Err(RuntimeError::assignment_ro_typename(
                             super::utils::value_type_name(&current),
                             &current.to_string_value(),
@@ -3537,7 +3575,7 @@ impl Interpreter {
                         if err.message.starts_with("No native mutable method") {
                             return self.call_native_instance_method(
                                 &class_name.resolve(),
-                                attributes.as_map(),
+                                &attributes.as_map(),
                                 method,
                                 args,
                             );
@@ -3787,7 +3825,7 @@ impl Interpreter {
         value: Value,
     ) -> Result<Value, RuntimeError> {
         let mut items = if let Value::Instance { attributes, .. } = &target
-            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+            && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
         {
             items.to_vec()
         } else {
@@ -3798,7 +3836,7 @@ impl Interpreter {
         let len = method_args.get(1).map(crate::runtime::to_int).unwrap_or(0) as usize;
 
         let new_bytes = if let Value::Instance { attributes, .. } = &value
-            && let Some(Value::Array(new_items, ..)) = attributes.get("bytes")
+            && let Some(Value::Array(new_items, ..)) = attributes.as_map().get("bytes")
         {
             new_items.to_vec()
         } else {
@@ -3845,7 +3883,7 @@ impl Interpreter {
                     cn
                 )));
             }
-            let items = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+            let items = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                 items.to_vec()
             } else {
                 Vec::new()
@@ -3882,7 +3920,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                         result.extend(items.to_vec());
                     }
                 }
@@ -3922,7 +3960,7 @@ impl Interpreter {
             ..
         } = &target
         {
-            let items = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+            let items = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                 items.to_vec()
             } else {
                 Vec::new()
@@ -3991,7 +4029,7 @@ impl Interpreter {
                     cn, method
                 )));
             }
-            let items = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+            let items = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                 items.to_vec()
             } else {
                 Vec::new()

@@ -245,29 +245,30 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "Supply" => {
-                let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback")
-                {
-                    let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                        let mut a = HashMap::new();
-                        a.insert("emitted".to_string(), Value::array(Vec::new()));
-                        a.insert("done".to_string(), Value::Bool(false));
-                        a
-                    });
-                    self.supply_emit_buffer.push(Vec::new());
-                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                    self.supply_emit_buffer.pop().unwrap_or_default()
-                } else {
-                    attributes
-                        .get("values")
-                        .and_then(|v| {
-                            if let Value::Array(items, ..) = v {
-                                Some(items.to_vec())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default()
-                };
+                let source_values =
+                    if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
+                        let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+                            let mut a = HashMap::new();
+                            a.insert("emitted".to_string(), Value::array(Vec::new()));
+                            a.insert("done".to_string(), Value::Bool(false));
+                            a
+                        });
+                        self.supply_emit_buffer.push(Vec::new());
+                        let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                        self.supply_emit_buffer.pop().unwrap_or_default()
+                    } else {
+                        attributes
+                            .as_map()
+                            .get("values")
+                            .and_then(|v| {
+                                if let Value::Array(items, ..) = v {
+                                    Some(items.to_vec())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default()
+                    };
                 let filtered = self.eval_grep_over_items(args.first().cloned(), source_values)?;
                 let filtered_values = Self::value_to_list(&filtered);
                 let mut attrs = HashMap::new();
@@ -276,6 +277,7 @@ impl Interpreter {
                 attrs.insert(
                     "live".to_string(),
                     attributes
+                        .as_map()
                         .get("live")
                         .cloned()
                         .unwrap_or(Value::Bool(false)),

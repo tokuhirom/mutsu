@@ -201,7 +201,7 @@ impl Interpreter {
                 let cancellation = Self::cancellation_instance();
                 let cancellation_id = match &cancellation {
                     Value::Instance { attributes, .. } => {
-                        match attributes.get("cancellation-id").cloned() {
+                        match attributes.as_map().get("cancellation-id").cloned() {
                             Some(Value::Int(id)) if id > 0 => id as u64,
                             _ => 0,
                         }

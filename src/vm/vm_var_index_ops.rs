@@ -839,7 +839,7 @@ impl VM {
                 },
                 Value::Array(keys, ..),
             ) if class_name == "Match" => {
-                if let Some(Value::Hash(named)) = attributes.get("named") {
+                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
                     Value::array(
                         keys.iter()
                             .map(|k| {
@@ -860,7 +860,7 @@ impl VM {
                 },
                 Value::Str(key),
             ) if class_name == "Match" => {
-                if let Some(Value::Hash(named)) = attributes.get("named") {
+                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
                     named.get(key.as_str()).cloned().unwrap_or(Value::Nil)
                 } else {
                     Value::Nil
@@ -876,7 +876,7 @@ impl VM {
             ) if class_name == "Match" => {
                 if i < 0 {
                     Value::Nil
-                } else if let Some(Value::Array(items, ..)) = attributes.get("list") {
+                } else if let Some(Value::Array(items, ..)) = attributes.as_map().get("list") {
                     items.get(i as usize).cloned().unwrap_or(Value::Nil)
                 } else {
                     Value::Nil
@@ -886,7 +886,7 @@ impl VM {
             (Value::Instance { ref attributes, .. }, ref idx)
                 if attributes.contains_key("__baggy_data__") =>
             {
-                let inner = attributes.get("__baggy_data__").unwrap().clone();
+                let inner = attributes.as_map().get("__baggy_data__").unwrap().clone();
                 let idx_clone = idx.clone();
                 // Re-enter the index logic with the inner bag/set value
                 self.stack.push(inner);
@@ -1358,7 +1358,7 @@ impl VM {
             ) => {
                 // Get element count from the instance
                 let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
-                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                         bytes.len() as i64
                     } else {
                         0
@@ -1391,7 +1391,7 @@ impl VM {
                 };
                 match i {
                     Some(i) if i >= 0 => {
-                        if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                             bytes.get(i as usize).cloned().unwrap_or(Value::Nil)
                         } else {
                             Value::Nil

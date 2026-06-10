@@ -385,7 +385,7 @@ impl Interpreter {
             ..
         } = &val
             && class_name == "Failure"
-            && let Some(exception) = attributes.get("exception")
+            && let Some(exception) = attributes.as_map().get("exception")
         {
             let message = if let Value::Instance {
                 attributes: ex_attrs,
@@ -393,6 +393,7 @@ impl Interpreter {
             } = exception
             {
                 ex_attrs
+                    .as_map()
                     .get("message")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default()
@@ -415,25 +416,27 @@ impl Interpreter {
         } = &val
             && class_name.resolve() == "Proc"
         {
-            let exitcode = match attributes.get("exitcode") {
+            let exitcode = match attributes.as_map().get("exitcode") {
                 Some(Value::Int(i)) => *i,
                 _ => 0,
             };
             // A still-"live" Proc (from `run(:in, ...)`) carries a placeholder
             // exitcode of -1 until it is finalized; sinking it must not throw.
-            let is_live = matches!(attributes.get("live"), Some(Value::Bool(true)));
+            let is_live = matches!(attributes.as_map().get("live"), Some(Value::Bool(true)));
             if exitcode != 0 && !is_live {
-                let signal = match attributes.get("signal") {
+                let signal = match attributes.as_map().get("signal") {
                     Some(Value::Int(i)) => *i,
                     _ => 0,
                 };
                 let command = attributes
+                    .as_map()
                     .get("command")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 // A command that could not be spawned (exit code -1) reports the
                 // underlying OS error, matching rakudo's X::Proc::Unsuccessful.
                 let os_error = attributes
+                    .as_map()
                     .get("os-error")
                     .map(|v| v.to_string_value())
                     .filter(|s| !s.is_empty());

@@ -328,8 +328,10 @@ impl Interpreter {
                 ..
             } => {
                 // Role candidate with index metadata
-                if let Some(Value::Int(idx)) = attributes.get("__mutsu_role_candidate_idx") {
+                if let Some(Value::Int(idx)) = attributes.as_map().get("__mutsu_role_candidate_idx")
+                {
                     let base_name = attributes
+                        .as_map()
                         .get("__mutsu_role_base_name")
                         .and_then(|v| match v {
                             Value::Str(s) => Some(s.to_string()),
@@ -345,16 +347,17 @@ impl Interpreter {
                 } else if class_name == "Attribute" {
                     // Attribute objects: look up by "ClassName::$!attrname"
                     let mut k = Vec::new();
-                    if let Some(Value::Str(attr_name)) = attributes.get("name") {
+                    if let Some(Value::Str(attr_name)) = attributes.as_map().get("name") {
                         // Try __mutsu_attr_owner first, then package
                         let owner = attributes
+                            .as_map()
                             .get("__mutsu_attr_owner")
                             .and_then(|v| match v {
                                 Value::Str(s) => Some(s.to_string()),
                                 _ => None,
                             })
                             .or_else(|| {
-                                attributes.get("package").and_then(|v| match v {
+                                attributes.as_map().get("package").and_then(|v| match v {
                                     Value::Package(p) => Some(p.resolve()),
                                     Value::Str(s) => Some(s.to_string()),
                                     _ => None,
@@ -370,6 +373,7 @@ impl Interpreter {
                     // Parameter objects: look up by "owner_sub::param_name"
                     let mut k = Vec::new();
                     let param_name = attributes
+                        .as_map()
                         .get("name")
                         .and_then(|v| match v {
                             Value::Str(s) => Some(s.to_string()),
@@ -377,13 +381,14 @@ impl Interpreter {
                         })
                         .unwrap_or_default();
                     let sigil = attributes
+                        .as_map()
                         .get("sigil")
                         .and_then(|v| match v {
                             Value::Str(s) => Some(s.to_string()),
                             _ => None,
                         })
                         .unwrap_or_default();
-                    if let Some(Value::Str(owner)) = attributes.get("__mutsu_owner_sub") {
+                    if let Some(Value::Str(owner)) = attributes.as_map().get("__mutsu_owner_sub") {
                         // Try scoped key with param name
                         if !param_name.is_empty() {
                             k.push(format!("{}::{}", owner, param_name));

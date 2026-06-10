@@ -188,7 +188,7 @@ impl Interpreter {
         let Value::Instance { attributes, .. } = target else {
             return Err(RuntimeError::new("Expected Supply instance"));
         };
-        let values = if let Some(Value::Array(items, ..)) = attributes.get("values") {
+        let values = if let Some(Value::Array(items, ..)) = attributes.as_map().get("values") {
             items.to_vec()
         } else {
             Vec::new()

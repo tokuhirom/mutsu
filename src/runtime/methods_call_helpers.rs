@@ -377,7 +377,7 @@ impl Interpreter {
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     // Extract bytes from Buf/Blob instance and cycle them
                     let pattern: Vec<Value> =
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                             items.to_vec()
                         } else {
                             Vec::new()

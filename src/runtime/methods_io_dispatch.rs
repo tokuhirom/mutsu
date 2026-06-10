@@ -120,7 +120,7 @@ impl Interpreter {
                 .map(|e| e.name.as_str().to_lowercase())
                 .unwrap_or_else(|| encoding.to_lowercase());
             let bytes = if is_wide {
-                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     let use_be = normalized_encoding == "utf-16be";
                     let mut out = Vec::with_capacity(items.len() * 2);
                     for item in items.iter() {
@@ -139,7 +139,7 @@ impl Interpreter {
                 } else {
                     Vec::new()
                 }
-            } else if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+            } else if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                 items
                     .iter()
                     .map(|v| match v {
@@ -176,7 +176,7 @@ impl Interpreter {
         } = target
             && (class_name == "Buf" || class_name == "Blob")
         {
-            let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+            let bytes = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                 items.to_vec()
             } else {
                 Vec::new()

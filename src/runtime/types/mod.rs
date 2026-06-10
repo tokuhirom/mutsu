@@ -210,7 +210,7 @@ impl Interpreter {
                 id,
             }) = self.env.get("self").cloned()
             {
-                let mut updated_attrs = (*attributes).clone();
+                let updated_attrs = (*attributes).clone();
                 updated_attrs.insert(attr_name.to_string(), value.clone());
                 self.env.insert(
                     "self".to_string(),
