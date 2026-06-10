@@ -8,6 +8,19 @@ use crate::value::Value;
 use super::super::expr::expression;
 use super::var::parse_var_name_from_str;
 
+/// Build the structured `X::Backslash::UnrecognizedSequence` parse error for an
+/// unknown backslash escape (e.g. `\u`) inside an interpolating string.
+pub(super) fn unrecognized_backslash_perror(seq: char) -> PError {
+    let msg = format!("Unrecognized backslash sequence: '\\{seq}'");
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("sequence".to_string(), Value::str(seq.to_string()));
+    let ex = Value::make_instance(
+        Symbol::intern("X::Backslash::UnrecognizedSequence"),
+        attrs,
+    );
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 fn make_list_expr(items: Vec<Expr>) -> Expr {
     Expr::Call {
         name: Symbol::intern("list"),
@@ -2610,10 +2623,8 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                     }
                 }
                 Ok(None) => {
-                    let c = rest.as_bytes()[1] as char;
-                    current.push('\\');
-                    current.push(c);
-                    rest = &rest[2..];
+                    let c = rest[1..].chars().next().unwrap();
+                    return Err(unrecognized_backslash_perror(c));
                 }
                 Err(msg) => {
                     return Err(PError::fatal(msg));
@@ -2714,10 +2725,8 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                     }
                 }
                 Ok(None) => {
-                    let c = rest.as_bytes()[1] as char;
-                    current.push('\\');
-                    current.push(c);
-                    rest = &rest[2..];
+                    let c = rest[1..].chars().next().unwrap();
+                    return Err(unrecognized_backslash_perror(c));
                 }
                 Err(msg) => {
                     return Err(PError::fatal(msg));
