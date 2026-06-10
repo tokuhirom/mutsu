@@ -1388,7 +1388,12 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::AugmentClass { name, body } = stmt {
+        if let Stmt::AugmentClass {
+            name,
+            body,
+            is_role,
+        } = stmt
+        {
             let name_str = name.resolve();
             // Check MONKEY-TYPING pragma: we check if `use MONKEY-TYPING` or `use MONKEY`
             // was issued. Since the compiler simply ignores these `use` statements,
@@ -1398,6 +1403,9 @@ impl VM {
                     "X::Syntax::Augment::WithoutMonkeyTyping",
                     "augment not allowed without 'use MONKEY-TYPING'",
                 ));
+            }
+            if *is_role {
+                return Err(self.interpreter.augment_role_error(&name_str));
             }
             self.interpreter.augment_class(&name_str, body)?;
             // Recompile augmented class methods for the fast path
