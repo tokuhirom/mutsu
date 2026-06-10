@@ -77,6 +77,13 @@ impl VM {
                 if pd.slurpy && pd.name == "%_" {
                     return false;
                 }
+                // An attributive parameter (`$!x`/`@!a`) binds straight to an
+                // attribute, i.e. it mutates `self` — so it is not read-only and
+                // must take the full path (which mirrors it into the shared cell
+                // and writes it back). The read-only fast path drops the write.
+                if Self::attr_twigil_base(&pd.name).is_some() {
+                    return true;
+                }
                 pd.slurpy
                     || pd.double_slurpy
                     || pd.named
@@ -467,6 +474,13 @@ impl VM {
                 self.locals[i] = val.clone();
             }
         }
+        // Phase 3 Stage 2c (i): an attributive parameter (`method m($!x)` /
+        // `method m(@!a)`) binds straight to the attribute. The binding above
+        // writes only env/locals; mirror it into `self`'s shared cell now so the
+        // method body's cell-direct reads of `$!x` see the parameter value (not
+        // the stale entry value) and the mutation is visible to every alias. This
+        // removes the attributive-param case from the exit-time reconcile.
+        self.mirror_attributive_params_to_cell(cc, method_def);
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             if let Some(val) = self.interpreter.get_state_var(key) {
@@ -803,6 +817,27 @@ impl VM {
                 attributes.insert(k, v);
             } else if let Some(cv) = cell_val {
                 attributes.insert(k, cv);
+            }
+        }
+    }
+
+    /// Phase 3 Stage 2c (i): mirror attributive parameters (`$!x`/`@!a`/`%!h`)
+    /// into `self`'s shared attribute cell right after argument binding. The
+    /// parameter binding writes the value to env/locals keyed by the attribute
+    /// twigil name (`!x`, `@!a`, …); this pushes it through to the cell so that
+    /// cell-direct body reads and cross-frame aliases observe it, taking the
+    /// attributive-param case out of the exit-time `reconcile_attrs`.
+    fn mirror_attributive_params_to_cell(
+        &self,
+        code: &CompiledCode,
+        method_def: &crate::runtime::MethodDef,
+    ) {
+        for pd in &method_def.param_defs {
+            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+                continue;
+            }
+            if Self::attr_twigil_base(&pd.name).is_some() {
+                self.mirror_attr_value_to_cell_by_name(code, &pd.name);
             }
         }
     }
