@@ -4826,6 +4826,48 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Finalize a typed `@`/`%` constructor attribute (`has Int @.nums` /
+    /// `has Int %.map`): type-check each element against the declared element
+    /// type (matching the variable path `my Int @a`, and raku's "Type check
+    /// failed for an element of @!nums") and tag the container with element-type
+    /// metadata so `.of` / `.WHAT` / `~~ Array[Int]` reflect the declared type.
+    ///
+    /// `value` must be the exact `Value` (Array/Hash) that will be stored in the
+    /// instance: the metadata is keyed by the backing `Arc`'s pointer, so it has
+    /// to be registered against the Arc that survives into `make_instance`.
+    pub(crate) fn finalize_typed_container_attr(
+        &mut self,
+        attr_name: &str,
+        sigil: char,
+        elem_type: &str,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        if elem_type != "Mu" && elem_type != "Any" {
+            let display = format!("{}!{}", sigil, attr_name);
+            let elems: Vec<&Value> = match value {
+                Value::Array(items, _) => items.iter().collect(),
+                Value::Hash(map) => map.values().collect(),
+                _ => Vec::new(),
+            };
+            for it in elems {
+                if !matches!(it, Value::Nil) && !self.type_matches_value(elem_type, it) {
+                    return Err(crate::runtime::utils::type_check_element_typed_error(
+                        &display, elem_type, it,
+                    ));
+                }
+            }
+        }
+        self.register_container_type_metadata(
+            value,
+            ContainerTypeInfo {
+                value_type: elem_type.to_string(),
+                key_type: None,
+                declared_type: None,
+            },
+        );
+        Ok(())
+    }
+
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
         self.var_dynamic_flags
             .get(Self::normalize_var_meta_name(name))
