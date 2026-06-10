@@ -156,6 +156,22 @@ fn param_display_name(name: &str) -> String {
 }
 
 pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PError> {
+    // The `:` invocant marker may only appear after the *first* parameter
+    // (`method m($self: ...)`). On any later parameter (`sub f($x, $y:)`,
+    // `method m($x, $y:)`) Raku raises X::Syntax::Signature::InvocantMarker.
+    for pd in params.iter().skip(1) {
+        if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+            let msg = "Can only use : as invocant marker in a signature after the first parameter"
+                .to_string();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Syntax::Signature::InvocantMarker"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
+    }
     let mut saw_optional_positional = false;
     let mut saw_named = false;
     let mut saw_variadic = false;
