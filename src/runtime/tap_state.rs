@@ -57,6 +57,18 @@ impl TestState {
         }
     }
 
+    /// The authoritative number of tests run. When a shared atomic counter is
+    /// active (a `start` block / Promise callback ran tests on another thread),
+    /// the local `ran` field can be stale — a `pass`/`ok` executed on a spawned
+    /// thread bumps the atomic but only that thread's cloned `ran`, not ours.
+    /// Read the atomic in that case so plan accounting stays correct.
+    pub(crate) fn effective_ran(&self) -> usize {
+        match &self.shared_ran {
+            Some(counter) => counter.load(Ordering::SeqCst),
+            None => self.ran,
+        }
+    }
+
     /// Get an Arc to the shared counter, creating one if needed.
     pub(crate) fn ensure_shared_ran(&mut self) -> Arc<AtomicUsize> {
         if let Some(ref counter) = self.shared_ran {
