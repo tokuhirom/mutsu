@@ -81,10 +81,18 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
             }
         }
         // Pod blocks only appear at the start of a line
-        if at_line_start && let Ok((r, _)) = pod_block(r) {
-            rest = r;
-            at_line_start = true;
-            continue;
+        if at_line_start {
+            match pod_block(r) {
+                Ok((r, _)) => {
+                    rest = r;
+                    at_line_start = true;
+                    continue;
+                }
+                // A fatal Pod error (e.g. `=begin` without an identifier) must
+                // propagate, not be silently treated as "not a Pod block".
+                Err(e) if e.is_fatal() => return Err(e),
+                Err(_) => {}
+            }
         }
         break;
     }
@@ -185,6 +193,18 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
         let begin_line_end = rest.find('\n').unwrap_or(rest.len());
         let begin_line = &rest[..begin_line_end];
         let target = begin_line.split_whitespace().next().unwrap_or("");
+        // `=begin` must be followed by an identifier (the block name).
+        if target.is_empty() {
+            let msg = "=begin must be followed by an identifier; (did you mean \"=begin pod\"?)"
+                .to_string();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Syntax::Pod::BeginWithoutIdentifier"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
         let is_table = target == "table";
         let mut remaining = rest.get(begin_line_end + 1..).unwrap_or_default();
         let mut depth = 1usize;
