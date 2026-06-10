@@ -74,6 +74,21 @@ fn non_associative_error(op_name: &str) -> PError {
     )
 }
 
+/// Non-associative chain of two named operators (e.g. `1 <=> 2 <=> 3`).
+/// Carries `.left` / `.right` like rakudo's `X::Syntax::NonAssociative`.
+fn non_associative_pair_error(left: &str, right: &str) -> PError {
+    let message = format!(
+        "Operators '{}' and '{}' are non-associative and require parentheses",
+        left, right
+    );
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("left".to_string(), Value::str(left.to_string()));
+    attrs.insert("right".to_string(), Value::str(right.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Syntax::NonAssociative"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
 fn conditional_precedence_too_loose_error() -> PError {
     syntax_exception(
         "X::Syntax::ConditionalOperator::PrecedenceTooLoose",
@@ -146,11 +161,10 @@ fn structural_comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     if let Some((next_op, _)) = parse_comparison_op(r2)
         && is_structural_comparison_op(next_op)
     {
-        return Err(non_associative_error(&format!(
-            "{} and {}",
+        return Err(non_associative_pair_error(
             comparison_nonassoc_key(&op.token_kind()).unwrap_or("<=>"),
-            comparison_nonassoc_key(&next_op.token_kind()).unwrap_or("<=>")
-        )));
+            comparison_nonassoc_key(&next_op.token_kind()).unwrap_or("<=>"),
+        ));
     }
     Ok((r, expr))
 }
