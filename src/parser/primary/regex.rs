@@ -167,6 +167,40 @@ fn is_regex_quote_terminator(open: char, ch: char) -> bool {
     }
 }
 
+/// True for boolean-switch regex adverbs that take no runtime value (unlike the
+/// value adverbs `:x`, `:nth`, `:pos`, `:continue`, `:g`).
+fn is_boolean_flag_adverb(name: &str) -> bool {
+    matches!(
+        name,
+        "i" | "ignorecase"
+            | "ii"
+            | "samecase"
+            | "s"
+            | "sigspace"
+            | "ss"
+            | "samespace"
+            | "m"
+            | "ignoremark"
+            | "mm"
+            | "samemark"
+            | "r"
+            | "ratchet"
+            | "ex"
+            | "exhaustive"
+            | "ov"
+            | "overlap"
+    )
+}
+
+/// True when an adverb argument source references a dynamic variable
+/// (a `*` twigil: `$*foo`, `@*ARGS`, `%*ENV`, `&*bar`).
+fn contains_dynamic_var(src: &str) -> bool {
+    let bytes = src.as_bytes();
+    bytes
+        .windows(2)
+        .any(|w| matches!(w[0], b'$' | b'@' | b'%' | b'&') && w[1] == b'*')
+}
+
 fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
     let mut spec = input;
     let mut adverbs = MatchAdverbs::default();
@@ -206,6 +240,21 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             }
             arg = Some(&r[1..r.len() - after.len() - 1]);
             r = after;
+        }
+
+        // A boolean-flag regex adverb (`:i`, `:s`, `:m`, ...) is a compile-time
+        // switch and cannot take a runtime value. When such an adverb is given an
+        // argument that references a dynamic variable (e.g. `m:i(@*ARGS[0])/`),
+        // it is X::Value::Dynamic ("Adverb i value must be known at compile time").
+        if let Some(arg_src) = arg
+            && is_boolean_flag_adverb(&name)
+            && contains_dynamic_var(arg_src)
+        {
+            let message = format!("Adverb {} value must be known at compile time", name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Value::Dynamic"), attrs);
+            return Err(PError::fatal_with_exception(message, Box::new(ex)));
         }
 
         if name == "g" || name == "global" {
