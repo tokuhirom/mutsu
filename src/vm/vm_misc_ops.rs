@@ -869,6 +869,21 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // Phase 3 Stage 2: scalar attribute increments read-modify-write the cell.
+        let attr_name = Self::const_str(code, name_idx).to_string();
+        self.sync_attr_local_from_cell_by_name(code, &attr_name);
+        let r = self.exec_pre_increment_op_inner(code, name_idx);
+        if r.is_ok() {
+            self.mirror_attr_local_to_cell_by_name(code, &attr_name);
+        }
+        r
+    }
+
+    fn exec_pre_increment_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
@@ -942,6 +957,21 @@ impl VM {
     }
 
     pub(super) fn exec_pre_decrement_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        // Phase 3 Stage 2: scalar attribute decrements read-modify-write the cell.
+        let attr_name = Self::const_str(code, name_idx).to_string();
+        self.sync_attr_local_from_cell_by_name(code, &attr_name);
+        let r = self.exec_pre_decrement_op_inner(code, name_idx);
+        if r.is_ok() {
+            self.mirror_attr_local_to_cell_by_name(code, &attr_name);
+        }
+        r
+    }
+
+    fn exec_pre_decrement_op_inner(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
@@ -1203,6 +1233,23 @@ impl VM {
     }
 
     pub(super) fn exec_assign_expr_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let r = self.exec_assign_expr_op_inner(code, name_idx);
+        // Phase 3 Stage 2: mirror name-based scalar attribute writes (`$.x = v`,
+        // `$!x = v` via AssignExpr) into the shared cell.
+        if r.is_ok()
+            && let Value::Str(name) = &code.constants[name_idx as usize]
+        {
+            let name = name.to_string();
+            self.mirror_attr_value_to_cell_by_name(code, &name);
+        }
+        r
+    }
+
+    fn exec_assign_expr_op_inner(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,

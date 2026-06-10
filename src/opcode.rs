@@ -1139,8 +1139,9 @@ pub(crate) struct CompiledCode {
 #[derive(Debug, Clone)]
 pub(crate) struct AttrSlots {
     pub(crate) attr_name: String,
-    pub(crate) private: Option<usize>,
-    pub(crate) public: Option<usize>,
+    // Phase 3 Stage 2 (scalar slice): scalar `!x`/`.x` slots are no longer used
+    // for writeback (scalar attributes are written through the cell directly), so
+    // only the array/hash slot indices remain.
     pub(crate) arr_private: Option<usize>,
     pub(crate) arr_public: Option<usize>,
     pub(crate) hash_private: Option<usize>,
@@ -1184,8 +1185,6 @@ impl CompiledCode {
             };
             self.attr_slots.push(AttrSlots {
                 attr_name: attr_name.clone(),
-                private: find("!"),
-                public: find("."),
                 arr_private: find("@!"),
                 arr_public: find("@."),
                 hash_private: find("%!"),
