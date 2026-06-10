@@ -18,6 +18,16 @@ pub(super) fn unrecognized_backslash_perror(seq: char) -> PError {
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
+/// Build the structured `X::Backslash::NonVariableDollar` parse error for a bare
+/// `$` inside an interpolating string that does not introduce a variable.
+pub(super) fn non_variable_dollar_perror() -> PError {
+    let msg = "Non-variable $ must be backslashed".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Backslash::NonVariableDollar"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 fn make_list_expr(items: Vec<Expr>) -> Expr {
     Expr::Call {
         name: Symbol::intern("list"),
@@ -2676,6 +2686,16 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 rest = &rest[end + 1..];
                 continue;
             }
+        }
+        // A `$` that reached here did not introduce a variable or `${...}`/
+        // `{...}` interpolation, so it is a non-variable dollar and must be
+        // backslashed (Raku: "Non-variable $ must be backslashed"). A `$`
+        // immediately followed by another sigil (`$@arr`, `$$aref`, `$%hash`,
+        // `$&code`) is a contextualizer prefix on the following sigil-variable,
+        // not a bare dollar — leave it so the sigil-variable interpolates on
+        // the next iteration.
+        if rest.starts_with('$') && !rest[1..].starts_with(['$', '@', '%', '&']) {
+            return Err(non_variable_dollar_perror());
         }
         let ch = rest.chars().next().unwrap();
         current.push(ch);
