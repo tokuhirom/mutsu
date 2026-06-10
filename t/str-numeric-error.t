@@ -1,0 +1,27 @@
+use Test;
+
+# A non-numeric string used in an arithmetic operator raises X::Str::Numeric
+# carrying source / pos / reason, instead of silently coercing to 0.
+# (Numeric comparison is intentionally left lenient — see infix_is_strictly_numeric.)
+
+plan 8;
+
+throws-like 'use fatal; my $x = "5 foo" + 8;', X::Str::Numeric,
+    'trailing characters after a number',
+    source => '5 foo', pos => 1, reason => /:i trailing/;
+
+throws-like 'use fatal; my $x = "foo" + 1;', X::Str::Numeric,
+    'no leading number',
+    source => 'foo', pos => 0, reason => /:i begin/;
+
+throws-like 'use fatal; my $x = "5 foo" * 2;', X::Str::Numeric,
+    'multiplication also coerces strictly';
+
+throws-like 'use fatal; my $x = "abc" - 1;', X::Str::Numeric,
+    'subtraction also coerces strictly';
+
+# Valid numeric strings keep coercing.
+is "5" + 8, 13, 'plain integer string';
+is "5.5" + 1, 6.5, 'decimal string';
+is "  10  " + 2, 12, 'surrounding whitespace is fine';
+is "1_000" + 1, 1001, 'underscores in number';

@@ -1201,6 +1201,12 @@ impl Interpreter {
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
             if self.infix_uses_numeric_bridge(op) {
+                // Genuinely-numeric ops reject non-numeric strings; the generic
+                // comparators (cmp/before/after/min/max) compare them as strings.
+                if Self::infix_is_strictly_numeric(op) {
+                    crate::runtime::utils::check_str_numeric(&lhs)?;
+                    crate::runtime::utils::check_str_numeric(&rhs)?;
+                }
                 lhs = self.coerce_infix_operand_numeric(lhs)?;
                 rhs = self.coerce_infix_operand_numeric(rhs)?;
             }
@@ -1544,6 +1550,18 @@ impl Interpreter {
                 | "min"
                 | "max"
         )
+    }
+
+    /// Subset of [`infix_uses_numeric_bridge`] for which a non-numeric string
+    /// operand is an X::Str::Numeric error rather than a silent 0-coercion.
+    /// Restricted to the arithmetic operators: numeric *comparison* (`==`/`<`/
+    /// `<=>` …) is intentionally NOT strict because mutsu still models some
+    /// enums (e.g. PromiseStatus `Broken`/`Kept`) as bare strings, so
+    /// `$status == Broken` must keep comparing them leniently. Arithmetic on a
+    /// non-numeric string is far rarer and is the case the spec exercises
+    /// (`"5 foo" + 8`).
+    fn infix_is_strictly_numeric(op: &str) -> bool {
+        matches!(op, "+" | "-" | "*" | "/" | "%" | "**")
     }
 
     /// Coerce an Instance operand to a numeric value via its `Numeric`/`Bridge`

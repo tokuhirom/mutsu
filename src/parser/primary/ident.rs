@@ -969,6 +969,8 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "sleep-till"
             | "dir"
             | "first"
+            | "deepmap"
+            | "duckmap"
             | "make"
             | "take"
             | "take-rw"

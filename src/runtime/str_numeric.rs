@@ -77,6 +77,65 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
     try_parse_plain_int(body, sign)
 }
 
+/// Inspect a string that failed `parse_raku_str_to_numeric` and classify the
+/// failure the way rakudo's X::Str::Numeric does: returns `(pos, reason)` where
+/// `pos` is the 0-based character index at which parsing stopped and `reason`
+/// is the human-readable explanation. Returns `None` when the string actually
+/// IS a valid number (so callers can treat `None` as "no error").
+pub(crate) fn str_numeric_failure(s: &str) -> Option<(usize, String)> {
+    if parse_raku_str_to_numeric(s).is_some() {
+        return None;
+    }
+    let end = numeric_prefix_end_byte(s);
+    if end == 0 {
+        // Nothing number-like at the front.
+        Some((
+            0,
+            "base-10 number must begin with valid digits or '.'".to_string(),
+        ))
+    } else {
+        // A valid number was parsed but extra non-whitespace follows it.
+        let char_pos = s[..end].chars().count();
+        Some((char_pos, "trailing characters after number".to_string()))
+    }
+}
+
+/// Scan the leading numeric token (skipping leading whitespace) of `s` and
+/// return the byte index just past it, or 0 when the string does not begin with
+/// a number. Handles the common int/decimal/scientific/signed forms; exotic
+/// forms (radix, complex, fractions) are not scanned precisely but still yield a
+/// non-zero prefix when they start with digits, which is enough to distinguish
+/// "trailing characters" from "no leading number".
+fn numeric_prefix_end_byte(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut i = 0;
+    while i < n && (bytes[i] as char).is_ascii_whitespace() {
+        i += 1;
+    }
+    if i < n && (bytes[i] == b'+' || bytes[i] == b'-') {
+        i += 1;
+    }
+    let mut saw_digit = false;
+    while i < n {
+        let c = bytes[i];
+        if c.is_ascii_digit() || c == b'_' {
+            saw_digit = true;
+            i += 1;
+        } else if c == b'.' {
+            i += 1;
+        } else if (c == b'e' || c == b'E') && saw_digit {
+            i += 1;
+            if i < n && (bytes[i] == b'+' || bytes[i] == b'-') {
+                i += 1;
+            }
+        } else {
+            break;
+        }
+    }
+    if saw_digit { i } else { 0 }
+}
+
 /// Normalize U+2212 MINUS SIGN to ASCII hyphen-minus.
 fn normalize_minus(s: &str) -> String {
     if s.contains('\u{2212}') {
