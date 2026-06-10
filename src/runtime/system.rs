@@ -699,7 +699,7 @@ impl Interpreter {
                     || name.contains("::")
                     || name.starts_with("CALLER")
                     || name.starts_with("DYNAMIC")
-                    || name == "__ANON_STATE__"
+                    || name.starts_with("__ANON_")
                     || name.chars().next().is_some_and(|c| c.is_ascii_digit())
                 {
                     return None;
@@ -726,6 +726,9 @@ impl Interpreter {
                 Some(("$", name.clone()))
             }
             Expr::ArrayVar(name) => {
+                if name.starts_with("__ANON_") {
+                    return None;
+                }
                 let sigiled = format!("@{}", name);
                 if declared.contains(name) || declared.contains(&sigiled) {
                     return None;
@@ -736,6 +739,9 @@ impl Interpreter {
                 Some(("@", name.clone()))
             }
             Expr::HashVar(name) => {
+                if name.starts_with("__ANON_") {
+                    return None;
+                }
                 let sigiled = format!("%{}", name);
                 if declared.contains(name) || declared.contains(&sigiled) {
                     return None;
