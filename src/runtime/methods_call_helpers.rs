@@ -120,6 +120,11 @@ impl Interpreter {
         &mut self,
         attributes: &HashMap<String, Value>,
     ) -> Result<Option<Value>, RuntimeError> {
+        // A known logical count (set for `LHS xx N` lazy repeats) takes priority:
+        // the materialized `items` are only a bounded prefix of the true length.
+        if let Some(count) = attributes.get("known_count") {
+            return Ok(Some(count.clone()));
+        }
         if let Some(Value::Array(items, ..)) = attributes.get("items") {
             let index = match attributes.get("index") {
                 Some(Value::Int(i)) if *i >= 0 => *i as usize,
