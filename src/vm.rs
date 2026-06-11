@@ -102,6 +102,11 @@ pub(crate) struct VM {
     /// reasoning as `registry`). Used by `try_native_io_handle_method` to resolve
     /// pure-handle IO methods natively instead of bouncing through the interpreter.
     io_handles: Arc<RwLock<crate::runtime::IoHandleTable>>,
+    /// The VM's clone of the shared [`OutputSink`](crate::runtime::OutputSink)
+    /// handle (same `RwLock` as the interpreter's), so Stdout/Stderr output
+    /// dispatch resolves natively instead of bouncing through the interpreter
+    /// (③後段 PR-C).
+    output_sink: Arc<RwLock<crate::runtime::OutputSink>>,
     stack: Vec<Value>,
     locals: Vec<Value>,
     in_smartmatch_rhs: bool,
@@ -417,10 +422,12 @@ impl VM {
     pub(crate) fn new(interpreter: Interpreter) -> Self {
         let registry = interpreter.registry_handle();
         let io_handles = interpreter.io_handles_handle();
+        let output_sink = interpreter.output_sink_handle();
         Self {
             interpreter,
             registry,
             io_handles,
+            output_sink,
             stack: Vec::new(),
             locals: Vec::new(),
             in_smartmatch_rhs: false,
@@ -493,6 +500,39 @@ impl VM {
     #[inline]
     pub(crate) fn io_handles_mut(&self) -> crate::runtime::IoHandlesWriteGuard<'_> {
         crate::runtime::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
+    }
+
+    /// Write access to the shared [`OutputSink`](crate::runtime::OutputSink) via
+    /// the VM's own handle. Same guard discipline as `io_handles_mut`.
+    #[inline]
+    pub(crate) fn output_sink_mut(&self) -> crate::runtime::OutputSinkWriteGuard<'_> {
+        crate::runtime::OutputSinkWriteGuard::new(&self.output_sink, "output_sink")
+    }
+
+    /// VM-native Stdout emit (③後段 PR-C), mirroring `Interpreter::emit_output`:
+    /// bump the Stdout-target handle's `bytes_written`, then push to the sink
+    /// (immediate real-stdout flush / buffer / thread-clone shared buffer per the
+    /// sink's decision). `subtest_active` comes from the interpreter (TAP state
+    /// stays interpreter-owned). Build the payload before calling — no guard is
+    /// held across re-entrant work.
+    pub(crate) fn vm_emit_stdout(&mut self, text: &str) {
+        let byte_count = text.len() as i64;
+        {
+            let mut table = self.io_handles_mut();
+            if let Some(h) = table.map.values_mut().find(|h| h.is_stdout_target()) {
+                h.add_bytes_written(byte_count);
+            }
+        }
+        let subtest_active = self.interpreter.subtest_active();
+        self.output_sink_mut().emit(text, subtest_active);
+    }
+
+    /// VM-native Stderr emit (③後段 PR-C), mirroring the `Stderr` branch of
+    /// `write_to_handle_value_trying` (immediate real-stderr flush or the stderr
+    /// buffer; no `bytes_written` scan, no `output_emitted`).
+    pub(crate) fn vm_emit_stderr(&mut self, text: &str) {
+        let subtest_active = self.interpreter.subtest_active();
+        self.output_sink_mut().emit_stderr(text, subtest_active);
     }
 
     /// Run the compiled bytecode. Always returns the interpreter back

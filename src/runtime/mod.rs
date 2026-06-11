@@ -5291,6 +5291,20 @@ impl Interpreter {
         self.io_handles.clone()
     }
 
+    /// Clone the shared [`OutputSink`] handle so the VM can write Stdout/Stderr
+    /// output natively as a peer (③後段 PR-C, same reasoning as
+    /// [`Self::io_handles_handle`]).
+    pub(crate) fn output_sink_handle(&self) -> Arc<RwLock<OutputSink>> {
+        self.output_sink.clone()
+    }
+
+    /// Whether a TAP subtest is currently in progress. The VM queries this (the
+    /// TAP state machine stays interpreter-owned) to pass `subtest_active` into
+    /// the output sink's emit decision for VM-native Stdout/Stderr output.
+    pub(crate) fn subtest_active(&self) -> bool {
+        self.tap.subtest_depth() != 0
+    }
+
     /// Allocate a fresh handle id, store `state` under it, and return the id.
     /// Build `state` fully (including anything that needs `&self`, e.g.
     /// `default_line_separators()`) *before* calling this, since the short write
