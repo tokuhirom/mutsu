@@ -6,7 +6,7 @@ use Test;
 # `$struct[..]<..>[..]` paths (which the old index-back-reference lost when an
 # enclosing container was COW-cloned on a later write).
 
-plan 50;
+plan 54;
 
 # Single-level array element
 {
@@ -217,6 +217,24 @@ plan 50;
     my %h = a => {n => 1}, b => {n => 2};
     my $c := %h<a>;
     is %h<a>.WHAT.^name, 'Hash', 'no cell leak in hash element read type';
+}
+
+# Binding to an element reached *through an `is raw` sub call* in the middle of
+# the path (`$struct[1]<key>()<subkey>[1]`, nested.t 11-12). The sub returns the
+# inner structure raw, so the element shares a cell with the source; a write
+# reached via the stack-target generic handler must go THROUGH that cell.
+{
+    my $inner = { subkey => [ "ig", 42 ] };
+    my sub get_inner () is raw { $inner }
+    my $struct = [ "ig", { key => &get_inner } ];
+
+    is $struct[1]<key>()<subkey>[1], 42, 'sub-mid-path: sanity read';
+    my $abbrev := $struct[1]<key>()<subkey>[1];
+    is $abbrev, 42, 'sub-mid-path: bind read';
+    $struct[1]<key>()<subkey>[1] = 43;
+    is $abbrev, 43, 'sub-mid-path: source write -> bind';
+    $abbrev = 44;
+    is $struct[1]<key>()<subkey>[1], 44, 'sub-mid-path: bind write -> source';
 }
 
 # vim: expandtab shiftwidth=4
