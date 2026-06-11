@@ -115,6 +115,17 @@ impl VM {
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
+            // VM-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
+            // resolve `IO::Handle`'s state-only methods (close/tell/eof/seek/
+            // opened/t and the Tier-1 setters/getters chomp/nl-out/out-buffer/
+            // encoding/native-descriptor) in the VM through its own `io_handles`
+            // handle, *before* the generic native-method fallback below would
+            // otherwise pre-empt them. Returns `None` (falling through to that
+            // fallback unchanged) for any receiver/method/args it cannot handle
+            // natively, so this is behavior-invariant.
+            if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
+                return result;
+            }
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
@@ -421,15 +432,6 @@ impl VM {
         {
             return result;
         }
-        // Native pure-handle IO methods on an `IO::Handle` receiver
-        // (close/tell/eof/seek/opened/t): resolve in the VM through its own
-        // `io_handles` handle (PLAN.md ③ native IO PR-C), shrinking the §1
-        // native-IO fork. Only methods that touch *only* handle state are handled
-        // here; read/write/lines/slurp/etc. (which need emit_output / env /
-        // encoding) still fall through to the interpreter below.
-        if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
-            return result;
-        }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
         // User-defined Instance methods now always run as bytecode (compiled at
         // registration, or on demand above via `populate_uncompiled_method`), so
@@ -442,8 +444,10 @@ impl VM {
     }
 
     /// VM-native dispatch for the pure-handle methods of an `IO::Handle`
-    /// (`close`/`tell`/`eof`/`seek`/`opened`/`t`) — the ones that touch only the
-    /// handle's own state, with no `emit_output` / env / encoding dependency.
+    /// (`close`/`tell`/`eof`/`seek`/`opened`/`t` plus the PR-D Tier-1
+    /// setters/getters `chomp`/`nl-out`/`out-buffer`/`encoding` and
+    /// `native-descriptor`) — the ones that touch only the handle's own state,
+    /// with no `emit_output` / env / encoding-helper dependency.
     /// Operates on the VM's own [`io_handles`](VM::io_handles_mut) handle and the
     /// shared `IoHandleState` methods (the single authoritative impl the
     /// interpreter's `*_handle_value` wrappers also use), so behavior is identical
@@ -472,6 +476,25 @@ impl VM {
             _ => return None,
         };
 
+        // Pure-handle setters/getters whose argument touches only handle state
+        // (PLAN.md ③ native IO PR-D Tier-1). Junction arguments fall through to
+        // the interpreter for autothreading.
+        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+            return None;
+        }
+
+        // `.encoding` returns Nil for binary mode and a Str otherwise, so its
+        // result shaping is method-specific (mirrors the interpreter's
+        // `native_io` arm exactly).
+        enum EncodingOp {
+            /// Getter: shape the current encoding into Nil("bin") / Str.
+            Get,
+            /// Setter to binary mode (`:bin`, `"bin"`, or `Nil` arg) -> Nil.
+            SetBin,
+            /// Setter to a named encoding -> Str(encoding).
+            Set(String),
+        }
+
         enum Op {
             Tell,
             Eof,
@@ -479,6 +502,11 @@ impl VM {
             Tty,
             Close,
             Seek(i64, i32),
+            Chomp(Option<bool>),
+            NlOut(Option<String>),
+            OutBuffer(Option<Option<usize>>),
+            Encoding(EncodingOp),
+            NativeDescriptor,
         }
         let op = match method {
             "tell" if args.is_empty() => Op::Tell,
@@ -486,6 +514,25 @@ impl VM {
             "opened" if args.is_empty() => Op::Opened,
             "t" if args.is_empty() => Op::Tty,
             "close" if args.is_empty() => Op::Close,
+            "native-descriptor" if args.is_empty() => Op::NativeDescriptor,
+            "chomp" => Op::Chomp(args.first().map(|a| a.truthy())),
+            "nl-out" => Op::NlOut(args.first().map(|a| a.to_string_value())),
+            "out-buffer" => Op::OutBuffer(
+                args.first()
+                    .map(crate::runtime::Interpreter::parse_out_buffer_size),
+            ),
+            "encoding" => Op::Encoding(match args.first() {
+                None => EncodingOp::Get,
+                Some(Value::Nil) => EncodingOp::SetBin,
+                Some(arg) => {
+                    let enc = arg.to_string_value();
+                    if enc == "bin" {
+                        EncodingOp::SetBin
+                    } else {
+                        EncodingOp::Set(enc)
+                    }
+                }
+            }),
             "seek" => {
                 // seek($offset, $whence = SeekFromBeginning). Mirror the
                 // interpreter's `native_io_handle` arg handling exactly: a
@@ -524,6 +571,28 @@ impl VM {
             Op::Tty => Ok(Value::Bool(state.is_tty())),
             Op::Close => state.close().map(Value::Bool),
             Op::Seek(pos, mode) => state.seek(pos, mode).map(Value::Int),
+            Op::Chomp(set) => Ok(Value::Bool(state.chomp_setting(set))),
+            Op::NlOut(set) => Ok(Value::str(state.nl_out_setting(set))),
+            Op::OutBuffer(set) => state.out_buffer_setting(set).map(|n| Value::Int(n as i64)),
+            Op::NativeDescriptor => state.native_descriptor().map(Value::Int),
+            Op::Encoding(enc_op) => Ok(match enc_op {
+                EncodingOp::Get => {
+                    let cur = state.encoding_setting(None);
+                    if cur == "bin" {
+                        Value::Nil
+                    } else {
+                        Value::str(cur)
+                    }
+                }
+                EncodingOp::SetBin => {
+                    state.encoding_setting(Some("bin".to_string()));
+                    Value::Nil
+                }
+                EncodingOp::Set(enc) => {
+                    state.encoding_setting(Some(enc.clone()));
+                    Value::str(enc)
+                }
+            }),
         };
         Some(result)
     }
@@ -946,6 +1015,15 @@ impl VM {
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
+            // VM-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D),
+            // mut path: `$fh.method` on a variable receiver routes here, so the
+            // same state-only `IO::Handle` methods must be intercepted before the
+            // generic native-method fallback below. These methods mutate only the
+            // shared handle-table state (not the receiver binding), so the native
+            // path returns the result directly; `None` falls through unchanged.
+            if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
+                return result;
+            }
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);

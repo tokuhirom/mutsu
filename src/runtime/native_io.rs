@@ -2343,15 +2343,9 @@ impl Interpreter {
                 }
             }
             "nl-out" => {
-                if let Some(arg) = args.first() {
-                    let val = arg.to_string_value();
-                    self.with_handle_mut(&target_val, |state| {
-                        state.nl_out = val.clone();
-                        Ok(())
-                    })?;
-                    return Ok(Value::str(val));
-                }
-                let nl = self.with_handle_mut(&target_val, |state| Ok(state.nl_out.clone()))?;
+                let set = args.first().map(|a| a.to_string_value());
+                let nl =
+                    self.with_handle_mut(&target_val, |state| Ok(state.nl_out_setting(set)))?;
                 Ok(Value::str(nl))
             }
             "nl-in" => {
@@ -2406,15 +2400,9 @@ impl Interpreter {
                 }
             }
             "chomp" => {
-                if let Some(arg) = args.first() {
-                    let val = arg.truthy();
-                    self.with_handle_mut(&target_val, |state| {
-                        state.line_chomp = val;
-                        Ok(())
-                    })?;
-                    return Ok(Value::Bool(val));
-                }
-                let chomp = self.with_handle_mut(&target_val, |state| Ok(state.line_chomp))?;
+                let set = args.first().map(|a| a.truthy());
+                let chomp =
+                    self.with_handle_mut(&target_val, |state| Ok(state.chomp_setting(set)))?;
                 Ok(Value::Bool(chomp))
             }
             "print-nl" => {
@@ -2721,13 +2709,9 @@ impl Interpreter {
                 }
             }
             "out-buffer" => {
-                let size = self.with_handle_mut(&target_val, |state| {
-                    if let Some(arg) = args.first() {
-                        state.flush_buffer()?;
-                        state.out_buffer_capacity = Self::parse_out_buffer_size(arg);
-                    }
-                    Ok(state.out_buffer_capacity.unwrap_or(0))
-                })?;
+                let set = args.first().map(Self::parse_out_buffer_size);
+                let size =
+                    self.with_handle_mut(&target_val, |state| state.out_buffer_setting(set))?;
                 Ok(Value::Int(size as i64))
             }
             "seek" => {
@@ -2876,34 +2860,7 @@ impl Interpreter {
             }
             "Supply" => self.handle_supply(target, &args),
             "native-descriptor" => {
-                let fd = self.with_handle_mut(&target_val, |state| {
-                    let fd = match state.target {
-                        IoHandleTarget::Stdin => 0i64,
-                        IoHandleTarget::Stdout => 1i64,
-                        IoHandleTarget::Stderr => 2i64,
-                        _ => {
-                            #[cfg(unix)]
-                            {
-                                if let Some(ref file) = state.file {
-                                    use std::os::unix::io::AsRawFd;
-                                    file.as_raw_fd() as i64
-                                } else {
-                                    return Err(RuntimeError::new(
-                                        "native-descriptor: handle has no file descriptor",
-                                    ));
-                                }
-                            }
-                            #[cfg(not(unix))]
-                            {
-                                let _ = state;
-                                return Err(RuntimeError::new(
-                                    "native-descriptor: not supported on this platform",
-                                ));
-                            }
-                        }
-                    };
-                    Ok(fd)
-                })?;
+                let fd = self.with_handle_mut(&target_val, |state| state.native_descriptor())?;
                 Ok(Value::Int(fd))
             }
             _ => Err(RuntimeError::new(format!(
