@@ -314,13 +314,13 @@ impl Compiler {
             let last_idx = stmts.iter().rposition(|s| !matches!(s, AStmt::SetLine(_)));
             if let Some(idx) = last_idx {
                 if let AStmt::Expr(expr) = stmts[idx].clone() {
-                    stmts[idx] = AStmt::Take(expr);
+                    stmts[idx] = AStmt::Take(expr, false);
                 } else {
                     // Wrap non-expr last stmt in Take(Nil) since we need a take
-                    stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil)));
+                    stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil), false));
                 }
             } else {
-                stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil)));
+                stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil), false));
             }
             stmts
         };

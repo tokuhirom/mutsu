@@ -261,7 +261,7 @@ impl Interpreter {
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
         match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
                 self.validate_private_access_in_expr(caller_class, e)?
             }
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
@@ -528,7 +528,7 @@ impl Interpreter {
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
         match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
                 self.check_private_calls_exist_expr(class_name, class_def, e)?;
             }
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {

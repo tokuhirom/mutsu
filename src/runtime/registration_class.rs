@@ -3670,7 +3670,7 @@ impl Interpreter {
 
     fn validate_attr_in_stmt(ctx: &AttrValidationCtx<'_>, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
                 Self::validate_attr_in_expr(ctx, e)?;
             }
             Stmt::VarDecl { expr, .. } => {

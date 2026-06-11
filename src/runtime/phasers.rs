@@ -199,7 +199,7 @@ fn lift_phasers_from_stmt(
         | Stmt::Return(expr)
         | Stmt::Die(expr)
         | Stmt::Fail(expr)
-        | Stmt::Take(expr) => {
+        | Stmt::Take(expr, _) => {
             lift_phasers_from_expr(expr, begin, check, init);
         }
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
@@ -594,7 +594,7 @@ fn lift_phasers_from_closure_stmt(
         | Stmt::Return(expr)
         | Stmt::Die(expr)
         | Stmt::Fail(expr)
-        | Stmt::Take(expr) => {
+        | Stmt::Take(expr, _) => {
             lift_phasers_from_expr(expr, begin, check, init);
         }
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
@@ -872,7 +872,7 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
             recurse_into_expr(supply);
             reorder_recursive(body);
         }
-        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
             recurse_into_expr(e);
         }
         Stmt::VarDecl { expr: e, .. } | Stmt::Assign { expr: e, .. } => {
