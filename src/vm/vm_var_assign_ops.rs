@@ -3091,7 +3091,7 @@ impl VM {
                         return Ok(());
                     }
                 }
-                if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+                if let Some(container) = self.env_root_descended_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
                             let is_self_hash_ref = matches!(
@@ -3705,7 +3705,7 @@ impl VM {
         {
             self.locals[slot] = Value::Nil;
         }
-        if let Some(Value::Array(outer_arr, _kind)) = self.interpreter.env_mut().get_mut(&var_name)
+        if let Some(Value::Array(outer_arr, _kind)) = self.env_root_descended_mut(&var_name)
             && let Ok(inner_i) = inner_key.parse::<usize>()
         {
             let arr = Arc::make_mut(outer_arr);
@@ -3774,7 +3774,7 @@ impl VM {
         if let Some(slot) = self.find_local_slot(code, &var_name) {
             self.locals[slot] = Value::Nil;
         }
-        if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+        if let Some(Value::Hash(outer_hash)) = self.env_root_descended_mut(&var_name) {
             let oh = Arc::make_mut(outer_hash);
             // Vivify the missing entry as Array if the OUTER (second) subscript
             // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
@@ -3785,42 +3785,92 @@ impl VM {
                     Value::hash(std::collections::HashMap::new())
                 }
             });
-            match inner_val {
-                Value::Array(arr, _) => {
-                    // Hash-containing-Array: $hash<key>[idx] = val
-                    // Use interior mutation when the array is shared (supports
-                    // ArraySlotRef and cross-variable identity).
-                    if let Ok(i) = outer_key.parse::<usize>() {
-                        if Arc::strong_count(arr) > 1 {
-                            // SAFETY: mutsu is single-threaded.
-                            let ptr = Arc::as_ptr(arr) as *mut Vec<Value>;
-                            unsafe {
-                                while (&(*ptr)).len() <= i {
-                                    (&mut (*ptr)).push(Value::Nil);
-                                }
-                                (&mut (*ptr))[i] = val.clone();
-                            }
-                        } else {
-                            let a = Arc::make_mut(arr);
-                            if i >= a.len() {
-                                a.resize(i + 1, Value::Nil);
-                            }
-                            a[i] = val.clone();
-                        }
-                    }
-                }
-                Value::Hash(h) => {
-                    // Hash-in-Hash: $hash<key1><key2> = val
-                    Value::hash_insert_through(Arc::make_mut(h), outer_key, val.clone());
-                }
-                _ => {}
-            }
+            Self::assign_into_nested_container(inner_val, &outer_key, val.clone());
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
             self.update_local_if_exists(code, &var_name, &updated);
         }
         self.stack.push(val);
         Ok(())
+    }
+
+    /// Assign `val` into `target[outer_key]`, descending through any chain of
+    /// `:=`-bound container cells (`ContainerRef`). Used by the 2-level nested
+    /// assign so that a write to a container-valued bound element
+    /// (`%h<key><inner> = ...` where `%h<key>` is a cell) mutates the shared,
+    /// held container in place instead of being silently dropped.
+    fn assign_into_nested_container(target: &mut Value, outer_key: &str, val: Value) {
+        match target {
+            Value::ContainerRef(cell) => {
+                let mut guard = cell.lock().unwrap();
+                Self::assign_into_nested_container(&mut guard, outer_key, val);
+            }
+            Value::Array(arr, _) => {
+                if let Ok(i) = outer_key.parse::<usize>() {
+                    if Arc::strong_count(arr) > 1 {
+                        // SAFETY: mutsu is single-threaded.
+                        let ptr = Arc::as_ptr(arr) as *mut Vec<Value>;
+                        unsafe {
+                            let v = &mut *ptr;
+                            while v.len() <= i {
+                                v.push(Value::Nil);
+                            }
+                            Value::assign_element_slot(&mut v[i], val);
+                        }
+                    } else {
+                        let a = Arc::make_mut(arr);
+                        if i >= a.len() {
+                            a.resize(i + 1, Value::Nil);
+                        }
+                        Value::assign_element_slot(&mut a[i], val);
+                    }
+                }
+            }
+            Value::Hash(h) => {
+                Value::hash_insert_through(Arc::make_mut(h), outer_key.to_string(), val);
+            }
+            _ => {}
+        }
+    }
+
+    /// Follow `current` through any chain of `:=`-bound container cells
+    /// (`ContainerRef`), returning a raw pointer to the innermost held value.
+    ///
+    /// SAFETY: mutsu is single-threaded; the pointer derived from the cell's
+    /// mutex data stays valid after the transient guard drops (the held `Value`
+    /// is owned by the `Arc`, which the caller keeps alive).
+    ///
+    /// Cycle-safety (Phase 4): a self-referential bind can make a cell
+    /// transitively hold a `ContainerRef` back to itself. A normal cell holds a
+    /// Hash/Array (the loop stops immediately); only a cell-holding-cell chain
+    /// can loop. Bound the descent depth and stop on overflow so a cyclic bind
+    /// terminates instead of hanging.
+    unsafe fn descend_container_ref(mut current: *mut Value) -> *mut Value {
+        const MAX_DESCENT: usize = 256;
+        for _ in 0..MAX_DESCENT {
+            let cell = match unsafe { &mut *current } {
+                Value::ContainerRef(cell) => cell.clone(),
+                _ => return current,
+            };
+            let mut guard = cell.lock().unwrap();
+            current = &mut *guard as *mut Value;
+        }
+        current
+    }
+
+    /// Read a root variable for index-assignment, descending through any
+    /// `:=`-bound container cell so a `ContainerRef` root resolves to its held
+    /// Hash/Array. Without this, a write to `$x[i]`/`$x<k>` where `$x` is itself
+    /// a bound cell would fall through every handler's `Value::Hash`/`Value::Array`
+    /// match and be silently dropped (Phase 3).
+    ///
+    /// SAFETY: single-threaded; the returned reference points into the cell's
+    /// mutex data, kept alive by the `Arc` stored in env (see
+    /// `descend_container_ref`).
+    fn env_root_descended_mut(&mut self, var_name: &str) -> Option<&mut Value> {
+        let root = self.interpreter.env_mut().get_mut(var_name)? as *mut Value;
+        let descended = unsafe { Self::descend_container_ref(root) };
+        Some(unsafe { &mut *descended })
     }
 
     /// Deep nested index assignment (3+ levels): @a[i][j][k]... = val
@@ -3906,6 +3956,10 @@ impl VM {
             let key = &indices[level];
             let is_positional = positional_flags[level];
 
+            // Descend through any `:=`-bound container cell at this level so the
+            // traversal/assignment reaches the shared, held container.
+            current = unsafe { Self::descend_container_ref(current) };
+
             if level < depth - 1 {
                 // Intermediate level: autovivify and descend
                 let next_positional = positional_flags[level + 1];
@@ -3918,9 +3972,14 @@ impl VM {
                                     let fill = native_fill.clone();
                                     arr.resize(i + 1, fill);
                                 }
-                                // Autovivify if needed
-                                let needs_viv =
-                                    !matches!(&arr[i], Value::Array(..) | Value::Hash(..));
+                                // Autovivify if needed. A `ContainerRef` is a
+                                // `:=`-bound cell that holds (and is descended to)
+                                // a container on the next iteration; treating it
+                                // as "needs vivify" would clobber the binding.
+                                let needs_viv = !matches!(
+                                    &arr[i],
+                                    Value::Array(..) | Value::Hash(..) | Value::ContainerRef(..)
+                                );
                                 if needs_viv {
                                     arr[i] = if next_positional {
                                         Value::real_array(Vec::new())

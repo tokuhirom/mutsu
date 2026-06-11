@@ -258,6 +258,31 @@ impl Compiler {
     /// `outer_positional` is the `is_positional` flag of the outermost
     /// subscript (i.e. `[...]` vs `{...}`/`<...>`), preserved from the
     /// `IndexAssign` AST node.
+    /// Compile the RHS value of an `IndexAssign`. When the value is a `:=` bind
+    /// marker (`__mutsu_bind_index_value(...)`) whose RHS is itself an indexed
+    /// element (`$bar[..]<..> := $foo[1]<key>`), compile it with terminal
+    /// promotion (`scalar_bind_autovivify` + `bind_terminal`) so the bound
+    /// element shares a `ContainerRef` cell with the source. That makes
+    /// element-to-element binds propagate writes bidirectionally (nested.t
+    /// 32-37). For a plain (non-bind) value, this is just `compile_expr`.
+    fn compile_bind_index_value(&mut self, value: &Expr) {
+        let is_bind = matches!(
+            value,
+            Expr::Call { name, .. } if *name == "__mutsu_bind_index_value"
+        );
+        if is_bind {
+            let saved_av = self.scalar_bind_autovivify;
+            let saved_term = self.bind_terminal;
+            self.scalar_bind_autovivify = true;
+            self.bind_terminal = true;
+            self.compile_expr(value);
+            self.scalar_bind_autovivify = saved_av;
+            self.bind_terminal = saved_term;
+        } else {
+            self.compile_expr(value);
+        }
+    }
+
     pub(super) fn compile_expr_index_assign(
         &mut self,
         target: &Expr,
@@ -310,7 +335,7 @@ impl Compiler {
                 self.compile_expr(target);
                 self.code.emit(OpCode::Pop);
             }
-            self.compile_expr(value);
+            self.compile_bind_index_value(value);
             self.compile_expr(index);
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::IndexAssignExprNamed {
@@ -330,7 +355,7 @@ impl Compiler {
                 crate::value::ArrayKind::Array,
             ));
             // Stack order: [value, idx_outermost, ..., idx_innermost]
-            self.compile_expr(value);
+            self.compile_bind_index_value(value);
             self.compile_expr(index); // outermost
             for (idx_expr, _) in chain.iter().rev() {
                 self.compile_expr(idx_expr);
@@ -347,7 +372,7 @@ impl Compiler {
             // `outer_positional` (the outermost subscript flag) is passed in
             // from the IndexAssign AST node. `inner_positional` is the inner
             // Index node's flag (the subscript closer to the variable).
-            self.compile_expr(value);
+            self.compile_bind_index_value(value);
             self.compile_expr(index);
             self.compile_expr(inner_index);
             let name_idx = self.code.add_constant(Value::str(name));

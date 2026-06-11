@@ -2578,7 +2578,7 @@ impl Value {
     ///
     /// Reads decontainerize at the single chokepoint (`resolve_hash_entry`);
     /// writes go through `hash_insert_through` (Stage 0).
-    pub fn hash_slot_ref(&self, key: &str) -> Option<Value> {
+    pub fn hash_slot_ref(&self, key: &str, terminal: bool) -> Option<Value> {
         if let Value::Hash(arc) = self {
             // SAFETY: mutsu is single-threaded; no immutable borrow into the
             // map is alive across this mutation.
@@ -2586,7 +2586,7 @@ impl Value {
             unsafe {
                 match (*ptr).get_mut(key) {
                     Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
-                    Some(elem @ (Value::Array(..) | Value::Hash(..))) => {
+                    Some(elem @ (Value::Array(..) | Value::Hash(..))) if !terminal => {
                         // Intermediate container: preserve traversal via SlotRef.
                         let _ = elem;
                         Some(Value::HashSlotRef {
@@ -2724,7 +2724,7 @@ impl Value {
     /// `Arc<Mutex>` cell is shared on every clone, so the alias survives
     /// arbitrarily deep `$struct[..]<..>[..]` paths. Reads decontainerize the
     /// element at the single read chokepoint (`resolve_array_entry`).
-    pub fn array_slot_ref(&self, idx: usize) -> Option<Value> {
+    pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
         if let Value::Array(arc, _kind) = self {
             // SAFETY: mutsu is single-threaded.
             let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
@@ -2741,7 +2741,7 @@ impl Value {
                 // (`$s[1][1]`, `$s[1]<k>`); keep the old `ArraySlotRef`, whose
                 // resolution shares the inner Arc, so the eventual leaf promotion
                 // lands in the same physical Vec the stored element points to.
-                if matches!(elem, Value::Array(..) | Value::Hash(..)) {
+                if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
                     return Some(Value::ArraySlotRef {
                         array: arc.clone(),
                         index: idx,

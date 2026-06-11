@@ -504,6 +504,10 @@ pub(crate) enum OpCode {
     /// Used for the outermost level of `:=` bind so that binding alone
     /// does not autovivify (e.g. `my $b := %h<a><b>` keeps %h empty).
     IndexAutovivifyLazy,
+    /// Like IndexAutovivifyLazy, but the index is the TERMINAL element of a `:=`
+    /// bind RHS. A container-valued (Array/Hash) leaf is promoted to a
+    /// `ContainerRef` cell — not kept as a traversal SlotRef.
+    IndexAutovivifyLazyTerminal,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]

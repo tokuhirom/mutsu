@@ -765,8 +765,10 @@ impl Compiler {
                     // only emit WrapVarRef when the RHS is a simple variable.
                     self.bind_vardecl = false;
                     self.scalar_bind_autovivify = true;
+                    self.bind_terminal = true;
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
+                    self.bind_terminal = false;
                 } else {
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')

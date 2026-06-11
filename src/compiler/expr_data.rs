@@ -327,6 +327,14 @@ impl Compiler {
         // When in scalar bind context (`:=`), emit IndexAutovivifyLazy so that
         // binding alone doesn't autovivify (deferred until assignment).
         let use_autovivify = self.scalar_bind_autovivify;
+        let is_terminal = use_autovivify && self.bind_terminal;
+        let lazy_op = if is_terminal {
+            OpCode::IndexAutovivifyLazyTerminal
+        } else {
+            OpCode::IndexAutovivifyLazy
+        };
+        let saved_terminal = self.bind_terminal;
+        self.bind_terminal = false; // inner `target` indices are intermediate
 
         // Special case: %*ENV<key> compiles to GetEnvIndex
         if let Expr::HashVar(name) = target {
@@ -338,7 +346,7 @@ impl Compiler {
                     self.compile_expr(target);
                     self.compile_expr(index);
                     if use_autovivify {
-                        self.code.emit(OpCode::IndexAutovivifyLazy);
+                        self.code.emit(lazy_op);
                     } else {
                         self.code.emit(OpCode::Index { is_positional });
                     }
@@ -347,7 +355,7 @@ impl Compiler {
                 self.compile_expr(target);
                 self.compile_expr(index);
                 if use_autovivify {
-                    self.code.emit(OpCode::IndexAutovivifyLazy);
+                    self.code.emit(lazy_op);
                 } else {
                     self.code.emit(OpCode::Index { is_positional });
                 }
@@ -356,11 +364,12 @@ impl Compiler {
             self.compile_expr(target);
             self.compile_expr(index);
             if use_autovivify {
-                self.code.emit(OpCode::IndexAutovivifyLazy);
+                self.code.emit(lazy_op);
             } else {
                 self.code.emit(OpCode::Index { is_positional });
             }
         }
+        self.bind_terminal = saved_terminal;
     }
 
     /// Compile StringInterpolation expression.
