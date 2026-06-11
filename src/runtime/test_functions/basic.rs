@@ -91,7 +91,7 @@ impl Interpreter {
                 .as_ref()
                 .map(|v| self.value_for_diag(v))
                 .unwrap_or_default();
-            self.output_sink
+            self.output_sink_mut()
                 .stderr_output
                 .push_str(&format!("expected: {}\n     got: {}\n", expected, got));
         }
@@ -148,8 +148,8 @@ impl Interpreter {
             {
                 let msg = "Must give `subtest` a (Sub) or a (Method) to be able to use \
                            `skip-all` plan inside, but you gave a (Block)";
-                self.output_sink.stderr_output.push_str(msg);
-                self.output_sink.stderr_output.push('\n');
+                self.output_sink_mut().stderr_output.push_str(msg);
+                self.output_sink_mut().stderr_output.push('\n');
                 self.exit_code = 1;
                 self.halted = true;
                 return Err(RuntimeError::new(msg));

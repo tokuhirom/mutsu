@@ -3141,7 +3141,7 @@ impl Interpreter {
                 return Ok(());
             }
             if name == "$*ERR" {
-                self.output_sink.stderr_output.push_str(&payload);
+                self.output_sink_mut().stderr_output.push_str(&payload);
             }
             self.emit_output(&payload);
             return Ok(());
@@ -3152,7 +3152,7 @@ impl Interpreter {
             text.to_string()
         };
         if name == "$*ERR" {
-            self.output_sink.stderr_output.push_str(&payload);
+            self.output_sink_mut().stderr_output.push_str(&payload);
         }
         self.emit_output(&payload);
         Ok(())

@@ -1,5 +1,19 @@
 use std::sync::{Arc, Mutex};
 
+/// Read guard for the shared [`OutputSink`]; a [`ReentrantReadGuard`] keyed by
+/// the `"output_sink"` lock name (PR-B lift — same playbook as `io_handles`).
+///
+/// [`ReentrantReadGuard`]: crate::runtime::lock_reentry::ReentrantReadGuard
+pub(crate) type OutputSinkReadGuard<'a> =
+    crate::runtime::lock_reentry::ReentrantReadGuard<'a, OutputSink>;
+
+/// Write guard for the shared [`OutputSink`]; a [`ReentrantWriteGuard`] keyed by
+/// the `"output_sink"` lock name.
+///
+/// [`ReentrantWriteGuard`]: crate::runtime::lock_reentry::ReentrantWriteGuard
+pub(crate) type OutputSinkWriteGuard<'a> =
+    crate::runtime::lock_reentry::ReentrantWriteGuard<'a, OutputSink>;
+
 /// Program output-sink state, extracted from [`Interpreter`](super::Interpreter)
 /// so its ownership can later move to the VM (③後段/④ — see
 /// `docs/vm-output-ownership.md`). Mirrors the `TapState` extraction pattern:
