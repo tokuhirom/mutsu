@@ -4181,10 +4181,21 @@ impl VM {
                 if let Ok(i) = key.parse::<usize>() {
                     let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
                     unsafe {
-                        while (&(*ptr)).len() <= i {
-                            (&mut (*ptr)).push(Value::Nil);
+                        let v = &mut *ptr;
+                        while v.len() <= i {
+                            v.push(Value::Nil);
                         }
-                        (&mut (*ptr))[i] = val.clone();
+                        if bind_source.is_some() {
+                            // Bind mode installs the payload directly (the
+                            // ArraySlotRef back-reference below aliases it).
+                            v[i] = val.clone();
+                        } else {
+                            // Write THROUGH an existing `:=`-bound cell so an
+                            // assignment reached via a stack target (e.g.
+                            // `get()<subkey>[1] = …`) updates the shared cell
+                            // instead of clobbering it (nested.t 11-12).
+                            Value::assign_element_slot(&mut v[i], val.clone());
+                        }
                     }
                     // For bind mode, set up an ArraySlotRef on the source variable
                     if let Some(source_name) = &bind_source {
