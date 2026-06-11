@@ -220,7 +220,7 @@ pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
 pub(crate) use self::registration_class::ClassDeclModifiers;
-pub(crate) use self::registry::Registry;
+pub(crate) use self::registry::{Registry, RegistryWriteGuard};
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
 
 pub(crate) use utils::*;
@@ -5211,6 +5211,18 @@ impl Interpreter {
     #[inline]
     pub(crate) fn registry(&self) -> crate::runtime::registry::RegistryReadGuard<'_> {
         crate::runtime::registry::RegistryReadGuard::new(&self.registry)
+    }
+
+    /// Clone the shared declaration [`Registry`] handle so the VM can hold it as a
+    /// peer (PLAN.md ② → A: VM owns its own handle to the same `RwLock`). Both the
+    /// Interpreter and the VM end up pointing at the *same* lock, so mutations
+    /// through either are visible and the debug re-entrancy guard (keyed by lock
+    /// address) still correctly flags a deadlocking re-acquire. Once the
+    /// Interpreter execution path is removed (④/⑤), this collapses to a plain VM
+    /// field and the handle clone disappears.
+    #[inline]
+    pub(crate) fn registry_handle(&self) -> Arc<RwLock<Registry>> {
+        self.registry.clone()
     }
 
     /// Write access to the shared declaration [`Registry`]. Same guard discipline
