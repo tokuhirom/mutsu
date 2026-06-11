@@ -233,7 +233,20 @@ lookup は accessor 経由（多くは既に owned 返し）。**PR-A**（抽出
   `choose_best_matching_candidate` の `where` 節＝ユーザコード再入に結合＝pure 化不可。env 移管まで interpreter
   bounce が正解）。**`has_proto_token` も据え置き**（`mro_readonly` MRO walk に結合）。
 - 挙動不変、build/clippy/make test 緑、S06-multi（proto/syntax/type-based/subsignature/lexical-multis/callsame）
-  /S10-packages/S11-modules roast 緑。
+  /S10-packages/S11-modules roast 緑。（PR #2929）
+
+- **第2スライス（`has_function`/`has_multi_function`, PR #2933）**: 残る pure 述語を同型で VM ネイティブ化。
+  `Registry::has_declared_function(current_package, name)` / `has_multi_function(current_package, name)` を
+  単一実装化、`Interpreter::has_declared_function`/`has_multi_function` は薄い委譲へ、VM ネイティブ
+  `has_declared_function`/`has_function`(alias)/`has_multi_function` を追加し ~15 VM サイトを変換。挙動不変、
+  make test 緑、S06-multi/S10-packages/S11-modules/S02-names roast 緑。
+
+  **pure-predicate dispatch read は枯渇**（has_proto/has_multi_candidates/has_function/has_multi_function 完了）。
+  残る dispatch bounce は全て ③ env/型検査 移管が前提:
+  - `resolve_function_with_types`（env + `where` 再入結合）
+  - `has_proto_token`（`mro_readonly` MRO walk 結合。`Registry::class_mro` は存在するが builtin 階層解決と
+    `proto_tokens` walk が Interpreter 側＝pure 化には MRO 全体の Registry 移管が必要で割に合わない）
+  - `type_matches_value`（subset `where` 再入 + 型メタ + env の mixed coupling）
 
 ## 非ゴール
 
