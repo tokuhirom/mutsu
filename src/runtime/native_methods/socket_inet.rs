@@ -20,8 +20,9 @@ impl Interpreter {
             "getpeername" => {
                 let id =
                     handle_id.ok_or_else(|| RuntimeError::new("IO::Socket::INET has no handle"))?;
-                let state = self
-                    .handles
+                let table = self.io_handles();
+                let state = table
+                    .map
                     .get(&id)
                     .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
                 if state.closed {
@@ -39,8 +40,9 @@ impl Interpreter {
             "close" => {
                 let id =
                     handle_id.ok_or_else(|| RuntimeError::new("IO::Socket::INET has no handle"))?;
-                let state = self
-                    .handles
+                let mut table = self.io_handles_mut();
+                let state = table
+                    .map
                     .get_mut(&id)
                     .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
                 state.closed = true;
@@ -60,8 +62,9 @@ impl Interpreter {
                     handle_id.ok_or_else(|| RuntimeError::new("IO::Socket::INET has no handle"))?;
                 // Take listener out temporarily to avoid borrow issues
                 let listener = {
-                    let state = self
-                        .handles
+                    let mut table = self.io_handles_mut();
+                    let state = table
+                        .map
                         .get_mut(&id)
                         .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
                     state.listener.as_ref().and_then(|l| l.try_clone().ok())
@@ -72,8 +75,6 @@ impl Interpreter {
                     .accept()
                     .map_err(|e| RuntimeError::new(format!("accept failed: {}", e)))?;
                 // Create a new handle for the accepted connection
-                let new_id = self.next_handle_id;
-                self.next_handle_id += 1;
                 let state = super::super::IoHandleState {
                     target: super::super::IoHandleTarget::Socket,
                     mode: super::super::IoHandleMode::ReadWrite,
@@ -99,7 +100,7 @@ impl Interpreter {
                     pending_words: std::collections::VecDeque::new(),
                     close_on_word_exhaust: false,
                 };
-                self.handles.insert(new_id, state);
+                let new_id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();
                 attrs.insert("handle".to_string(), Value::Int(new_id as i64));
                 Ok(Value::make_instance(
@@ -117,8 +118,9 @@ impl Interpreter {
                 if method == "say" || method == "put" {
                     data.push('\n');
                 }
-                let state = self
-                    .handles
+                let mut table = self.io_handles_mut();
+                let state = table
+                    .map
                     .get_mut(&id)
                     .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
                 if let Some(ref mut stream) = state.socket {
@@ -143,8 +145,9 @@ impl Interpreter {
                 } else {
                     return Err(RuntimeError::new("write expects a Buf argument"));
                 };
-                let state = self
-                    .handles
+                let mut table = self.io_handles_mut();
+                let state = table
+                    .map
                     .get_mut(&id)
                     .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
                 if let Some(ref mut stream) = state.socket {
@@ -203,8 +206,9 @@ impl Interpreter {
                 // Getter for nl-in
                 let id =
                     handle_id.ok_or_else(|| RuntimeError::new("IO::Socket::INET has no handle"))?;
-                let state = self
-                    .handles
+                let table = self.io_handles();
+                let state = table
+                    .map
                     .get(&id)
                     .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
                 let seps: Vec<Value> = state

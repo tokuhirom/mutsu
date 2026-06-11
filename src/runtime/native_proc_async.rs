@@ -787,7 +787,8 @@ impl Interpreter {
         let Some(handle_id) = Self::handle_id_from_value(value) else {
             return Ok(None);
         };
-        let Some(state) = self.handles.get_mut(&handle_id) else {
+        let mut table = self.io_handles_mut();
+        let Some(state) = table.map.get_mut(&handle_id) else {
             return Err(RuntimeError::new("Invalid IO::Handle"));
         };
         let Some(file) = state.file.as_mut() else {
@@ -809,7 +810,8 @@ impl Interpreter {
         let Some(handle_id) = Self::handle_id_from_value(value) else {
             return Ok(None);
         };
-        let Some(state) = self.handles.get_mut(&handle_id) else {
+        let mut table = self.io_handles_mut();
+        let Some(state) = table.map.get_mut(&handle_id) else {
             return Err(RuntimeError::new("Invalid IO::Handle"));
         };
         let Some(file) = state.file.as_mut() else {

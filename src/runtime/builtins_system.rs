@@ -110,7 +110,7 @@ impl Interpreter {
         let ret = Value::Promise(promise.clone());
         let thread_interp = self.clone_for_thread();
         let parent_handles_snapshot: std::collections::HashSet<usize> =
-            self.handles.keys().copied().collect();
+            self.io_handles().map.keys().copied().collect();
 
         // Raku gives each start block fresh $/ and $!.
         // Strip these from the closure's captured env so they don't override
@@ -132,17 +132,18 @@ impl Interpreter {
             // Transfer any handles opened by this thread back to the awaiter.
             let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
             let new_ids: Vec<usize> = thread_interp
-                .handles
+                .io_handles()
+                .map
                 .keys()
                 .copied()
                 .filter(|id| !parent_handles_snapshot.contains(id))
                 .collect();
             for id in new_ids {
-                if let Some(state) = thread_interp.handles.remove(&id) {
+                if let Some(state) = thread_interp.io_handles_mut().map.remove(&id) {
                     new_handles.push((id, state));
                 }
             }
-            let next_id = thread_interp.next_handle_id;
+            let next_id = thread_interp.io_handles().next_id;
             if !new_handles.is_empty() {
                 promise.set_thread_payload(Box::new(ThreadPromisePayload {
                     new_handles,
@@ -1001,8 +1002,9 @@ impl Interpreter {
         // Handle :out with IO::Handle — redirect stdout to that file
         let mut stdout_file_for_merge: Option<std::fs::File> = None;
         if let Some(handle_id) = opts.out_handle_id {
-            let state = self
-                .handles
+            let table = self.io_handles();
+            let state = table
+                .map
                 .get(&handle_id)
                 .ok_or_else(|| RuntimeError::new("Invalid IO::Handle for :out"))?;
             let file = state
@@ -1594,11 +1596,12 @@ impl Interpreter {
                             new_handles,
                             next_handle_id,
                         } = *payload;
+                        let mut table = self.io_handles_mut();
                         for (id, state) in new_handles {
-                            self.handles.entry(id).or_insert(state);
+                            table.map.entry(id).or_insert(state);
                         }
-                        if next_handle_id > self.next_handle_id {
-                            self.next_handle_id = next_handle_id;
+                        if next_handle_id > table.next_id {
+                            table.next_id = next_handle_id;
                         }
                     }
                     if shared.status() == "Broken" {

@@ -150,6 +150,8 @@ mod dispatch;
 mod eval_check;
 mod handle;
 mod io;
+mod io_handles;
+mod lock_reentry;
 mod main_args;
 mod metamodel;
 mod methods;
@@ -848,8 +850,10 @@ pub struct Interpreter {
     /// remain visible, but non-exported operators from loaded modules do not.
     pub(crate) imported_operator_names: HashSet<String>,
     lib_paths: Vec<String>,
-    handles: HashMap<usize, IoHandleState>,
-    next_handle_id: usize,
+    /// Open IO handles (files/sockets/listeners) shared between the VM and the
+    /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned
+    /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
+    io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
     program_path: Option<String>,
     current_package: String,
     routine_stack: Vec<RoutineFrame>,
@@ -2875,8 +2879,10 @@ impl Interpreter {
             operator_assoc: HashMap::new(),
             imported_operator_names: HashSet::new(),
             lib_paths: Vec::new(),
-            handles: HashMap::new(),
-            next_handle_id: 1,
+            io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
+                map: HashMap::new(),
+                next_id: 1,
+            })),
             program_path: None,
             current_package: "GLOBAL".to_string(),
             routine_stack: Vec::new(),
@@ -4223,7 +4229,8 @@ impl Interpreter {
         self.output_emitted = true;
         let byte_count = text.len() as i64;
         if let Some(stdout_handle) = self
-            .handles
+            .io_handles_mut()
+            .map
             .values_mut()
             .find(|h| matches!(h.target, IoHandleTarget::Stdout))
         {
@@ -5231,7 +5238,7 @@ impl Interpreter {
     /// [`RegistryReadGuard`](crate::runtime::registry::RegistryReadGuard)).
     #[inline]
     pub(crate) fn registry(&self) -> crate::runtime::registry::RegistryReadGuard<'_> {
-        crate::runtime::registry::RegistryReadGuard::new(&self.registry)
+        crate::runtime::registry::RegistryReadGuard::new(&self.registry, "registry")
     }
 
     /// Clone the shared declaration [`Registry`] handle so the VM can hold it as a
@@ -5250,7 +5257,35 @@ impl Interpreter {
     /// as [`Self::registry`].
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::registry::RegistryWriteGuard<'_> {
-        crate::runtime::registry::RegistryWriteGuard::new(&self.registry)
+        crate::runtime::registry::RegistryWriteGuard::new(&self.registry, "registry")
+    }
+
+    /// Read access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
+    /// Same guard discipline as [`Self::registry`]: never hold the returned guard
+    /// across a call that re-enters another handle operation (`RwLock` is not
+    /// reentrant). Use as `self.io_handles().map.get(&id)`.
+    #[inline]
+    pub(crate) fn io_handles(&self) -> io_handles::IoHandlesReadGuard<'_> {
+        io_handles::IoHandlesReadGuard::new(&self.io_handles, "io_handles")
+    }
+
+    /// Write access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
+    /// Same guard discipline as [`Self::io_handles`].
+    #[inline]
+    pub(crate) fn io_handles_mut(&self) -> io_handles::IoHandlesWriteGuard<'_> {
+        io_handles::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
+    }
+
+    /// Allocate a fresh handle id, store `state` under it, and return the id.
+    /// Build `state` fully (including anything that needs `&self`, e.g.
+    /// `default_line_separators()`) *before* calling this, since the short write
+    /// guard taken here must not be held across other `self` operations.
+    pub(super) fn insert_handle_state(&mut self, state: IoHandleState) -> usize {
+        let mut table = self.io_handles_mut();
+        let id = table.next_id;
+        table.next_id += 1;
+        table.map.insert(id, state);
+        id
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
@@ -5302,7 +5337,8 @@ impl Interpreter {
             }
         }
         let mut cloned_handles = HashMap::new();
-        for (id, handle) in &self.handles {
+        let handles_guard = self.io_handles();
+        for (id, handle) in &handles_guard.map {
             if handle.closed || !referenced_handle_ids.contains(id) {
                 continue;
             }
@@ -5333,6 +5369,8 @@ impl Interpreter {
             };
             cloned_handles.insert(*id, cloned);
         }
+        let cloned_next_handle_id = handles_guard.next_id;
+        drop(handles_guard);
         let mut cloned = Self {
             env: self.env.clone(),
             output: String::new(),
@@ -5348,8 +5386,10 @@ impl Interpreter {
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
             lib_paths: self.lib_paths.clone(),
-            handles: cloned_handles,
-            next_handle_id: self.next_handle_id,
+            io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
+                map: cloned_handles,
+                next_id: cloned_next_handle_id,
+            })),
             program_path: self.program_path.clone(),
             current_package: self.current_package.clone(),
             routine_stack: Vec::new(),
@@ -5848,7 +5888,7 @@ impl Interpreter {
 impl Interpreter {
     /// Flush all open file handle buffers. Call before process exit.
     pub fn flush_all_handles(&mut self) {
-        for state in self.handles.values_mut() {
+        for state in self.io_handles_mut().map.values_mut() {
             if state.closed {
                 continue;
             }

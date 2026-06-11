@@ -55,8 +55,9 @@ impl Interpreter {
         bin_mode: bool,
     ) -> Result<Value, RuntimeError> {
         use std::io::Read;
-        let state = self
-            .handles
+        let mut table = self.io_handles_mut();
+        let state = table
+            .map
             .get_mut(&handle_id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
         let stream = state
@@ -134,8 +135,9 @@ impl Interpreter {
         nbytes: usize,
     ) -> Result<Value, RuntimeError> {
         use std::io::Read;
-        let state = self
-            .handles
+        let mut table = self.io_handles_mut();
+        let state = table
+            .map
             .get_mut(&handle_id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
         let stream = state
@@ -165,15 +167,17 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         use std::io::Read;
         let separators = {
-            let state = self
-                .handles
+            let table = self.io_handles();
+            let state = table
+                .map
                 .get(&handle_id)
                 .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
             state.line_separators.clone()
         };
 
-        let state = self
-            .handles
+        let mut table = self.io_handles_mut();
+        let state = table
+            .map
             .get_mut(&handle_id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
         let stream = state

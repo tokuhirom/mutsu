@@ -473,7 +473,7 @@ impl VM {
     /// logic — forbidden by the "1 operation = 1 implementation" rule.)
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::RegistryWriteGuard<'_> {
-        crate::runtime::RegistryWriteGuard::new(&self.registry)
+        crate::runtime::RegistryWriteGuard::new(&self.registry, "registry")
     }
 
     /// Run the compiled bytecode. Always returns the interpreter back

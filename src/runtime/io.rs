@@ -2595,8 +2595,6 @@ impl Interpreter {
         mode: IoHandleMode,
         path: Option<String>,
     ) -> Value {
-        let id = self.next_handle_id;
-        self.next_handle_id += 1;
         let state = IoHandleState {
             target,
             mode,
@@ -2622,7 +2620,7 @@ impl Interpreter {
             pending_words: std::collections::VecDeque::new(),
             close_on_word_exhaust: false,
         };
-        self.handles.insert(id, state);
+        let id = self.insert_handle_state(state);
         self.make_handle_instance(id)
     }
 
@@ -2633,7 +2631,7 @@ impl Interpreter {
     pub(super) fn make_handle_instance_with_bin(&self, handle_id: usize, bin: bool) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("handle".to_string(), Value::Int(handle_id as i64));
-        if let Some(state) = self.handles.get(&handle_id) {
+        if let Some(state) = self.io_handles().map.get(&handle_id) {
             if let Some(path) = &state.path {
                 attrs.insert("path".to_string(), Value::str(path.clone()));
             }

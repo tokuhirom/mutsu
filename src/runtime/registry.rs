@@ -387,193 +387,22 @@ impl Registry {
 // enum variant values, parametric role bodies), so a stray held guard silently
 // deadlocks.
 //
-// A silent deadlock is only caught by `make roast`'s ~13-min timeout, and a
-// static text scanner misses code shapes the borrow checker also misses (PR-A
-// slice 5: a `write -> write` inside a `match self.registry_mut()...{}` arm hung
-// at runtime despite passing both checks). So instead we detect re-entry at
-// runtime, in debug builds: each acquisition checks a thread-local record of the
-// guards this thread currently holds *on that same lock* and panics with a
-// located message before the would-be-deadlocking `.read()`/`.write()` call.
-//
-// The record is keyed by the lock's address, NOT just by thread: a single thread
-// legitimately holds guards on *different* registries at once — e.g.
-// `self.registry_mut().classes = nested.registry().classes.clone();` holds a
-// write guard on `self`'s registry and a read guard on a sub-interpreter's
-// (`nested`) registry simultaneously. Those are independent locks, so there is no
-// deadlock; a thread-global flag would false-positive. Only re-acquiring the
-// *same* lock deadlocks.
-//
-// The allowed/forbidden matrix (per lock) matches `std::sync::RwLock`'s actual
-// deadlock conditions:
-//   - acquiring a WRITE while ANY guard (read or write) on the same lock is held -> deadlock
-//   - acquiring a READ while a WRITE on the same lock is held                    -> deadlock
-//   - acquiring a READ while only READ guards on the same lock are held          -> tolerated
-//     (nested reads are relied upon, e.g. `a().x && b().y` keeps both temporary
-//     read guards alive to end-of-statement).
-//
-// This is `#[cfg(debug_assertions)]` only: the per-access bookkeeping would
-// otherwise tax the hot `registry()` read path (method dispatch reads MRO through
-// it). CI's release `make roast` still backstops via timeout.
+// The reentrancy-detecting guard machinery is shared with the IO handle table
+// (PLAN.md ③) in [`crate::runtime::lock_reentry`]; see that module for the full
+// rationale (lock-address keying, the allowed/forbidden matrix, debug-only
+// instrumentation). The registry's guards are concrete type aliases over the
+// generic guards, identified by the `"registry"` lock name in panic messages.
 
-#[cfg(debug_assertions)]
-mod reentry_check {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
+/// Read guard for the shared [`Registry`]; a [`ReentrantReadGuard`] keyed by the
+/// `"registry"` lock name. See [`crate::runtime::lock_reentry`].
+///
+/// [`ReentrantReadGuard`]: crate::runtime::lock_reentry::ReentrantReadGuard
+pub(crate) type RegistryReadGuard<'a> =
+    crate::runtime::lock_reentry::ReentrantReadGuard<'a, Registry>;
 
-    thread_local! {
-        // lock address -> (outstanding read guards, write guard held?) on this thread.
-        static HELD: RefCell<HashMap<usize, (u32, bool)>> = RefCell::new(HashMap::new());
-    }
-
-    /// Called before `RwLock::read()`. Panics if this thread already holds a write
-    /// guard on the same lock (read-while-write deadlocks).
-    pub(super) fn enter_read(lock: usize) {
-        HELD.with(|h| {
-            let mut h = h.borrow_mut();
-            let entry = h.entry(lock).or_insert((0, false));
-            assert!(
-                !entry.1,
-                "registry(): a read guard was acquired while this thread already \
-                 holds a write guard on the same registry. RwLock<Registry> is not \
-                 reentrant; drop the write guard before re-entering. See the lock \
-                 discipline in src/runtime/registry.rs / docs/vm-registry-ownership.md.",
-            );
-            entry.0 += 1;
-        });
-    }
-
-    pub(super) fn exit_read(lock: usize) {
-        HELD.with(|h| {
-            let mut h = h.borrow_mut();
-            if let Some(entry) = h.get_mut(&lock) {
-                entry.0 = entry.0.saturating_sub(1);
-                if entry.0 == 0 && !entry.1 {
-                    h.remove(&lock);
-                }
-            }
-        });
-    }
-
-    /// Called before `RwLock::write()`. Panics if this thread already holds any
-    /// guard on the same lock (write-while-anything deadlocks).
-    pub(super) fn enter_write(lock: usize) {
-        HELD.with(|h| {
-            let mut h = h.borrow_mut();
-            let entry = h.entry(lock).or_insert((0, false));
-            assert!(
-                !entry.1,
-                "registry_mut(): a write guard was acquired while this thread \
-                 already holds a write guard on the same registry (write -> write). \
-                 RwLock<Registry> is not reentrant; consolidate into a single write \
-                 guard. See src/runtime/registry.rs / docs/vm-registry-ownership.md.",
-            );
-            assert!(
-                entry.0 == 0,
-                "registry_mut(): a write guard was acquired while this thread holds \
-                 a read guard on the same registry (read -> write upgrade). \
-                 RwLock<Registry> is not reentrant; drop the read guard first. See \
-                 src/runtime/registry.rs / docs/vm-registry-ownership.md.",
-            );
-            entry.1 = true;
-        });
-    }
-
-    pub(super) fn exit_write(lock: usize) {
-        HELD.with(|h| {
-            let mut h = h.borrow_mut();
-            if let Some(entry) = h.get_mut(&lock) {
-                entry.1 = false;
-                if entry.0 == 0 {
-                    h.remove(&lock);
-                }
-            }
-        });
-    }
-}
-
-/// Read guard for the shared [`Registry`]. Derefs to `Registry`; in debug builds
-/// it records the acquisition in a thread-local so a re-entrant lock attempt
-/// panics with a located message instead of silently deadlocking (see the
-/// `reentry_check` module above).
-pub(crate) struct RegistryReadGuard<'a> {
-    inner: std::sync::RwLockReadGuard<'a, Registry>,
-    #[cfg(debug_assertions)]
-    lock_id: usize,
-}
-
-impl<'a> RegistryReadGuard<'a> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<Registry>) -> Self {
-        #[cfg(debug_assertions)]
-        let lock_id = lock as *const _ as usize;
-        #[cfg(debug_assertions)]
-        reentry_check::enter_read(lock_id);
-        // Acquire only after the reentry check, so a would-be deadlock panics
-        // instead of hanging on the blocking `.read()`.
-        let inner = lock.read().unwrap();
-        Self {
-            inner,
-            #[cfg(debug_assertions)]
-            lock_id,
-        }
-    }
-}
-
-impl std::ops::Deref for RegistryReadGuard<'_> {
-    type Target = Registry;
-    #[inline]
-    fn deref(&self) -> &Registry {
-        &self.inner
-    }
-}
-
-#[cfg(debug_assertions)]
-impl Drop for RegistryReadGuard<'_> {
-    fn drop(&mut self) {
-        reentry_check::exit_read(self.lock_id);
-    }
-}
-
-/// Write guard for the shared [`Registry`]. Same reentry instrumentation as
-/// [`RegistryReadGuard`].
-pub(crate) struct RegistryWriteGuard<'a> {
-    inner: std::sync::RwLockWriteGuard<'a, Registry>,
-    #[cfg(debug_assertions)]
-    lock_id: usize,
-}
-
-impl<'a> RegistryWriteGuard<'a> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<Registry>) -> Self {
-        #[cfg(debug_assertions)]
-        let lock_id = lock as *const _ as usize;
-        #[cfg(debug_assertions)]
-        reentry_check::enter_write(lock_id);
-        let inner = lock.write().unwrap();
-        Self {
-            inner,
-            #[cfg(debug_assertions)]
-            lock_id,
-        }
-    }
-}
-
-impl std::ops::Deref for RegistryWriteGuard<'_> {
-    type Target = Registry;
-    #[inline]
-    fn deref(&self) -> &Registry {
-        &self.inner
-    }
-}
-
-impl std::ops::DerefMut for RegistryWriteGuard<'_> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Registry {
-        &mut self.inner
-    }
-}
-
-#[cfg(debug_assertions)]
-impl Drop for RegistryWriteGuard<'_> {
-    fn drop(&mut self) {
-        reentry_check::exit_write(self.lock_id);
-    }
-}
+/// Write guard for the shared [`Registry`]; a [`ReentrantWriteGuard`] keyed by
+/// the `"registry"` lock name. See [`crate::runtime::lock_reentry`].
+///
+/// [`ReentrantWriteGuard`]: crate::runtime::lock_reentry::ReentrantWriteGuard
+pub(crate) type RegistryWriteGuard<'a> =
+    crate::runtime::lock_reentry::ReentrantWriteGuard<'a, Registry>;
