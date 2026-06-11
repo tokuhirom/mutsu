@@ -6,7 +6,7 @@ use Test;
 # `$struct[..]<..>[..]` paths (which the old index-back-reference lost when an
 # enclosing container was COW-cloned on a later write).
 
-plan 13;
+plan 22;
 
 # Single-level array element
 {
@@ -52,6 +52,46 @@ plan 13;
     is @a.reduce(&[+]), 6, 'reduce sees the element value';
     is @a.raku, '[1, 2, 3]', '.raku does not leak the cell';
     is (@a[1] + 10), 12, 'arith on the element reads through';
+}
+
+# Single-level hash element binding (Stage 1)
+{
+    my %h = a => 1, b => 2;
+    my $x := %h<a>;
+    is $x, 1, 'bound hash element reads the current value';
+    %h<a> = 99;
+    is $x, 99, 'hash element write -> binding';
+    $x = 5;
+    is %h<a>, 5, 'binding write -> hash element';
+}
+
+# Deep hash-in-hash element binding survives COW of the inner hash
+{
+    my %g = outer => { inner => 10 };
+    my $y := %g<outer><inner>;
+    is $y, 10, 'deep hash leaf bound element reads';
+    %g<outer><inner> = 55;
+    is $y, 55, 'deep hash: element write -> binding (survives COW)';
+    $y = 7;
+    is %g<outer><inner>, 7, 'deep hash: binding write -> element';
+}
+
+# A hash value that is a callable, invoked mid-path, is NOT promoted to a cell
+{
+    my $inner = { subkey => [ "ignored", 42 ] };
+    my sub getit() is raw { $inner }
+    my $struct = [ "ignored", { key => &getit } ];
+    my $abbrev := $struct[1]<key>()<subkey>[1];
+    is $abbrev, 42, 'callable invoked mid bind-path stays callable (no over-promotion)';
+}
+
+# Bound hash element stays transparent in value contexts (no cell leak)
+{
+    my %h = a => 1, b => 2, c => 3;
+    my $x := %h<a>;
+    %h<a> = 10;
+    is %h.values.sort.join(','), '2,3,10', 'hash iteration does not leak the cell';
+    is %h<a> + 5, 15, 'arith on the bound hash element reads through';
 }
 
 # vim: expandtab shiftwidth=4

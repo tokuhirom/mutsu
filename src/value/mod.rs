@@ -2561,6 +2561,55 @@ impl Value {
         }
     }
 
+    /// Bind to hash element `key`, promoting it to a first-class container
+    /// (Phase 2 Stage 1) — the hash analogue of [`array_slot_ref`]. An existing
+    /// *scalar* leaf is replaced in place with a shared `ContainerRef` cell
+    /// (reusing one if already present), and that same cell is returned so the
+    /// binding aliases the element by **cell identity**, surviving COW clones of
+    /// any enclosing container on a later write (the staleness that the old
+    /// `HashSlotRef` back-reference suffers for deep `%h<a><b>` paths).
+    ///
+    /// An existing *container* leaf (Array/Hash) is an intermediate level of a
+    /// deeper path (`%h<a><b>`, `%h<a>[1]`); it keeps the old `HashSlotRef` so
+    /// the deeper traversal resolves through the shared inner Arc and the
+    /// eventual leaf promotion lands in the physical map the entry points to.
+    /// A *missing* key stays lazy (no entry created) — promotion is deferred to
+    /// the first write, exactly like `hash_slot_ref_lazy`.
+    ///
+    /// Reads decontainerize at the single chokepoint (`resolve_hash_entry`);
+    /// writes go through `hash_insert_through` (Stage 0).
+    pub fn hash_slot_ref(&self, key: &str) -> Option<Value> {
+        if let Value::Hash(arc) = self {
+            // SAFETY: mutsu is single-threaded; no immutable borrow into the
+            // map is alive across this mutation.
+            let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+            unsafe {
+                match (*ptr).get_mut(key) {
+                    Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
+                    Some(elem @ (Value::Array(..) | Value::Hash(..))) => {
+                        // Intermediate container: preserve traversal via SlotRef.
+                        let _ = elem;
+                        Some(Value::HashSlotRef {
+                            hash: arc.clone(),
+                            key: key.to_string(),
+                        })
+                    }
+                    Some(elem) => {
+                        let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                        *elem = Value::ContainerRef(cell.clone());
+                        Some(Value::ContainerRef(cell))
+                    }
+                    None => Some(Value::HashSlotRef {
+                        hash: arc.clone(),
+                        key: key.to_string(),
+                    }),
+                }
+            }
+        } else {
+            None
+        }
+    }
+
     /// Autovivify a hash entry with a scalar value (for binding/assignment).
     /// Inserts the given value at the key if missing, or replaces the existing value.
     /// Returns the value stored at the key after the operation.

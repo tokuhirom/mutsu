@@ -397,6 +397,17 @@ impl Compiler {
 
     /// Compile CallOn expression: @($x), %($x), &code(args), value(args).
     pub(super) fn compile_expr_call_on(&mut self, target: &Expr, args: &[Expr]) {
+        // A call's invocant and arguments are value reads, never the target of
+        // the enclosing `:=` bind. Reset scalar-bind autovivify so an
+        // intermediate `%h<key>()...` invocant isn't promoted to a cell
+        // (the bind leaf is the outermost index chain, compiled by the caller).
+        let saved_bind_autoviv = self.scalar_bind_autovivify;
+        self.scalar_bind_autovivify = false;
+        self.compile_expr_call_on_inner(target, args);
+        self.scalar_bind_autovivify = saved_bind_autoviv;
+    }
+
+    fn compile_expr_call_on_inner(&mut self, target: &Expr, args: &[Expr]) {
         // @($x) -- array contextualizer: coerce single arg to Array
         if let Expr::ArrayVar(name) = target
             && (name == "__ANON_ARRAY__" || name.starts_with("__ANON_ARRAY_"))
