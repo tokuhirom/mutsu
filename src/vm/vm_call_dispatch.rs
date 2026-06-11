@@ -50,7 +50,7 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         if let Some(cf) = self.find_compiled_function(compiled_fns, name, &args) {
-            let pkg = self.interpreter.current_package().to_string();
+            let pkg = self.current_package().to_string();
             return self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
         }
         if let Some(native_result) =
@@ -295,7 +295,7 @@ impl VM {
             })
             .unwrap_or(arity);
         let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
-        let pkg = self.interpreter.current_package();
+        let pkg = self.current_package();
         let type_sig: Vec<String> = args
             .iter()
             .map(|v| runtime::value_type_name(v).to_string())
@@ -452,7 +452,7 @@ impl VM {
             // Cache the resolution result for future lookups
             let cached_pkg = resolved_def
                 .map(|def| def.package.resolve())
-                .unwrap_or_else(|| self.interpreter.current_package().to_string());
+                .unwrap_or_else(|| self.current_package().to_string());
             if use_cache {
                 self.fn_resolve_cache
                     .insert(cache_key, (key.clone(), expected_fingerprint, cached_pkg));
@@ -1543,9 +1543,9 @@ impl VM {
 
         // Set current_package to the function's defining package so that default
         // value expressions can resolve package-scoped functions (e.g. &double).
-        let saved_package = self.interpreter.current_package().to_string();
+        let saved_package = self.current_package().to_string();
         if !fn_package.is_empty() && fn_package != "GLOBAL" {
-            self.interpreter.set_current_package(fn_package.to_string());
+            self.set_current_package(fn_package.to_string());
         }
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables
@@ -1580,7 +1580,7 @@ impl VM {
             {
                 Ok(bindings) => bindings,
                 Err(e) => {
-                    self.interpreter.set_current_package(saved_package);
+                    self.set_current_package(saved_package);
                     self.interpreter.pop_routine();
                     self.interpreter
                         .pop_test_assertion_context(pushed_assertion);
@@ -1740,7 +1740,7 @@ impl VM {
             } = &cf.code.stmt_pool[*idx as usize]
         {
             ret_val = Value::make_sub(
-                Symbol::intern(self.interpreter.current_package()),
+                Symbol::intern(&self.current_package()),
                 *sub_name,
                 params.clone(),
                 param_defs.clone(),
@@ -1767,7 +1767,7 @@ impl VM {
             self.interpreter.set_state_var(key.clone(), val);
         }
 
-        self.interpreter.set_current_package(saved_package);
+        self.set_current_package(saved_package);
         self.interpreter.pop_routine();
         self.interpreter
             .pop_test_assertion_context(pushed_assertion);

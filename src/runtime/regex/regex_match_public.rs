@@ -133,7 +133,7 @@ impl Interpreter {
         text: &str,
     ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
 
         // When :m (ignoremark) is set, strip combining marks from both text and
@@ -288,7 +288,7 @@ impl Interpreter {
             };
             let candidates = self.resolve_named_regex_candidates_in_pkg(
                 &spec,
-                &self.current_package.clone(),
+                &self.current_package(),
                 &arg_values,
             );
             // Use LTM: compute declarative prefix match length for each candidate
@@ -304,10 +304,10 @@ impl Interpreter {
                 let prefix_match_len = self
                     .declarative_prefix_match_len(&sub_pat, text)
                     .unwrap_or(0);
-                let saved_pkg = self.current_package.clone();
-                self.current_package = sub_pkg;
+                let saved_pkg = self.current_package();
+                self.set_current_package(sub_pkg);
                 let mut caps = self.regex_match_with_captures(&sub_pat, text);
-                self.current_package = saved_pkg;
+                self.set_current_package(saved_pkg);
                 if let Some(mut caps) = caps.take() {
                     if caps.from != 0 || caps.to != text.chars().count() {
                         continue;

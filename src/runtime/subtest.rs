@@ -677,7 +677,7 @@ impl Interpreter {
 
         let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
         let callback = Value::make_sub(
-            Symbol::intern(&self.current_package),
+            Symbol::intern(&self.current_package()),
             Symbol::intern(""),
             param.iter().cloned().collect(),
             Vec::new(),
@@ -689,7 +689,7 @@ impl Interpreter {
             .into_iter()
             .map(|body| {
                 Value::make_sub(
-                    Symbol::intern(&self.current_package),
+                    Symbol::intern(&self.current_package()),
                     Symbol::intern(""),
                     Vec::new(),
                     Vec::new(),
@@ -703,7 +703,7 @@ impl Interpreter {
             .into_iter()
             .map(|body| {
                 Value::make_sub(
-                    Symbol::intern(&self.current_package),
+                    Symbol::intern(&self.current_package()),
                     Symbol::intern(""),
                     vec!["_".to_string()],
                     Vec::new(),

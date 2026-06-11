@@ -251,12 +251,12 @@ impl Interpreter {
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
         let captured = Self::captured_type_object(value);
         self.env.insert(name.to_string(), captured.clone());
-        if self.current_package != "GLOBAL"
+        if self.current_package() != "GLOBAL"
             && !name.contains("::")
             && !name.starts_with(['$', '@', '%', '&', '!', '.', '?', '*', '/'])
         {
             self.env
-                .insert(format!("{}::{}", self.current_package, name), captured);
+                .insert(format!("{}::{}", self.current_package(), name), captured);
         }
         self.env
             .insert(Self::type_capture_marker_key(name), Value::Bool(true));

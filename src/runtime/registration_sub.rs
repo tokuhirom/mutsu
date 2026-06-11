@@ -304,7 +304,7 @@ impl Interpreter {
             }
         });
         if multi {
-            let single_key = format!("{}::{}", self.current_package, name);
+            let single_key = format!("{}::{}", self.current_package(), name);
             if is_our_scoped && !self.registry().proto_subs.contains(&single_key) {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
@@ -318,7 +318,7 @@ impl Interpreter {
             }
         }
         let new_def = FunctionDef {
-            package: Symbol::intern(&self.current_package),
+            package: Symbol::intern(&self.current_package()),
             name: Symbol::intern(name),
             params: params.to_vec(),
             param_defs: effective_param_defs,
@@ -332,8 +332,8 @@ impl Interpreter {
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
         };
-        let single_key = format!("{}::{}", self.current_package, name);
-        let multi_prefix = format!("{}::{}/", self.current_package, name);
+        let single_key = format!("{}::{}", self.current_package(), name);
+        let multi_prefix = format!("{}::{}/", self.current_package(), name);
         let single_key_sym = Symbol::intern(&single_key);
         let has_single = self.registry().functions.contains_key(&single_key_sym);
         let has_multi = self
@@ -381,7 +381,7 @@ impl Interpreter {
                     == body_debug_without_setline(&new_def.body);
             if same && !has_user_custom_traits {
                 let callable_key =
-                    format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+                    format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                 self.env.insert(
                     callable_key,
                     Value::Int(crate::value::next_instance_id() as i64),
@@ -399,7 +399,7 @@ impl Interpreter {
                     && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
                 if body.is_empty() && same_signature {
                     let callable_key =
-                        format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+                        format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                     self.env.insert(
                         callable_key,
                         Value::Int(crate::value::next_instance_id() as i64),
@@ -432,8 +432,8 @@ impl Interpreter {
         }
         let def = new_def;
         if !multi && allow_lexical_shadow && !is_our_scoped {
-            let lexical_single = format!("{}::{}", self.current_package, name);
-            let lexical_multi_prefix = format!("{}::{}/", self.current_package, name);
+            let lexical_single = format!("{}::{}", self.current_package(), name);
+            let lexical_multi_prefix = format!("{}::{}/", self.current_package(), name);
             self.registry_mut().functions.retain(|key, _| {
                 let resolved = key.resolve();
                 resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
@@ -441,8 +441,10 @@ impl Interpreter {
         }
         if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
-            self.operator_assoc
-                .insert(format!("{}::{}", self.current_package, name), assoc.clone());
+            self.operator_assoc.insert(
+                format!("{}::{}", self.current_package(), name),
+                assoc.clone(),
+            );
         }
         if multi {
             let arity = if def.param_defs.is_empty() && !params.is_empty() {
@@ -471,14 +473,14 @@ impl Interpreter {
             if has_types {
                 let typed_fq = format!(
                     "{}::{}/{}:{}",
-                    self.current_package,
+                    self.current_package(),
                     name,
                     arity,
                     type_sig.join(",")
                 );
                 self.insert_multi_overload(&typed_fq, def.clone());
             }
-            let fq = format!("{}::{}/{}", self.current_package, name, arity);
+            let fq = format!("{}::{}/{}", self.current_package(), name, arity);
             if !has_types || name == "trait_mod:<is>" {
                 self.insert_multi_overload(&fq, def);
             } else {
@@ -488,7 +490,7 @@ impl Interpreter {
                     .or_insert(def);
             }
         } else {
-            let fq = format!("{}::{}", self.current_package, name);
+            let fq = format!("{}::{}", self.current_package(), name);
             self.registry_mut()
                 .functions
                 .insert(Symbol::intern(&fq), def);
@@ -496,7 +498,7 @@ impl Interpreter {
         // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
         // so it survives block scope restoration.
         if is_our_scoped {
-            let fq = format!("{}::{}", self.current_package, name);
+            let fq = format!("{}::{}", self.current_package(), name);
             // Clone out before the registry_mut write (read->write on the same
             // lock would deadlock).
             let f = self.registry().functions.get(&Symbol::intern(&fq)).cloned();
@@ -508,18 +510,18 @@ impl Interpreter {
         }
         // If this is NOT our-scoped and we're inside a non-GLOBAL package,
         // mark it as my-scoped so it doesn't appear in the package stash.
-        if !is_our_scoped && self.current_package != "GLOBAL" {
-            let fq = format!("{}::{}", self.current_package, name);
+        if !is_our_scoped && self.current_package() != "GLOBAL" {
+            let fq = format!("{}::{}", self.current_package(), name);
             self.mark_my_scoped_package_item(fq);
         }
-        let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+        let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
         self.env.insert(
             callable_key,
             Value::Int(crate::value::next_instance_id() as i64),
         );
         if is_method_value_decl {
             let sub_val = Value::make_sub(
-                Symbol::intern(&self.current_package),
+                Symbol::intern(&self.current_package()),
                 Symbol::intern(name),
                 params.to_vec(),
                 param_defs.to_vec(),
@@ -552,7 +554,7 @@ impl Interpreter {
                     continue;
                 }
                 let sub_val = Value::make_sub(
-                    Symbol::intern(&self.current_package),
+                    Symbol::intern(&self.current_package()),
                     Symbol::intern(name),
                     params.to_vec(),
                     param_defs.to_vec(),
@@ -608,7 +610,7 @@ impl Interpreter {
 
     /// Resolve a name to a type object (Package value) if the name refers to a known class or role.
     pub(crate) fn resolve_type_object(&self, name: &str) -> Option<Value> {
-        let fq_name = format!("{}::{}", self.current_package, name);
+        let fq_name = format!("{}::{}", self.current_package(), name);
         if self.registry().classes.contains_key(name)
             || self.registry().classes.contains_key(fq_name.as_str())
             || self.registry().roles.contains_key(name)
@@ -636,7 +638,7 @@ impl Interpreter {
         multi: bool,
     ) {
         let def = FunctionDef {
-            package: Symbol::intern(&self.current_package),
+            package: Symbol::intern(&self.current_package()),
             name: Symbol::intern(name),
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
@@ -660,7 +662,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let key = format!("{}::{}", self.current_package, name);
+        let key = format!("{}::{}", self.current_package(), name);
         if self
             .registry()
             .functions
@@ -677,11 +679,11 @@ impl Interpreter {
             resolved != key && !resolved.starts_with(&prefix)
         });
         self.registry_mut().proto_subs.insert(key);
-        let fq = format!("{}::{}", self.current_package, name);
+        let fq = format!("{}::{}", self.current_package(), name);
         self.registry_mut().proto_functions.insert(
             Symbol::intern(&fq),
             FunctionDef {
-                package: Symbol::intern(&self.current_package),
+                package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(name),
                 params: params.to_vec(),
                 param_defs: param_defs.to_vec(),
@@ -933,7 +935,7 @@ impl Interpreter {
     }
 
     pub(crate) fn register_proto_token_decl(&mut self, name: &str) {
-        let key = format!("{}::{}", self.current_package, name);
+        let key = format!("{}::{}", self.current_package(), name);
         self.registry_mut().proto_tokens.insert(key);
     }
 
@@ -1070,9 +1072,9 @@ impl Interpreter {
             self.env
                 .insert(name.to_string(), Value::Package(Symbol::intern(name)));
             // Also register with fully-qualified package name
-            if self.current_package != "GLOBAL" {
+            if self.current_package() != "GLOBAL" {
                 self.env.insert(
-                    format!("{}::{}", self.current_package, name),
+                    format!("{}::{}", self.current_package(), name),
                     Value::Package(Symbol::intern(name)),
                 );
             }
@@ -1088,17 +1090,17 @@ impl Interpreter {
                 self.env
                     .insert(format!("{}::{}", name, key), enum_val.clone());
                 // Also register with fully-qualified package name
-                if self.current_package != "GLOBAL" {
+                if self.current_package() != "GLOBAL" {
                     self.env.insert(
-                        format!("{}::{}::{}", self.current_package, name, key),
+                        format!("{}::{}::{}", self.current_package(), name, key),
                         enum_val.clone(),
                     );
                 }
             }
             // Also register bare variant with package prefix for import lookup
-            if self.current_package != "GLOBAL" {
+            if self.current_package() != "GLOBAL" {
                 self.env.insert(
-                    format!("{}::{}", self.current_package, key),
+                    format!("{}::{}", self.current_package(), key),
                     enum_val.clone(),
                 );
             }
@@ -1110,7 +1112,7 @@ impl Interpreter {
         }
         // Register exports if `is export`
         if is_export && !is_anonymous {
-            let pkg = self.current_package.clone();
+            let pkg = self.current_package();
             for (key, _) in &enum_variants {
                 self.register_exported_var(pkg.clone(), key.clone(), vec!["DEFAULT".to_string()]);
             }

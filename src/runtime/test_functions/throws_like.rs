@@ -46,7 +46,7 @@ impl Interpreter {
                 nested.registry_mut().subsets = self.registry().subsets.clone();
                 nested.registry_mut().enum_types = self.registry().enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
-                nested.current_package = self.current_package.clone();
+                nested.set_current_package(self.current_package());
                 nested.suppressed_names = self.suppressed_names.clone();
                 nested.lexical_class_scopes = self.lexical_class_scopes.clone();
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();

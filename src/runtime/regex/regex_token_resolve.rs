@@ -67,7 +67,7 @@ impl Interpreter {
         for def in self.resolve_token_defs_in_pkg(name, pkg) {
             let mut interp = Interpreter {
                 env: self.env.clone(),
-                current_package: def.package.resolve(),
+                current_package: Arc::new(RwLock::new(def.package.resolve())),
                 ..Default::default()
             };
             self.copy_decl_registry_into(&mut interp);

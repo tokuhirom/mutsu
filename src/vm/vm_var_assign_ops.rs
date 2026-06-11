@@ -5738,7 +5738,7 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert(symbol.to_string(), val.clone());
-            let pkg = self.interpreter.current_package().to_string();
+            let pkg = self.current_package().to_string();
             if pkg != "GLOBAL" {
                 self.interpreter
                     .env_mut()

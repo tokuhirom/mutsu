@@ -646,7 +646,7 @@ impl Interpreter {
                 .cloned();
         }
         // Try multi-dispatch with arity first
-        let multi_local = format!("{}::{}/{}", self.current_package, name, arity);
+        let multi_local = format!("{}::{}/{}", self.current_package(), name, arity);
         if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_local)) {
             return Some(def.clone());
         }
@@ -683,9 +683,9 @@ impl Interpreter {
                 // their declaring package.
                 if self.is_my_scoped_package_item(name)
                     && let Some((pkg_prefix, _)) = name.rsplit_once("::")
-                    && pkg_prefix != self.current_package
+                    && pkg_prefix != self.current_package()
                     && !self
-                        .current_package
+                        .current_package()
                         .starts_with(&format!("{}::", pkg_prefix))
                 {
                     return None;
@@ -745,9 +745,9 @@ impl Interpreter {
                 if !self.is_my_scoped_package_item(name) {
                     return Some(def);
                 } else if let Some((pkg_prefix, _)) = name.rsplit_once("::")
-                    && (pkg_prefix == self.current_package
+                    && (pkg_prefix == self.current_package()
                         || self
-                            .current_package
+                            .current_package()
                             .starts_with(&format!("{}::", pkg_prefix)))
                 {
                     return Some(def);
@@ -758,20 +758,20 @@ impl Interpreter {
             // as a Package value in env).  This handles calls like
             // `Our::Package::pkg()` inside `PackageTest` where the nested
             // package was registered as `PackageTest::Our::Package`.
-            if self.current_package != "GLOBAL" {
+            if self.current_package() != "GLOBAL" {
                 // Check if the prefix package (everything before the last `::`)
                 // is visible in env as a Package type object.
                 let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
                     self.env.get(pkg_prefix).is_some()
                         || self
                             .env
-                            .get(&format!("{}::{}", self.current_package, pkg_prefix))
+                            .get(&format!("{}::{}", self.current_package(), pkg_prefix))
                             .is_some()
                 } else {
                     false
                 };
                 if prefix_visible {
-                    let qualified = format!("{}::{}", self.current_package, name);
+                    let qualified = format!("{}::{}", self.current_package(), name);
                     if let Some(def) = self
                         .registry()
                         .functions
@@ -806,7 +806,7 @@ impl Interpreter {
             }
             return None;
         }
-        let exact_local = format!("{}::{}", self.current_package, name);
+        let exact_local = format!("{}::{}", self.current_package(), name);
         if let Some(def) = self
             .registry()
             .functions
@@ -824,10 +824,10 @@ impl Interpreter {
         {
             return Some(def);
         }
-        let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
+        let prefix_local = format!("{}::{}/{}:", self.current_package(), name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
         let generic_keys = [
-            format!("{}::{}/{}", self.current_package, name, arity),
+            format!("{}::{}/{}", self.current_package(), name, arity),
             format!("GLOBAL::{}/{}", name, arity),
         ];
         let mut found_multi_candidates = false;
@@ -863,7 +863,7 @@ impl Interpreter {
         // Try optional/default candidates with different arities.
         // These can match calls with fewer positional arguments.
         let optional_prefixes = [
-            format!("{}::{}/", self.current_package, name),
+            format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
         let mut optional_candidates: Vec<(String, FunctionDef)> = self
@@ -903,7 +903,7 @@ impl Interpreter {
         // Try slurpy candidates with different arities (slurpy params accept
         // variable number of args, so the registered arity may differ from call arity).
         let slurpy_prefixes = [
-            format!("{}::{}/", self.current_package, name),
+            format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
         let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
@@ -931,7 +931,7 @@ impl Interpreter {
         // Try candidates from other arities (e.g., optional/default positional params).
         // This allows calls with fewer args to match signatures like `$x = ...`.
         let any_arity_prefixes = [
-            format!("{}::{name}/", self.current_package),
+            format!("{}::{name}/", self.current_package()),
             format!("GLOBAL::{name}/"),
         ];
         let mut any_arity_candidates: Vec<(String, FunctionDef)> = self
@@ -977,7 +977,7 @@ impl Interpreter {
 
         // Collect from typed candidates
         for prefix_base in [
-            format!("{}::{}/{}:", self.current_package, name, arity),
+            format!("{}::{}/{}:", self.current_package(), name, arity),
             format!("GLOBAL::{}/{}:", name, arity),
         ] {
             let candidates: Vec<FunctionDef> = self
@@ -996,7 +996,7 @@ impl Interpreter {
 
         // Collect from generic (untyped) candidates
         let generic_keys = [
-            format!("{}::{}/{}", self.current_package, name, arity),
+            format!("{}::{}/{}", self.current_package(), name, arity),
             format!("GLOBAL::{}/{}", name, arity),
         ];
         for key in &generic_keys {
@@ -1033,7 +1033,7 @@ impl Interpreter {
 
         // Collect from slurpy candidates
         let slurpy_prefixes = [
-            format!("{}::{}/", self.current_package, name),
+            format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
         let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
@@ -1072,7 +1072,7 @@ impl Interpreter {
     pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<FunctionDef> {
         let mut all = Vec::new();
         let prefixes = [
-            format!("{}::{}/", self.current_package, name),
+            format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
         let mut seen_fps = Vec::new();
@@ -1215,7 +1215,7 @@ impl Interpreter {
         if name.contains("::") {
             return self.registry().proto_subs.contains(name);
         }
-        let local = format!("{}::{}", self.current_package, name);
+        let local = format!("{}::{}", self.current_package(), name);
         if self.registry().proto_subs.contains(&local) {
             return true;
         }
@@ -1227,7 +1227,7 @@ impl Interpreter {
     /// Check if any multi candidates exist for this function name (any arity).
     pub(crate) fn has_multi_candidates(&self, name: &str) -> bool {
         let prefixes = [
-            format!("{}::{}/", self.current_package, name),
+            format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
         self.registry().functions.keys().any(|k| {
@@ -1262,7 +1262,7 @@ impl Interpreter {
                 .get(&Symbol::intern(name))
                 .cloned();
         }
-        let local = format!("{}::{}", self.current_package, name);
+        let local = format!("{}::{}", self.current_package(), name);
         if let Some(def) = self.registry().proto_functions.get(&Symbol::intern(&local)) {
             return Some(def.clone());
         }
@@ -1475,10 +1475,10 @@ impl Interpreter {
             .iter()
             .filter(|v| !matches!(v, Value::Pair(..)))
             .count();
-        let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
+        let prefix_local = format!("{}::{}/{}:", self.current_package(), name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
         let generic_keys = [
-            format!("{}::{}/{}", self.current_package, name, arity),
+            format!("{}::{}/{}", self.current_package(), name, arity),
             format!("GLOBAL::{}/{}", name, arity),
         ];
         // Collect all candidates (typed + generic) like resolve_function_with_types
@@ -1588,7 +1588,7 @@ impl Interpreter {
         //   Package::name/arity:Type
         //   GLOBAL::name/arity__mN
         // We need to match all of them.
-        let local_prefix = format!("{}::{}/", self.current_package, name);
+        let local_prefix = format!("{}::{}/", self.current_package(), name);
         let global_prefix = format!("GLOBAL::{}/", name);
         let bare_prefix = format!("{}/", name);
         let mut seen_sigs = std::collections::HashSet::new();

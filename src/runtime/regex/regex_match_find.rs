@@ -8,7 +8,7 @@ impl Interpreter {
         text: &str,
     ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
 
         if parsed.ignore_mark {
@@ -73,7 +73,7 @@ impl Interpreter {
         pos: usize,
     ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
         if pos > orig_chars.len() {
             return None;
@@ -133,7 +133,7 @@ impl Interpreter {
         from_pos: usize,
     ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
         if from_pos > orig_chars.len() {
             return None;
@@ -193,7 +193,7 @@ impl Interpreter {
         let Some(parsed) = self.parse_regex(pattern) else {
             return Vec::new();
         };
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
 
         if parsed.ignore_mark {
@@ -257,7 +257,7 @@ impl Interpreter {
         min_pos: usize,
     ) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
         if parsed.anchor_start && min_pos > 0 {
             return None;
@@ -304,7 +304,7 @@ impl Interpreter {
         min_pos: usize,
     ) -> Option<(usize, usize, Vec<String>)> {
         let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
         if parsed.anchor_start && min_pos > 0 {
             return None;
@@ -351,7 +351,7 @@ impl Interpreter {
 
     pub(crate) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
 
         // When :m (ignoremark) is set, strip combining marks from both text and
         // pattern literals, match on stripped forms, then map positions back.
@@ -419,7 +419,7 @@ impl Interpreter {
     ) -> Option<usize> {
         let mut interp = Interpreter {
             env: self.env.clone(),
-            current_package: pkg.to_string(),
+            current_package: Arc::new(RwLock::new(pkg.to_string())),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             var_type_constraints: self.var_type_constraints.clone(),
             state_vars: self.state_vars.clone(),

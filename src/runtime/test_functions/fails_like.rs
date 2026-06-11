@@ -70,7 +70,7 @@ impl Interpreter {
                 nested.registry_mut().subsets = self.registry().subsets.clone();
                 nested.registry_mut().enum_types = self.registry().enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
-                nested.current_package = self.current_package.clone();
+                nested.set_current_package(self.current_package());
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();
                 for (k, v) in &self.env {
                     if k.contains_str("::") {

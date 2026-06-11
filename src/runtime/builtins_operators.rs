@@ -487,14 +487,14 @@ impl Interpreter {
             // Set current_package to the function's defining package so that
             // unqualified function lookups inside the body resolve correctly
             // (e.g., imported functions from `use` inside a module).
-            let saved_package = self.current_package.clone();
+            let saved_package = self.current_package();
             let fn_pkg = def.package.resolve();
             if !fn_pkg.is_empty() && fn_pkg != "GLOBAL" {
-                self.current_package = fn_pkg;
+                self.set_current_package(fn_pkg);
             }
             self.prepare_definite_return_slot(return_spec.as_deref());
             let result = self.eval_block_value_with_pre_post(&def.body);
-            self.current_package = saved_package;
+            self.set_current_package(saved_package);
             self.routine_stack.pop();
             self.block_stack.pop();
             self.pop_test_assertion_context(pushed_assertion);
@@ -1437,7 +1437,7 @@ impl Interpreter {
             right: Box::new(Expr::Var(param.clone())),
         })];
         Value::make_sub(
-            Symbol::intern(&self.current_package),
+            Symbol::intern(&self.current_package()),
             Symbol::intern("<whatevercode-x>"),
             vec![param],
             Vec::new(),

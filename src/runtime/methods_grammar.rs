@@ -119,15 +119,15 @@ impl Interpreter {
             source_text
         };
 
-        let saved_package = self.current_package.clone();
+        let saved_package = self.current_package();
         let saved_topic = self.env.get("_").cloned();
         let saved_made = self.env.get("made").cloned();
         self.env.remove("made");
-        self.current_package = package_name.to_string();
+        self.set_current_package(package_name.to_string());
         let has_start_rule =
             self.resolve_token_defs(&start_rule).is_some() || self.has_proto_token(&start_rule);
         if !has_start_rule {
-            self.current_package = saved_package;
+            self.set_current_package(saved_package);
             if let Some(old_topic) = saved_topic {
                 self.env.insert("_".to_string(), old_topic);
             } else {
@@ -291,7 +291,7 @@ impl Interpreter {
             Ok(match_obj)
         })();
 
-        self.current_package = saved_package;
+        self.set_current_package(saved_package);
         if let Some(old_topic) = saved_topic {
             self.env.insert("_".to_string(), old_topic);
         } else {

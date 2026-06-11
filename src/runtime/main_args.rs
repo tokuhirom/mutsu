@@ -186,7 +186,7 @@ impl Interpreter {
         let mut seen_keys = std::collections::HashSet::new();
         let prefixes: Vec<String> = {
             let mut p = vec!["GLOBAL::MAIN/".to_string()];
-            let pkg = &self.current_package;
+            let pkg = &self.current_package();
             if pkg != "GLOBAL" {
                 p.push(format!("{pkg}::MAIN/"));
             }

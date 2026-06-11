@@ -87,7 +87,7 @@ impl VM {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
-                package: Symbol::intern(self.interpreter.current_package()),
+                package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params,
                 param_defs: Vec::new(),
@@ -156,7 +156,7 @@ impl VM {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
-                package: Symbol::intern(self.interpreter.current_package()),
+                package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params: params.clone(),
                 param_defs: param_defs.clone(),
@@ -356,7 +356,7 @@ impl VM {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
-                package: Symbol::intern(self.interpreter.current_package()),
+                package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params: params.clone(),
                 param_defs: param_defs.clone(),
@@ -399,7 +399,7 @@ impl VM {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
-                package: Symbol::intern(self.interpreter.current_package()),
+                package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params: vec![],
                 param_defs: Vec::new(),
@@ -478,7 +478,7 @@ impl VM {
             self.last_method_resolve = None;
             self.fast_method_cache.clear();
             if *is_export && !self.interpreter.suppress_exports {
-                let pkg = self.interpreter.current_package().to_string();
+                let pkg = self.current_package().to_string();
                 self.interpreter.register_exported_sub(
                     pkg.clone(),
                     resolved_name.clone(),
@@ -598,7 +598,7 @@ impl VM {
                         )));
                     }
                     let sub_val = Value::make_sub(
-                        Symbol::intern(self.interpreter.current_package()),
+                        Symbol::intern(&self.current_package()),
                         Symbol::intern(&name_str),
                         params.clone(),
                         param_defs.clone(),
@@ -775,11 +775,8 @@ impl VM {
                 _ => None,
             })
             .unwrap_or_else(|| vec!["DEFAULT".to_string()]);
-        self.interpreter.register_exported_var(
-            self.interpreter.current_package().to_string(),
-            name,
-            tags,
-        );
+        self.interpreter
+            .register_exported_var(self.current_package().to_string(), name, tags);
         Ok(())
     }
 
@@ -1233,7 +1230,7 @@ impl VM {
             } else {
                 name.resolve()
             };
-            let current_package = self.interpreter.current_package().to_string();
+            let current_package = self.current_package().to_string();
             let qualified_name = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
                 // `class GLOBAL::Foo` declares Foo in the global namespace
                 stripped.to_string()
@@ -1435,7 +1432,7 @@ impl VM {
         } = stmt
         {
             let name_str = name.resolve();
-            let current_package = self.interpreter.current_package().to_string();
+            let current_package = self.current_package().to_string();
             let qualified_name = if let Some(stripped) = name_str.strip_prefix("GLOBAL::") {
                 stripped.to_string()
             } else if name_str.contains("::")
@@ -1592,10 +1589,7 @@ impl VM {
                     if let Some((pkg, short)) = resolved_name.rsplit_once("::") {
                         (pkg.to_string(), short.to_string())
                     } else {
-                        (
-                            self.interpreter.current_package().to_string(),
-                            resolved_name,
-                        )
+                        (self.current_package().to_string(), resolved_name)
                     };
                 self.interpreter.register_exported_var(
                     export_pkg,

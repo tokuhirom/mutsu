@@ -149,7 +149,7 @@ impl Interpreter {
     /// returning the remaining statements for normal evaluation.
     pub(super) fn inject_eval_methods_into_class(&mut self, stmts: Vec<Stmt>) -> Vec<Stmt> {
         // Only applies when current_package is a class being defined
-        let class_name = self.current_package.clone();
+        let class_name = self.current_package();
         if !self.registry().classes.contains_key(&class_name) {
             return stmts;
         }

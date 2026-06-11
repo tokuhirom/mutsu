@@ -264,7 +264,7 @@ impl Interpreter {
                 if let Some(pat_str) = pattern_str
                     && let Some(parsed) = self.parse_regex(&pat_str)
                 {
-                    let pkg = self.current_package.clone();
+                    let pkg = self.current_package();
                     if let Some((end, inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, &pkg)
                     {
@@ -342,7 +342,7 @@ impl Interpreter {
                 if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {
                     let mut interp = Interpreter {
                         env: self.env.clone(),
-                        current_package: self.current_package.clone(),
+                        current_package: Arc::new(RwLock::new(self.current_package())),
                         ..Default::default()
                     };
                     self.copy_decl_registry_into(&mut interp);
@@ -393,7 +393,7 @@ impl Interpreter {
                     let tail_text: String = tail.iter().collect();
                     let mut interp = Interpreter {
                         env: self.env.clone(),
-                        current_package: sub_pkg.clone(),
+                        current_package: Arc::new(RwLock::new(sub_pkg.clone())),
                         var_dynamic_flags: self.var_dynamic_flags.clone(),
                         var_type_constraints: self.var_type_constraints.clone(),
                         state_vars: self.state_vars.clone(),

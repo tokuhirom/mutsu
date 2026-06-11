@@ -196,7 +196,7 @@ impl VM {
             || self.interpreter.has_multi_function(name)
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
-                let pkg = self.interpreter.current_package().to_string();
+                let pkg = self.current_package().to_string();
                 // Slice 6.3 step 2: precise env_dirty from the named-call merge.
                 self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?
             } else if let Some(native_result) =

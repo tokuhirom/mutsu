@@ -1238,7 +1238,7 @@ impl Interpreter {
         // qualifies bare variable names with current_package (e.g. "m" →
         // "G::m").  Mirror bound params under their qualified names so the
         // generated GetGlobal lookup succeeds.
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         if pkg != "GLOBAL" {
             for p in &bind_params {
                 if !p.contains("::")
@@ -1281,16 +1281,16 @@ impl Interpreter {
         // to be found by methods in the same class.
         // Set current_package so the compiler qualifies function calls
         // with the class name, allowing class-scoped subs to be found.
-        let saved_package = self.current_package.clone();
+        let saved_package = self.current_package();
         if self.has_class_scoped_subs(receiver_class_name) {
-            self.current_package = receiver_class_name.to_string();
-        } else if self.current_package != "GLOBAL" {
+            self.set_current_package(receiver_class_name.to_string());
+        } else if self.current_package() != "GLOBAL" {
             // Reset to GLOBAL so class-level `my` variables are not falsely
             // qualified with the caller's package (e.g. grammar name).
-            self.current_package = "GLOBAL".to_string();
+            self.set_current_package("GLOBAL".to_string());
         }
         let block_result = self.run_block(&method_def.body);
-        self.current_package = saved_package;
+        self.set_current_package(saved_package);
         self.routine_stack.pop();
         let implicit_return = self.env.get("_").cloned();
         let result = match block_result {

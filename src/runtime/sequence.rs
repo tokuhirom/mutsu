@@ -784,7 +784,7 @@ impl Interpreter {
                         let scope = if let Some(frame) = self.routine_stack.last() {
                             format!("{}::&{}", frame.package, frame.name)
                         } else {
-                            self.current_package.clone()
+                            self.current_package()
                         };
                         compiler.set_current_package(scope);
                         Some(compiler.compile(&data.body))
