@@ -3048,6 +3048,7 @@ pub(crate) fn compare_rat_parts(a: (i64, i64), b: (i64, i64)) -> std::cmp::Order
 
 pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     match val {
+        Value::ContainerRef(cell) => to_float_value(&cell.lock().unwrap()),
         Value::Mixin(inner, _) => to_float_value(inner),
         Value::Num(f) => Some(*f),
         Value::Int(i) => Some(*i as f64),
@@ -3303,6 +3304,9 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
 
 pub(crate) fn to_int(v: &Value) -> i64 {
     match v {
+        // Phase 2 element container: a `:=`-bound element cell that leaked into
+        // a numeric context reads through to its inner value.
+        Value::ContainerRef(cell) => to_int(&cell.lock().unwrap()),
         Value::Mixin(inner, _) => to_int(inner),
         Value::Int(i) => *i,
         Value::BigInt(n) => {

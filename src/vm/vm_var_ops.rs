@@ -99,6 +99,9 @@ impl VM {
                     .cloned()
                     .unwrap_or(Value::Nil)
             }
+            // Phase 2 element container: a `:=`-bound entry holds a shared
+            // `ContainerRef` cell; decontainerize on read (the chokepoint).
+            Some(Value::ContainerRef(cell)) => cell.lock().unwrap().clone(),
             Some(value) => value.clone(),
             None => Value::Nil,
         }
@@ -171,6 +174,10 @@ impl VM {
             Some(Value::Nil) if kind == ArrayKind::Shaped && !matches!(default, Value::Nil) => {
                 default
             }
+            // Phase 2 element container: a `:=`-bound element holds a shared
+            // `ContainerRef` cell. Reading the element decontainerizes it (the
+            // single read chokepoint), so value contexts never see the cell.
+            Some(Value::ContainerRef(cell)) => cell.lock().unwrap().clone(),
             Some(value) => value.clone(),
             None => default,
         }
@@ -564,7 +571,7 @@ impl VM {
         }
         let arr = Arc::make_mut(items);
         if indices.len() == 1 {
-            arr[i] = val;
+            Value::assign_element_slot(&mut arr[i], val);
         } else {
             Self::assign_array_multidim(&mut arr[i], &indices[1..], val)?;
         }

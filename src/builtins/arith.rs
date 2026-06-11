@@ -505,6 +505,9 @@ where
 
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    // Phase 2 element container: a `:=`-bound element cell may reach an arith op
+    // directly (e.g. `@a.reduce(&[+])` folds raw items); read through the cell.
+    let (left, right) = (left.into_deref(), right.into_deref());
     // Mixin-wrapped Range + Real (or Real + Mixin Range): perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith(left.clone(), right.clone(), arith_add)
         .or_else(|| mixin_range_arith(right.clone(), left.clone(), arith_add))
@@ -694,6 +697,7 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
 }
 
 pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
+    let (left, right) = (left.into_deref(), right.into_deref());
     if let (Some(a), Some(b)) = (instance_instant_raw(&left), instance_instant_raw(&right)) {
         return make_duration(runtime::to_float_value(&value_sub(a, b)).unwrap_or(0.0));
     }
@@ -859,6 +863,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
+    let (left, right) = (left.into_deref(), right.into_deref());
     // Mixin-wrapped Range * Real: perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith_val(left.clone(), right.clone(), arith_mul)
         .or_else(|| mixin_range_arith_val(right.clone(), left.clone(), arith_mul))
@@ -944,6 +949,7 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    let (left, right) = (left.into_deref(), right.into_deref());
     // Mixin-wrapped Range / Real: perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith(left.clone(), right.clone(), arith_div) {
         return result;
@@ -1075,6 +1081,7 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    let (left, right) = (left.into_deref(), right.into_deref());
     if let Some(raw) = instance_duration_raw_value(&left)
         && right.is_numeric()
     {
@@ -1182,6 +1189,7 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
+    let (left, right) = (left.into_deref(), right.into_deref());
     let (l, r) = runtime::coerce_numeric(left, right);
     let to_pow_f64 = |v: &Value| -> Option<f64> {
         runtime::to_float_value(v).or_else(|| match v {
