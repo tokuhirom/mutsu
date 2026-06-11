@@ -183,6 +183,19 @@ impl Interpreter {
     ) {
         for (param_name, source_name) in rw_bindings {
             if let Some(updated) = self.env.get(param_name).cloned() {
+                // When the caller's variable already holds a shared `ContainerRef`
+                // cell (e.g. an inner `$a := $arg` re-bound the rw param into the
+                // caller's slot as a live alias), write the param's final value
+                // *through* the cell instead of replacing it. Replacing would
+                // snapshot the value and sever every alias of that cell. Only the
+                // value flows back; the cell identity (shared with `$a`) survives,
+                // so post-return `$val++` / `$a = …` keep observing one container.
+                if let Some(Value::ContainerRef(arc)) = target_env.get(source_name)
+                    && !updated.is_container_ref()
+                {
+                    *arc.lock().unwrap() = updated;
+                    continue;
+                }
                 target_env.insert(source_name.clone(), updated);
             }
         }
