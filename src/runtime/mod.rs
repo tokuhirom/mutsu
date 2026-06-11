@@ -221,6 +221,7 @@ mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
+pub(crate) use self::io_handles::{IoHandleTable, IoHandlesWriteGuard};
 pub(crate) use self::registration_class::ClassDeclModifiers;
 pub(crate) use self::registry::{Registry, RegistryWriteGuard};
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
@@ -5274,6 +5275,18 @@ impl Interpreter {
     #[inline]
     pub(crate) fn io_handles_mut(&self) -> io_handles::IoHandlesWriteGuard<'_> {
         io_handles::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
+    }
+
+    /// Clone the shared [`IoHandleTable`](io_handles::IoHandleTable) handle so the
+    /// VM can hold it as a peer (PLAN.md ③ native IO PR-C: VM owns its own handle
+    /// to the same `RwLock`, mirroring [`Self::registry_handle`]). Both point at
+    /// the same lock, so mutations through either are visible and the debug
+    /// re-entrancy guard (keyed by lock address) still flags deadlocking
+    /// re-acquires. Collapses to a plain VM field once the Interpreter execution
+    /// path is removed (④/⑤).
+    #[inline]
+    pub(crate) fn io_handles_handle(&self) -> Arc<RwLock<io_handles::IoHandleTable>> {
+        self.io_handles.clone()
     }
 
     /// Allocate a fresh handle id, store `state` under it, and return the id.
