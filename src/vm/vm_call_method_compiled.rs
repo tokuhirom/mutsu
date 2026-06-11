@@ -138,6 +138,12 @@ impl VM {
             if let Some(result) = self.try_native_io_handle_byte_output(&target, method, &args) {
                 return result;
             }
+            // VM-native line read from a File+UTF8 `IO::Handle` (get): reads via
+            // the handle's record reader (PR-D read side). ArgFiles/Stdin/non-UTF8
+            // (which need @*ARGS / decode) fall through.
+            if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
+                return result;
+            }
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
@@ -874,6 +880,48 @@ impl VM {
         )
     }
 
+    /// VM-native line read (`get`) from a `File`+UTF8 `IO::Handle` receiver
+    /// (③後段 PR-D read side): read the next record via the shared
+    /// `IoHandleState::read_line_native` (the handle's record reader, UTF-8-lossy)
+    /// and map it to `Str` / `Nil` exactly as the interpreter's `get` handler.
+    ///
+    /// Returns `None` (fall through) for any non-`IO::Handle` receiver, any other
+    /// method, extra args, or a handle that is not a File with a UTF-8/binary
+    /// encoding — Stdin / ArgFiles (which need `@*ARGS`) and a non-UTF-8 File
+    /// (which needs `decode_with_encoding`) keep the interpreter's richer read.
+    fn try_native_io_handle_read(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let id = match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
+                Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        if method != "get" || !args.is_empty() {
+            return None;
+        }
+        let mut table = self.io_handles_mut();
+        let state = table.map.get_mut(&id)?;
+        // File + UTF-8/binary only; everything else falls through.
+        if !state.can_native_text_write() {
+            return None;
+        }
+        Some(
+            state
+                .read_line_native()
+                .map(|line| line.map(Value::str).unwrap_or(Value::Nil)),
+        )
+    }
+
     /// VM-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
     /// over a list-like receiver (List/Array/Seq/Slip/Hash/Set/Bag/Mix/Pair/Range).
     /// Delegates the element folding to the single authoritative pure
@@ -1310,6 +1358,12 @@ impl VM {
             // raw file write, no buffering/encoding (PR-D Tier-2c). Stdout/Stderr
             // and a non-UTF8 spurt of a Str fall through.
             if let Some(result) = self.try_native_io_handle_byte_output(&target, method, &args) {
+                return result;
+            }
+            // VM-native line read from a File+UTF8 `IO::Handle` (get): reads via
+            // the handle's record reader (PR-D read side). ArgFiles/Stdin/non-UTF8
+            // (which need @*ARGS / decode) fall through.
+            if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
                 return result;
             }
             if self.interpreter.is_native_method(&class, method) {
