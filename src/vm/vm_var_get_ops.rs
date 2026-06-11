@@ -58,9 +58,7 @@ impl VM {
             && let Some(stripped_sym) = sym.strip_prefix('&')
         {
             let qualified_name = format!("{pkg}::{stripped_sym}");
-            if self.interpreter.has_function(&qualified_name)
-                || self.interpreter.has_multi_function(&qualified_name)
-            {
+            if self.has_function(&qualified_name) || self.has_multi_function(&qualified_name) {
                 Value::Routine {
                     package: Symbol::intern(pkg),
                     name: Symbol::intern(&qualified_name),
@@ -191,9 +189,9 @@ impl VM {
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
-        } else if self.interpreter.has_function(name)
+        } else if self.has_function(name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
-            || self.interpreter.has_multi_function(name)
+            || self.has_multi_function(name)
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.current_package().to_string();
@@ -240,7 +238,7 @@ impl VM {
             // Try resolving as a package-qualified function call (e.g.
             // `Module::func` used as a term without parens).
             if let Some((_pkg, short)) = name.rsplit_once("::")
-                && self.interpreter.has_function(&format!("GLOBAL::{}", short))
+                && self.has_function(&format!("GLOBAL::{}", short))
             {
                 // Route the package-qualified term fork through the VM's unified
                 // compiled-first function dispatch (ledger §2): interpreter remains
@@ -253,10 +251,10 @@ impl VM {
                 && last_seg.starts_with(|c: char| c.is_ascii_lowercase())
                 && !self.interpreter.has_type(name)
                 && !Self::is_builtin_type(name)
-                && !self.interpreter.has_function(name)
-                && !self.interpreter.has_multi_function(name)
-                && !self.interpreter.has_function(last_seg)
-                && !self.interpreter.has_multi_function(last_seg)
+                && !self.has_function(name)
+                && !self.has_multi_function(name)
+                && !self.has_function(last_seg)
+                && !self.has_multi_function(last_seg)
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix

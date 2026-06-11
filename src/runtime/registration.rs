@@ -678,12 +678,8 @@ impl Interpreter {
     }
 
     pub(crate) fn has_declared_function(&self, name: &str) -> bool {
-        let fq = format!("{}::{}", self.current_package(), name);
-        self.registry().functions.contains_key(&Symbol::intern(&fq))
-            || self
-                .registry()
-                .functions
-                .contains_key(&Symbol::intern(name))
+        let pkg = self.current_package();
+        self.registry().has_declared_function(&pkg, name)
     }
 
     pub(crate) fn is_implicit_zero_arg_builtin(name: &str) -> bool {
@@ -692,11 +688,8 @@ impl Interpreter {
 
     /// Check if a multi-dispatched function with the given name exists (any arity).
     pub(crate) fn has_multi_function(&self, name: &str) -> bool {
-        let fq_slash = format!("{}::{}/", self.current_package(), name);
-        self.registry()
-            .functions
-            .keys()
-            .any(|k| k.resolve().starts_with(&fq_slash))
+        let pkg = self.current_package();
+        self.registry().has_multi_function(&pkg, name)
     }
 
     /// Check if a user-defined function with the given name can accept the
