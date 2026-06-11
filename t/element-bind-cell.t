@@ -6,7 +6,7 @@ use Test;
 # `$struct[..]<..>[..]` paths (which the old index-back-reference lost when an
 # enclosing container was COW-cloned on a later write).
 
-plan 22;
+plan 25;
 
 # Single-level array element
 {
@@ -92,6 +92,17 @@ plan 22;
     %h<a> = 10;
     is %h.values.sort.join(','), '2,3,10', 'hash iteration does not leak the cell';
     is %h<a> + 5, 15, 'arith on the bound hash element reads through';
+}
+
+# Deferred binding to a missing nested key: does not autovivify, and `=:=`
+# identity holds after the assignment promotes the element to a cell.
+{
+    my %h;
+    my $b := %h<a><b>;
+    is %h.keys.elems, 0, 'deferred bind does not autovivify';
+    $b = 42;
+    is %h<a><b>, 42, 'deferred bind autovivifies on assignment';
+    ok %h<a><b> =:= $b, 'deferred-bound element keeps identity (=:=) after promotion';
 }
 
 # vim: expandtab shiftwidth=4

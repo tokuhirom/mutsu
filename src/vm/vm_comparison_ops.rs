@@ -646,7 +646,21 @@ impl VM {
         // *values* and therefore must read through a cell.)
         match (a, b) {
             (Value::ContainerRef(x), Value::ContainerRef(y)) => return Arc::ptr_eq(x, y),
-            (Value::ContainerRef(_), _) | (_, Value::ContainerRef(_)) => return false,
+            (Value::ContainerRef(cell), other) | (other, Value::ContainerRef(cell)) => {
+                // A `:=`-bound hash element is promoted to a `ContainerRef` cell
+                // (Phase 2 Stage 1). The OTHER side may still be a HashSlotRef /
+                // DeferredHashAccess pointing at that *same* element (e.g. a
+                // deferred bind `my $b := %h<a><b>` whose element was later
+                // promoted when re-evaluated). They are the same container iff
+                // the element currently stored at that slot IS this cell.
+                if let Some((arc, key)) = Self::extract_hash_ref(other) {
+                    let ptr = Arc::as_ptr(arc);
+                    if let Some(Value::ContainerRef(elem_cell)) = unsafe { (*ptr).get(key) } {
+                        return Arc::ptr_eq(cell, elem_cell);
+                    }
+                }
+                return false;
+            }
             _ => {}
         }
         // Extract (arc, key) from each side
