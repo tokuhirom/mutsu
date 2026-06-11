@@ -224,7 +224,18 @@ make roast のタイムアウト（静的には捕捉できない＝必ずスモ
     fall through（say/print が fallback に残る）。io-handle.t の not-ok 数は main と同一(24＝既存・本変更は不変)。
     `make test`(cargo 458+prove)緑。**`write_bytes_to_handle_value` の File 分岐は out-buffer 非対応の別 semantics ゆえ
     委譲せず据え置き**（`write`/`spurt` は Tier-2b 範囲）。
-  - **次 = PR-D Tier-2b**: 残り出力 `printf`(sprintf)/`write`/`spurt`(Buf/bytes)/`flush`(Failure 整形) を File 対象で
-    native 化。`flush` は closed 時 `Failure` を返す整形が要る。**Stdout/Stderr 出力 + 読み系（get/lines/read/slurp + ArgFiles
-    `@*ARGS`/非UTF8 decode）の真の撲滅は emit_output/env/encode を VM 到達可能にする ③後段/④ が前提**。Tier-3 =
-    open(reopen)/path/Supply/DESTROY/Str。
+- **PR-D Tier-2b 完了（2026-06-11）**: `printf`（File+UTF8）と `flush`（全ターゲット）を VM ネイティブ化。
+  - **printf**: `try_native_io_handle_output` に `Kind::Printf` 追加。payload は pure な
+    `crate::runtime::sprintf::{validate_sprintf_directives, format_sprintf_args}`（`mod sprintf` は `pub(super)`＝crate 可視、
+    現行ハンドラと同一）で構築し File ブランチへ書き込み（newline=false、print と同型）。junction 第一引数は
+    全 junction fall-through で interpreter の threading へ。validate エラーは `Some(Err)` で伝播（ハンドラと一致）。
+  - **flush**: target 非依存・純粋（`flush_buffer` + `file.flush`、Stdout/Stderr は file 無しで no-op）。
+    `IoHandleState::flush_for_method` 抽出、interpreter の `flush` ハンドラが委譲。`try_native_io_handle_method` に
+    **専用 arm**（junction チェック直後、Op enum 前）: id が table に在れば native で `Bool(true)`、**不在なら `None`
+    で fall through**（interpreter が `X::IO::Flush` Failure を value として整形する経路は Err-on-absent な汎用 path で
+    再現不能ゆえ）。closed-but-in-table は Bool(true)＝interpreter の既存挙動と一致（raku は Failure＝既存差・スコープ外）。
+  - **検証**: 新 `t/io-handle-tier2b-printf-flush.t`(9) mutsu/raku 双方 9/9。out-buffering.t の **flush が fallback から
+    消滅**（flush=15→0）、printf も native。S32-io（out-buffering/open/io-special/slurp/spurt）緑。`make test` 緑。
+  - **次 = PR-D Tier-2c**: `write`/`spurt`（Buf/bytes、`write_bytes_to_handle_value` の out-buffer 非対応 File 分岐を
+    共有ヘルパ化して native 化）。**Stdout/Stderr 出力 + 読み系（get/lines/read/slurp + ArgFiles `@*ARGS`/非UTF8 decode）の
+    真の撲滅は emit_output/env/encode を VM 到達可能にする ③後段/④ が前提**。Tier-3 = open(reopen)/path/Supply/DESTROY/Str。

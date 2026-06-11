@@ -2682,15 +2682,8 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "flush" => {
-                let flushed = self.with_handle_mut_opt(&target_val, |state| {
-                    state.flush_buffer()?;
-                    if let Some(file) = state.file.as_mut() {
-                        file.flush().map_err(|err| {
-                            RuntimeError::new(format!("Failed to flush handle: {}", err))
-                        })?;
-                    }
-                    Ok(())
-                })?;
+                let flushed =
+                    self.with_handle_mut_opt(&target_val, |state| state.flush_for_method())?;
                 if flushed.is_some() {
                     Ok(Value::Bool(true))
                 } else {

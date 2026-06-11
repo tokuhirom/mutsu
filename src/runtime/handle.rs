@@ -99,6 +99,20 @@ impl IoHandleState {
         self.write_file_payload(payload.as_bytes())
     }
 
+    /// `.flush` — flush the `:out-buffer` pending bytes and the OS file buffer.
+    /// Pure handle state (no `Interpreter`), so the VM-native dispatch and the
+    /// interpreter's `flush` handler share it (③ native IO PR-D Tier-2b). Works
+    /// for any target: Stdout/Stderr have no file, so only `flush_buffer` (a
+    /// no-op when nothing is pending) runs.
+    pub(crate) fn flush_for_method(&mut self) -> Result<(), RuntimeError> {
+        self.flush_buffer()?;
+        if let Some(file) = self.file.as_mut() {
+            file.flush()
+                .map_err(|err| RuntimeError::new(format!("Failed to flush handle: {}", err)))?;
+        }
+        Ok(())
+    }
+
     /// VM-native `.print-nl` on a `File` handle: write the handle's `nl_out`
     /// terminator. Mirrors the interpreter's `print-nl` (read `nl_out`, then
     /// `write_to_handle_value(.., newline = false)`). Caller guarantees
