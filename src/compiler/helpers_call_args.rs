@@ -257,7 +257,7 @@ impl Compiler {
 
     pub(super) fn stmt_has_placeholder(stmt: &Stmt) -> bool {
         match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
                 Self::expr_has_placeholder(e)
             }
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {

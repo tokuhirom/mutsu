@@ -85,6 +85,11 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
         Value::Slip(items) if items.is_empty() => false,
         Value::Instance { class_name, .. } if class_name == "Failure" => false,
         Value::DeferredHashAccess { .. } => false,
+        // A `ContainerRef` cell (`:=`-alias, take-rw, promoted element) is
+        // transparent to definedness: `$x // …` / `take-rw …[i] // next` must
+        // test the *inner* value, not the wrapper, so an undefined element still
+        // triggers the `//` fallback even when it has been promoted to a cell.
+        Value::ContainerRef(arc) => value_is_defined(&arc.lock().unwrap()),
         _ => true,
     }
 }

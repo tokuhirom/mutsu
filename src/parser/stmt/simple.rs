@@ -1739,13 +1739,14 @@ pub(super) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
         && let Ok((rest, _)) = ws1(rest)
     {
         let (rest, expr) = parse_comma_or_expr(rest)?;
-        // TODO: implement true rw semantics (container references)
-        return parse_statement_modifier(rest, Stmt::Take(expr));
+        // `take-rw`: is_rw=true. The compiler captures the source container so the
+        // gathered value keeps container identity (`=:=`) with the original lvalue.
+        return parse_statement_modifier(rest, Stmt::Take(expr, true));
     }
     let rest = keyword("take", input).ok_or_else(|| PError::expected("take statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, expr) = parse_comma_or_expr(rest)?;
-    parse_statement_modifier(rest, Stmt::Take(expr))
+    parse_statement_modifier(rest, Stmt::Take(expr, false))
 }
 
 /// Parse CATCH/CONTROL blocks.

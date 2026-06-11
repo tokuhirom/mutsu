@@ -302,7 +302,11 @@ impl Interpreter {
     pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
         fn scan_stmt(stmt: &Stmt, positional: &mut bool, named: &mut bool) {
             match stmt {
-                Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+                Stmt::Expr(e)
+                | Stmt::Return(e)
+                | Stmt::Die(e)
+                | Stmt::Fail(e)
+                | Stmt::Take(e, _) => {
                     scan_expr(e, positional, named);
                 }
                 Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {

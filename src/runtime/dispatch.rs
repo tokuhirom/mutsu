@@ -1629,7 +1629,7 @@ impl Interpreter {
             }),
             Stmt::Expr(expr) => Stmt::Expr(Self::rewrite_proto_dispatch_expr(expr)),
             Stmt::Return(expr) => Stmt::Return(Self::rewrite_proto_dispatch_expr(expr)),
-            Stmt::Take(expr) => Stmt::Take(Self::rewrite_proto_dispatch_expr(expr)),
+            Stmt::Take(expr, rw) => Stmt::Take(Self::rewrite_proto_dispatch_expr(expr), *rw),
             Stmt::Die(expr) => Stmt::Die(Self::rewrite_proto_dispatch_expr(expr)),
             Stmt::Fail(expr) => Stmt::Fail(Self::rewrite_proto_dispatch_expr(expr)),
             Stmt::VarDecl {

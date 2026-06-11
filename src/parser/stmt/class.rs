@@ -224,7 +224,7 @@ fn stmt_uses_attr_twigil(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(expr)
         | Stmt::Return(expr)
-        | Stmt::Take(expr)
+        | Stmt::Take(expr, _)
         | Stmt::Die(expr)
         | Stmt::Fail(expr) => expr_uses_attr_twigil(expr),
         Stmt::VarDecl {

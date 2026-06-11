@@ -394,6 +394,25 @@ impl Compiler {
                 self.code.emit(OpCode::ContainerEqRaw);
                 return;
             }
+            // Both sides are Index expressions that `encode_index_source` could
+            // not encode (nested `@a[i][j]`, or a non-literal subscript). Promote
+            // each leaf to its shared `ContainerRef` cell via scalar_bind_autovivify
+            // (+ bind_terminal so a scalar leaf is boxed) and compare cell identity
+            // directly. Without this, nested-element `=:=` falls through to the
+            // generic value compare below and reports False even for the same cell
+            // (e.g. take-rw: `@neighbors[1][1][0] =:= @spot[0][0]`).
+            if matches!(left, Expr::Index { .. }) && matches!(right, Expr::Index { .. }) {
+                let saved_av = self.scalar_bind_autovivify;
+                let saved_term = self.bind_terminal;
+                self.scalar_bind_autovivify = true;
+                self.bind_terminal = true;
+                self.compile_expr(left);
+                self.compile_expr(right);
+                self.scalar_bind_autovivify = saved_av;
+                self.bind_terminal = saved_term;
+                self.code.emit(OpCode::ContainerEqRaw);
+                return;
+            }
             let left_fresh = Self::expr_is_fresh_container(left);
             let right_fresh = Self::expr_is_fresh_container(right);
             let flags =

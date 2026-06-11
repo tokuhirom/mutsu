@@ -666,7 +666,10 @@ pub(crate) enum Stmt {
     Fail(Expr),
     Catch(Vec<Stmt>),
     Control(Vec<Stmt>),
-    Take(Expr),
+    /// `take` / `take-rw`. The bool is `is_rw`: a `take-rw` of an lvalue captures
+    /// the source container (a shared `ContainerRef` cell) so the gathered value
+    /// keeps container identity with the original (`=:=`), instead of a snapshot.
+    Take(Expr, bool),
     Goto(Expr),
     Label {
         name: String,
@@ -914,7 +917,7 @@ fn collect_unattached_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         | Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
-        | Stmt::Take(e)
+        | Stmt::Take(e, _)
         | Stmt::Goto(e) => collect_unattached_ph_expr(e, out),
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
             collect_unattached_ph_expr(expr, out)
@@ -1132,7 +1135,7 @@ fn collect_virtual_call_stmt(stmt: &Stmt, out: &mut Option<String>) {
         | Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
-        | Stmt::Take(e)
+        | Stmt::Take(e, _)
         | Stmt::Goto(e) => collect_virtual_call_expr(e, out),
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
             collect_virtual_call_expr(expr, out)
@@ -1171,7 +1174,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         | Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
-        | Stmt::Take(e)
+        | Stmt::Take(e, _)
         | Stmt::Goto(e) => {
             collect_ph_expr(e, out);
         }
@@ -1466,7 +1469,7 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
         | Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
-        | Stmt::Take(e)
+        | Stmt::Take(e, _)
         | Stmt::Goto(e) => {
             collect_ph_expr_shallow(e, out);
         }
@@ -1790,7 +1793,7 @@ pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {
 
 fn check_bare_var_stmt(stmt: &Stmt, bare_name: &str, found: &mut bool) {
     match stmt {
-        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
             check_bare_var_expr(e, bare_name, found);
         }
         Stmt::Assign { expr, .. } => check_bare_var_expr(expr, bare_name, found),

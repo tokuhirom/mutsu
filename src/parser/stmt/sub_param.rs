@@ -385,7 +385,7 @@ fn stmt_contains_whatever(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(expr)
         | Stmt::Return(expr)
-        | Stmt::Take(expr)
+        | Stmt::Take(expr, _)
         | Stmt::Die(expr)
         | Stmt::Fail(expr) => expr_contains_whatever(expr),
         Stmt::VarDecl {

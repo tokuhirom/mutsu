@@ -1836,8 +1836,26 @@ impl Compiler {
             Stmt::DoesDecl { .. } | Stmt::TrustsDecl { .. } => {}
 
             // --- Take (gather/take) ---
-            Stmt::Take(expr) => {
-                self.compile_expr(expr);
+            Stmt::Take(expr, is_rw) => {
+                if *is_rw {
+                    // `take-rw <lvalue>`: capture the source container (a shared
+                    // `ContainerRef` cell), not a snapshot, so the gathered value
+                    // keeps container identity with the original (`=:=`). Compile
+                    // the operand exactly like a `:=` bind RHS: `scalar_bind_autovivify`
+                    // makes an element subscript (`@a[i][j]`) yield the promoted
+                    // cell; `bind_terminal` marks the leaf so a scalar element is
+                    // boxed. A leading `// next` guard preserves the cell because
+                    // `//` returns its (peeked) left operand unchanged when defined.
+                    let saved_av = self.scalar_bind_autovivify;
+                    let saved_term = self.bind_terminal;
+                    self.scalar_bind_autovivify = true;
+                    self.bind_terminal = true;
+                    self.compile_expr(expr);
+                    self.scalar_bind_autovivify = saved_av;
+                    self.bind_terminal = saved_term;
+                } else {
+                    self.compile_expr(expr);
+                }
                 self.code.emit(OpCode::Take);
             }
 

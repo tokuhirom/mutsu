@@ -14,7 +14,7 @@ impl Interpreter {
                 | Stmt::Return(expr)
                 | Stmt::Die(expr)
                 | Stmt::Fail(expr)
-                | Stmt::Take(expr) => expr_contains_last(expr),
+                | Stmt::Take(expr, _) => expr_contains_last(expr),
                 Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_contains_last(expr),
                 Stmt::If {
                     cond,
