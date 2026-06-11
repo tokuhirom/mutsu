@@ -1280,8 +1280,8 @@ impl VM {
         if name.starts_with('&') && !name.contains("::") {
             let bare = name.trim_start_matches('&');
             let has_variable_slot = self.interpreter.env().contains_key(&name);
-            let is_routine_symbol = self.interpreter.has_function(bare)
-                || self.interpreter.has_multi_function(bare)
+            let is_routine_symbol = self.has_function(bare)
+                || self.has_multi_function(bare)
                 || self.has_proto(bare)
                 || self.interpreter.resolve_token_defs(bare).is_some()
                 || self.interpreter.has_proto_token(bare);

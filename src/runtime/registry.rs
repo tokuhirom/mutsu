@@ -370,6 +370,26 @@ impl Registry {
         })
     }
 
+    /// Whether a (non-multi) function `name` is declared, visible from the
+    /// `current_package` scope: either fully qualified under the current package
+    /// or as a bare global name. Pure registry+scope read, shared by
+    /// `Interpreter::has_declared_function` and the VM's native dispatch path.
+    pub(crate) fn has_declared_function(&self, current_package: &str, name: &str) -> bool {
+        let fq = format!("{}::{}", current_package, name);
+        self.functions.contains_key(&Symbol::intern(&fq))
+            || self.functions.contains_key(&Symbol::intern(name))
+    }
+
+    /// Whether a `multi`-dispatched function `name` exists at any arity, visible
+    /// from the `current_package` scope. Pure registry+scope read, shared by
+    /// `Interpreter::has_multi_function` and the VM's native dispatch path.
+    pub(crate) fn has_multi_function(&self, current_package: &str, name: &str) -> bool {
+        let fq_slash = format!("{}::{}/", current_package, name);
+        self.functions
+            .keys()
+            .any(|k| k.resolve().starts_with(&fq_slash))
+    }
+
     /// Whether `name` is marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) fn is_hidden_class(&self, name: &str) -> bool {
         self.hidden_classes.contains(name)

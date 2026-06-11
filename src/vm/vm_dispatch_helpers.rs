@@ -376,11 +376,11 @@ impl VM {
             let fns = compiled_fns.unwrap_or(&empty_fns);
             if !pkg.is_empty() && pkg != "GLOBAL" {
                 let fq = format!("{pkg}::{name_str}");
-                if self.interpreter.has_function(&fq) {
+                if self.has_function(&fq) {
                     return self.call_function_compiled_first(&fq, args, fns);
                 }
             }
-            if self.interpreter.has_function(&name_str)
+            if self.has_function(&name_str)
                 || self.has_proto(&name_str)
                 || self.has_multi_candidates(&name_str)
             {

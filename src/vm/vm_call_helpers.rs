@@ -157,9 +157,7 @@ impl VM {
             .cloned()
             .map(Self::unwrap_var_ref_value)
             .collect();
-        if self.interpreter.has_declared_function(name)
-            || self.interpreter.has_multi_function(name)
-            || self.has_proto(name)
+        if self.has_declared_function(name) || self.has_multi_function(name) || self.has_proto(name)
         {
             raw_args
         } else {

@@ -193,7 +193,7 @@ impl VM {
             // handling for `note` inside a caller-provided block).
             if self.has_proto(name_str)
                 || self.has_multi_candidates(name_str)
-                || !self.interpreter.has_function(name_str)
+                || !self.has_function(name_str)
             {
                 None
             } else {

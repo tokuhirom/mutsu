@@ -527,6 +527,31 @@ impl VM {
         self.registry().has_multi_candidates(&pkg, name)
     }
 
+    /// VM-native declared-(non-multi-)function check, mirroring
+    /// `Interpreter::has_declared_function` via the single
+    /// [`Registry::has_declared_function`] implementation.
+    #[inline]
+    pub(crate) fn has_declared_function(&self, name: &str) -> bool {
+        let pkg = self.current_package();
+        self.registry().has_declared_function(&pkg, name)
+    }
+
+    /// Alias of [`Self::has_declared_function`], mirroring
+    /// `Interpreter::has_function` (which delegates to `has_declared_function`).
+    #[inline]
+    pub(crate) fn has_function(&self, name: &str) -> bool {
+        self.has_declared_function(name)
+    }
+
+    /// VM-native multi-function check, mirroring
+    /// `Interpreter::has_multi_function` via the single
+    /// [`Registry::has_multi_function`] implementation.
+    #[inline]
+    pub(crate) fn has_multi_function(&self, name: &str) -> bool {
+        let pkg = self.current_package();
+        self.registry().has_multi_function(&pkg, name)
+    }
+
     /// The in-scope package name, read out of the VM's own `current_package`
     /// handle as an owned `String` (no `self.interpreter` bounce). The guard is
     /// dropped before returning, so no lock is held across the caller's work.
