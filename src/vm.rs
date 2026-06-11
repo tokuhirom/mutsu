@@ -1,6 +1,6 @@
 #![allow(clippy::result_large_err)]
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::ast::Stmt;
 use crate::env::Env;
@@ -86,6 +86,14 @@ pub(super) struct VmCallFrame {
 
 pub(crate) struct VM {
     interpreter: Interpreter,
+    /// Handle to the shared declaration [`Registry`](crate::runtime::Registry),
+    /// cloned from the interpreter at construction (PLAN.md ② → A: the VM holds the
+    /// registry as a *peer* rather than reaching through `self.interpreter`). Points
+    /// at the same `RwLock` as `self.interpreter`'s handle, so mutations through
+    /// either are visible. Stable for the VM's lifetime: the interpreter's registry
+    /// Arc is only ever replaced by `clone_for_thread` (which builds a fresh
+    /// Interpreter for a child thread), never reassigned in place during a run.
+    registry: Arc<RwLock<crate::runtime::Registry>>,
     stack: Vec<Value>,
     locals: Vec<Value>,
     in_smartmatch_rhs: bool,
@@ -399,8 +407,10 @@ impl VM {
     }
 
     pub(crate) fn new(interpreter: Interpreter) -> Self {
+        let registry = interpreter.registry_handle();
         Self {
             interpreter,
+            registry,
             stack: Vec::new(),
             locals: Vec::new(),
             in_smartmatch_rhs: false,
@@ -452,6 +462,18 @@ impl VM {
             gather_for_loop_resume: None,
             rw_map_topic_capture: None,
         }
+    }
+
+    /// Write access to the shared declaration [`Registry`](crate::runtime::Registry)
+    /// via the VM's own handle (no `self.interpreter` bounce). Same lock and same
+    /// guard discipline as the interpreter's `registry_mut`: never hold the guard
+    /// across user-code re-entry. (A read counterpart will be added when a
+    /// pure-registry VM read site lands; today every VM-side registry read still
+    /// needs `current_package`/env, so routing it here would duplicate interpreter
+    /// logic — forbidden by the "1 operation = 1 implementation" rule.)
+    #[inline]
+    pub(crate) fn registry_mut(&self) -> crate::runtime::RegistryWriteGuard<'_> {
+        crate::runtime::RegistryWriteGuard::new(&self.registry)
     }
 
     /// Run the compiled bytecode. Always returns the interpreter back
@@ -3618,12 +3640,12 @@ impl VM {
             }
             OpCode::RegisterPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.interpreter.registry_mut().package_stubs.insert(name);
+                self.registry_mut().package_stubs.insert(name);
                 *ip += 1;
             }
             OpCode::ClearPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.interpreter.registry_mut().package_stubs.remove(&name);
+                self.registry_mut().package_stubs.remove(&name);
                 *ip += 1;
             }
 
