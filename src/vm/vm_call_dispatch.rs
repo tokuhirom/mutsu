@@ -25,7 +25,7 @@ impl VM {
         }
     }
 
-    /// Cached version of `interpreter.has_multi_candidates()`.
+    /// Cached version of the VM-native [`Self::has_multi_candidates`].
     /// Uses `fn_resolve_gen` for invalidation so it's O(1) on cache hit.
     pub(super) fn has_multi_candidates_cached(&mut self, name: &str) -> bool {
         if self.multi_candidates_cache_gen != self.fn_resolve_gen {
@@ -36,7 +36,7 @@ impl VM {
         if let Some(&cached) = self.multi_candidates_cache.get(&sym) {
             return cached;
         }
-        let result = self.interpreter.has_multi_candidates(name);
+        let result = self.has_multi_candidates(name);
         self.multi_candidates_cache.insert(sym, result);
         result
     }

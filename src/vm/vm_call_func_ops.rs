@@ -191,8 +191,8 @@ impl VM {
             // this branch prevents regressions where dispatching through
             // `call_sub_value` behaves differently (e.g. dynamic `$*ERR`
             // handling for `note` inside a caller-provided block).
-            if self.interpreter.has_proto(name_str)
-                || self.interpreter.has_multi_candidates(name_str)
+            if self.has_proto(name_str)
+                || self.has_multi_candidates(name_str)
                 || !self.interpreter.has_function(name_str)
             {
                 None
@@ -405,7 +405,7 @@ impl VM {
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
-        if !self.interpreter.has_proto(&name)
+        if !self.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             let cf_auto_fetch = !cf.is_raw;
@@ -427,7 +427,7 @@ impl VM {
             // candidate dispatch stays correct. Must not fall through to the native
             // arm below (the shadowed builtin).
             if crate::runtime::Interpreter::is_builtin_function(&name)
-                && !self.interpreter.has_proto(&name)
+                && !self.has_proto(&name)
                 && !self.has_multi_candidates_cached(&name)
                 && let Some(def) = self.interpreter.resolve_function_with_types(&name, &args)
                 && Self::def_is_otf_compilable(&def)
@@ -571,7 +571,7 @@ impl VM {
             self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
-        } else if !self.interpreter.has_proto(&name)
+        } else if !self.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             let cf_auto_fetch = !cf.is_raw;
@@ -616,7 +616,7 @@ impl VM {
         } else {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
-            let compiled = if !self.interpreter.has_proto(name) {
+            let compiled = if !self.has_proto(name) {
                 self.find_compiled_function(compiled_fns, name, &args)
             } else {
                 None
@@ -713,7 +713,7 @@ impl VM {
                 // signal env_dirty only when a captured-outer write happened, so
                 // a pure compiled call no longer forces a per-call locals pull.
                 self.env_dirty = true;
-                if self.has_multi_candidates_cached(name) && !self.interpreter.has_proto(name) {
+                if self.has_multi_candidates_cached(name) && !self.has_proto(name) {
                     // User-defined multi candidates take priority over builtins.
                     // Resolve the winning candidate VM-side via the same resolver
                     // call_function_fallback uses (③ PR-3, ledger §2). When the
@@ -770,7 +770,7 @@ impl VM {
                     // must not escape the enclosing routine — Test::Util's
                     // is-deeply-junction). Those keep tree-walking unchanged.
                     if crate::runtime::Interpreter::is_builtin_function(name)
-                        && !self.interpreter.has_proto(name)
+                        && !self.has_proto(name)
                         && !self.has_multi_candidates_cached(name)
                         && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
                         && Self::def_is_otf_compilable(&def)

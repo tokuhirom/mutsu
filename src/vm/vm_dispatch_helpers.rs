@@ -381,8 +381,8 @@ impl VM {
                 }
             }
             if self.interpreter.has_function(&name_str)
-                || self.interpreter.has_proto(&name_str)
-                || self.interpreter.has_multi_candidates(&name_str)
+                || self.has_proto(&name_str)
+                || self.has_multi_candidates(&name_str)
             {
                 // A Routine whose name is also a builtin (e.g. `&SETTING::...::not`
                 // resolves to Routine{GLOBAL, "not"}, accessors.rs) intentionally

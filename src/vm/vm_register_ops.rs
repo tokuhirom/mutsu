@@ -583,8 +583,8 @@ impl VM {
             }
             // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
             if !custom_traits.is_empty() {
-                let has_trait_mod = self.interpreter.has_proto("trait_mod:<is>")
-                    || self.interpreter.has_multi_candidates("trait_mod:<is>");
+                let has_trait_mod =
+                    self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
                 for trait_name in custom_traits.iter().filter(|t| {
                     !t.starts_with("__")
                         && *t != "default"
@@ -1121,9 +1121,7 @@ impl VM {
             }
         }
 
-        if !(self.interpreter.has_proto("trait_mod:<is>")
-            || self.interpreter.has_multi_candidates("trait_mod:<is>"))
-        {
+        if !(self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>")) {
             // For uppercase type-like traits (e.g. `is Map`, `is Set`), silently
             // accept them even if trait_mod:<is> is not defined. These are type
             // container traits that may not have runtime trait_mod:<is> handlers.
@@ -1348,8 +1346,8 @@ impl VM {
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
             // Merge explicitly parsed custom_traits with deferred_traits
             // (unknown lowercase parents deferred from register_class_decl).
-            let has_trait_mod = self.interpreter.has_proto("trait_mod:<is>")
-                || self.interpreter.has_multi_candidates("trait_mod:<is>");
+            let has_trait_mod =
+                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
                 let type_obj = Value::Package(Symbol::intern(&qualified_name));
                 // Dispatch explicitly parsed custom traits (with args)
@@ -1528,8 +1526,8 @@ impl VM {
                 .unwrap_or_default();
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined
-            let has_trait_mod = self.interpreter.has_proto("trait_mod:<is>")
-                || self.interpreter.has_multi_candidates("trait_mod:<is>");
+            let has_trait_mod =
+                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::Package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
