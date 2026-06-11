@@ -639,6 +639,16 @@ impl VM {
     /// Check if two raw container values (DeferredHashAccess / HashSlotRef)
     /// point to the same hash slot.
     fn containers_same_slot(a: &Value, b: &Value) -> bool {
+        // Phase 2 element container: a `ContainerRef` cell has container identity
+        // by its `Arc<Mutex>`. Two cells are the same container only if the same
+        // Arc; a cell is never the same container as a non-cell value. (Must be
+        // checked here, not in `values_identical`, which `===` uses to compare
+        // *values* and therefore must read through a cell.)
+        match (a, b) {
+            (Value::ContainerRef(x), Value::ContainerRef(y)) => return Arc::ptr_eq(x, y),
+            (Value::ContainerRef(_), _) | (_, Value::ContainerRef(_)) => return false,
+            _ => {}
+        }
         // Extract (arc, key) from each side
         let a_ref = Self::extract_hash_ref(a);
         let b_ref = Self::extract_hash_ref(b);
