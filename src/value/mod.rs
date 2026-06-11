@@ -2471,6 +2471,19 @@ impl Value {
         Value::ContainerRef(Arc::new(Mutex::new(self)))
     }
 
+    /// Assign `val` into an array/hash element `slot`. When the slot already
+    /// holds a `ContainerRef` cell (a Phase 2 `:=`-bound element), write
+    /// *through* the cell so every alias of that element observes the new
+    /// value; otherwise replace the slot in place. This is the single element
+    /// write chokepoint that keeps a bound element's alias live across writes.
+    pub fn assign_element_slot(slot: &mut Value, val: Value) {
+        if let Value::ContainerRef(cell) = slot {
+            *cell.lock().unwrap() = val;
+        } else {
+            *slot = val;
+        }
+    }
+
     pub fn is_container_ref(&self) -> bool {
         matches!(self, Value::ContainerRef(_))
     }
@@ -2633,22 +2646,42 @@ impl Value {
         }
     }
 
-    /// Create an ArraySlotRef pointing to a specific index in an array.
-    /// Uses interior mutation to ensure the array is large enough.
+    /// Bind to array element `idx`, promoting it to a first-class container
+    /// (Phase 2). The element is replaced in place with a shared
+    /// `ContainerRef` cell (reusing an existing one), and that same cell is
+    /// returned so the binding aliases the element by **cell identity**. Unlike
+    /// the old `ArraySlotRef` (an array-Arc + index back-reference, which goes
+    /// stale when an enclosing container is COW-cloned on a later write), the
+    /// `Arc<Mutex>` cell is shared on every clone, so the alias survives
+    /// arbitrarily deep `$struct[..]<..>[..]` paths. Reads decontainerize the
+    /// element at the single read chokepoint (`resolve_array_entry`).
     pub fn array_slot_ref(&self, idx: usize) -> Option<Value> {
         if let Value::Array(arc, _kind) = self {
             // SAFETY: mutsu is single-threaded.
             let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
             unsafe {
-                // Ensure the array is large enough
                 while (&(*ptr)).len() <= idx {
                     (&mut (*ptr)).push(Value::Nil);
                 }
+                let elem = &mut (&mut (*ptr))[idx];
+                if let Value::ContainerRef(cell) = elem {
+                    return Some(Value::ContainerRef(cell.clone()));
+                }
+                // Only promote a *scalar* leaf to a cell. A container element
+                // (Array/Hash) is an intermediate level of a deeper path
+                // (`$s[1][1]`, `$s[1]<k>`); keep the old `ArraySlotRef`, whose
+                // resolution shares the inner Arc, so the eventual leaf promotion
+                // lands in the same physical Vec the stored element points to.
+                if matches!(elem, Value::Array(..) | Value::Hash(..)) {
+                    return Some(Value::ArraySlotRef {
+                        array: arc.clone(),
+                        index: idx,
+                    });
+                }
+                let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                *elem = Value::ContainerRef(cell.clone());
+                Some(Value::ContainerRef(cell))
             }
-            Some(Value::ArraySlotRef {
-                array: arc.clone(),
-                index: idx,
-            })
         } else {
             None
         }
@@ -3322,6 +3355,9 @@ impl Value {
     /// Convert a numeric value to f64.
     pub(crate) fn to_f64(&self) -> f64 {
         match self {
+            // Phase 2 element container: numify the inner value transparently
+            // if a `:=`-bound element's cell leaks into a numeric context.
+            Value::ContainerRef(cell) => cell.lock().unwrap().to_f64(),
             Value::Int(i) => *i as f64,
             Value::BigInt(n) => n.to_f64().unwrap_or(0.0),
             Value::Num(f) => *f,

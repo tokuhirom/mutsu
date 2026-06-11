@@ -3219,6 +3219,11 @@ impl VM {
                                             val.clone(),
                                             source_index,
                                         );
+                                    } else if let Value::ContainerRef(cell) = &arr[i] {
+                                        // Phase 2: the element is a `:=`-bound
+                                        // shared cell — write through it so the
+                                        // alias observes the new value.
+                                        *cell.lock().unwrap() = native_store_val.clone();
                                     } else {
                                         arr[i] = if is_self_array_ref {
                                             Self::self_array_ref_marker()
@@ -3674,7 +3679,7 @@ impl VM {
                                 while v.len() <= j {
                                     v.push(Value::Nil);
                                 }
-                                v[j] = val.clone();
+                                Value::assign_element_slot(&mut v[j], val.clone());
                             }
                         } else {
                             let inner = Arc::make_mut(inner_arr);
@@ -3682,7 +3687,7 @@ impl VM {
                                 let fill = native_fill.clone();
                                 inner.resize(j + 1, fill);
                             }
-                            inner[j] = val.clone();
+                            Value::assign_element_slot(&mut inner[j], val.clone());
                         }
                     }
                 }
@@ -3921,12 +3926,17 @@ impl VM {
                                     let fill = native_fill.clone();
                                     arr.resize(i + 1, fill);
                                 }
-                                arr[i] = val.clone();
+                                Value::assign_element_slot(&mut arr[i], val.clone());
                             }
                         }
                         Value::Hash(hash_arc) => {
                             let hash = Arc::make_mut(hash_arc);
-                            hash.insert(key.clone(), val.clone());
+                            if let Some(slot @ Value::ContainerRef(_)) = hash.get_mut(key.as_str())
+                            {
+                                Value::assign_element_slot(slot, val.clone());
+                            } else {
+                                hash.insert(key.clone(), val.clone());
+                            }
                         }
                         _ => {
                             // Autovivify at final level
