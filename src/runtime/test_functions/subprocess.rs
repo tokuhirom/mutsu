@@ -328,7 +328,7 @@ impl Interpreter {
         nested: &Interpreter,
         result: Result<String, RuntimeError>,
     ) -> (String, String, i64) {
-        let stderr_content = nested.output_sink.stderr_output.clone();
+        let stderr_content = nested.output_sink().stderr_output.clone();
         match result {
             Ok(output) => {
                 let s = if nested.tap.bailed_out() {
@@ -342,7 +342,7 @@ impl Interpreter {
                 (stdout_tap, err, s)
             }
             Err(e) => {
-                let combined = nested.output_sink.output.clone();
+                let combined = nested.output_sink().output.clone();
                 let (stdout_only, tap_err) = Self::split_tap_output_streams(&combined);
                 let mut err = stderr_content;
                 err.push_str(&tap_err);

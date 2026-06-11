@@ -862,7 +862,7 @@ impl Interpreter {
         // Auto-call MAIN sub if defined, with CLI argument parsing
         self.dispatch_main(&compiled_fns)?;
         self.finish()?;
-        Ok(self.output_sink.output.clone())
+        Ok(self.output_sink().output.clone())
     }
 
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
@@ -1018,8 +1018,8 @@ impl Interpreter {
         self.run_pending_instance_destroys()?;
         // Print deprecation report to stderr at program exit
         if let Some(report) = super::deprecation::take_report() {
-            self.output_sink.stderr_output.push_str(&report);
-            self.output_sink.stderr_output.push('\n');
+            self.output_sink_mut().stderr_output.push_str(&report);
+            self.output_sink_mut().stderr_output.push('\n');
         }
         if self.tap.bailed_out() {
             return Ok(());
@@ -1036,7 +1036,7 @@ impl Interpreter {
             }
             if plan_mismatch {
                 if let Some(planned) = state.planned {
-                    self.output_sink.stderr_output.push_str(&format!(
+                    self.output_sink_mut().stderr_output.push_str(&format!(
                         "# You planned {} test, but ran {}\n",
                         planned, ran
                     ));
@@ -1815,14 +1815,17 @@ mod tests {
         );
         assert!(result.is_ok(), "run failed: {:?}", result.err());
         assert!(
-            interp.output_sink.output.contains("1..1"),
+            interp.output_sink().output.contains("1..1"),
             "output: {}",
-            interp.output_sink.output
+            interp.output_sink().output
         );
         assert!(
-            interp.output_sink.output.contains("ok 1 - q-bracket eval"),
+            interp
+                .output_sink()
+                .output
+                .contains("ok 1 - q-bracket eval"),
             "output: {}",
-            interp.output_sink.output
+            interp.output_sink().output
         );
     }
 
@@ -1832,7 +1835,7 @@ mod tests {
         interp.set_immediate_stdout(false);
         let result = interp.run("use Test; plan 1;\n#?rakudo todo 'NYI'\nok True, 'pass';");
         assert!(result.is_ok(), "run failed: {:?}", result.err());
-        assert_eq!(interp.output_sink.output, "1..1\nok 1 - pass\n");
+        assert_eq!(interp.output_sink().output, "1..1\nok 1 - pass\n");
     }
 
     #[test]
@@ -1843,7 +1846,7 @@ mod tests {
         assert!(result.is_ok(), "run failed: {:?}", result.err());
         assert!(
             interp
-                .output_sink
+                .output_sink()
                 .output
                 .starts_with("1..1\nnot ok 1 - fail # TODO NYI\n")
         );
@@ -1860,7 +1863,7 @@ mod tests {
         interp.set_immediate_stdout(false);
         let result = interp.run("END { say 'end-ran' }; die 'boom';");
         assert!(result.is_err(), "die should propagate as error");
-        assert_eq!(interp.output_sink.output, "end-ran\n");
+        assert_eq!(interp.output_sink().output, "end-ran\n");
     }
 
     #[test]
@@ -1869,7 +1872,7 @@ mod tests {
         interp.set_immediate_stdout(false);
         let result = interp.run("END { say 'end-ran' }; exit;");
         assert!(result.is_ok());
-        assert_eq!(interp.output_sink.output, "end-ran\n");
+        assert_eq!(interp.output_sink().output, "end-ran\n");
     }
 
     #[test]
@@ -1879,7 +1882,7 @@ mod tests {
         let result = interp.run("END { say 'end-ran' }; exit(5);");
         assert!(result.is_ok());
         assert_eq!(interp.exit_code(), 5);
-        assert_eq!(interp.output_sink.output, "end-ran\n");
+        assert_eq!(interp.output_sink().output, "end-ran\n");
     }
 
     #[test]
@@ -1888,7 +1891,7 @@ mod tests {
         interp.set_immediate_stdout(false);
         let result = interp.run("END { print 'A' }; END { print 'B' }; END { print 'C' };");
         assert!(result.is_ok());
-        assert_eq!(interp.output_sink.output, "CBA");
+        assert_eq!(interp.output_sink().output, "CBA");
     }
 
     #[test]
@@ -1897,7 +1900,7 @@ mod tests {
         interp.set_immediate_stdout(false);
         let result = interp.run("END { print 'A' }; END { print 'B' }; die 'x';");
         assert!(result.is_err());
-        assert_eq!(interp.output_sink.output, "BA");
+        assert_eq!(interp.output_sink().output, "BA");
     }
 
     #[test]
@@ -1906,7 +1909,7 @@ mod tests {
         interp.set_immediate_stdout(false);
         let result = interp.run("say 'hello'; END { say 'end' };");
         assert!(result.is_ok());
-        assert_eq!(interp.output_sink.output, "hello\nend\n");
+        assert_eq!(interp.output_sink().output, "hello\nend\n");
     }
 
     #[test]

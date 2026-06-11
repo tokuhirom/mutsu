@@ -230,7 +230,7 @@ impl Interpreter {
         if ok {
             self.sync_eval_definition_state(&nested);
         }
-        for raw in nested.output_sink.output.lines() {
+        for raw in nested.output_sink().output.lines() {
             let line = raw.trim_start();
             let (assert_ok, rest) = if let Some(rest) = line.strip_prefix("ok ") {
                 (true, rest)
@@ -259,8 +259,8 @@ impl Interpreter {
         if !ok && let Some(err_msg) = eval_err_msg {
             // Emit error details to stderr as diag, matching Raku behavior
             let diag = format!("# Error: {}\n", err_msg);
-            self.output_sink.stderr_output.push_str(&diag);
-            if self.output_sink.immediate_stdout {
+            self.output_sink_mut().stderr_output.push_str(&diag);
+            if self.output_sink().immediate_stdout {
                 eprint!("{}", diag);
             }
         }

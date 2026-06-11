@@ -570,12 +570,12 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::Stderr => {
-                if self.tap.subtest_depth() == 0 && self.output_sink.immediate_stdout {
+                if self.tap.subtest_depth() == 0 && self.output_sink().immediate_stdout {
                     use std::io::Write;
                     let _ = std::io::stderr().write_all(payload.as_bytes());
                     let _ = std::io::stderr().flush();
                 } else {
-                    self.output_sink.stderr_output.push_str(&payload);
+                    self.output_sink_mut().stderr_output.push_str(&payload);
                 }
                 Ok(())
             }
@@ -628,13 +628,13 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::Stderr => {
-                if self.tap.subtest_depth() == 0 && self.output_sink.immediate_stdout {
+                if self.tap.subtest_depth() == 0 && self.output_sink().immediate_stdout {
                     use std::io::Write;
                     let _ = std::io::stderr().write_all(bytes);
                     let _ = std::io::stderr().flush();
                 } else {
                     let content = String::from_utf8_lossy(bytes).to_string();
-                    self.output_sink.stderr_output.push_str(&content);
+                    self.output_sink_mut().stderr_output.push_str(&content);
                 }
                 Ok(())
             }

@@ -224,6 +224,8 @@ pub(crate) mod utils;
 pub(crate) mod value_iterator;
 pub(crate) use self::io_handles::{IoHandleTable, IoHandlesWriteGuard};
 pub(crate) use self::output_sink::OutputSink;
+#[allow(unused_imports)]
+pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};
 pub(crate) use self::registration_class::ClassDeclModifiers;
 pub(crate) use self::registry::{Registry, RegistryWriteGuard};
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
@@ -828,10 +830,11 @@ pub(crate) struct CurRepoState {
 pub struct Interpreter {
     env: Env,
     /// Program output sink — stdout/stderr buffers, the immediate-flush flag,
-    /// and thread-clone interleaving. Extracted so its ownership can later move
-    /// to the VM (③後段/④; see `docs/vm-output-ownership.md`). Access through
-    /// `emit_output` / `emit_stderr_output` and the `output_sink` field.
-    output_sink: OutputSink,
+    /// and thread-clone interleaving. Lifted behind `Arc<RwLock<…>>` (PR-B) so
+    /// the VM and the Interpreter can reach it as peers, exactly like
+    /// `io_handles` (③後段/④; see `docs/vm-output-ownership.md`). Access through
+    /// the `output_sink()` / `output_sink_mut()` guarded accessors.
+    output_sink: Arc<RwLock<OutputSink>>,
     warn_output: String,
     warn_suppression_depth: usize,
     /// All TAP / `Test` module runtime state (counter, subtest stack, bail-out).
@@ -2858,7 +2861,7 @@ impl Interpreter {
 
         let mut interpreter = Self {
             env: Env::from(env),
-            output_sink: OutputSink::new(),
+            output_sink: Arc::new(RwLock::new(OutputSink::new())),
             warn_output: String::new(),
             warn_suppression_depth: 0,
             tap: TapState::default(),
@@ -4184,29 +4187,30 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn output(&self) -> &str {
-        &self.output_sink.output
+    pub fn output(&self) -> String {
+        self.output_sink().output.clone()
     }
 
     /// Clear the output buffer and reset the output-emitted flag.
     pub fn clear_output(&mut self) {
-        self.output_sink.output.clear();
-        self.output_sink.output_emitted = false;
+        let mut sink = self.output_sink_mut();
+        sink.output.clear();
+        sink.output_emitted = false;
     }
 
     /// Take the output buffer, leaving it empty.
     pub(crate) fn take_output(&mut self) -> String {
-        std::mem::take(&mut self.output_sink.output)
+        std::mem::take(&mut self.output_sink_mut().output)
     }
 
     /// Take the stderr buffer, leaving it empty.
     pub(crate) fn take_stderr_output(&mut self) -> String {
-        std::mem::take(&mut self.output_sink.stderr_output)
+        std::mem::take(&mut self.output_sink_mut().stderr_output)
     }
 
     /// Returns true if any output was emitted since the last `clear_output`.
     pub fn has_output_emitted(&self) -> bool {
-        self.output_sink.output_emitted
+        self.output_sink().output_emitted
     }
 
     /// Write to the output buffer and also flush to real stdout
@@ -4224,19 +4228,19 @@ impl Interpreter {
         // The Stdout `bytes_written` accounting above touches `io_handles`; the
         // write decision + buffers live in `output_sink`.
         let subtest_active = self.tap.subtest_depth() != 0;
-        self.output_sink.emit(text, subtest_active);
+        self.output_sink_mut().emit(text, subtest_active);
     }
 
     /// Enable immediate flushing of output to stdout.
     pub fn set_immediate_stdout(&mut self, val: bool) {
-        self.output_sink.immediate_stdout = val;
+        self.output_sink_mut().immediate_stdout = val;
     }
 
     pub fn flush_stderr_buffer(&mut self) {
-        if !self.output_sink.stderr_output.is_empty() {
-            eprint!("{}", self.output_sink.stderr_output);
+        let stderr = std::mem::take(&mut self.output_sink_mut().stderr_output);
+        if !stderr.is_empty() {
+            eprint!("{}", stderr);
             let _ = std::io::stderr().flush();
-            self.output_sink.stderr_output.clear();
         }
     }
 
@@ -4274,7 +4278,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_thread_clone(&self) -> bool {
-        self.output_sink.is_thread_clone
+        self.output_sink().is_thread_clone
     }
 
     /// Write a message to stderr, respecting nested mode.
@@ -4283,7 +4287,7 @@ impl Interpreter {
     /// not duplicate it.
     pub(crate) fn emit_stderr(&mut self, text: &str) {
         if self.nested_mode {
-            self.output_sink.stderr_output.push_str(text);
+            self.output_sink_mut().stderr_output.push_str(text);
         } else {
             eprint!("{}", text);
         }
@@ -4291,9 +4295,17 @@ impl Interpreter {
 
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         let msg = format!("{}\n", message);
-        if self.output_sink.is_thread_clone
-            && let Some(ref shared) = self.output_sink.shared_thread_stderr
-        {
+        // Read the thread-clone shared stderr Arc out under a scoped guard so it
+        // is dropped before `self.warn_output` / `emit` re-borrow self.
+        let thread_shared_stderr = {
+            let sink = self.output_sink();
+            if sink.is_thread_clone {
+                sink.shared_thread_stderr.clone()
+            } else {
+                None
+            }
+        };
+        if let Some(shared) = thread_shared_stderr {
             shared.lock().unwrap().push_str(&msg);
             self.warn_output.push_str(&msg);
             return;
@@ -4304,7 +4316,7 @@ impl Interpreter {
         // Otherwise emit directly to the real stderr; if we also pushed
         // into `stderr_output`, the final flush would duplicate it.
         if self.nested_mode {
-            self.output_sink.stderr_output.push_str(&msg);
+            self.output_sink_mut().stderr_output.push_str(&msg);
         } else {
             eprint!("{}", msg);
         }
@@ -5245,6 +5257,21 @@ impl Interpreter {
         io_handles::IoHandlesReadGuard::new(&self.io_handles, "io_handles")
     }
 
+    /// Read access to the shared [`OutputSink`]. Same guard discipline as
+    /// [`Self::io_handles`]: never hold the returned guard across a call that
+    /// re-enters another output operation.
+    #[inline]
+    pub(crate) fn output_sink(&self) -> output_sink::OutputSinkReadGuard<'_> {
+        output_sink::OutputSinkReadGuard::new(&self.output_sink, "output_sink")
+    }
+
+    /// Write access to the shared [`OutputSink`]. Same guard discipline as
+    /// [`Self::output_sink`].
+    #[inline]
+    pub(crate) fn output_sink_mut(&self) -> output_sink::OutputSinkWriteGuard<'_> {
+        output_sink::OutputSinkWriteGuard::new(&self.output_sink, "output_sink")
+    }
+
     /// Write access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
     /// Same guard discipline as [`Self::io_handles`].
     #[inline]
@@ -5362,17 +5389,18 @@ impl Interpreter {
         // Thread clones write through the parent's shared stdout/stderr buffers
         // so concurrent output interleaves in real chronological order.
         let thread_output_sink = {
+            let mut parent_sink = self.output_sink_mut();
             let shared_out = Arc::clone(
-                self.output_sink
+                parent_sink
                     .shared_thread_output
                     .get_or_insert_with(|| Arc::new(Mutex::new(String::new()))),
             );
             let shared_err = Arc::clone(
-                self.output_sink
+                parent_sink
                     .shared_thread_stderr
                     .get_or_insert_with(|| Arc::new(Mutex::new(String::new()))),
             );
-            OutputSink {
+            Arc::new(RwLock::new(OutputSink {
                 output: String::new(),
                 stderr_output: String::new(),
                 output_emitted: false,
@@ -5380,7 +5408,7 @@ impl Interpreter {
                 is_thread_clone: true,
                 shared_thread_output: Some(shared_out),
                 shared_thread_stderr: Some(shared_err),
-            }
+            }))
         };
         let mut cloned = Self {
             env: self.env.clone(),
