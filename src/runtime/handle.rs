@@ -121,6 +121,26 @@ impl IoHandleState {
         matches!(self.target, IoHandleTarget::File)
     }
 
+    /// VM-native `.get` line read on a `File`+UTF8 handle (PR-D read side): read
+    /// the next record using the handle's `nl-in` separators and `chomp`, decoded
+    /// UTF-8-lossy. The same record reader the interpreter's File branch uses, so
+    /// it is the single authoritative impl. Caller guarantees a File target with
+    /// a UTF-8/binary encoding (`can_native_text_write`); ArgFiles / Stdin /
+    /// non-UTF8 (which need `@*ARGS` / `decode_with_encoding`) fall through.
+    pub(crate) fn read_line_native(&mut self) -> Result<Option<String>, RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        self.read_attempted = true;
+        let seps = self.line_separators.clone();
+        let chomp = self.line_chomp;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+        Interpreter::read_record_with_separators(file, &seps, chomp)
+    }
+
     /// Add to this handle's `bytes_written` counter. Used by the VM's Stdout
     /// emit to mirror `emit_output`'s Stdout-handle accounting (③後段 PR-C).
     pub(crate) fn add_bytes_written(&mut self, n: i64) {
@@ -677,7 +697,7 @@ impl Interpreter {
         self.with_handle_mut(handle_value, |state| state.close())
     }
 
-    fn read_record_bytes<R: Read>(
+    pub(crate) fn read_record_bytes<R: Read>(
         reader: &mut R,
         separators: &[Vec<u8>],
         chomp: bool,
@@ -710,7 +730,7 @@ impl Interpreter {
         Ok(Some(buffer))
     }
 
-    fn read_record_with_separators<R: Read>(
+    pub(crate) fn read_record_with_separators<R: Read>(
         reader: &mut R,
         separators: &[Vec<u8>],
         chomp: bool,
