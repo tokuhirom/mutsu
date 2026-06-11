@@ -1382,7 +1382,19 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
+        // A sigilless bareword on the LHS of `:=` binds to that named symbol
+        // (e.g. a `constant`). Emit a real bind so it raises for a readonly
+        // constant ("terms cannot be rebound") instead of silently evaluating
+        // both sides as a no-op block.
+        let stmt = if let Expr::BareWord(name) = expr {
+            Stmt::Expr(Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+                is_bind: true,
+            })
+        } else {
+            Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
+        };
         return parse_statement_modifier(r, stmt);
     }
 
