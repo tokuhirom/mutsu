@@ -263,7 +263,7 @@ impl Interpreter {
                 "# Failed test '{}'\n# expected: {}\n#      got: {}\n",
                 desc, exp_resolved, got_resolved
             );
-            self.stderr_output.push_str(&diag);
+            self.output_sink.stderr_output.push_str(&diag);
         }
         Ok(Value::Bool(ok))
     }

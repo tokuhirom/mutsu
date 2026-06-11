@@ -195,6 +195,7 @@ mod native_proc_async;
 mod native_supply_methods;
 pub(crate) mod native_types;
 mod ops;
+mod output_sink;
 pub(crate) mod phasers;
 mod react_died;
 mod regex;
@@ -222,6 +223,7 @@ pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
 pub(crate) use self::io_handles::{IoHandleTable, IoHandlesWriteGuard};
+pub(crate) use self::output_sink::OutputSink;
 pub(crate) use self::registration_class::ClassDeclModifiers;
 pub(crate) use self::registry::{Registry, RegistryWriteGuard};
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
@@ -825,8 +827,11 @@ pub(crate) struct CurRepoState {
 
 pub struct Interpreter {
     env: Env,
-    output: String,
-    stderr_output: String,
+    /// Program output sink — stdout/stderr buffers, the immediate-flush flag,
+    /// and thread-clone interleaving. Extracted so its ownership can later move
+    /// to the VM (③後段/④; see `docs/vm-output-ownership.md`). Access through
+    /// `emit_output` / `emit_stderr_output` and the `output_sink` field.
+    output_sink: OutputSink,
     warn_output: String,
     warn_suppression_depth: usize,
     /// All TAP / `Test` module runtime state (counter, subtest stack, bail-out).
@@ -839,11 +844,6 @@ pub struct Interpreter {
     /// `std::process::exit()`.  Used by in-process `is_run` so that
     /// the nested interpreter does not kill the parent process.
     pub(crate) nested_mode: bool,
-    /// When true, output is flushed to real stdout immediately (for Proc::Async children).
-    immediate_stdout: bool,
-    /// Tracks whether any output was emitted (useful when immediate_stdout
-    /// skips the buffer).
-    output_emitted: bool,
     operator_assoc: HashMap<String, String>,
     /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
     /// imported into the current lexical scope via `use Module`. Used to
@@ -1124,15 +1124,6 @@ pub struct Interpreter {
     precomp_enabled: bool,
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
     monkey_typing: bool,
-    /// Shared output buffer for concurrent threads (used by `start` blocks).
-    /// When set on a thread-cloned interpreter, `emit_output` writes here instead
-    /// of the per-interpreter buffer, preserving the real interleaving order of
-    /// concurrent `say`/`print` calls.
-    shared_thread_output: Option<Arc<Mutex<String>>>,
-    /// Shared stderr buffer for concurrent threads.
-    shared_thread_stderr: Option<Arc<Mutex<String>>>,
-    /// True when this interpreter is a thread clone (should use shared output).
-    is_thread_clone: bool,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -2867,16 +2858,13 @@ impl Interpreter {
 
         let mut interpreter = Self {
             env: Env::from(env),
-            output: String::new(),
-            stderr_output: String::new(),
+            output_sink: OutputSink::new(),
             warn_output: String::new(),
             warn_suppression_depth: 0,
             tap: TapState::default(),
             halted: false,
             exit_code: 0,
             nested_mode: false,
-            immediate_stdout: false,
-            output_emitted: false,
             operator_assoc: HashMap::new(),
             imported_operator_names: HashSet::new(),
             lib_paths: Vec::new(),
@@ -3173,9 +3161,6 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: true,
             monkey_typing: false,
-            shared_thread_output: None,
-            shared_thread_stderr: None,
-            is_thread_clone: false,
         };
         interpreter.init_io_environment();
         // Built-in enum constants (Order/Endian/ProtocolFamily/Signal) are
@@ -4200,34 +4185,33 @@ impl Interpreter {
     }
 
     pub fn output(&self) -> &str {
-        &self.output
+        &self.output_sink.output
     }
 
     /// Clear the output buffer and reset the output-emitted flag.
     pub fn clear_output(&mut self) {
-        self.output.clear();
-        self.output_emitted = false;
+        self.output_sink.output.clear();
+        self.output_sink.output_emitted = false;
     }
 
     /// Take the output buffer, leaving it empty.
     pub(crate) fn take_output(&mut self) -> String {
-        std::mem::take(&mut self.output)
+        std::mem::take(&mut self.output_sink.output)
     }
 
     /// Take the stderr buffer, leaving it empty.
     pub(crate) fn take_stderr_output(&mut self) -> String {
-        std::mem::take(&mut self.stderr_output)
+        std::mem::take(&mut self.output_sink.stderr_output)
     }
 
     /// Returns true if any output was emitted since the last `clear_output`.
     pub fn has_output_emitted(&self) -> bool {
-        self.output_emitted
+        self.output_sink.output_emitted
     }
 
     /// Write to the output buffer and also flush to real stdout
     /// when not inside a subtest.
     pub(crate) fn emit_output(&mut self, text: &str) {
-        self.output_emitted = true;
         let byte_count = text.len() as i64;
         if let Some(stdout_handle) = self
             .io_handles_mut()
@@ -4237,31 +4221,22 @@ impl Interpreter {
         {
             stdout_handle.bytes_written += byte_count;
         }
-        if self.tap.subtest_depth() == 0 && self.immediate_stdout {
-            use std::io::Write;
-            let _ = std::io::stdout().write_all(text.as_bytes());
-            let _ = std::io::stdout().flush();
-        } else if self.is_thread_clone
-            && let Some(ref shared) = self.shared_thread_output
-        {
-            // Thread clones write to the shared buffer so concurrent output is
-            // interleaved in real chronological order (not grouped per-promise).
-            shared.lock().unwrap().push_str(text);
-        } else {
-            self.output.push_str(text);
-        }
+        // The Stdout `bytes_written` accounting above touches `io_handles`; the
+        // write decision + buffers live in `output_sink`.
+        let subtest_active = self.tap.subtest_depth() != 0;
+        self.output_sink.emit(text, subtest_active);
     }
 
     /// Enable immediate flushing of output to stdout.
     pub fn set_immediate_stdout(&mut self, val: bool) {
-        self.immediate_stdout = val;
+        self.output_sink.immediate_stdout = val;
     }
 
     pub fn flush_stderr_buffer(&mut self) {
-        if !self.stderr_output.is_empty() {
-            eprint!("{}", self.stderr_output);
+        if !self.output_sink.stderr_output.is_empty() {
+            eprint!("{}", self.output_sink.stderr_output);
             let _ = std::io::stderr().flush();
-            self.stderr_output.clear();
+            self.output_sink.stderr_output.clear();
         }
     }
 
@@ -4299,7 +4274,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_thread_clone(&self) -> bool {
-        self.is_thread_clone
+        self.output_sink.is_thread_clone
     }
 
     /// Write a message to stderr, respecting nested mode.
@@ -4308,7 +4283,7 @@ impl Interpreter {
     /// not duplicate it.
     pub(crate) fn emit_stderr(&mut self, text: &str) {
         if self.nested_mode {
-            self.stderr_output.push_str(text);
+            self.output_sink.stderr_output.push_str(text);
         } else {
             eprint!("{}", text);
         }
@@ -4316,8 +4291,8 @@ impl Interpreter {
 
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         let msg = format!("{}\n", message);
-        if self.is_thread_clone
-            && let Some(ref shared) = self.shared_thread_stderr
+        if self.output_sink.is_thread_clone
+            && let Some(ref shared) = self.output_sink.shared_thread_stderr
         {
             shared.lock().unwrap().push_str(&msg);
             self.warn_output.push_str(&msg);
@@ -4329,7 +4304,7 @@ impl Interpreter {
         // Otherwise emit directly to the real stderr; if we also pushed
         // into `stderr_output`, the final flush would duplicate it.
         if self.nested_mode {
-            self.stderr_output.push_str(&msg);
+            self.output_sink.stderr_output.push_str(&msg);
         } else {
             eprint!("{}", msg);
         }
@@ -5384,18 +5359,38 @@ impl Interpreter {
         }
         let cloned_next_handle_id = handles_guard.next_id;
         drop(handles_guard);
+        // Thread clones write through the parent's shared stdout/stderr buffers
+        // so concurrent output interleaves in real chronological order.
+        let thread_output_sink = {
+            let shared_out = Arc::clone(
+                self.output_sink
+                    .shared_thread_output
+                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new()))),
+            );
+            let shared_err = Arc::clone(
+                self.output_sink
+                    .shared_thread_stderr
+                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new()))),
+            );
+            OutputSink {
+                output: String::new(),
+                stderr_output: String::new(),
+                output_emitted: false,
+                immediate_stdout: false,
+                is_thread_clone: true,
+                shared_thread_output: Some(shared_out),
+                shared_thread_stderr: Some(shared_err),
+            }
+        };
         let mut cloned = Self {
             env: self.env.clone(),
-            output: String::new(),
-            stderr_output: String::new(),
+            output_sink: thread_output_sink,
             warn_output: String::new(),
             warn_suppression_depth: 0,
             tap: self.tap.clone_for_thread(),
             halted: false,
             exit_code: 0,
             nested_mode: self.nested_mode,
-            immediate_stdout: false,
-            output_emitted: false,
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
             lib_paths: self.lib_paths.clone(),
@@ -5523,19 +5518,6 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
             monkey_typing: self.monkey_typing,
-            shared_thread_output: {
-                let buf = self
-                    .shared_thread_output
-                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new())));
-                Some(Arc::clone(buf))
-            },
-            shared_thread_stderr: {
-                let buf = self
-                    .shared_thread_stderr
-                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new())));
-                Some(Arc::clone(buf))
-            },
-            is_thread_clone: true,
         };
         // Raku gives each start block fresh $/ and $! (they are lexically scoped).
         cloned.env.insert("/".to_string(), Value::Nil);

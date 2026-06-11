@@ -395,13 +395,13 @@ impl Interpreter {
                 }
             }
             // Flush any remaining buffered output from the thread
-            let output = std::mem::take(&mut thread_interp.output);
+            let output = std::mem::take(&mut thread_interp.output_sink.output);
             if !output.is_empty() {
                 use std::io::Write;
                 let _ = std::io::stdout().write_all(output.as_bytes());
                 let _ = std::io::stdout().flush();
             }
-            let stderr = std::mem::take(&mut thread_interp.stderr_output);
+            let stderr = std::mem::take(&mut thread_interp.output_sink.stderr_output);
             if !stderr.is_empty() {
                 use std::io::Write;
                 let _ = std::io::stderr().write_all(stderr.as_bytes());

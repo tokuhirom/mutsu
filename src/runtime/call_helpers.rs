@@ -116,7 +116,8 @@ impl Interpreter {
                 && self.tap.subtest_depth() == 0
                 && self.raku_test_die_on_fail_enabled()
             {
-                self.stderr_output
+                self.output_sink
+                    .stderr_output
                     .push_str("Stopping test suite because of RAKU_TEST_DIE_ON_FAIL\n");
                 self.exit_code = 255;
                 self.halted = true;
@@ -134,11 +135,12 @@ impl Interpreter {
         if let Some(planned) = planned
             && planned != ran
         {
-            self.stderr_output
+            self.output_sink
+                .stderr_output
                 .push_str(&format!("# Planned {} tests, but ran {}\n", planned, ran));
         }
         let plural = if failed == 1 { "" } else { "s" };
-        self.stderr_output.push_str(&format!(
+        self.output_sink.stderr_output.push_str(&format!(
             "# You failed {} test{} of {}\n",
             failed, plural, ran
         ));
@@ -153,7 +155,7 @@ impl Interpreter {
         };
         let mut emit = |msg: String| {
             if to_stderr {
-                self.stderr_output.push_str(&msg);
+                self.output_sink.stderr_output.push_str(&msg);
                 eprint!("{}", msg);
             } else {
                 self.emit_output(&msg);

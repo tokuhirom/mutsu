@@ -313,12 +313,12 @@ impl Interpreter {
             let result = interp.call_sub_value(cb.clone(), vec![value], true);
             // Flush stdout (check both the per-interpreter buffer and the
             // shared thread output buffer used by thread clones).
-            if !interp.output.is_empty() {
-                print!("{}", interp.output);
+            if !interp.output_sink.output.is_empty() {
+                print!("{}", interp.output_sink.output);
                 let _ = std::io::stdout().flush();
-                interp.output.clear();
+                interp.output_sink.output.clear();
             }
-            if let Some(ref shared) = interp.shared_thread_output {
+            if let Some(ref shared) = interp.output_sink.shared_thread_output {
                 let drained = std::mem::take(&mut *shared.lock().unwrap());
                 if !drained.is_empty() {
                     print!("{}", drained);
@@ -326,12 +326,12 @@ impl Interpreter {
                 }
             }
             // Flush stderr
-            if !interp.stderr_output.is_empty() {
-                eprint!("{}", interp.stderr_output);
+            if !interp.output_sink.stderr_output.is_empty() {
+                eprint!("{}", interp.output_sink.stderr_output);
                 let _ = std::io::stderr().flush();
-                interp.stderr_output.clear();
+                interp.output_sink.stderr_output.clear();
             }
-            if let Some(ref shared) = interp.shared_thread_stderr {
+            if let Some(ref shared) = interp.output_sink.shared_thread_stderr {
                 let drained = std::mem::take(&mut *shared.lock().unwrap());
                 if !drained.is_empty() {
                     eprint!("{}", drained);

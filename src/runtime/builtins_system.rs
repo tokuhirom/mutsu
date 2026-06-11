@@ -152,13 +152,13 @@ impl Interpreter {
             }
             match result {
                 Ok(result) => {
-                    let output = std::mem::take(&mut thread_interp.output);
-                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                    let output = std::mem::take(&mut thread_interp.output_sink.output);
+                    let stderr = std::mem::take(&mut thread_interp.output_sink.stderr_output);
                     promise.keep(result, output, stderr);
                 }
                 Err(e) => {
-                    let output = std::mem::take(&mut thread_interp.output);
-                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                    let output = std::mem::take(&mut thread_interp.output_sink.output);
+                    let stderr = std::mem::take(&mut thread_interp.output_sink.stderr_output);
                     let error_val = if let Some(ex) = e.exception {
                         *ex
                     } else {
@@ -1588,7 +1588,7 @@ impl Interpreter {
                 Value::Promise(shared) => {
                     let (result, output, stderr) = shared.wait();
                     self.emit_output(&output);
-                    self.stderr_output.push_str(&stderr);
+                    self.output_sink.stderr_output.push_str(&stderr);
                     if let Some(payload) = shared.take_thread_payload()
                         && let Ok(payload) = payload.downcast::<ThreadPromisePayload>()
                     {
@@ -1668,7 +1668,7 @@ impl Interpreter {
                             Value::Promise(shared) => {
                                 let (result, output, stderr) = shared.wait();
                                 self.emit_output(&output);
-                                self.stderr_output.push_str(&stderr);
+                                self.output_sink.stderr_output.push_str(&stderr);
                                 if shared.status() == "Broken" {
                                     self.sync_shared_vars_to_env();
                                     let msg = result.to_string_value();
@@ -1705,16 +1705,16 @@ impl Interpreter {
         self.run_pending_instance_destroys()?;
 
         // Drain shared thread output buffers (concurrent output interleaved in real order)
-        if let Some(ref shared) = self.shared_thread_output {
+        if let Some(ref shared) = self.output_sink.shared_thread_output {
             let drained = std::mem::take(&mut *shared.lock().unwrap());
             if !drained.is_empty() {
                 self.emit_output(&drained);
             }
         }
-        if let Some(ref shared) = self.shared_thread_stderr {
+        if let Some(ref shared) = self.output_sink.shared_thread_stderr {
             let drained = std::mem::take(&mut *shared.lock().unwrap());
             if !drained.is_empty() {
-                self.stderr_output.push_str(&drained);
+                self.output_sink.stderr_output.push_str(&drained);
             }
         }
 
