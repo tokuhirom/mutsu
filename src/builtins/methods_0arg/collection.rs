@@ -431,7 +431,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    let values: Vec<Value> = map.values().cloned().collect();
+                    // Decontainerize `:=`-bound element cells (Phase 2): a bound
+                    // hash element is a `ContainerRef`, and `.values` must yield
+                    // the inner value, not the cell (else sort/compare leak).
+                    let values: Vec<Value> = map.values().map(|v| v.deref_container()).collect();
                     Some(Ok(Value::array(values)))
                 }
                 Value::Pair(_, value) | Value::ValuePair(_, value) => {

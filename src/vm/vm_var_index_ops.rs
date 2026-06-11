@@ -170,8 +170,11 @@ impl VM {
         match &resolved {
             Value::Hash(_) => {
                 let key = Value::hash_key_encode(&index);
-                // Use lazy ref: don't create the entry
-                if let Some(slot_ref) = resolved.hash_slot_ref_lazy(&key) {
+                // Phase 2 Stage 1: promote an existing scalar leaf to a shared
+                // `ContainerRef` cell so deep `%h<a><b>` binds survive COW; an
+                // intermediate container keeps a lazy HashSlotRef, and a missing
+                // key stays lazy (no entry created).
+                if let Some(slot_ref) = resolved.hash_slot_ref(&key) {
                     self.stack.push(slot_ref);
                 } else {
                     self.stack.push(Value::Nil);
