@@ -341,6 +341,35 @@ impl Registry {
         self.class_role_param_bindings.get(class_name).cloned()
     }
 
+    /// Whether a `proto sub`/`proto` named `name` is declared, visible from the
+    /// `current_package` scope. Pure registry+scope read (no env, no re-entry):
+    /// the single implementation shared by `Interpreter::has_proto` and the VM's
+    /// native dispatch path.
+    pub(crate) fn has_proto(&self, current_package: &str, name: &str) -> bool {
+        if name.contains("::") {
+            return self.proto_subs.contains(name);
+        }
+        let local = format!("{}::{}", current_package, name);
+        if self.proto_subs.contains(&local) {
+            return true;
+        }
+        self.proto_subs.contains(&format!("GLOBAL::{}", name))
+    }
+
+    /// Whether any `multi` candidate (any arity) exists for `name`, visible from
+    /// the `current_package` scope. Pure registry+scope read, shared by
+    /// `Interpreter::has_multi_candidates` and the VM's native dispatch path.
+    pub(crate) fn has_multi_candidates(&self, current_package: &str, name: &str) -> bool {
+        let prefixes = [
+            format!("{}::{}/", current_package, name),
+            format!("GLOBAL::{}/", name),
+        ];
+        self.functions.keys().any(|k| {
+            let ks = k.resolve();
+            prefixes.iter().any(|p| ks.starts_with(p))
+        })
+    }
+
     /// Whether `name` is marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) fn is_hidden_class(&self, name: &str) -> bool {
         self.hidden_classes.contains(name)

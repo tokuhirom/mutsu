@@ -1212,28 +1212,14 @@ impl Interpreter {
     }
 
     pub(crate) fn has_proto(&self, name: &str) -> bool {
-        if name.contains("::") {
-            return self.registry().proto_subs.contains(name);
-        }
-        let local = format!("{}::{}", self.current_package(), name);
-        if self.registry().proto_subs.contains(&local) {
-            return true;
-        }
-        self.registry()
-            .proto_subs
-            .contains(&format!("GLOBAL::{}", name))
+        let pkg = self.current_package();
+        self.registry().has_proto(&pkg, name)
     }
 
     /// Check if any multi candidates exist for this function name (any arity).
     pub(crate) fn has_multi_candidates(&self, name: &str) -> bool {
-        let prefixes = [
-            format!("{}::{}/", self.current_package(), name),
-            format!("GLOBAL::{}/", name),
-        ];
-        self.registry().functions.keys().any(|k| {
-            let ks = k.resolve();
-            prefixes.iter().any(|p| ks.starts_with(p))
-        })
+        let pkg = self.current_package();
+        self.registry().has_multi_candidates(&pkg, name)
     }
 
     pub(super) fn resolve_proto_function_with_alias(

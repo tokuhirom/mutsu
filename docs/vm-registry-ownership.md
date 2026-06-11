@@ -215,6 +215,26 @@ lookup は accessor 経由（多くは既に owned 返し）。**PR-A**（抽出
 メソッド化）→ **PR-C**（register_* の write-through 整理＋再入跨ぎ guard 無しを実行時 guard で保証）まで全完了。
 **次は ③**（env/型/state 移管＝interpreter ブリッジ撤去の最大の山）。
 
+## PR-D（③ 後続: registry dispatch read の VM ネイティブ化）進捗
+
+②で registry は VM ハンドル化済みだが、VM の dispatch 判定（`has_proto`/`has_multi_candidates`）は
+`self.interpreter.has_proto(...)` バウンス経由だった（これら wrapper が `current_package` に結合し、
+`current_package` が Interpreter 所有の plain field だったため）。`current_package` を共有ハンドル化した
+直後スライス（`docs/vm-state-ownership.md` の current_package 移管エントリ）の上に構築:
+
+- **`has_proto`/`has_multi_candidates` を pure `impl Registry` メソッド化**（`registry.rs`、`current_package`
+  を引数で受ける純 registry+scope read・env/再入なし）。`Interpreter::has_proto`/`has_multi_candidates` は
+  `self.registry().has_proto(&self.current_package(), name)` の薄い委譲へ（**1 操作 = 1 実装**）。
+- **VM に `registry()` read accessor 追加**（`RegistryReadGuard`、`registry_mut()` と同規律＝再入を跨いで
+  保持しない）+ VM ネイティブ `has_proto`/`has_multi_candidates`（VM 自前の `registry`+`current_package`
+  ハンドルで読む）。VM の ~21 サイトを `self.interpreter.has_*` → `self.has_*` へ。`has_multi_candidates_cached`
+  も VM ネイティブ呼びへ。`RegistryReadGuard` を `runtime` から re-export。
+- **`resolve_function_with_types` は据え置き**（`self.env.get(...)` の prefix-package 可視判定 +
+  `choose_best_matching_candidate` の `where` 節＝ユーザコード再入に結合＝pure 化不可。env 移管まで interpreter
+  bounce が正解）。**`has_proto_token` も据え置き**（`mro_readonly` MRO walk に結合）。
+- 挙動不変、build/clippy/make test 緑、S06-multi（proto/syntax/type-based/subsignature/lexical-multis/callsame）
+  /S10-packages/S11-modules roast 緑。
+
 ## 非ゴール
 
 env/型/state 移管（③）、登録の完全 VM ネイティブ化（③/④後）、台帳 §1/§2 の実消化（②完了後の別 PR）、

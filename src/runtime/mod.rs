@@ -227,7 +227,7 @@ pub(crate) use self::output_sink::OutputSink;
 #[allow(unused_imports)]
 pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};
 pub(crate) use self::registration_class::ClassDeclModifiers;
-pub(crate) use self::registry::{Registry, RegistryWriteGuard};
+pub(crate) use self::registry::{Registry, RegistryReadGuard, RegistryWriteGuard};
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
 
 pub(crate) use utils::*;

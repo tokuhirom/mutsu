@@ -159,7 +159,7 @@ impl VM {
             .collect();
         if self.interpreter.has_declared_function(name)
             || self.interpreter.has_multi_function(name)
-            || self.interpreter.has_proto(name)
+            || self.has_proto(name)
         {
             raw_args
         } else {

@@ -493,14 +493,38 @@ impl VM {
     /// Write access to the shared declaration [`Registry`](crate::runtime::Registry)
     /// via the VM's own handle (no `self.interpreter` bounce). Same lock and same
     /// guard discipline as the interpreter's `registry_mut`: never hold the guard
-    /// across user-code re-entry. (A read counterpart will be added when the
-    /// registry dispatch reads — `has_proto` / `has_multi_candidates` /
-    /// `resolve_function_with_types` — are turned into pure `impl Registry` methods
-    /// taking `current_package` as a parameter; `current_package` itself is now
-    /// VM-accessible via [`Self::current_package`], so that follow-up is unblocked.)
+    /// across user-code re-entry.
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::RegistryWriteGuard<'_> {
         crate::runtime::RegistryWriteGuard::new(&self.registry, "registry")
+    }
+
+    /// Read access to the shared declaration [`Registry`] via the VM's own handle.
+    /// Used by the VM-native dispatch predicates ([`Self::has_proto`] /
+    /// [`Self::has_multi_candidates`]) so they read the registry without bouncing
+    /// through `self.interpreter`. The guard must not be held across user-code
+    /// re-entry (same discipline as `registry_mut`).
+    #[inline]
+    pub(crate) fn registry(&self) -> crate::runtime::RegistryReadGuard<'_> {
+        crate::runtime::RegistryReadGuard::new(&self.registry, "registry")
+    }
+
+    /// VM-native `proto`-declaration check, mirroring
+    /// `Interpreter::has_proto`: reads the VM's own registry + `current_package`
+    /// handles and delegates to the single [`Registry::has_proto`] implementation.
+    #[inline]
+    pub(crate) fn has_proto(&self, name: &str) -> bool {
+        let pkg = self.current_package();
+        self.registry().has_proto(&pkg, name)
+    }
+
+    /// VM-native multi-candidate check, mirroring
+    /// `Interpreter::has_multi_candidates` via the single
+    /// [`Registry::has_multi_candidates`] implementation.
+    #[inline]
+    pub(crate) fn has_multi_candidates(&self, name: &str) -> bool {
+        let pkg = self.current_package();
+        self.registry().has_multi_candidates(&pkg, name)
     }
 
     /// The in-scope package name, read out of the VM's own `current_package`
