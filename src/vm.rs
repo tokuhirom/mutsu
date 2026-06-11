@@ -94,6 +94,14 @@ pub(crate) struct VM {
     /// Arc is only ever replaced by `clone_for_thread` (which builds a fresh
     /// Interpreter for a child thread), never reassigned in place during a run.
     registry: Arc<RwLock<crate::runtime::Registry>>,
+    /// Handle to the shared [`IoHandleTable`](crate::runtime::IoHandleTable),
+    /// cloned from the interpreter at construction (PLAN.md ③ native IO PR-C: the
+    /// VM holds the IO handle table as a *peer*, mirroring `registry`). Points at
+    /// the same `RwLock` as `self.interpreter`'s handle, so mutations through
+    /// either are visible. Stable for the VM's lifetime (same `clone_for_thread`
+    /// reasoning as `registry`). Used by `try_native_io_handle_method` to resolve
+    /// pure-handle IO methods natively instead of bouncing through the interpreter.
+    io_handles: Arc<RwLock<crate::runtime::IoHandleTable>>,
     stack: Vec<Value>,
     locals: Vec<Value>,
     in_smartmatch_rhs: bool,
@@ -408,9 +416,11 @@ impl VM {
 
     pub(crate) fn new(interpreter: Interpreter) -> Self {
         let registry = interpreter.registry_handle();
+        let io_handles = interpreter.io_handles_handle();
         Self {
             interpreter,
             registry,
+            io_handles,
             stack: Vec::new(),
             locals: Vec::new(),
             in_smartmatch_rhs: false,
@@ -474,6 +484,15 @@ impl VM {
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::RegistryWriteGuard<'_> {
         crate::runtime::RegistryWriteGuard::new(&self.registry, "registry")
+    }
+
+    /// Write access to the shared [`IoHandleTable`](crate::runtime::IoHandleTable)
+    /// via the VM's own handle (no `self.interpreter` bounce). Same lock and guard
+    /// discipline as the interpreter's `io_handles_mut`: never hold the guard
+    /// across a re-entrant handle op.
+    #[inline]
+    pub(crate) fn io_handles_mut(&self) -> crate::runtime::IoHandlesWriteGuard<'_> {
+        crate::runtime::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
     }
 
     /// Run the compiled bytecode. Always returns the interpreter back

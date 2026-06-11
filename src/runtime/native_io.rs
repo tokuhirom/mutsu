@@ -2695,7 +2695,7 @@ impl Interpreter {
             }
             "flush" => {
                 let flushed = self.with_handle_mut_opt(&target_val, |state| {
-                    Self::flush_file_handle_buffer(state)?;
+                    state.flush_buffer()?;
                     if let Some(file) = state.file.as_mut() {
                         file.flush().map_err(|err| {
                             RuntimeError::new(format!("Failed to flush handle: {}", err))
@@ -2723,7 +2723,7 @@ impl Interpreter {
             "out-buffer" => {
                 let size = self.with_handle_mut(&target_val, |state| {
                     if let Some(arg) = args.first() {
-                        Self::flush_file_handle_buffer(state)?;
+                        state.flush_buffer()?;
                         state.out_buffer_capacity = Self::parse_out_buffer_size(arg);
                     }
                     Ok(state.out_buffer_capacity.unwrap_or(0))
@@ -2761,23 +2761,7 @@ impl Interpreter {
                 Ok(Value::Bool(at_end))
             }
             "t" => {
-                // Check if the handle is a TTY
-                use std::io::IsTerminal;
-                let is_tty = self.with_handle_mut(&target_val, |state| {
-                    Ok(match state.target {
-                        IoHandleTarget::Stdin => std::io::stdin().is_terminal(),
-                        IoHandleTarget::Stdout => std::io::stdout().is_terminal(),
-                        IoHandleTarget::Stderr => std::io::stderr().is_terminal(),
-                        IoHandleTarget::File => {
-                            if let Some(file) = state.file.as_ref() {
-                                file.is_terminal()
-                            } else {
-                                false
-                            }
-                        }
-                        _ => false,
-                    })
-                })?;
+                let is_tty = self.with_handle_mut(&target_val, |state| Ok(state.is_tty()))?;
                 Ok(Value::Bool(is_tty))
             }
             "encoding" => {
@@ -2802,7 +2786,7 @@ impl Interpreter {
                 Ok(Value::str(current))
             }
             "opened" => {
-                let opened = self.with_handle_mut(&target_val, |state| Ok(!state.closed))?;
+                let opened = self.with_handle_mut(&target_val, |state| Ok(state.is_opened()))?;
                 Ok(Value::Bool(opened))
             }
             "slurp" => {

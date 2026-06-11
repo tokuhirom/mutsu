@@ -421,6 +421,15 @@ impl VM {
         {
             return result;
         }
+        // Native pure-handle IO methods on an `IO::Handle` receiver
+        // (close/tell/eof/seek/opened/t): resolve in the VM through its own
+        // `io_handles` handle (PLAN.md ③ native IO PR-C), shrinking the §1
+        // native-IO fork. Only methods that touch *only* handle state are handled
+        // here; read/write/lines/slurp/etc. (which need emit_output / env /
+        // encoding) still fall through to the interpreter below.
+        if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
+            return result;
+        }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
         // User-defined Instance methods now always run as bytecode (compiled at
         // registration, or on demand above via `populate_uncompiled_method`), so
@@ -430,6 +439,93 @@ impl VM {
         crate::vm::vm_stats::record_method_fallback(method);
         self.interpreter
             .call_method_with_values(target, method, args)
+    }
+
+    /// VM-native dispatch for the pure-handle methods of an `IO::Handle`
+    /// (`close`/`tell`/`eof`/`seek`/`opened`/`t`) — the ones that touch only the
+    /// handle's own state, with no `emit_output` / env / encoding dependency.
+    /// Operates on the VM's own [`io_handles`](VM::io_handles_mut) handle and the
+    /// shared `IoHandleState` methods (the single authoritative impl the
+    /// interpreter's `*_handle_value` wrappers also use), so behavior is identical
+    /// to the interpreter's native fork.
+    ///
+    /// Returns `None` (fall through to the interpreter) for any other receiver,
+    /// any other method, unexpected arity, or junction arguments (which need
+    /// interpreter autothreading). Restricted to the exact `"IO::Handle"` class:
+    /// `IO::Socket::INET` (socket-semantic close) and `IO::Pipe` (process-reaping
+    /// close) are intentionally excluded.
+    fn try_native_io_handle_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let id = match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
+                Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                _ => return None,
+            },
+            _ => return None,
+        };
+
+        enum Op {
+            Tell,
+            Eof,
+            Opened,
+            Tty,
+            Close,
+            Seek(i64, i32),
+        }
+        let op = match method {
+            "tell" if args.is_empty() => Op::Tell,
+            "eof" if args.is_empty() => Op::Eof,
+            "opened" if args.is_empty() => Op::Opened,
+            "t" if args.is_empty() => Op::Tty,
+            "close" if args.is_empty() => Op::Close,
+            "seek" => {
+                // seek($offset, $whence = SeekFromBeginning). Mirror the
+                // interpreter's `native_io_handle` arg handling exactly: a
+                // non-Int offset coerces to 0 (`unwrap_or(0)`), and the whence
+                // string maps to 0/1/2 (anything else -> 0). Defer to the
+                // interpreter when an arg is a junction (needs autothreading) or
+                // the arity is unexpected.
+                if args.len() > 2 || args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+                    return None;
+                }
+                let pos = match args.first() {
+                    Some(Value::Int(i)) => *i,
+                    _ => 0,
+                };
+                let mode = match args.get(1) {
+                    Some(v) => match v.to_string_value().as_str() {
+                        "SeekFromCurrent" => 1,
+                        "SeekFromEnd" => 2,
+                        _ => 0,
+                    },
+                    None => 0,
+                };
+                Op::Seek(pos, mode)
+            }
+            _ => return None,
+        };
+
+        let mut table = self.io_handles_mut();
+        let Some(state) = table.map.get_mut(&id) else {
+            return Some(Err(RuntimeError::new("Invalid IO::Handle")));
+        };
+        let result = match op {
+            Op::Tell => state.tell().map(Value::Int),
+            Op::Eof => state.eof().map(Value::Bool),
+            Op::Opened => Ok(Value::Bool(state.is_opened())),
+            Op::Tty => Ok(Value::Bool(state.is_tty())),
+            Op::Close => state.close().map(Value::Bool),
+            Op::Seek(pos, mode) => state.seek(pos, mode).map(Value::Int),
+        };
+        Some(result)
     }
 
     /// VM-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`

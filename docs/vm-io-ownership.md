@@ -151,3 +151,25 @@ make roast のタイムアウト（静的には捕捉できない＝必ずスモ
     slurp/spurt/out-buffering/utf16/null-char + IO-Socket-INET/UNIX/accept-threads/fail-invalid/pipe/note/other +
     Async/Async-UDP/signals）+ t/（io-*/socket/thread/concurrency/proc-async/subtest-threaded）緑、再入 panic ゼロ。
     `make test`（cargo 458 + prove 6292）緑。次の着手 = **PR-C**（VM へ io_handles ハンドル移管、② #2895 相当）。
+- **PR-C 完了（2026-06-11）**: VM へ `io_handles` ハンドル移管（② #2895 相当）＋**最初の VM ネイティブ IO dispatch
+  スライス**。② registry は VM 直アクセスサイト（package_stubs）が既存だったため #2895 が純粋なハンドル追加で済んだが、
+  IO は VM 直アクセスが**ゼロ**（catch-all が `self.interpreter.call_method_with_values` へ全部落とす）。よってハンドル
+  だけ足すと dead_code になる → #2895 同様「実ユーザを伴うハンドル移管」とし、**純粋ハンドルメソッド**を最初の
+  ネイティブ dispatch として実装。
+  - **純粋ロジックを `impl IoHandleState` へ抽出**（`handle.rs`）: `flush_buffer`/`tell`/`eof`/`seek`/`close`/
+    `is_opened`/`is_tty` — emit_output/env/encoding 非依存の状態専有操作。Interpreter の `*_handle_value` ラッパは
+    これらへ委譲（`with_handle_mut(hv, |s| s.tell())` 等）、native_io の `t`/`opened` も委譲。`flush_file_handle_buffer`
+    （Interpreter 関連関数）→ `IoHandleState::flush_buffer`（6 呼び出し側変換）。＝「1 操作 = 1 実装」。
+  - **VM ハンドル**: `Interpreter::io_handles_handle()`（Arc clone、`registry_handle()` 同型）、VM に `io_handles`
+    フィールド（`VM::new` で clone）+ `io_handles_mut()` アクセサ。両ハンドルは同一 RwLock を指し、debug 再入 guard
+    が deadlock を検出。`clone_for_thread` が fresh Interpreter を作るため VM 寿命中 Arc は安定（#2895 と同じ論拠）。
+  - **`try_native_io_handle_method`**（`vm_call_method_compiled.rs`、catch-all 直前）: 受け手が **`IO::Handle`
+    厳密一致**（`IO::Socket::INET` の socket-close / `IO::Pipe` の process-reap close は除外）かつ method ∈
+    {close/tell/eof/seek/opened/t} かつ引数が純粋（junction はインタプリタ autothread へ fall through）のとき VM の
+    `io_handles_mut()` で state を引き共有メソッドを呼ぶ。seek の arg 解釈は native_io と完全一致（非Int offset→0、
+    whence 文字列→0/1/2）。それ以外は全て `None`（fall through）。`handle_id_from_value` を `pub(crate)` 化。
+  - **検証**: PR-B smoke + 新規 `t/io-handle-pure-methods.t`（16 本、tell/eof/seek/opened/close/t）を raku と byte
+    一致、whitelisted S32-io（seek/tell/open 等が VM ネイティブ経路を通過）+ socket/pipe/thread 緑、`make test`
+    （cargo 458 + prove 6338）緑、再入 panic ゼロ。double-close が False 返し（raku は True）の差は**抽出前から存在
+    する既存挙動**（verbatim 抽出ゆえ PR-C は不変、roast close.t/open.t も緑）。次 = **PR-D**（read/write/lines/slurp
+    等の重 IO メソッドを段階的に VM ネイティブ化。emit_output/env/encoding 依存ゆえ ③ 後段/④ の状態移管が前提）。

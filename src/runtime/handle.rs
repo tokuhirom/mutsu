@@ -1,6 +1,167 @@
 use super::*;
 use num_traits::ToPrimitive;
 
+/// Pure per-handle operations that touch only the handle's own state — no
+/// `Interpreter` state (no `emit_output`, env, or encoding helpers). These are
+/// the single authoritative implementation shared by the interpreter's
+/// `*_handle_value` wrappers and the VM-native IO dispatch
+/// (`try_native_io_handle_method`), so the §1 native-IO fork for these methods
+/// can resolve in the VM via its own `io_handles` handle without bouncing
+/// through `self.interpreter` (PLAN.md ③ native IO PR-C).
+impl IoHandleState {
+    /// Flush any buffered (`:out-buffer`) bytes to the underlying file.
+    pub(crate) fn flush_buffer(&mut self) -> Result<(), RuntimeError> {
+        if self.out_buffer_pending.is_empty() {
+            return Ok(());
+        }
+        let Some(file) = self.file.as_mut() else {
+            return Err(RuntimeError::new("IO::Handle is not attached to a file"));
+        };
+        file.write_all(&self.out_buffer_pending)
+            .map_err(|err| RuntimeError::new(format!("Failed to write to file: {}", err)))?;
+        self.out_buffer_pending.clear();
+        Ok(())
+    }
+
+    /// `.tell` — current byte offset (file position, or bytes written for
+    /// non-file targets).
+    pub(crate) fn tell(&mut self) -> Result<i64, RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        match self.target {
+            IoHandleTarget::File => {
+                let file = self
+                    .file
+                    .as_mut()
+                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                let pos = file.stream_position().map_err(|err| {
+                    RuntimeError::new(format!("Failed to query position: {}", err))
+                })?;
+                Ok(pos as i64)
+            }
+            _ => Ok(self.bytes_written),
+        }
+    }
+
+    /// `.eof` — whether the read position is at end of file.
+    pub(crate) fn eof(&mut self) -> Result<bool, RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        match self.target {
+            IoHandleTarget::File => {
+                let file = self
+                    .file
+                    .as_mut()
+                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                let pos = file.stream_position().map_err(|err| {
+                    RuntimeError::new(format!("Failed to query position: {}", err))
+                })?;
+                let end = file
+                    .metadata()
+                    .map_err(|err| RuntimeError::new(format!("Failed to stat file: {}", err)))?
+                    .len();
+                // Raku semantics: a freshly opened file where pos == 0 and the
+                // reported size is 0 returns False for .eof until a read or seek
+                // has been performed (handles truly empty files and /proc
+                // virtual files that report size 0).
+                if pos == 0 && end == 0 && !self.read_attempted {
+                    return Ok(false);
+                }
+                Ok(pos >= end)
+            }
+            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(false),
+            _ => Err(RuntimeError::new("Handle not readable")),
+        }
+    }
+
+    /// `.seek($offset, $whence)` — reposition the file cursor. `mode`: 0 = from
+    /// beginning, 1 = from current, 2 = from end. Returns the new position.
+    pub(crate) fn seek(&mut self, pos: i64, mode: i32) -> Result<i64, RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        self.read_attempted = true;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+        let seek_from = match mode {
+            1 => SeekFrom::Current(pos),
+            2 => SeekFrom::End(pos),
+            _ => {
+                if pos < 0 {
+                    return Err(RuntimeError::new(
+                        "X::IO::Seek: Cannot seek to a negative position",
+                    ));
+                }
+                SeekFrom::Start(pos as u64)
+            }
+        };
+        if mode == 1 || mode == 2 {
+            let current = file
+                .stream_position()
+                .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+            let target_pos = match mode {
+                1 => current as i64 + pos,
+                2 => {
+                    let end = file
+                        .seek(SeekFrom::End(0))
+                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                    file.seek(SeekFrom::Start(current))
+                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                    end as i64 + pos
+                }
+                _ => unreachable!(),
+            };
+            if target_pos < 0 {
+                return Err(RuntimeError::new(
+                    "X::IO::Seek: Cannot seek to a negative position",
+                ));
+            }
+        }
+        let new_pos = file
+            .seek(seek_from)
+            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+        Ok(new_pos as i64)
+    }
+
+    /// `.close` — flush + close a file handle. Returns false if already closed.
+    pub(crate) fn close(&mut self) -> Result<bool, RuntimeError> {
+        if self.closed {
+            return Ok(false);
+        }
+        if matches!(self.target, IoHandleTarget::File) {
+            self.flush_buffer()?;
+            if let Some(file) = self.file.as_mut() {
+                file.flush()
+                    .map_err(|err| RuntimeError::new(format!("Failed to flush handle: {}", err)))?;
+            }
+        }
+        self.closed = true;
+        self.file = None;
+        Ok(true)
+    }
+
+    /// `.opened` — whether the handle is still open.
+    pub(crate) fn is_opened(&self) -> bool {
+        !self.closed
+    }
+
+    /// `.t` — whether the handle is attached to a TTY.
+    pub(crate) fn is_tty(&self) -> bool {
+        use std::io::IsTerminal;
+        match self.target {
+            IoHandleTarget::Stdin => std::io::stdin().is_terminal(),
+            IoHandleTarget::Stdout => std::io::stdout().is_terminal(),
+            IoHandleTarget::Stderr => std::io::stderr().is_terminal(),
+            IoHandleTarget::File => self.file.as_ref().is_some_and(|f| f.is_terminal()),
+            _ => false,
+        }
+    }
+}
+
 impl Interpreter {
     pub(super) fn parse_out_buffer_size(value: &Value) -> Option<usize> {
         match value {
@@ -8,19 +169,6 @@ impl Interpreter {
             Value::BigInt(i) if i.sign() != num_bigint::Sign::Minus => i.to_usize(),
             _ => None,
         }
-    }
-
-    pub(super) fn flush_file_handle_buffer(state: &mut IoHandleState) -> Result<(), RuntimeError> {
-        if state.out_buffer_pending.is_empty() {
-            return Ok(());
-        }
-        let Some(file) = state.file.as_mut() else {
-            return Err(RuntimeError::new("IO::Handle is not attached to a file"));
-        };
-        file.write_all(&state.out_buffer_pending)
-            .map_err(|err| RuntimeError::new(format!("Failed to write to file: {}", err)))?;
-        state.out_buffer_pending.clear();
-        Ok(())
     }
 
     pub(super) fn default_line_separators(&self) -> Vec<Vec<u8>> {
@@ -96,7 +244,7 @@ impl Interpreter {
         result
     }
 
-    pub(super) fn handle_id_from_value(value: &Value) -> Option<usize> {
+    pub(crate) fn handle_id_from_value(value: &Value) -> Option<usize> {
         if let Value::Instance {
             class_name,
             attributes,
@@ -233,7 +381,7 @@ impl Interpreter {
                 };
                 if let Some(capacity) = state.out_buffer_capacity {
                     if capacity == 0 {
-                        Self::flush_file_handle_buffer(state)?;
+                        state.flush_buffer()?;
                         if let Some(file) = state.file.as_mut() {
                             file.write_all(payload_bytes).map_err(|err| {
                                 RuntimeError::new(format!("Failed to write to file: {}", err))
@@ -243,7 +391,7 @@ impl Interpreter {
                     }
                     if payload_bytes.len() > capacity {
                         // Large payloads bypass buffering after flushing queued data.
-                        Self::flush_file_handle_buffer(state)?;
+                        state.flush_buffer()?;
                         if let Some(file) = state.file.as_mut() {
                             file.write_all(payload_bytes).map_err(|err| {
                                 RuntimeError::new(format!("Failed to write to file: {}", err))
@@ -252,7 +400,7 @@ impl Interpreter {
                         return Ok(());
                     }
                     if state.out_buffer_pending.len() + payload_bytes.len() > capacity {
-                        Self::flush_file_handle_buffer(state)?;
+                        state.flush_buffer()?;
                     }
                     state.out_buffer_pending.extend_from_slice(payload_bytes);
                     Ok(())
@@ -346,22 +494,7 @@ impl Interpreter {
         &mut self,
         handle_value: &Value,
     ) -> Result<bool, RuntimeError> {
-        self.with_handle_mut(handle_value, |state| {
-            if state.closed {
-                return Ok(false);
-            }
-            if matches!(state.target, IoHandleTarget::File) {
-                Self::flush_file_handle_buffer(state)?;
-                if let Some(file) = state.file.as_mut() {
-                    file.flush().map_err(|err| {
-                        RuntimeError::new(format!("Failed to flush handle: {}", err))
-                    })?;
-                }
-            }
-            state.closed = true;
-            state.file = None;
-            Ok(true)
-        })
+        self.with_handle_mut(handle_value, |state| state.close())
     }
 
     fn read_record_bytes<R: Read>(
@@ -968,108 +1101,15 @@ impl Interpreter {
         pos: i64,
         mode: i32,
     ) -> Result<i64, RuntimeError> {
-        self.with_handle_mut(handle_value, |state| {
-            if state.closed {
-                return Err(RuntimeError::io_closed("handle operation"));
-            }
-            state.read_attempted = true;
-            let file = state
-                .file
-                .as_mut()
-                .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-            let seek_from = match mode {
-                1 => SeekFrom::Current(pos),
-                2 => SeekFrom::End(pos),
-                _ => {
-                    if pos < 0 {
-                        return Err(RuntimeError::new(
-                            "X::IO::Seek: Cannot seek to a negative position",
-                        ));
-                    }
-                    SeekFrom::Start(pos as u64)
-                }
-            };
-            if mode == 1 || mode == 2 {
-                let current = file
-                    .stream_position()
-                    .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-                let target_pos = match mode {
-                    1 => current as i64 + pos,
-                    2 => {
-                        let end = file
-                            .seek(SeekFrom::End(0))
-                            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-                        file.seek(SeekFrom::Start(current))
-                            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-                        end as i64 + pos
-                    }
-                    _ => unreachable!(),
-                };
-                if target_pos < 0 {
-                    return Err(RuntimeError::new(
-                        "X::IO::Seek: Cannot seek to a negative position",
-                    ));
-                }
-            }
-            let new_pos = file
-                .seek(seek_from)
-                .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-            Ok(new_pos as i64)
-        })
+        self.with_handle_mut(handle_value, |state| state.seek(pos, mode))
     }
 
     pub(super) fn tell_handle_value(&mut self, handle_value: &Value) -> Result<i64, RuntimeError> {
-        self.with_handle_mut(handle_value, |state| {
-            if state.closed {
-                return Err(RuntimeError::io_closed("handle operation"));
-            }
-            match state.target {
-                IoHandleTarget::File => {
-                    let file = state
-                        .file
-                        .as_mut()
-                        .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                    let pos = file.stream_position().map_err(|err| {
-                        RuntimeError::new(format!("Failed to query position: {}", err))
-                    })?;
-                    Ok(pos as i64)
-                }
-                _ => Ok(state.bytes_written),
-            }
-        })
+        self.with_handle_mut(handle_value, |state| state.tell())
     }
 
     pub(super) fn handle_eof_value(&mut self, handle_value: &Value) -> Result<bool, RuntimeError> {
-        self.with_handle_mut(handle_value, |state| {
-            if state.closed {
-                return Err(RuntimeError::io_closed("handle operation"));
-            }
-            match state.target {
-                IoHandleTarget::File => {
-                    let file = state
-                        .file
-                        .as_mut()
-                        .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                    let pos = file.stream_position().map_err(|err| {
-                        RuntimeError::new(format!("Failed to query position: {}", err))
-                    })?;
-                    let end = file
-                        .metadata()
-                        .map_err(|err| RuntimeError::new(format!("Failed to stat file: {}", err)))?
-                        .len();
-                    // Raku semantics: a freshly opened file where pos == 0 and
-                    // the reported size is 0 returns False for .eof until a read
-                    // or seek has been performed. This handles both truly empty
-                    // files and /proc virtual files that report size 0.
-                    if pos == 0 && end == 0 && !state.read_attempted {
-                        return Ok(false);
-                    }
-                    Ok(pos >= end)
-                }
-                IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(false),
-                _ => Err(RuntimeError::new("Handle not readable")),
-            }
-        })
+        self.with_handle_mut(handle_value, |state| state.eof())
     }
 
     pub(super) fn set_handle_encoding(
