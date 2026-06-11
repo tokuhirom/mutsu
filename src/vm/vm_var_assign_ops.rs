@@ -2967,6 +2967,12 @@ impl VM {
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_source_update: Option<(String, Value)> = None;
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
+                // Phase 2 Stage 2: a single-level LHS bind to a plain scalar
+                // source (`@a[i] := $v`) promotes the element to a shared
+                // `ContainerRef` cell instead of the `BOUND_ARRAY_REF_SENTINEL`
+                // back-reference. The cell is written back to the source var
+                // after the write completes (symmetric to the deep handler).
+                let mut pending_source_cell: Option<(String, Arc<std::sync::Mutex<Value>>)> = None;
                 // Pre-compute whether this %-sigiled variable was bound via `:=`.
                 // Bound hash variables are marked readonly, so we use that as a signal
                 // to allow in-place mutation (preserving shared identity).
@@ -3220,12 +3226,26 @@ impl VM {
                                     if bind_mode
                                         && let Some(Some(source_name)) = bind_sources.first()
                                     {
-                                        // Store a sentinel so reads follow the
-                                        // source variable (two-way binding).
-                                        arr[i] = Value::Pair(
-                                            super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL.to_string(),
-                                            Box::new(Value::str(source_name.clone())),
-                                        );
+                                        if source_name.contains('\0') {
+                                            // Element source (`:= $b[j]`, encoded
+                                            // with `\0idx\0`) — keep the sentinel
+                                            // back-reference for now (cell-izing
+                                            // element sources is a later slice).
+                                            arr[i] = Value::Pair(
+                                                super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL
+                                                    .to_string(),
+                                                Box::new(Value::str(source_name.clone())),
+                                            );
+                                        } else {
+                                            // Plain scalar source: promote the
+                                            // element to a shared `ContainerRef`
+                                            // cell (Phase 2 Stage 2). Reads decont
+                                            // at `resolve_array_entry`; writes go
+                                            // through the cell arm below.
+                                            let cell = Arc::new(std::sync::Mutex::new(val.clone()));
+                                            arr[i] = Value::ContainerRef(cell.clone());
+                                            pending_source_cell = Some((source_name.clone(), cell));
+                                        }
                                     } else if let Some(Value::Pair(marker, source)) = arr.get(i)
                                         && marker == super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL
                                     {
@@ -3271,7 +3291,10 @@ impl VM {
                                 return Err(RuntimeError::new("Index out of bounds"));
                             }
                             self.mark_initialized_index(&var_name, encoded_idx.clone());
-                            if bind_mode {
+                            // A cell-bound element (scalar source) does not need
+                            // the bound-index side table — the `ContainerRef` cell
+                            // is the alias and write-through happens via the cell.
+                            if bind_mode && pending_source_cell.is_none() {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
                         }
@@ -3416,6 +3439,13 @@ impl VM {
                 }
                 if let Some((source_name, source_index, source_value)) = pending_varref_update {
                     self.assign_varref_target(&source_name, source_index, source_value)?;
+                }
+                if let Some((source_name, cell)) = pending_source_cell {
+                    // Bind the source variable to the same cell installed at the
+                    // element, so both sides alias one container.
+                    let cell_val = Value::ContainerRef(cell);
+                    self.set_env_with_main_alias(&source_name, cell_val.clone());
+                    self.update_local_if_exists(code, &source_name, &cell_val);
                 }
                 for encoded in range_initialized_marks {
                     self.mark_initialized_index(&var_name, encoded);
