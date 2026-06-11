@@ -227,7 +227,7 @@ impl Interpreter {
     }
 
     /// Create a Buf instance from raw bytes
-    pub(in crate::runtime) fn make_buf(bytes: Vec<u8>) -> Value {
+    pub(crate) fn make_buf(bytes: Vec<u8>) -> Value {
         let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(byte_vals));

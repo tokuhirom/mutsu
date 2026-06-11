@@ -880,15 +880,16 @@ impl VM {
         )
     }
 
-    /// VM-native line read (`get`) from a `File`+UTF8 `IO::Handle` receiver
-    /// (③後段 PR-D read side): read the next record via the shared
-    /// `IoHandleState::read_line_native` (the handle's record reader, UTF-8-lossy)
-    /// and map it to `Str` / `Nil` exactly as the interpreter's `get` handler.
+    /// VM-native reads from a `File`+UTF8 `IO::Handle` receiver (③後段 PR-D read
+    /// side): `get` (next line → `Str`/`Nil`), `slurp` (rest of file → `Str`),
+    /// `read` (up to N bytes → `Buf`). Each delegates to the shared
+    /// `IoHandleState` reader and shapes the result exactly as the interpreter's
+    /// handler.
     ///
     /// Returns `None` (fall through) for any non-`IO::Handle` receiver, any other
-    /// method, extra args, or a handle that is not a File with a UTF-8/binary
-    /// encoding — Stdin / ArgFiles (which need `@*ARGS`) and a non-UTF-8 File
-    /// (which needs `decode_with_encoding`) keep the interpreter's richer read.
+    /// method, or a handle the native path can't serve — Stdin / ArgFiles (need
+    /// `@*ARGS`), a non-UTF-8 / `:bin` slurp (needs `Buf` / `decode_with_encoding`),
+    /// junction args — keeping the interpreter's richer read.
     fn try_native_io_handle_read(
         &mut self,
         target: &Value,
@@ -906,20 +907,62 @@ impl VM {
             },
             _ => return None,
         };
-        if method != "get" || !args.is_empty() {
+        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
             return None;
         }
-        let mut table = self.io_handles_mut();
-        let state = table.map.get_mut(&id)?;
-        // File + UTF-8/binary only; everything else falls through.
-        if !state.can_native_text_write() {
-            return None;
+        match method {
+            "get" => {
+                if !args.is_empty() {
+                    return None;
+                }
+                let mut table = self.io_handles_mut();
+                let state = table.map.get_mut(&id)?;
+                // File + UTF-8/binary only; everything else falls through.
+                if !state.can_native_text_write() {
+                    return None;
+                }
+                Some(
+                    state
+                        .read_line_native()
+                        .map(|line| line.map(Value::str).unwrap_or(Value::Nil)),
+                )
+            }
+            "slurp" => {
+                // `:bin` falls through (returns a Buf via the interpreter).
+                let has_bin = args
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "bin" && v.truthy()));
+                let mut table = self.io_handles_mut();
+                let state = table.map.get_mut(&id)?;
+                if !state.can_native_slurp_string(has_bin) {
+                    return None;
+                }
+                Some(state.slurp_string_native().map(Value::str))
+            }
+            "read" => {
+                // `.read` returns a Buf. Parse the byte count exactly as the
+                // interpreter (positive Int → that many bytes; else read to EOF).
+                let count = match args.first() {
+                    Some(Value::Int(i)) if *i > 0 => *i as usize,
+                    None => 0,
+                    // Any other first arg (0/negative Int, non-Int) → the
+                    // interpreter coerces to 0 (read all); match that.
+                    Some(Value::Int(_)) => 0,
+                    _ => return None,
+                };
+                let mut table = self.io_handles_mut();
+                let state = table.map.get_mut(&id)?;
+                if !state.is_file_target() {
+                    return None;
+                }
+                Some(
+                    state
+                        .read_bytes_native(count)
+                        .map(crate::runtime::Interpreter::make_buf),
+                )
+            }
+            _ => None,
         }
-        Some(
-            state
-                .read_line_native()
-                .map(|line| line.map(Value::str).unwrap_or(Value::Nil)),
-        )
     }
 
     /// VM-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`

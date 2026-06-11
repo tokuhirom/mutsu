@@ -141,6 +141,64 @@ impl IoHandleState {
         Interpreter::read_record_with_separators(file, &seps, chomp)
     }
 
+    /// Whether `.slurp` can resolve to a `Str` natively (PR-D2): a `File` target
+    /// in text mode with a UTF-8 encoding (no `:bin`, no binary handle). A `:bin`
+    /// / binary-mode / non-UTF-8 slurp (which needs a `Buf` or
+    /// `decode_with_encoding`) falls through.
+    pub(crate) fn can_native_slurp_string(&self, has_bin_arg: bool) -> bool {
+        matches!(self.target, IoHandleTarget::File)
+            && !has_bin_arg
+            && !self.bin
+            && (self.encoding.is_empty() || self.encoding == "utf-8" || self.encoding == "utf8")
+    }
+
+    /// VM-native `.slurp` (Str) on a `File`+UTF8 handle: read everything from the
+    /// current position to EOF, UTF-8-lossy. Caller guarantees
+    /// [`can_native_slurp_string`].
+    pub(crate) fn slurp_string_native(&mut self) -> Result<String, RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        self.read_attempted = true;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+        Ok(String::from_utf8_lossy(&bytes).to_string())
+    }
+
+    /// VM-native `.read` on a `File` handle (PR-D2): `count > 0` reads up to
+    /// `count` bytes in one `read` (a short read is fine); `count == 0` reads to
+    /// EOF. Encoding-independent (returns raw bytes). Mirrors
+    /// `read_bytes_from_handle_value`'s File branch. Caller guarantees
+    /// [`is_file_target`].
+    pub(crate) fn read_bytes_native(&mut self, count: usize) -> Result<Vec<u8>, RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        self.read_attempted = true;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+        if count > 0 {
+            let mut buffer = vec![0u8; count];
+            let n = file
+                .read(&mut buffer)
+                .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+            buffer.truncate(n);
+            Ok(buffer)
+        } else {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)
+                .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+            Ok(bytes)
+        }
+    }
+
     /// Add to this handle's `bytes_written` counter. Used by the VM's Stdout
     /// emit to mirror `emit_output`'s Stdout-handle accounting (③後段 PR-C).
     pub(crate) fn add_bytes_written(&mut self, n: i64) {
