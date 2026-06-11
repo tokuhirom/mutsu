@@ -75,7 +75,11 @@ impl Interpreter {
             .as_ref()
             .map(|s| s.effective_ran())
             .unwrap_or(0);
-        let has_plan = subtest_state.as_ref().and_then(|s| s.planned).is_some();
+        let subtest_planned = subtest_state.as_ref().and_then(|s| s.planned);
+        let has_plan = subtest_planned.is_some();
+        // A subtest that declares a plan must run exactly that many tests. When it
+        // under/over-runs, rakudo reports it as a failure with a diagnostic line.
+        let plan_mismatch = matches!(subtest_planned, Some(p) if p != subtest_ran);
 
         self.tap.set_state(ctx.parent_test_state);
         self.output = ctx.parent_output;
@@ -93,6 +97,14 @@ impl Interpreter {
         self.emit_output(&format!("# Subtest: {}\n", label));
         if !has_plan {
             subtest_output.push_str(&format!("1..{}\n", subtest_ran));
+        } else if let Some(planned) = subtest_planned
+            && plan_mismatch
+        {
+            let plural = if planned == 1 { "" } else { "s" };
+            subtest_output.push_str(&format!(
+                "# You planned {} test{}, but ran {}\n",
+                planned, plural, subtest_ran
+            ));
         }
 
         let mut rendered_lines = Vec::new();
@@ -140,11 +152,11 @@ impl Interpreter {
             && subtest_had_not_ok
             && uses_parent_historical_reason;
         let ok = if parent_forced_todo_reason.is_some() {
-            run_result.is_ok() && !subtest_had_not_ok
+            run_result.is_ok() && !subtest_had_not_ok && !plan_mismatch
         } else if inherited_parent_todo {
             false
         } else {
-            run_result.is_ok() && subtest_failed == 0
+            run_result.is_ok() && subtest_failed == 0 && !plan_mismatch
         };
         self.test_ok(ok, label, inherited_parent_todo)?;
         Ok(())
