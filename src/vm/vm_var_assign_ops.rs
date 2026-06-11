@@ -5669,12 +5669,19 @@ impl VM {
             self.interpreter.clear_container_default(&val);
         }
         self.locals[idx] = val.clone();
-        // When assigning (not binding) to an untyped hash variable, clear
-        // stale container type metadata from Arc pointer reuse.
+        // When assigning (not binding) to an untyped hash/array variable, clear
+        // stale container type metadata from Arc pointer reuse. The pointer-keyed
+        // `*_type_metadata` maps are never pruned when a typed container is
+        // dropped, so a freshly-built untyped `@a`/`%h` whose backing `Arc`
+        // reuses a freed typed container's heap address inherits its stale
+        // `Array[Int]`/`Hash[...]` metadata (alloc-order-dependent, intermittent).
+        // The variable is provably untyped here (`var_type_constraint` is `None`),
+        // so any metadata found on its value is necessarily that stale alias and
+        // is safe to remove (a live typed container cannot share the address).
         // Skip for attribute variables (.h, !h) which get typed metadata from
         // the class definition, not from var_type_constraints.
         if !is_bind
-            && name.starts_with('%')
+            && (name.starts_with('%') || name.starts_with('@'))
             && !name.contains('.')
             && !name.contains('!')
             && self.interpreter.var_type_constraint(name).is_none()
