@@ -160,10 +160,82 @@ impl IoHandleState {
             _ => false,
         }
     }
+
+    /// `.chomp` getter/setter — auto-chomp on line reads. `set` carries the new
+    /// truthy value when called as a setter; returns the resulting setting.
+    pub(crate) fn chomp_setting(&mut self, set: Option<bool>) -> bool {
+        if let Some(v) = set {
+            self.line_chomp = v;
+        }
+        self.line_chomp
+    }
+
+    /// `.nl-out` getter/setter — the output line terminator. Returns the
+    /// resulting terminator string.
+    pub(crate) fn nl_out_setting(&mut self, set: Option<String>) -> String {
+        if let Some(v) = set {
+            self.nl_out = v;
+        }
+        self.nl_out.clone()
+    }
+
+    /// `.out-buffer` getter/setter — output buffer capacity. When `set` is
+    /// `Some(cap)` the pending buffer is flushed first and the capacity is
+    /// replaced (a `None` capacity means unbounded/disabled). Returns the
+    /// resulting capacity (0 when unset).
+    pub(crate) fn out_buffer_setting(
+        &mut self,
+        set: Option<Option<usize>>,
+    ) -> Result<usize, RuntimeError> {
+        if let Some(cap) = set {
+            self.flush_buffer()?;
+            self.out_buffer_capacity = cap;
+        }
+        Ok(self.out_buffer_capacity.unwrap_or(0))
+    }
+
+    /// `.encoding` getter/setter — the handle's character encoding (`"bin"` for
+    /// binary mode). On set, returns the *previous* encoding; on get, the
+    /// current one (mirrors the interpreter's `set_handle_encoding`).
+    pub(crate) fn encoding_setting(&mut self, set: Option<String>) -> String {
+        match set {
+            Some(enc) => std::mem::replace(&mut self.encoding, enc),
+            None => self.encoding.clone(),
+        }
+    }
+
+    /// `.native-descriptor` — the underlying OS file descriptor. Std streams map
+    /// to 0/1/2; file handles report their real `fd` on Unix.
+    pub(crate) fn native_descriptor(&self) -> Result<i64, RuntimeError> {
+        match self.target {
+            IoHandleTarget::Stdin => Ok(0),
+            IoHandleTarget::Stdout => Ok(1),
+            IoHandleTarget::Stderr => Ok(2),
+            _ => {
+                #[cfg(unix)]
+                {
+                    if let Some(ref file) = self.file {
+                        use std::os::unix::io::AsRawFd;
+                        Ok(file.as_raw_fd() as i64)
+                    } else {
+                        Err(RuntimeError::new(
+                            "native-descriptor: handle has no file descriptor",
+                        ))
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    Err(RuntimeError::new(
+                        "native-descriptor: not supported on this platform",
+                    ))
+                }
+            }
+        }
+    }
 }
 
 impl Interpreter {
-    pub(super) fn parse_out_buffer_size(value: &Value) -> Option<usize> {
+    pub(crate) fn parse_out_buffer_size(value: &Value) -> Option<usize> {
         match value {
             Value::Int(i) if *i >= 0 => Some(*i as usize),
             Value::BigInt(i) if i.sign() != num_bigint::Sign::Minus => i.to_usize(),
@@ -1117,15 +1189,7 @@ impl Interpreter {
         handle_value: &Value,
         encoding: Option<String>,
     ) -> Result<String, RuntimeError> {
-        self.with_handle_mut(handle_value, |state| {
-            if let Some(enc) = encoding {
-                let prev = state.encoding.clone();
-                state.encoding = enc;
-                Ok(prev)
-            } else {
-                Ok(state.encoding.clone())
-            }
-        })
+        self.with_handle_mut(handle_value, |state| Ok(state.encoding_setting(encoding)))
     }
 
     pub(super) fn system_time_to_int(time: SystemTime) -> i64 {

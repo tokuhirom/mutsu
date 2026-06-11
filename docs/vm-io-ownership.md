@@ -186,3 +186,25 @@ make roast のタイムアウト（静的には捕捉できない＝必ずスモ
     （cargo 458 + prove 6338）緑、再入 panic ゼロ。double-close が False 返し（raku は True）の差は**抽出前から存在
     する既存挙動**（verbatim 抽出ゆえ PR-C は不変、roast close.t/open.t も緑）。次 = **PR-D**（read/write/lines/slurp
     等の重 IO メソッドを段階的に VM ネイティブ化。emit_output/env/encoding 依存ゆえ ③ 後段/④ の状態移管が前提）。
+- **PR-D Tier-1 完了（2026-06-11）**: 状態専有 setter/getter `chomp`/`nl-out`/`out-buffer`/`encoding` +
+  `native-descriptor` を VM ネイティブ dispatch へ。純粋ロジックを `impl IoHandleState` へ追加（`chomp_setting`/
+  `nl_out_setting`/`out_buffer_setting`/`encoding_setting`/`native_descriptor`）、Interpreter の native_io ハンドラと
+  `set_handle_encoding` をこれらへ委譲（「1 操作 = 1 実装」）。`try_native_io_handle_method` に arm 追加（encoding は
+  Nil↔bin の Value 整形を arm 内で実施＝native_io と完全一致、out-buffer の `parse_out_buffer_size` を `pub(crate)`
+  化）。
+  - **★ PR-C 遮蔽バグを発見・修正（本スライスの crux）**: PR-C の `try_native_io_handle_method` は **catch-all 直前**に
+    置かれていたが、`try_compiled_method_or_interpret`/`try_compiled_method_mut_or_interpret` の**先頭に
+    `is_native_method` 早期フォールバックゲート**があり、IO::Handle の native メソッド（tell/seek/close…全部）は
+    そのゲートで `call_method_with_values` へ落ちて L430 に到達せず＝**PR-C の dispatch は丸ごとデッドコードだった**
+    （`t/io-handle-pure-methods.t` が緑だったのはフォールバック結果が同一だったため）。修正: native-IO dispatch を
+    **早期ゲートの直前**へ移設（mut/非mut 両パス）、デッド配置を削除。`MUTSU_VM_STATS` で確認: native-descriptor.t が
+    method-call fallback 0%、io-handle-pure-methods.t も tell/seek/close/eof/opened/t が全て native 化（PR-C が**初めて
+    実効化**）。**教訓: native dispatch は必ず `MUTSU_VM_STATS` の method-fallback カウンタで実効を確認する**（テスト緑
+    だけでは遮蔽を検出できない）。
+  - **挙動不変**: encoding 名 verbatim（mutsu `latin1` / raku `iso-8859-1`）・out-buffer default 0（raku 8192）は
+    **変更前から存在する既存差**でスコープ外。新規 `t/io-handle-tier1-methods.t`（14 本）を mutsu/raku 双方で 14/14 緑
+    （encoding 名差は setter return と getter の一致で吸収）。whitelisted S32-io（native-descriptor/out-buffering/open/
+    seek/tell/slurp/spurt/io-special/note/null-char/other + socket/pipe/procasync）緑、再入 panic ゼロ。
+  - **次 = PR-D Tier-2**（③ 後段/④ 必須・本丸の §1 fork 撲滅）: 出力 print/say/put/printf/write/flush/spurt + 読み
+    get/getc/readchars/lines/words/read/slurp/split/comb。emit_output/env(@*ARGS)/非UTF8 encode が VM 到達可能になる
+    状態移管が前提。Tier-3 = open(reopen)/path/Supply/DESTROY/Str。
