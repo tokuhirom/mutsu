@@ -961,6 +961,46 @@ impl VM {
                         .map(crate::runtime::Interpreter::make_buf),
                 )
             }
+            "getc" => {
+                if !args.is_empty() {
+                    return None;
+                }
+                let mut table = self.io_handles_mut();
+                let state = table.map.get_mut(&id)?;
+                // File + UTF-8/binary only (utf16/non-UTF8 need the interpreter).
+                if !state.can_native_text_write() {
+                    return None;
+                }
+                // One character, possibly multi-byte; empty -> Nil (as `getc`).
+                Some(state.read_chars_native(Some(1)).map(|s| {
+                    if s.is_empty() {
+                        Value::Nil
+                    } else {
+                        Value::str(s)
+                    }
+                }))
+            }
+            "readchars" => {
+                let mut table = self.io_handles_mut();
+                let state = table.map.get_mut(&id)?;
+                if !state.can_native_text_write() {
+                    return None;
+                }
+                // count: a non-negative integer (parsed as the interpreter does);
+                // an invalid arg is the same error; no arg reads to EOF.
+                let count = match args.first() {
+                    None => None,
+                    Some(arg) => match crate::runtime::Interpreter::parse_out_buffer_size(arg) {
+                        Some(n) => Some(n),
+                        None => {
+                            return Some(Err(RuntimeError::new(
+                                "readchars count must be a non-negative integer",
+                            )));
+                        }
+                    },
+                };
+                Some(state.read_chars_native(count).map(Value::str))
+            }
             _ => None,
         }
     }

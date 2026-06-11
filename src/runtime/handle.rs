@@ -199,6 +199,47 @@ impl IoHandleState {
         }
     }
 
+    /// VM-native character read on a `File`+UTF8 handle (`getc`/`readchars`,
+    /// PR-D3): `count = Some(n)` reads up to n UTF-8 characters, `None` reads the
+    /// rest of the file UTF-8-lossy. Mirrors `read_chars_from_handle_value`'s
+    /// File branch for the UTF-8/binary case. Caller guarantees
+    /// [`can_native_text_write`] (which excludes utf16 — that path needs the
+    /// interpreter's BOM/endianness handling).
+    pub(crate) fn read_chars_native(
+        &mut self,
+        count: Option<usize>,
+    ) -> Result<String, RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        self.read_attempted = true;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+        match count {
+            Some(limit) => {
+                if limit == 0 {
+                    return Ok(String::new());
+                }
+                let mut out = String::new();
+                for _ in 0..limit {
+                    let Some(ch) = Interpreter::read_utf8_char(file)? else {
+                        break;
+                    };
+                    out.push_str(&ch);
+                }
+                Ok(out)
+            }
+            None => {
+                let mut bytes = Vec::new();
+                file.read_to_end(&mut bytes)
+                    .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                Ok(String::from_utf8_lossy(&bytes).to_string())
+            }
+        }
+    }
+
     /// Add to this handle's `bytes_written` counter. Used by the VM's Stdout
     /// emit to mirror `emit_output`'s Stdout-handle accounting (③後段 PR-C).
     pub(crate) fn add_bytes_written(&mut self, n: i64) {
@@ -1108,7 +1149,7 @@ impl Interpreter {
         })
     }
 
-    fn read_utf8_char<R: Read>(reader: &mut R) -> Result<Option<String>, RuntimeError> {
+    pub(crate) fn read_utf8_char<R: Read>(reader: &mut R) -> Result<Option<String>, RuntimeError> {
         let mut first = [0u8; 1];
         let n = reader
             .read(&mut first)
