@@ -2345,16 +2345,18 @@ impl Interpreter {
             "nl-out" => {
                 if let Some(arg) = args.first() {
                     let val = arg.to_string_value();
-                    let state = self.handle_state_mut(&target_val)?;
-                    state.nl_out = val.clone();
+                    self.with_handle_mut(&target_val, |state| {
+                        state.nl_out = val.clone();
+                        Ok(())
+                    })?;
                     return Ok(Value::str(val));
                 }
-                let state = self.handle_state_mut(&target_val)?;
-                Ok(Value::str(state.nl_out.clone()))
+                let nl = self.with_handle_mut(&target_val, |state| Ok(state.nl_out.clone()))?;
+                Ok(Value::str(nl))
             }
             "nl-in" => {
                 if let Some(arg) = args.first() {
-                    if let Ok(state) = self.handle_state_mut(&target_val) {
+                    let _ = self.with_handle_mut_opt(&target_val, |state| {
                         match arg {
                             Value::Array(items, ..) => {
                                 let seps: Vec<Vec<u8>> = items
@@ -2368,10 +2370,11 @@ impl Interpreter {
                                 state.line_separators = vec![s.clone().into_bytes()];
                             }
                         }
-                    }
+                        Ok(())
+                    })?;
                     return Ok(arg.clone());
                 }
-                if let Ok(state) = self.handle_state_mut(&target_val) {
+                let got = self.with_handle_mut_opt(&target_val, |state| {
                     if state.line_separators.len() == 1 {
                         Ok(Value::str(
                             String::from_utf8_lossy(&state.line_separators[0]).to_string(),
@@ -2384,35 +2387,38 @@ impl Interpreter {
                             .collect();
                         Ok(Value::real_array(items))
                     }
-                } else {
-                    // Default nl-in for unopened handles
-                    let items: Vec<Value> = self
-                        .default_line_separators()
-                        .iter()
-                        .map(|s| Value::str(String::from_utf8_lossy(s).to_string()))
-                        .collect();
-                    if items.len() == 1 {
-                        Ok(items.into_iter().next().unwrap())
-                    } else {
-                        Ok(Value::real_array(items))
+                })?;
+                match got {
+                    Some(v) => Ok(v),
+                    None => {
+                        // Default nl-in for unopened handles
+                        let items: Vec<Value> = self
+                            .default_line_separators()
+                            .iter()
+                            .map(|s| Value::str(String::from_utf8_lossy(s).to_string()))
+                            .collect();
+                        if items.len() == 1 {
+                            Ok(items.into_iter().next().unwrap())
+                        } else {
+                            Ok(Value::real_array(items))
+                        }
                     }
                 }
             }
             "chomp" => {
                 if let Some(arg) = args.first() {
                     let val = arg.truthy();
-                    let state = self.handle_state_mut(&target_val)?;
-                    state.line_chomp = val;
+                    self.with_handle_mut(&target_val, |state| {
+                        state.line_chomp = val;
+                        Ok(())
+                    })?;
                     return Ok(Value::Bool(val));
                 }
-                let state = self.handle_state_mut(&target_val)?;
-                Ok(Value::Bool(state.line_chomp))
+                let chomp = self.with_handle_mut(&target_val, |state| Ok(state.line_chomp))?;
+                Ok(Value::Bool(chomp))
             }
             "print-nl" => {
-                let nl = {
-                    let state = self.handle_state_mut(&target_val)?;
-                    state.nl_out.clone()
-                };
+                let nl = self.with_handle_mut(&target_val, |state| Ok(state.nl_out.clone()))?;
                 self.write_to_handle_value(&target_val, &nl, false)?;
                 Ok(Value::Bool(true))
             }
@@ -2422,10 +2428,8 @@ impl Interpreter {
                 .map(Value::str)
                 .unwrap_or(Value::Nil)),
             "getc" => {
-                let encoding = {
-                    let state = self.handle_state_mut(&target_val)?;
-                    state.encoding.clone()
-                };
+                let encoding =
+                    self.with_handle_mut(&target_val, |state| Ok(state.encoding.clone()))?;
                 let needs_decode = !encoding.is_empty()
                     && encoding != "utf-8"
                     && encoding != "utf8"
@@ -2544,7 +2548,10 @@ impl Interpreter {
                     // (e.g. `$fh.words[1,2]`) leaves the handle open, while a full
                     // consumer triggers close-on-exhaust when `:close` was given.
                     if close_after {
-                        self.handle_state_mut(&target_val)?.close_on_word_exhaust = true;
+                        self.with_handle_mut(&target_val, |state| {
+                            state.close_on_word_exhaust = true;
+                            Ok(())
+                        })?;
                     }
                     return Ok(Value::LazyIoLines {
                         handle: Box::new(target_val.clone()),
@@ -2674,11 +2681,9 @@ impl Interpreter {
                 } else {
                     let content = content_value.to_string_value();
                     // Determine encoding from the handle's state
-                    let enc = if let Ok(state) = self.handle_state_mut(&target_val) {
-                        state.encoding.clone()
-                    } else {
-                        "utf-8".to_string()
-                    };
+                    let enc = self
+                        .with_handle_mut_opt(&target_val, |state| Ok(state.encoding.clone()))?
+                        .unwrap_or_else(|| "utf-8".to_string());
                     let bytes = if enc == "utf-8" || enc == "utf8" {
                         content.into_bytes()
                     } else {
@@ -2689,13 +2694,16 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "flush" => {
-                if let Ok(state) = self.handle_state_mut(&target_val) {
+                let flushed = self.with_handle_mut_opt(&target_val, |state| {
                     Self::flush_file_handle_buffer(state)?;
                     if let Some(file) = state.file.as_mut() {
                         file.flush().map_err(|err| {
                             RuntimeError::new(format!("Failed to flush handle: {}", err))
                         })?;
                     }
+                    Ok(())
+                })?;
+                if flushed.is_some() {
                     Ok(Value::Bool(true))
                 } else {
                     let mut ex_attrs = HashMap::new();
@@ -2713,12 +2721,13 @@ impl Interpreter {
                 }
             }
             "out-buffer" => {
-                let state = self.handle_state_mut(&target_val)?;
-                if let Some(arg) = args.first() {
-                    Self::flush_file_handle_buffer(state)?;
-                    state.out_buffer_capacity = Self::parse_out_buffer_size(arg);
-                }
-                let size = state.out_buffer_capacity.unwrap_or(0);
+                let size = self.with_handle_mut(&target_val, |state| {
+                    if let Some(arg) = args.first() {
+                        Self::flush_file_handle_buffer(state)?;
+                        state.out_buffer_capacity = Self::parse_out_buffer_size(arg);
+                    }
+                    Ok(state.out_buffer_capacity.unwrap_or(0))
+                })?;
                 Ok(Value::Int(size as i64))
             }
             "seek" => {
@@ -2754,20 +2763,21 @@ impl Interpreter {
             "t" => {
                 // Check if the handle is a TTY
                 use std::io::IsTerminal;
-                let state = self.handle_state_mut(&target_val)?;
-                let is_tty = match state.target {
-                    IoHandleTarget::Stdin => std::io::stdin().is_terminal(),
-                    IoHandleTarget::Stdout => std::io::stdout().is_terminal(),
-                    IoHandleTarget::Stderr => std::io::stderr().is_terminal(),
-                    IoHandleTarget::File => {
-                        if let Some(file) = state.file.as_ref() {
-                            file.is_terminal()
-                        } else {
-                            false
+                let is_tty = self.with_handle_mut(&target_val, |state| {
+                    Ok(match state.target {
+                        IoHandleTarget::Stdin => std::io::stdin().is_terminal(),
+                        IoHandleTarget::Stdout => std::io::stdout().is_terminal(),
+                        IoHandleTarget::Stderr => std::io::stderr().is_terminal(),
+                        IoHandleTarget::File => {
+                            if let Some(file) = state.file.as_ref() {
+                                file.is_terminal()
+                            } else {
+                                false
+                            }
                         }
-                    }
-                    _ => false,
-                };
+                        _ => false,
+                    })
+                })?;
                 Ok(Value::Bool(is_tty))
             }
             "encoding" => {
@@ -2792,17 +2802,16 @@ impl Interpreter {
                 Ok(Value::str(current))
             }
             "opened" => {
-                let state = self.handle_state_mut(&target_val)?;
-                Ok(Value::Bool(!state.closed))
+                let opened = self.with_handle_mut(&target_val, |state| Ok(!state.closed))?;
+                Ok(Value::Bool(opened))
             }
             "slurp" => {
                 let has_bin_arg = Self::named_bool(&args, "bin");
-                let (is_bin, handle_encoding) = {
-                    let state = self.handle_state_mut(&target_val)?;
+                let (is_bin, handle_encoding) = self.with_handle_mut(&target_val, |state| {
                     let bin = has_bin_arg || state.bin || state.encoding == "bin";
                     let enc = state.encoding.clone();
-                    (bin, enc)
-                };
+                    Ok((bin, enc))
+                })?;
                 let mut all_bytes = Vec::new();
                 loop {
                     let chunk = self.read_bytes_from_handle_value(&target_val, 8192)?;
@@ -2883,32 +2892,34 @@ impl Interpreter {
             }
             "Supply" => self.handle_supply(target, &args),
             "native-descriptor" => {
-                let state = self.handle_state_mut(&target_val)?;
-                let fd = match state.target {
-                    IoHandleTarget::Stdin => 0i64,
-                    IoHandleTarget::Stdout => 1i64,
-                    IoHandleTarget::Stderr => 2i64,
-                    _ => {
-                        #[cfg(unix)]
-                        {
-                            if let Some(ref file) = state.file {
-                                use std::os::unix::io::AsRawFd;
-                                file.as_raw_fd() as i64
-                            } else {
+                let fd = self.with_handle_mut(&target_val, |state| {
+                    let fd = match state.target {
+                        IoHandleTarget::Stdin => 0i64,
+                        IoHandleTarget::Stdout => 1i64,
+                        IoHandleTarget::Stderr => 2i64,
+                        _ => {
+                            #[cfg(unix)]
+                            {
+                                if let Some(ref file) = state.file {
+                                    use std::os::unix::io::AsRawFd;
+                                    file.as_raw_fd() as i64
+                                } else {
+                                    return Err(RuntimeError::new(
+                                        "native-descriptor: handle has no file descriptor",
+                                    ));
+                                }
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                let _ = state;
                                 return Err(RuntimeError::new(
-                                    "native-descriptor: handle has no file descriptor",
+                                    "native-descriptor: not supported on this platform",
                                 ));
                             }
                         }
-                        #[cfg(not(unix))]
-                        {
-                            let _ = state;
-                            return Err(RuntimeError::new(
-                                "native-descriptor: not supported on this platform",
-                            ));
-                        }
-                    }
-                };
+                    };
+                    Ok(fd)
+                })?;
                 Ok(Value::Int(fd))
             }
             _ => Err(RuntimeError::new(format!(

@@ -1229,7 +1229,10 @@ impl Interpreter {
                 // (e.g. `words($fh, :close)[1,2]`) leaves the handle open, while a
                 // full consumer triggers close-on-exhaust when `:close` was given.
                 if close_after {
-                    self.handle_state_mut(&handle)?.close_on_word_exhaust = true;
+                    self.with_handle_mut(&handle, |state| {
+                        state.close_on_word_exhaust = true;
+                        Ok(())
+                    })?;
                 }
                 return Ok(Value::LazyIoLines {
                     handle: Box::new(handle),

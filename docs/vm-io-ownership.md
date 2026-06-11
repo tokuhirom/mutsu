@@ -116,4 +116,15 @@ make roast のタイムアウト（静的には捕捉できない＝必ずスモ
 - **crux 発見（着手時, 2026-06-11）**: `handle_state_mut` の `&mut IoHandleState` 返し API（~32 呼び出し側）が
   guard 寿命と両立せず、registry の軽い抽出にならないと判明。スライスを「PR-A=closure 形 API 再設計（plain
   field のまま地ならし）→ PR-B=lock 化 → PR-C=VM ハンドル → PR-D=VM ネイティブ dispatch」に分割。
-  次の着手 = PR-A（`with_handle_mut` 化）。Arc<RwLock> 試行コードは revert 済み（本 doc に知見を残す）。
+- **PR-A 完了（2026-06-11）**: `handle_state_mut`（`&mut IoHandleState` 返し）を撤去し、closure 形
+  `with_handle_mut(id, |state| …)` / `with_handle_mut_opt`（handle 無効時 `Ok(None)` フォールバック）へ全面置換。
+  32 呼び出し側を変換。self 再入を含む 4 メソッドは extract→drop→re-enter に再構成して borrow を closure に
+  封じ込め: `write_to_handle_value_trying`（phase1 payload/bytes_written → phase2 `encode_with_encoding` →
+  phase3 dispatch、Stdout/Stderr の `emit_output` は borrow 外）、`write_bytes_to_handle_value`（同型）、
+  `read_line_from_handle_value`（`LineOutcome::{Done,NeedsDecode}` で raw record を closure 内 read → 外で
+  `decode_with_encoding`）、`read_bytes_from_handle_value`（target/own_paths を peek → ArgFiles の `@*ARGS`
+  読みを borrow 間に挟む）。**plain field のまま**（borrow checker が再入を引き続き強制）で挙動完全不変
+  （say+nl-out / print-nl / latin-1 enc / words / getc / read / seek・tell・eof を raku と byte 一致で確認、
+  whitelisted S32-io 8 本 PASS）。次の着手 = **PR-B**（`IoHandleTable` 新設 + `reentry_check` を
+  `lock_reentry.rs` へ汎用化 + `handles`/`next_handle_id` → `io_handles: Arc<RwLock<IoHandleTable>>`、
+  `with_handle_mut` を guard 経由へ）。
