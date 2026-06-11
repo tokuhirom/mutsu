@@ -489,6 +489,19 @@ impl VM {
             return None;
         }
 
+        // `.flush` is target-agnostic and pure (flush pending out-buffer + the OS
+        // file buffer); shared `flush_for_method` (PR-D Tier-2b). A handle id not
+        // in the table falls through — the interpreter shapes that into an
+        // `X::IO::Flush` Failure (a value, not an error), which this Err-on-absent
+        // path below cannot reproduce.
+        if method == "flush" && args.is_empty() {
+            let mut table = self.io_handles_mut();
+            return table
+                .map
+                .get_mut(&id)
+                .map(|state| state.flush_for_method().map(|_| Value::Bool(true)));
+        }
+
         // `.encoding` returns Nil for binary mode and a Str otherwise, so its
         // result shaping is method-specific (mirrors the interpreter's
         // `native_io` arm exactly).
@@ -604,12 +617,12 @@ impl VM {
     }
 
     /// VM-native text output for a `File`+UTF8 `IO::Handle` receiver
-    /// (`print`/`put`/`say`/`print-nl`): build the payload exactly as the
-    /// interpreter's `native_io` handlers do — `render_str_value` for
+    /// (`print`/`put`/`say`/`printf`/`print-nl`): build the payload exactly as
+    /// the interpreter's `native_io` handlers do — `render_str_value` for
     /// print/put, `render_gist_value` for say (byte-identical; the same helpers
-    /// the VM's own `say`/`print` ops use) — and write it through the VM's
-    /// `io_handles` handle via the shared `IoHandleState::native_text_write`
-    /// (PLAN.md ③ native IO PR-D Tier-2a).
+    /// the VM's own `say`/`print` ops use), the pure `sprintf` helpers for
+    /// printf — and write it through the VM's `io_handles` handle via the shared
+    /// `IoHandleState::native_text_write` (PLAN.md ③ native IO PR-D Tier-2a/2b).
     ///
     /// Returns `None` (fall through to the interpreter) for any non-`IO::Handle`
     /// receiver, any other method, a junction argument (autothreading), or a
@@ -640,16 +653,19 @@ impl VM {
             Print,
             Put,
             Say,
+            Printf,
             PrintNl,
         }
         let kind = match method {
             "print" => Kind::Print,
             "put" => Kind::Put,
             "say" => Kind::Say,
+            "printf" => Kind::Printf,
             "print-nl" => Kind::PrintNl,
             _ => return None,
         };
-        // Junction args autothread in the interpreter; fall through for those.
+        // Junction args autothread in the interpreter; fall through for those
+        // (printf's first-arg junction also threads there).
         if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
             return None;
         }
@@ -673,13 +689,38 @@ impl VM {
             return Some(state.native_print_nl().map(|_| Value::Bool(true)));
         }
 
-        let mut content = String::new();
-        for arg in args {
-            match kind {
-                Kind::Say => content.push_str(&self.interpreter.render_gist_value(arg)),
-                _ => content.push_str(&self.interpreter.render_str_value(arg)),
+        let content = match kind {
+            // printf: validate the directives then format, exactly as the
+            // interpreter's `printf` arm (pure `sprintf` helpers, no handle state).
+            Kind::Printf => {
+                let fmt = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let rest = if args.is_empty() { &[][..] } else { &args[1..] };
+                if let Err(e) =
+                    crate::runtime::sprintf::validate_sprintf_directives(&fmt, rest.len())
+                {
+                    return Some(Err(e));
+                }
+                crate::runtime::sprintf::format_sprintf_args(&fmt, rest)
             }
-        }
+            Kind::Say => {
+                let mut c = String::new();
+                for arg in args {
+                    c.push_str(&self.interpreter.render_gist_value(arg));
+                }
+                c
+            }
+            // print / put use `render_str_value`.
+            _ => {
+                let mut c = String::new();
+                for arg in args {
+                    c.push_str(&self.interpreter.render_str_value(arg));
+                }
+                c
+            }
+        };
         let newline = matches!(kind, Kind::Put | Kind::Say);
 
         let mut table = self.io_handles_mut();
