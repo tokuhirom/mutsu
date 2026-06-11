@@ -88,6 +88,20 @@ impl IoHandleState {
         newline: bool,
         trying: &str,
     ) -> Result<(), RuntimeError> {
+        let payload = self.prepare_text_payload(content, newline, trying)?;
+        self.write_file_payload(payload.as_bytes())
+    }
+
+    /// Shared phase-1 of a text write (`write_to_handle_value_trying`): error on
+    /// a closed handle, append `nl_out` when `newline`, account the bytes on this
+    /// (receiver) handle, and return the payload. Target-agnostic — File then
+    /// writes it via `write_file_payload`, Stdout/Stderr emit it (③後段 PR-C).
+    pub(crate) fn prepare_text_payload(
+        &mut self,
+        content: &str,
+        newline: bool,
+        trying: &str,
+    ) -> Result<String, RuntimeError> {
         if self.closed {
             return Err(RuntimeError::io_closed(trying));
         }
@@ -96,7 +110,7 @@ impl IoHandleState {
             payload.push_str(&self.nl_out);
         }
         self.bytes_written += payload.len() as i64;
-        self.write_file_payload(payload.as_bytes())
+        Ok(payload)
     }
 
     /// Whether this handle targets a regular file (the gate for the VM-native
@@ -105,6 +119,23 @@ impl IoHandleState {
     /// Tier-2c). Stdout/Stderr/Socket return `false` and fall through.
     pub(crate) fn is_file_target(&self) -> bool {
         matches!(self.target, IoHandleTarget::File)
+    }
+
+    /// Add to this handle's `bytes_written` counter. Used by the VM's Stdout
+    /// emit to mirror `emit_output`'s Stdout-handle accounting (③後段 PR-C).
+    pub(crate) fn add_bytes_written(&mut self, n: i64) {
+        self.bytes_written += n;
+    }
+
+    /// Whether this handle targets Stdout (the VM emits via the shared output
+    /// sink — ③後段 PR-C).
+    pub(crate) fn is_stdout_target(&self) -> bool {
+        matches!(self.target, IoHandleTarget::Stdout)
+    }
+
+    /// Whether this handle targets Stderr.
+    pub(crate) fn is_stderr_target(&self) -> bool {
+        matches!(self.target, IoHandleTarget::Stderr)
     }
 
     /// Raw `file.write_all` to a File handle — the shared leaf used by the
@@ -148,19 +179,6 @@ impl IoHandleState {
                 .map_err(|err| RuntimeError::new(format!("Failed to flush handle: {}", err)))?;
         }
         Ok(())
-    }
-
-    /// VM-native `.print-nl` on a `File` handle: write the handle's `nl_out`
-    /// terminator. Mirrors the interpreter's `print-nl` (read `nl_out`, then
-    /// `write_to_handle_value(.., newline = false)`). Caller guarantees
-    /// [`can_native_text_write`].
-    pub(crate) fn native_print_nl(&mut self) -> Result<(), RuntimeError> {
-        if self.closed {
-            return Err(RuntimeError::io_closed("write"));
-        }
-        let nl = self.nl_out.clone();
-        self.bytes_written += nl.len() as i64;
-        self.write_file_payload(nl.as_bytes())
     }
 
     /// `.tell` — current byte offset (file position, or bytes written for
@@ -570,13 +588,8 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::Stderr => {
-                if self.tap.subtest_depth() == 0 && self.output_sink().immediate_stdout {
-                    use std::io::Write;
-                    let _ = std::io::stderr().write_all(payload.as_bytes());
-                    let _ = std::io::stderr().flush();
-                } else {
-                    self.output_sink_mut().stderr_output.push_str(&payload);
-                }
+                let subtest_active = self.subtest_active();
+                self.output_sink_mut().emit_stderr(&payload, subtest_active);
                 Ok(())
             }
             IoHandleTarget::File => self.with_handle_mut(handle_value, |state| {

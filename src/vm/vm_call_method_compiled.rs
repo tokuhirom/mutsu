@@ -676,26 +676,35 @@ impl VM {
             return None;
         }
 
-        // Gate on File+UTF8 *before* building the payload, so falling through
-        // (Stdout/Stderr/non-UTF8) never runs the arg stringification twice.
-        {
+        // Resolve the target *before* building the payload, so falling through
+        // (Socket / non-UTF8 File / Stdin) never runs the arg stringification
+        // twice. Stdout/Stderr emit via the VM's shared output sink (③後段 PR-C);
+        // File writes its handle state (Tier-2a).
+        enum Tgt {
+            File,
+            Stdout,
+            Stderr,
+        }
+        let tgt = {
             let table = self.io_handles_mut();
             let state = table.map.get(&id)?;
-            if !state.can_native_text_write() {
+            if state.can_native_text_write() {
+                Tgt::File
+            } else if state.is_stdout_target() {
+                Tgt::Stdout
+            } else if state.is_stderr_target() {
+                Tgt::Stderr
+            } else {
                 return None;
             }
-        }
+        };
 
-        // `print-nl` writes the handle's `nl_out`; the others stringify args.
-        if matches!(kind, Kind::PrintNl) {
-            let mut table = self.io_handles_mut();
-            let Some(state) = table.map.get_mut(&id) else {
-                return Some(Err(RuntimeError::new("Invalid IO::Handle")));
-            };
-            return Some(state.native_print_nl().map(|_| Value::Bool(true)));
-        }
-
-        let content = match kind {
+        // Build the argument content. `print-nl` has no args — its payload is the
+        // handle's `nl_out`, which `prepare_text_payload` appends via `newline`
+        // (content = "", newline = true). Its closed-handle error uses "write",
+        // matching the interpreter's `print-nl` (which calls `write_to_handle_value`).
+        let (content, newline, trying): (String, bool, &str) = match kind {
+            Kind::PrintNl => (String::new(), true, "write"),
             // printf: validate the directives then format, exactly as the
             // interpreter's `printf` arm (pure `sprintf` helpers, no handle state).
             Kind::Printf => {
@@ -709,35 +718,67 @@ impl VM {
                 {
                     return Some(Err(e));
                 }
-                crate::runtime::sprintf::format_sprintf_args(&fmt, rest)
+                (
+                    crate::runtime::sprintf::format_sprintf_args(&fmt, rest),
+                    false,
+                    method,
+                )
             }
             Kind::Say => {
                 let mut c = String::new();
                 for arg in args {
                     c.push_str(&self.interpreter.render_gist_value(arg));
                 }
-                c
+                (c, true, method)
             }
             // print / put use `render_str_value`.
-            _ => {
+            Kind::Print => {
                 let mut c = String::new();
                 for arg in args {
                     c.push_str(&self.interpreter.render_str_value(arg));
                 }
-                c
+                (c, false, method)
+            }
+            Kind::Put => {
+                let mut c = String::new();
+                for arg in args {
+                    c.push_str(&self.interpreter.render_str_value(arg));
+                }
+                (c, true, method)
             }
         };
-        let newline = matches!(kind, Kind::Put | Kind::Say);
 
-        let mut table = self.io_handles_mut();
-        let Some(state) = table.map.get_mut(&id) else {
-            return Some(Err(RuntimeError::new("Invalid IO::Handle")));
+        // File: prepare + buffered file write in one confined guard.
+        if matches!(tgt, Tgt::File) {
+            let mut table = self.io_handles_mut();
+            let Some(state) = table.map.get_mut(&id) else {
+                return Some(Err(RuntimeError::new("Invalid IO::Handle")));
+            };
+            return Some(
+                state
+                    .native_text_write(&content, newline, trying)
+                    .map(|_| Value::Bool(true)),
+            );
+        }
+
+        // Stdout/Stderr: prepare the payload on the receiver handle (closed check
+        // + nl_out + bytes_written), then emit via the shared output sink.
+        let payload = {
+            let mut table = self.io_handles_mut();
+            let Some(state) = table.map.get_mut(&id) else {
+                return Some(Err(RuntimeError::new("Invalid IO::Handle")));
+            };
+            match state.prepare_text_payload(&content, newline, trying) {
+                Ok(p) => p,
+                Err(e) => return Some(Err(e)),
+            }
         };
-        Some(
-            state
-                .native_text_write(&content, newline, method)
-                .map(|_| Value::Bool(true)),
-        )
+        if matches!(tgt, Tgt::Stdout) {
+            self.vm_emit_stdout(&payload);
+        } else {
+            self.vm_emit_stderr(&payload);
+        }
+        Some(Ok(Value::Bool(true)))
     }
 
     /// VM-native raw byte output for a `File` `IO::Handle` receiver

@@ -81,4 +81,18 @@ impl OutputSink {
             self.output.push_str(text);
         }
     }
+
+    /// Emit `text` to stderr. `subtest_active` suppresses the immediate
+    /// real-stderr flush. Mirrors the `IoHandleTarget::Stderr` branch of
+    /// `write_to_handle_value_trying` (no `output_emitted` flag, no Stdout-style
+    /// thread-clone interleaving — stderr buffers per interpreter).
+    pub(crate) fn emit_stderr(&mut self, text: &str, subtest_active: bool) {
+        if !subtest_active && self.immediate_stdout {
+            use std::io::Write;
+            let _ = std::io::stderr().write_all(text.as_bytes());
+            let _ = std::io::stderr().flush();
+        } else {
+            self.stderr_output.push_str(text);
+        }
+    }
 }
