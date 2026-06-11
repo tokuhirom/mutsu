@@ -539,6 +539,7 @@ roast/S09-multidim/indexing.t
 roast/S09-multidim/methods.t
 roast/S09-multidim/subs.t
 roast/S09-subscript/multidim-assignment.t
+roast/S09-typed-arrays/arrays.t
 roast/S09-typed-arrays/hashes.t
 roast/S09-typed-arrays/native-decl.t
 roast/S09-typed-arrays/native-int.t

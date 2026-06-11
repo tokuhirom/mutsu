@@ -9,42 +9,60 @@ impact. Each entry carries a **fix difficulty** estimate:
   identity, real lazy infinite sequences, threading primitives, RakuAST,
   object-hash `%{Mu}` keys) or a large pile of disparate sub-features.
 
-Last refreshed: 2026-06-07 (Tier-2 first pass landed — typed exceptions across
-constant/lexical-subs/exporthow/adverbs/subst/misc2; Tier-2 section now records
-what shipped, the next misc2.t clusters, and the cross-cutting main-engineer
-blockers. Earlier: stale entries removed, counts re-measured, difficulty ratings).
+Last refreshed: 2026-06-11 (re-measured every listed file against the current
+release build; removed entries that are now whitelisted — `S02-types/nil.t`,
+`S04-declarations/will.t`, `S06-signature/slurpy-blocks.t`,
+`S32-exceptions/misc2.t`, `S09-typed-arrays/arrays.t` — and folded the stale
+"main engineer / sub-engineer" fleet framing into a plain difficulty/subsystem
+taxonomy, since work is now single-threaded).
 
----
+## Status (2026-06-11)
 
-## Sub-engineer work order (conflict-minimizing)
+The project is in its **final stretch**: every remaining file below has been
+re-measured, and essentially all of them are gated on one of a small set of
+**Hard architectural blockers** — there are no more cheap whitelist wins to
+cherry-pick. The blockers, in rough order of how many files they gate:
 
-The **main engineer** owns the bytecode-VM architecture (PLAN.md "🔴 最優先":
-lever B/C, the `env↔locals` dual store, closure capture, dispatch) and the
-**first-class container** migration (PLAN.md "🟣 第2優先": `Value` variant
-signatures, scalar/element/attribute containers). Those changes churn `src/vm/*`,
-`src/compiler/*`, the env machinery, and eventually `value.rs`.
+- **First-class container identity** (scalar/element/attribute `Scalar`
+  containers; `Value` carries a bare value with no per-slot container) — gates
+  binding/`:=`-alias, `is rw`/take-rw, `.VAR`, typed-hash default survival,
+  closure capture-by-container, object-hash `%{Mu}` keys, Arc-pointer typed-array
+  flaky. This is PLAN.md's "🟣 第2優先" and the single largest lever.
+- **Real lazy infinite sequences** — `@a[0..*]`, `fib[100]`, `X::Cannot::Lazy`
+  on same-type lazy iterables; mutsu materializes `1…∞` to a finite list.
+- **Threading / concurrency primitives** — Semaphore, nonblocking await, lock
+  contention, Supply combinators (all of S17).
+- **RakuAST** — `Formatter.AST`, anything needing a reflectable AST.
+- **A long tail of distinct compile-time `X::` exception types** thrown at the
+  exact right place (misc.t / misc2.t-style campaigns).
 
-**Sub-engineers must stay out of those files.** Pick roast work from the tiers
-below **in order** — earlier tiers live in subsystems the main engineer does not
-touch, so they almost never conflict. Within a tier, order is free; **one file
-per PR, small short-lived branches** to keep the conflict window tiny. Enable
-auto-merge and move to the next file (do not babysit CI).
+So the highest-leverage work is no longer per-file roast picking but the
+**architectural tracks in PLAN.md** (Interpreter-execution-path removal +
+first-class containers). The per-file analysis below is kept as a map: when one
+of those blockers lands, this doc says which files it unblocks.
 
-If a chosen test turns out to be blocked on container identity / closure capture
-/ dual-store / lazy infinite sequences / VM dispatch (you'll hit it mid-fix),
-**stop and switch** to a Tier-1/2 file — do not start patching VM internals; that
-will collide with the main engineer.
+## How to read the tiers
 
-### Tier 1 — fully isolated subsystems (start here; near-zero conflict)
+The tiers are a **difficulty / subsystem taxonomy**, not a work queue for a
+fleet (the old "main/sub engineer, stay out of these files" framing is gone — we
+work single-threaded now):
+
+- **Tier 1** — isolated subsystems (regex engine, IO, unicode, Buf/OS builtins).
+- **Tier 2** — additive `X::` exception types + module plumbing.
+- **Tier 3** — self-contained semantic fixes in specific builtins / methods / coercion.
+- **Tier 4** — touches VM control / return handling / parser / compiler.
+
+"**Container identity / closure capture / lazy / dispatch**" items are collected
+under "Do NOT pick — architectural blocker" — they only move when the PLAN.md
+tracks advance.
+
+### Tier 1 — fully isolated subsystems
 
 Live in the regex engine (`runtime/regex*.rs`), IO (`runtime/io*`, IO builtins),
-unicode (`builtins/unicode.rs`), and Buf/OS builtins. The main engineer never
-touches these.
+unicode (`builtins/unicode.rs`), and Buf/OS builtins.
 
-**Done this round (whitelisted):** S16-io/words.t (lazy word iterator +
-close-on-exhaust + `IO::ArgFiles.new`); S05-capture/alias.t (numbered aliases +
-`:s`-into-alternation + aliased-group nested subcap); S29-os/system.t (already
-passing — verified, was a stale entry).
+**Already whitelisted (done):** S16-io/words.t, S05-capture/alias.t,
+S32-io/io-path-cygwin.t, S29-os/system.t.
 
 **Skip — not whitelistable (reference rakudo also fails, or environment quirk):**
 do NOT spend time here, the file cannot reach a clean pass as written.
@@ -56,16 +74,11 @@ do NOT spend time here, the file cannot reach a clean pass as written.
   `{...}`-code string as a regex; real rakudo dies there too (no MONKEY-SEE-NO-EVAL).
   Not reachable to `plan 95` without code-string subrules.
 
-**Recommended order for the genuinely-achievable remainder** (each is a self-
-contained feature; estimate + concrete approach given so the next worker can start
-cold):
+**Genuinely-achievable remainder** (self-contained features; concrete approach
+given so the next worker can start cold):
 
-1. **S32-io/io-path-cygwin.t** — **DONE** (whitelisted). IO::Path::Cygwin now
-   normalizes backslashes to forward slashes and uses Win32-style volume /
-   absoluteness semantics (`is_cygwin_spec` + `io_path_parts_spec` in
-   `runtime/native_io.rs`; cygwin branches in absolute/relative).
-2. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests; needs
-   2530 tests. **Reclassified — the blockers are Whatever-currying, not 128-bit.**
+1. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests.
+   **Reclassified — the blockers are Whatever-currying, not 128-bit.**
    128-bit `read-int128`/`write-int128`/`-uint128` and dynamic interpolated method
    names (`."read-int{8*$_}"(...)`) already work across all endiannesses
    (verified: `blob8.new(1..16).read-int128(0,BigEndian)` returns the right value).
@@ -105,63 +118,50 @@ cold):
 - S15-nfg/GraphemeBreakTest-3.t — GB9c (Indic conjunct) / GB11 (emoji-ZWJ) need a
   `unicode-segmentation` upgrade or UAX-29 post-processing. Hard.
 
-### Tier 2 — additive exception types & module plumbing (low conflict)
+### Tier 2 — additive exception types & module plumbing
 
 Mostly **additive**: new `X::` types + throw sites + parse-time checks. Lives in
-exception/parser-error code and module handlers, not the VM hot path. (If you
-must touch `value.rs` for a new `RuntimeError`, it is the `RuntimeError` area, far
-from the `Value` enum the main engineer reworks — but coordinate before editing
-`value.rs`.)
+exception/parser-error code and module handlers, not the VM hot path.
 
-**Reality check (verified):** the "Medium" label was optimistic for the whole-file
-pass. Several of these files are **not whitelistable** (reference rakudo itself
-fails them), and the rest are blocked on deep features (container identity, regex
-internals). So Tier 2's real value is the **reusable typed exceptions** each file
-motivates — those carry across files (`X::Redeclaration` / `X::Undeclared::Symbols`
-are also misc2.t prerequisites) — not the per-file whitelist.
+**Reality check (verified):** these files are mostly **not whitelistable** as
+whole files — reference rakudo itself fails some, and the rest are blocked on
+deep features (container identity, regex internals). So Tier 2's real value is
+the **reusable typed exceptions** each file motivates — those carry across files
+(`X::Redeclaration` / `X::Undeclared::Symbols` are misc2.t prerequisites) — not
+the per-file whitelist. The misc2.t campaign is **done and whitelisted**.
 
-**First pass — DONE (2026-06-07, PRs #2698/#2700/#2701/#2702/#2704/#2706).** Each
-landed a typed exception or feature; details in the per-synopsis TODO file.
+**Landed (typed exceptions + features; details in per-synopsis TODO files):**
 
-1. **S04-declarations/constant.t** — `X::Redeclaration` on a same-scope `constant`
-   redeclaration (compile-time, `.symbol`); inner-block shadowing still allowed.
-   NOT whitelistable (lazy-seq `fib[100]`, `G::c` qualified name via constant
-   alias, multi-candidate sharing, ExportConstant module). See S04.md.
-2. **S06-advanced/lexical-subs.t** — unknown `foo()` now throws a *typed*
-   `X::Undeclared::Symbols`. Remaining: bareword-undeclared detection, `&foo`
-   parameter precedence (**VM call cache — main engineer**), inner-block
-   lexical-sub leak, identical-empty-sub redeclaration. See S06.md.
-3. **S12-meta/exporthow.t** — `X::EXPORTHOW::InvalidDirective` (validate EXPORTHOW
-   `<directive>::<decl>` members on `use`); test 1 passes. NOT whitelistable:
-   rakudo itself dies at test 2 on EXPORTHOW SUPERSEDE of a custom meta-type HOW.
-   See S12.md.
-4. **S32-hash/adverbs.t** — *big win, 823→1069/1128.* Zen-slice adverbs
-   (`%h{}:k/:v/:kv/:p`), `X::Adverb` (unknown + conflicting, with
-   `.what`/`.source`/`.nogo`/`.unexpected`), `%h.name`/`@a.name`, Range-key
-   slices. Remaining 59: typed-hash value-type default surviving rebinding
-   (**first-class container identity — main engineer**). See S32.md.
-5. **S05-substitution/subst.t** — `X::Assignment::RO` for `s///`/`tr///` on a
-   *matching* string literal. NOT whitelistable: rakudo itself fails tests 157,
-   170. Remaining is regex-internal (`:mm`/samemark, `:samecase`,
-   `X::Syntax::Regex::NullRegex`, non-constant `:i` → `X::Value::Dynamic`). See S05.md.
-6. **S32-exceptions/misc2.t** — *Hard campaign, started.* `X::Parameter::WrongOrder`
-   (`.misplaced`/`.after` for required/optional after optional/named/variadic).
-   134→131 failing of 241 run.
+- **S32-exceptions/misc2.t** — *DONE, whitelisted (265/265).* The full
+  compile-time-exception campaign (`X::Parameter::WrongOrder`, `X::Obsolete`,
+  `X::Syntax::Perl5Var`, `X::Placeholder::*`, `X::Redeclaration`,
+  `X::Multi::NoMatch` → Failure, …) landed across ~35 PRs.
+- **S04-declarations/constant.t** — `X::Redeclaration` on same-scope `constant`
+  redeclaration; plus `constant := value` now raises (24/26 fixed, #2893). Still
+  NOT whitelistable: lazy-seq `fib[100]` (46) + `G::c` qualified name via constant
+  alias (44). 65/72. See S04.md.
+- **S06-advanced/lexical-subs.t** — unknown `foo()` throws typed
+  `X::Undeclared::Symbols`. Remaining: bareword-undeclared detection, `&foo`
+  parameter precedence (VM call cache), inner-block lexical-sub leak. See S06.md.
+- **S12-meta/exporthow.t** — `X::EXPORTHOW::InvalidDirective`. NOT whitelistable:
+  rakudo itself dies at test 2 on EXPORTHOW SUPERSEDE. See S12.md.
+- **S32-hash/adverbs.t** — *big win, 823→1069/1128.* Zen-slice adverbs, `X::Adverb`,
+  `%h.name`/`@a.name`, Range-key slices. Remaining 59: typed-hash value-type
+  default surviving rebinding (first-class container identity). See S32.md.
+- **S05-substitution/subst.t** — `X::Assignment::RO` for `s///`/`tr///` on a
+  matching string literal. NOT whitelistable: rakudo itself fails tests 157, 170.
+  Remaining is regex-internal (`:mm`/samemark, `:samecase`,
+  `X::Syntax::Regex::NullRegex`, non-constant `:i`). See S05.md.
 
-**Next pickups (bounded, one small PR each — continue the misc2.t campaign):**
+**Next pickups (bounded, one small PR each):**
 
-1. **S32-exceptions/misc2.t, cluster by cluster** (highest count first):
-   `X::Obsolete` (`qr//`, `.`-concat, `foreach`, C-style `for`, `undef`, `<>`) →
-   `X::Syntax::Perl5Var` (`$#foo`, `$\`, `$&`) → `X::Placeholder::Mainline`
-   (`$^x`/`@_` at mainline) → `X::Redeclaration` of subs/methods (reuse the
-   constant work) → then the abort at test 241 (`X::Multi::NoMatch` /
-   `X::Syntax::Adverb` throws-like). Each cluster ≈ one PR. Full list in S32.md.
-2. **S05-substitution/subst.t regex-internal pieces** — sequence AFTER any open
+1. **S05-substitution/subst.t regex-internal pieces** — sequence AFTER any open
    regex PR: `X::Syntax::Regex::NullRegex` (empty `s///`), `:samecase`/`:samemark`
    application in `.subst`.
+2. **S32-exceptions/misc.t** — the *other* compile-time-exception file (still
+   42/157; ~40 distinct types). Same campaign style as misc2.t, now reusable.
 
-**Cross-cutting blockers = main-engineer territory** (do NOT patch from a
-sub-engineer branch):
+**Cross-cutting blockers (architectural — see "Do NOT pick" below):**
 - **First-class container identity** — adverbs.t typed-hash missing-key default
   surviving variable rebinding; needs value-carried type metadata.
 - **VM call cache** — lexical `&foo`/`&infix` parameter precedence over a
@@ -177,43 +177,54 @@ sub-engineer branch):
 ### Tier 3 — self-contained semantic fixes (off the VM core)
 
 Touch specific builtins / method handlers / type coercion, not env or dispatch.
+**Caveat (verified 2026-06-11):** most of these turned out to have a Hard blocker
+hiding inside, so none is a clean single-PR whitelist right now:
 
-- S32-array/splice.t (snapshot replacement args before mutating — self-referential splice)
-- S32-hash/perl.t (typed-hash `.perl`/`.raku` decont rules)
-- S02-types/nil.t, S02-types/pair.t (Nil-in-`for` / Pair `.value` edge cases)
-- S12-methods/qualified.t (callsame in punned roles)
-- S12-introspection/walk.t (`.WALK` + `WalkList` — large but self-contained)
-- S06-signature/slurpy-params.t, S06-signature/slurpy-blocks.t (slurpy parsing)
+- S32-array/splice.t — the basic self-referential splice now works; the 245
+  failures are in the typed-array subtest harness (`$T.new`/`.WHAT` over typed
+  arrays), not the snapshot. Hard.
+- S32-hash/perl.t — needs Hash itemization on scalar assignment (`my $a = %h` →
+  `${…}` perlify) = container semantics, not a local coercion tweak. 12 fail.
+- S02-types/pair.t — 3 fail; 128/139 need `$pair.value` to alias the original
+  variable's container (container identity). Test 171 (typed-assign throw) is the
+  only non-container one.
+- S12-methods/qualified.t — the one remaining failure is the parameterized-role
+  subtest (`$?ROLE`/`$?CLASS`, `R1[::T]` qualified dispatch) = heavy MOP, not
+  "callsame in punned roles" as previously labeled.
+- S12-introspection/walk.t — `.WALK` + `WalkList` (large but self-contained MOP).
+- S06-signature/slurpy-params.t — autothread + `+@` single-arg-rule + range
+  handling (multi-feature; aborts at 43/86).
 
-### Tier 4 — coordinate first (overlaps VM control / parser / compiler)
+### Tier 4 — VM control / parser / compiler
 
-These touch `vm/vm_control_ops.rs`, return handling, or the parser/compiler the
-main engineer also edits. **Ping the main engineer before starting**, or defer
-until their current PR lands.
+These touch `vm/vm_control_ops.rs`, return handling, or the parser/compiler.
 
 - S04-statements/for.t (loop-var binding — VM control ops)
-- S06-advanced/return_function.t, S06-advanced/return-prioritization.t (return/LEAVE)
+- S06-advanced/return_function.t, S06-advanced/return-prioritization.t
+  (return/LEAVE; note return-prioritization.t: reference rakudo also dies at
+  test 5 on this box, so it is not whitelistable as written)
 - Parser operators: `ff`/`fff` flipflop, `==>`/`<==` feed precedence, hyper
   assignment, generalized negation meta (parser + compiler)
 - S32-array/multislice-6e.t, S32-hash/multislice-6e.t (subscript-lvalue path)
 
-### Do NOT pick — blocked on the main engineer's in-flight work
+### Do NOT pick — blocked on an architectural blocker (PLAN.md tracks)
 
 These are facets of first-class container identity, closure capture, the dual
-store, real lazy infinite sequences, or threading shared-state. They will be
-solved (or unblocked) by the main engineer's lever B/C and container work; a
-sub-engineer starting here both collides and duplicates effort.
+store, real lazy infinite sequences, or threading shared-state. They only move
+when PLAN.md's Interpreter-removal / first-class-container tracks advance.
 
 - **Container identity / closure capture**: S02-types/capture.t,
   S02-names-vars/variables-and-packages.t, S04-statements/gather.t (take-rw),
   S14-traits/attributes.t, S12-methods/accessors.t, S03-binding/attributes.t,
   S03-binding/nested.t, S12-subset/subtypes.t, S02-names/is_default.t,
-  S04-blocks-and-statements/temp.t, S06-advanced/wrap.t, S02-types/whatever.t
+  S04-blocks-and-statements/temp.t, S06-advanced/wrap.t, S02-types/whatever.t,
+  S32-hash/perl.t, S02-types/pair.t
 - **Object-hash `%{Mu}`**: S32-list/classify.t, S09-hashes/objecthash.t
 - **Lazy infinite sequences**: S03-operators/eqv.t, S09-subscript/slice.t,
   S32-list/skip.t
 - **Typed-array type-metadata** (Arc-pointer keying — folded into container
-  identity): S09-typed-arrays/native-shape1-*.t, S09-typed-arrays/arrays.t
+  identity): S09-typed-arrays/native-shape1-*.t. (Note: S09-typed-arrays/arrays.t
+  is now whitelisted.)
 - **Threading / concurrency**: the entire S17 section below.
 
 ---
@@ -282,8 +293,6 @@ right place*, plus compile-time undeclared-symbol checking.
   throws on illegal substitution forms + `.subst` adverb edge cases.
 - roast/S06-advanced/lexical-subs.t — **Medium**. 5/13 fail then aborts at line 66:
   X::Undeclared::Symbols for forward-referenced lexical `my sub`.
-- roast/S09-typed-arrays/arrays.t — **Medium**. Type-constraint violations on
-  assignment to a typed array don't throw X::TypeCheck.
 - roast/S12-attributes/class.t — **Hard**. X::Method::NotFound + EVAL-inside-class
   body (depends on the EVAL-in-class blocker below).
 - roast/S12-meta/exporthow.t — **Medium**. X::EXPORTHOW::InvalidDirective +
@@ -296,12 +305,9 @@ right place*, plus compile-time undeclared-symbol checking.
   X::NotParametric, X::Syntax::Extension::SpecialForm, X::Redeclaration of
   subs/methods, X::Bind, sink-context "Useless use" warnings, ~30 one-off types.
   See TODO_roast/S32.md.
-- roast/S32-exceptions/misc2.t — **Hard** (reclassified). 134/265. Needs ~50
-  *distinct* compile-time exception types thrown at the right place
-  (`X::Attribute::Undeclared`, `X::Signature::Placeholder`, `X::Obsolete`,
-  `X::Placeholder::*`, `X::Parameter::*`, `X::Redeclaration`,
-  `X::Method::Private::*`, `X::Bind`, …); reference rakudo fails only 1 of 265.
-  A multi-PR campaign, not a single pickup.
+- roast/S32-exceptions/misc2.t — **DONE, whitelisted (265/265).** The full
+  compile-time-exception campaign landed (~35 PRs). Use misc.t (above) as the
+  next file in the same style.
 
 ## Native Typed Arrays — shaped only — **Hard**
 
@@ -392,11 +398,6 @@ identity, below).
   per-attribute *container template*. Blocked on first-class per-attribute
   containers (mutsu stores attribute values as plain Values, no Scalar container) —
   the same container-identity root limitation. Local test: t/attribute-trait-mod.t.
-- roast/S04-declarations/will.t — **Medium**. 17/19 (tests 5/7/13 are `# TODO`). Two
-  real failures: test 1 needs BEGIN-vs-CHECK phaser ordering interleaved with
-  `will begin`/`will check` (CHECK fires LIFO after all BEGIN); test 17 needs
-  `will leave` on a class-scoped `my` var to fire when the class body is left.
-  Blocked on phaser ordering, not traits.
 - roast/S12-introspection/walk.t — **Hard**. Needs the `.WALK` method + `WalkList`
   type with all MRO orderings (:canonical/:super/:breadth/:descendant/:ascendant/
   :preorder/:omit/:include), submethod walking, lazy batch invocation, quiet-mode
@@ -462,8 +463,10 @@ cases. `pipe.t`, `spurt.t`, `indir.t`, `child-secure.t` now pass.
 
 ## Multi Method / Subsignature Dispatch
 
-- roast/S12-methods/qualified.t — **Medium**. 6/7; only "parameterizations and
-  inheritance" (callsame in punned roles) fails.
+- roast/S12-methods/qualified.t — **Hard (MOP)**. 6/7; the one remaining subtest
+  ("parameterizations and inheritance") throws during setup on parameterized
+  roles (`$?ROLE`/`$?CLASS`, `R1[::T]` qualified dispatch, role-private classes),
+  not "callsame in punned roles" as previously labeled.
 - roast/S06-operator-overloading/infix.t — **unpassable as written**: rakudo itself
   fails to compile it ("Code items cannot be rebound" — rebinding `&infix:<...>`).
 
@@ -579,29 +582,28 @@ no per-slot `Scalar` container (first-class container identity).
   dispatch `.Numeric` to the wrong (second) class. A proper fix needs per-decl
   class identity (mirroring the existing `role_id`/`role_candidates` machinery for
   roles), touching class storage + dispatch + `.^name` display.
-- roast/S02-types/nil.t — **Medium**. 12/65 fail then aborts (planned 67): Nil in a
-  `for` loop and Nil assignment to a subset-typed var.
-- roast/S02-types/pair.t — **Medium**. 4/180 fail then aborts (planned 182): Pair
-  `.value` mutation and enum-derived Pair behavior.
-- roast/S03-buf/write-int.t — **Hard (large but mechanical)**. 2530 tests. Basic
-  `write-int8/16/32/64` + `read-int*` already work (the old "Callable expected" was
-  a stale build). The real work is **128-bit** `read-int128`/`write-int128`/`-uint128`
-  across the full NativeEndian/LittleEndian/BigEndian matrix (`Value::BigInt` exists;
-  wire the 128-bit Buf methods). Big but no architectural blocker.
+- roast/S02-types/pair.t — **Hard (container identity)**. 3/180 fail. Tests
+  128/139 need `$pair.value` to alias the original variable's container; only
+  test 171 (typed-assign throw) is independent. See "Do NOT pick" above.
+- roast/S03-buf/write-int.t — **Hard (large but mechanical)**. 2530 tests. The
+  128-bit read/write and dynamic interpolated method names already work; the file
+  aborts in *setup* on two Whatever-currying bugs (see the Tier 1 entry for the
+  exact reproductions). Fix Whatever-currying first.
 - roast/S04-blocks-and-statements/temp.t — **Medium**. 30/37 (7 remaining): `temp`
   restoration interacting with hash/array element containers (container identity).
-- roast/S04-declarations/constant.t — **Medium**. 63/68 pass, 5 fail then aborts at
-  line 331: `constant` with complex RHS (list/typed/sigilless) edge cases.
+- roast/S04-declarations/constant.t — **Medium**. 65/72 (24/26 fixed in #2893).
+  Remaining: lazy-seq `fib[100]` (46), `G::c` qualified name via constant alias
+  (44), multi-candidate sharing (69+). NOT whitelistable until the lazy-seq lands.
 - roast/S06-advanced/return_function.t — **Medium**. Aborts at test 1 (planned 4):
   `return` via named-argument binding to a routine returns the wrong value.
-- roast/S06-advanced/return-prioritization.t — **Medium**. 2/11 fail: a `LEAVE`
-  phaser's value overwrites the routine's `return` value (got 2, expected 1).
+- roast/S06-advanced/return-prioritization.t — **not whitelistable as written**.
+  Reference rakudo on this box also dies at test 5 (only 4 ok then a die in
+  `LEAVE`-with-`return`). 2/11 fail in mutsu; do NOT target a whitelist.
 - roast/S06-advanced/wrap.t — **Hard**. 12/70 fail then aborts (planned 90): `.wrap`
   lexical visibility — the wrapper closure can't see the wrapped routine's lexicals
   (closure capture / container identity).
-- roast/S06-signature/slurpy-params.t — **Medium**. Aborts at test 29 (planned 86):
-  slurpy-scalar (`*$x`) and slurpy+named interaction throw early.
-- roast/S06-signature/slurpy-blocks.t — **Medium**. Aborts before test 1 (ran 0/6):
-  slurpy params in block signatures throw at setup.
+- roast/S06-signature/slurpy-params.t — **Medium (multi-feature)**. Aborts at
+  test 43 (planned 86): the `+@`/`+foo` single-argument rule over ranges/lists,
+  plus a Junction `*@a` slurpy that must not autothread (34/35).
 - roast/S32-list/skip.t — **Medium**. Plan mismatch: planned 55, ran 206 (the file
   loops more than planned, so subtest counting/laziness is off); 29 fail.
