@@ -493,10 +493,11 @@ impl VM {
     /// Write access to the shared declaration [`Registry`](crate::runtime::Registry)
     /// via the VM's own handle (no `self.interpreter` bounce). Same lock and same
     /// guard discipline as the interpreter's `registry_mut`: never hold the guard
-    /// across user-code re-entry. (A read counterpart will be added when a
-    /// pure-registry VM read site lands; today every VM-side registry read still
-    /// needs `current_package`/env, so routing it here would duplicate interpreter
-    /// logic — forbidden by the "1 operation = 1 implementation" rule.)
+    /// across user-code re-entry. (A read counterpart will be added when the
+    /// registry dispatch reads — `has_proto` / `has_multi_candidates` /
+    /// `resolve_function_with_types` — are turned into pure `impl Registry` methods
+    /// taking `current_package` as a parameter; `current_package` itself is now
+    /// VM-accessible via [`Self::current_package`], so that follow-up is unblocked.)
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::RegistryWriteGuard<'_> {
         crate::runtime::RegistryWriteGuard::new(&self.registry, "registry")
