@@ -236,6 +236,23 @@ make roast のタイムアウト（静的には捕捉できない＝必ずスモ
     再現不能ゆえ）。closed-but-in-table は Bool(true)＝interpreter の既存挙動と一致（raku は Failure＝既存差・スコープ外）。
   - **検証**: 新 `t/io-handle-tier2b-printf-flush.t`(9) mutsu/raku 双方 9/9。out-buffering.t の **flush が fallback から
     消滅**（flush=15→0）、printf も native。S32-io（out-buffering/open/io-special/slurp/spurt）緑。`make test` 緑。
-  - **次 = PR-D Tier-2c**: `write`/`spurt`（Buf/bytes、`write_bytes_to_handle_value` の out-buffer 非対応 File 分岐を
-    共有ヘルパ化して native 化）。**Stdout/Stderr 出力 + 読み系（get/lines/read/slurp + ArgFiles `@*ARGS`/非UTF8 decode）の
-    真の撲滅は emit_output/env/encode を VM 到達可能にする ③後段/④ が前提**。Tier-3 = open(reopen)/path/Supply/DESTROY/Str。
+- **PR-D Tier-2c 完了（2026-06-11）**: `write`/`spurt`（File ターゲットの raw byte 書き込み）を VM ネイティブ化。
+  - **raw write の共有**: `write_bytes_to_handle_value` の File 分岐（out-buffer 非対応の `file.write_all`）を
+    `IoHandleState::write_all_to_file` へ抽出（interpreter が委譲）。VM 用に `is_file_target`（File ゲート、encoding 非依存）
+    と `native_write_bytes_file`（closed/mode-Read 検査+bytes 計上+`write_all_to_file`＝write_bytes の phase1+File 分岐の
+    File 専用結合）を `impl IoHandleState` に追加。
+  - **byte 構築**は現行ハンドラと同一: `write`=各引数を buffer 型(Buf/Blob/utf8/utf16)なら `supply_chunk_to_bytes`(utf16 対応・
+    `pub(crate)` 化)、非 buffer は `render_str_value`(UTF-8 bytes)で連結。`spurt`=Buf は `VM::extract_buf_bytes`、Str は
+    UTF-8 bytes。VM 新 `try_native_io_handle_byte_output`（output dispatch の次、mut/非mut 両パス）。
+  - **ゲート**: write は File のみ（encoding 無関係＝raw bytes）。spurt は File かつ、**Str 引数のときは encoding が UTF-8**
+    （非UTF8 Str は `encode_with_encoding` 再入ゆえ fall through）。Buf spurt は File のみで OK。junction fall-through。
+  - **検証**: 新 `t/io-handle-tier2c-write-spurt.t`(8) mutsu/raku 双方 8/8。MUTSU_VM_STATS で `$fh.write`/`$fh.spurt`
+    が native（latin1-Str spurt は spurt=1 で fall through、closed write は die）。S32-io（spurt/out-buffering/open/io-special/
+    slurp/null-char/**utf16**）緑＝utf16 buffer write path 検証。`make test` 緑。**注: `IO::Path.spurt`（受け手が Path）は
+    別メソッドで対象外**（spurt.t の spurt fallback はこれ）。
+  - **次 = PR-D Tier-3 / 真の本丸**: 残る `IO::Handle` メソッドは全て interpreter 状態依存:
+    - **Stdout/Stderr 出力**（print/say/put/printf/write/spurt の非 File 分岐）= `emit_output`/`stderr_output`（output バッファ/
+      output_emitted/TAP/thread-clone）。
+    - **読み系** get/getc/readchars/lines/words/read/slurp/split/comb = `@*ARGS`(env) の ArgFiles + 非UTF8 `decode_with_encoding`。
+    - これらの真の撲滅は **emit_output/env/encode を VM 到達可能にする ③後段/④ の状態移管が前提**＝native IO 撤去の最終段。
+    - Tier-3 = open(reopen)/path/Supply/DESTROY/Str/gist。**Tier-1 nl-in getter** の小残り（未open時 newline_mode fallback）も。

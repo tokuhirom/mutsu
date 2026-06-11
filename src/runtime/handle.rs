@@ -99,6 +99,43 @@ impl IoHandleState {
         self.write_file_payload(payload.as_bytes())
     }
 
+    /// Whether this handle targets a regular file (the gate for the VM-native
+    /// byte-write methods `write`/`spurt`, which write raw bytes straight to the
+    /// file independent of `:out-buffer` and encoding — ③ native IO PR-D
+    /// Tier-2c). Stdout/Stderr/Socket return `false` and fall through.
+    pub(crate) fn is_file_target(&self) -> bool {
+        matches!(self.target, IoHandleTarget::File)
+    }
+
+    /// Raw `file.write_all` to a File handle — the shared leaf used by the
+    /// interpreter's `write_bytes_to_handle_value` File branch and the VM-native
+    /// `write`/`spurt` byte-write. Deliberately bypasses the `:out-buffer`
+    /// (matching the existing `write_bytes_to_handle_value` semantics).
+    pub(crate) fn write_all_to_file(&mut self, bytes: &[u8]) -> Result<(), RuntimeError> {
+        if let Some(file) = self.file.as_mut() {
+            file.write_all(bytes)
+                .map_err(|err| RuntimeError::new(format!("Failed to write to file: {}", err)))?;
+            Ok(())
+        } else {
+            Err(RuntimeError::new("IO::Handle is not attached to a file"))
+        }
+    }
+
+    /// VM-native raw byte write to a File handle (`write`/`spurt`): closed-check,
+    /// not-open-for-writing check, byte accounting, then the raw file write.
+    /// Mirrors `write_bytes_to_handle_value`'s phase-1 validation + File branch
+    /// for a File target. Caller guarantees [`is_file_target`].
+    pub(crate) fn native_write_bytes_file(&mut self, bytes: &[u8]) -> Result<(), RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("write"));
+        }
+        if matches!(self.mode, IoHandleMode::Read) {
+            return Err(RuntimeError::new("Handle not open for writing"));
+        }
+        self.bytes_written += bytes.len() as i64;
+        self.write_all_to_file(bytes)
+    }
+
     /// `.flush` — flush the `:out-buffer` pending bytes and the OS file buffer.
     /// Pure handle state (no `Interpreter`), so the VM-native dispatch and the
     /// interpreter's `flush` handler share it (③ native IO PR-D Tier-2b). Works
@@ -601,16 +638,9 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            IoHandleTarget::File => self.with_handle_mut(handle_value, |state| {
-                if let Some(file) = state.file.as_mut() {
-                    file.write_all(bytes).map_err(|err| {
-                        RuntimeError::new(format!("Failed to write to file: {}", err))
-                    })?;
-                    Ok(())
-                } else {
-                    Err(RuntimeError::new("IO::Handle is not attached to a file"))
-                }
-            }),
+            IoHandleTarget::File => {
+                self.with_handle_mut(handle_value, |state| state.write_all_to_file(bytes))
+            }
             IoHandleTarget::Socket => self.with_handle_mut(handle_value, |state| {
                 if let Some(sock) = state.socket.as_mut() {
                     sock.write_all(bytes).map_err(|err| {
