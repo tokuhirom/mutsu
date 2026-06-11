@@ -128,3 +128,26 @@ make roast のタイムアウト（静的には捕捉できない＝必ずスモ
   whitelisted S32-io 8 本 PASS）。次の着手 = **PR-B**（`IoHandleTable` 新設 + `reentry_check` を
   `lock_reentry.rs` へ汎用化 + `handles`/`next_handle_id` → `io_handles: Arc<RwLock<IoHandleTable>>`、
   `with_handle_mut` を guard 経由へ）。
+- **PR-B 完了（2026-06-11）**: `handles`/`next_handle_id` を `io_handles: Arc<RwLock<IoHandleTable>>`
+  （`src/runtime/io_handles.rs`、`map`+`next_id`）へ持ち上げ＝② registry 方式の共有ハンドル足場。
+  - **`reentry_check` を `src/runtime/lock_reentry.rs` へ汎用化**: ② の bespoke `RegistryRead/WriteGuard` +
+    `reentry_check` mod を、ジェネリックな `ReentrantReadGuard<'a,T>`/`ReentrantWriteGuard<'a,T>`（lock 名を
+    panic メッセージへ引数化）に統合。`RegistryReadGuard`/`RegistryWriteGuard` は型エイリアス化（呼び出し側
+    無改変、`new` のみ `, "registry"` 追加 = 3 サイト）。IO 側は `IoHandlesReadGuard`/`IoHandlesWriteGuard`
+    エイリアス + `io_handles()`/`io_handles_mut()` アクセサ（`registry()`/`registry_mut()` と同型）。
+  - **アクセサ経由へ全 ~59 サイト変換（10 ファイル）**: `self.handles.get/get_mut/insert/keys/values_mut` →
+    `self.io_handles()/.io_handles_mut().map.*`、`self.next_handle_id` → table の `next_id`。**新設ヘルパ
+    `insert_handle_state(state) -> id`** で `next_id` 採番 + insert を一元化（io.rs/handle.rs/socket 各所の
+    `let id = next_handle_id; next_handle_id += 1; … handles.insert` 重複を畳む。state は `&self` 依存の
+    `default_line_separators()` 等を含むため** guard 取得前に完全構築**してから渡す規律）。
+  - **`with_handle_mut`/`with_handle_mut_opt` は write guard 経由**（PR-A の closure 封じ込めにより guard を
+    closure 跨ぎで保持しても self 再入不能＝per-thread snapshot ゆえ blocking IO 跨ぎでも deadlock せず）。
+  - **`clone_for_thread`**: `Arc::new(RwLock::new(IoHandleTable { map: <try_clone deep copy>, next_id }))` で
+    per-thread snapshot（意味論不変）。**merge-back**（`builtins_system.rs` の spawn/await 両側）は子の
+    `io_handles()` snapshot から open handle を抜いて親 `io_handles_mut()` へ、`next_id` 突き合わせ。
+  - **再入安全性**: debug 実行時 guard（lock アドレス keyed）で read-while-write / write-while-any を即 panic 化。
+    debug ビルド（guard 有効）で smoke（say+nl-out / file get/lines/words/seek/tell/eof/getc / :w print+say /
+    thread が開いた handle の merge-back / `$*OUT`）を raku と byte 一致確認、whitelisted S32-io（seek/tell/open/
+    slurp/spurt/out-buffering/utf16/null-char + IO-Socket-INET/UNIX/accept-threads/fail-invalid/pipe/note/other +
+    Async/Async-UDP/signals）+ t/（io-*/socket/thread/concurrency/proc-async/subtest-threaded）緑、再入 panic ゼロ。
+    `make test`（cargo 458 + prove 6292）緑。次の着手 = **PR-C**（VM へ io_handles ハンドル移管、② #2895 相当）。

@@ -128,8 +128,14 @@ impl Interpreter {
     ) -> Result<R, RuntimeError> {
         let id = Self::handle_id_from_value(handle_value)
             .ok_or_else(|| RuntimeError::new("Expected IO::Handle"))?;
-        let state = self
-            .handles
+        // The write guard is held across `f`, which may perform blocking IO but
+        // (by construction — `f` only receives `&mut IoHandleState`, never
+        // `self`) cannot re-enter another handle op. Per-thread snapshot
+        // semantics make holding the lock across blocking IO deadlock-free; the
+        // debug reentry guard catches any same-thread re-acquire.
+        let mut table = self.io_handles_mut();
+        let state = table
+            .map
             .get_mut(&id)
             .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))?;
         f(state)
@@ -147,7 +153,8 @@ impl Interpreter {
         let Some(id) = Self::handle_id_from_value(handle_value) else {
             return Ok(None);
         };
-        let Some(state) = self.handles.get_mut(&id) else {
+        let mut table = self.io_handles_mut();
+        let Some(state) = table.map.get_mut(&id) else {
             return Ok(None);
         };
         f(state).map(Some)
@@ -422,7 +429,8 @@ impl Interpreter {
         let stdin_seps: Option<(Vec<Vec<u8>>, bool)> =
             self.get_dynamic_handle("$*IN").and_then(|in_handle| {
                 let id = Self::handle_id_from_value(&in_handle)?;
-                let in_state = self.handles.get(&id)?;
+                let table = self.io_handles();
+                let in_state = table.map.get(&id)?;
                 Some((in_state.line_separators.clone(), in_state.line_chomp))
             });
 
@@ -1261,8 +1269,6 @@ impl Interpreter {
         let file = options.open(path).map_err(|err| {
             RuntimeError::new(format!("Failed to open '{}': {}", path.display(), err))
         })?;
-        let id = self.next_handle_id;
-        self.next_handle_id += 1;
         let mode = if read && (write || append) {
             IoHandleMode::ReadWrite
         } else if append {
@@ -1327,7 +1333,7 @@ impl Interpreter {
                 state.utf16_bom_written = true;
             }
         }
-        self.handles.insert(id, state);
+        let id = self.insert_handle_state(state);
         Ok(self.make_handle_instance_with_bin(id, bin))
     }
 }

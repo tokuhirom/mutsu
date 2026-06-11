@@ -2200,7 +2200,7 @@ impl Interpreter {
             "DESTROY" => {
                 // Standard handles ($*IN, $*OUT, $*ERR) must not be closed by DESTROY
                 let is_std = if let Some(id) = Self::handle_id_from_value(&target_val) {
-                    self.handles.get(&id).is_some_and(|s| {
+                    self.io_handles().map.get(&id).is_some_and(|s| {
                         matches!(
                             s.target,
                             IoHandleTarget::Stdin | IoHandleTarget::Stdout | IoHandleTarget::Stderr
@@ -2217,7 +2217,7 @@ impl Interpreter {
             "path" | "IO" => {
                 // For standard handles ($*IN, $*OUT, $*ERR), return IO::Special
                 if let Some(id) = Self::handle_id_from_value(&target_val)
-                    && let Some(state) = self.handles.get(&id)
+                    && let Some(state) = self.io_handles().map.get(&id)
                 {
                     let special_name = match state.target {
                         IoHandleTarget::Stdout => Some("STDOUT"),

@@ -100,8 +100,6 @@ impl Interpreter {
                 let listener = std::os::unix::net::UnixListener::bind(&path).map_err(|e| {
                     RuntimeError::new(format!("Failed to bind UNIX socket '{}': {}", path, e))
                 })?;
-                let id = self.next_handle_id;
-                self.next_handle_id += 1;
                 let state = IoHandleState {
                     target: IoHandleTarget::Socket,
                     mode: IoHandleMode::ReadWrite,
@@ -127,7 +125,7 @@ impl Interpreter {
                     pending_words: std::collections::VecDeque::new(),
                     close_on_word_exhaust: false,
                 };
-                self.handles.insert(id, state);
+                let id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();
                 attrs.insert("handle".to_string(), Value::Int(id as i64));
                 attrs.insert("localport".to_string(), Value::Int(0i64));
@@ -146,8 +144,6 @@ impl Interpreter {
                 RuntimeError::new(format!("Failed to bind to '{}': {}", bind_addr, e))
             })?;
             let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(localport);
-            let id = self.next_handle_id;
-            self.next_handle_id += 1;
             let state = IoHandleState {
                 target: IoHandleTarget::Socket,
                 mode: IoHandleMode::ReadWrite,
@@ -173,7 +169,7 @@ impl Interpreter {
                 pending_words: std::collections::VecDeque::new(),
                 close_on_word_exhaust: false,
             };
-            self.handles.insert(id, state);
+            let id = self.insert_handle_state(state);
             let mut attrs = HashMap::new();
             attrs.insert("handle".to_string(), Value::Int(id as i64));
             attrs.insert("localport".to_string(), Value::Int(actual_port as i64));
@@ -205,8 +201,6 @@ impl Interpreter {
                         path, e
                     ))
                 })?;
-                let id = self.next_handle_id;
-                self.next_handle_id += 1;
                 let state = IoHandleState {
                     target: IoHandleTarget::Socket,
                     mode: IoHandleMode::ReadWrite,
@@ -232,7 +226,7 @@ impl Interpreter {
                     pending_words: std::collections::VecDeque::new(),
                     close_on_word_exhaust: false,
                 };
-                self.handles.insert(id, state);
+                let id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();
                 attrs.insert("handle".to_string(), Value::Int(id as i64));
                 attrs.insert("host".to_string(), Value::str(path));
