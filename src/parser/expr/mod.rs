@@ -531,6 +531,27 @@ pub(super) fn is_whatever(expr: &Expr) -> bool {
     matches!(expr, Expr::Whatever)
 }
 
+/// True when `expr` is an already-wrapped WhateverCode closure (produced by a
+/// parenthesized curry such as `(* - 1)`). Such a closure is opaque as a *value*
+/// (e.g. when passed as an argument or stored in a variable), but when it appears
+/// as an *operand* of a further operator/method in the same expression, Raku
+/// composes it into a new, larger WhateverCode (`(* - 1) - 1`, `(^*).roll`,
+/// `1 +< (* - 1)`). The currying machinery (`count_whatever` /
+/// `replace_whatever_*`) already knows how to inline such a closure; this helper
+/// lets the composing operand positions detect it.
+fn is_wrapped_whatevercode(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Lambda {
+            is_whatever_code: true,
+            ..
+        } | Expr::AnonSubParams {
+            is_whatever_code: true,
+            ..
+        }
+    )
+}
+
 pub(super) fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         e if is_whatever(e) => true,
@@ -578,8 +599,24 @@ pub(super) fn contains_whatever(expr: &Expr) -> bool {
             op: TokenKind::Ident(name),
             ..
         } if name == "o" || name == "\u{2218}" => false,
-        Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_whatever(expr),
+        // `xx` replicates its LHS as a value N times (producing a Seq), so a
+        // WhateverCode LHS is NOT composed — `(* - 1) xx 3` is a Seq of three
+        // WhateverCodes, not a curried WhateverCode. Keep the historical
+        // bare-`*` behavior (only the literal placeholder triggers wrapping).
+        Expr::Binary {
+            op: TokenKind::Ident(name),
+            left,
+            right,
+        } if name == "xx" => contains_whatever(left) || contains_whatever(right),
+        Expr::Binary { left, right, .. } => {
+            contains_whatever(left)
+                || contains_whatever(right)
+                || is_wrapped_whatevercode(left)
+                || is_wrapped_whatevercode(right)
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
+            contains_whatever(expr) || is_wrapped_whatevercode(expr)
+        }
         // Pseudo-methods (.WHAT, .WHO, .HOW, etc.) are always evaluated immediately
         // on Whatever, they don't create WhateverCode. e.g. *.WHAT returns (Whatever).
         Expr::MethodCall { target, name, .. }
@@ -591,7 +628,7 @@ pub(super) fn contains_whatever(expr: &Expr) -> bool {
             false
         }
         Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
-            contains_whatever(target)
+            contains_whatever(target) || is_wrapped_whatevercode(target)
         }
         Expr::CallOn { target, args } => {
             // Already-wrapped WhateverCode args (Lambda/AnonSubParams with
@@ -614,7 +651,7 @@ pub(super) fn contains_whatever(expr: &Expr) -> bool {
         }
         // Only check target, not index: @a[*-1] should NOT make the whole expr a WhateverCode.
         // The [*-1] subscript handles its own WhateverCode wrapping.
-        Expr::Index { target, .. } => contains_whatever(target),
+        Expr::Index { target, .. } => contains_whatever(target) || is_wrapped_whatevercode(target),
         // User-defined infix operators: `* quack 5`, `3 quack *`, etc.
         // Exclude flip-flop operators (ff, fff and variants) since `ff *` means
         // "stay true forever" and `*` should not trigger WhateverCode wrapping.
@@ -628,14 +665,23 @@ pub(super) fn contains_whatever(expr: &Expr) -> bool {
             if is_flipflop {
                 return false;
             }
-            contains_whatever(left) || right.iter().any(contains_whatever)
+            contains_whatever(left)
+                || is_wrapped_whatevercode(left)
+                || right
+                    .iter()
+                    .any(|e| contains_whatever(e) || is_wrapped_whatevercode(e))
         }
         // R meta-operators with Whatever: `5 R- *` should curry.
         // X/Z meta-operators with bare * in list contexts mean "extend" rather
         // than WhateverCode, so only enable for R (reverse) meta-ops.
         Expr::MetaOp {
             meta, left, right, ..
-        } if meta == "R" => contains_whatever(left) || contains_whatever(right),
+        } if meta == "R" => {
+            contains_whatever(left)
+                || contains_whatever(right)
+                || is_wrapped_whatevercode(left)
+                || is_wrapped_whatevercode(right)
+        }
         _ => false,
     }
 }
@@ -644,6 +690,18 @@ pub(super) fn contains_whatever(expr: &Expr) -> bool {
 fn count_whatever(expr: &Expr) -> usize {
     match expr {
         e if is_whatever(e) => 1,
+        // A nested, already-wrapped WhateverCode operand (e.g. `(* - 1)` inside
+        // `(* - 1) - 1`) contributes its own placeholder count: a single-param
+        // `_`/`__wc_0` lambda counts as 1, a multi-param one as its arity.
+        Expr::Lambda {
+            is_whatever_code: true,
+            ..
+        } => 1,
+        Expr::AnonSubParams {
+            is_whatever_code: true,
+            params,
+            ..
+        } => params.len(),
         Expr::Binary {
             left,
             op: TokenKind::AndAnd,
@@ -1081,6 +1139,21 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
         Expr::Lambda { param, body, .. } if param == "_" => {
             if let Some(Stmt::Expr(e)) = body.first() {
                 e.clone()
+            } else {
+                Expr::Var("_".to_string())
+            }
+        }
+        // A nested single-param WhateverCode built as AnonSubParams (its body
+        // referenced $_, so it uses a numbered param): rename that param to $_
+        // so it shares the composed closure's single topic.
+        Expr::AnonSubParams {
+            params,
+            body,
+            is_whatever_code: true,
+            ..
+        } if params.len() == 1 => {
+            if let Some(Stmt::Expr(e)) = body.first() {
+                rename_var(e, &params[0], "_")
             } else {
                 Expr::Var("_".to_string())
             }

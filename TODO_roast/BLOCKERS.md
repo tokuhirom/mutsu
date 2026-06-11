@@ -77,19 +77,14 @@ do NOT spend time here, the file cannot reach a clean pass as written.
 **Genuinely-achievable remainder** (self-contained features; concrete approach
 given so the next worker can start cold):
 
-1. **S03-buf/write-int.t** — *Hard (large but mechanical).* 2530 tests.
-   **Reclassified — the blockers are Whatever-currying, not 128-bit.**
-   128-bit `read-int128`/`write-int128`/`-uint128` and dynamic interpolated method
-   names (`."read-int{8*$_}"(...)`) already work across all endiannesses
-   (verified: `blob8.new(1..16).read-int128(0,BigEndian)` returns the right value).
-   The test aborts in *setup* (before `plan`) on two Whatever-composition bugs:
-   - `1 +< (*-1) - 1` throws "Callable expected" — a WhateverCode `(*-1)` does not
-     curry through an enclosing `1 +< … - 1` into a new WhateverCode.
-   - `(^*).roll` evaluates to the un-rolled Range `0..^N` instead of a
-     WhateverCode `{ (^$_).roll }` — `.roll` (and method calls generally) on a
-     `^*` Whatever-range is not deferred into the curried closure.
-   Fix the Whatever-currying of chained infix ops and trailing method calls
-   first (broad impact, well beyond this file); the Buf widths are already done.
+1. **S03-buf/write-int.t** — *DONE, whitelisted (2530/2530).* The two
+   Whatever-composition setup bugs (`1 +< (*-1) - 1` threw "Callable expected";
+   `(^*).roll` returned the un-rolled Range) are fixed: an already-wrapped
+   WhateverCode operand now composes into a new WhateverCode through general
+   infix/unary/method-call/index/InfixFunc/R-metaop positions (NOT through `xx`,
+   list comma, or a direct `(wc)(args)` call). `count_whatever`/`replace_whatever_*`
+   already knew how to inline a nested closure; only `contains_whatever`/
+   `count_whatever` needed to detect a wrapped-WhateverCode operand.
 
 **Defer — needs deep/crate-level work (file fully passes only after a big lift):**
 - S32-io/io-path.t — 6 *independent* failures; one (test 31 `.gist`) depends on a
@@ -585,10 +580,9 @@ no per-slot `Scalar` container (first-class container identity).
 - roast/S02-types/pair.t — **Hard (container identity)**. 3/180 fail. Tests
   128/139 need `$pair.value` to alias the original variable's container; only
   test 171 (typed-assign throw) is independent. See "Do NOT pick" above.
-- roast/S03-buf/write-int.t — **Hard (large but mechanical)**. 2530 tests. The
-  128-bit read/write and dynamic interpolated method names already work; the file
-  aborts in *setup* on two Whatever-currying bugs (see the Tier 1 entry for the
-  exact reproductions). Fix Whatever-currying first.
+- roast/S03-buf/write-int.t — **DONE, whitelisted (2530/2530).** The two
+  Whatever-currying setup bugs are fixed (see the Tier 1 entry); a parenthesized
+  WhateverCode now composes into a new WhateverCode through surrounding operators.
 - roast/S04-blocks-and-statements/temp.t — **Medium**. 30/37 (7 remaining): `temp`
   restoration interacting with hash/array element containers (container identity).
 - roast/S04-declarations/constant.t — **Medium**. 65/72 (24/26 fixed in #2893).
