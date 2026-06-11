@@ -4633,6 +4633,27 @@ impl Interpreter {
         }
     }
 
+    /// Re-attach previously-captured container type metadata to whatever array
+    /// is now bound to `key`. In-place array mutators (pop/shift/splice/append/
+    /// prepend/unshift) call `Arc::make_mut`, which reallocates the backing
+    /// buffer whenever the Arc is shared (e.g. the method receiver still holds a
+    /// clone). The fresh heap pointer has no entry in the pointer-keyed
+    /// `array_type_metadata` map, which silently demotes a typed `array[int]` /
+    /// `Array[Int]` to a plain `Array`. Re-registering the saved metadata under
+    /// the new pointer preserves the declared type across the mutation. No-op
+    /// when the array was untyped (`saved` is `None`).
+    pub(crate) fn reattach_array_type_metadata(
+        &mut self,
+        key: &str,
+        saved: &Option<ContainerTypeInfo>,
+    ) {
+        if let Some(info) = saved
+            && let Some(arr @ Value::Array(..)) = self.env.get(key).cloned()
+        {
+            self.register_container_type_metadata(&arr, info.clone());
+        }
+    }
+
     pub(crate) fn set_type_metadata_get(&self, id: usize) -> Option<ContainerTypeInfo> {
         self.set_type_metadata.get(&id).cloned()
     }
