@@ -205,7 +205,21 @@ impl Interpreter {
                         cn == "Date" || self.class_mro(&cn).iter().any(|name| name == "Date");
                     if is_date_like {
                         use crate::builtins::methods_0arg::temporal;
-                        let secs = crate::value::current_time_secs_f64() as i64;
+                        // Date.today uses the local timezone ($*TZ), matching
+                        // rakudo. Without the offset the date would be UTC, which
+                        // differs from DateTime.now.Date in non-UTC zones.
+                        let tz = self
+                            .env
+                            .get("*TZ")
+                            .and_then(|v| {
+                                if let Value::Int(n) = v {
+                                    Some(*n)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(0i64);
+                        let secs = crate::value::current_time_secs_f64() as i64 + tz;
                         let epoch_days = secs.div_euclid(86400);
                         let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
                         if cn == "Date" {
