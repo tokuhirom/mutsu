@@ -23,6 +23,95 @@ impl IoHandleState {
         Ok(())
     }
 
+    /// Write already-encoded payload bytes to a **File-target** handle,
+    /// honoring the `:out-buffer` capacity (flush-and-write, bypass-on-large,
+    /// or append-to-pending). Pure handle state — no `Interpreter` access — so
+    /// it is the single authoritative impl shared by the interpreter's
+    /// `write_to_handle_value_trying` File branch and the VM-native output
+    /// dispatch (③ native IO PR-D Tier-2a). The caller guarantees the target is
+    /// `File`; Stdout/Stderr/Socket are handled elsewhere.
+    pub(crate) fn write_file_payload(&mut self, bytes: &[u8]) -> Result<(), RuntimeError> {
+        if matches!(self.mode, IoHandleMode::Read) {
+            return Err(RuntimeError::new("Handle not open for writing"));
+        }
+        if self.file.is_none() {
+            return Err(RuntimeError::new("IO::Handle is not attached to a file"));
+        }
+        if let Some(capacity) = self.out_buffer_capacity {
+            // capacity 0 (unbuffered) or a payload larger than the buffer:
+            // flush queued data, then write straight through.
+            if capacity == 0 || bytes.len() > capacity {
+                self.flush_buffer()?;
+                if let Some(file) = self.file.as_mut() {
+                    file.write_all(bytes).map_err(|err| {
+                        RuntimeError::new(format!("Failed to write to file: {}", err))
+                    })?;
+                }
+                return Ok(());
+            }
+            if self.out_buffer_pending.len() + bytes.len() > capacity {
+                self.flush_buffer()?;
+            }
+            self.out_buffer_pending.extend_from_slice(bytes);
+            Ok(())
+        } else if let Some(file) = self.file.as_mut() {
+            file.write_all(bytes)
+                .map_err(|err| RuntimeError::new(format!("Failed to write to file: {}", err)))?;
+            Ok(())
+        } else {
+            Err(RuntimeError::new("IO::Handle is not attached to a file"))
+        }
+    }
+
+    /// Whether a text payload can be written to this handle entirely in the VM
+    /// (③ native IO PR-D Tier-2a): a `File` target with a UTF-8 / binary
+    /// encoding, where the bytes are the payload verbatim (no `encode_with_encoding`
+    /// re-entry) and the write touches only handle state (no `emit_output`).
+    /// Stdout/Stderr (need `emit_output` / `stderr_output`), Socket, and any
+    /// non-UTF-8 File encoding return `false` and fall through to the interpreter.
+    pub(crate) fn can_native_text_write(&self) -> bool {
+        matches!(self.target, IoHandleTarget::File)
+            && (self.encoding.is_empty()
+                || self.encoding == "utf-8"
+                || self.encoding == "utf8"
+                || self.encoding == "bin")
+    }
+
+    /// VM-native text write to a `File` handle (`print`/`say`/`put`): error on a
+    /// closed handle, append `nl_out` when `newline`, account the bytes, and do
+    /// the buffered file write. Mirrors `write_to_handle_value_trying`'s File
+    /// path exactly for the UTF-8 case. `trying` names the op for the
+    /// closed-handle error. Caller guarantees [`can_native_text_write`].
+    pub(crate) fn native_text_write(
+        &mut self,
+        content: &str,
+        newline: bool,
+        trying: &str,
+    ) -> Result<(), RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed(trying));
+        }
+        let mut payload = String::from(content);
+        if newline {
+            payload.push_str(&self.nl_out);
+        }
+        self.bytes_written += payload.len() as i64;
+        self.write_file_payload(payload.as_bytes())
+    }
+
+    /// VM-native `.print-nl` on a `File` handle: write the handle's `nl_out`
+    /// terminator. Mirrors the interpreter's `print-nl` (read `nl_out`, then
+    /// `write_to_handle_value(.., newline = false)`). Caller guarantees
+    /// [`can_native_text_write`].
+    pub(crate) fn native_print_nl(&mut self) -> Result<(), RuntimeError> {
+        if self.closed {
+            return Err(RuntimeError::io_closed("write"));
+        }
+        let nl = self.nl_out.clone();
+        self.bytes_written += nl.len() as i64;
+        self.write_file_payload(nl.as_bytes())
+    }
+
     /// `.tell` — current byte offset (file position, or bytes written for
     /// non-file targets).
     pub(crate) fn tell(&mut self) -> Result<i64, RuntimeError> {
@@ -440,50 +529,12 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::File => self.with_handle_mut(handle_value, |state| {
-                if matches!(state.mode, IoHandleMode::Read) {
-                    return Err(RuntimeError::new("Handle not open for writing"));
-                }
-                if state.file.is_none() {
-                    return Err(RuntimeError::new("IO::Handle is not attached to a file"));
-                }
                 let payload_bytes = if let Some(ref enc_bytes) = encoded_bytes {
                     enc_bytes.as_slice()
                 } else {
                     payload.as_bytes()
                 };
-                if let Some(capacity) = state.out_buffer_capacity {
-                    if capacity == 0 {
-                        state.flush_buffer()?;
-                        if let Some(file) = state.file.as_mut() {
-                            file.write_all(payload_bytes).map_err(|err| {
-                                RuntimeError::new(format!("Failed to write to file: {}", err))
-                            })?;
-                        }
-                        return Ok(());
-                    }
-                    if payload_bytes.len() > capacity {
-                        // Large payloads bypass buffering after flushing queued data.
-                        state.flush_buffer()?;
-                        if let Some(file) = state.file.as_mut() {
-                            file.write_all(payload_bytes).map_err(|err| {
-                                RuntimeError::new(format!("Failed to write to file: {}", err))
-                            })?;
-                        }
-                        return Ok(());
-                    }
-                    if state.out_buffer_pending.len() + payload_bytes.len() > capacity {
-                        state.flush_buffer()?;
-                    }
-                    state.out_buffer_pending.extend_from_slice(payload_bytes);
-                    Ok(())
-                } else if let Some(file) = state.file.as_mut() {
-                    file.write_all(payload_bytes).map_err(|err| {
-                        RuntimeError::new(format!("Failed to write to file: {}", err))
-                    })?;
-                    Ok(())
-                } else {
-                    Err(RuntimeError::new("IO::Handle is not attached to a file"))
-                }
+                state.write_file_payload(payload_bytes)
             }),
             IoHandleTarget::Socket => self.with_handle_mut(handle_value, |state| {
                 if let Some(sock) = state.socket.as_mut() {

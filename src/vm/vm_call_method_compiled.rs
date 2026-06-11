@@ -126,6 +126,12 @@ impl VM {
             if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
                 return result;
             }
+            // VM-native text output to a File+UTF8 `IO::Handle` (print/put/say/
+            // print-nl): the write touches only handle state (PR-D Tier-2a).
+            // Stdout/Stderr (need emit_output) and non-UTF8 File fall through.
+            if let Some(result) = self.try_native_io_handle_output(&target, method, &args) {
+                return result;
+            }
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
@@ -597,6 +603,96 @@ impl VM {
         Some(result)
     }
 
+    /// VM-native text output for a `File`+UTF8 `IO::Handle` receiver
+    /// (`print`/`put`/`say`/`print-nl`): build the payload exactly as the
+    /// interpreter's `native_io` handlers do — `render_str_value` for
+    /// print/put, `render_gist_value` for say (byte-identical; the same helpers
+    /// the VM's own `say`/`print` ops use) — and write it through the VM's
+    /// `io_handles` handle via the shared `IoHandleState::native_text_write`
+    /// (PLAN.md ③ native IO PR-D Tier-2a).
+    ///
+    /// Returns `None` (fall through to the interpreter) for any non-`IO::Handle`
+    /// receiver, any other method, a junction argument (autothreading), or a
+    /// handle whose target/encoding is not File+UTF8 — Stdout/Stderr need
+    /// `emit_output`/`stderr_output` and a non-UTF8 File needs
+    /// `encode_with_encoding`, neither VM-reachable yet (③ 後段/④). The
+    /// target/encoding gate is read *before* the payload is built so a
+    /// fall-through never double-runs the argument stringification.
+    fn try_native_io_handle_output(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let id = match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
+                Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                _ => return None,
+            },
+            _ => return None,
+        };
+
+        enum Kind {
+            Print,
+            Put,
+            Say,
+            PrintNl,
+        }
+        let kind = match method {
+            "print" => Kind::Print,
+            "put" => Kind::Put,
+            "say" => Kind::Say,
+            "print-nl" => Kind::PrintNl,
+            _ => return None,
+        };
+        // Junction args autothread in the interpreter; fall through for those.
+        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+            return None;
+        }
+
+        // Gate on File+UTF8 *before* building the payload, so falling through
+        // (Stdout/Stderr/non-UTF8) never runs the arg stringification twice.
+        {
+            let table = self.io_handles_mut();
+            let state = table.map.get(&id)?;
+            if !state.can_native_text_write() {
+                return None;
+            }
+        }
+
+        // `print-nl` writes the handle's `nl_out`; the others stringify args.
+        if matches!(kind, Kind::PrintNl) {
+            let mut table = self.io_handles_mut();
+            let Some(state) = table.map.get_mut(&id) else {
+                return Some(Err(RuntimeError::new("Invalid IO::Handle")));
+            };
+            return Some(state.native_print_nl().map(|_| Value::Bool(true)));
+        }
+
+        let mut content = String::new();
+        for arg in args {
+            match kind {
+                Kind::Say => content.push_str(&self.interpreter.render_gist_value(arg)),
+                _ => content.push_str(&self.interpreter.render_str_value(arg)),
+            }
+        }
+        let newline = matches!(kind, Kind::Put | Kind::Say);
+
+        let mut table = self.io_handles_mut();
+        let Some(state) = table.map.get_mut(&id) else {
+            return Some(Err(RuntimeError::new("Invalid IO::Handle")));
+        };
+        Some(
+            state
+                .native_text_write(&content, newline, method)
+                .map(|_| Value::Bool(true)),
+        )
+    }
+
     /// VM-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
     /// over a list-like receiver (List/Array/Seq/Slip/Hash/Set/Bag/Mix/Pair/Range).
     /// Delegates the element folding to the single authoritative pure
@@ -1022,6 +1118,11 @@ impl VM {
             // shared handle-table state (not the receiver binding), so the native
             // path returns the result directly; `None` falls through unchanged.
             if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
+                return result;
+            }
+            // VM-native text output to a File+UTF8 `IO::Handle` (print/put/say/
+            // print-nl), mut path (PR-D Tier-2a). See the non-mut twin above.
+            if let Some(result) = self.try_native_io_handle_output(&target, method, &args) {
                 return result;
             }
             if self.interpreter.is_native_method(&class, method) {

@@ -205,6 +205,26 @@ make roast のタイムアウト（静的には捕捉できない＝必ずスモ
     **変更前から存在する既存差**でスコープ外。新規 `t/io-handle-tier1-methods.t`（14 本）を mutsu/raku 双方で 14/14 緑
     （encoding 名差は setter return と getter の一致で吸収）。whitelisted S32-io（native-descriptor/out-buffering/open/
     seek/tell/slurp/spurt/io-special/note/null-char/other + socket/pipe/procasync）緑、再入 panic ゼロ。
-  - **次 = PR-D Tier-2**（③ 後段/④ 必須・本丸の §1 fork 撲滅）: 出力 print/say/put/printf/write/flush/spurt + 読み
-    get/getc/readchars/lines/words/read/slurp/split/comb。emit_output/env(@*ARGS)/非UTF8 encode が VM 到達可能になる
-    状態移管が前提。Tier-3 = open(reopen)/path/Supply/DESTROY/Str。
+- **PR-D Tier-2a 完了（2026-06-11）**: **File+UTF8 ターゲットのテキスト出力** `print`/`put`/`say`/`print-nl` を VM
+  ネイティブ dispatch へ。**調査で出力系が2系統の依存に割れると確定**:
+  - **書き込み先で分岐**: **Stdout**→`emit_output`（`output` バッファ / `output_emitted` / TAP subtest 深度 /
+    thread-clone 共有出力に依存＝**VM 到達不能**、真の撲滅は ③後段/④ の状態移管が前提）、**Stderr**→`stderr_output`
+    バッファ（同）、**File**→handle state へ直書き（buffering 含め**純粋 handle state**。非UTF-8 のみ `encode_with_encoding`
+    再入）。**Socket** も別。→ **File+UTF8/bin のみ純粋に native 化可能**。最頻ケース Stdout は据え置き。
+  - **payload 構築**は `self.interpreter.render_str_value`(print/put)/`render_gist_value`(say)＝**現行 native_io ハンドラ
+    と同一コード**かつ **VM 自身の exec_say_op/exec_print_op も同じ helper を使う**ので byte 一致・parity リスクゼロ・env
+    desync なし（VM の say が既に同様に呼んでいる）。
+  - **書き込み**は File ブランチの buffering を `IoHandleState::write_file_payload` へ抽出（`write_to_handle_value_trying`
+    の File 分岐が委譲＝1 操作1実装）。`can_native_text_write`(File+utf8/bin ゲート)/`native_text_write`(closed 検査+nl_out
+    付与+bytes 計上+write)/`native_print_nl` を `impl IoHandleState` に追加。VM 新 `try_native_io_handle_output`
+    （**早期ゲート直前**、mut/非mut 両パス）。**ゲート(target/encoding)は payload 構築の前に読む**＝fall-through 時に引数
+    stringification を二重実行しない。junction 引数は autothread へ fall through。
+  - **検証**: 新 `t/io-handle-tier2a-file-output.t`(12) mutsu/raku 双方 12/12。`MUTSU_VM_STATS` で File 出力が native
+    （out-buffering.t は print/say/put が fallback から消え open/slurp/**flush** のみ残）、Stdout/Stderr/latin1-File は正しく
+    fall through（say/print が fallback に残る）。io-handle.t の not-ok 数は main と同一(24＝既存・本変更は不変)。
+    `make test`(cargo 458+prove)緑。**`write_bytes_to_handle_value` の File 分岐は out-buffer 非対応の別 semantics ゆえ
+    委譲せず据え置き**（`write`/`spurt` は Tier-2b 範囲）。
+  - **次 = PR-D Tier-2b**: 残り出力 `printf`(sprintf)/`write`/`spurt`(Buf/bytes)/`flush`(Failure 整形) を File 対象で
+    native 化。`flush` は closed 時 `Failure` を返す整形が要る。**Stdout/Stderr 出力 + 読み系（get/lines/read/slurp + ArgFiles
+    `@*ARGS`/非UTF8 decode）の真の撲滅は emit_output/env/encode を VM 到達可能にする ③後段/④ が前提**。Tier-3 =
+    open(reopen)/path/Supply/DESTROY/Str。
