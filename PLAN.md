@@ -426,6 +426,13 @@ NaN-boxing で payload 8byte 化。**各ステップで int.t 等の重量級 ro
       されていたが、実体は alloc/hash 順依存の**正しさバグ**（テストは ~0.07s 実行・起動 ~0ms、perf 無関係）。
     - **済**: ハッシュ要素 READ 経路を #2635 で部分対処（name-based reconcile + stale 上書き復元、
       S09-typed-arrays/hashes.t を 0/500 に）。
+    - **済（untyped 代入時の stale クリア、`%`→`@` 対称化）**: `vm_var_assign_ops.rs` は untyped `%h = ...`
+      代入時に「`var_type_constraint` が `None`＝確実に untyped なのに値に型メタが付いている＝ポインタ再利用の
+      stale alias」を `unregister_container_type_metadata` で除去していた。これを `@a = ...` にも拡張
+      （native/typed 配列は `var_type_constraint` Some でスキップ＝不変）。`t/native-array-mut.t` subtest 26
+      flaky の根（drop 済み typed 配列の slot を untyped `@a` の構築が再利用し `Array[Int]` を継承）を断つ。
+      **部分対処**（untyped *変数代入*サイト限定。EVAL 生成リスト等の他サイトや根の Arc-ptr keying 自体は残＝
+      下記「本筋」）。
     - **試して revert（2回・いずれも不成立）**: (1) メタに `Weak` を併存させ lookup 時 `Arc::ptr_eq` 検証
       する案は family 全体を 0/300 にしたが、native typed 配列（`my int @a`/`my str @a`）で
       `native-int.t` 240 件回帰 → revert。(2) ハッシュで効いた name-based reconcile（`var_type_constraints`
