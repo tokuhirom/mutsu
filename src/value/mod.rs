@@ -2484,6 +2484,26 @@ impl Value {
         }
     }
 
+    /// Hash element write chokepoint (Phase 2 Stage 0). The hash analogue of
+    /// [`assign_element_slot`]: if the existing entry at `key` is a
+    /// `ContainerRef` cell, write *through* it (preserving any `:=` binding);
+    /// otherwise insert or replace the entry as a bare value.
+    ///
+    /// This is behavior-invariant until hash elements are promoted to cells
+    /// (Phase 2 Stage 1), because no hash currently stores `ContainerRef`
+    /// entries, so every call collapses to a plain insert/replace. Routing all
+    /// hash-element writes through this single chokepoint is the prerequisite
+    /// for that promotion: a naive promotion without it broke array-through-hash
+    /// traversal (nested.t 30->7), see `docs/container-identity.md`.
+    pub fn hash_insert_through(map: &mut HashMap<String, Value>, key: String, val: Value) {
+        match map.get_mut(&key) {
+            Some(slot) => Value::assign_element_slot(slot, val),
+            None => {
+                map.insert(key, val);
+            }
+        }
+    }
+
     pub fn is_container_ref(&self) -> bool {
         matches!(self, Value::ContainerRef(_))
     }
@@ -2549,7 +2569,7 @@ impl Value {
         if let Value::Hash(arc) = self {
             let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
             unsafe {
-                (*ptr).insert(key.to_string(), val.clone());
+                Value::hash_insert_through(&mut *ptr, key.to_string(), val.clone());
             }
             Some(val)
         } else {
@@ -2579,7 +2599,7 @@ impl Value {
         if let Value::HashSlotRef { hash, key } = self {
             let ptr = Arc::as_ptr(hash) as *mut HashMap<String, Value>;
             unsafe {
-                (*ptr).insert(key.clone(), val);
+                Value::hash_insert_through(&mut *ptr, key.clone(), val);
             }
         }
     }
@@ -3487,3 +3507,38 @@ const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Value>();
 };
+
+#[cfg(test)]
+mod hash_chokepoint_tests {
+    use super::*;
+
+    #[test]
+    fn insert_through_replaces_bare_entry() {
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), Value::Int(1));
+        Value::hash_insert_through(&mut map, "a".to_string(), Value::Int(2));
+        assert!(matches!(map.get("a"), Some(Value::Int(2))));
+    }
+
+    #[test]
+    fn insert_through_creates_missing_entry() {
+        let mut map = HashMap::new();
+        Value::hash_insert_through(&mut map, "b".to_string(), Value::Int(7));
+        assert!(matches!(map.get("b"), Some(Value::Int(7))));
+    }
+
+    #[test]
+    fn insert_through_writes_through_container_ref_cell() {
+        // A `:=`-bound element holds a shared `ContainerRef` cell; a later
+        // assignment to the key must write *through* the cell (preserving the
+        // binding), not replace the entry with a bare value.
+        let cell = Arc::new(Mutex::new(Value::Int(1)));
+        let mut map = HashMap::new();
+        map.insert("k".to_string(), Value::ContainerRef(cell.clone()));
+        Value::hash_insert_through(&mut map, "k".to_string(), Value::Int(99));
+        // The entry is still the same cell (binding preserved)...
+        assert!(matches!(map.get("k"), Some(Value::ContainerRef(_))));
+        // ...and the alias observes the new value through the cell.
+        assert!(matches!(*cell.lock().unwrap(), Value::Int(99)));
+    }
+}

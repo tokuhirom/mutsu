@@ -1840,7 +1840,7 @@ impl VM {
         {
             match container_value {
                 Value::Hash(h) => {
-                    Arc::make_mut(h).insert(key.clone(), new_val.clone());
+                    Value::hash_insert_through(Arc::make_mut(h), key.clone(), new_val.clone());
                     true
                 }
                 Value::Array(arr, ..) => {
@@ -2141,7 +2141,7 @@ impl VM {
                     self.locals[slot] = Value::Nil;
                 }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
-                    Arc::make_mut(hash).insert(key.clone(), val.clone());
+                    Value::hash_insert_through(Arc::make_mut(hash), key.clone(), val.clone());
                 }
                 // Restore the local slot to point to the (now mutated) env Arc
                 if let Some(slot) = local_slot
@@ -3112,7 +3112,7 @@ impl VM {
                             } else if is_self_hash_ref {
                                 h.insert(key.clone(), Self::self_hash_ref_marker());
                             } else {
-                                h.insert(key.clone(), val.clone());
+                                Value::hash_insert_through(h, key.clone(), val.clone());
                             }
                             // For object hashes, store the original key object
                             if is_object_hash {
@@ -3696,11 +3696,11 @@ impl VM {
                         let ptr = Arc::as_ptr(inner_hash)
                             as *mut std::collections::HashMap<String, Value>;
                         unsafe {
-                            (&mut *ptr).insert(outer_key.clone(), val.clone());
+                            Value::hash_insert_through(&mut *ptr, outer_key.clone(), val.clone());
                         }
                     } else {
                         let h = Arc::make_mut(inner_hash);
-                        h.insert(outer_key.clone(), val.clone());
+                        Value::hash_insert_through(h, outer_key.clone(), val.clone());
                     }
                 }
                 _ => {}
@@ -3756,7 +3756,7 @@ impl VM {
                 }
                 Value::Hash(h) => {
                     // Hash-in-Hash: $hash<key1><key2> = val
-                    Arc::make_mut(h).insert(outer_key, val.clone());
+                    Value::hash_insert_through(Arc::make_mut(h), outer_key, val.clone());
                 }
                 _ => {}
             }
@@ -3931,12 +3931,7 @@ impl VM {
                         }
                         Value::Hash(hash_arc) => {
                             let hash = Arc::make_mut(hash_arc);
-                            if let Some(slot @ Value::ContainerRef(_)) = hash.get_mut(key.as_str())
-                            {
-                                Value::assign_element_slot(slot, val.clone());
-                            } else {
-                                hash.insert(key.clone(), val.clone());
-                            }
+                            Value::hash_insert_through(hash, key.clone(), val.clone());
                         }
                         _ => {
                             // Autovivify at final level
@@ -4014,7 +4009,7 @@ impl VM {
                 // so the change is visible to all holders of the same Arc.
                 let ptr = Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
                 unsafe {
-                    (*ptr).insert(key.clone(), val.clone());
+                    Value::hash_insert_through(&mut *ptr, key.clone(), val.clone());
                 }
                 // For bind mode, set up a HashSlotRef on the source variable
                 if let Some(source_name) = &bind_source {
