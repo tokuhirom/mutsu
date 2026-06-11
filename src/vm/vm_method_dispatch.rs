@@ -387,36 +387,12 @@ impl VM {
                 }
                 continue;
             }
-            // For private attributes ($!attr), prefer the class-qualified value
-            // from the method's owner class. This ensures that when Parent and Child
-            // both declare `$!priv`, Parent's method gets Parent's value.
-            let qualified_key = format!("{}\0{}", owner_class, attr_name);
-            let private_val = attributes.get(&qualified_key).unwrap_or(attr_val);
-            self.interpreter
-                .env_mut()
-                .insert(format!("!{}", attr_name), private_val.clone());
-            self.interpreter
-                .env_mut()
-                .insert(format!(".{}", attr_name), attr_val.clone());
-            match private_val {
-                Value::Array(..) => {
-                    self.interpreter
-                        .env_mut()
-                        .insert(format!("@!{}", attr_name), private_val.clone());
-                    self.interpreter
-                        .env_mut()
-                        .insert(format!("@.{}", attr_name), attr_val.clone());
-                }
-                Value::Hash(..) => {
-                    self.interpreter
-                        .env_mut()
-                        .insert(format!("%!{}", attr_name), private_val.clone());
-                    self.interpreter
-                        .env_mut()
-                        .insert(format!("%.{}", attr_name), attr_val.clone());
-                }
-                _ => {}
-            }
+            // Phase 3 Stage 2c (iii-b): the attribute value env copies (`!attr`,
+            // `.attr`, `@!attr`, …) that materialize used to insert here are no
+            // longer needed — every read of `$!x`/`$.x`/`@!a`/`%!h`/sigilless `$x`
+            // goes cell-direct (Stage 2a/2b/2c (ii)), and the exit reconcile reads
+            // the cell (Stage 2c (iii-a)). Only the sigilless alias table above is
+            // still required.
         }
 
         // Register `is default(...)` values for attribute variables so that
@@ -990,6 +966,12 @@ impl VM {
             } else {
                 env.remove("?ROLE");
             }
+            // Array/hash attribute env copies are still materialized here: an
+            // inner closure that mutates `@!a`/`%!h` by element (`%!h<k> = v`)
+            // observes them through the captured env copy, not the cell, so
+            // removing them drops the first such mutation (Stage 2c (iii-b) keeps
+            // the cell-direct *read* path but this write-capture path still needs
+            // the copy; see tmp closure hash-element test).
             for (attr_name, attr_val) in &attributes {
                 if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
                     continue;
