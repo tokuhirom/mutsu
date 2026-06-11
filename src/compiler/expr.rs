@@ -48,6 +48,32 @@ impl Compiler {
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
+                // `%.attr` is `self.attr` in *hash* context — call the accessor and
+                // coerce the result to a Hash (e.g. an `@.a = (1,2,3,4)` attribute
+                // read as `%.a` yields `{1 => 2, 3 => 4}`). Mirrors the `$.attr`
+                // item-context accessor in `compile_expr_var`.
+                if let Some(attr_name) = name.strip_prefix('.')
+                    && !attr_name.is_empty()
+                {
+                    self.emit_load_self_for_accessor(&format!("%.{}", attr_name));
+                    let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx: method_idx,
+                        arity: 0,
+                        modifier_idx: None,
+                        quoted: false,
+                        arg_sources_idx: None,
+                    });
+                    let hash_idx = self.code.add_constant(Value::str_from("hash"));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx: hash_idx,
+                        arity: 0,
+                        modifier_idx: None,
+                        quoted: false,
+                        arg_sources_idx: None,
+                    });
+                    return;
+                }
                 let sigiled = format!("%{}", name);
                 let var_name = if self.local_map.contains_key(sigiled.as_str()) {
                     sigiled

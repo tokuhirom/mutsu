@@ -431,6 +431,12 @@ impl Compiler {
                 quoted: false,
                 arg_sources_idx: None,
             });
+            // `$.attr` is `self.attr` in *item* context — the `$` sigil itemizes a
+            // list/array accessor result so it counts as a single element in list
+            // context (e.g. `flat 0, $.a` sees `$.a` as one item). `@.attr` /
+            // `%.attr` use their own list/hash-context reads; only the `$` form
+            // itemizes here. A scalar accessor result is left unchanged.
+            self.code.emit(OpCode::Itemize);
             return;
         }
         // $!attr (private twigil) — direct attribute access via local slot.
