@@ -164,6 +164,7 @@ roast/S03-binding/closure.t
 roast/S03-binding/hashes.t
 roast/S03-binding/nested.t
 roast/S03-binding/ro.t
+roast/S03-binding/scalars.t
 roast/S03-buf/read-int.t
 roast/S03-buf/read-num.t
 roast/S03-buf/read-write-bits.t
