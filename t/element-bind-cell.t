@@ -6,7 +6,7 @@ use Test;
 # `$struct[..]<..>[..]` paths (which the old index-back-reference lost when an
 # enclosing container was COW-cloned on a later write).
 
-plan 25;
+plan 31;
 
 # Single-level array element
 {
@@ -103,6 +103,34 @@ plan 25;
     $b = 42;
     is %h<a><b>, 42, 'deferred bind autovivifies on assignment';
     ok %h<a><b> =:= $b, 'deferred-bound element keeps identity (=:=) after promotion';
+}
+
+# LHS binding: a deep element bound to a scalar var (`element := $v`) — writes
+# through either side reach the other (symmetric form of RHS element binding).
+{
+    my $struct = [
+        "ignored",
+        { key => { subkey => [ "ignored", 42 ] } },
+    ];
+    my $abbrev = 30;
+    $struct[1]<key><subkey>[1] := $abbrev;
+    is $abbrev, 30, 'LHS bind leaves the source value unchanged';
+    $struct[1]<key><subkey>[1] = 31;
+    is $abbrev, 31, 'LHS deep: element write -> source (survives COW)';
+    $abbrev = 32;
+    is $struct[1]<key><subkey>[1], 32, 'LHS deep: source write -> element';
+}
+
+# LHS binding through a deep array-of-array path
+{
+    my $s = [0, [10, [100, 200]]];
+    my $v = 7;
+    $s[1][1][0] := $v;
+    $s[1][1][0] = 8;
+    is $v, 8, 'LHS deep array: element write -> source';
+    $v = 9;
+    is $s[1][1][0], 9, 'LHS deep array: source write -> element';
+    is $s[1][1][1], 200, 'sibling element untouched';
 }
 
 # vim: expandtab shiftwidth=4

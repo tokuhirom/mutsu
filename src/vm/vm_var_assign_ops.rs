@@ -109,6 +109,31 @@ impl VM {
         }
     }
 
+    /// Unwrap a `__mutsu_bind_index_value` payload to `(value, first_source)`.
+    /// `value` is the RHS value being bound; `first_source` is the name of the
+    /// single source variable when the bind is the common `LHS := $scalar`
+    /// shape. Returns `(val, None)` for a plain (non-bind) value, so callers can
+    /// treat the non-bind path unchanged.
+    fn unwrap_bind_index_value(val: Value) -> (Value, Option<String>) {
+        if let Value::Pair(name, payload) = &val
+            && name == "__mutsu_bind_index_value"
+        {
+            if let Value::Array(items, ..) = payload.as_ref() {
+                let value = items.first().cloned().unwrap_or(Value::Nil);
+                let source = match items.get(1) {
+                    Some(Value::Array(srcs, ..)) => match srcs.first() {
+                        Some(Value::Str(s)) if !s.is_empty() => Some((**s).clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                return (value, source);
+            }
+            return ((**payload).clone(), None);
+        }
+        (val, None)
+    }
+
     fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {
         if let Value::Capture { positional, named } = value
             && positional.is_empty()
@@ -3796,6 +3821,20 @@ impl VM {
 
         let val = self.stack.pop().unwrap_or(Value::Nil);
 
+        // LHS binding (`$struct[..]<..>[..] := $scalar`): unwrap the bind
+        // payload and promote the deep leaf element to a first-class
+        // `ContainerRef` cell shared with the source variable (Phase 2 Stage 2,
+        // the symmetric form of RHS element binding). Only a plain scalar source
+        // is handled here; an indexed element source (`:= $b[j]`, encoded with
+        // `\0idx\0`) is a separate slice. A cell survives COW of any enclosing
+        // container, so a later write to either side reaches the other — which
+        // the old `BOUND_ARRAY_REF_SENTINEL` by-name back-reference lost at depth.
+        let (val, bind_source) = Self::unwrap_bind_index_value(val);
+        let bind_source = bind_source.filter(|s| !s.contains("\x00idx\x00"));
+        let bind_cell: Option<Arc<std::sync::Mutex<Value>>> = bind_source
+            .as_ref()
+            .map(|_| Arc::new(std::sync::Mutex::new(val.clone())));
+
         // Extract positional flags from constant
         let flags_val = code.constants[positional_flags_idx as usize].clone();
         let positional_flags: Vec<bool> = if let Value::Array(arr, _) = &flags_val {
@@ -3916,7 +3955,14 @@ impl VM {
                     }
                 }
             } else {
-                // Final level: assign the value
+                // Final level: assign the value. When binding, install the
+                // shared cell *directly* (replacing any prior leaf), rather than
+                // writing through it — a fresh `:=` rebinds the element to the
+                // source's cell.
+                let leaf_val = bind_cell
+                    .as_ref()
+                    .map(|c| Value::ContainerRef(c.clone()))
+                    .unwrap_or_else(|| val.clone());
                 unsafe {
                     match &mut *current {
                         Value::Array(arr_arc, _) => {
@@ -3926,12 +3972,20 @@ impl VM {
                                     let fill = native_fill.clone();
                                     arr.resize(i + 1, fill);
                                 }
-                                Value::assign_element_slot(&mut arr[i], val.clone());
+                                if bind_cell.is_some() {
+                                    arr[i] = leaf_val;
+                                } else {
+                                    Value::assign_element_slot(&mut arr[i], leaf_val);
+                                }
                             }
                         }
                         Value::Hash(hash_arc) => {
                             let hash = Arc::make_mut(hash_arc);
-                            Value::hash_insert_through(hash, key.clone(), val.clone());
+                            if bind_cell.is_some() {
+                                hash.insert(key.clone(), leaf_val);
+                            } else {
+                                Value::hash_insert_through(hash, key.clone(), leaf_val);
+                            }
                         }
                         _ => {
                             // Autovivify at final level
@@ -3940,18 +3994,26 @@ impl VM {
                                 if let Ok(i) = key.parse::<usize>() {
                                     let fill = native_fill.clone();
                                     arr.resize(i + 1, fill);
-                                    arr[i] = val.clone();
+                                    arr[i] = leaf_val;
                                 }
                                 *current = Value::real_array(arr);
                             } else {
                                 let mut h = std::collections::HashMap::new();
-                                h.insert(key.clone(), val.clone());
+                                h.insert(key.clone(), leaf_val);
                                 *current = Value::hash(h);
                             }
                         }
                     }
                 }
             }
+        }
+
+        // Write the shared cell back to the source variable so both sides alias
+        // the same container (the symmetric counterpart of the leaf store above).
+        if let (Some(src), Some(cell)) = (bind_source, bind_cell) {
+            let cell_val = Value::ContainerRef(cell);
+            self.set_env_with_main_alias(&src, cell_val.clone());
+            self.update_local_if_exists(code, &src, &cell_val);
         }
 
         self.stack.push(val);
