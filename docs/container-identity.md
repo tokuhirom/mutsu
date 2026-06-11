@@ -289,8 +289,15 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
                 2994 PASS、has-attr-binding 6/6、全 bypass/sigilless/attrparam テスト raku 一致。（S32-temporal/DateTime.t の 2 失敗は
                 `Date.today`=UTC vs `DateTime.now.Date`=local の pre-existing timezone バグで、変更退避した baseline でも同一＝非関連・
                 ローカル JST のみの artifact、CI=UTC では両者一致でパス。）
-          - [ ] **(iii-b) materialize の attr-value env コピー撤去**（reads は全 cell-direct なので冗長だが、env コピーの他消費者
-                — locals init / closure 捕捉 / `:=` ContainerRef 経路 — の監査が必要でより高リスク。別 PR）。
+          - [x] **(iii-b) slow-path materialize の attr-value env コピー撤去（landed: branch `phase3-stage2c-materialize-removal`）**:
+                complex-param メソッド経路（`call_compiled_method`）の attr value env コピー挿入（`!attr`/`.attr`/`@!attr`/`@.attr`/
+                `%!attr`/`%.attr`、~30行）を撤去。reads は全 cell-direct（2a/2b/2c-ii）、exit reconcile は cell.to_map()（iii-a）なので冗長。
+                sigilless alias テーブル設定 + `is default` 登録は保持。検証: make test 6265、S12/S14/S04/S03-binding/S06 144 ファイル 3076 PASS、
+                closure が private/array/hash/sigilless attr を捕捉・読み書きするケース（reader/writer 返却・nested+closure・map/gather）すべて raku 一致。
+                **fast-path（`call_compiled_method_fast`）の array/hash env コピーは保持**: closure が `%!h<k>=v` 要素変異する経路は
+                **captured env コピー経由**で cell 非経由（撤去すると最初の要素変異が落ちる）。これは pre-existing な hash-element-via-closure の
+                cell 非対応（main でも `%!cache{k}=v` の closure 経由で最初の write が `(Any)` になる既知バグ）に依存しており、cell 化は別件。
+                fast-path scalar attr は locals 直挿入（env 非経由）のため対象外。
         - [ ] **registry 撤去（別 slice・後回し）**: `instance_cells` + `make_instance_detached`/`update_instance_cell` 撤去
               （callers が `self` の Arc を直接 in-place 変異する形へ。~50 の make_instance_with_id rebuild を全変換する all-or-nothing 大改修）+
               CAS の cell-CAS 化。
