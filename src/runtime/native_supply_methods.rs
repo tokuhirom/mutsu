@@ -1624,22 +1624,22 @@ impl Interpreter {
                     supplier_register_promise(supplier_id, promise.clone());
                     let (result, output, stderr) = promise.wait();
                     self.emit_output(&output);
-                    self.stderr_output.push_str(&stderr);
+                    self.output_sink.stderr_output.push_str(&stderr);
                     self.sync_shared_vars_to_env();
                     // Drain shared thread output buffers so output produced by
                     // any background `start { }` thread that emitted into this
                     // supplier reaches the main TAP stream in chronological
                     // order.
-                    if let Some(ref shared) = self.shared_thread_output {
+                    if let Some(ref shared) = self.output_sink.shared_thread_output {
                         let drained = std::mem::take(&mut *shared.lock().unwrap());
                         if !drained.is_empty() {
                             self.emit_output(&drained);
                         }
                     }
-                    if let Some(ref shared) = self.shared_thread_stderr {
+                    if let Some(ref shared) = self.output_sink.shared_thread_stderr {
                         let drained = std::mem::take(&mut *shared.lock().unwrap());
                         if !drained.is_empty() {
-                            self.stderr_output.push_str(&drained);
+                            self.output_sink.stderr_output.push_str(&drained);
                         }
                     }
                     return Ok(result);

@@ -94,8 +94,8 @@ impl Interpreter {
                 if should_run(&status) {
                     let promise_val = Value::Promise(orig.clone());
                     let cb_result = thread_interp.call_sub_value(block, vec![promise_val], true);
-                    let out = std::mem::take(&mut thread_interp.output);
-                    let err = std::mem::take(&mut thread_interp.stderr_output);
+                    let out = std::mem::take(&mut thread_interp.output_sink.output);
+                    let err = std::mem::take(&mut thread_interp.output_sink.stderr_output);
                     Self::resolve_promise_callback(
                         &new_promise,
                         cb_result,

@@ -60,7 +60,7 @@ impl Interpreter {
         {
             // Restore state before propagating
             self.tap.set_state(ctx.parent_test_state);
-            self.output = ctx.parent_output;
+            self.output_sink.output = ctx.parent_output;
             self.halted = ctx.parent_halted;
             self.tap.end_subtest();
             self.env = saved_env;

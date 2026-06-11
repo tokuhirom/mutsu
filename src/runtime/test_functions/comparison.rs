@@ -139,7 +139,7 @@ impl Interpreter {
                 "# Failed test '{}'\n# expected: {}\n#      got: {}\n# matcher: {}\n",
                 desc, expected_str, got_str, op_diag
             );
-            self.stderr_output.push_str(&diag);
+            self.output_sink.stderr_output.push_str(&diag);
             eprint!("{}", diag);
         }
         Ok(Value::Bool(ok))

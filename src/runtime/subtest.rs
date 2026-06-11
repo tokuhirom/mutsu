@@ -49,7 +49,7 @@ impl Interpreter {
     }
 
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
-        let parent_output = std::mem::take(&mut self.output);
+        let parent_output = std::mem::take(&mut self.output_sink.output);
         let parent_halted = self.halted;
         // Stash the parent TAP state, install a fresh one, and push the subtest
         // stack (defaulting the callable kind to Sub; callers override after).
@@ -68,7 +68,7 @@ impl Interpreter {
         label: &str,
         run_result: Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let mut subtest_output = std::mem::take(&mut self.output);
+        let mut subtest_output = std::mem::take(&mut self.output_sink.output);
         let subtest_state = self.tap.take_state();
         let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
         let subtest_ran = subtest_state
@@ -82,7 +82,7 @@ impl Interpreter {
         let plan_mismatch = matches!(subtest_planned, Some(p) if p != subtest_ran);
 
         self.tap.set_state(ctx.parent_test_state);
-        self.output = ctx.parent_output;
+        self.output_sink.output = ctx.parent_output;
         self.halted = ctx.parent_halted;
         self.tap.end_subtest();
         let parent_forced_todo_reason = self.tap.state().and_then(|state| {
