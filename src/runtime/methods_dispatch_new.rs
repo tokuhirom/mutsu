@@ -30,9 +30,10 @@ impl Interpreter {
                     crate::runtime::IoHandleMode::Read,
                     None,
                 );
-                if let Ok(state) = self.handle_state_mut(&handle) {
+                let _ = self.with_handle_mut_opt(&handle, |state| {
                     state.argfiles_paths = Some(paths);
-                }
+                    Ok(())
+                });
                 Some(Ok(handle))
             }
             "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>

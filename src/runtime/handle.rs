@@ -111,15 +111,46 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn handle_state_mut(
+    /// Run `f` with a mutable borrow of the handle's `IoHandleState`, returning
+    /// whatever the closure produces. The `&mut IoHandleState` borrow is
+    /// confined to the closure body, so a caller can never hold it across
+    /// another `self.*` handle operation. That re-entry-free discipline is what
+    /// makes a later `Arc<RwLock>` lift (PR-B) safe: the lock is taken, the
+    /// closure runs, the lock is released — no same-thread re-acquisition.
+    ///
+    /// Returns `Err("Expected IO::Handle" / "Invalid IO::Handle")` when the
+    /// value is not a usable handle. Use [`with_handle_mut_opt`] instead when a
+    /// missing handle should fall back to a default rather than error.
+    pub(super) fn with_handle_mut<R>(
         &mut self,
         handle_value: &Value,
-    ) -> Result<&mut IoHandleState, RuntimeError> {
+        f: impl FnOnce(&mut IoHandleState) -> Result<R, RuntimeError>,
+    ) -> Result<R, RuntimeError> {
         let id = Self::handle_id_from_value(handle_value)
             .ok_or_else(|| RuntimeError::new("Expected IO::Handle"))?;
-        self.handles
+        let state = self
+            .handles
             .get_mut(&id)
-            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))
+            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))?;
+        f(state)
+    }
+
+    /// Like [`with_handle_mut`], but yields `Ok(None)` when the value is not a
+    /// live handle (instead of an error). Errors raised *inside* the closure
+    /// still propagate as `Err`, so callers can distinguish "no such handle"
+    /// (`Ok(None)`) from "the operation failed" (`Err`).
+    pub(super) fn with_handle_mut_opt<R>(
+        &mut self,
+        handle_value: &Value,
+        f: impl FnOnce(&mut IoHandleState) -> Result<R, RuntimeError>,
+    ) -> Result<Option<R>, RuntimeError> {
+        let Some(id) = Self::handle_id_from_value(handle_value) else {
+            return Ok(None);
+        };
+        let Some(state) = self.handles.get_mut(&id) else {
+            return Ok(None);
+        };
+        f(state).map(Some)
     }
 
     pub(super) fn write_to_handle_value(
@@ -138,33 +169,35 @@ impl Interpreter {
         newline: bool,
         trying: &str,
     ) -> Result<(), RuntimeError> {
-        let id = Self::handle_id_from_value(handle_value)
-            .ok_or_else(|| RuntimeError::new("Expected IO::Handle"))?;
-        let state = self
-            .handles
-            .get_mut(&id)
-            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))?;
-        if state.closed {
-            return Err(RuntimeError::io_closed(trying));
-        }
-        let mut payload = String::from(content);
-        if newline {
-            payload.push_str(&state.nl_out.clone());
-        }
-        // Encode payload using the handle's encoding
-        let encoding = state.encoding.clone();
+        // Phase 1: validate the handle, build the payload (appending the
+        // handle's `nl_out` when requested) and account the bytes. Done inside
+        // a confined borrow so no `&mut IoHandleState` is held across the
+        // self-re-entrant `encode_with_encoding` / `emit_output` calls below.
+        let (target, encoding, payload) = self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed(trying));
+            }
+            let mut payload = String::from(content);
+            if newline {
+                payload.push_str(&state.nl_out);
+            }
+            state.bytes_written += payload.len() as i64;
+            Ok((state.target, state.encoding.clone(), payload))
+        })?;
+
+        // Phase 2: encode (only File targets honour a non-UTF-8 encoding). This
+        // re-enters `self`, hence it must run outside the handle borrow.
         let needs_encoding =
             !encoding.is_empty() && encoding != "utf-8" && encoding != "utf8" && encoding != "bin";
-        let encoded_bytes = if needs_encoding && matches!(state.target, IoHandleTarget::File) {
-            // Drop mutable borrow on state before calling encode_with_encoding
+        let encoded_bytes = if needs_encoding && matches!(target, IoHandleTarget::File) {
             Some(self.encode_with_encoding(&payload, &encoding)?)
         } else {
             None
         };
-        // Re-borrow state after encoding
-        let state = self.handles.get_mut(&id).unwrap();
-        state.bytes_written += payload.len() as i64;
-        match state.target {
+
+        // Phase 3: dispatch. Stdout/Stderr touch `self`; File/Socket touch only
+        // the handle state (a fresh confined borrow).
+        match target {
             IoHandleTarget::Stdout => {
                 self.emit_output(&payload);
                 Ok(())
@@ -179,13 +212,13 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            IoHandleTarget::File => {
+            IoHandleTarget::File => self.with_handle_mut(handle_value, |state| {
                 if matches!(state.mode, IoHandleMode::Read) {
                     return Err(RuntimeError::new("Handle not open for writing"));
                 }
-                let Some(_) = state.file.as_mut() else {
+                if state.file.is_none() {
                     return Err(RuntimeError::new("IO::Handle is not attached to a file"));
-                };
+                }
                 let payload_bytes = if let Some(ref enc_bytes) = encoded_bytes {
                     enc_bytes.as_slice()
                 } else {
@@ -224,8 +257,8 @@ impl Interpreter {
                 } else {
                     Err(RuntimeError::new("IO::Handle is not attached to a file"))
                 }
-            }
-            IoHandleTarget::Socket => {
+            }),
+            IoHandleTarget::Socket => self.with_handle_mut(handle_value, |state| {
                 if let Some(sock) = state.socket.as_mut() {
                     sock.write_all(payload.as_bytes()).map_err(|err| {
                         RuntimeError::new(format!("Failed to write to socket: {}", err))
@@ -234,7 +267,7 @@ impl Interpreter {
                 } else {
                     Err(RuntimeError::new("Socket not connected"))
                 }
-            }
+            }),
             IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
                 Err(RuntimeError::new("Cannot write to read-only handle"))
             }
@@ -246,20 +279,19 @@ impl Interpreter {
         handle_value: &Value,
         bytes: &[u8],
     ) -> Result<(), RuntimeError> {
-        let id = Self::handle_id_from_value(handle_value)
-            .ok_or_else(|| RuntimeError::new("Expected IO::Handle"))?;
-        let state = self
-            .handles
-            .get_mut(&id)
-            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))?;
-        if state.closed {
-            return Err(RuntimeError::io_closed("write"));
-        }
-        if matches!(state.mode, IoHandleMode::Read) {
-            return Err(RuntimeError::new("Handle not open for writing"));
-        }
-        state.bytes_written += bytes.len() as i64;
-        match state.target {
+        // Validate + account the bytes inside a confined borrow, then dispatch.
+        // Stdout/Stderr re-enter `self`, so the handle borrow is dropped first.
+        let target = self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed("write"));
+            }
+            if matches!(state.mode, IoHandleMode::Read) {
+                return Err(RuntimeError::new("Handle not open for writing"));
+            }
+            state.bytes_written += bytes.len() as i64;
+            Ok(state.target)
+        })?;
+        match target {
             IoHandleTarget::Stdout => {
                 // For stdout, convert bytes to lossy string and emit
                 let content = String::from_utf8_lossy(bytes).to_string();
@@ -277,7 +309,7 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            IoHandleTarget::File => {
+            IoHandleTarget::File => self.with_handle_mut(handle_value, |state| {
                 if let Some(file) = state.file.as_mut() {
                     file.write_all(bytes).map_err(|err| {
                         RuntimeError::new(format!("Failed to write to file: {}", err))
@@ -286,8 +318,8 @@ impl Interpreter {
                 } else {
                     Err(RuntimeError::new("IO::Handle is not attached to a file"))
                 }
-            }
-            IoHandleTarget::Socket => {
+            }),
+            IoHandleTarget::Socket => self.with_handle_mut(handle_value, |state| {
                 if let Some(sock) = state.socket.as_mut() {
                     sock.write_all(bytes).map_err(|err| {
                         RuntimeError::new(format!("Failed to write to socket: {}", err))
@@ -296,7 +328,7 @@ impl Interpreter {
                 } else {
                     Err(RuntimeError::new("Socket not connected"))
                 }
-            }
+            }),
             IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
                 Err(RuntimeError::new("Cannot write to read-only handle"))
             }
@@ -307,20 +339,22 @@ impl Interpreter {
         &mut self,
         handle_value: &Value,
     ) -> Result<bool, RuntimeError> {
-        let state = self.handle_state_mut(handle_value)?;
-        if state.closed {
-            return Ok(false);
-        }
-        if matches!(state.target, IoHandleTarget::File) {
-            Self::flush_file_handle_buffer(state)?;
-            if let Some(file) = state.file.as_mut() {
-                file.flush()
-                    .map_err(|err| RuntimeError::new(format!("Failed to flush handle: {}", err)))?;
+        self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Ok(false);
             }
-        }
-        state.closed = true;
-        state.file = None;
-        Ok(true)
+            if matches!(state.target, IoHandleTarget::File) {
+                Self::flush_file_handle_buffer(state)?;
+                if let Some(file) = state.file.as_mut() {
+                    file.flush().map_err(|err| {
+                        RuntimeError::new(format!("Failed to flush handle: {}", err))
+                    })?;
+                }
+            }
+            state.closed = true;
+            state.file = None;
+            Ok(true)
+        })
     }
 
     fn read_record_bytes<R: Read>(
@@ -392,44 +426,59 @@ impl Interpreter {
                 Some((in_state.line_separators.clone(), in_state.line_chomp))
             });
 
-        let state = self.handle_state_mut(handle_value)?;
-        if state.closed {
-            return Err(RuntimeError::io_closed("handle operation"));
+        // The File branch may need to decode the raw record via
+        // `self.decode_with_encoding`, which re-enters `self`. Read the record
+        // inside the confined handle borrow, then decode outside it.
+        enum LineOutcome {
+            Done(Option<String>),
+            NeedsDecode(Vec<u8>, String),
         }
-        state.read_attempted = true;
-        let encoding = state.encoding.clone();
-        let needs_decode =
-            !encoding.is_empty() && encoding != "utf-8" && encoding != "utf8" && encoding != "bin";
-        match state.target {
-            IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
-                Err(RuntimeError::new("Handle not readable"))
+        let outcome = self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed("handle operation"));
             }
-            IoHandleTarget::Stdin => {
-                let seps = state.line_separators.clone();
-                let chomp = state.line_chomp;
-                let mut stdin = std::io::stdin().lock();
-                Self::read_record_with_separators(&mut stdin, &seps, chomp)
-            }
-            IoHandleTarget::ArgFiles => {
-                let seps = state.line_separators.clone();
-                let chomp = state.line_chomp;
-                // An `IO::ArgFiles.new(@files)` handle carries its own file list;
-                // a plain `$*ARGFILES` handle falls back to the global `@*ARGS`.
-                let effective_list = match &state.argfiles_paths {
-                    Some(paths) => paths.clone(),
-                    None => argfiles_list,
-                };
-                if effective_list.is_empty() {
-                    // No file args — read from stdin, using $*IN's nl-in if available
-                    let (effective_seps, effective_chomp) =
-                        stdin_seps.clone().unwrap_or((seps.clone(), chomp));
+            state.read_attempted = true;
+            let encoding = state.encoding.clone();
+            let needs_decode = !encoding.is_empty()
+                && encoding != "utf-8"
+                && encoding != "utf8"
+                && encoding != "bin";
+            match state.target {
+                IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
+                    Err(RuntimeError::new("Handle not readable"))
+                }
+                IoHandleTarget::Stdin => {
+                    let seps = state.line_separators.clone();
+                    let chomp = state.line_chomp;
                     let mut stdin = std::io::stdin().lock();
-                    Self::read_record_with_separators(&mut stdin, &effective_seps, effective_chomp)
-                } else {
+                    Self::read_record_with_separators(&mut stdin, &seps, chomp)
+                        .map(LineOutcome::Done)
+                }
+                IoHandleTarget::ArgFiles => {
+                    let seps = state.line_separators.clone();
+                    let chomp = state.line_chomp;
+                    // An `IO::ArgFiles.new(@files)` handle carries its own file
+                    // list; a plain `$*ARGFILES` handle falls back to `@*ARGS`.
+                    let effective_list = match &state.argfiles_paths {
+                        Some(paths) => paths.clone(),
+                        None => argfiles_list,
+                    };
+                    if effective_list.is_empty() {
+                        // No file args — read from stdin, using $*IN's nl-in.
+                        let (effective_seps, effective_chomp) =
+                            stdin_seps.unwrap_or((seps.clone(), chomp));
+                        let mut stdin = std::io::stdin().lock();
+                        return Self::read_record_with_separators(
+                            &mut stdin,
+                            &effective_seps,
+                            effective_chomp,
+                        )
+                        .map(LineOutcome::Done);
+                    }
                     // Read from files listed in the effective list sequentially
                     loop {
                         if state.argfiles_index >= effective_list.len() {
-                            return Ok(None);
+                            return Ok(LineOutcome::Done(None));
                         }
                         // Open the next file if we don't have a reader
                         if state.argfiles_reader.is_none() {
@@ -438,7 +487,7 @@ impl Interpreter {
                                 // `-` means read from stdin
                                 let mut stdin = std::io::stdin().lock();
                                 match Self::read_record_with_separators(&mut stdin, &seps, chomp)? {
-                                    Some(line) => return Ok(Some(line)),
+                                    Some(line) => return Ok(LineOutcome::Done(Some(line))),
                                     None => {
                                         state.argfiles_index += 1;
                                         continue;
@@ -452,7 +501,7 @@ impl Interpreter {
                         }
                         let reader = state.argfiles_reader.as_mut().unwrap();
                         match Self::read_record_with_separators(reader, &seps, chomp)? {
-                            Some(line) => return Ok(Some(line)),
+                            Some(line) => return Ok(LineOutcome::Done(Some(line))),
                             None => {
                                 // Current file exhausted, move to next
                                 state.argfiles_reader = None;
@@ -461,32 +510,41 @@ impl Interpreter {
                         }
                     }
                 }
-            }
-            IoHandleTarget::File => {
-                let seps = state.line_separators.clone();
-                let chomp = state.line_chomp;
-                let file = state
-                    .file
-                    .as_mut()
-                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                if needs_decode {
-                    match Self::read_record_bytes(file, &seps, chomp)? {
-                        Some(bytes) => {
-                            let decoded = self.decode_with_encoding(&bytes, &encoding)?;
-                            Ok(Some(decoded))
+                IoHandleTarget::File => {
+                    let seps = state.line_separators.clone();
+                    let chomp = state.line_chomp;
+                    let file = state
+                        .file
+                        .as_mut()
+                        .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                    if needs_decode {
+                        match Self::read_record_bytes(file, &seps, chomp)? {
+                            Some(bytes) => Ok(LineOutcome::NeedsDecode(bytes, encoding)),
+                            None => Ok(LineOutcome::Done(None)),
                         }
-                        None => Ok(None),
+                    } else {
+                        Self::read_record_with_separators(file, &seps, chomp).map(LineOutcome::Done)
                     }
-                } else {
-                    Self::read_record_with_separators(file, &seps, chomp)
+                }
+                IoHandleTarget::Socket => {
+                    let sock = state
+                        .socket
+                        .as_mut()
+                        .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
+                    Self::read_record_with_separators(
+                        sock,
+                        &state.line_separators,
+                        state.line_chomp,
+                    )
+                    .map(LineOutcome::Done)
                 }
             }
-            IoHandleTarget::Socket => {
-                let sock = state
-                    .socket
-                    .as_mut()
-                    .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
-                Self::read_record_with_separators(sock, &state.line_separators, state.line_chomp)
+        })?;
+        match outcome {
+            LineOutcome::Done(line) => Ok(line),
+            LineOutcome::NeedsDecode(bytes, encoding) => {
+                let decoded = self.decode_with_encoding(&bytes, &encoding)?;
+                Ok(Some(decoded))
             }
         }
     }
@@ -502,10 +560,8 @@ impl Interpreter {
         handle_value: &Value,
     ) -> Result<Option<String>, RuntimeError> {
         loop {
-            if let Some(word) = self
-                .handle_state_mut(handle_value)?
-                .pending_words
-                .pop_front()
+            if let Some(word) =
+                self.with_handle_mut(handle_value, |state| Ok(state.pending_words.pop_front()))?
             {
                 return Ok(Some(word));
             }
@@ -516,12 +572,15 @@ impl Interpreter {
                     if words.is_empty() {
                         continue;
                     }
-                    let state = self.handle_state_mut(handle_value)?;
-                    state.pending_words.extend(words);
+                    self.with_handle_mut(handle_value, |state| {
+                        state.pending_words.extend(words);
+                        Ok(())
+                    })?;
                 }
                 None => {
-                    let state = self.handle_state_mut(handle_value)?;
-                    let should_close = state.close_on_word_exhaust && !state.closed;
+                    let should_close = self.with_handle_mut(handle_value, |state| {
+                        Ok(state.close_on_word_exhaust && !state.closed)
+                    })?;
                     if should_close {
                         let _ = self.close_handle_value(handle_value);
                     }
@@ -536,16 +595,35 @@ impl Interpreter {
         handle_value: &Value,
         count: usize,
     ) -> Result<Vec<u8>, RuntimeError> {
-        let state = self.handle_state_mut(handle_value)?;
-        if state.closed {
-            return Err(RuntimeError::io_closed("handle operation"));
-        }
-        state.read_attempted = true;
-        match state.target {
-            IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
-                Err(RuntimeError::new("Handle not readable"))
+        // Validate, mark the handle read, and capture the target plus any
+        // handle-owned ArgFiles list inside a confined borrow. The ArgFiles
+        // fallback needs `@*ARGS` from `self.env`, so it runs between borrows.
+        let (target, own_paths) = self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed("handle operation"));
             }
-            IoHandleTarget::Stdin => {
+            state.read_attempted = true;
+            Ok((state.target, state.argfiles_paths.clone()))
+        })?;
+        if matches!(target, IoHandleTarget::ArgFiles) {
+            // Read bytes from files listed in @*ARGS sequentially, unless the
+            // handle carries its own explicit list (`IO::ArgFiles.new(@files)`).
+            let argfiles_list: Vec<String> = match own_paths {
+                Some(paths) => paths,
+                None => self
+                    .env
+                    .get("@*ARGS")
+                    .and_then(|v| {
+                        if let Value::Array(items, ..) = v {
+                            Some(items.iter().map(|v| v.to_string_value()).collect())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default(),
+            };
+            if argfiles_list.is_empty() {
+                // No file args — read from stdin
                 use std::io::Read;
                 let mut stdin = std::io::stdin().lock();
                 let mut buffer = vec![0u8; count];
@@ -553,39 +631,9 @@ impl Interpreter {
                     RuntimeError::new(format!("Failed to read from stdin: {}", err))
                 })?;
                 buffer.truncate(bytes_read);
-                Ok(buffer)
+                return Ok(buffer);
             }
-            IoHandleTarget::ArgFiles => {
-                // Read bytes from files listed in @*ARGS sequentially, unless the
-                // handle carries its own explicit list (`IO::ArgFiles.new(@files)`).
-                let argfiles_list: Vec<String> =
-                    match self.handle_state_mut(handle_value)?.argfiles_paths.clone() {
-                        Some(paths) => paths,
-                        None => self
-                            .env
-                            .get("@*ARGS")
-                            .and_then(|v| {
-                                if let Value::Array(items, ..) = v {
-                                    Some(items.iter().map(|v| v.to_string_value()).collect())
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or_default(),
-                    };
-                if argfiles_list.is_empty() {
-                    // No file args — read from stdin
-                    use std::io::Read;
-                    let mut stdin = std::io::stdin().lock();
-                    let mut buffer = vec![0u8; count];
-                    let bytes_read = stdin.read(&mut buffer).map_err(|err| {
-                        RuntimeError::new(format!("Failed to read from stdin: {}", err))
-                    })?;
-                    buffer.truncate(bytes_read);
-                    return Ok(buffer);
-                }
-                // Re-borrow state after extracting args list
-                let state = self.handle_state_mut(handle_value)?;
+            return self.with_handle_mut(handle_value, |state| {
                 let mut result = Vec::new();
                 loop {
                     if state.argfiles_index >= argfiles_list.len() {
@@ -616,6 +664,22 @@ impl Interpreter {
                 }
                 result.truncate(count);
                 Ok(result)
+            });
+        }
+        // Non-ArgFiles targets touch only the handle state.
+        self.with_handle_mut(handle_value, |state| match state.target {
+            IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
+                Err(RuntimeError::new("Handle not readable"))
+            }
+            IoHandleTarget::Stdin => {
+                use std::io::Read;
+                let mut stdin = std::io::stdin().lock();
+                let mut buffer = vec![0u8; count];
+                let bytes_read = stdin.read(&mut buffer).map_err(|err| {
+                    RuntimeError::new(format!("Failed to read from stdin: {}", err))
+                })?;
+                buffer.truncate(bytes_read);
+                Ok(buffer)
             }
             IoHandleTarget::File => {
                 let file = state
@@ -641,7 +705,8 @@ impl Interpreter {
                 buffer.truncate(bytes);
                 Ok(buffer)
             }
-        }
+            IoHandleTarget::ArgFiles => unreachable!("ArgFiles handled above"),
+        })
     }
 
     fn read_utf8_char<R: Read>(reader: &mut R) -> Result<Option<String>, RuntimeError> {
@@ -735,90 +800,120 @@ impl Interpreter {
         handle_value: &Value,
         count: Option<usize>,
     ) -> Result<String, RuntimeError> {
-        let state = self.handle_state_mut(handle_value)?;
-        if state.closed {
-            return Err(RuntimeError::io_closed("handle operation"));
-        }
-        state.read_attempted = true;
-        let encoding = state.encoding.to_lowercase();
-        // Determine if this is a utf16 stream and its byte order
-        let utf16_auto = matches!(encoding.as_str(), "utf-16" | "utf16");
-        let utf16_mode = match encoding.as_str() {
-            "utf-16be" | "utf16be" => Some(true),  // big endian
-            "utf-16le" | "utf16le" => Some(false), // little endian
-            "utf-16" | "utf16" => {
-                // Use previously detected endianness, or default to native
-                Some(
-                    state
-                        .utf16_detected_be
-                        .unwrap_or(cfg!(target_endian = "big")),
-                )
+        self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed("handle operation"));
             }
-            _ => None,
-        };
-        match state.target {
-            IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
-                Err(RuntimeError::new("Handle not readable"))
-            }
-            IoHandleTarget::Stdin => {
-                let mut stdin = std::io::stdin().lock();
-                if let Some(limit) = count {
-                    if limit == 0 {
-                        return Ok(String::new());
-                    }
-                    let mut out = String::new();
-                    for _ in 0..limit {
-                        let Some(ch) = Self::read_utf8_char(&mut stdin)? else {
-                            break;
-                        };
-                        out.push_str(&ch);
-                    }
-                    Ok(out)
-                } else {
-                    let mut bytes = Vec::new();
-                    stdin
-                        .read_to_end(&mut bytes)
-                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                    Ok(String::from_utf8_lossy(&bytes).to_string())
+            state.read_attempted = true;
+            let encoding = state.encoding.to_lowercase();
+            // Determine if this is a utf16 stream and its byte order
+            let utf16_auto = matches!(encoding.as_str(), "utf-16" | "utf16");
+            let utf16_mode = match encoding.as_str() {
+                "utf-16be" | "utf16be" => Some(true),  // big endian
+                "utf-16le" | "utf16le" => Some(false), // little endian
+                "utf-16" | "utf16" => {
+                    // Use previously detected endianness, or default to native
+                    Some(
+                        state
+                            .utf16_detected_be
+                            .unwrap_or(cfg!(target_endian = "big")),
+                    )
                 }
-            }
-            IoHandleTarget::ArgFiles => Ok(String::new()),
-            IoHandleTarget::File => {
-                let file = state
-                    .file
-                    .as_mut()
-                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                if let Some(mut big_endian) = utf16_mode {
-                    // For utf16 auto-detect: detect BOM on first read
-                    if utf16_auto && state.utf16_detected_be.is_none() {
-                        let mut bom_buf = [0u8; 2];
-                        let n = file
-                            .read(&mut bom_buf)
-                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                        if n >= 2 {
-                            if bom_buf[0] == 0xFE && bom_buf[1] == 0xFF {
-                                big_endian = true;
-                                state.utf16_detected_be = Some(true);
-                                // BOM consumed, don't include in output
-                            } else if bom_buf[0] == 0xFF && bom_buf[1] == 0xFE {
-                                big_endian = false;
-                                state.utf16_detected_be = Some(false);
-                                // BOM consumed, don't include in output
-                            } else {
-                                // No BOM, seek back
-                                state.utf16_detected_be = Some(cfg!(target_endian = "big"));
-                                use std::io::Seek;
-                                let _ = file.seek(std::io::SeekFrom::Current(-2));
-                            }
-                        }
-                    }
+                _ => None,
+            };
+            match state.target {
+                IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
+                    Err(RuntimeError::new("Handle not readable"))
+                }
+                IoHandleTarget::Stdin => {
+                    let mut stdin = std::io::stdin().lock();
                     if let Some(limit) = count {
                         if limit == 0 {
                             return Ok(String::new());
                         }
                         let mut out = String::new();
                         for _ in 0..limit {
-                            let Some(ch) = Self::read_utf16_char(file, big_endian)? else {
+                            let Some(ch) = Self::read_utf8_char(&mut stdin)? else {
+                                break;
+                            };
+                            out.push_str(&ch);
+                        }
+                        Ok(out)
+                    } else {
+                        let mut bytes = Vec::new();
+                        stdin
+                            .read_to_end(&mut bytes)
+                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        Ok(String::from_utf8_lossy(&bytes).to_string())
+                    }
+                }
+                IoHandleTarget::ArgFiles => Ok(String::new()),
+                IoHandleTarget::File => {
+                    let file = state
+                        .file
+                        .as_mut()
+                        .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                    if let Some(mut big_endian) = utf16_mode {
+                        // For utf16 auto-detect: detect BOM on first read
+                        if utf16_auto && state.utf16_detected_be.is_none() {
+                            let mut bom_buf = [0u8; 2];
+                            let n = file.read(&mut bom_buf).map_err(|err| {
+                                RuntimeError::new(format!("Failed to read: {}", err))
+                            })?;
+                            if n >= 2 {
+                                if bom_buf[0] == 0xFE && bom_buf[1] == 0xFF {
+                                    big_endian = true;
+                                    state.utf16_detected_be = Some(true);
+                                    // BOM consumed, don't include in output
+                                } else if bom_buf[0] == 0xFF && bom_buf[1] == 0xFE {
+                                    big_endian = false;
+                                    state.utf16_detected_be = Some(false);
+                                    // BOM consumed, don't include in output
+                                } else {
+                                    // No BOM, seek back
+                                    state.utf16_detected_be = Some(cfg!(target_endian = "big"));
+                                    use std::io::Seek;
+                                    let _ = file.seek(std::io::SeekFrom::Current(-2));
+                                }
+                            }
+                        }
+                        if let Some(limit) = count {
+                            if limit == 0 {
+                                return Ok(String::new());
+                            }
+                            let mut out = String::new();
+                            for _ in 0..limit {
+                                let Some(ch) = Self::read_utf16_char(file, big_endian)? else {
+                                    break;
+                                };
+                                out.push_str(&ch);
+                            }
+                            Ok(out)
+                        } else {
+                            let mut bytes = Vec::new();
+                            file.read_to_end(&mut bytes).map_err(|err| {
+                                RuntimeError::new(format!("Failed to read: {}", err))
+                            })?;
+                            // Decode all bytes using the utf16 decoder
+                            let units: Vec<u16> = bytes
+                                .chunks_exact(2)
+                                .map(|c| {
+                                    if big_endian {
+                                        u16::from_be_bytes([c[0], c[1]])
+                                    } else {
+                                        u16::from_le_bytes([c[0], c[1]])
+                                    }
+                                })
+                                .collect();
+                            Ok(String::from_utf16_lossy(&units))
+                        }
+                    } else if let Some(limit) = count {
+                        if limit == 0 {
+                            return Ok(String::new());
+                        }
+                        let mut out = String::new();
+                        for _ in 0..limit {
+                            let Some(ch) = Self::read_utf8_char(file)? else {
                                 break;
                             };
                             out.push_str(&ch);
@@ -828,63 +923,35 @@ impl Interpreter {
                         let mut bytes = Vec::new();
                         file.read_to_end(&mut bytes)
                             .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                        // Decode all bytes using the utf16 decoder
-                        let units: Vec<u16> = bytes
-                            .chunks_exact(2)
-                            .map(|c| {
-                                if big_endian {
-                                    u16::from_be_bytes([c[0], c[1]])
-                                } else {
-                                    u16::from_le_bytes([c[0], c[1]])
-                                }
-                            })
-                            .collect();
-                        Ok(String::from_utf16_lossy(&units))
+                        Ok(String::from_utf8_lossy(&bytes).to_string())
                     }
-                } else if let Some(limit) = count {
-                    if limit == 0 {
-                        return Ok(String::new());
+                }
+                IoHandleTarget::Socket => {
+                    let sock = state
+                        .socket
+                        .as_mut()
+                        .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
+                    if let Some(limit) = count {
+                        if limit == 0 {
+                            return Ok(String::new());
+                        }
+                        let mut out = String::new();
+                        for _ in 0..limit {
+                            let Some(ch) = Self::read_utf8_char(sock)? else {
+                                break;
+                            };
+                            out.push_str(&ch);
+                        }
+                        Ok(out)
+                    } else {
+                        let mut bytes = Vec::new();
+                        sock.read_to_end(&mut bytes)
+                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        Ok(String::from_utf8_lossy(&bytes).to_string())
                     }
-                    let mut out = String::new();
-                    for _ in 0..limit {
-                        let Some(ch) = Self::read_utf8_char(file)? else {
-                            break;
-                        };
-                        out.push_str(&ch);
-                    }
-                    Ok(out)
-                } else {
-                    let mut bytes = Vec::new();
-                    file.read_to_end(&mut bytes)
-                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                    Ok(String::from_utf8_lossy(&bytes).to_string())
                 }
             }
-            IoHandleTarget::Socket => {
-                let sock = state
-                    .socket
-                    .as_mut()
-                    .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
-                if let Some(limit) = count {
-                    if limit == 0 {
-                        return Ok(String::new());
-                    }
-                    let mut out = String::new();
-                    for _ in 0..limit {
-                        let Some(ch) = Self::read_utf8_char(sock)? else {
-                            break;
-                        };
-                        out.push_str(&ch);
-                    }
-                    Ok(out)
-                } else {
-                    let mut bytes = Vec::new();
-                    sock.read_to_end(&mut bytes)
-                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                    Ok(String::from_utf8_lossy(&bytes).to_string())
-                }
-            }
-        }
+        })
     }
 
     pub(super) fn seek_handle_value(
@@ -893,105 +960,108 @@ impl Interpreter {
         pos: i64,
         mode: i32,
     ) -> Result<i64, RuntimeError> {
-        let state = self.handle_state_mut(handle_value)?;
-        if state.closed {
-            return Err(RuntimeError::io_closed("handle operation"));
-        }
-        state.read_attempted = true;
-        let file = state
-            .file
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-        let seek_from = match mode {
-            1 => SeekFrom::Current(pos),
-            2 => SeekFrom::End(pos),
-            _ => {
-                if pos < 0 {
+        self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed("handle operation"));
+            }
+            state.read_attempted = true;
+            let file = state
+                .file
+                .as_mut()
+                .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+            let seek_from = match mode {
+                1 => SeekFrom::Current(pos),
+                2 => SeekFrom::End(pos),
+                _ => {
+                    if pos < 0 {
+                        return Err(RuntimeError::new(
+                            "X::IO::Seek: Cannot seek to a negative position",
+                        ));
+                    }
+                    SeekFrom::Start(pos as u64)
+                }
+            };
+            if mode == 1 || mode == 2 {
+                let current = file
+                    .stream_position()
+                    .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                let target_pos = match mode {
+                    1 => current as i64 + pos,
+                    2 => {
+                        let end = file
+                            .seek(SeekFrom::End(0))
+                            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                        file.seek(SeekFrom::Start(current))
+                            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                        end as i64 + pos
+                    }
+                    _ => unreachable!(),
+                };
+                if target_pos < 0 {
                     return Err(RuntimeError::new(
                         "X::IO::Seek: Cannot seek to a negative position",
                     ));
                 }
-                SeekFrom::Start(pos as u64)
             }
-        };
-        if mode == 1 || mode == 2 {
-            let current = file
-                .stream_position()
+            let new_pos = file
+                .seek(seek_from)
                 .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-            let target_pos = match mode {
-                1 => current as i64 + pos,
-                2 => {
-                    let end = file
-                        .seek(SeekFrom::End(0))
-                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-                    file.seek(SeekFrom::Start(current))
-                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-                    end as i64 + pos
-                }
-                _ => unreachable!(),
-            };
-            if target_pos < 0 {
-                return Err(RuntimeError::new(
-                    "X::IO::Seek: Cannot seek to a negative position",
-                ));
-            }
-        }
-        let new_pos = file
-            .seek(seek_from)
-            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-        Ok(new_pos as i64)
+            Ok(new_pos as i64)
+        })
     }
 
     pub(super) fn tell_handle_value(&mut self, handle_value: &Value) -> Result<i64, RuntimeError> {
-        let state = self.handle_state_mut(handle_value)?;
-        if state.closed {
-            return Err(RuntimeError::io_closed("handle operation"));
-        }
-        match state.target {
-            IoHandleTarget::File => {
-                let file = state
-                    .file
-                    .as_mut()
-                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                let pos = file.stream_position().map_err(|err| {
-                    RuntimeError::new(format!("Failed to query position: {}", err))
-                })?;
-                Ok(pos as i64)
+        self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed("handle operation"));
             }
-            _ => Ok(state.bytes_written),
-        }
+            match state.target {
+                IoHandleTarget::File => {
+                    let file = state
+                        .file
+                        .as_mut()
+                        .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                    let pos = file.stream_position().map_err(|err| {
+                        RuntimeError::new(format!("Failed to query position: {}", err))
+                    })?;
+                    Ok(pos as i64)
+                }
+                _ => Ok(state.bytes_written),
+            }
+        })
     }
 
     pub(super) fn handle_eof_value(&mut self, handle_value: &Value) -> Result<bool, RuntimeError> {
-        let state = self.handle_state_mut(handle_value)?;
-        if state.closed {
-            return Err(RuntimeError::io_closed("handle operation"));
-        }
-        match state.target {
-            IoHandleTarget::File => {
-                let file = state
-                    .file
-                    .as_mut()
-                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                let pos = file.stream_position().map_err(|err| {
-                    RuntimeError::new(format!("Failed to query position: {}", err))
-                })?;
-                let end = file
-                    .metadata()
-                    .map_err(|err| RuntimeError::new(format!("Failed to stat file: {}", err)))?
-                    .len();
-                // Raku semantics: a freshly opened file where pos == 0 and
-                // the reported size is 0 returns False for .eof until a read
-                // or seek has been performed. This handles both truly empty
-                // files and /proc virtual files that report size 0.
-                if pos == 0 && end == 0 && !state.read_attempted {
-                    return Ok(false);
-                }
-                Ok(pos >= end)
+        self.with_handle_mut(handle_value, |state| {
+            if state.closed {
+                return Err(RuntimeError::io_closed("handle operation"));
             }
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(false),
-            _ => Err(RuntimeError::new("Handle not readable")),
-        }
+            match state.target {
+                IoHandleTarget::File => {
+                    let file = state
+                        .file
+                        .as_mut()
+                        .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                    let pos = file.stream_position().map_err(|err| {
+                        RuntimeError::new(format!("Failed to query position: {}", err))
+                    })?;
+                    let end = file
+                        .metadata()
+                        .map_err(|err| RuntimeError::new(format!("Failed to stat file: {}", err)))?
+                        .len();
+                    // Raku semantics: a freshly opened file where pos == 0 and
+                    // the reported size is 0 returns False for .eof until a read
+                    // or seek has been performed. This handles both truly empty
+                    // files and /proc virtual files that report size 0.
+                    if pos == 0 && end == 0 && !state.read_attempted {
+                        return Ok(false);
+                    }
+                    Ok(pos >= end)
+                }
+                IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(false),
+                _ => Err(RuntimeError::new("Handle not readable")),
+            }
+        })
     }
 
     pub(super) fn set_handle_encoding(
@@ -999,14 +1069,15 @@ impl Interpreter {
         handle_value: &Value,
         encoding: Option<String>,
     ) -> Result<String, RuntimeError> {
-        let state = self.handle_state_mut(handle_value)?;
-        if let Some(enc) = encoding {
-            let prev = state.encoding.clone();
-            state.encoding = enc;
-            Ok(prev)
-        } else {
-            Ok(state.encoding.clone())
-        }
+        self.with_handle_mut(handle_value, |state| {
+            if let Some(enc) = encoding {
+                let prev = state.encoding.clone();
+                state.encoding = enc;
+                Ok(prev)
+            } else {
+                Ok(state.encoding.clone())
+            }
+        })
     }
 
     pub(super) fn system_time_to_int(time: SystemTime) -> i64 {
