@@ -3032,7 +3032,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::IndexAutovivifyLazy => {
-                self.exec_index_autovivify_lazy_op()?;
+                self.exec_index_autovivify_lazy_op(false)?;
+                *ip += 1;
+            }
+            OpCode::IndexAutovivifyLazyTerminal => {
+                self.exec_index_autovivify_lazy_op(true)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {

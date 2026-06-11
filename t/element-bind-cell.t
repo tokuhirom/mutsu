@@ -6,7 +6,7 @@ use Test;
 # `$struct[..]<..>[..]` paths (which the old index-back-reference lost when an
 # enclosing container was COW-cloned on a later write).
 
-plan 35;
+plan 50;
 
 # Single-level array element
 {
@@ -153,6 +153,70 @@ plan 35;
     $x = 30;
     is ~@copy2, "1 20 3", 'RHS-bound element: array copy snapshots the value';
     is ~@a2, "1 30 3", 'RHS-bound element: original still aliases the source';
+}
+
+# Binding to a *container-valued* element (the leaf holds a Hash/Array) must
+# promote the leaf to a shared cell too, so deep writes through either side are
+# mutually visible.
+{
+    my %h = key => { inner => 5 };
+    my $x := %h<key>;
+    is $x<inner>, 5, 'container-leaf bind: initial read';
+    %h<key><inner> = 50;
+    is $x<inner>, 50, 'container-leaf bind: source write -> element';
+    $x<inner> = 500;
+    is %h<key><inner>, 500, 'container-leaf bind: element write -> source';
+}
+
+# RHS deep container-leaf bind: the bound root is itself a cell, so writes in
+# both directions must traverse it.
+{
+    my $foo = [ "ig", { key => { subkey => [ "ig", 2 ] } } ];
+    my $x := $foo[1]<key>;
+    is $x<subkey>[1], 2, 'deep container-leaf: initial read';
+    $foo[1]<key><subkey>[1] = 7;
+    is $x<subkey>[1], 7, 'deep container-leaf: source write -> element';
+    $x<subkey>[1] = 8;
+    is $foo[1]<key><subkey>[1], 8, 'deep container-leaf: element write -> source';
+}
+
+# Element-to-element bind: bind a deep element of one structure to a deep
+# element of another (roast S03-binding/nested.t 32-33 shape). Writes in both
+# directions propagate through the shared cell.
+{
+    my $foo = [ "ig", { key => { subkey => [ "ig", 2 ] } } ];
+    my $bar = [ "ig", { key => { subkey => [ "ig", 5 ] } } ];
+    $bar[1]<key><subkey> := $foo[1]<key>;
+    is $bar[1]<key><subkey><subkey>[1], 2, 'element-element: initial read';
+    $foo[1]<key><subkey>[1] = 7;
+    is $bar[1]<key><subkey><subkey>[1], 7, 'element-element: source write -> element';
+    $bar[1]<key><subkey><subkey>[1] = 8;
+    is $foo[1]<key><subkey>[1], 8, 'element-element: element write -> source';
+}
+
+# Self-referential (cyclic) bind: bind an element of a structure to an element
+# of the SAME structure (nested.t 35-37). Writes must terminate and propagate
+# both ways through the cycle.
+{
+    my $struct = [ "ig", { key => { foo => "bar", subkey => [ "ig", 100 ] } } ];
+    $struct[1]<key><subkey>[1] := $struct[1]<key>;
+    is $struct[1]<key><subkey>[1]<foo>, "bar", 'cyclic bind: initial read';
+    $struct[1]<key><subkey>[1]<foo> = "new_value";
+    is $struct[1]<key><foo>, "new_value", 'cyclic bind: long write -> short read';
+    $struct[1]<key><foo> = "very_new_value";
+    is $struct[1]<key><subkey>[1]<foo>, "very_new_value", 'cyclic bind: short write -> long read';
+}
+
+# A bound container-valued element must NOT leak the `ContainerRef` cell into
+# rendering / iteration of the enclosing structure (Phase 5).
+{
+    my @a = [{x => 1}, {y => 2}, {z => 3}];
+    my $b := @a[1];
+    is @a.raku, '[{:x(1)}, {:y(2)}, {:z(3)}]', 'no cell leak in array .raku';
+    is @a.list[1].WHAT.^name, 'Hash', 'no cell leak in array .list element type';
+    my %h = a => {n => 1}, b => {n => 2};
+    my $c := %h<a>;
+    is %h<a>.WHAT.^name, 'Hash', 'no cell leak in hash element read type';
 }
 
 # vim: expandtab shiftwidth=4

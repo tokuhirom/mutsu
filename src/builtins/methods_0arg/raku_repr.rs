@@ -263,6 +263,13 @@ pub fn raku_value(v: &Value) -> String {
         static ARRAY_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
     match v {
+        // A `:=`-bound element holds a `ContainerRef` cell; render the held
+        // value so a bound element inside a hash/array renders like a plain one
+        // (Phase 5 leak hardening).
+        Value::ContainerRef(cell) => {
+            let inner = cell.lock().unwrap().clone();
+            raku_value(&inner)
+        }
         Value::Array(items, kind) => {
             // Lazy arrays should not be materialized
             if *kind == crate::value::ArrayKind::Lazy {

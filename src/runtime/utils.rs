@@ -858,6 +858,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
     }
     match value {
+        // A `:=`-bound element holds a `ContainerRef` cell; render the held
+        // value so a bound element gists like a plain one (Phase 5 leak).
+        Value::ContainerRef(cell) => gist_value(&cell.lock().unwrap()),
         Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => {
             // Rat.gist is identical to Rat.Str in Raku
             value.to_string_value()

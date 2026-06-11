@@ -496,6 +496,7 @@ pub(super) fn dispatch(
             fn gist_item(v: &Value) -> String {
                 match v {
                     Value::Nil => "Nil".to_string(),
+                    Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
                     Value::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, *kind)
@@ -554,6 +555,7 @@ pub(super) fn dispatch(
             fn gist_item(v: &Value) -> String {
                 match v {
                     Value::Nil => "Nil".to_string(),
+                    Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
                     Value::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, *kind)

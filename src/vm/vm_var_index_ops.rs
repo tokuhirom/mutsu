@@ -119,7 +119,7 @@ impl VM {
             Value::Array(..) => {
                 // Positional autovivify: return an ArraySlotRef
                 if let Some(idx) = Self::index_to_usize(&index) {
-                    if let Some(slot_ref) = resolved.array_slot_ref(idx) {
+                    if let Some(slot_ref) = resolved.array_slot_ref(idx, false) {
                         self.stack.push(slot_ref);
                     } else {
                         self.stack.push(Value::Nil);
@@ -156,7 +156,10 @@ impl VM {
     /// Lazy variant of IndexAutovivify: returns a HashSlotRef without creating
     /// the hash entry if it doesn't exist. Used for `:=` bind expressions
     /// so that `my $b := %h<a><b>` doesn't autovivify until assignment.
-    pub(super) fn exec_index_autovivify_lazy_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_index_autovivify_lazy_op(
+        &mut self,
+        terminal: bool,
+    ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
 
@@ -173,11 +176,27 @@ impl VM {
                 // Phase 2 Stage 1: promote an existing scalar leaf to a shared
                 // `ContainerRef` cell so deep `%h<a><b>` binds survive COW; an
                 // intermediate container keeps a lazy HashSlotRef, and a missing
-                // key stays lazy (no entry created).
-                if let Some(slot_ref) = resolved.hash_slot_ref(&key) {
+                // key stays lazy (no entry created). When `terminal` (outermost
+                // bind subscript), promote a container-valued leaf to a cell too.
+                if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
                     self.stack.push(slot_ref);
                 } else {
                     self.stack.push(Value::Nil);
+                }
+            }
+            // Terminal bind index into an Array leaf: promote the element to a
+            // shared `ContainerRef` cell (container-valued leaves included).
+            Value::Array(..) if terminal => {
+                if let Some(idx) = Self::index_to_usize(&index) {
+                    if let Some(slot_ref) = resolved.array_slot_ref(idx, true) {
+                        self.stack.push(slot_ref);
+                    } else {
+                        self.stack.push(Value::Nil);
+                    }
+                } else {
+                    self.stack.push(resolved);
+                    self.stack.push(index);
+                    return self.exec_index_autovivify_op();
                 }
             }
             // When resolved is an Array (from a HashSlotRef or ArraySlotRef), create
@@ -288,6 +307,15 @@ impl VM {
         // values (e.g. `$hash.item<key>` or `from-json(…)<key>`).
         if let Value::Scalar(inner) = &target {
             self.stack.push(inner.as_ref().clone());
+            self.stack.push(index);
+            return self.exec_index_op_with_positional(is_positional);
+        }
+        // Decontainerize a `:=`-bound container cell so a read through a bound
+        // element (`$x<k>` where `$x<k>` resolves to a `ContainerRef`) sees the
+        // shared, held container rather than the cell wrapper.
+        if let Value::ContainerRef(cell) = &target {
+            let inner = cell.lock().unwrap().clone();
+            self.stack.push(inner);
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);
         }

@@ -71,6 +71,12 @@ pub(crate) struct Compiler {
     /// Index.  Set only during scalar `:=` bind VarDecl compilation so that
     /// `my $b := %h<foo><baz>` creates a HashSlotRef.
     scalar_bind_autovivify: bool,
+    /// When true (alongside `scalar_bind_autovivify`), the next Index compiled is
+    /// the TERMINAL element of the bind RHS (outermost subscript whose value is
+    /// bound). A terminal index promotes even a container-valued (Array/Hash) leaf
+    /// to a cell. Cleared while compiling the inner `target` so only the outermost
+    /// index is terminal.
+    bind_terminal: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
@@ -129,6 +135,7 @@ impl Compiler {
             lexically_in_routine: false,
             bind_vardecl: false,
             scalar_bind_autovivify: false,
+            bind_terminal: false,
             constant_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
