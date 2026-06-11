@@ -730,6 +730,17 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
 
     match value {
         Value::Array(items, kind) => {
+            // Assigning an array to an `@` variable snapshots element VALUES
+            // (Raku `=` semantics). A `:=`-bound element is a shared
+            // `ContainerRef` cell (Phase 2); decontainerize it on copy so a
+            // later write through the bound source does not leak into the copy.
+            // Only rebuild when a cell is actually present (common path keeps
+            // sharing the Arc, so there is no per-assignment cost).
+            let items = if items.iter().any(|v| matches!(v, Value::ContainerRef(_))) {
+                Arc::new(items.iter().map(|v| v.deref_container()).collect())
+            } else {
+                items
+            };
             if kind.is_itemized() {
                 // Itemized arrays (from `$` scalar containers) are treated as
                 // a single item when assigned to an `@` variable.

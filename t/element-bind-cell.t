@@ -6,7 +6,7 @@ use Test;
 # `$struct[..]<..>[..]` paths (which the old index-back-reference lost when an
 # enclosing container was COW-cloned on a later write).
 
-plan 31;
+plan 35;
 
 # Single-level array element
 {
@@ -131,6 +131,28 @@ plan 31;
     $v = 9;
     is $s[1][1][0], 9, 'LHS deep array: source write -> element';
     is $s[1][1][1], 200, 'sibling element untouched';
+}
+
+# Copying an array with a bound element SNAPSHOTS the value (Raku `=`
+# decontainerizes), so a later write through the source does not leak into
+# the copy — for both LHS (`@a[i] := $v`) and RHS (`$x := @a[i]`) binds.
+{
+    my @array = <a b c>;
+    my $var = "d";
+    @array[1] := $var;       # LHS bind (single level)
+    $var = "e";
+    my @copy = @array;
+    $var = "f";
+    is ~@copy, "a e c", 'LHS-bound element: array copy snapshots the value';
+    is ~@array, "a f c", 'LHS-bound element: original still aliases the source';
+
+    my @a2 = 1, 2, 3;
+    my $x := @a2[1];         # RHS bind
+    $x = 20;
+    my @copy2 = @a2;
+    $x = 30;
+    is ~@copy2, "1 20 3", 'RHS-bound element: array copy snapshots the value';
+    is ~@a2, "1 30 3", 'RHS-bound element: original still aliases the source';
 }
 
 # vim: expandtab shiftwidth=4
