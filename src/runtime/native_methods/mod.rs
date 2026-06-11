@@ -174,7 +174,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn supply_chunk_to_bytes(&self, chunk: &Value, encoding_name: &str) -> Vec<u8> {
+    pub(crate) fn supply_chunk_to_bytes(&self, chunk: &Value, encoding_name: &str) -> Vec<u8> {
         let normalized = self
             .find_encoding(encoding_name)
             .map(|e| e.name.as_str())

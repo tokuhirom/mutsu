@@ -132,6 +132,12 @@ impl VM {
             if let Some(result) = self.try_native_io_handle_output(&target, method, &args) {
                 return result;
             }
+            // VM-native raw byte output to a File `IO::Handle` (write/spurt):
+            // raw file write, no buffering/encoding (PR-D Tier-2c). Stdout/Stderr
+            // and a non-UTF8 spurt of a Str fall through.
+            if let Some(result) = self.try_native_io_handle_byte_output(&target, method, &args) {
+                return result;
+            }
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
@@ -734,6 +740,99 @@ impl VM {
         )
     }
 
+    /// VM-native raw byte output for a `File` `IO::Handle` receiver
+    /// (`write` / `spurt`): build the bytes exactly as the interpreter's
+    /// `native_io` handlers do and write them straight to the file via the
+    /// shared `IoHandleState::native_write_bytes_file` (raw, `:out-buffer`- and
+    /// encoding-bypassing — same semantics as `write_bytes_to_handle_value`).
+    /// PLAN.md ③ native IO PR-D Tier-2c.
+    ///
+    /// `write` concatenates each arg's bytes — buffer types (Buf/Blob/utf8/
+    /// utf16) via `supply_chunk_to_bytes` (utf16-aware), non-buffers via
+    /// `render_str_value` (their UTF-8 bytes). `spurt` writes its single
+    /// argument: a Buf's raw bytes, or a Str's UTF-8 bytes.
+    ///
+    /// Returns `None` (fall through) for any non-`IO::Handle` receiver, any other
+    /// method, a junction argument, a non-File target (Stdout/Stderr need
+    /// `emit_output`), or a `spurt` of a Str on a non-UTF-8 handle (needs
+    /// `encode_with_encoding`). The File gate is read before the bytes are built.
+    fn try_native_io_handle_byte_output(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let id = match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
+                Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        if !matches!(method, "write" | "spurt") {
+            return None;
+        }
+        // Junction args autothread in the interpreter; fall through for those.
+        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+            return None;
+        }
+
+        // File-target gate, read before building the bytes. For `spurt` of a Str
+        // the handle encoding must also be UTF-8 (a non-UTF-8 encoding re-enters
+        // `encode_with_encoding`); `write` and a Buf `spurt` ignore encoding.
+        let spurt_str_needs_utf8 =
+            method == "spurt" && !args.first().map(Self::is_buf_value).unwrap_or(false);
+        {
+            let table = self.io_handles_mut();
+            let state = table.map.get(&id)?;
+            if !state.is_file_target() {
+                return None;
+            }
+            if spurt_str_needs_utf8 && !state.can_native_text_write() {
+                return None;
+            }
+        }
+
+        let bytes: Vec<u8> = if method == "spurt" {
+            let content_value = args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| Value::Str(String::new().into()));
+            if Self::is_buf_value(&content_value) {
+                Self::extract_buf_bytes(&content_value)
+            } else {
+                // Gate guaranteed UTF-8, so the Str's bytes are its UTF-8 bytes.
+                content_value.to_string_value().into_bytes()
+            }
+        } else {
+            // write: concatenate each arg — buffer types via supply_chunk_to_bytes
+            // (utf16-aware), non-buffers via render_str_value (UTF-8 bytes).
+            let mut out = Vec::new();
+            for arg in args {
+                if Self::is_buf_value(arg) {
+                    out.extend(self.interpreter.supply_chunk_to_bytes(arg, "utf-8"));
+                } else {
+                    out.extend(self.interpreter.render_str_value(arg).into_bytes());
+                }
+            }
+            out
+        };
+
+        let mut table = self.io_handles_mut();
+        let Some(state) = table.map.get_mut(&id) else {
+            return Some(Err(RuntimeError::new("Invalid IO::Handle")));
+        };
+        Some(
+            state
+                .native_write_bytes_file(&bytes)
+                .map(|_| Value::Bool(true)),
+        )
+    }
+
     /// VM-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
     /// over a list-like receiver (List/Array/Seq/Slip/Hash/Set/Bag/Mix/Pair/Range).
     /// Delegates the element folding to the single authoritative pure
@@ -1164,6 +1263,12 @@ impl VM {
             // VM-native text output to a File+UTF8 `IO::Handle` (print/put/say/
             // print-nl), mut path (PR-D Tier-2a). See the non-mut twin above.
             if let Some(result) = self.try_native_io_handle_output(&target, method, &args) {
+                return result;
+            }
+            // VM-native raw byte output to a File `IO::Handle` (write/spurt):
+            // raw file write, no buffering/encoding (PR-D Tier-2c). Stdout/Stderr
+            // and a non-UTF8 spurt of a Str fall through.
+            if let Some(result) = self.try_native_io_handle_byte_output(&target, method, &args) {
                 return result;
             }
             if self.interpreter.is_native_method(&class, method) {
