@@ -558,11 +558,23 @@ no per-slot `Scalar` container (first-class container identity).
 
 ## Miscellaneous
 
-- roast/S32-array/splice.t — **Hard**. 245/381 fail (NOT "edge cases" — this is the
-  dominant failure of the file). Root cause is **self-referential splice**: the test
-  matrix does `@a.splice(..., @a)` / push-self forms, and mutsu's splice reads the
-  replacement list lazily *while mutating the same array*, so the "remainder results"
-  diverge. Needs splice to snapshot its replacement args before mutating.
+- roast/S32-array/splice.t — **Hard (container identity, Phase 2)**. 136/381.
+  Re-diagnosed: the dominant failure is NOT self-referential splice but
+  **typed-array container identity through a multi-var `for` loop**. The test
+  iterates `for @testing -> @a, $T` where each `@a` is aliased from a `my int
+  @int` (`array[int]`) and then does `@a = values; @a.splice(...)`, checking that
+  both the remainder `@a` and the splice return keep type `array[int]`. mutsu's
+  multi-var loop param binding is compiled to `@a = $_[i]` (assign-coerce), which
+  de-itemizes + reallocates and drops the pointer-keyed type metadata — Raku
+  instead binds `@a` as a true alias to the typed element. Fixing it fully needs
+  first-class array-element containers (PLAN.md Phase 2): the chunk element must
+  be bound, not copied, so its declared type (and, per `@a[0]=99` writing back to
+  the source, its identity) survives. *Partially addressed* (the in-place mutators
+  pop/shift/splice/append/prepend/unshift no longer demote a `my int @a` to a
+  plain `Array`, and `splice` returns the removed slice as the same typed
+  container — see #2898), but the loop-alias step remains. The earlier
+  "self-referential splice" note covered only tests 17-30 of the regular-Array
+  iteration.
 - roast/S32-hash/perl.t — **Medium**. 12/55 fail: Hash-in-Scalar vs deconted-Hash
   `.perl`/`.raku` differ (`(Str(Any),Mu)` typed-hash perlification + decont rules).
 - roast/S09-hashes/objecthash.t — **Hard**. 8/36 fail then aborts (planned 62) —

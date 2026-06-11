@@ -2098,6 +2098,12 @@ impl Interpreter {
                 return Err(RuntimeError::illegal_on_fixed_dimension_array(method));
             }
             let key = target_var.to_string();
+            // Capture the declared container type before mutating. The mutators
+            // below reallocate the backing buffer via `Arc::make_mut` when the
+            // Arc is shared, which orphans the pointer-keyed type metadata; we
+            // re-attach it to the post-mutation array (see
+            // `reattach_array_type_metadata`).
+            let saved_meta = self.container_type_metadata(&target);
             // Container description for X::Cannot::Empty (`array[num]` for a
             // native typed array, otherwise `Array`).
             let empty_what = match self.var_type_constraint(&key) {
@@ -2123,61 +2129,73 @@ impl Interpreter {
                     // as-is (no recursive flattening).
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &flat_values)?;
-                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                    let result = if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key)
+                    {
+                        let kind = *kind;
                         let items = Arc::make_mut(arc_items);
                         items.extend(flat_values);
-                        let result = Value::Array(Arc::clone(arc_items), *kind);
-                        return Ok(result);
-                    }
-                    let mut items = match target {
-                        Value::Array(v, ..) => v.to_vec(),
-                        _ => Vec::new(),
+                        Value::Array(Arc::clone(arc_items), kind)
+                    } else {
+                        let mut items = match target {
+                            Value::Array(v, ..) => v.to_vec(),
+                            _ => Vec::new(),
+                        };
+                        items.extend(flat_values);
+                        self.env
+                            .insert(key.clone(), Value::real_array(items.clone()));
+                        Value::real_array(items)
                     };
-                    items.extend(flat_values);
-                    let result = Value::real_array(items.clone());
-                    self.env.insert(key, Value::real_array(items));
+                    self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
                 "unshift" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &normalized_args)?;
-                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                    let result = if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key)
+                    {
+                        let kind = *kind;
                         let items = Arc::make_mut(arc_items);
                         for (i, arg) in normalized_args.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        let result = Value::Array(Arc::clone(arc_items), *kind);
-                        return Ok(result);
-                    }
-                    let items = match target {
-                        Value::Array(v, ..) => v.to_vec(),
-                        _ => Vec::new(),
+                        Value::Array(Arc::clone(arc_items), kind)
+                    } else {
+                        let items = match target {
+                            Value::Array(v, ..) => v.to_vec(),
+                            _ => Vec::new(),
+                        };
+                        let mut pref: Vec<Value> = normalized_args;
+                        pref.extend(items);
+                        self.env
+                            .insert(key.clone(), Value::real_array(pref.clone()));
+                        Value::real_array(pref)
                     };
-                    let mut pref: Vec<Value> = normalized_args;
-                    pref.extend(items);
-                    let result = Value::real_array(pref.clone());
-                    self.env.insert(key, Value::real_array(pref));
+                    self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
                 "prepend" => {
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &flat_values)?;
-                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                    let result = if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key)
+                    {
+                        let kind = *kind;
                         let items = Arc::make_mut(arc_items);
                         for (i, arg) in flat_values.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        let result = Value::Array(Arc::clone(arc_items), *kind);
-                        return Ok(result);
-                    }
-                    let items = match target {
-                        Value::Array(v, ..) => v.to_vec(),
-                        _ => Vec::new(),
+                        Value::Array(Arc::clone(arc_items), kind)
+                    } else {
+                        let items = match target {
+                            Value::Array(v, ..) => v.to_vec(),
+                            _ => Vec::new(),
+                        };
+                        let mut pref: Vec<Value> = flat_values;
+                        pref.extend(items);
+                        self.env
+                            .insert(key.clone(), Value::real_array(pref.clone()));
+                        Value::real_array(pref)
                     };
-                    let mut pref: Vec<Value> = flat_values;
-                    pref.extend(items);
-                    let result = Value::real_array(pref.clone());
-                    self.env.insert(key, Value::real_array(pref));
+                    self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
                 "pop" => {
@@ -2192,7 +2210,7 @@ impl Interpreter {
                     {
                         return Err(RuntimeError::cannot_lazy("pop"));
                     }
-                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                    let out = if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         // Avoid `Arc::make_mut` on an empty array: it would clone a
                         // shared Arc and drop the native type metadata keyed by the
                         // old pointer, demoting `array[num]` to a plain Array.
@@ -2200,17 +2218,20 @@ impl Interpreter {
                             return Ok(make_empty_array_failure_what("pop", &empty_what));
                         }
                         let items = Arc::make_mut(arc_items);
-                        return Ok(items.pop().unwrap_or(Value::Nil));
-                    }
-                    let mut items = match target {
-                        Value::Array(v, ..) => v.to_vec(),
-                        _ => Vec::new(),
+                        items.pop().unwrap_or(Value::Nil)
+                    } else {
+                        let mut items = match target {
+                            Value::Array(v, ..) => v.to_vec(),
+                            _ => Vec::new(),
+                        };
+                        if items.is_empty() {
+                            return Ok(make_empty_array_failure_what("pop", &empty_what));
+                        }
+                        let out = items.pop().unwrap_or(Value::Nil);
+                        self.env.insert(key.clone(), Value::real_array(items));
+                        out
                     };
-                    if items.is_empty() {
-                        return Ok(make_empty_array_failure_what("pop", &empty_what));
-                    }
-                    let out = items.pop().unwrap_or(Value::Nil);
-                    self.env.insert(key, Value::real_array(items));
+                    self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(out);
                 }
                 "shift" => {
@@ -2220,22 +2241,25 @@ impl Interpreter {
                             args.len() + 1
                         )));
                     }
-                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                    let out = if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         if arc_items.is_empty() {
                             return Ok(make_empty_array_failure_what("shift", &empty_what));
                         }
                         let items = Arc::make_mut(arc_items);
-                        return Ok(items.remove(0));
-                    }
-                    let mut items = match target {
-                        Value::Array(v, ..) => v.to_vec(),
-                        _ => Vec::new(),
+                        items.remove(0)
+                    } else {
+                        let mut items = match target {
+                            Value::Array(v, ..) => v.to_vec(),
+                            _ => Vec::new(),
+                        };
+                        if items.is_empty() {
+                            return Ok(make_empty_array_failure_what("shift", &empty_what));
+                        }
+                        let out = items.remove(0);
+                        self.env.insert(key.clone(), Value::real_array(items));
+                        out
                     };
-                    if items.is_empty() {
-                        return Ok(make_empty_array_failure_what("shift", &empty_what));
-                    }
-                    let out = items.remove(0);
-                    self.env.insert(key, Value::real_array(items));
+                    self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(out);
                 }
                 "splice" => {
@@ -2418,18 +2442,28 @@ impl Interpreter {
                             .collect(),
                         ));
                     }
-                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                    let removed = if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
-                        let removed = do_splice(items, &resolved_args);
-                        return Ok(Value::real_array(removed));
-                    }
-                    let mut items = match target {
-                        Value::Array(v, ..) => v.to_vec(),
-                        _ => Vec::new(),
+                        do_splice(items, &resolved_args)
+                    } else {
+                        let mut items = match target {
+                            Value::Array(v, ..) => v.to_vec(),
+                            _ => Vec::new(),
+                        };
+                        let removed = do_splice(&mut items, &resolved_args);
+                        self.env.insert(key.clone(), Value::real_array(items));
+                        removed
                     };
-                    let removed = do_splice(&mut items, &resolved_args);
-                    self.env.insert(key, Value::real_array(items));
-                    return Ok(Value::real_array(removed));
+                    self.reattach_array_type_metadata(&key, &saved_meta);
+                    // Raku's `splice` returns the removed elements as the *same*
+                    // typed container as the receiver (`array[int]` splices to
+                    // `array[int]`), so propagate the declared type onto the
+                    // returned slice too.
+                    let removed_arr = Value::real_array(removed);
+                    if let Some(info) = &saved_meta {
+                        self.register_container_type_metadata(&removed_arr, info.clone());
+                    }
+                    return Ok(removed_arr);
                 }
                 "squish" => {
                     let current = self.env.get(&key).cloned().unwrap_or(target.clone());
