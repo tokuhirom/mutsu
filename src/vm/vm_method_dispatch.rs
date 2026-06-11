@@ -197,10 +197,9 @@ impl VM {
 
         // Set current_package so class-scoped subs are found during method execution.
         // Only change package if the class has subs declared in its body.
-        let saved_package = self.interpreter.current_package().to_string();
+        let saved_package = self.current_package().to_string();
         if self.interpreter.has_class_scoped_subs(receiver_class_name) {
-            self.interpreter
-                .set_current_package(receiver_class_name.to_string());
+            self.set_current_package(receiver_class_name.to_string());
         }
 
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
@@ -310,7 +309,7 @@ impl VM {
                         if !self.interpreter.type_matches_value(expected, &base) {
                             self.interpreter.restore_var_bindings(saved_var_bindings);
                             self.interpreter.pop_method_class();
-                            self.interpreter.set_current_package(saved_package.clone());
+                            self.set_current_package(saved_package.clone());
                             self.stack.truncate(saved_stack_depth);
                             let frame = self.pop_call_frame();
                             *self.interpreter.env_mut() = frame.saved_env;
@@ -438,7 +437,7 @@ impl VM {
                 Err(e) => {
                     self.interpreter.restore_var_bindings(saved_var_bindings);
                     self.interpreter.pop_method_class();
-                    self.interpreter.set_current_package(saved_package.clone());
+                    self.set_current_package(saved_package.clone());
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     *self.interpreter.env_mut() = frame.saved_env;
@@ -679,14 +678,14 @@ impl VM {
 
             self.interpreter.pop_routine();
             self.interpreter.pop_method_class();
-            self.interpreter.set_current_package(saved_package.clone());
+            self.set_current_package(saved_package.clone());
             *self.interpreter.env_mut() = merged_env;
         }
 
         if can_skip_merge {
             // No env writes possible -> the caller's slots stay coherent (pure).
             self.method_dispatch_pure = true;
-            self.interpreter.set_current_package(saved_package);
+            self.set_current_package(saved_package);
             let frame = self.pop_call_frame();
             *self.interpreter.env_mut() = frame.saved_env;
         }
@@ -865,10 +864,9 @@ impl VM {
         let saved_var_bindings = self.interpreter.take_var_bindings();
         self.interpreter.push_method_class(owner_class.to_string());
 
-        let saved_package = self.interpreter.current_package().to_string();
+        let saved_package = self.current_package().to_string();
         if self.interpreter.has_class_scoped_subs(receiver_class_name) {
-            self.interpreter
-                .set_current_package(receiver_class_name.to_string());
+            self.set_current_package(receiver_class_name.to_string());
         }
 
         // Compute role context without touching env
@@ -902,7 +900,7 @@ impl VM {
                     // Type mismatch — fall back to slow path for proper error
                     self.interpreter.restore_var_bindings(saved_var_bindings);
                     self.interpreter.pop_method_class();
-                    self.interpreter.set_current_package(saved_package);
+                    self.set_current_package(saved_package);
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     self.interpreter.set_env(frame.saved_env);
@@ -1205,7 +1203,7 @@ impl VM {
 
         self.interpreter.pop_routine();
         self.interpreter.pop_method_class();
-        self.interpreter.set_current_package(saved_package);
+        self.set_current_package(saved_package);
 
         if can_skip_merge {
             // No env writes possible — just restore saved env (pure: caller

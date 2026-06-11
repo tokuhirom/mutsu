@@ -297,7 +297,7 @@ impl Interpreter {
         } else {
             self.parse_require_source(file, &path)?
         };
-        let saved_package = self.current_package.clone();
+        let saved_package = self.current_package();
         let before_function_keys: std::collections::HashSet<Symbol> =
             self.registry().functions.keys().copied().collect();
         let before_env_keys: std::collections::HashSet<Symbol> = self.env.keys().copied().collect();
@@ -306,10 +306,10 @@ impl Interpreter {
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
-            self.current_package = pkg.to_string();
+            self.set_current_package(pkg.to_string());
         }
         let run_result = self.run_block(&stmts);
-        self.current_package = saved_package;
+        self.set_current_package(saved_package);
         run_result?;
 
         // A `sub MAIN` defined in a required module is NOT the program's MAIN

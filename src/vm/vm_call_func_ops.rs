@@ -143,7 +143,7 @@ impl VM {
                         } else if Self::is_positional_light_call_eligible(&cf, name_str) {
                             self.call_compiled_function_positional_light(&cf, &args, compiled_fns)
                         } else {
-                            let pkg = self.interpreter.current_package().to_string();
+                            let pkg = self.current_package().to_string();
                             self.interpreter.push_samewith_context(name_str, None);
                             let pushed_dispatch =
                                 self.interpreter.push_multi_dispatch_frame(name_str, &args);
@@ -409,7 +409,7 @@ impl VM {
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             let cf_auto_fetch = !cf.is_raw;
-            let pkg = self.interpreter.current_package().to_string();
+            let pkg = self.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             let result = self
                 .interpreter
@@ -575,7 +575,7 @@ impl VM {
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             let cf_auto_fetch = !cf.is_raw;
-            let pkg = self.interpreter.current_package().to_string();
+            let pkg = self.current_package().to_string();
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
@@ -687,7 +687,7 @@ impl VM {
                     }
                     resolved_def
                         .map(|def| def.package.resolve())
-                        .unwrap_or_else(|| self.interpreter.current_package().to_string())
+                        .unwrap_or_else(|| self.current_package().to_string())
                 };
                 let cf_auto_fetch = !cf.is_raw;
                 let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);

@@ -108,7 +108,7 @@ impl Interpreter {
             ignore_mark: parsed.ignore_mark,
         };
         let chars: Vec<char> = text.chars().collect();
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         self.regex_match_end_from_caps_in_pkg(&prefix_pattern, &chars, 0, &pkg)
             .map(|(end, _)| end)
     }
@@ -477,7 +477,7 @@ impl Interpreter {
         let (stmts, _) = crate::parse_dispatch::parse_source(&source).ok()?;
         let mut interp = Interpreter {
             env: self.make_regex_eval_env(caps),
-            current_package: self.current_package.clone(),
+            current_package: Arc::new(RwLock::new(self.current_package())),
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);

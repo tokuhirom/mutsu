@@ -829,7 +829,7 @@ impl Interpreter {
         self.check_eval_param_type_constraints(&body_main)?;
         self.preregister_top_level_subs(&body_main)?;
         let mut compiler = crate::compiler::Compiler::new();
-        compiler.set_current_package(self.current_package.clone());
+        compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
         let (code, compiled_fns) = compiler.compile(&body_main);
         let interp = std::mem::take(self);
@@ -947,13 +947,13 @@ impl Interpreter {
         // The outermost compilation unit is the mainline: placeholder variables
         // ($^x, @_, ...) appearing here are outside any sub or block.
         compiler.is_mainline = self.routine_stack.is_empty();
-        compiler.set_current_package(self.current_package.clone());
+        compiler.set_current_package(self.current_package());
         // Resolve distribution context: prefer the current one, then look up
         // by the current package name in case we're running a function body
         // from a module that had a distribution.
         compiler.current_distribution = self.current_distribution.clone().or_else(|| {
             self.package_distributions
-                .get(&self.current_package)
+                .get(&self.current_package())
                 .cloned()
         });
         let (code, compiled_fns) = compiler.compile(stmts);
@@ -1446,7 +1446,7 @@ impl Interpreter {
             // for unit modules) since the interpreter's current_package may not
             // match the module name during function body evaluation.
             self.package_distributions
-                .insert(self.current_package.clone(), dist);
+                .insert(self.current_package(), dist);
         }
         // Save and restore the language version around module loading.
         // Each module may set its own `use v6.*` which should not leak
@@ -1463,8 +1463,8 @@ impl Interpreter {
             // would qualify top-level declarations inside the module file with
             // the caller's package (e.g. `Export_PackB::Export_PackA::foo`
             // instead of `Export_PackA::foo`).
-            let saved_package = self.current_package.clone();
-            self.current_package = "GLOBAL".to_string();
+            let saved_package = self.current_package();
+            self.set_current_package("GLOBAL".to_string());
             // If the module file is a `unit module X` (or unit package/class),
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
@@ -1481,7 +1481,7 @@ impl Interpreter {
             if pushed_unit {
                 self.unit_module_loading_stack.pop();
             }
-            self.current_package = saved_package;
+            self.set_current_package(saved_package);
             result?;
             // A `sub MAIN` defined in a used module is NOT the program's MAIN
             // and must not be auto-dispatched at program end.
@@ -1513,7 +1513,7 @@ impl Interpreter {
             }
         }
         // Priority 3: Look up by current package
-        if let Some(dist) = self.package_distributions.get(&self.current_package) {
+        if let Some(dist) = self.package_distributions.get(&self.current_package()) {
             return Self::build_resources_from_dist(dist);
         }
         Value::Hash(Arc::new(HashMap::new()))

@@ -859,7 +859,15 @@ pub struct Interpreter {
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
     io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
     program_path: Option<String>,
-    current_package: String,
+    /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
+    /// used to build fully-qualified names during function/method dispatch and
+    /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM
+    /// can read/write it through its own handle (mirroring `io_handles` /
+    /// `registry`) rather than bouncing through `self.interpreter`. Snapshot-cloned
+    /// per thread (see `clone_for_thread`). Accessed only via
+    /// `current_package()` / `set_current_package()`, which read-clone / write the
+    /// lock and never hold the guard across user-code re-entry.
+    current_package: Arc<RwLock<String>>,
     routine_stack: Vec<RoutineFrame>,
     callframe_stack: Vec<CallFrameEntry>,
     method_class_stack: Vec<String>,
@@ -2876,7 +2884,7 @@ impl Interpreter {
                 next_id: 1,
             })),
             program_path: None,
-            current_package: "GLOBAL".to_string(),
+            current_package: Arc::new(RwLock::new("GLOBAL".to_string())),
             routine_stack: Vec::new(),
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
@@ -3405,7 +3413,7 @@ impl Interpreter {
             return None;
         }
         // Check current package
-        let current_pkg = &self.current_package;
+        let current_pkg = &self.current_package();
         if current_pkg != "GLOBAL" {
             let qualified = format!("{}::{}", current_pkg, name);
             if self.has_type(&qualified) {
@@ -4017,7 +4025,7 @@ impl Interpreter {
         // Import into the current package scope so that `use Foo` inside
         // `module Bar { }` makes Foo's exports available as `Bar::name`
         // rather than polluting the GLOBAL namespace.
-        let target_pkg = self.current_package.clone();
+        let target_pkg = self.current_package();
 
         for (name, symbol_tags) in subs {
             // MANDATORY exports are always imported regardless of requested tags
@@ -5298,6 +5306,13 @@ impl Interpreter {
         self.output_sink.clone()
     }
 
+    /// Clone the shared `current_package` handle so the VM can read/write the
+    /// in-scope package name through its own peer handle (same reasoning as
+    /// [`Self::registry_handle`]) rather than bouncing through `self.interpreter`.
+    pub(crate) fn current_package_handle(&self) -> Arc<RwLock<String>> {
+        self.current_package.clone()
+    }
+
     /// Whether a TAP subtest is currently in progress. The VM queries this (the
     /// TAP state machine stays interpreter-owned) to pass `subtest_active` into
     /// the output sink's emit decision for VM-native Stdout/Stderr output.
@@ -5441,7 +5456,9 @@ impl Interpreter {
                 next_id: cloned_next_handle_id,
             })),
             program_path: self.program_path.clone(),
-            current_package: self.current_package.clone(),
+            // Snapshot (fresh lock), not a shared handle: thread-local registry
+            // semantics — child sees a copy, writes don't leak to the parent.
+            current_package: Arc::new(RwLock::new(self.current_package())),
             routine_stack: Vec::new(),
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),

@@ -40,7 +40,7 @@ impl Interpreter {
         let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
         let mut interp = Interpreter {
             env,
-            current_package: self.current_package.clone(),
+            current_package: Arc::new(RwLock::new(self.current_package())),
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);
@@ -125,7 +125,7 @@ impl Interpreter {
         // Evaluate the code in a fresh interpreter with this env
         let mut interp = Interpreter {
             env,
-            current_package: self.current_package.clone(),
+            current_package: Arc::new(RwLock::new(self.current_package())),
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);
@@ -170,7 +170,7 @@ impl Interpreter {
         let env = self.make_regex_eval_env(caps);
         let mut interp = Interpreter {
             env,
-            current_package: self.current_package.clone(),
+            current_package: Arc::new(RwLock::new(self.current_package())),
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);
@@ -631,7 +631,7 @@ impl Interpreter {
             Some(p) => p,
             None => return Vec::new(),
         };
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let chars: Vec<char> = text.chars().collect();
         let mut results = Vec::new();
         let mut pos = 0;
@@ -680,7 +680,7 @@ impl Interpreter {
             Some(p) => p,
             None => return Vec::new(),
         };
-        let pkg = self.current_package.clone();
+        let pkg = self.current_package();
         let chars: Vec<char> = text.chars().collect();
         let mut results = Vec::new();
         let mut pos = 0;

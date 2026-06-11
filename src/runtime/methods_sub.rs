@@ -726,7 +726,8 @@ impl Interpreter {
             let current_callable_id = if !func_name.is_empty() {
                 let key = format!(
                     "__mutsu_callable_id::{}::{}",
-                    self.current_package, func_name
+                    self.current_package(),
+                    func_name
                 );
                 self.env
                     .get(&key)

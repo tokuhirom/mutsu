@@ -65,7 +65,7 @@ impl VM {
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
-            let pkg = self.interpreter.current_package().to_string();
+            let pkg = self.current_package().to_string();
             let call_result =
                 self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
@@ -105,7 +105,7 @@ impl VM {
         };
         // Try compiled function dispatch first
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
-            let pkg = self.interpreter.current_package().to_string();
+            let pkg = self.current_package().to_string();
             self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             self.env_dirty = true;
             return Ok(());
@@ -159,7 +159,7 @@ impl VM {
         }
         // Try compiled function dispatch first
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
-            let pkg = self.interpreter.current_package().to_string();
+            let pkg = self.current_package().to_string();
             self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             self.env_dirty = true;
             return Ok(());

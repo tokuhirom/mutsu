@@ -1528,9 +1528,9 @@ impl Interpreter {
             reg.class_stubs.remove(name);
             reg.package_stubs.remove(name);
         }
-        let saved_package = self.current_package.clone();
+        let saved_package = self.current_package();
         let saved_env = self.env.clone();
-        self.current_package = name.to_string();
+        self.set_current_package(name.to_string());
         self.env
             .insert("?CLASS".to_string(), Value::Package(Symbol::intern(name)));
         // Flatten SyntheticBlock (from `has ($a, $b)` list form) so inner
@@ -1625,7 +1625,7 @@ impl Interpreter {
                             type_constraint.as_deref(),
                         )
                     {
-                        self.current_package = saved_package;
+                        self.set_current_package(saved_package);
                         self.env = saved_env;
                         return Err(err);
                     }
@@ -1651,7 +1651,7 @@ impl Interpreter {
                         .iter()
                         .any(|(n, ..)| n == &attr_name_str)
                     {
-                        self.current_package = saved_package;
+                        self.set_current_package(saved_package);
                         self.env = saved_env;
                         return Err(RuntimeError::new(format!(
                             "X::Comp::Trait::Duplicate: attribute '{}' already exists in class '{}' (possibly from role composition)",
@@ -1719,7 +1719,7 @@ impl Interpreter {
                                         super::utils::value_type_name(&val)
                                     ));
                                     runtime_err.exception = Some(Box::new(err));
-                                    self.current_package = saved_package;
+                                    self.set_current_package(saved_package);
                                     self.env = saved_env;
                                     return Err(runtime_err);
                                 }
@@ -1809,7 +1809,7 @@ impl Interpreter {
                                             attr_name,
                                             "!",
                                         );
-                                        self.current_package = saved_package;
+                                        self.set_current_package(saved_package);
                                         self.env = saved_env;
                                         return Err(err);
                                     }
@@ -2397,7 +2397,7 @@ impl Interpreter {
                 }
             }
         }
-        self.current_package = saved_package;
+        self.set_current_package(saved_package);
         if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
             restore_previous_state(self);
             return Err(err);
@@ -2553,8 +2553,8 @@ impl Interpreter {
                 .or_default();
         }
 
-        let saved_package = self.current_package.clone();
-        self.current_package = name.to_string();
+        let saved_package = self.current_package();
+        self.set_current_package(name.to_string());
 
         // Process body statements and add methods/attributes to the existing class
         let flattened_body: Vec<&Stmt> = body
@@ -2735,7 +2735,7 @@ impl Interpreter {
             }
         }
 
-        self.current_package = saved_package;
+        self.set_current_package(saved_package);
         Ok(())
     }
 

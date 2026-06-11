@@ -355,12 +355,12 @@ impl Interpreter {
                         self.env.insert(bang, a_val.clone());
                         self.env.insert(dot, a_val.clone());
                     }
-                    let saved_package = self.current_package.clone();
+                    let saved_package = self.current_package();
                     if self.has_class_scoped_subs(cn_resolved) {
-                        self.current_package = cn_resolved.to_string();
+                        self.set_current_package(cn_resolved.to_string());
                     }
                     let result = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())]);
-                    self.current_package = saved_package;
+                    self.set_current_package(saved_package);
                     for (key, old_val) in saved_attr_env {
                         match old_val {
                             Some(v) => {
@@ -3475,10 +3475,10 @@ impl Interpreter {
                             // Temporarily switch to the class package so that
                             // class-scoped subs (e.g. `sub inner`) are found
                             // when evaluating attribute default expressions.
-                            let saved_package = self.current_package.clone();
-                            self.current_package = class_key.to_string();
+                            let saved_package = self.current_package();
+                            self.set_current_package(class_key.to_string());
                             let result = self.eval_block_value(&[Stmt::Expr(expr)]);
-                            self.current_package = saved_package;
+                            self.set_current_package(saved_package);
                             // Restore previous env state for attribute variables
                             for (key, old_val) in saved_attr_env {
                                 if let Some(v) = old_val {

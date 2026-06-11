@@ -532,7 +532,7 @@ impl Interpreter {
     }
 
     pub(crate) fn infix_associativity(&self, full_name: &str) -> Option<String> {
-        let fq = format!("{}::{}", self.current_package, full_name);
+        let fq = format!("{}::{}", self.current_package(), full_name);
         self.operator_assoc
             .get(&fq)
             .cloned()
@@ -1124,7 +1124,7 @@ impl Interpreter {
         // the regular functions map.
         let def = self.resolve_function(lookup_name).or_else(|| {
             if has_packages {
-                let fq = format!("{}::{}", self.current_package, lookup_name);
+                let fq = format!("{}::{}", self.current_package(), lookup_name);
                 self.registry()
                     .our_scoped_functions
                     .get(&Symbol::intern(&fq))
@@ -1142,7 +1142,7 @@ impl Interpreter {
         });
         let is_multi = if def.is_none() && !self.has_proto(lookup_name) {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
-            let prefix_local = format!("{}::{}/", self.current_package, lookup_name);
+            let prefix_local = format!("{}::{}/", self.current_package(), lookup_name);
             let prefix_global = format!("GLOBAL::{}/", lookup_name);
             self.registry().functions.keys().any(|k| {
                 let ks = k.resolve();
@@ -1182,7 +1182,7 @@ impl Interpreter {
                 Value::str(lookup_name.to_string()),
             );
             Value::make_sub(
-                Symbol::intern(&self.current_package),
+                Symbol::intern(&self.current_package()),
                 Symbol::intern(lookup_name),
                 Vec::new(),
                 Vec::new(),
@@ -1195,7 +1195,7 @@ impl Interpreter {
             || self.has_proto_token(lookup_name)
         {
             Value::Routine {
-                package: Symbol::intern(&self.current_package),
+                package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(lookup_name),
                 is_regex: self.resolve_token_defs(lookup_name).is_some()
                     || self.has_proto_token(lookup_name),
@@ -1441,12 +1441,17 @@ impl Interpreter {
         self.gather_take_limits.pop();
     }
 
-    pub(crate) fn current_package(&self) -> &str {
-        &self.current_package
+    /// The package currently in scope, read out of the shared `Arc<RwLock>`
+    /// handle as an owned `String`. Returns owned (not `&str`) because the value
+    /// lives behind a lock guard that must not escape the call — the guard is
+    /// dropped before returning, so no lock is held across the caller's work
+    /// (re-entry safe, mirroring the registry accessors).
+    pub(crate) fn current_package(&self) -> String {
+        self.current_package.read().unwrap().clone()
     }
 
     pub(crate) fn set_current_package(&mut self, pkg: String) {
-        self.current_package = pkg;
+        *self.current_package.write().unwrap() = pkg;
     }
 
     fn stash_symbol_key_from_env_tail(rest: &str) -> String {
@@ -2028,7 +2033,7 @@ impl Interpreter {
         // declarations like `{ package Foo { our sub bar {} } }` survive). We
         // distinguish "newly registered during this block" by tracking the set
         // of our_scoped_functions keys that existed at snapshot time.
-        let current_pkg = self.current_package.clone();
+        let current_pkg = self.current_package();
         let mut new_our: Vec<(Symbol, FunctionDef)> = Vec::new();
         // Collect under a read guard, which drops before the writes below
         // (read->write on the same lock would deadlock).

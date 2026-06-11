@@ -107,6 +107,13 @@ pub(crate) struct VM {
     /// dispatch resolves natively instead of bouncing through the interpreter
     /// (③後段 PR-C).
     output_sink: Arc<RwLock<crate::runtime::OutputSink>>,
+    /// The VM's clone of the shared `current_package` handle (same `RwLock` as
+    /// the interpreter's), so the VM reads/writes the in-scope package name
+    /// through its own peer handle instead of bouncing through
+    /// `self.interpreter` — a step toward removing the interpreter bridge.
+    /// Stable for the VM's lifetime (same `clone_for_thread` reasoning as
+    /// `registry`).
+    current_package: Arc<RwLock<String>>,
     stack: Vec<Value>,
     locals: Vec<Value>,
     in_smartmatch_rhs: bool,
@@ -423,11 +430,13 @@ impl VM {
         let registry = interpreter.registry_handle();
         let io_handles = interpreter.io_handles_handle();
         let output_sink = interpreter.output_sink_handle();
+        let current_package = interpreter.current_package_handle();
         Self {
             interpreter,
             registry,
             io_handles,
             output_sink,
+            current_package,
             stack: Vec::new(),
             locals: Vec::new(),
             in_smartmatch_rhs: false,
@@ -491,6 +500,22 @@ impl VM {
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::RegistryWriteGuard<'_> {
         crate::runtime::RegistryWriteGuard::new(&self.registry, "registry")
+    }
+
+    /// The in-scope package name, read out of the VM's own `current_package`
+    /// handle as an owned `String` (no `self.interpreter` bounce). The guard is
+    /// dropped before returning, so no lock is held across the caller's work.
+    #[inline]
+    pub(crate) fn current_package(&self) -> String {
+        self.current_package.read().unwrap().clone()
+    }
+
+    /// Set the in-scope package name through the VM's own handle. Visible to the
+    /// interpreter too (same `RwLock`), preserving save/restore semantics across
+    /// the VM↔interpreter ping-pong.
+    #[inline]
+    pub(crate) fn set_current_package(&self, pkg: String) {
+        *self.current_package.write().unwrap() = pkg;
     }
 
     /// Write access to the shared [`IoHandleTable`](crate::runtime::IoHandleTable)
@@ -994,7 +1019,7 @@ impl VM {
                                     // `$D2::d3` from inside package `D1::D2` (or any
                                     // ancestor of it), also try the fully-qualified
                                     // forms by prepending each ancestor prefix.
-                                    let cur = self.interpreter.current_package().to_string();
+                                    let cur = self.current_package().to_string();
                                     if cur.is_empty() || cur == "GLOBAL" {
                                         return None;
                                     }
@@ -1050,7 +1075,7 @@ impl VM {
                         // Only apply when the qualifier matches the current package
                         // (i.e. the name was auto-qualified by the compiler, not
                         // explicitly written as a package-qualified access).
-                        let cur = self.interpreter.current_package().to_string();
+                        let cur = self.current_package().to_string();
                         if cur.is_empty() || cur == "GLOBAL" {
                             return None;
                         }
@@ -1075,7 +1100,7 @@ impl VM {
                         if name.contains("::") {
                             return None;
                         }
-                        let cur = self.interpreter.current_package().to_string();
+                        let cur = self.current_package().to_string();
                         if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
                             return None;
                         }

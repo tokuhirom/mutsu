@@ -47,18 +47,18 @@ impl Interpreter {
             }
             // If not found, try qualifying with the current package prefix
             // when the prefix package is visible in the current scope.
-            if self.current_package != "GLOBAL" {
+            if self.current_package() != "GLOBAL" {
                 let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
                     self.env.get(pkg_prefix).is_some()
                         || self
                             .env
-                            .get(&format!("{}::{}", self.current_package, pkg_prefix))
+                            .get(&format!("{}::{}", self.current_package(), pkg_prefix))
                             .is_some()
                 } else {
                     false
                 };
                 if prefix_visible {
-                    let qualified = format!("{}::{}", self.current_package, name);
+                    let qualified = format!("{}::{}", self.current_package(), name);
                     if let Some(def) = self
                         .registry()
                         .functions
@@ -71,7 +71,7 @@ impl Interpreter {
             }
             return None;
         }
-        let local = format!("{}::{}", self.current_package, name);
+        let local = format!("{}::{}", self.current_package(), name);
         self.registry()
             .functions
             .get(&Symbol::intern(&local))
@@ -85,7 +85,7 @@ impl Interpreter {
     }
 
     pub(super) fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
-        let key = Symbol::intern(&format!("{}::{}", self.current_package, name));
+        let key = Symbol::intern(&format!("{}::{}", self.current_package(), name));
         if multi {
             self.registry_mut()
                 .token_defs
@@ -196,7 +196,7 @@ impl Interpreter {
         }
         let mut defs = Vec::new();
         // Check current package and its MRO
-        let scopes_to_check = self.mro_readonly(&self.current_package);
+        let scopes_to_check = self.mro_readonly(&self.current_package());
         for scope in &scopes_to_check {
             self.collect_token_defs_for_scope(scope, name, &mut defs);
             if !defs.is_empty() {
@@ -235,7 +235,7 @@ impl Interpreter {
             return false;
         }
         // Check current package MRO
-        for scope in self.mro_readonly(&self.current_package) {
+        for scope in self.mro_readonly(&self.current_package()) {
             if self
                 .registry()
                 .proto_tokens
@@ -1734,13 +1734,13 @@ impl Interpreter {
             compiler.enclosing_package = Some(frame.package.clone());
             format!("{}::&{}", frame.package, frame.name)
         } else {
-            self.current_package.clone()
+            self.current_package()
         };
         compiler.set_current_package(scope);
         // Resolve distribution context for $?DISTRIBUTION
         compiler.current_distribution = self.current_distribution.clone().or_else(|| {
             self.package_distributions
-                .get(&self.current_package)
+                .get(&self.current_package())
                 .cloned()
         });
         let (code, compiled_fns) = compiler.compile(body);
@@ -1755,7 +1755,7 @@ impl Interpreter {
                 is_rw,
                 ..
             }) => Some(Value::make_sub(
-                Symbol::intern(&self.current_package),
+                Symbol::intern(&self.current_package()),
                 *name,
                 params.clone(),
                 param_defs.clone(),

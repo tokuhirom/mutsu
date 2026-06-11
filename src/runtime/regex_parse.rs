@@ -3823,7 +3823,7 @@ impl Interpreter {
                                             | "ident"
                                     );
                                     let grammar_overrides_builtin = is_builtin_name
-                                        && !self.current_package.is_empty()
+                                        && !self.current_package().is_empty()
                                         && self.resolve_token_defs(class_name).is_some();
                                     if grammar_overrides_builtin {
                                         RegexAtom::Named(name)
@@ -5968,7 +5968,7 @@ impl Interpreter {
                     );
                     if !is_known_builtin {
                         // Check if the name resolves as a grammar token in the current package
-                        let is_grammar_token = !self.current_package.is_empty()
+                        let is_grammar_token = !self.current_package().is_empty()
                             && self.resolve_token_defs(class_name).is_some();
                         // "No such method" is a runtime resolution failure, not a
                         // parse-time syntax error: such patterns are meant to die
@@ -6047,7 +6047,7 @@ impl Interpreter {
         };
         let mut interp = Interpreter {
             env: self.env.clone(),
-            current_package: self.current_package.clone(),
+            current_package: Arc::new(RwLock::new(self.current_package())),
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);
