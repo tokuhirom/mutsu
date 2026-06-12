@@ -589,19 +589,19 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         Value::Range(a, b) => {
             let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
         }
         Value::RangeExcl(a, b) => {
             let items: Vec<Value> = (a..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
         }
         Value::RangeExclStart(a, b) => {
             let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
         }
         Value::RangeExclBoth(a, b) => {
             let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
         }
         Value::Nil => Value::hash(HashMap::new()),
         Value::Instance {

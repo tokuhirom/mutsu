@@ -1803,7 +1803,7 @@ impl VM {
     /// to a sublist (slice). Returns `None` if the index is not a range.
     pub(super) fn resolve_range_index_slice(
         idx: &Value,
-        items: &std::sync::Arc<Vec<Value>>,
+        items: &std::sync::Arc<crate::value::ArrayData>,
         kind: crate::value::ArrayKind,
         _len: i64,
         vm: &mut VM,

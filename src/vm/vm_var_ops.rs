@@ -148,14 +148,14 @@ impl VM {
 
     pub(super) fn resolve_array_entry(
         &self,
-        items: &Arc<Vec<Value>>,
+        items: &Arc<crate::value::ArrayData>,
         kind: ArrayKind,
         idx: usize,
         default: Value,
     ) -> Value {
         match items.get(idx) {
             Some(Value::Pair(name, _)) if name == SELF_ARRAY_REF_SENTINEL => {
-                Value::Array(crate::value::Value::array_arc(items.clone().to_vec()), kind)
+                Value::Array(items.clone(), kind)
             }
             Some(Value::Pair(name, source)) if name == BOUND_ARRAY_REF_SENTINEL => {
                 let source_name = source.to_string_value();

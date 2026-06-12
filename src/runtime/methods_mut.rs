@@ -269,7 +269,7 @@ impl Interpreter {
 
     pub(crate) fn overwrite_array_bindings_by_identity(
         &mut self,
-        needle: &std::sync::Arc<Vec<Value>>,
+        needle: &std::sync::Arc<crate::value::ArrayData>,
         replacement: Value,
     ) {
         let keys: Vec<Symbol> = self
@@ -311,7 +311,7 @@ impl Interpreter {
     /// share the same array container.
     pub(crate) fn propagate_shared_array_in_instances(
         &mut self,
-        needle: &std::sync::Arc<Vec<Value>>,
+        needle: &std::sync::Arc<crate::value::ArrayData>,
         replacement: &Value,
     ) {
         let mut updates: Vec<(Symbol, String)> = Vec::new();

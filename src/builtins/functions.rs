@@ -1905,12 +1905,12 @@ fn builtin_times() -> Result<Value, RuntimeError> {
             let user = usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0;
             let sys = usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0;
             Ok(Value::Array(
-                vec![Value::Num(user), Value::Num(sys)].into(),
+                crate::value::Value::array_arc(vec![Value::Num(user), Value::Num(sys)]),
                 ArrayKind::List,
             ))
         } else {
             Ok(Value::Array(
-                vec![Value::Num(0.0), Value::Num(0.0)].into(),
+                crate::value::Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
                 ArrayKind::List,
             ))
         }
@@ -1918,7 +1918,7 @@ fn builtin_times() -> Result<Value, RuntimeError> {
     #[cfg(not(unix))]
     {
         Ok(Value::Array(
-            vec![Value::Num(0.0), Value::Num(0.0)].into(),
+            crate::value::Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
             ArrayKind::List,
         ))
     }
@@ -1981,7 +1981,7 @@ fn builtin_localtime_gmtime(name: &str, args: &[Value]) -> Result<Value, Runtime
         } else {
             // List context: return the 9-element list
             Ok(Value::Array(
-                vec![
+                crate::value::Value::array_arc(vec![
                     Value::Int(sec as i64),
                     Value::Int(min as i64),
                     Value::Int(hour as i64),
@@ -1991,8 +1991,7 @@ fn builtin_localtime_gmtime(name: &str, args: &[Value]) -> Result<Value, Runtime
                     Value::Int(wday as i64),
                     Value::Int(yday as i64),
                     Value::Int(isdst as i64),
-                ]
-                .into(),
+                ]),
                 ArrayKind::List,
             ))
         }

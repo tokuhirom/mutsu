@@ -82,7 +82,7 @@ impl Interpreter {
         // Second arg is the type check cache (array of types)
         let cache = if let Some(cache_val) = args.get(1) {
             match cache_val {
-                Value::Array(items, _) => Some(items.as_ref().clone()),
+                Value::Array(items, _) => Some(items.to_vec()),
                 _ => None,
             }
         } else {

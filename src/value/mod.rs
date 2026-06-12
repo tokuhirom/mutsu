@@ -1386,14 +1386,6 @@ impl From<Vec<Value>> for ArrayData {
     }
 }
 
-/// Lets `vec.into()` build the backing Arc directly at the many
-/// `Value::Array(<vec>.into(), kind)` construction sites.
-impl From<Vec<Value>> for Arc<ArrayData> {
-    fn from(items: Vec<Value>) -> Self {
-        Arc::new(ArrayData::new(items))
-    }
-}
-
 /// Array equality ignores container metadata — only the elements matter
 /// (preserves the prior `Arc<Vec<Value>>` PartialEq semantics).
 impl PartialEq for ArrayData {

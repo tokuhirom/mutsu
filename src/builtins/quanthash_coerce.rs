@@ -348,7 +348,18 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         }
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
-        Value::Array(ref items, crate::value::ArrayKind::List) | Value::Seq(ref items) => {
+        Value::Array(ref items, crate::value::ArrayKind::List) => {
+            for item in items.iter() {
+                flatten_into(
+                    &mut counts,
+                    &mut original_keys,
+                    &mut has_non_str_keys,
+                    item,
+                    true,
+                )?;
+            }
+        }
+        Value::Seq(ref items) => {
             for item in items.iter() {
                 flatten_into(
                     &mut counts,
