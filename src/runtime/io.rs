@@ -2968,7 +2968,7 @@ impl Interpreter {
         // properties: a non-empty hash so the value is truthy.
         let mut props = HashMap::new();
         props.insert("name".to_string(), Value::str_from("mutsu"));
-        attrs.insert("properties".to_string(), Value::Hash(props.into()));
+        attrs.insert("properties".to_string(), Value::hash(props));
         // config: a non-empty hash so the value is truthy.
         let mut config = HashMap::new();
         config.insert("name".to_string(), Value::str_from("mutsu"));
@@ -2979,7 +2979,7 @@ impl Interpreter {
             "0"
         };
         config.insert("be".to_string(), Value::str_from(be_val));
-        attrs.insert("config".to_string(), Value::Hash(config.into()));
+        attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("VM"), attrs)
     }
 

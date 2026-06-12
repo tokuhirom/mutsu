@@ -1187,6 +1187,70 @@ impl ArrayKind {
     }
 }
 
+/// Backing storage for `Value::Hash`. Bundles the key/value map with its
+/// container type metadata (element/key types) and object-hash original keys,
+/// so the metadata travels WITH the hash through copy-on-write and rebuilds —
+/// replacing the fragile `Arc::as_ptr`-keyed side tables (the root of the
+/// intermittent typed-hash / object-hash flaky). `Deref`s to the inner map so
+/// the overwhelming majority of read sites (`.get`/`.iter`/`.len`/`.values`/…)
+/// are unchanged; only structural mutation/rebuild sites touch the wrapper.
+#[derive(Debug, Clone, Default)]
+pub struct HashData {
+    pub map: HashMap<String, Value>,
+    /// Element value-type constraint (e.g. `Int` for `my Int %h`), if any.
+    pub value_type: Option<String>,
+    /// Object-hash key-type constraint (e.g. `Mu` for `my %h{Mu}`), if any.
+    /// `Some(..)` marks this as an object hash (`.WHICH`-keyed).
+    pub key_type: Option<String>,
+    /// For object hashes / typed-key hashes: maps each stored `.WHICH` key
+    /// string back to the original key object (so `.keys`/subscript see the
+    /// real key, not the WHICH string).
+    pub original_keys: Option<HashMap<String, Value>>,
+}
+
+impl HashData {
+    pub fn new(map: HashMap<String, Value>) -> Self {
+        HashData {
+            map,
+            value_type: None,
+            key_type: None,
+            original_keys: None,
+        }
+    }
+
+    /// Whether any container metadata is attached (type or object-hash keys).
+    pub fn has_meta(&self) -> bool {
+        self.value_type.is_some() || self.key_type.is_some() || self.original_keys.is_some()
+    }
+}
+
+impl std::ops::Deref for HashData {
+    type Target = HashMap<String, Value>;
+    fn deref(&self) -> &HashMap<String, Value> {
+        &self.map
+    }
+}
+
+impl std::ops::DerefMut for HashData {
+    fn deref_mut(&mut self) -> &mut HashMap<String, Value> {
+        &mut self.map
+    }
+}
+
+impl From<HashMap<String, Value>> for HashData {
+    fn from(map: HashMap<String, Value>) -> Self {
+        HashData::new(map)
+    }
+}
+
+/// Hash equality ignores container metadata — only the key/value map matters
+/// (preserves the prior `Arc<HashMap>` PartialEq semantics).
+impl PartialEq for HashData {
+    fn eq(&self, other: &Self) -> bool {
+        self.map == other.map
+    }
+}
+
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnumValue {
@@ -1244,7 +1308,7 @@ pub enum Value {
     },
     /// Distinguishes Array, List, and their itemized (Scalar-wrapped) variants.
     Array(Arc<Vec<Value>>, ArrayKind),
-    Hash(Arc<HashMap<String, Value>>),
+    Hash(Arc<HashData>),
     Rat(i64, i64),
     FatRat(i64, i64),
     BigRat(NumBigInt, NumBigInt),
@@ -1390,7 +1454,7 @@ pub enum Value {
     /// Assigning to it writes back to the parent hash via interior mutation.
     /// Indexing it autovivifies (creates an empty Hash at the key if missing).
     HashSlotRef {
-        hash: Arc<HashMap<String, Value>>,
+        hash: Arc<HashData>,
         key: String,
     },
     /// A reference to an array slot, used for binding to array elements.
@@ -2461,8 +2525,18 @@ impl Value {
     pub fn shaped_array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(items), ArrayKind::Shaped)
     }
-    pub fn hash(map: HashMap<String, Value>) -> Self {
-        Value::Hash(Arc::new(map))
+    /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
+    /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
+    /// preserved) via `Into<HashData>`.
+    pub fn hash(map: impl Into<HashData>) -> Self {
+        Value::Hash(Arc::new(map.into()))
+    }
+
+    /// Build an `Arc<HashData>` from a map or `HashData`. Lets call sites that
+    /// constructed `Value::Hash(Arc::new(x))` keep their shape as
+    /// `Value::Hash(Value::hash_arc(x))` while the variant moved to `HashData`.
+    pub fn hash_arc(map: impl Into<HashData>) -> Arc<HashData> {
+        Arc::new(map.into())
     }
 
     /// Coerce a value into item context (`.item` method).
@@ -2671,9 +2745,9 @@ impl Value {
     /// Uses the same interior-mutation approach as `hash_autovivify`.
     pub fn hash_assign_at(&self, key: &str, val: Value) -> Option<Value> {
         if let Value::Hash(arc) = self {
-            let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+            let ptr = Arc::as_ptr(arc) as *mut HashData;
             unsafe {
-                Value::hash_insert_through(&mut *ptr, key.to_string(), val.clone());
+                Value::hash_insert_through(&mut (*ptr).map, key.to_string(), val.clone());
             }
             Some(val)
         } else {
@@ -2701,9 +2775,9 @@ impl Value {
     /// Uses interior mutation (same as hash_autovivify).
     pub fn hash_slot_write(&self, val: Value) {
         if let Value::HashSlotRef { hash, key } = self {
-            let ptr = Arc::as_ptr(hash) as *mut HashMap<String, Value>;
+            let ptr = Arc::as_ptr(hash) as *mut HashData;
             unsafe {
-                Value::hash_insert_through(&mut *ptr, key.clone(), val);
+                Value::hash_insert_through(&mut (*ptr).map, key.clone(), val);
             }
         }
     }
@@ -2724,9 +2798,9 @@ impl Value {
             };
             // Now write the value to the inner hash at the given key
             if let Value::Hash(arc) = &inner_hash {
-                let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+                let ptr = Arc::as_ptr(arc) as *mut HashData;
                 unsafe {
-                    (*ptr).insert(key.clone(), val);
+                    (*ptr).map.insert(key.clone(), val);
                 }
             }
         }

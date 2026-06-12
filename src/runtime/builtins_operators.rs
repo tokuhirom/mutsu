@@ -1419,7 +1419,7 @@ impl Interpreter {
             Value::Seq(items) => Ok(Value::array(items.as_ref().clone())),
             // xx thunks the LHS: each repetition must be an independent copy
             Value::Array(items, kind) => Ok(Value::Array(Arc::new(items.as_ref().clone()), *kind)),
-            Value::Hash(map) => Ok(Value::Hash(Arc::new(map.as_ref().clone()))),
+            Value::Hash(map) => Ok(Value::Hash(Value::hash_arc(map.as_ref().clone()))),
             _ => Ok(left.clone()),
         }
     }

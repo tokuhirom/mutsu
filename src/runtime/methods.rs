@@ -592,7 +592,7 @@ impl Interpreter {
                 Value::Package(crate::symbol::Symbol::intern("GLOBAL")),
             );
             let mut handle_attrs = std::collections::HashMap::new();
-            handle_attrs.insert("unit".to_string(), Value::Hash(unit_hash.into()));
+            handle_attrs.insert("unit".to_string(), Value::hash(unit_hash));
             return Ok(Value::make_instance(
                 crate::symbol::Symbol::intern("CompUnit::Handle"),
                 handle_attrs,
@@ -1128,7 +1128,7 @@ impl Interpreter {
                     _ => {}
                 }
             }
-            return Ok(Value::Hash(Arc::new(new_map)));
+            return Ok(Value::Hash(Value::hash_arc(new_map)));
         }
         // IO::Special.new("<STDOUT>")
         if let Value::Package(name) = &target

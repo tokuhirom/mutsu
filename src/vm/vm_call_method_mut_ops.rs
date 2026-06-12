@@ -884,11 +884,11 @@ impl VM {
                             .container_type_metadata(inner_target)
                             .clone();
                         let mut hash = match inner_target {
-                            Value::Hash(map) => (**map).clone(),
+                            Value::Hash(map) => map.map.clone(),
                             _ => std::collections::HashMap::new(),
                         };
                         hash.insert(key, value.clone());
-                        let new_hash = Value::Hash(Arc::new(hash));
+                        let new_hash = Value::Hash(Value::hash_arc(hash));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
                             value_type: "Any".to_string(),
                             key_type: None,
@@ -965,7 +965,7 @@ impl VM {
                         hash.insert(key, value.clone());
                         self.interpreter
                             .env_mut()
-                            .insert(target_name.to_string(), Value::Hash(Arc::new(hash)));
+                            .insert(target_name.to_string(), Value::Hash(Value::hash_arc(hash)));
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());
@@ -996,7 +996,7 @@ impl VM {
                         };
                         let mut new_map = (**map).clone();
                         new_map.remove(&key);
-                        let new_hash = Value::Hash(Arc::new(new_map));
+                        let new_hash = Value::Hash(Value::hash_arc(new_map));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
                             value_type: "Any".to_string(),
                             key_type: None,
@@ -1094,7 +1094,7 @@ impl VM {
                         } else {
                             new_map.insert(key, value.clone());
                         }
-                        let new_hash = Value::Hash(Arc::new(new_map));
+                        let new_hash = Value::Hash(Value::hash_arc(new_map));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
                             value_type: "Any".to_string(),
                             key_type: None,
@@ -1128,9 +1128,10 @@ impl VM {
                         } else {
                             new_map.insert(key, value.clone());
                         }
-                        self.interpreter
-                            .env_mut()
-                            .insert(target_name.to_string(), Value::Hash(Arc::new(new_map)));
+                        self.interpreter.env_mut().insert(
+                            target_name.to_string(),
+                            Value::Hash(Value::hash_arc(new_map)),
+                        );
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());

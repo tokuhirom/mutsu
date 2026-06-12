@@ -1256,10 +1256,7 @@ impl Interpreter {
             for (key, value) in std::env::vars() {
                 env_hash.insert(key, builtins_collection::builtin_val(&[Value::str(value)]));
             }
-            env.insert(
-                "%*ENV".to_string(),
-                Value::Hash(std::sync::Arc::new(env_hash)),
-            );
+            env.insert("%*ENV".to_string(), Value::Hash(Value::hash_arc(env_hash)));
         }
         env.insert(
             "*SCHEDULER".to_string(),

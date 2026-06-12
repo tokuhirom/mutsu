@@ -452,7 +452,7 @@ impl VM {
         match target {
             Value::Hash(..) => {}
             Value::Nil | Value::Package(..) => {
-                *target = Value::Hash(std::sync::Arc::new(std::collections::HashMap::new()));
+                *target = Value::Hash(Value::hash_arc(std::collections::HashMap::new()));
             }
             _ => {}
         }

@@ -1089,7 +1089,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         match method {
             "meta" => {
                 return Some(Ok(attributes.as_map().get("$!meta").cloned().unwrap_or(
-                    Value::Hash(std::sync::Arc::new(std::collections::HashMap::new())),
+                    Value::Hash(Value::hash_arc(std::collections::HashMap::new())),
                 )));
             }
             "Str" | "gist" => {

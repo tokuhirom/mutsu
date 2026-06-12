@@ -1388,7 +1388,7 @@ impl VM {
                 let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right)?;
                 result.insert(key, v);
             }
-            return Ok(Value::Hash(std::sync::Arc::new(result)));
+            return Ok(Value::Hash(Value::hash_arc(result)));
         }
         // Hyper op between a hash and a scalar: apply the op to each value with
         // the scalar broadcast over every key (`%h >>*>> 4`, `2 <<**<< %h`).
@@ -1401,7 +1401,7 @@ impl VM {
                 let v = self.hyper_op_pair(op, value, right, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            return Ok(Value::Hash(std::sync::Arc::new(result)));
+            return Ok(Value::Hash(Value::hash_arc(result)));
         }
         if let Value::Hash(map) = &right
             && !Self::is_listy(left)
@@ -1412,7 +1412,7 @@ impl VM {
                 let v = self.hyper_op_pair(op, left, value, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            return Ok(Value::Hash(std::sync::Arc::new(result)));
+            return Ok(Value::Hash(Value::hash_arc(result)));
         }
         // At least one side is a (non-hash) Iterable: distribute element-wise,
         // recursing so nested Iterables/Hashes are handled at every depth.
@@ -1536,7 +1536,7 @@ impl VM {
                 .collect(),
             other => return other.clone(),
         };
-        Value::Hash(std::sync::Arc::new(map))
+        Value::Hash(Value::hash_arc(map))
     }
 
     /// Rebuild a QuantHash of the given kind/mutability from a result Hash,
@@ -1910,10 +1910,10 @@ impl VM {
                 result.insert(key, v);
             }
         }
-        let result_hash = Value::Hash(std::sync::Arc::new(result));
+        let result_hash = Value::Hash(Value::hash_arc(result));
         if writeback {
             let writeback_val = if do_writeback {
-                Value::Hash(std::sync::Arc::new(mutated))
+                Value::Hash(Value::hash_arc(mutated))
             } else {
                 left.clone()
             };

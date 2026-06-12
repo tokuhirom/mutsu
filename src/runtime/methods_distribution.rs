@@ -62,7 +62,7 @@ impl Interpreter {
                 files.insert(format!("bin/{name}"), Value::str(path));
             }
         }
-        Value::Hash(Arc::new(files))
+        Value::Hash(Value::hash_arc(files))
     }
 
     /// Extract short-name and matcher fields from a depspec value.
@@ -205,7 +205,7 @@ impl Interpreter {
             let meta = if let Value::Hash(map) = &meta {
                 let mut m = (**map).clone();
                 m.insert("files".to_string(), files_hash.clone());
-                Value::Hash(Arc::new(m))
+                Value::Hash(Value::hash_arc(m))
             } else {
                 meta
             };
@@ -231,13 +231,16 @@ impl Interpreter {
                     meta_map.insert("name".to_string(), Value::str(short_name.clone()));
                     let mut provides_map = HashMap::new();
                     provides_map.insert(short_name.clone(), Value::str(format!("{relative}{ext}")));
-                    meta_map.insert("provides".to_string(), Value::Hash(Arc::new(provides_map)));
-                    let meta = Value::Hash(Arc::new(meta_map));
+                    meta_map.insert(
+                        "provides".to_string(),
+                        Value::Hash(Value::hash_arc(provides_map)),
+                    );
+                    let meta = Value::Hash(Value::hash_arc(meta_map));
                     let files_hash = self.build_dist_files_hash(prefix, &meta);
                     let meta = if let Value::Hash(map) = &meta {
                         let mut m = (**map).clone();
                         m.insert("files".to_string(), files_hash.clone());
-                        Value::Hash(Arc::new(m))
+                        Value::Hash(Value::hash_arc(m))
                     } else {
                         meta
                     };
@@ -268,7 +271,7 @@ impl Interpreter {
         let meta = if let Value::Hash(map) = &meta {
             let mut m = (**map).clone();
             m.insert("files".to_string(), files_hash.clone());
-            Value::Hash(Arc::new(m))
+            Value::Hash(Value::hash_arc(m))
         } else {
             meta
         };
@@ -419,7 +422,7 @@ impl Interpreter {
                 }
                 let mut inner = HashMap::new();
                 inner.insert("file".to_string(), Value::str(source_id));
-                installed_provides.insert(k.clone(), Value::Hash(Arc::new(inner)));
+                installed_provides.insert(k.clone(), Value::Hash(Value::hash_arc(inner)));
             }
         }
         let mut installed_resources = HashMap::new();
@@ -474,18 +477,18 @@ impl Interpreter {
             other => other,
         };
         let mut meta_map = match meta_inner {
-            Value::Hash(map) => (**map).clone(),
+            Value::Hash(map) => map.map.clone(),
             _ => HashMap::new(),
         };
         meta_map.insert(
             "provides".to_string(),
-            Value::Hash(Arc::new(installed_provides)),
+            Value::Hash(Value::hash_arc(installed_provides)),
         );
         let mut all_files = installed_resources;
         all_files.extend(installed_bin);
-        meta_map.insert("files".to_string(), Value::Hash(Arc::new(all_files)));
+        meta_map.insert("files".to_string(), Value::Hash(Value::hash_arc(all_files)));
         meta_map.insert("dist-id".to_string(), Value::str(dist_id.clone()));
-        let meta_value = Value::Hash(Arc::new(meta_map));
+        let meta_value = Value::Hash(Value::hash_arc(meta_map));
         let json_str = value_to_json_string(&meta_value);
         let dist_file = dist_dir.join(format!("{dist_id}.json"));
         std::fs::write(&dist_file, json_str)
@@ -905,7 +908,7 @@ fn parse_json_object(s: &str) -> Result<(Value, &str), String> {
     let mut map = HashMap::new();
     let mut s = s.trim_start();
     if let Some(rest) = s.strip_prefix('}') {
-        return Ok((Value::Hash(Arc::new(map)), rest));
+        return Ok((Value::Hash(Value::hash_arc(map)), rest));
     }
     loop {
         let s2 = s.trim_start();
@@ -922,7 +925,7 @@ fn parse_json_object(s: &str) -> Result<(Value, &str), String> {
         map.insert(key, val);
         let rest = rest.trim_start();
         if let Some(after) = rest.strip_prefix('}') {
-            return Ok((Value::Hash(Arc::new(map)), after));
+            return Ok((Value::Hash(Value::hash_arc(map)), after));
         }
         if let Some(after) = rest.strip_prefix(',') {
             s = after;

@@ -314,7 +314,7 @@ impl Interpreter {
         if let Value::CustomType { name, .. } = target {
             return Ok(self.package_stash_value(&name.resolve()));
         }
-        Ok(Value::Hash(Arc::new(HashMap::new())))
+        Ok(Value::Hash(Value::hash_arc(HashMap::new())))
     }
 
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance

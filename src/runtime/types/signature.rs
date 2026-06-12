@@ -178,7 +178,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
 ) -> std::collections::HashMap<String, Value> {
     match value {
         Value::Capture { named, .. } => named.clone(),
-        Value::Hash(map) => (**map).clone(),
+        Value::Hash(map) => map.map.clone(),
         Value::Pair(key, val) => {
             let mut out = std::collections::HashMap::new();
             out.insert(key.clone(), *val.clone());

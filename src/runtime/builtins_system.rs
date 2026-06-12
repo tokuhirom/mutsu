@@ -1824,7 +1824,7 @@ mod tests {
     fn extract_proc_options_reads_win_verbatim_hash() {
         let mut map = HashMap::new();
         map.insert("win-verbatim-args".to_string(), Value::Bool(true));
-        let args = vec![Value::Hash(map.into())];
+        let args = vec![Value::hash(map)];
         let opts = Interpreter::extract_proc_options(&args, 0);
         assert!(opts.win_verbatim_args);
     }

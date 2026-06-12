@@ -676,7 +676,7 @@ impl VM {
 
     /// Extract the (hash Arc, key) from a HashSlotRef or DeferredHashAccess.
     /// For DeferredHashAccess, resolves the parent_slot to find the inner hash.
-    fn extract_hash_ref(val: &Value) -> Option<(&Arc<HashMap<String, Value>>, &str)> {
+    fn extract_hash_ref(val: &Value) -> Option<(&Arc<crate::value::HashData>, &str)> {
         match val {
             Value::HashSlotRef { hash, key } => Some((hash, key.as_str())),
             Value::DeferredHashAccess { parent_slot, key } => {

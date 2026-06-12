@@ -77,7 +77,7 @@ impl Interpreter {
     ) -> Option<(Vec<Value>, HashMap<String, Value>)> {
         match value {
             Value::Capture { positional, named } => Some((positional.clone(), named.clone())),
-            Value::Hash(map) => Some((Vec::new(), (**map).clone())),
+            Value::Hash(map) => Some((Vec::new(), map.map.clone())),
             Value::Set(items, _) => Some((
                 Vec::new(),
                 items

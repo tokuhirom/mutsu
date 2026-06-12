@@ -398,7 +398,7 @@ impl Interpreter {
                 let new_val = apply_hyper_prefix(self, &routine, v.clone())?;
                 result_map.insert(k.clone(), new_val);
             }
-            let result = Value::Hash(std::sync::Arc::new(result_map));
+            let result = Value::Hash(Value::hash_arc(result_map));
             if mutating {
                 self.overwrite_hash_bindings_by_identity(map, result.clone());
             }

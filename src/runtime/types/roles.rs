@@ -365,7 +365,7 @@ impl Interpreter {
                     // Default value based on sigil: @ -> [], % -> {}, $ -> Nil
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
-                        '%' => Value::Hash(std::sync::Arc::new(HashMap::new())),
+                        '%' => Value::Hash(Value::hash_arc(HashMap::new())),
                         _ => Value::Nil,
                     }
                 };

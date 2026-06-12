@@ -540,14 +540,14 @@ impl Interpreter {
 
     fn extrema_from_hash(
         &mut self,
-        map: &std::sync::Arc<HashMap<String, Value>>,
+        map: &std::sync::Arc<crate::value::HashData>,
         by: Option<Value>,
         want_max: bool,
     ) -> Result<Value, RuntimeError> {
         let mut best_pair: Option<Value> = None;
         let mut best_key: Option<Value> = None;
 
-        for (k, v) in map.as_ref() {
+        for (k, v) in map.as_ref().iter() {
             let pair = Value::Pair(k.clone(), Box::new(v.clone()));
             let key = if let Some(by_callable) = &by {
                 match self.call_sub_value(by_callable.clone(), vec![pair.clone()], true) {
@@ -1906,7 +1906,7 @@ impl Interpreter {
         }
 
         let mut buckets: HashMap<String, Value> = match into_target.as_ref() {
-            Some(Value::Hash(map)) => map.as_ref().clone(),
+            Some(Value::Hash(map)) => map.as_ref().map.clone(),
             _ => HashMap::new(),
         };
         let mut bag_counts: Option<HashMap<String, i64>> = match into_target.as_ref() {
@@ -2248,7 +2248,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::Hash(std::sync::Arc::new(result)))
+                Ok(Value::Hash(Value::hash_arc(result)))
             }
             // Single non-iterable value: try the block on it directly
             _ => self.duckmap_element(block, target),
@@ -2346,7 +2346,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::Hash(std::sync::Arc::new(result)))
+                Ok(Value::Hash(Value::hash_arc(result)))
             }
             // Leaf value: apply the block
             _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
@@ -2425,7 +2425,7 @@ impl Interpreter {
                         for (k, v) in map.iter() {
                             result.insert(k.clone(), self.duckmap_element(block, v)?);
                         }
-                        Ok(Value::Hash(std::sync::Arc::new(result)))
+                        Ok(Value::Hash(Value::hash_arc(result)))
                     }
                     // Not iterable — return unchanged
                     _ => Ok(value.clone()),

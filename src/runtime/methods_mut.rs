@@ -70,7 +70,7 @@ impl Interpreter {
                 true
             }
             Value::Hash(map) => {
-                updated.extend((*map).clone());
+                updated.extend(map.map.clone());
                 true
             }
             _ => false,
@@ -156,7 +156,7 @@ impl Interpreter {
         let current = current.map(Value::into_descalarized);
         match current {
             Some(Value::Hash(existing_hash)) => {
-                Self::normalize_hash_like_assignment((*existing_hash).clone(), value)
+                Self::normalize_hash_like_assignment(existing_hash.map.clone(), value)
             }
             Some(Value::Array(..)) => super::coerce_to_array(value),
             _ => value,
@@ -274,7 +274,7 @@ impl Interpreter {
 
     pub(crate) fn overwrite_hash_bindings_by_identity(
         &mut self,
-        needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        needle: &std::sync::Arc<crate::value::HashData>,
         replacement: Value,
     ) {
         let keys: Vec<Symbol> = self
@@ -323,7 +323,7 @@ impl Interpreter {
     /// Same as `propagate_shared_array_in_instances` but for Hash attributes.
     pub(crate) fn propagate_shared_hash_in_instances(
         &mut self,
-        needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        needle: &std::sync::Arc<crate::value::HashData>,
         replacement: &Value,
     ) {
         let mut updates: Vec<(Symbol, String)> = Vec::new();
@@ -669,11 +669,11 @@ impl Interpreter {
                 }
                 let key = method_args[0].to_string_value();
                 let mut hash = match inner {
-                    Value::Hash(map) => (**map).clone(),
+                    Value::Hash(map) => map.map.clone(),
                     _ => std::collections::HashMap::new(),
                 };
                 hash.insert(key, value.clone());
-                let new_hash = Value::Hash(std::sync::Arc::new(hash));
+                let new_hash = Value::Hash(Value::hash_arc(hash));
                 // Propagate container type metadata to avoid stale pointer reuse
                 let meta = old_meta.unwrap_or(ContainerTypeInfo {
                     value_type: "Any".to_string(),
@@ -885,9 +885,7 @@ impl Interpreter {
                     *cell.lock().unwrap() = value.clone();
                     return Ok(value);
                 }
-                let mut selected_hash: Option<
-                    std::sync::Arc<std::collections::HashMap<String, Value>>,
-                > = None;
+                let mut selected_hash: Option<std::sync::Arc<crate::value::HashData>> = None;
                 let mut selected_array: Option<std::sync::Arc<Vec<Value>>> = None;
 
                 if let Some(var_name) = target_var
@@ -2486,14 +2484,14 @@ impl Interpreter {
 
                     // Fallback: create from target value
                     let mut hash: std::collections::HashMap<String, Value> = match &target {
-                        Value::Hash(h, ..) => (**h).clone(),
+                        Value::Hash(h, ..) => h.map.clone(),
                         _ => std::collections::HashMap::new(),
                     };
                     let pairs = Self::hash_push_collect_pairs(args);
                     for (k, v) in pairs {
                         Self::hash_push_insert(&mut hash, k, v, is_push);
                     }
-                    let result = Value::Hash(Arc::new(hash));
+                    let result = Value::Hash(Value::hash_arc(hash));
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }

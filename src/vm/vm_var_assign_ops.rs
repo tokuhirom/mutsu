@@ -78,7 +78,7 @@ impl VM {
             Value::Hash(hash) if matches!(idx, Value::Str(_)) => {
                 let mut updated = (**hash).clone();
                 updated.insert(idx.to_string_value(), val.clone());
-                *attr_value = Value::Hash(Arc::new(updated));
+                *attr_value = Value::Hash(Value::hash_arc(updated));
                 true
             }
             Value::Nil if !matches!(idx, Value::Str(_)) => {
@@ -102,7 +102,7 @@ impl VM {
             Value::Nil if matches!(idx, Value::Str(_)) => {
                 let mut updated = std::collections::HashMap::new();
                 updated.insert(idx.to_string_value(), val.clone());
-                *attr_value = Value::Hash(Arc::new(updated));
+                *attr_value = Value::Hash(Value::hash_arc(updated));
                 true
             }
             _ => false,
@@ -319,15 +319,17 @@ impl VM {
                 new_map.insert(k.clone(), v.clone());
             }
             // Create the new Arc with the map
-            let result_arc = Arc::new(new_map);
+            let result_arc = Value::hash_arc(new_map);
             // Now fix up the circular references: set the placeholder values
             // to point to the result_arc itself.
-            let map = Arc::as_ptr(&result_arc) as *mut HashMap<String, Value>;
+            let map = Arc::as_ptr(&result_arc) as *mut crate::value::HashData;
             for key in &circular_keys {
                 // SAFETY: We just created result_arc and hold the only reference,
                 // so no other thread can access it.
                 unsafe {
-                    (*map).insert(key.clone(), Value::Hash(result_arc.clone()));
+                    (*map)
+                        .map
+                        .insert(key.clone(), Value::Hash(result_arc.clone()));
                 }
             }
             *new_arc = result_arc;
@@ -398,18 +400,20 @@ impl VM {
                             new_map.insert(k.clone(), hv.clone());
                         }
                     }
-                    let new_hash_arc = Arc::new(new_map);
+                    let new_hash_arc = Value::hash_arc(new_map);
                     let new_hash_ptr = Arc::as_ptr(&new_hash_arc) as usize;
                     // Mark the new hash as seen so recursive calls don't
                     // re-enter it via self-referencing values.
                     seen_hashes.push(new_hash_ptr);
                     // SAFETY: We just created new_hash_arc and hold the only ref.
-                    let map_ptr = Arc::as_ptr(&new_hash_arc) as *mut HashMap<String, Value>;
+                    let map_ptr = Arc::as_ptr(&new_hash_arc) as *mut crate::value::HashData;
                     unsafe {
                         for key in &self_ref_keys {
-                            (*map_ptr).insert(key.clone(), Value::Hash(new_hash_arc.clone()));
+                            (*map_ptr)
+                                .map
+                                .insert(key.clone(), Value::Hash(new_hash_arc.clone()));
                         }
-                        for hv in (*map_ptr).values_mut() {
+                        for hv in (*map_ptr).map.values_mut() {
                             Self::replace_array_refs_in_value(
                                 hv,
                                 old_ptr,
@@ -646,7 +650,7 @@ impl VM {
                     let mut flattened = Vec::new();
                     for item in items.iter() {
                         if let Value::Hash(h) = item {
-                            for (k, v) in h.as_ref() {
+                            for (k, v) in h.as_ref().iter() {
                                 flattened.push(Value::Pair(k.clone(), Box::new(v.clone())));
                             }
                         } else {
@@ -1920,7 +1924,11 @@ impl VM {
         {
             match container_value {
                 Value::Hash(h) => {
-                    Value::hash_insert_through(Arc::make_mut(h), key.clone(), new_val.clone());
+                    Value::hash_insert_through(
+                        &mut Arc::make_mut(h).map,
+                        key.clone(),
+                        new_val.clone(),
+                    );
                     true
                 }
                 Value::Array(arr, ..) => {
@@ -2221,7 +2229,11 @@ impl VM {
                     self.locals[slot] = Value::Nil;
                 }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
-                    Value::hash_insert_through(Arc::make_mut(hash), key.clone(), val.clone());
+                    Value::hash_insert_through(
+                        &mut Arc::make_mut(hash).map,
+                        key.clone(),
+                        val.clone(),
+                    );
                 }
                 // Restore the local slot to point to the (now mutated) env Arc
                 if let Some(slot) = local_slot
@@ -3188,9 +3200,11 @@ impl VM {
                             let use_inplace = Arc::strong_count(hash) > 1
                                 && (!var_name.starts_with('%') || is_bound_hash_var);
                             let h: &mut std::collections::HashMap<String, Value> = if use_inplace {
-                                unsafe { &mut *(Arc::as_ptr(hash) as *mut _) }
+                                unsafe {
+                                    &mut (*(Arc::as_ptr(hash) as *mut crate::value::HashData)).map
+                                }
                             } else {
-                                Arc::make_mut(hash)
+                                &mut Arc::make_mut(hash).map
                             };
                             if bind_mode && let Some(Some(source_name)) = bind_sources.first() {
                                 pending_source_update = Some((source_name.clone(), val.clone()));
@@ -3881,7 +3895,7 @@ impl VM {
                 }
             }
             Value::Hash(h) => {
-                Value::hash_insert_through(Arc::make_mut(h), outer_key.to_string(), val);
+                Value::hash_insert_through(&mut Arc::make_mut(h).map, outer_key.to_string(), val);
             }
             _ => {}
         }
@@ -6309,7 +6323,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            self.stack.push(Value::Hash(Arc::new(entries)));
+            self.stack.push(Value::Hash(Value::hash_arc(entries)));
             return;
         }
         if name.strip_suffix("::") == Some("OUR") {
@@ -6318,7 +6332,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(key);
                 entries.insert(display_key, val.clone());
             }
-            self.stack.push(Value::Hash(Arc::new(entries)));
+            self.stack.push(Value::Hash(Value::hash_arc(entries)));
             return;
         }
         if let Some(package) = name.strip_suffix("::")
@@ -6346,7 +6360,7 @@ impl VM {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
-        self.stack.push(Value::Hash(Arc::new(entries)));
+        self.stack.push(Value::Hash(Value::hash_arc(entries)));
     }
 
     /// Build a pseudo-stash hash for a given pseudo-package name.
@@ -6362,7 +6376,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            return Value::Hash(Arc::new(entries));
+            return Value::Hash(Value::hash_arc(entries));
         }
         if name == "OUR" {
             let mut entries: HashMap<String, Value> = HashMap::new();
@@ -6370,7 +6384,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(key);
                 entries.insert(display_key, val.clone());
             }
-            return Value::Hash(Arc::new(entries));
+            return Value::Hash(Value::hash_arc(entries));
         }
         if name != "MY" && name != "LEXICAL" {
             return self.interpreter.package_stash_value(name);
@@ -6391,7 +6405,7 @@ impl VM {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
-        Value::Hash(Arc::new(entries))
+        Value::Hash(Value::hash_arc(entries))
     }
 
     /// Add a sigil prefix to a variable name for display in pseudo-stash.
