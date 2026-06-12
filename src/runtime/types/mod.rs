@@ -228,11 +228,11 @@ impl Interpreter {
                 id,
             }) = self.env.get("self").cloned()
             {
-                let updated_attrs = (*attributes).clone();
+                let mut updated_attrs = attributes.to_map();
                 updated_attrs.insert(attr_name.to_string(), value.clone());
                 self.env.insert(
                     "self".to_string(),
-                    Value::make_instance_with_id(class_name, (updated_attrs).to_map(), id),
+                    Value::write_back_sharing(&attributes, class_name, updated_attrs, id),
                 );
             }
         }

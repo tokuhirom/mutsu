@@ -620,9 +620,9 @@ impl Interpreter {
         }
 
         let Value::Instance {
-            class_name,
             attributes,
             id: target_id,
+            ..
         } = &target
         else {
             // Fallback: just call the method on the accessor result
@@ -653,14 +653,10 @@ impl Interpreter {
         let new_value = self.env.get(&temp_var).cloned().unwrap_or(result.clone());
         self.env.remove(&temp_var);
 
-        // Update the instance attribute
+        // Update the instance attribute in the live shared cell
         let mut updated = attributes.to_map();
         updated.insert(attr_key, new_value.clone());
-        let cn = *class_name;
-        let tid = *target_id;
-
-        // Propagate to all env bindings referencing this instance
-        self.overwrite_instance_bindings_by_identity(&cn.resolve(), tid, updated);
+        attributes.commit_attrs(updated);
 
         // Also propagate the array/hash change to all instances sharing
         // the same Arc (handles clone semantics).

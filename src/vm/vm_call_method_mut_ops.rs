@@ -1723,10 +1723,10 @@ impl VM {
             }
             bytes
         };
-        // Build updated attributes and write back by instance identity (so aliases
-        // observing the same buf see the mutation), then refresh the receiver
-        // binding to match the interpreter's `env.insert(target_var, ...)`.
-        let updated_attrs = attributes.as_ref().clone();
+        // Write the updated bytes straight into the receiver's live shared cell
+        // (so aliases observing the same buf see the mutation), then refresh the
+        // receiver binding to match the interpreter's `env.insert(target_var, ...)`.
+        let mut updated_attrs = attributes.to_map();
         updated_attrs.insert(
             "bytes".to_string(),
             Value::array(
@@ -1736,12 +1736,7 @@ impl VM {
                     .collect(),
             ),
         );
-        self.interpreter.overwrite_instance_bindings_by_identity(
-            &cn,
-            *id,
-            (updated_attrs.clone()).to_map(),
-        );
-        let updated = Value::make_instance_with_id(*class_name, (updated_attrs).to_map(), *id);
+        let updated = Value::write_back_sharing(attributes, *class_name, updated_attrs, *id);
         self.interpreter
             .env_mut()
             .insert(target_name.to_string(), updated.clone());

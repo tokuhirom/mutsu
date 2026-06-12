@@ -1129,11 +1129,7 @@ impl Interpreter {
                         args,
                         Some(target.clone()),
                     )?;
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        *target_id,
-                        updated,
-                    );
+                    attributes.commit_attrs(updated);
                     return Ok(vec![result]);
                 } else {
                     // Private method not found -- return structured X::Method::NotFound
@@ -1154,8 +1150,12 @@ impl Interpreter {
                     // Build an invocant with the latest attributes so that
                     // `$.attr` accessor reads inside the method body see
                     // values updated by preceding calls in the MRO chain.
-                    let invocant =
-                        Value::make_instance_with_id(*class_name, attrs.clone(), *target_id);
+                    let invocant = Value::write_back_sharing(
+                        attributes,
+                        *class_name,
+                        attrs.clone(),
+                        *target_id,
+                    );
                     let (result, updated) = self.run_instance_method_resolved(
                         &class_name.resolve(),
                         &resolved_owner,
@@ -1167,11 +1167,7 @@ impl Interpreter {
                     attrs = updated;
                     out.push(result);
                 }
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    *target_id,
-                    attrs,
-                );
+                attributes.commit_attrs(attrs);
                 return Ok(out);
             }
             // If the method is defined but no multi candidate matched,

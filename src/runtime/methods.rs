@@ -710,7 +710,7 @@ impl Interpreter {
                             v,
                             Some(*class_name),
                             Some(*id),
-                            Some(attributes.as_ref().clone()),
+                            Some(attributes.clone()),
                         )
                     } else {
                         (false, None, Vec::new(), None, None, None)
@@ -749,19 +749,16 @@ impl Interpreter {
                 if is_inst {
                     let class_sym = class_sym_opt.unwrap();
                     let id = id_opt.unwrap();
-                    let updated_attrs = attrs_opt.unwrap();
-                    updated_attrs.insert(
+                    let updated_cell = attrs_opt.unwrap();
+                    let mut updated_map = updated_cell.to_map();
+                    updated_map.insert(
                         "bytes".to_string(),
                         Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
                     );
-                    self.overwrite_instance_bindings_by_identity(
-                        &cn,
-                        id,
-                        (updated_attrs.clone()).to_map(),
-                    );
-                    return Ok(Value::make_instance_with_id(
+                    return Ok(Value::write_back_sharing(
+                        &updated_cell,
                         class_sym,
-                        (updated_attrs).to_map(),
+                        updated_map,
                         id,
                     ));
                 }
@@ -810,7 +807,7 @@ impl Interpreter {
                             v,
                             Some(*class_name),
                             Some(*id),
-                            Some(attributes.as_ref().clone()),
+                            Some(attributes.clone()),
                         )
                     } else {
                         (false, None, Vec::new(), None, None, None)
@@ -849,19 +846,16 @@ impl Interpreter {
                 if is_inst {
                     let class_sym = class_sym_opt.unwrap();
                     let id = id_opt.unwrap();
-                    let updated_attrs = attrs_opt.unwrap();
-                    updated_attrs.insert(
+                    let updated_cell = attrs_opt.unwrap();
+                    let mut updated_map = updated_cell.to_map();
+                    updated_map.insert(
                         "bytes".to_string(),
                         Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
                     );
-                    self.overwrite_instance_bindings_by_identity(
-                        &cn,
-                        id,
-                        (updated_attrs.clone()).to_map(),
-                    );
-                    return Ok(Value::make_instance_with_id(
+                    return Ok(Value::write_back_sharing(
+                        &updated_cell,
                         class_sym,
-                        (updated_attrs).to_map(),
+                        updated_map,
                         id,
                     ));
                 }

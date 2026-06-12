@@ -180,14 +180,10 @@ impl Interpreter {
                         call_args,
                         Some(invocant.clone()),
                     )?;
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        *target_id,
-                        updated.clone(),
-                    );
                     (
                         result,
-                        Some(Value::make_instance_with_id(
+                        Some(Value::write_back_sharing(
+                            attributes,
                             *class_name,
                             updated,
                             *target_id,
