@@ -1089,15 +1089,14 @@ impl VM {
                         }
                     }
                 }
-                // Register container type metadata so assignment operations
+                // Embed container type metadata so assignment operations
                 // know to coerce back to BagHash/SetHash/etc.
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,
                     declared_type: Some(trait_name.clone()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&instance, info);
+                let instance = self.interpreter.tag_container_metadata(instance, info);
                 self.locals_set_by_name(code, &name_str, instance.clone());
                 self.set_env_with_main_alias(&name_str, instance.clone());
                 // Set type constraint so future assignments are coerced correctly

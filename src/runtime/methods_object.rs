@@ -2551,8 +2551,8 @@ impl Interpreter {
                     } else {
                         Value::set(elems)
                     };
-                    // Register type metadata for parameterized SetHash[T]
-                    if let Some(ref ta) = type_args
+                    // Embed type metadata for parameterized SetHash[T]
+                    let result = if let Some(ref ta) = type_args
                         && let Some(constraint) = ta.first()
                     {
                         let info = crate::runtime::ContainerTypeInfo {
@@ -2560,8 +2560,10 @@ impl Interpreter {
                             key_type: Some(constraint.clone()),
                             declared_type: Some(class_name.resolve()),
                         };
-                        self.register_container_type_metadata(&result, info);
-                    }
+                        self.tag_container_metadata(result, info)
+                    } else {
+                        result
+                    };
                     return Ok(result);
                 }
                 "Bag" | "BagHash" => {
@@ -2809,16 +2811,18 @@ impl Interpreter {
                     } else {
                         Value::mix(weights)
                     };
-                    if is_hash_variant {
-                        self.register_container_type_metadata(
-                            &result,
+                    let result = if is_hash_variant {
+                        self.tag_container_metadata(
+                            result,
                             ContainerTypeInfo {
                                 value_type: "Real".to_string(),
                                 key_type: None,
                                 declared_type: Some("MixHash".to_string()),
                             },
-                        );
-                    }
+                        )
+                    } else {
+                        result
+                    };
                     return Ok(result);
                 }
                 "Complex" => {

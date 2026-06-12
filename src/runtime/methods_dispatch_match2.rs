@@ -105,8 +105,8 @@ impl Interpreter {
                     } else {
                         result
                     };
-                    self.register_container_type_metadata(
-                        &result,
+                    let result = self.tag_container_metadata(
+                        result,
                         ContainerTypeInfo {
                             value_type: "Real".to_string(),
                             key_type: None,

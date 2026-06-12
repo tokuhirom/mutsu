@@ -1031,14 +1031,9 @@ pub struct Interpreter {
     var_hash_key_constraints: HashMap<String, String>,
     /// Type metadata for Array values (pointer-keyed, Weak-guarded).
     array_type_metadata: PtrKeyedMap<Vec<Value>, ContainerTypeInfo>,
-    /// Type metadata for Mix values (pointer-keyed, Weak-guarded).
-    mix_type_metadata: PtrKeyedMap<crate::value::MixData, ContainerTypeInfo>,
-    /// Type metadata for Set values (pointer-keyed, Weak-guarded).
-    set_type_metadata: PtrKeyedMap<crate::value::SetData, ContainerTypeInfo>,
-    /// Type metadata for Bag values (pointer-keyed, Weak-guarded).
-    bag_type_metadata: PtrKeyedMap<crate::value::BagData, ContainerTypeInfo>,
-    // Object-hash original keys are embedded in `HashData.original_keys`
-    // (Stage 2) — no side table.
+    // Hash/Set/Bag/Mix type metadata and object-hash original keys are
+    // embedded in their backing data structs (HashData/SetData/BagData/
+    // MixData) — no side tables.
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value, bool)>,
@@ -3130,9 +3125,6 @@ impl Interpreter {
             hash_defaults: PtrKeyedMap::new(),
             var_hash_key_constraints: HashMap::new(),
             array_type_metadata: PtrKeyedMap::new(),
-            mix_type_metadata: PtrKeyedMap::new(),
-            set_type_metadata: PtrKeyedMap::new(),
-            bag_type_metadata: PtrKeyedMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
@@ -4602,41 +4594,59 @@ impl Interpreter {
         })
     }
 
-    /// Write a `ContainerTypeInfo`'s type fields into a hash's embedded metadata.
-    fn apply_type_info_to_hashdata(hd: &mut crate::value::HashData, info: &ContainerTypeInfo) {
-        hd.value_type = (!info.value_type.is_empty()).then(|| info.value_type.clone());
-        hd.key_type = info.key_type.clone();
-        hd.declared_type = info.declared_type.clone();
-    }
-
     /// Attach container type metadata to `value`, returning the (possibly
-    /// rebuilt) value. For hashes the metadata is embedded in the `HashData`
-    /// (via copy-on-write `Arc::make_mut`), so callers MUST use the returned
-    /// value — store it back into the env/local slot it came from. For other
-    /// container types this defers to the Arc-pointer side tables (unchanged)
-    /// and returns the value untouched.
+    /// rebuilt) value. For hashes and Set/Bag/Mix the metadata is embedded in
+    /// the backing data struct (via copy-on-write `Arc::make_mut`), so callers
+    /// MUST use the returned value — store it back into the env/local slot it
+    /// came from. For other container types this defers to the Arc-pointer
+    /// side tables (unchanged) and returns the value untouched.
     pub(crate) fn tag_container_metadata(
         &mut self,
         value: Value,
         info: ContainerTypeInfo,
     ) -> Value {
+        // Skip the copy-on-write clone when the metadata is already present.
+        // `Arc::make_mut` on a shared container clones the backing data, which
+        // changes the container's identity (`.WHICH` is pointer-based) — so a
+        // no-op re-tag of e.g. `$map.Map` would otherwise break
+        // `$map.Map === $map`.
+        macro_rules! embed_type_info {
+            ($arc:ident, $info:ident) => {{
+                let new_vt = (!$info.value_type.is_empty()).then(|| $info.value_type.clone());
+                if $arc.value_type != new_vt
+                    || $arc.key_type != $info.key_type
+                    || $arc.declared_type != $info.declared_type
+                {
+                    let data = Arc::make_mut(&mut $arc);
+                    data.value_type = new_vt;
+                    data.key_type = $info.key_type.clone();
+                    data.declared_type = $info.declared_type.clone();
+                }
+            }};
+        }
         match value {
             Value::Hash(mut arc) => {
-                // Skip the copy-on-write clone when the metadata is already
-                // present. `Arc::make_mut` on a shared hash clones the backing
-                // `HashData`, which changes the hash's identity (`.WHICH` is
-                // pointer-based) — so a no-op re-tag of e.g. `$map.Map` would
-                // otherwise break `$map.Map === $map`.
-                let new_vt = (!info.value_type.is_empty()).then(|| info.value_type.clone());
-                if arc.value_type != new_vt
-                    || arc.key_type != info.key_type
-                    || arc.declared_type != info.declared_type
-                {
-                    Self::apply_type_info_to_hashdata(Arc::make_mut(&mut arc), &info);
-                }
+                embed_type_info!(arc, info);
                 Value::Hash(arc)
             }
-            Value::Mixin(inner, m) if matches!(inner.as_ref(), Value::Hash(_)) => {
+            Value::Set(mut arc, m) => {
+                embed_type_info!(arc, info);
+                Value::Set(arc, m)
+            }
+            Value::Bag(mut arc, m) => {
+                embed_type_info!(arc, info);
+                Value::Bag(arc, m)
+            }
+            Value::Mix(mut arc, m) => {
+                embed_type_info!(arc, info);
+                Value::Mix(arc, m)
+            }
+            Value::Mixin(inner, m)
+                if matches!(
+                    inner.as_ref(),
+                    Value::Hash(_) | Value::Set(..) | Value::Bag(..) | Value::Mix(..)
+                ) =>
+            {
                 let tagged = self.tag_container_metadata((*inner).clone(), info);
                 Value::Mixin(Arc::new(tagged), m)
             }
@@ -4654,18 +4664,17 @@ impl Interpreter {
     ) {
         match value {
             Value::Array(items, ..) => self.array_type_metadata.insert(items, info),
-            Value::Mix(items, _) => self.mix_type_metadata.insert(items, info),
-            Value::Set(items, _) => self.set_type_metadata.insert(items, info),
-            Value::Bag(items, _) => self.bag_type_metadata.insert(items, info),
-            Value::Hash(_) => {
-                // Hash type metadata is embedded in `HashData` — see
-                // `tag_container_metadata`. Reaching here means a hash flowed
-                // through the by-reference register path, which cannot embed
-                // (it has no owning slot to write back). Such sites are migrated
-                // to `tag_container_metadata`; this arm is intentionally a no-op.
+            Value::Hash(_) | Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+                // Hash/Set/Bag/Mix type metadata is embedded in the backing
+                // data struct — see `tag_container_metadata`. Reaching here
+                // means such a value flowed through the by-reference register
+                // path, which cannot embed (it has no owning slot to write
+                // back). Such sites are migrated to `tag_container_metadata`;
+                // this arm is intentionally a no-op.
                 debug_assert!(
                     false,
-                    "register_container_type_metadata called on a Hash; use tag_container_metadata"
+                    "register_container_type_metadata called on a {}; use tag_container_metadata",
+                    crate::value::what_type_name(value)
                 );
             }
             Value::Instance { id, .. } => {
@@ -4695,10 +4704,6 @@ impl Interpreter {
         {
             self.register_container_type_metadata(&arr, info.clone());
         }
-    }
-
-    pub(crate) fn set_type_metadata_get(&self, id: usize) -> Option<ContainerTypeInfo> {
-        self.set_type_metadata.get(id).cloned()
     }
 
     /// Capture a container's pointer-keyed metadata (type info + `is default`)
@@ -4762,11 +4767,25 @@ impl Interpreter {
     }
 
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
+        // Embedded-metadata readers for Set/Bag/Mix (mirrors `hashdata_type_info`).
+        macro_rules! embedded_type_info {
+            ($data:ident) => {
+                if $data.has_type_meta() {
+                    Some(ContainerTypeInfo {
+                        value_type: $data.value_type.clone().unwrap_or_default(),
+                        key_type: $data.key_type.clone(),
+                        declared_type: $data.declared_type.clone(),
+                    })
+                } else {
+                    None
+                }
+            };
+        }
         match value {
             Value::Array(items, ..) => self.array_type_metadata.get_arc(items).cloned(),
-            Value::Mix(items, _) => self.mix_type_metadata.get_arc(items).cloned(),
-            Value::Set(items, _) => self.set_type_metadata.get_arc(items).cloned(),
-            Value::Bag(items, _) => self.bag_type_metadata.get_arc(items).cloned(),
+            Value::Mix(items, _) => embedded_type_info!(items),
+            Value::Set(items, _) => embedded_type_info!(items),
+            Value::Bag(items, _) => embedded_type_info!(items),
             Value::Hash(items) => Self::hashdata_type_info(items),
             Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
             Value::Mixin(inner, _) => self.container_type_metadata(inner),
@@ -5529,9 +5548,6 @@ impl Interpreter {
             hash_defaults: self.hash_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             array_type_metadata: self.array_type_metadata.clone(),
-            mix_type_metadata: self.mix_type_metadata.clone(),
-            set_type_metadata: self.set_type_metadata.clone(),
-            bag_type_metadata: self.bag_type_metadata.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
