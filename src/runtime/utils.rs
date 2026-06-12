@@ -645,6 +645,19 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                 }
                 map.insert(str_key, *boxed_val);
             }
+            // A hash appearing as a list element (e.g. `my %c = (%h,)` or
+            // `%c = %a, %b`) contributes its key/value pairs, not a single odd
+            // element. Object-hash original keys are carried along.
+            Value::Hash(h) => {
+                for (k, v) in h.map.iter() {
+                    map.insert(k.clone(), v.clone());
+                }
+                if let Some(ok) = h.original_keys.as_ref() {
+                    for (k, orig) in ok.iter() {
+                        original_keys.insert(k.clone(), orig.clone());
+                    }
+                }
+            }
             other => {
                 let Some(value) = iter.next() else {
                     let message = format!(
