@@ -215,14 +215,23 @@ STATUS で撤回済み。
 
 - [ ] **`.VAR.^name` 束縛コンテナ反映** — `my $l := (1,2,3); $l.VAR.^name` が `Scalar`（raku `List`）。
       格納時コンテナ status が要る。
-- [ ] **配列/ハッシュ要素のセル化（COW）= Phase 2 残り** — 深い `>>++`・`deepmap(++*)`（hyper.t 330-333）/
-      object-hash。最ホット表現に触る大改修。下記「設計の鍵」を適用。（`is rw` 共有セル #2928・take-rw #2930・
+- [ ] **配列/ハッシュ要素のセル化（COW）= Phase 2 残り** — 深い `>>++`・`deepmap(++*)`（hyper.t 330-333）。
+      最ホット表現に触る大改修。下記「設計の鍵」を適用。（`is rw` 共有セル #2928・take-rw #2930・
       束縛要素セル #2902-#2925 は landed）
+- [~] **object-hash（`%h{KeyType}`）** — キー保存（original_keys）は HashData 埋め込みで **COW-stable 化済み**
+      (#2954)。mixin キー・`.new`/`.clone` 維持 (#2956)、multidim Range slice `:exists` (#2959) も landed。
+      残る `S09-hashes/objecthash.t`（非whitelist）の失敗は**型強制/構築の別系統課題**（互いに独立）:
+      ① test 3 = `%h{Any}` の Mu キー拒否 — 根は object-hash でなく **`Mu.new` が `Any` 型インスタンスを生成**
+      （`Mu.new ~~ Any` が誤 True、smartmatch 全体に波及・高リスク）。② test 21/23/24 = `Hash.push` 型チェック。
+      ③ test 37-62 を塞ぐ list→hash flatten abort = **itemization 追跡が必要**（bare `%h` は平坦化・itemized
+      `$h` は不可、mutsu は build_hash_from_items で区別不可 — メモリ `list-to-hash-flatten-itemization`、
+      #2958 revert 済）。
 - [ ] **属性セル + 属性束縛 = Phase 3** — `$!x :=` / per-attribute container template（S03-binding/attributes,
       S14-traits/attributes 5-8）。
-- [~] **型メタを Arc ポインタ keying からセルへ（Q2 項目）** — Hash は HashData 埋め込みで完全吸収 DONE (#2952)、
-      未 wrapper テーブルは Weak-guard で interim 防御 (#2953)。残 = original_keys 埋め込み（Stage 2）と
-      Array/Set/Bag/Mix の wrapper 展開（上記トラック B 参照）。
+- [~] **型メタを Arc ポインタ keying からセルへ（Q2 項目）** — Hash 完全吸収 DONE（型メタ #2952 ＋
+      original_keys Stage 2 #2954）、Set/Bag/Mix も *Data struct 埋め込み DONE (#2957)。**残 = Array の
+      ArrayData wrapper のみ**（最後の大物。`Arc::as_ptr as *mut Vec<Value>` unsafe 全監査が必須 —
+      メモリ `hashdata-layout-unsafe-cast-audit`。docs/hashdata-migration-plan.md Stage 3 節 / 上記トラック B 参照）。
 
 注: 既に通るようになった項目（観測 2026-06-08）— reduce.t 62 の `:=` 束縛リスト平坦化（`@a.elems`=3）、
 `is rw` の**基本** persistent（`f($a);f($a)`）は現状 PASS。バックログから外す。
@@ -448,12 +457,14 @@ NaN-boxing で payload 8byte 化。**各ステップで int.t 等の重量級 ro
       240 件は**全く減らず**（reconcile が native 配列のメタライフサイクルに届かない）→ これも破棄。
       **結論: Weak + name-reconcile の安価なパッチは native 配列で行き止まり。** 部分対処の積み増しでは
       family を根治できない。
-    - **本筋（次セッションはここから直接着手）**: 生ポインタ keying を**完全に廃止**し、型メタを
-      **コンテナ Value 自体に載せる**（例: `Value::Array(Arc<Vec<Value>>, ArrayKind, Option<Arc<ContainerTypeInfo>>)`、
-      Hash/Set/Bag/Mix も同様）か、**真の安定コンテナ ID**（生成時に採番し COW・再構築・`clone_for_thread`
-      を跨いで保持）。前者は Value variant 署名変更で全構築/match サイトに波及する大改修だが、副テーブルの
-      ポインタ再利用 aliasing を構造的に消せる唯一の道。hot path 全体に関わるため段階的に。再現手順・失敗
-      した2手法の詳細はメモリ `project_known_failing_tests_reclassified` 参照。
+    - **本筋（埋め込みで構造的に解消 — 大半 DONE）**: 生ポインタ keying を廃止し型メタを**コンテナ Value
+      自体に載せる**方針を採用。**Hash = HashData 埋め込み DONE（型メタ #2952 ＋ original_keys #2954）、
+      Set/Bag/Mix = *Data struct 埋め込み DONE (#2957)**。これで `S02-types/hash.t` の `.clone` flaky・
+      object-hash の Nil 読み・hash 系 typed flaky は根絶。**残 = Array のみ**（`Value::Array(Arc<Vec<Value>>, _)`
+      → ArrayData wrapper。`S02-names-vars/perl.t` の EVAL 生成リスト aliasing flaky を断つ最後の一手。
+      `Arc::as_ptr as *mut Vec<Value>` の unsafe 全監査が前提 — メモリ `hashdata-layout-unsafe-cast-audit`）。
+      手順は **docs/hashdata-migration-plan.md Stage 3 節**。未 wrapper の間は #2953 の Weak-guard
+      `PtrKeyedMap` が interim 防御。再現手順・失敗した2手法はメモリ `project_known_failing_tests_reclassified`。
 
 ---
 
