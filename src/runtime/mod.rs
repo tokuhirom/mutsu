@@ -4626,7 +4626,11 @@ impl Interpreter {
     /// value — store it back into the env/local slot it came from. For other
     /// container types this defers to the Arc-pointer side tables (unchanged)
     /// and returns the value untouched.
-    pub(crate) fn tag_container_metadata(&mut self, value: Value, info: ContainerTypeInfo) -> Value {
+    pub(crate) fn tag_container_metadata(
+        &mut self,
+        value: Value,
+        info: ContainerTypeInfo,
+    ) -> Value {
         match value {
             Value::Hash(mut arc) => {
                 // Skip the copy-on-write clone when the metadata is already

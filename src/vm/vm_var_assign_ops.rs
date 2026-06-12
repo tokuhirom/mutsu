@@ -5793,9 +5793,10 @@ impl VM {
             self.interpreter.unregister_container_type_metadata(&val);
             // Hashes: clear the embedded `HashData` type metadata in place so an
             // untyped variable never reports a typed element/key constraint.
-            let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(
-                std::mem::replace(&mut self.locals[idx], Value::Nil),
-            );
+            let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(std::mem::replace(
+                &mut self.locals[idx],
+                Value::Nil,
+            ));
             self.locals[idx] = cleared;
         }
         // When binding a typed hash/array to a variable, propagate the container's
