@@ -122,9 +122,10 @@ impl Interpreter {
                             ..
                         } if class_name == "IterationBuffer" => {
                             match attributes.as_map().get("__mutsu_iterationbuffer_items") {
-                                Some(Value::Array(values, ..))
-                                | Some(Value::Seq(values))
-                                | Some(Value::Slip(values)) => values.to_vec(),
+                                Some(Value::Array(values, ..)) => values.to_vec(),
+                                Some(Value::Seq(values)) | Some(Value::Slip(values)) => {
+                                    values.to_vec()
+                                }
                                 _ => Vec::new(),
                             }
                         }

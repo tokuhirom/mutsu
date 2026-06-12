@@ -1024,13 +1024,13 @@ pub struct Interpreter {
     var_defaults: HashMap<String, Value>,
     /// Array element defaults for `is default(...)`, keyed by Arc pointer
     /// identity with a Weak guard against pointer reuse (see `ptr_keyed`).
-    array_defaults: PtrKeyedMap<Vec<Value>, Value>,
+    array_defaults: PtrKeyedMap<crate::value::ArrayData, Value>,
     /// Hash element defaults for `is default(...)` (guarded; see `ptr_keyed`).
     hash_defaults: PtrKeyedMap<crate::value::HashData, Value>,
     /// Optional hash key type constraints (e.g. `%h{Str}`).
     var_hash_key_constraints: HashMap<String, String>,
     /// Type metadata for Array values (pointer-keyed, Weak-guarded).
-    array_type_metadata: PtrKeyedMap<Vec<Value>, ContainerTypeInfo>,
+    array_type_metadata: PtrKeyedMap<crate::value::ArrayData, ContainerTypeInfo>,
     // Hash/Set/Bag/Mix type metadata and object-hash original keys are
     // embedded in their backing data structs (HashData/SetData/BagData/
     // MixData) — no side tables.
