@@ -1037,12 +1037,8 @@ pub struct Interpreter {
     set_type_metadata: PtrKeyedMap<crate::value::SetData, ContainerTypeInfo>,
     /// Type metadata for Bag values (pointer-keyed, Weak-guarded).
     bag_type_metadata: PtrKeyedMap<crate::value::BagData, ContainerTypeInfo>,
-    /// Original key objects for object hashes, keyed by Hash Arc pointer
-    /// identity. Deliberately NOT Weak-guarded: object-hash construction
-    /// mutates the hash repeatedly and relies on in-place pointer stability;
-    /// the structural fix is embedding `original_keys` in `HashData`
-    /// (docs/hashdata-migration-plan.md Stage 2), not a guard.
-    hash_object_keys: HashMap<usize, HashMap<String, Value>>,
+    // Object-hash original keys are embedded in `HashData.original_keys`
+    // (Stage 2) — no side table.
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value, bool)>,
@@ -3137,7 +3133,6 @@ impl Interpreter {
             mix_type_metadata: PtrKeyedMap::new(),
             set_type_metadata: PtrKeyedMap::new(),
             bag_type_metadata: PtrKeyedMap::new(),
-            hash_object_keys: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
@@ -4779,32 +4774,10 @@ impl Interpreter {
         }
     }
 
-    /// Store an original key object for an object hash entry.
-    pub(crate) fn set_hash_object_key(
-        &mut self,
-        hash_ptr: usize,
-        which_key: &str,
-        original_key: Value,
-    ) {
-        self.hash_object_keys
-            .entry(hash_ptr)
-            .or_default()
-            .insert(which_key.to_string(), original_key);
-    }
-
-    /// Get the original key objects for a hash by Arc pointer id.
-    pub(crate) fn hash_object_keys_get(&self, hash_ptr: usize) -> Option<&HashMap<String, Value>> {
-        self.hash_object_keys.get(&hash_ptr)
-    }
-
-    /// Copy object keys from old Arc pointer to new Arc pointer (after COW).
-    pub(crate) fn migrate_hash_object_keys(&mut self, old_ptr: usize, new_ptr: usize) {
-        if old_ptr != new_ptr
-            && let Some(keys) = self.hash_object_keys.remove(&old_ptr)
-        {
-            self.hash_object_keys.insert(new_ptr, keys);
-        }
-    }
+    // Object-hash original keys are embedded in `HashData.original_keys`
+    // (see `runtime::utils::set_hash_original_keys` / `hash_original_keys_snapshot`),
+    // so the `hash_object_keys` side table and its pointer-migration helpers are
+    // gone — the map now travels with the hash across copy-on-write.
 
     /// Check if a hash is an object hash (has a key_type constraint).
     pub(crate) fn is_object_hash(&self, hash: &Value) -> bool {
@@ -5559,7 +5532,6 @@ impl Interpreter {
             mix_type_metadata: self.mix_type_metadata.clone(),
             set_type_metadata: self.set_type_metadata.clone(),
             bag_type_metadata: self.bag_type_metadata.clone(),
-            hash_object_keys: self.hash_object_keys.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),

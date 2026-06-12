@@ -63,14 +63,37 @@ branch only because `map` happened to land at offset 0; adding the
 `declared_type` field reordered the struct and turned it into a SEGV. Fixed to
 cast to `*mut HashData` and go through `.map`.
 
-### Remaining (Stage 2 — object-hash original_keys)
+### Stage 2 — object-hash original_keys (DONE: embed; side tables deleted)
 
-`original_keys` (the `.WHICH`-string → original-key-object map) is STILL on the
-two Arc-pointer side tables (`hash_object_keys` + the `hash_original_keys_registry`
-in `runtime/utils.rs`). Object-hash tests `S09-hashes/objecthash.t` (7 fail) and
-`S32-list/classify.t` (1 fail) — both NOT whitelisted — remain blocked on this;
-they are unchanged by Stage 1b. Embed `original_keys` in `HashData` next, using
-the same `tag`/write-back pattern, then delete those two side tables.
+**Status (2026-06-12):** `original_keys` (the `.WHICH`-string → original-key-object
+map) now lives in `HashData.original_keys`. Both Arc-pointer side tables are
+DELETED: the interpreter's `hash_object_keys` field (+ `set_hash_object_key` /
+`hash_object_keys_get` / `migrate_hash_object_keys`) and the global
+`hash_original_keys_registry` in `runtime/utils.rs` (+ the `*_by_id` /
+`take_*_by_id` pointer helpers). Because the map travels with the hash through
+copy-on-write, the entire COW pointer-migration dance in the element-assignment
+path (`migrate` + `take_by_id` + `register_by_id` after each make_mut) is GONE —
+object keys are written into the same `&mut HashData` as the element insert.
+
+- Writers: element-assignment paths set `hd.original_keys` in the same
+  in-place/`make_mut` mutation; result-builders (Set/Bag/Mix→Hash coercions,
+  typed-hash coercion) use `runtime::utils::set_hash_original_keys(value, keys)`.
+- Readers: `hash_original_keys_snapshot` / `hash_typed_key` read
+  `HashData.original_keys`; the `.keys` object-hash path reads the single source.
+
+`make test` green; no whitelisted regression.
+
+**NOT fixed by Stage 2 (separate object-hash *enforcement/construction*
+features, still failing in the non-whitelisted `S09-hashes/objecthash.t`):**
+- key-type check on assignment (`%h{Any}` must reject a `Mu` key — test 3; its
+  failure also makes the order-sensitive test 4 flaky by leaving an extra key)
+- `Hash.push` key/value type checks (tests 21, 23, 24)
+- `.new`/`.clone` on an object-hash instance must stay an object hash
+  (tests 34–35 see `Hash[Any,Any]` where `Hash` is expected)
+- mixin objects as keys (test 36 — aborts the file at line 104)
+
+These are object-hash *type enforcement*, independent of where the original keys
+are stored; tackle them next now that the key map is COW-stable.
 
 ---
 (original plan below)

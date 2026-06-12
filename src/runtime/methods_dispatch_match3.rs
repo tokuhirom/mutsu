@@ -628,22 +628,8 @@ impl Interpreter {
                 if let Some(info) = self.container_type_metadata(&target)
                     && info.key_type.is_some()
                 {
-                    // Object hash: use original key objects from interpreter storage
-                    let hash_ptr = std::sync::Arc::as_ptr(map) as usize;
-                    if let Some(orig_map) = self.hash_object_keys_get(hash_ptr) {
-                        let orig_map_clone = orig_map.clone();
-                        let keys: Vec<Value> = map
-                            .keys()
-                            .map(|k| {
-                                orig_map_clone
-                                    .get(k)
-                                    .cloned()
-                                    .unwrap_or_else(|| Value::str(k.clone()))
-                            })
-                            .collect();
-                        return Some(Ok(Value::array(keys)));
-                    }
-                    // Also try global registry (for hashes from Set/Bag/Mix coercion)
+                    // Object hash: use the original key objects embedded in the
+                    // hash's `HashData` (single source, COW-stable).
                     if let Some(ref orig) = utils::hash_original_keys_snapshot(&target)
                         && !orig.is_empty()
                     {

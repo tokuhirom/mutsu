@@ -89,77 +89,40 @@ fn shaped_array_ids() -> &'static Mutex<ShapedArrayIds> {
     SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(PtrKeyedMap::new()))
 }
 
-/// Global registry of original (non-string) keys for object hashes.
-/// Keyed by the hash's Arc pointer identity. Deliberately NOT Weak-guarded
-/// (unlike `shaped_array_ids`/`grep_view_bindings`): object-hash construction
-/// mutates the hash repeatedly and relies on in-place pointer stability; the
-/// structural fix is embedding `original_keys` in `HashData`
-/// (docs/hashdata-migration-plan.md Stage 2), not a guard.
-fn hash_original_keys_registry() -> &'static Mutex<HashMap<usize, HashMap<String, Value>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<usize, HashMap<String, Value>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Register original keys for a hash value.
-pub(crate) fn register_hash_original_keys(hash: &Value, original_keys: HashMap<String, Value>) {
+/// Embed original (non-string) keys for an object hash into its `HashData`,
+/// returning the (possibly rebuilt) value. The map travels WITH the hash
+/// through copy-on-write — replacing the old Arc-pointer-keyed side tables, so
+/// no `migrate`/`by_id` pointer bookkeeping is needed across COW. Callers must
+/// use the returned value (store it back into its slot).
+pub(crate) fn set_hash_original_keys(value: Value, original_keys: HashMap<String, Value>) -> Value {
     if original_keys.is_empty() {
-        return;
+        return value;
     }
-    if let Value::Hash(arc) = hash {
-        let id = Arc::as_ptr(arc) as usize;
-        if let Ok(mut reg) = hash_original_keys_registry().lock() {
-            reg.insert(id, original_keys);
-        }
+    if let Value::Hash(mut arc) = value {
+        Arc::make_mut(&mut arc).original_keys = Some(original_keys);
+        return Value::Hash(arc);
     }
+    value
 }
 
-/// Snapshot the original keys for a hash, if any are registered.
+/// Snapshot the original keys embedded in an object hash, if any.
 pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<HashMap<String, Value>> {
     if let Value::Hash(arc) = hash {
-        let id = Arc::as_ptr(arc) as usize;
-        if let Ok(reg) = hash_original_keys_registry().lock() {
-            return reg.get(&id).cloned();
-        }
+        return arc.original_keys.clone();
     }
     None
 }
 
 /// Retrieve the original (typed) key value for a hash entry, if available.
-/// Falls back to the string key if no original key is registered.
+/// Falls back to the string key if no original key is embedded.
 pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
-    if let Value::Hash(arc) = hash {
-        let id = Arc::as_ptr(arc) as usize;
-        if let Ok(reg) = hash_original_keys_registry().lock()
-            && let Some(orig_keys) = reg.get(&id)
-            && let Some(orig) = orig_keys.get(str_key)
-        {
-            return orig.clone();
-        }
+    if let Value::Hash(arc) = hash
+        && let Some(orig_keys) = arc.original_keys.as_ref()
+        && let Some(orig) = orig_keys.get(str_key)
+    {
+        return orig.clone();
     }
     Value::str(str_key.to_string())
-}
-
-/// Register original keys for a hash value by Arc pointer ID directly.
-pub(crate) fn register_hash_original_keys_by_id(id: usize, original_keys: HashMap<String, Value>) {
-    if let Ok(mut reg) = hash_original_keys_registry().lock() {
-        reg.insert(id, original_keys);
-    }
-}
-
-/// Snapshot original keys by Arc pointer ID.
-pub(crate) fn hash_original_keys_snapshot_by_id(id: usize) -> Option<HashMap<String, Value>> {
-    if let Ok(reg) = hash_original_keys_registry().lock() {
-        return reg.get(&id).cloned();
-    }
-    None
-}
-
-/// Take (remove and return) original keys by Arc pointer ID.
-pub(crate) fn take_hash_original_keys_by_id(id: usize) -> Option<HashMap<String, Value>> {
-    if let Ok(mut reg) = hash_original_keys_registry().lock() {
-        return reg.remove(&id);
-    }
-    None
 }
 
 fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
@@ -532,9 +495,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     i += 2;
                 }
             }
-            let result = Value::hash(map);
-            register_hash_original_keys(&result, original_keys);
-            result
+            set_hash_original_keys(Value::hash(map), original_keys)
         }
         Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
             let mut map = HashMap::new();
@@ -581,10 +542,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     original_keys.insert(key.clone(), typed);
                 }
             }
-            let result = Value::hash(map);
+            let mut result = Value::hash(map);
             if has_typed {
                 original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                register_hash_original_keys(&result, original_keys);
+                result = set_hash_original_keys(result, original_keys);
             }
             result
         }
@@ -600,10 +561,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     original_keys.insert(key.clone(), typed);
                 }
             }
-            let result = Value::hash(map);
+            let mut result = Value::hash(map);
             if has_typed {
                 original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                register_hash_original_keys(&result, original_keys);
+                result = set_hash_original_keys(result, original_keys);
             }
             result
         }
@@ -619,10 +580,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     original_keys.insert(key.clone(), typed);
                 }
             }
-            let result = Value::hash(map);
+            let mut result = Value::hash(map);
             if has_typed {
                 original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                register_hash_original_keys(&result, original_keys);
+                result = set_hash_original_keys(result, original_keys);
             }
             result
         }
@@ -710,9 +671,7 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             }
         }
     }
-    let result = Value::hash(map);
-    register_hash_original_keys(&result, original_keys);
-    Ok(result)
+    Ok(set_hash_original_keys(Value::hash(map), original_keys))
 }
 
 /// Maximum number of elements when expanding an infinite range into an Array.

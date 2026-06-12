@@ -300,11 +300,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         original_keys.insert(k.clone(), typed);
                     }
                 }
-                let result = Value::hash(map);
+                let mut result = Value::hash(map);
                 if has_typed {
                     // Tag so .keys can distinguish setty-origin hashes
                     original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                    result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
                 }
                 Some(Ok(result))
             }
@@ -320,10 +320,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         original_keys.insert(k.clone(), typed);
                     }
                 }
-                let result = Value::hash(map);
+                let mut result = Value::hash(map);
                 if has_typed {
                     original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                    result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
                 }
                 Some(Ok(result))
             }
@@ -339,10 +339,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         original_keys.insert(k.clone(), typed);
                     }
                 }
-                let result = Value::hash(map);
+                let mut result = Value::hash(map);
                 if has_typed {
                     original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                    crate::runtime::utils::register_hash_original_keys(&result, original_keys);
+                    result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
                 }
                 Some(Ok(result))
             }
