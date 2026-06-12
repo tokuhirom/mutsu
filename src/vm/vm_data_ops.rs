@@ -518,6 +518,13 @@ impl VM {
             self.locals[slot] = Value::Nil;
         }
 
+        // `Arc::make_mut` below relocates a metadata-bearing (Weak-guarded)
+        // array; carry its type info / `is default` over to the new pointer.
+        let saved_meta = match self.interpreter.env().get(target_name) {
+            Some(v @ Value::Array(..)) => self.interpreter.capture_container_meta(v),
+            _ => (None, None),
+        };
+
         let result = if let Some(Value::Array(arr, kind)) =
             self.interpreter.env_mut().get_mut(target_name)
         {
@@ -538,6 +545,8 @@ impl VM {
                 .insert(target_name.to_string(), arr.clone());
             arr
         };
+
+        self.interpreter.restore_container_meta(&result, saved_meta);
 
         // Restore local slot
         if let Some(slot) = local_slot {

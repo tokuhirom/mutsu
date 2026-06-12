@@ -2,6 +2,7 @@ use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::runtime::ptr_keyed::PtrKeyedMap;
 use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value};
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -80,15 +81,20 @@ pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 type GrepViewBinding = (Arc<Vec<Value>>, Vec<usize>, ArrayKind);
-type GrepViewMap = HashMap<usize, GrepViewBinding>;
+type GrepViewMap = PtrKeyedMap<Vec<Value>, GrepViewBinding>;
+type ShapedArrayIds = PtrKeyedMap<Vec<Value>, Vec<usize>>;
 
-fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
-    static SHAPED_ARRAY_IDS: OnceLock<Mutex<HashMap<usize, Vec<usize>>>> = OnceLock::new();
-    SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(HashMap::new()))
+fn shaped_array_ids() -> &'static Mutex<ShapedArrayIds> {
+    static SHAPED_ARRAY_IDS: OnceLock<Mutex<ShapedArrayIds>> = OnceLock::new();
+    SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(PtrKeyedMap::new()))
 }
 
 /// Global registry of original (non-string) keys for object hashes.
-/// Keyed by the hash's Arc pointer identity.
+/// Keyed by the hash's Arc pointer identity. Deliberately NOT Weak-guarded
+/// (unlike `shaped_array_ids`/`grep_view_bindings`): object-hash construction
+/// mutates the hash repeatedly and relies on in-place pointer stability; the
+/// structural fix is embedding `original_keys` in `HashData`
+/// (docs/hashdata-migration-plan.md Stage 2), not a guard.
 fn hash_original_keys_registry() -> &'static Mutex<HashMap<usize, HashMap<String, Value>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<usize, HashMap<String, Value>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
@@ -158,15 +164,11 @@ pub(crate) fn take_hash_original_keys_by_id(id: usize) -> Option<HashMap<String,
 
 fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
     static GREP_VIEW_BINDINGS: OnceLock<Mutex<GrepViewMap>> = OnceLock::new();
-    GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(HashMap::new()))
+    GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(PtrKeyedMap::new()))
 }
 
 fn shaped_array_key(items: &Arc<Vec<Value>>) -> usize {
-    Arc::as_ptr(items) as usize
-}
-
-fn grep_view_key(items: &Arc<Vec<Value>>) -> usize {
-    Arc::as_ptr(items) as usize
+    crate::runtime::ptr_keyed::ptr_key(items)
 }
 
 pub(crate) fn register_grep_view_binding(
@@ -176,10 +178,7 @@ pub(crate) fn register_grep_view_binding(
     source_is_array: ArrayKind,
 ) {
     if let Ok(mut bindings) = grep_view_bindings().lock() {
-        bindings.insert(
-            grep_view_key(filtered),
-            (source.clone(), source_indices, source_is_array),
-        );
+        bindings.insert(filtered, (source.clone(), source_indices, source_is_array));
     }
 }
 
@@ -187,7 +186,7 @@ pub(crate) fn get_grep_view_binding(
     filtered: &Arc<Vec<Value>>,
 ) -> Option<(Arc<Vec<Value>>, Vec<usize>, ArrayKind)> {
     let bindings = grep_view_bindings().lock().ok()?;
-    bindings.get(&grep_view_key(filtered)).cloned()
+    bindings.get_arc(filtered).cloned()
 }
 
 /// Check if an array is a shaped (multidimensional) array.
@@ -233,18 +232,15 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         return None;
     }
 
-    fn infer_shape_from_array(
-        items: &[Value],
-        ids: &HashMap<usize, Vec<usize>>,
-    ) -> Option<Vec<usize>> {
+    fn infer_shape_from_array(items: &[Value], ids: &ShapedArrayIds) -> Option<Vec<usize>> {
         let first = items.first()?;
         let Value::Array(first_items, ..) = first else {
             return None;
         };
-        let first_shape = ids.get(&shaped_array_key(first_items))?;
+        let first_shape = ids.get(shaped_array_key(first_items))?;
         if !items.iter().all(|child| {
             if let Value::Array(child_items, ..) = child {
-                ids.get(&shaped_array_key(child_items)) == Some(first_shape)
+                ids.get(shaped_array_key(child_items)) == Some(first_shape)
             } else {
                 false
             }
@@ -258,7 +254,7 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     }
 
     let ids = shaped_array_ids().lock().ok()?;
-    let cached_shape = ids.get(&key).cloned();
+    let cached_shape = ids.get(key).cloned();
     if let Some(cached_shape) = cached_shape
         && shape_matches_structure(value, &cached_shape)
     {
@@ -270,7 +266,7 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     }
     drop(ids);
     if let Ok(mut ids) = shaped_array_ids().lock() {
-        ids.insert(key, inferred_shape.clone());
+        ids.insert(items, inferred_shape.clone());
     }
     Some(inferred_shape)
 }
@@ -288,12 +284,12 @@ pub(crate) fn mark_shaped_array_items(items: &Arc<Vec<Value>>, shape: Option<&[u
     }
     let key = shaped_array_key(items);
     if let Ok(mut ids) = shaped_array_ids().lock() {
-        if let Some(current_shape) = ids.get(&key)
+        if let Some(current_shape) = ids.get(key)
             && shape.is_some_and(|s| current_shape.as_slice() == s)
         {
             return;
         }
-        ids.insert(key, shape.unwrap_or(&[]).to_vec());
+        ids.insert(items, shape.unwrap_or(&[]).to_vec());
     }
 }
 
@@ -725,11 +721,10 @@ const MAX_ARRAY_EXPAND: i64 = 100_000;
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     fn metadata_shape_for_items(items: &Arc<Vec<Value>>) -> Option<Vec<usize>> {
-        let key = shaped_array_key(items);
         shaped_array_ids()
             .lock()
             .ok()
-            .and_then(|ids| ids.get(&key).cloned())
+            .and_then(|ids| ids.get_arc(items).cloned())
     }
 
     match value {
