@@ -624,6 +624,21 @@ impl Interpreter {
             };
             return self.dispatch_new(Value::Package(Symbol::intern(&type_name)), args);
         }
+        // Calling .new() on a concrete object hash (`%h{KeyType}`) produces a
+        // new object hash of the same key/value type, not a plain Hash — mirror
+        // the typed-Array `.new` path above.
+        if let Value::Hash(_) = &target
+            && let Some(info) = self.container_type_metadata(&target)
+            && let Some(kt) = info.key_type.clone()
+        {
+            let vt = if info.value_type.is_empty() {
+                "Any".to_string()
+            } else {
+                info.value_type.clone()
+            };
+            let pkg = format!("Hash[{},{}]", vt, kt);
+            return self.dispatch_new(Value::Package(Symbol::intern(&pkg)), args);
+        }
         // Calling .new() on a concrete Hash/Bag/Mix delegates to the type constructor
         {
             let type_pkg = match &target {

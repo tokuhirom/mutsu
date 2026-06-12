@@ -3506,6 +3506,21 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         Value::Enum { enum_type, key, .. } => {
             format!("{}|{}", enum_type.resolve(), key.resolve())
         }
+        // A `but`-mixed value (e.g. `"quux" but $role`) keeps the identity of
+        // its base value but is a DISTINCT object per mixed-in role set — raku's
+        // `.WHICH` is `Str+{<role>}|quux`. Fold the (sorted) mixin type/role
+        // names into the key so two different roles over the same base value are
+        // distinct object-hash keys, while the same value+role collides.
+        Value::Mixin(inner, mixins) => {
+            let mut roles: Vec<&str> = mixins.keys().map(|s| s.as_str()).collect();
+            roles.sort_unstable();
+            format!(
+                "{}+{{{}}}|{}",
+                value_type_name(inner),
+                roles.join(","),
+                value_which_key(inner)
+            )
+        }
         _ => {
             format!("{}|{}", value_type_name(value), value.to_string_value())
         }
