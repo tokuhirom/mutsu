@@ -1627,9 +1627,10 @@ impl VM {
     /// to `target_name` (ledger §1: native receiver dispatch -> VM-native). Mirrors
     /// the interpreter's instance-mutate branches in `methods_mut.rs` exactly: the
     /// byte transforms are the single shared pure implementations in `builtins/`
-    /// (`buf_bits`/`buf_write_num`/`buf_write_int`), and the writeback uses the
-    /// same identity-based `overwrite_instance_bindings_by_identity` so aliases of
-    /// the same buf observe the mutation — so the result is behavior-invariant.
+    /// (`buf_bits`/`buf_write_num`/`buf_write_int`), and the writeback goes
+    /// straight into the receiver's shared cell (`Value::write_back_sharing`) so
+    /// aliases of the same buf observe the mutation — so the result is
+    /// behavior-invariant.
     ///
     /// Returns `None` (fall through to the interpreter) for type-object receivers
     /// (`buf8.write-...` on the type returns a fresh buf), immutable `Blob`, and

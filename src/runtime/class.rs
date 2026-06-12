@@ -1309,8 +1309,9 @@ impl Interpreter {
         } else {
             result
         };
-        // If `self` in the env was updated (e.g. by overwrite_instance_bindings_by_identity
-        // after a nested method call like `self.some-method(...)`), sync the attribute env
+        // If `self` in the env was updated (e.g. by an in-place write into its shared
+        // attribute cell after a nested method call like `self.some-method(...)`),
+        // sync the attribute env
         // variables (!attr, .attr) from `self`'s updated attributes. Without this,
         // attribute mutations made by nested method calls on `self` would be lost during
         // the writeback below, because the env variables still hold the pre-call values.
