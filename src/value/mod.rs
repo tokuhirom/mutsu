@@ -588,7 +588,11 @@ pub fn register_container_constraint(cell: &Arc<Mutex<Value>>, type_name: &str) 
 /// Look up the `of`-type constraint of a `ContainerRef` cell, if any.
 pub fn lookup_container_constraint(cell: &Arc<Mutex<Value>>) -> Option<String> {
     let ptr = Arc::as_ptr(cell) as usize;
-    typed_container_constraints().lock().unwrap().get(&ptr).cloned()
+    typed_container_constraints()
+        .lock()
+        .unwrap()
+        .get(&ptr)
+        .cloned()
 }
 
 impl Clone for InstanceAttrs {
