@@ -103,32 +103,34 @@ impl Compiler {
         // A method argument is passed to the callee, not stored in the caller
         // frame, so a closure argument is conservatively NON-escaping (same
         // #2746 guard as compile_call_arg).
-        self.with_escape(false, |s| s.with_suppress_pair_capture(true, |s| {
-            if let Expr::AssignExpr { name, expr, .. } = arg {
-                // `foo(arg = 1)` in method-call argument position is treated as a
-                // named argument only for sigilless identifiers. Sigiled targets
-                // (`$x = ...`, `@x = ...`, `%x = ...`) are real assignment exprs.
-                if name.starts_with('$')
-                    || name.starts_with('@')
-                    || name.starts_with('%')
-                    || name.starts_with('&')
-                {
+        self.with_escape(false, |s| {
+            s.with_suppress_pair_capture(true, |s| {
+                if let Expr::AssignExpr { name, expr, .. } = arg {
+                    // `foo(arg = 1)` in method-call argument position is treated as a
+                    // named argument only for sigilless identifiers. Sigiled targets
+                    // (`$x = ...`, `@x = ...`, `%x = ...`) are real assignment exprs.
+                    if name.starts_with('$')
+                        || name.starts_with('@')
+                        || name.starts_with('%')
+                        || name.starts_with('&')
+                    {
+                        s.compile_expr(arg);
+                        if Self::needs_decont(arg) {
+                            s.code.emit(OpCode::Decont);
+                        }
+                    } else {
+                        s.compile_expr(&Expr::Literal(Value::str(name.clone())));
+                        s.compile_expr(expr);
+                        s.code.emit(OpCode::MakePair);
+                    }
+                } else {
                     s.compile_expr(arg);
                     if Self::needs_decont(arg) {
                         s.code.emit(OpCode::Decont);
                     }
-                } else {
-                    s.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                    s.compile_expr(expr);
-                    s.code.emit(OpCode::MakePair);
                 }
-            } else {
-                s.compile_expr(arg);
-                if Self::needs_decont(arg) {
-                    s.code.emit(OpCode::Decont);
-                }
-            }
-        }));
+            })
+        });
     }
 
     /// Check if an expression produces an array value that needs decontainerization
@@ -164,7 +166,9 @@ impl Compiler {
         // caller frame, so a closure argument is conservatively NON-escaping
         // (the #2746 guard: `map {...}` / `lives-ok {...}` must not box even when
         // the whole call sits in an escaping position like `my @r = map {...}`).
-        self.with_escape(false, |c| c.with_suppress_pair_capture(true, |c| c.compile_expr(arg)));
+        self.with_escape(false, |c| {
+            c.with_suppress_pair_capture(true, |c| c.compile_expr(arg))
+        });
         if Self::needs_decont(arg) {
             self.code.emit(OpCode::Decont);
         }

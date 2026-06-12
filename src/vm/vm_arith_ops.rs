@@ -1289,10 +1289,7 @@ impl VM {
         // with `$var`, giving Raku's write-through semantics: `$pair.value = X`
         // updates `$var`, and `$pair.value<k> = v` writes through to `$var`'s
         // backing Array/Hash. (See S02:1704 / roast S02-types/pair.t.)
-        if let Value::Capture {
-            positional,
-            named,
-        } = &right
+        if let Value::Capture { positional, named } = &right
             && positional.is_empty()
             && let Some(Value::Str(source_name)) = named.get("__mutsu_varref_name")
             && let Some(inner) = named.get("__mutsu_varref_value")
