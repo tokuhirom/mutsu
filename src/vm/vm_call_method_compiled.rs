@@ -450,6 +450,16 @@ impl VM {
         {
             return result;
         }
+        // Native `.iterator` construction over a plain receiver (Range/Set/Bag/
+        // Mix/List/Array/...): builds the `Iterator` instance via the single
+        // `builtins::iterator_construct` impl the interpreter also uses. `Seq`
+        // (consumed-state + `squish` env mutation) and an already-built Iterator
+        // fall through to the interpreter.
+        if args.is_empty()
+            && let Some(result) = Self::try_native_iterator_construct(&target, method)
+        {
+            return Ok(result);
+        }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
         // User-defined Instance methods now always run as bytecode (compiled at
         // registration, or on demand above via `populate_uncompiled_method`), so
@@ -1060,6 +1070,29 @@ impl VM {
             _ => unreachable!(),
         };
         Some(result)
+    }
+
+    /// VM-native `.iterator` construction, mirroring
+    /// `Interpreter::dispatch_iterator_method`: an already-built `Iterator`
+    /// instance returns itself; a `Seq` falls through (consumed-state tracking +
+    /// `squish` env mutation are interpreter-owned); any other receiver builds an
+    /// `Iterator` instance via the single `builtins::iterator_construct` impl.
+    /// Returns `None` to fall through to the interpreter.
+    fn try_native_iterator_construct(target: &Value, method: &str) -> Option<Value> {
+        if method != "iterator" {
+            return None;
+        }
+        // Already an Iterator instance: identity (interpreter's early return).
+        if let Value::Instance { class_name, .. } = target
+            && class_name == "Iterator"
+        {
+            return Some(target.clone());
+        }
+        // Seq: consumed-state + `squish` env mutation are interpreter-owned.
+        if matches!(target, Value::Seq(_)) {
+            return None;
+        }
+        Some(crate::builtins::iterator_construct::build_iterator_instance(target))
     }
 
     /// VM-native Iterator protocol over a self-contained, array-backed `Iterator`
