@@ -691,14 +691,14 @@ impl Interpreter {
                     _ => std::collections::HashMap::new(),
                 };
                 hash.insert(key, value.clone());
-                let new_hash = Value::Hash(Value::hash_arc(hash));
+                let mut new_hash = Value::Hash(Value::hash_arc(hash));
                 // Propagate container type metadata to avoid stale pointer reuse
                 let meta = old_meta.unwrap_or(ContainerTypeInfo {
                     value_type: "Any".to_string(),
                     key_type: None,
                     declared_type: None,
                 });
-                let new_hash = self.tag_container_metadata(new_hash, meta);
+                new_hash = self.tag_container_metadata(new_hash, meta);
                 if let Some(var_name) = target_var {
                     self.env.insert(var_name.to_string(), new_hash);
                 }
@@ -2486,9 +2486,9 @@ impl Interpreter {
                     // typed container as the receiver (`array[int]` splices to
                     // `array[int]`), so propagate the declared type onto the
                     // returned slice too.
-                    let removed_arr = Value::real_array(removed);
+                    let mut removed_arr = Value::real_array(removed);
                     if let Some(info) = &saved_meta {
-                        self.register_container_type_metadata(&removed_arr, info.clone());
+                        removed_arr = self.tag_container_metadata(removed_arr, info.clone());
                     }
                     return Ok(removed_arr);
                 }

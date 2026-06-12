@@ -1456,8 +1456,7 @@ impl VM {
                     if let Some(ref cv) = current_val
                         && let Some(info) = self.interpreter.container_type_metadata(cv)
                     {
-                        self.interpreter
-                            .register_container_type_metadata(&assigned, info);
+                        assigned = self.interpreter.tag_container_metadata(assigned, info);
                     }
                 }
             }

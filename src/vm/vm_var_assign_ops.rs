@@ -5437,8 +5437,7 @@ impl VM {
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(&shape));
                 // Preserve container type metadata
                 if let Some(info) = self.interpreter.container_type_metadata(&self.locals[idx]) {
-                    self.interpreter
-                        .register_container_type_metadata(&assigned, info);
+                    assigned = self.interpreter.tag_container_metadata(assigned, info);
                 }
             }
             let class_name = match &self.locals[idx] {
@@ -5764,9 +5763,7 @@ impl VM {
             && self.interpreter.var_type_constraint(name).is_none()
             && self.interpreter.container_type_metadata(&val).is_some()
         {
-            // Arrays: drop the stale Arc-pointer side-table entry.
-            self.interpreter.unregister_container_type_metadata(&val);
-            // Hashes: clear the embedded `HashData` type metadata in place so an
+            // Clear the embedded container type metadata in place so an
             // untyped variable never reports a typed element/key constraint.
             let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(std::mem::replace(
                 &mut self.locals[idx],

@@ -560,9 +560,9 @@ impl Interpreter {
                     }
                 }
             }
-            let arr = Value::real_array(items.items);
-            self.register_container_type_metadata(
-                &arr,
+            let mut arr = Value::real_array(items.items);
+            arr = self.tag_container_metadata(
+                arr,
                 super::ContainerTypeInfo {
                     value_type: inner,
                     key_type: None,
@@ -1158,7 +1158,7 @@ impl Interpreter {
                         } else {
                             data
                         };
-                        let shaped = Self::make_shaped_array(&dims);
+                        let mut shaped = Self::make_shaped_array(&dims);
                         if let Some(ref data_val) = data
                             && let Some(source_shape) =
                                 crate::runtime::utils::shaped_array_shape(data_val)
@@ -1246,7 +1246,8 @@ impl Interpreter {
                                         new_items[i] = val;
                                     }
                                 }
-                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                                let mut result =
+                                    Value::Array(std::sync::Arc::new(new_items), is_arr);
                                 crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
                                 // Register type metadata for typed shaped arrays (e.g. array[str].new(:shape(5), ...))
                                 if let Some(ref ta) = type_args
@@ -1261,7 +1262,7 @@ impl Interpreter {
                                             class_name.resolve()
                                         }),
                                     };
-                                    self.register_container_type_metadata(&result, info);
+                                    result = self.tag_container_metadata(result, info);
                                 }
                                 return Ok(result);
                             }
@@ -1279,7 +1280,7 @@ impl Interpreter {
                                     class_name.resolve()
                                 }),
                             };
-                            self.register_container_type_metadata(&shaped, info);
+                            shaped = self.tag_container_metadata(shaped, info);
                         }
                         return Ok(shaped);
                     }
@@ -1334,7 +1335,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    let result = if matches!(base_class_name, "Array" | "array") {
+                    let mut result = if matches!(base_class_name, "Array" | "array") {
                         Value::real_array(items)
                     } else {
                         Value::array(items)
@@ -1352,7 +1353,7 @@ impl Interpreter {
                                 class_name.resolve()
                             }),
                         };
-                        self.register_container_type_metadata(&result, info);
+                        result = self.tag_container_metadata(result, info);
                     }
                     return Ok(result);
                 }
@@ -2998,7 +2999,7 @@ impl Interpreter {
                             data
                         };
                         let shaped = Self::make_shaped_array(&dims);
-                        let result = if let Some(data_val) = data {
+                        let mut result = if let Some(data_val) = data {
                             let data_items = match data_val {
                                 Value::Array(items, ..) => items.to_vec(),
                                 Value::Seq(items) | Value::Slip(items) => items.to_vec(),
@@ -3024,8 +3025,8 @@ impl Interpreter {
                             .first()
                             .cloned()
                             .unwrap_or_else(|| "Any".to_string());
-                        self.register_container_type_metadata(
-                            &result,
+                        result = self.tag_container_metadata(
+                            result,
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type: None,
@@ -3045,7 +3046,7 @@ impl Interpreter {
                             other => items.push(other.clone()),
                         }
                     }
-                    let result = if matches!(base_class_name, "Array" | "array") {
+                    let mut result = if matches!(base_class_name, "Array" | "array") {
                         Value::real_array(items)
                     } else {
                         Value::array(items)
@@ -3054,8 +3055,8 @@ impl Interpreter {
                         .first()
                         .cloned()
                         .unwrap_or_else(|| "Any".to_string());
-                    self.register_container_type_metadata(
-                        &result,
+                    result = self.tag_container_metadata(
+                        result,
                         crate::runtime::ContainerTypeInfo {
                             value_type,
                             key_type: None,
@@ -3580,9 +3581,9 @@ impl Interpreter {
                                         .or_else(|| type_name.strip_prefix("array["))
                                         .and_then(|s| s.strip_suffix(']'))
                                     {
-                                        let arr = Value::real_array(Vec::new());
-                                        self.register_container_type_metadata(
-                                            &arr,
+                                        let mut arr = Value::real_array(Vec::new());
+                                        arr = self.tag_container_metadata(
+                                            arr,
                                             super::ContainerTypeInfo {
                                                 value_type: inner.trim().to_string(),
                                                 key_type: None,
@@ -3601,7 +3602,7 @@ impl Interpreter {
                                         }
                                     }
                                 } else {
-                                    let arr = Value::real_array(Vec::new());
+                                    let mut arr = Value::real_array(Vec::new());
                                     // Register element type constraint for typed array attributes
                                     let tc = self
                                         .registry()
@@ -3610,8 +3611,8 @@ impl Interpreter {
                                         .and_then(|cd| cd.attribute_types.get(&attr_name))
                                         .cloned();
                                     if let Some(tc) = tc {
-                                        self.register_container_type_metadata(
-                                            &arr,
+                                        arr = self.tag_container_metadata(
+                                            arr,
                                             super::ContainerTypeInfo {
                                                 value_type: tc,
                                                 key_type: None,
@@ -3997,9 +3998,9 @@ impl Interpreter {
                                     .or_else(|| type_name.strip_prefix("array["))
                                     .and_then(|s| s.strip_suffix(']'))
                                 {
-                                    let arr = Value::real_array(Vec::new());
-                                    self.register_container_type_metadata(
-                                        &arr,
+                                    let mut arr = Value::real_array(Vec::new());
+                                    arr = self.tag_container_metadata(
+                                        arr,
                                         super::ContainerTypeInfo {
                                             value_type: inner.trim().to_string(),
                                             key_type: None,
@@ -4099,15 +4100,15 @@ impl Interpreter {
                         attrs.insert(attr_name, Value::mixin(base, mixins));
                     }
                 }
-                let instance = Value::make_instance(*class_name, attrs);
+                let mut instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
                     if self.class_mro(class_key).iter().any(|n| n == "Array") {
                         let value_type = type_args
                             .first()
                             .cloned()
                             .unwrap_or_else(|| "Any".to_string());
-                        self.register_container_type_metadata(
-                            &instance,
+                        instance = self.tag_container_metadata(
+                            instance,
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type: None,
@@ -4120,8 +4121,8 @@ impl Interpreter {
                             .cloned()
                             .unwrap_or_else(|| "Any".to_string());
                         let key_type = type_args.get(1).cloned();
-                        self.register_container_type_metadata(
-                            &instance,
+                        instance = self.tag_container_metadata(
+                            instance,
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type,

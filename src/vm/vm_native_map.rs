@@ -204,10 +204,9 @@ impl VM {
         // so re-register it on the new container.
         if let Some(name) = writeback_name {
             let meta = self.interpreter.container_type_metadata(target);
-            let new_array = Value::real_array(source_after);
+            let mut new_array = Value::real_array(source_after);
             if let Some(info) = meta {
-                self.interpreter
-                    .register_container_type_metadata(&new_array, info);
+                new_array = self.interpreter.tag_container_metadata(new_array, info);
             }
             self.set_env_with_main_alias(&name, new_array);
         }

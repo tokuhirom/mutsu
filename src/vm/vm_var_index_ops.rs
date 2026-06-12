@@ -235,8 +235,7 @@ impl VM {
             && crate::runtime::native_types::is_native_array_element_type(&meta.value_type)
         {
             let result = Value::real_array(items);
-            self.interpreter
-                .register_container_type_metadata(&result, meta);
+            let result = self.interpreter.tag_container_metadata(result, meta);
             return result;
         }
         match source {
