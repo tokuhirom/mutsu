@@ -763,6 +763,7 @@ impl InstanceAttrs {
     /// Phase 3 cell-CAS: atomically read-modify-write one attribute under a
     /// single write lock (atomic add / increment / decrement). Returns
     /// `(old, new)`; an error from `f` leaves the attribute unchanged.
+    #[allow(clippy::result_large_err)]
     pub(crate) fn fetch_update(
         &self,
         key: &str,
