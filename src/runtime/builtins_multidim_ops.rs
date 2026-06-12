@@ -380,9 +380,23 @@ impl Interpreter {
         target: &Value,
         indices: &[Value],
     ) -> Result<Vec<Value>, RuntimeError> {
+        // A Range (or Seq) in a subscript dimension is a multi-key slice
+        // (`%h{1;1..3}`), so expand it to its element list up front — then the
+        // existing multi-index path (`has_multi_indices` / collect-leaves) walks
+        // each key, exactly as it already does for a comma list (`%h{1;2,3}`).
+        let indices: Vec<Value> = indices
+            .iter()
+            .map(|idx| {
+                if idx.is_range() || matches!(idx, Value::Seq(_)) {
+                    Value::array(crate::runtime::utils::value_to_list(idx))
+                } else {
+                    idx.clone()
+                }
+            })
+            .collect();
         let mut resolved = Vec::with_capacity(indices.len());
         let mut current = target.clone();
-        for idx in indices {
+        for idx in &indices {
             match idx {
                 Value::Sub(..) => {
                     // WhateverCode: call with array length
