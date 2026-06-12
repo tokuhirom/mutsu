@@ -549,7 +549,7 @@ impl Interpreter {
             let inner = inner.trim().to_string();
             let items = match Self::coerce_attr_value_by_sigil(value, '@') {
                 Value::Array(items, _) => (*items).clone(),
-                other => vec![other],
+                other => crate::value::ArrayData::new(vec![other]),
             };
             if inner.starts_with(char::is_uppercase) {
                 for it in &items {
@@ -560,7 +560,7 @@ impl Interpreter {
                     }
                 }
             }
-            let arr = Value::real_array(items);
+            let arr = Value::real_array(items.items);
             self.register_container_type_metadata(
                 &arr,
                 super::ContainerTypeInfo {
@@ -3435,7 +3435,7 @@ impl Interpreter {
                     {
                         let items = match val {
                             Value::Array(items, _) => (**items).clone(),
-                            _ => vec![val.clone()],
+                            _ => crate::value::ArrayData::new(vec![val.clone()]),
                         };
                         let shaped = Value::Array(std::sync::Arc::new(items), ArrayKind::Shaped);
                         crate::runtime::utils::mark_shaped_array(&shaped, Some(&dims));

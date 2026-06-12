@@ -367,7 +367,7 @@ impl Interpreter {
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Array(std::sync::Arc::new(mapped), kind))
+                    Ok(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(mapped)), kind))
                 }
                 Value::Seq(items) => {
                     let mut mapped = Vec::with_capacity(items.len());
@@ -411,7 +411,7 @@ impl Interpreter {
             for item in items.iter() {
                 results.push(apply_hyper_prefix(self, &routine, item.clone())?);
             }
-            let result = Value::Array(std::sync::Arc::new(results), *kind);
+            let result = Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(results)), *kind);
             if mutating {
                 self.overwrite_array_bindings_by_identity(items, result.clone());
             }

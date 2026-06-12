@@ -1097,7 +1097,7 @@ impl Interpreter {
         // copy unconditionally flattened nested `[...]`, which over-flattened
         // `flat(1, [2, [3, 4]], (5, 6))` (raku keeps the inner `[3 4]`).
         let list = Value::Array(
-            std::sync::Arc::new(args.to_vec()),
+            std::sync::Arc::new(crate::value::ArrayData::new(args.to_vec())),
             crate::value::ArrayKind::List,
         );
         let mut result = Vec::new();
@@ -1142,7 +1142,7 @@ impl Interpreter {
                 lines.push(Value::str(line));
             }
             lines.reverse();
-            return Ok(Value::Array(Arc::new(lines), ArrayKind::List));
+            return Ok(Value::Array(Arc::new(crate::value::ArrayData::new(lines)), ArrayKind::List));
         }
         // Single arg: delegate to the single shared native `reverse` (Array / Seq
         // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy
@@ -2072,7 +2072,7 @@ impl Interpreter {
                     {
                         match single {
                             Value::Array(items, _) => {
-                                values = items.as_ref().clone();
+                                values = items.as_ref().clone().items;
                             }
                             Value::Seq(items) | Value::Slip(items) => {
                                 values = items.as_ref().clone();
@@ -2309,7 +2309,7 @@ impl Interpreter {
                 } else {
                     crate::value::ArrayKind::List
                 };
-                Ok(Value::Array(std::sync::Arc::new(result), arr_kind))
+                Ok(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(result)), arr_kind))
             }
             Value::Seq(items) => {
                 let mut result = Vec::new();
@@ -2323,7 +2323,7 @@ impl Interpreter {
                 if itemize_result {
                     // Itemize the result as a list
                     Ok(Value::Array(
-                        std::sync::Arc::new(result),
+                        std::sync::Arc::new(crate::value::ArrayData::new(result)),
                         crate::value::ArrayKind::ItemList,
                     ))
                 } else {

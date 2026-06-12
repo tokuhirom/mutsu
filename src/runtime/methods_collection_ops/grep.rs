@@ -290,7 +290,7 @@ impl Interpreter {
                 let updated_source = std::sync::Arc::new(mutated_items);
                 self.overwrite_array_bindings_by_identity(
                     &items,
-                    Value::Array(updated_source.clone(), arr_kind),
+                    Value::Array(crate::value::Value::array_arc(updated_source.clone().to_vec()), arr_kind),
                 );
                 let mut indices = Vec::new();
                 if let Value::Array(filtered_items, ..) = &filtered {

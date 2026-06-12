@@ -260,7 +260,7 @@ impl Interpreter {
                 Some(self.dispatch_grep(target, &args).map(|v| {
                     if !is_real_array && let Value::Array(items, crate::value::ArrayKind::List) = v
                     {
-                        return Value::Seq(items);
+                        return Value::Seq(std::sync::Arc::new(items.to_vec()));
                     }
                     v
                 }))

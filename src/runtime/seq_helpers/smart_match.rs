@@ -491,7 +491,7 @@ impl Interpreter {
                     self.env.insert(
                         "/".to_string(),
                         Value::Array(
-                            std::sync::Arc::new(Vec::new()),
+                            std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                             crate::value::ArrayKind::List,
                         ),
                     );
@@ -502,7 +502,7 @@ impl Interpreter {
                         self.env.insert(
                             "/".to_string(),
                             Value::Array(
-                                std::sync::Arc::new(Vec::new()),
+                                std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                                 crate::value::ArrayKind::List,
                             ),
                         );
@@ -1148,15 +1148,15 @@ impl Interpreter {
                             let vt = &info.value_type;
                             if let Some(ref kt) = info.key_type {
                                 if vt != "Any" || kt != "Str" {
-                                    return Some(vec![
+                                    return Some(crate::value::ArrayData::new(vec![
                                         Value::Package(crate::symbol::Symbol::intern(vt)),
                                         Value::Package(crate::symbol::Symbol::intern(kt)),
-                                    ]);
+                                    ]));
                                 }
                             } else if vt != "Any" && vt != "Mu" {
-                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
+                                return Some(crate::value::ArrayData::new(vec![Value::Package(crate::symbol::Symbol::intern(
                                     vt,
-                                ))]);
+                                ))]));
                             }
                         }
                         None
@@ -1166,9 +1166,9 @@ impl Interpreter {
                         if let Some(info) = self.container_type_metadata(left_value) {
                             let vt = &info.value_type;
                             if vt != "Any" && vt != "Mu" {
-                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
+                                return Some(crate::value::ArrayData::new(vec![Value::Package(crate::symbol::Symbol::intern(
                                     vt,
-                                ))]);
+                                ))]));
                             }
                         }
                         None

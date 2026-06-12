@@ -1360,7 +1360,7 @@ impl VM {
                     other => other.clone(),
                 })
                 .collect();
-            Value::Array(std::sync::Arc::new(resolved), kind)
+            Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(resolved)), kind)
         } else {
             val
         }

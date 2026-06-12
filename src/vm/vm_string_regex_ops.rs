@@ -1482,7 +1482,7 @@ impl VM {
             let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
             return if !left_is_array && !right_is_array {
                 Ok(Value::Array(
-                    std::sync::Arc::new(results),
+                    std::sync::Arc::new(crate::value::ArrayData::new(results)),
                     crate::value::ArrayKind::List,
                 ))
             } else {
@@ -1767,7 +1767,7 @@ impl VM {
             if both_scalar && items.len() == 1 {
                 items.into_iter().next().unwrap()
             } else if !left_is_array && !right_is_array {
-                Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
             } else {
                 Value::real_array(items)
             }

@@ -484,7 +484,7 @@ impl VM {
             Value::Array(_, kind) if kind.is_real_array() && !method_is_nodal => ArrayKind::Array,
             _ => ArrayKind::List,
         };
-        let result = Value::Array(std::sync::Arc::new(results), result_kind);
+        let result = Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(results)), result_kind);
         // A per-element native method raised a resumable warn: re-raise it once,
         // carrying the whole hyper result as the resume value, so an enclosing
         // `CONTROL { .resume }` (or the default warn handler) resumes the entire
@@ -521,8 +521,8 @@ impl VM {
                     mutated.push(m);
                 }
                 Ok((
-                    Value::Array(std::sync::Arc::new(results), *kind),
-                    Value::Array(std::sync::Arc::new(mutated), *kind),
+                    Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(results)), *kind),
+                    Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(mutated)), *kind),
                 ))
             }
             Value::Seq(elems) | Value::Slip(elems) => {
@@ -535,8 +535,8 @@ impl VM {
                     mutated.push(m);
                 }
                 Ok((
-                    Value::Array(std::sync::Arc::new(results), ArrayKind::List),
-                    Value::Array(std::sync::Arc::new(mutated), ArrayKind::List),
+                    Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(results)), ArrayKind::List),
+                    Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(mutated)), ArrayKind::List),
                 ))
             }
             Value::Hash(map) => {
@@ -783,7 +783,7 @@ impl VM {
             _ => ArrayKind::List,
         };
         self.stack
-            .push(Value::Array(std::sync::Arc::new(results), result_kind));
+            .push(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(results)), result_kind));
         Ok(())
     }
 }

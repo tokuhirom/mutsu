@@ -707,7 +707,7 @@ impl Interpreter {
                 let mut updated = items.to_vec();
                 if idx < updated.len() {
                     updated[idx] = value.clone();
-                    let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+                    let replacement = Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(updated)), *kind);
                     if let Some(var_name) = target_var {
                         self.env.insert(var_name.to_string(), replacement);
                     }
@@ -724,7 +724,7 @@ impl Interpreter {
             let idx = if method == "head" { 0 } else { items.len() - 1 };
             let mut updated = items.to_vec();
             updated[idx] = value.clone();
-            let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+            let replacement = Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(updated)), *kind);
             if let Some(var_name) = target_var {
                 self.env.insert(var_name.to_string(), replacement);
             }
@@ -900,7 +900,7 @@ impl Interpreter {
                     && let Some(Value::Array(candidate, ..)) = self.env.get(var_name)
                     && candidate.get(i) == Some(current_value.as_ref())
                 {
-                    selected_array = Some(candidate.clone());
+                    selected_array = Some(std::sync::Arc::new(candidate.clone().to_vec()));
                 }
 
                 if selected_hash.is_none() {
@@ -932,7 +932,7 @@ impl Interpreter {
                     if let Some(first) = candidates.next()
                         && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
                     {
-                        selected_array = Some(first);
+                        selected_array = Some(std::sync::Arc::new(first.to_vec()));
                     }
                 }
 
@@ -2579,7 +2579,7 @@ impl Interpreter {
                     } else {
                         items.extend(normalized_args);
                     }
-                    let result = Value::Array(Arc::new(items), array_flag);
+                    let result = Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag);
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -2614,7 +2614,7 @@ impl Interpreter {
                         items.pop().unwrap_or(Value::Nil)
                     };
                     self.env
-                        .insert(key, Value::Array(Arc::new(items), array_flag));
+                        .insert(key, Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag));
                     return Ok(out);
                 }
                 "unshift" => {
@@ -2633,7 +2633,7 @@ impl Interpreter {
                     for (i, arg) in normalized_args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result = Value::Array(Arc::new(items), array_flag);
+                    let result = Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag);
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -2652,9 +2652,9 @@ impl Interpreter {
                     };
                     let mut pref: Vec<Value> = flat_values;
                     pref.extend(items);
-                    let result = Value::Array(Arc::new(pref.clone()), array_flag);
+                    let result = Value::Array(Arc::new(crate::value::ArrayData::new(pref.clone())), array_flag);
                     self.env
-                        .insert(key, Value::Array(Arc::new(pref), array_flag));
+                        .insert(key, Value::Array(Arc::new(crate::value::ArrayData::new(pref)), array_flag));
                     return Ok(result);
                 }
                 "shift" => {
@@ -2683,7 +2683,7 @@ impl Interpreter {
                         items.remove(0)
                     };
                     self.env
-                        .insert(key, Value::Array(Arc::new(items), array_flag));
+                        .insert(key, Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag));
                     return Ok(out);
                 }
                 _ => {}
@@ -3118,7 +3118,7 @@ impl Interpreter {
                                 let mut next = existing.to_vec();
                                 next.extend(collected);
                                 let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
+                                    Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(next)), *arr_kind);
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             Value::str_from("IterationEnd")
@@ -3180,7 +3180,7 @@ impl Interpreter {
                                 let mut next = existing.to_vec();
                                 next.extend(collected.clone());
                                 let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
+                                    Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(next)), *arr_kind);
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             if collected.len() >= want {
@@ -3261,7 +3261,7 @@ impl Interpreter {
                     if let Some(Value::Array(existing, arr_kind)) = args.first() {
                         let mut next = existing.to_vec();
                         next.extend(vals.iter().cloned());
-                        let updated_array = Value::Array(std::sync::Arc::new(next), *arr_kind);
+                        let updated_array = Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(next)), *arr_kind);
                         self.overwrite_array_bindings_by_identity(existing, updated_array);
                     }
                 };

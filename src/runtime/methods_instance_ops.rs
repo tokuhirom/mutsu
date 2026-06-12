@@ -1644,11 +1644,11 @@ impl Interpreter {
                         }
                     }
                     new_items.append(items);
-                    *items = new_items;
+                    *items = crate::value::ArrayData::new(new_items);
                 }
                 _ => {}
             }
-            Ok(Value::real_array(items.clone()))
+            Ok(Value::real_array(items.clone().items))
         } else {
             Err(RuntimeError::new(format!(
                 "Cannot call '{}' on non-Array attribute",

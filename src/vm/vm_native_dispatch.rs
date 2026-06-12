@@ -203,7 +203,7 @@ impl VM {
                     let val = match method_name.as_str() {
                         "Slip" => Value::Slip(std::sync::Arc::new(items)),
                         "List" => {
-                            Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                            Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
                         }
                         "Seq" => Value::Seq(std::sync::Arc::new(items)),
                         "Array" => Value::real_array(items),

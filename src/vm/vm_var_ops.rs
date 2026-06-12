@@ -155,7 +155,7 @@ impl VM {
     ) -> Value {
         match items.get(idx) {
             Some(Value::Pair(name, _)) if name == SELF_ARRAY_REF_SENTINEL => {
-                Value::Array(items.clone(), kind)
+                Value::Array(crate::value::Value::array_arc(items.clone().to_vec()), kind)
             }
             Some(Value::Pair(name, source)) if name == BOUND_ARRAY_REF_SENTINEL => {
                 let source_name = source.to_string_value();

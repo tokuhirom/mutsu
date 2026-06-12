@@ -725,7 +725,7 @@ impl VM {
         // Convert HyperSeq/RaceSeq to List for method dispatch
         let target = match target {
             Value::HyperSeq(items) | Value::RaceSeq(items) => {
-                Value::Array(items, crate::value::ArrayKind::List)
+                Value::Array(crate::value::Value::array_arc(items.to_vec()), crate::value::ArrayKind::List)
             }
             other => other,
         };

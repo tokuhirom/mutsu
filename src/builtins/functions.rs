@@ -174,7 +174,7 @@ fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Value, RuntimeE
     let flattened: Vec<Value>;
     let actual_args = if rest.len() == 1 {
         if let Value::Array(items, ..) = &rest[0] {
-            flattened = items.as_ref().clone();
+            flattened = items.as_ref().clone().items;
             &flattened[..]
         } else {
             rest
@@ -893,7 +893,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Value::Array(items, ..) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::array(reversed)
+                    Value::array(reversed.items)
                 }
                 Value::Seq(items) | Value::Slip(items) => {
                     let mut reversed = (**items).clone();
@@ -923,7 +923,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Value::Array(items, ..) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::array(sorted)
+                    Value::array(sorted.items)
                 }
                 _ => Value::Nil,
             }))

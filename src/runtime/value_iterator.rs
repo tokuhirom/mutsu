@@ -39,7 +39,7 @@ impl ValueIterator {
         match val {
             // Already-materialized sequences: share the backing Arc, no copy.
             Value::Array(items, kind) if !kind.is_itemized() => Some(ValueIterator::Slice {
-                items: items.clone(),
+                items: std::sync::Arc::new(items.clone().to_vec()),
                 idx: 0,
             }),
             Value::Seq(items) | Value::Slip(items) => Some(ValueIterator::Slice {

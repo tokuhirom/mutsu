@@ -3044,7 +3044,7 @@ impl Value {
                 // lands in the same physical Vec the stored element points to.
                 if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
                     return Some(Value::ArraySlotRef {
-                        array: arc.clone(),
+                        array: std::sync::Arc::new(arc.clone().to_vec()),
                         index: idx,
                     });
                 }

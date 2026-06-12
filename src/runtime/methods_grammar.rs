@@ -90,7 +90,7 @@ impl Interpreter {
                             rule_args = positional.clone();
                         }
                         Value::Array(arr, _) => {
-                            rule_args = arr.as_ref().clone();
+                            rule_args = arr.as_ref().clone().items;
                         }
                         other => {
                             rule_args = vec![other.clone()];
@@ -380,7 +380,7 @@ impl Interpreter {
                             self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?;
                         updated_items.push(updated_item);
                     }
-                    updated_named.insert(child_name, Value::Array(Arc::new(updated_items), *meta));
+                    updated_named.insert(child_name, Value::Array(Arc::new(crate::value::ArrayData::new(updated_items)), *meta));
                 } else {
                     let dispatch_name =
                         Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());

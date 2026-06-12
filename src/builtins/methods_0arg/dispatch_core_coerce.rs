@@ -35,7 +35,7 @@ pub(super) fn dispatch(
             match target {
                 Value::Package(_) | Value::Nil => Some(Some(Ok(target.clone()))),
                 Value::Array(items, kind) => {
-                    Some(Some(Ok(Value::Array(Arc::new(items.to_vec()), *kind))))
+                    Some(Some(Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items.to_vec())), *kind))))
                 }
                 Value::Hash(map) => Some(Some(Ok(Value::Hash(Value::hash_arc((**map).clone()))))),
                 Value::Set(data, mutable) => {

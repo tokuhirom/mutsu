@@ -616,7 +616,7 @@ impl Interpreter {
         // Find candidates and pick the highest matching version.
         let candidates = match self.cur_inst_candidates(prefix, &depspec)? {
             Value::Array(arr, _) => arr,
-            _ => Arc::new(Vec::new()),
+            _ => crate::value::Value::array_arc(Arc::new(Vec::new()).to_vec()),
         };
         let dist_meta = |dist: &Value| -> Value {
             match dist {

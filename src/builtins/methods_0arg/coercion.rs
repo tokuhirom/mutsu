@@ -200,7 +200,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 crate::value::seq_mark_cached(items);
                 Some(Ok(Value::Slip(items.clone())))
             }
-            Value::Array(items, ..) => Some(Ok(Value::Slip(items.clone()))),
+            Value::Array(items, ..) => Some(Ok(Value::Slip(std::sync::Arc::new(items.clone().to_vec())))),
             Value::Slip(_) => Some(Ok(target.clone())),
             Value::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
@@ -244,7 +244,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     )))
                 } else {
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(Vec::new()),
+                        std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                         crate::value::ArrayKind::List,
                     )))
                 }

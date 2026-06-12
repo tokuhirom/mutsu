@@ -1405,7 +1405,7 @@ impl VM {
                         shaped_items.resize(shape[0], Value::Nil);
                     }
                     assigned = Value::Array(
-                        std::sync::Arc::new(shaped_items),
+                        std::sync::Arc::new(crate::value::ArrayData::new(shaped_items)),
                         crate::value::ArrayKind::Shaped,
                     );
                     crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
@@ -3322,7 +3322,7 @@ impl VM {
         match val {
             Value::Array(arc_vec, kind) => {
                 let copied: Vec<Value> = arc_vec.iter().map(Self::deep_copy_value).collect();
-                Value::Array(std::sync::Arc::new(copied), *kind)
+                Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(copied)), *kind)
             }
             Value::Hash(arc_map) => {
                 let copied: std::collections::HashMap<String, Value> = arc_map

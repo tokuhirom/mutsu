@@ -79,13 +79,13 @@ impl VM {
         let result = if is_shift {
             let rest = items.split_off(actual_n);
             let shifted = items;
-            items = rest;
+            items = crate::value::ArrayData::new(rest);
             shifted
         } else {
             // pop
             let split_at = items.len().saturating_sub(actual_n);
             let popped: Vec<Value> = items.drain(split_at..).rev().collect();
-            popped
+            crate::value::ArrayData::new(popped)
         };
         // Write the mutated array back
         let lookup_key = if self.interpreter.env().contains_key(&arr_key) {
@@ -97,7 +97,7 @@ impl VM {
             .env_mut()
             .insert(lookup_key.to_string(), Value::Array(Arc::new(items), kind));
         self.env_dirty = true;
-        Ok(Some(result))
+        Ok(Some(result.items))
     }
 
     /// VM-native implementation of xx-repeat for thunks.

@@ -219,7 +219,7 @@ impl VM {
         // Bare Whatever (*) in array subscript means all indices: 0, 1, ..., len-1
         if matches!(idx, Value::Whatever) {
             let indices: Vec<Value> = (0..len).map(Value::Int).collect();
-            return Value::Array(Arc::new(indices), crate::value::ArrayKind::List);
+            return Value::Array(Arc::new(crate::value::ArrayData::new(indices)), crate::value::ArrayKind::List);
         }
         if let Value::Sub(ref data) = idx {
             let mut sub_env = data.env.clone();
@@ -265,7 +265,7 @@ impl VM {
                         resolved.push(item.clone());
                     }
                 }
-                return Value::Array(Arc::new(resolved), kind);
+                return Value::Array(Arc::new(crate::value::ArrayData::new(resolved)), kind);
             }
         }
         idx
@@ -373,7 +373,7 @@ impl VM {
     ) {
         match v {
             Value::Array(inner_arc, _) if Arc::as_ptr(inner_arc) as usize == old_ptr => {
-                *v = Value::Array(new_array.clone(), kind);
+                *v = Value::Array(crate::value::Value::array_arc(new_array.clone().to_vec()), kind);
             }
             Value::Hash(map) => {
                 let hash_ptr = Arc::as_ptr(map) as usize;
@@ -472,7 +472,7 @@ impl VM {
             // so no other thread can access it.
             unsafe {
                 for idx in &circular_indices {
-                    (&mut *items_ptr)[*idx] = Value::Array(result_arc.clone(), *kind);
+                    (&mut *items_ptr)[*idx] = Value::Array(crate::value::Value::array_arc(result_arc.clone().to_vec()), *kind);
                 }
                 for idx in &hash_fixup_indices {
                     let mut seen = Vec::new();
@@ -485,7 +485,7 @@ impl VM {
                     );
                 }
             }
-            *new_arc = result_arc;
+            *new_arc = crate::value::Value::array_arc(result_arc.to_vec());
         }
     }
 
@@ -875,7 +875,7 @@ impl VM {
 
     fn assignment_rhs_values(&mut self, val: &Value) -> Result<Vec<Value>, RuntimeError> {
         Ok(match val {
-            Value::Array(v, ..) => v.as_ref().clone(),
+            Value::Array(v, ..) => v.as_ref().clone().items,
             Value::Seq(v) | Value::Slip(v) => v.iter().cloned().collect(),
             Value::Range(a, b) => {
                 let end = (*b).min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
@@ -1075,7 +1075,7 @@ impl VM {
                 &coercion_target,
                 explicit_initializer,
             )?;
-            return Ok(Value::Array(Arc::new(coerced_items), kind));
+            return Ok(Value::Array(Arc::new(crate::value::ArrayData::new(coerced_items)), kind));
         }
 
         if var_name.starts_with('%')
@@ -1227,7 +1227,7 @@ impl VM {
                     coercion_target,
                     explicit_initializer,
                 )?;
-                coerced_items.push(Value::Array(Arc::new(sub_coerced), *sub_kind));
+                coerced_items.push(Value::Array(Arc::new(crate::value::ArrayData::new(sub_coerced)), *sub_kind));
                 continue;
             }
             let target_type = coercion_target(constraint).unwrap_or_else(|| constraint.to_string());
@@ -2444,23 +2444,23 @@ impl VM {
                     }));
         let expand_range = var_name.starts_with('%') || array_var_is_native;
         let idx = match idx {
-            Value::Seq(items) => Value::Array(items, crate::value::ArrayKind::List),
-            Value::Slip(items) => Value::Array(items, crate::value::ArrayKind::List),
+            Value::Seq(items) => Value::Array(crate::value::Value::array_arc(items.to_vec()), crate::value::ArrayKind::List),
+            Value::Slip(items) => Value::Array(crate::value::Value::array_arc(items.to_vec()), crate::value::ArrayKind::List),
             Value::Range(a, b) if expand_range => {
                 let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+                Value::Array(Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
             }
             Value::RangeExcl(a, b) if expand_range => {
                 let items: Vec<Value> = (a..b).map(Value::Int).collect();
-                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+                Value::Array(Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
             }
             Value::RangeExclStart(a, b) if expand_range => {
                 let items: Vec<Value> = ((a + 1)..=b).map(Value::Int).collect();
-                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+                Value::Array(Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
             }
             Value::RangeExclBoth(a, b) if expand_range => {
                 let items: Vec<Value> = ((a + 1)..b).map(Value::Int).collect();
-                Value::Array(Arc::new(items), crate::value::ArrayKind::List)
+                Value::Array(Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
             }
             other => other,
         };
@@ -3540,7 +3540,7 @@ impl VM {
                                     if Arc::as_ptr(array) as usize == old_ptr
                                         && let Value::Array(new_arc, _) = container
                                     {
-                                        *array = new_arc.clone();
+                                        *array = std::sync::Arc::new(new_arc.clone().to_vec());
                                     }
                                 }
                                 Value::HashSlotRef { hash, .. } => {
@@ -4221,7 +4221,7 @@ impl VM {
                     // For bind mode, set up an ArraySlotRef on the source variable
                     if let Some(source_name) = &bind_source {
                         let slot_ref = Value::ArraySlotRef {
-                            array: arc.clone(),
+                            array: std::sync::Arc::new(arc.clone().to_vec()),
                             index: i,
                         };
                         self.interpreter
@@ -5170,17 +5170,17 @@ impl VM {
                     Value::Array(items, kind) if kind.is_real_array() => Value::Array(items, kind),
                     Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
                     Value::Seq(items) => Value::Array(
-                        std::sync::Arc::new(items.to_vec()),
+                        std::sync::Arc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
                     Value::LazyList(list) => {
                         let items = self.force_lazy_list_vm(&list)?;
-                        Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                        Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
                     }
                     Value::LazyIoLines { .. } => {
                         let forced = self.force_if_lazy_io_lines(raw_popped)?;
                         let items = runtime::value_to_list(&forced);
-                        Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                        Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List)
                     }
                     Value::Instance { ref class_name, .. } => {
                         // Check if Instance does Positional — if so, keep as-is.
@@ -5255,18 +5255,18 @@ impl VM {
                                     Value::Array(items, crate::value::ArrayKind::List)
                                 }
                                 Value::Seq(items) => Value::Array(
-                                    std::sync::Arc::new(items.to_vec()),
+                                    std::sync::Arc::new(crate::value::ArrayData::new(items.to_vec())),
                                     crate::value::ArrayKind::List,
                                 ),
                                 other => Value::Array(
-                                    std::sync::Arc::new(vec![other]),
+                                    std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
                                     crate::value::ArrayKind::List,
                                 ),
                             }
                         }
                     }
                     other => Value::Array(
-                        std::sync::Arc::new(vec![other]),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
                         crate::value::ArrayKind::List,
                     ),
                 }
@@ -5392,7 +5392,7 @@ impl VM {
                     shaped_items.resize(shape[0], Value::Nil);
                 }
                 assigned = Value::Array(
-                    std::sync::Arc::new(shaped_items),
+                    std::sync::Arc::new(crate::value::ArrayData::new(shaped_items)),
                     crate::value::ArrayKind::Shaped,
                 );
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(&shape));
@@ -5455,7 +5455,7 @@ impl VM {
                     .iter()
                     .map(|v| if is_hole(v) { def.clone() } else { v.clone() })
                     .collect();
-                val = Value::Array(Arc::new(replaced), kind);
+                val = Value::Array(Arc::new(crate::value::ArrayData::new(replaced)), kind);
             }
         }
         // Skip typed container coercion for `:=` binding — it would create
@@ -6475,8 +6475,8 @@ impl VM {
 
         let key_list = match keys {
             Value::Array(items, ..) => items,
-            Value::Seq(items) => Arc::new(items.to_vec()),
-            _ => Arc::new(vec![keys]),
+            Value::Seq(items) => crate::value::Value::array_arc(Arc::new(items.to_vec()).to_vec()),
+            _ => crate::value::Value::array_arc(Arc::new(vec![keys]).to_vec()),
         };
 
         let mut current = target;
