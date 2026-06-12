@@ -760,11 +760,15 @@ impl VM {
     /// env/locals here and let it win, keeping the alias alive past method exit.
     ///
     /// Returns `true` when the map was adjusted beyond the raw cell snapshot
-    /// (a `:=` ContainerRef was recovered). When `false`, the map is exactly the
-    /// cell's current contents, so committing it back would be a no-op at best —
-    /// and a lost-update race at worst: a concurrent cell-CAS / cell-direct write
-    /// from another thread between this snapshot and the commit would be
-    /// clobbered by the stale whole-map write. Callers skip the commit then.
+    /// (a `:=` ContainerRef was recovered). When `false`, the cell's current
+    /// contents are authoritative and `attributes` is left as the (stale) entry
+    /// snapshot — committing a snapshot back would be a no-op at best, and a
+    /// lost-update race at worst: a concurrent cell-CAS / cell-direct write
+    /// from another thread between snapshot and commit would be clobbered by
+    /// the stale whole-map write. Callers skip the commit then, and the rare
+    /// consumer that needs the post-method map (proxy_fetch) re-snapshots the
+    /// live cell on demand instead — so the common exit pays no `to_map()`
+    /// (full attr-map clone) at all.
     fn reconcile_attrs(
         &self,
         base: &Value,
@@ -777,38 +781,68 @@ impl VM {
         else {
             return false;
         };
-        *attributes = cell.to_map();
-        let mut adjusted = false;
-        // Preserve `:=`-bound attributes: their authoritative value is the shared
-        // ContainerRef in env/locals, not the cell snapshot.
-        let keys: Vec<String> = attributes.keys().cloned().collect();
-        for k in keys {
-            if k.starts_with(ATTR_ALIAS_META_PREFIX) {
-                continue;
-            }
-            let bare = k.rsplit('\0').next().unwrap_or(&k);
-            // Sigilless (`has $x` → bare `x`) and twigil (`$!x`/`@.x`/…) keys may
-            // hold the `:=` ContainerRef alias.
-            let candidates = [
-                bare.to_string(),
-                format!("!{}", bare),
-                format!(".{}", bare),
-                format!("@!{}", bare),
-                format!("@.{}", bare),
-                format!("%!{}", bare),
-                format!("%.{}", bare),
-            ];
-            for key in candidates {
-                if let Some(v) = self.attr_env_or_local(code, &key)
-                    && v.is_container_ref()
-                {
-                    attributes.insert(k.clone(), v);
-                    adjusted = true;
-                    break;
+        // Cheap pre-check: a `:=` attr override can only be observed as a
+        // ContainerRef value in THIS frame's locals or env overlay (the bind
+        // op writes it there). No ContainerRef anywhere -> skip the per-attr
+        // candidate scan below (7 `format!`s + env lookups per attribute key,
+        // ~5% of method-heavy profiles) entirely. Deliberately overlay-only:
+        // a caller-frame ContainerRef (e.g. a boxed loop capture that happens
+        // to share an attribute's bare name) is NOT a binding made by this
+        // method and must not be adopted as one.
+        let frame_has_container_ref = self
+            .locals
+            .iter()
+            .any(|v| matches!(v, Value::ContainerRef(_)))
+            || self
+                .interpreter
+                .env()
+                .overlay_iter()
+                .any(|(_, v)| matches!(v, Value::ContainerRef(_)));
+        if !frame_has_container_ref {
+            return false;
+        }
+        // Scan for `:=`-bound attributes: their authoritative value is the
+        // shared ContainerRef in env/locals, not the cell. Key iteration runs
+        // under the cell's read guard (attr_env_or_local touches only
+        // env/locals, never the cell), so no map clone is materialized when —
+        // as in the overwhelmingly common case — no `:=` binding exists.
+        let mut overrides: Vec<(String, Value)> = Vec::new();
+        {
+            let cell_map = cell.as_map();
+            for k in cell_map.keys() {
+                if k.starts_with(ATTR_ALIAS_META_PREFIX) {
+                    continue;
+                }
+                let bare = k.rsplit('\0').next().unwrap_or(k);
+                // Sigilless (`has $x` → bare `x`) and twigil (`$!x`/`@.x`/…) keys
+                // may hold the `:=` ContainerRef alias.
+                let candidates = [
+                    bare.to_string(),
+                    format!("!{}", bare),
+                    format!(".{}", bare),
+                    format!("@!{}", bare),
+                    format!("@.{}", bare),
+                    format!("%!{}", bare),
+                    format!("%.{}", bare),
+                ];
+                for key in candidates {
+                    if let Some(v) = self.attr_env_or_local(code, &key)
+                        && v.is_container_ref()
+                    {
+                        overrides.push((k.clone(), v));
+                        break;
+                    }
                 }
             }
         }
-        adjusted
+        if overrides.is_empty() {
+            return false;
+        }
+        *attributes = cell.to_map();
+        for (k, v) in overrides {
+            attributes.insert(k, v);
+        }
+        true
     }
 
     /// Read the current value of `name` from the method's local slot if present,
