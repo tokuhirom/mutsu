@@ -2096,6 +2096,17 @@ impl VM {
                 self.stack.push(Value::Scalar(Box::new(val)));
                 *ip += 1;
             }
+            OpCode::WrapTypedContainer(type_idx) => {
+                // Wrap a typed anonymous scalar (`my T $`) in a ContainerRef cell
+                // and record its `of`-type, so the constraint travels with the
+                // value (e.g. into a Pair value) and is enforced on assignment.
+                let type_name = Self::const_str(code, *type_idx).to_string();
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let cell = std::sync::Arc::new(std::sync::Mutex::new(val));
+                crate::value::register_container_constraint(&cell, &type_name);
+                self.stack.push(Value::ContainerRef(cell));
+                *ip += 1;
+            }
             OpCode::FlattenSlurpy => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let mut items = Vec::new();

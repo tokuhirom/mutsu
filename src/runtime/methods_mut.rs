@@ -868,6 +868,20 @@ impl Interpreter {
                 // `$var` (S02:1704). The type constraint, if any, is enforced by
                 // the cell itself on assignment.
                 if let Value::ContainerRef(cell) = current_value.as_ref() {
+                    // Enforce a typed container's `of`-type constraint, so
+                    // `Pair.new("foo", my Int $).value = "bar"` raises
+                    // X::TypeCheck::Assignment (S02-types/pair.t).
+                    if let Some(constraint) = crate::value::lookup_container_constraint(cell)
+                        && !matches!(constraint.as_str(), "Any" | "Mu")
+                        && !matches!(&value, Value::Nil)
+                        && !self.type_matches_value(&constraint, &value)
+                    {
+                        return Err(RuntimeError::typecheck_assignment(
+                            &constraint,
+                            &value,
+                            None,
+                        ));
+                    }
                     *cell.lock().unwrap() = value.clone();
                     return Ok(value);
                 }

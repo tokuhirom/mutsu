@@ -103,6 +103,12 @@ pub(crate) enum OpCode {
     /// Used for `my $ = expr` (anonymous scalar) in argument position,
     /// so the anonymous container is preserved in immutable List contexts.
     WrapScalar,
+    /// Wrap the top-of-stack value in a typed `ContainerRef` cell and register
+    /// its `of`-type constraint (the u32 is the constant-pool index of the type
+    /// name). Emitted for a typed anonymous scalar `my T $` used as a value, so
+    /// the constraint travels with the value (e.g. into a `Pair` value) and
+    /// `.value = ...` can raise X::TypeCheck::Assignment.
+    WrapTypedContainer(u32),
     /// Recursively flatten a list value into a real Array (like *@ slurpy).
     /// Used to populate @_ in bare if blocks.
     FlattenSlurpy,

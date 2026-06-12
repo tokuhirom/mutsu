@@ -199,6 +199,18 @@ impl Compiler {
                 // be wrapped -- their value must be used directly for numeric ops.
                 if name == "__ANON_STATE__" && type_constraint.is_none() {
                     self.code.emit(OpCode::WrapScalar);
+                } else if name == "__ANON_STATE__"
+                    && let Some(tc) = type_constraint
+                    && !matches!(tc.as_str(), "Any" | "Mu" | "")
+                    && !crate::runtime::native_types::is_native_array_element_type(tc)
+                {
+                    // A typed anonymous scalar (`my Int $`) used as a value: wrap
+                    // it in a typed ContainerRef so the `of`-type constraint
+                    // travels with the value (e.g. into a Pair value) and is
+                    // enforced on assignment. Native types stay unwrapped (their
+                    // raw value is needed for numeric ops).
+                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                    self.code.emit(OpCode::WrapTypedContainer(tc_idx));
                 }
                 // Apply custom traits (e.g. `is default(...)`) that were
                 // captured by `..` in the original pattern. Without this,
