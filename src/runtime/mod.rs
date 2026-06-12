@@ -5862,6 +5862,14 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
+        // No atomic variable has ever been registered (monotonic flag, set
+        // before any `__mutsu_atomic_name::` key is created), so there is
+        // nothing to reset. Skip the per-assignment `format!` + env remove +
+        // shared_vars write lock on the hot path — the same gate the atomic
+        // read paths already use (GetGlobal / SetLocal).
+        if !self.atomic_var_seen {
+            return;
+        }
         let name_key = format!("__mutsu_atomic_name::{name}");
         let Some(Value::Str(value_key)) = self.env.remove(&name_key) else {
             return;
@@ -5872,6 +5880,10 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
+        // See reset_atomic_var_key: nothing to reset when no atomics exist.
+        if !self.atomic_var_seen {
+            return;
+        }
         let name_key = format!("__mutsu_atomic_name::{name}");
         self.env.remove(&name_key);
         let mut shared = self.shared_vars.write().unwrap();
