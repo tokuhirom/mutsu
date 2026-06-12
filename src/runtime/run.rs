@@ -1385,7 +1385,7 @@ impl Interpreter {
                     // Build a distribution instance with files resolved to absolute paths
                     // Remap the "files" entries to full paths
                     use std::collections::HashMap;
-                    use std::sync::Arc;
+
                     let mut resolved_files: HashMap<String, Value> = HashMap::new();
                     if let Some(files_val) = meta_val.hash_get_str("files")
                         && let Value::Hash(fmap) = files_val
@@ -1402,13 +1402,16 @@ impl Interpreter {
                         }
                     }
                     let mut meta_map = match &meta_val {
-                        Value::Hash(m) => (**m).clone(),
+                        Value::Hash(m) => m.map.clone(),
                         _ => HashMap::new(),
                     };
-                    meta_map.insert("files".to_string(), Value::Hash(Arc::new(resolved_files)));
+                    meta_map.insert(
+                        "files".to_string(),
+                        Value::Hash(Value::hash_arc(resolved_files)),
+                    );
                     meta_map.insert("prefix".to_string(), Value::str(prefix.to_string()));
                     let mut attrs = HashMap::new();
-                    attrs.insert("meta".to_string(), Value::Hash(Arc::new(meta_map)));
+                    attrs.insert("meta".to_string(), Value::Hash(Value::hash_arc(meta_map)));
                     attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
                     return Some(Value::make_instance_without_destroy(
                         crate::symbol::Symbol::intern("Distribution::Installation"),
@@ -1500,7 +1503,6 @@ impl Interpreter {
     /// and returns a Hash mapping resource names to their absolute paths on disk.
     pub(crate) fn build_resources_for_package(&self) -> Value {
         use std::collections::HashMap;
-        use std::sync::Arc;
 
         // Priority 1: current_distribution (set during module loading)
         if let Some(dist) = &self.current_distribution {
@@ -1516,12 +1518,11 @@ impl Interpreter {
         if let Some(dist) = self.package_distributions.get(&self.current_package()) {
             return Self::build_resources_from_dist(dist);
         }
-        Value::Hash(Arc::new(HashMap::new()))
+        Value::Hash(Value::hash_arc(HashMap::new()))
     }
 
     fn build_resources_from_dist(dist: &Value) -> Value {
         use std::collections::HashMap;
-        use std::sync::Arc;
 
         let meta = match dist {
             Value::Instance { attributes, .. } => {
@@ -1594,7 +1595,7 @@ impl Interpreter {
             }
             _ => {}
         }
-        Value::Hash(Arc::new(result))
+        Value::Hash(Value::hash_arc(result))
     }
 
     /// Detect a distribution (META6.json) for the given module source path.
@@ -1624,7 +1625,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "$!meta".to_string(),
-            Value::Hash(std::sync::Arc::new(meta_hash)),
+            Value::Hash(Value::hash_arc(meta_hash)),
         );
         Some(Value::make_instance_without_destroy(
             crate::symbol::Symbol::intern("Distribution"),
@@ -1647,11 +1648,11 @@ impl Interpreter {
         {
             Self::scan_resources(rd)
         } else {
-            Value::Hash(std::sync::Arc::new(HashMap::new()))
+            Value::Hash(Value::hash_arc(HashMap::new()))
         };
         meta.insert("resources".to_string(), resources);
         let mut attrs = HashMap::new();
-        attrs.insert("$!meta".to_string(), Value::Hash(std::sync::Arc::new(meta)));
+        attrs.insert("$!meta".to_string(), Value::Hash(Value::hash_arc(meta)));
         Value::make_instance_without_destroy(crate::symbol::Symbol::intern("Distribution"), attrs)
     }
 
@@ -1674,7 +1675,7 @@ impl Interpreter {
                 }
             }
         }
-        Value::Hash(std::sync::Arc::new(provides))
+        Value::Hash(Value::hash_arc(provides))
     }
 
     fn scan_resources(resources_dir: &Path) -> Value {
@@ -1690,7 +1691,7 @@ impl Interpreter {
                 }
             }
         }
-        Value::Hash(std::sync::Arc::new(files))
+        Value::Hash(Value::hash_arc(files))
     }
 
     fn parse_meta6_json(content: &str) -> Option<HashMap<String, Value>> {
@@ -1725,7 +1726,7 @@ impl Interpreter {
                 for (k, v) in obj {
                     map.insert(k.clone(), Self::json_to_value(v));
                 }
-                Value::Hash(std::sync::Arc::new(map))
+                Value::Hash(Value::hash_arc(map))
             }
         }
     }

@@ -948,8 +948,11 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&container, info);
+                // Hashes embed metadata in `HashData`; store the tagged value
+                // back into both the local slot and env.
+                let tagged = self.interpreter.tag_container_metadata(container, info);
+                self.locals_set_by_name(code, &name_str, tagged.clone());
+                self.set_env_with_main_alias(&name_str, tagged);
             }
             // Mark the variable read-only to prevent mutation
             self.interpreter.mark_readonly(&name_str);

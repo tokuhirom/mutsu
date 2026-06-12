@@ -315,12 +315,17 @@ impl VM {
             self.update_local_if_exists(code, &var_name, &updated);
         }
 
-        // Re-register container type metadata if Arc pointer changed
+        // Re-register container type metadata if Arc pointer changed. Hashes
+        // embed metadata in `HashData`, so the re-tagged value must be written
+        // back (no-op Arc for array/instance side-table containers).
         if let Some(info) = old_type_info
             && let Some(updated) = self.interpreter.env().get(&var_name).cloned()
         {
+            let tagged = self.interpreter.tag_container_metadata(updated, info);
             self.interpreter
-                .register_container_type_metadata(&updated, info);
+                .env_mut()
+                .insert(var_name.clone(), tagged.clone());
+            self.update_local_if_exists(code, &var_name, &tagged);
         }
 
         self.stack.push(value);
@@ -452,7 +457,7 @@ impl VM {
         match target {
             Value::Hash(..) => {}
             Value::Nil | Value::Package(..) => {
-                *target = Value::Hash(std::sync::Arc::new(std::collections::HashMap::new()));
+                *target = Value::Hash(Value::hash_arc(std::collections::HashMap::new()));
             }
             _ => {}
         }

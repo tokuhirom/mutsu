@@ -391,10 +391,8 @@ impl VM {
             for (key, item) in keys.iter().zip(items.iter()) {
                 map.insert(key.clone(), item.clone());
             }
-            self.interpreter.overwrite_hash_bindings_by_identity(
-                existing,
-                Value::Hash(std::sync::Arc::new(map)),
-            );
+            self.interpreter
+                .overwrite_hash_bindings_by_identity(existing, Value::Hash(Value::hash_arc(map)));
             self.env_dirty = true;
         }
         // Preserve the container type of the target for QuantHash types.
@@ -476,7 +474,7 @@ impl VM {
             for (key, value) in keys.into_iter().zip(results) {
                 map.insert(key, value);
             }
-            self.stack.push(Value::Hash(std::sync::Arc::new(map)));
+            self.stack.push(Value::Hash(Value::hash_arc(map)));
             return Ok(());
         }
         // Preserve the container type of the target: Array->Array, List->List.
@@ -553,8 +551,8 @@ impl VM {
                     mut_map.insert(k, m);
                 }
                 Ok((
-                    Value::Hash(std::sync::Arc::new(res_map)),
-                    Value::Hash(std::sync::Arc::new(mut_map)),
+                    Value::Hash(Value::hash_arc(res_map)),
+                    Value::Hash(Value::hash_arc(mut_map)),
                 ))
             }
             _ => {

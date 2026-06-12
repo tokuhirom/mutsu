@@ -135,7 +135,7 @@ impl Interpreter {
                             key_type: None,
                             declared_type: Some("Map".to_string()),
                         };
-                        self.register_container_type_metadata(&result, info);
+                        return Some(Ok(self.tag_container_metadata(result, info)));
                     }
                     return Some(Ok(result));
                 }

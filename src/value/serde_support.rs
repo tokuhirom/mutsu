@@ -342,9 +342,11 @@ fn ser_to_value(sv: SerValue) -> Value {
             Arc::new(items.into_iter().map(ser_to_value).collect()),
             kind,
         ),
-        SerValue::Hash(map) => Value::Hash(Arc::new(
-            map.into_iter().map(|(k, v)| (k, ser_to_value(v))).collect(),
-        )),
+        SerValue::Hash(map) => Value::hash(
+            map.into_iter()
+                .map(|(k, v)| (k, ser_to_value(v)))
+                .collect::<HashMap<String, Value>>(),
+        ),
         SerValue::Rat(n, d) => Value::Rat(n, d),
         SerValue::FatRat(n, d) => Value::FatRat(n, d),
         SerValue::BigRat(n, d) => Value::BigRat(n, d),

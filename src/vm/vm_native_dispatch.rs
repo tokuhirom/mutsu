@@ -172,7 +172,7 @@ impl VM {
         {
             return None;
         }
-        let result = if args.len() == 2 {
+        let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {
             crate::builtins::native_method_1arg(target, method_sym, &args[0])
@@ -285,11 +285,13 @@ impl VM {
         // metadata, copy the metadata to the cloned value so the clone
         // preserves the type constraint (e.g. %h.clone ~~ Hash[Int,Int]).
         if method_name == "clone"
-            && let Some(Ok(ref cloned)) = result
+            && matches!(&result, Some(Ok(_)))
             && let Some(info) = self.interpreter.container_type_metadata(target)
+            && let Some(Ok(v)) = result.take()
         {
-            self.interpreter
-                .register_container_type_metadata(cloned, info);
+            // Hashes embed metadata in `HashData`; re-tag the cloned value
+            // (no-op Arc for array/instance side-table containers).
+            result = Some(Ok(self.interpreter.tag_container_metadata(v, info)));
         }
 
         result

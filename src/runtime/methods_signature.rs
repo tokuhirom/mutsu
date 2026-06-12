@@ -275,7 +275,7 @@ impl Interpreter {
                     // A single Pair coerces to a one-element hash
                     let mut map = HashMap::new();
                     map.insert(k.clone(), *v.clone());
-                    Value::Hash(std::sync::Arc::new(map))
+                    Value::Hash(Value::hash_arc(map))
                 }
                 Value::Array(arr, _) => {
                     // Convert array of pairs to hash
@@ -288,7 +288,7 @@ impl Interpreter {
                         }
                     }
                     if has_pairs {
-                        Value::Hash(std::sync::Arc::new(map))
+                        Value::Hash(Value::hash_arc(map))
                     } else {
                         val
                     }

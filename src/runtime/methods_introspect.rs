@@ -314,7 +314,7 @@ impl Interpreter {
         if let Value::CustomType { name, .. } = target {
             return Ok(self.package_stash_value(&name.resolve()));
         }
-        Ok(Value::Hash(Arc::new(HashMap::new())))
+        Ok(Value::Hash(Value::hash_arc(HashMap::new())))
     }
 
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance
@@ -657,8 +657,8 @@ impl Interpreter {
             }
             let result = Value::hash(map);
             // Mark as Map (immutable hash)
-            self.register_container_type_metadata(
-                &result,
+            let result = self.tag_container_metadata(
+                result,
                 ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,

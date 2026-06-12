@@ -135,8 +135,7 @@ impl VM {
                 } else {
                     None
                 };
-                let id = Arc::as_ptr(hash_arc) as usize;
-                if self.interpreter.hash_type_metadata_exists(id) {
+                if hash_arc.has_type_meta() {
                     return None;
                 }
                 let key = idx.to_string_value();
@@ -354,7 +353,9 @@ impl VM {
         } else {
             result
         };
-        // Re-register type metadata if it was lost due to Arc::make_mut
+        // Re-register type metadata if it was lost due to Arc::make_mut. Hashes
+        // embed metadata in `HashData`, so the re-tagged value is written back
+        // (no-op Arc for array/instance side-table containers).
         if let Some(info) = saved_meta
             && let Some(container) = self.interpreter.env().get(&var_name)
             && self
@@ -363,8 +364,11 @@ impl VM {
                 .is_none()
         {
             let container = container.clone();
+            let tagged = self.interpreter.tag_container_metadata(container, info);
             self.interpreter
-                .register_container_type_metadata(&container, info);
+                .env_mut()
+                .insert(var_name.to_string(), tagged.clone());
+            self.update_local_if_exists(code, &var_name, &tagged);
         }
         // Re-register container default if it was lost due to Arc::make_mut.
         // Use the pointer-keyed container_default saved before delete so we

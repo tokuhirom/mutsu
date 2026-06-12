@@ -37,7 +37,7 @@ pub(super) fn dispatch(
                 Value::Array(items, kind) => {
                     Some(Some(Ok(Value::Array(Arc::new(items.to_vec()), *kind))))
                 }
-                Value::Hash(map) => Some(Some(Ok(Value::Hash(Arc::new((**map).clone()))))),
+                Value::Hash(map) => Some(Some(Ok(Value::Hash(Value::hash_arc((**map).clone()))))),
                 Value::Set(data, mutable) => {
                     Some(Some(Ok(Value::Set(Arc::new((**data).clone()), *mutable))))
                 }

@@ -1965,8 +1965,11 @@ impl VM {
                         },
                         declared_type: None,
                     };
-                    self.interpreter
-                        .register_container_type_metadata(&value, info);
+                    // Hashes embed metadata in `HashData`; write the tagged value
+                    // back (no-op Arc for array/instance side-table containers).
+                    let tagged = self.interpreter.tag_container_metadata(value, info);
+                    self.set_env_with_main_alias(&name, tagged.clone());
+                    self.update_local_if_exists(code, &name, &tagged);
                 }
                 *ip += 1;
             }
@@ -3253,9 +3256,8 @@ impl VM {
                             unsafe { (*ptr).clear() };
                         }
                         Value::Hash(arc) => {
-                            let ptr =
-                                Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
+                            unsafe { (*ptr).map.clear() };
                         }
                         _ => {}
                     }
@@ -3268,9 +3270,8 @@ impl VM {
                             unsafe { (*ptr).clear() };
                         }
                         Value::Hash(arc) => {
-                            let ptr =
-                                Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
+                            unsafe { (*ptr).map.clear() };
                         }
                         _ => {
                             self.locals[slot] = Value::Nil;

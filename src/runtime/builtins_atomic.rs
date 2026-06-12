@@ -840,7 +840,7 @@ impl Interpreter {
                     .env
                     .get(&hash_name)
                     .cloned()
-                    .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+                    .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
                 let mut shared = self.shared_vars.write().unwrap();
                 if !shared.contains_key(&atomic_key) {
                     shared.insert(atomic_key.clone(), hash);
@@ -879,13 +879,13 @@ impl Interpreter {
                     let hash = shared
                         .get(&atomic_key)
                         .cloned()
-                        .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+                        .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
                     if let Value::Hash(ref map) = hash {
                         let current = map.get(&key).cloned().unwrap_or(Value::Int(0));
                         let new_val = crate::builtins::arith_add(current, Value::Int(d))?;
                         let mut new_map = (**map).clone();
                         new_map.insert(key, new_val);
-                        let updated = Value::Hash(std::sync::Arc::new(new_map));
+                        let updated = Value::Hash(Value::hash_arc(new_map));
                         shared.insert(atomic_key.clone(), updated.clone());
                         shared.insert(hash_name.clone(), updated.clone());
                         drop(shared);
@@ -907,7 +907,7 @@ impl Interpreter {
                 let hash = shared
                     .get(&atomic_key)
                     .cloned()
-                    .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+                    .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
                 if let Value::Hash(ref map) = hash {
                     map.get(&key).cloned().unwrap_or(Value::Int(0))
                 } else {
@@ -933,13 +933,13 @@ impl Interpreter {
             let hash = shared
                 .get(&atomic_key)
                 .cloned()
-                .unwrap_or_else(|| Value::Hash(std::sync::Arc::new(HashMap::new())));
+                .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
             if let Value::Hash(ref map) = hash {
                 let seen = map.get(&key).cloned().unwrap_or(Value::Int(0));
                 if Self::cas_retry_matches(&current, &seen) {
                     let mut new_map = (**map).clone();
                     new_map.insert(key, new_val);
-                    let updated = Value::Hash(std::sync::Arc::new(new_map));
+                    let updated = Value::Hash(Value::hash_arc(new_map));
                     shared.insert(atomic_key.clone(), updated.clone());
                     shared.insert(hash_name.clone(), updated.clone());
                     drop(shared);

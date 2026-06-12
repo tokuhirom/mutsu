@@ -84,7 +84,7 @@ impl VM {
 
     pub(super) fn resolve_hash_entry(
         &self,
-        items: &Arc<HashMap<String, Value>>,
+        items: &Arc<crate::value::HashData>,
         key: &str,
     ) -> Value {
         match items.get(key) {
@@ -117,7 +117,7 @@ impl VM {
 
     /// Resolve all sentinel entries in a hash, returning a new hash with
     /// bound variable references replaced by their current values.
-    pub(super) fn resolve_hash_for_iteration(&self, items: &Arc<HashMap<String, Value>>) -> Value {
+    pub(super) fn resolve_hash_for_iteration(&self, items: &Arc<crate::value::HashData>) -> Value {
         let mut resolved = HashMap::new();
         for (key, value) in items.iter() {
             let resolved_value = match value {
@@ -136,7 +136,7 @@ impl VM {
             };
             resolved.insert(key.clone(), resolved_value);
         }
-        Value::Hash(Arc::new(resolved))
+        Value::Hash(Value::hash_arc(resolved))
     }
 
     pub(super) fn self_array_ref_marker() -> Value {

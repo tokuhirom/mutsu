@@ -1916,7 +1916,7 @@ impl VM {
                         let mut updated = hash_items.as_ref().clone();
                         let key_str = key.to_string_value();
                         updated.insert(key_str, val);
-                        let updated_value = Value::Hash(std::sync::Arc::new(updated));
+                        let updated_value = Value::Hash(Value::hash_arc(updated));
                         self.set_env_with_main_alias(source, updated_value.clone());
                         self.update_local_if_exists(code, source, &updated_value);
                     }
@@ -1930,7 +1930,7 @@ impl VM {
                     {
                         let mut updated = hash_items.as_ref().clone();
                         updated.insert(keys[idx].clone(), val);
-                        let updated_value = Value::Hash(std::sync::Arc::new(updated));
+                        let updated_value = Value::Hash(Value::hash_arc(updated));
                         self.set_env_with_main_alias(source, updated_value.clone());
                         self.update_local_if_exists(code, source, &updated_value);
                     }

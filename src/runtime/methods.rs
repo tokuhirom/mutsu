@@ -592,7 +592,7 @@ impl Interpreter {
                 Value::Package(crate::symbol::Symbol::intern("GLOBAL")),
             );
             let mut handle_attrs = std::collections::HashMap::new();
-            handle_attrs.insert("unit".to_string(), Value::Hash(unit_hash.into()));
+            handle_attrs.insert("unit".to_string(), Value::hash(unit_hash));
             return Ok(Value::make_instance(
                 crate::symbol::Symbol::intern("CompUnit::Handle"),
                 handle_attrs,
@@ -1060,13 +1060,13 @@ impl Interpreter {
             };
             // Check if we can mutate in-place (shared reference)
             if Arc::strong_count(arc) > 1 {
-                let ptr = Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
                 unsafe {
                     for arg in args {
                         match arg {
                             Value::Pair(k, v) => {
                                 let key = k.as_str().to_string();
-                                let map = &mut *ptr;
+                                let map = &mut (*ptr).map;
                                 if let Some(existing) = map.get(&key) {
                                     // Key exists: create itemized array
                                     let arr = Value::Array(
@@ -1080,7 +1080,7 @@ impl Interpreter {
                             }
                             Value::ValuePair(k, v) => {
                                 let key = k.to_string_value();
-                                let map = &mut *ptr;
+                                let map = &mut (*ptr).map;
                                 if let Some(existing) = map.get(&key) {
                                     let arr = Value::Array(
                                         Arc::new(vec![existing.clone(), *v]),
@@ -1128,7 +1128,7 @@ impl Interpreter {
                     _ => {}
                 }
             }
-            return Ok(Value::Hash(Arc::new(new_map)));
+            return Ok(Value::Hash(Value::hash_arc(new_map)));
         }
         // IO::Special.new("<STDOUT>")
         if let Value::Package(name) = &target

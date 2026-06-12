@@ -3343,7 +3343,7 @@ impl VM {
                     .iter()
                     .map(|(k, v)| (k.clone(), Self::deep_copy_value(v)))
                     .collect();
-                Value::Hash(std::sync::Arc::new(copied))
+                Value::Hash(Value::hash_arc(copied))
             }
             other => other.clone(),
         }

@@ -909,7 +909,7 @@ impl Interpreter {
                                         }
                                         self.env.insert(
                                             param.clone(),
-                                            Value::Hash(std::sync::Arc::new(map)),
+                                            Value::Hash(Value::hash_arc(map)),
                                         );
                                         break;
                                     }

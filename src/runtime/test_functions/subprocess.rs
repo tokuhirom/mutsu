@@ -164,7 +164,7 @@ impl Interpreter {
         hash.insert("out".to_string(), Value::str(out));
         hash.insert("err".to_string(), Value::str(err));
         hash.insert("status".to_string(), Value::Int(status));
-        Ok(Value::Hash(std::sync::Arc::new(hash)))
+        Ok(Value::Hash(Value::hash_arc(hash)))
     }
 
     pub(crate) fn test_fn_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

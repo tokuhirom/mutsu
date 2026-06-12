@@ -78,7 +78,7 @@ impl VM {
             Value::Hash(hash) if matches!(idx, Value::Str(_)) => {
                 let mut updated = (**hash).clone();
                 updated.insert(idx.to_string_value(), val.clone());
-                *attr_value = Value::Hash(Arc::new(updated));
+                *attr_value = Value::Hash(Value::hash_arc(updated));
                 true
             }
             Value::Nil if !matches!(idx, Value::Str(_)) => {
@@ -102,7 +102,7 @@ impl VM {
             Value::Nil if matches!(idx, Value::Str(_)) => {
                 let mut updated = std::collections::HashMap::new();
                 updated.insert(idx.to_string_value(), val.clone());
-                *attr_value = Value::Hash(Arc::new(updated));
+                *attr_value = Value::Hash(Value::hash_arc(updated));
                 true
             }
             _ => false,
@@ -319,15 +319,17 @@ impl VM {
                 new_map.insert(k.clone(), v.clone());
             }
             // Create the new Arc with the map
-            let result_arc = Arc::new(new_map);
+            let result_arc = Value::hash_arc(new_map);
             // Now fix up the circular references: set the placeholder values
             // to point to the result_arc itself.
-            let map = Arc::as_ptr(&result_arc) as *mut HashMap<String, Value>;
+            let map = Arc::as_ptr(&result_arc) as *mut crate::value::HashData;
             for key in &circular_keys {
                 // SAFETY: We just created result_arc and hold the only reference,
                 // so no other thread can access it.
                 unsafe {
-                    (*map).insert(key.clone(), Value::Hash(result_arc.clone()));
+                    (*map)
+                        .map
+                        .insert(key.clone(), Value::Hash(result_arc.clone()));
                 }
             }
             *new_arc = result_arc;
@@ -398,18 +400,20 @@ impl VM {
                             new_map.insert(k.clone(), hv.clone());
                         }
                     }
-                    let new_hash_arc = Arc::new(new_map);
+                    let new_hash_arc = Value::hash_arc(new_map);
                     let new_hash_ptr = Arc::as_ptr(&new_hash_arc) as usize;
                     // Mark the new hash as seen so recursive calls don't
                     // re-enter it via self-referencing values.
                     seen_hashes.push(new_hash_ptr);
                     // SAFETY: We just created new_hash_arc and hold the only ref.
-                    let map_ptr = Arc::as_ptr(&new_hash_arc) as *mut HashMap<String, Value>;
+                    let map_ptr = Arc::as_ptr(&new_hash_arc) as *mut crate::value::HashData;
                     unsafe {
                         for key in &self_ref_keys {
-                            (*map_ptr).insert(key.clone(), Value::Hash(new_hash_arc.clone()));
+                            (*map_ptr)
+                                .map
+                                .insert(key.clone(), Value::Hash(new_hash_arc.clone()));
                         }
-                        for hv in (*map_ptr).values_mut() {
+                        for hv in (*map_ptr).map.values_mut() {
                             Self::replace_array_refs_in_value(
                                 hv,
                                 old_ptr,
@@ -646,7 +650,7 @@ impl VM {
                     let mut flattened = Vec::new();
                     for item in items.iter() {
                         if let Value::Hash(h) = item {
-                            for (k, v) in h.as_ref() {
+                            for (k, v) in h.as_ref().iter() {
                                 flattened.push(Value::Pair(k.clone(), Box::new(v.clone())));
                             }
                         } else {
@@ -771,9 +775,7 @@ impl VM {
                         key_type: None,
                         declared_type: Some("Map".to_string()),
                     };
-                    self.interpreter
-                        .register_container_type_metadata(&mapped_val, info);
-                    Ok(mapped_val)
+                    Ok(self.interpreter.tag_container_metadata(mapped_val, info))
                 }
             }
             // Non-Associative values: coerce to Map
@@ -784,9 +786,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&hash, info);
-                Ok(hash)
+                Ok(self.interpreter.tag_container_metadata(hash, info))
             }
             Value::Seq(items) | Value::Slip(items) => {
                 let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
@@ -795,9 +795,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&hash, info);
-                Ok(hash)
+                Ok(self.interpreter.tag_container_metadata(hash, info))
             }
             _ => {
                 // For other types (Int, Str, etc.), coerce to Map via
@@ -809,9 +807,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&hash, info);
-                Ok(hash)
+                Ok(self.interpreter.tag_container_metadata(hash, info))
             }
         }
     }
@@ -1920,7 +1916,11 @@ impl VM {
         {
             match container_value {
                 Value::Hash(h) => {
-                    Value::hash_insert_through(Arc::make_mut(h), key.clone(), new_val.clone());
+                    Value::hash_insert_through(
+                        &mut Arc::make_mut(h).map,
+                        key.clone(),
+                        new_val.clone(),
+                    );
                     true
                 }
                 Value::Array(arr, ..) => {
@@ -2192,8 +2192,7 @@ impl VM {
                     None
                 };
                 // Reject if there's container type metadata
-                let id = Arc::as_ptr(hash_arc) as usize;
-                if self.interpreter.hash_type_metadata_exists(id) {
+                if hash_arc.has_type_meta() {
                     return None;
                 }
                 // Peek at the key to check if the existing element is a bound ref
@@ -2221,7 +2220,11 @@ impl VM {
                     self.locals[slot] = Value::Nil;
                 }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
-                    Value::hash_insert_through(Arc::make_mut(hash), key.clone(), val.clone());
+                    Value::hash_insert_through(
+                        &mut Arc::make_mut(hash).map,
+                        key.clone(),
+                        val.clone(),
+                    );
                 }
                 // Restore the local slot to point to the (now mutated) env Arc
                 if let Some(slot) = local_slot
@@ -2304,13 +2307,9 @@ impl VM {
         // metadata key. Reapply them on the final container so typed-array
         // hole semantics and `is default(...)` are preserved.
         let save_var_name = Self::const_str(code, name_idx).to_string();
-        // Heal the hash's Arc-pointer-keyed type metadata from its authoritative
-        // name-based key constraint before assigning, so object-hash semantics
-        // survive across copy-on-write and Arc-pointer reuse (otherwise typed
-        // `%h{$int} = ...` intermittently loses its key constraint and stores the
-        // value under a stringified key, returning Nil on later reads).
-        self.interpreter
-            .reconcile_hash_type_metadata_from_name(&save_var_name);
+        // Hash type metadata (including the object-hash key constraint) is now
+        // embedded in `HashData` and travels with the hash across copy-on-write,
+        // so the old name-based reconcile healing is no longer needed.
         let saved_type_meta_outer = self
             .interpreter
             .env()
@@ -2353,11 +2352,15 @@ impl VM {
                 .as_ref()
                 != Some(&info)
         {
+            // Hashes embed metadata in `HashData`, so the re-tagged value must
+            // be written back into both env and the fast-path local slot
+            // (`tag_container_metadata` returns the same Arc for non-hash
+            // containers, whose Arc-pointer side table is updated in place).
+            let tagged = self.interpreter.tag_container_metadata(container, info);
             self.interpreter
-                .register_container_type_metadata(&container, info);
-            // Sync the refreshed container pointer into locals so fast-path
-            // reads see the preserved metadata.
-            self.locals_set_by_name(code, &save_var_name, container);
+                .env_mut()
+                .insert(save_var_name.clone(), tagged.clone());
+            self.locals_set_by_name(code, &save_var_name, tagged);
         }
         if let Some(def) = saved_default_outer
             && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
@@ -3188,9 +3191,11 @@ impl VM {
                             let use_inplace = Arc::strong_count(hash) > 1
                                 && (!var_name.starts_with('%') || is_bound_hash_var);
                             let h: &mut std::collections::HashMap<String, Value> = if use_inplace {
-                                unsafe { &mut *(Arc::as_ptr(hash) as *mut _) }
+                                unsafe {
+                                    &mut (*(Arc::as_ptr(hash) as *mut crate::value::HashData)).map
+                                }
                             } else {
-                                Arc::make_mut(hash)
+                                &mut Arc::make_mut(hash).map
                             };
                             if bind_mode && let Some(Some(source_name)) = bind_sources.first() {
                                 pending_source_update = Some((source_name.clone(), val.clone()));
@@ -3802,10 +3807,13 @@ impl VM {
                 }
                 Value::Hash(inner_hash) => {
                     if Arc::strong_count(inner_hash) > 1 {
-                        let ptr = Arc::as_ptr(inner_hash)
-                            as *mut std::collections::HashMap<String, Value>;
+                        let ptr = Arc::as_ptr(inner_hash) as *mut crate::value::HashData;
                         unsafe {
-                            Value::hash_insert_through(&mut *ptr, outer_key.clone(), val.clone());
+                            Value::hash_insert_through(
+                                &mut (*ptr).map,
+                                outer_key.clone(),
+                                val.clone(),
+                            );
                         }
                     } else {
                         let h = Arc::make_mut(inner_hash);
@@ -3881,7 +3889,7 @@ impl VM {
                 }
             }
             Value::Hash(h) => {
-                Value::hash_insert_through(Arc::make_mut(h), outer_key.to_string(), val);
+                Value::hash_insert_through(&mut Arc::make_mut(h).map, outer_key.to_string(), val);
             }
             _ => {}
         }
@@ -4212,9 +4220,9 @@ impl VM {
                 }
                 // Interior mutation: write into the hash via raw pointer
                 // so the change is visible to all holders of the same Arc.
-                let ptr = Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
                 unsafe {
-                    Value::hash_insert_through(&mut *ptr, key.clone(), val.clone());
+                    Value::hash_insert_through(&mut (*ptr).map, key.clone(), val.clone());
                 }
                 // For bind mode, set up a HashSlotRef on the source variable
                 if let Some(source_name) = &bind_source {
@@ -5784,7 +5792,15 @@ impl VM {
             && self.interpreter.var_type_constraint(name).is_none()
             && self.interpreter.container_type_metadata(&val).is_some()
         {
+            // Arrays: drop the stale Arc-pointer side-table entry.
             self.interpreter.unregister_container_type_metadata(&val);
+            // Hashes: clear the embedded `HashData` type metadata in place so an
+            // untyped variable never reports a typed element/key constraint.
+            let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(std::mem::replace(
+                &mut self.locals[idx],
+                Value::Nil,
+            ));
+            self.locals[idx] = cleared;
         }
         // When binding a typed hash/array to a variable, propagate the container's
         // type constraints to the variable so that subsequent element assignments
@@ -5822,6 +5838,32 @@ impl VM {
         // a true circular reference (matching Raku container semantics).
         if name.starts_with('@') && !is_bind && !is_constant {
             Self::fixup_circular_array_refs(&mut self.locals[idx], &old_array_arc);
+        }
+        // Apply the variable's declared element/key type to the stored
+        // container. For hashes this embeds the metadata in `HashData` so it
+        // travels with the value through later copy-on-write; for arrays it
+        // updates the Arc-pointer side table. Done before the value is cloned
+        // and propagated to env/aliases below, so every copy carries it.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+        {
+            let info = crate::runtime::ContainerTypeInfo {
+                declared_type: if name.starts_with('@')
+                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
+                {
+                    Some(format!("array[{value_type}]"))
+                } else {
+                    None
+                },
+                value_type,
+                key_type: if name.starts_with('%') {
+                    self.interpreter.var_hash_key_constraint(name)
+                } else {
+                    None
+                },
+            };
+            let stored = std::mem::replace(&mut self.locals[idx], Value::Nil);
+            self.locals[idx] = self.interpreter.tag_container_metadata(stored, info);
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();
@@ -5905,27 +5947,6 @@ impl VM {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, val.clone());
             self.update_local_if_exists(code, &sv, &val);
-        }
-        if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = self.interpreter.var_type_constraint(name)
-        {
-            let info = crate::runtime::ContainerTypeInfo {
-                declared_type: if name.starts_with('@')
-                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
-                {
-                    Some(format!("array[{value_type}]"))
-                } else {
-                    None
-                },
-                value_type,
-                key_type: if name.starts_with('%') {
-                    self.interpreter.var_hash_key_constraint(name)
-                } else {
-                    None
-                },
-            };
-            self.interpreter
-                .register_container_type_metadata(&val, info);
         }
         Ok(())
     }
@@ -6249,6 +6270,29 @@ impl VM {
         {
             return Err(err);
         }
+        // Apply the variable's declared element/key type to the container value
+        // before it is stored, so the embedded `HashData` metadata (or array
+        // side-table entry) is carried by every copy below.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+        {
+            let info = crate::runtime::ContainerTypeInfo {
+                declared_type: if name.starts_with('@')
+                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
+                {
+                    Some(format!("array[{value_type}]"))
+                } else {
+                    None
+                },
+                value_type,
+                key_type: if name.starts_with('%') {
+                    self.interpreter.var_hash_key_constraint(name)
+                } else {
+                    None
+                },
+            };
+            val = self.interpreter.tag_container_metadata(val, info);
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
@@ -6270,27 +6314,6 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
-        if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = self.interpreter.var_type_constraint(name)
-        {
-            let info = crate::runtime::ContainerTypeInfo {
-                declared_type: if name.starts_with('@')
-                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
-                {
-                    Some(format!("array[{value_type}]"))
-                } else {
-                    None
-                },
-                value_type,
-                key_type: if name.starts_with('%') {
-                    self.interpreter.var_hash_key_constraint(name)
-                } else {
-                    None
-                },
-            };
-            self.interpreter
-                .register_container_type_metadata(&val, info);
-        }
         self.stack.push(val);
         Ok(())
     }
@@ -6309,7 +6332,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            self.stack.push(Value::Hash(Arc::new(entries)));
+            self.stack.push(Value::Hash(Value::hash_arc(entries)));
             return;
         }
         if name.strip_suffix("::") == Some("OUR") {
@@ -6318,7 +6341,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(key);
                 entries.insert(display_key, val.clone());
             }
-            self.stack.push(Value::Hash(Arc::new(entries)));
+            self.stack.push(Value::Hash(Value::hash_arc(entries)));
             return;
         }
         if let Some(package) = name.strip_suffix("::")
@@ -6346,7 +6369,7 @@ impl VM {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
-        self.stack.push(Value::Hash(Arc::new(entries)));
+        self.stack.push(Value::Hash(Value::hash_arc(entries)));
     }
 
     /// Build a pseudo-stash hash for a given pseudo-package name.
@@ -6362,7 +6385,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            return Value::Hash(Arc::new(entries));
+            return Value::Hash(Value::hash_arc(entries));
         }
         if name == "OUR" {
             let mut entries: HashMap<String, Value> = HashMap::new();
@@ -6370,7 +6393,7 @@ impl VM {
                 let display_key = Self::add_sigil_prefix(key);
                 entries.insert(display_key, val.clone());
             }
-            return Value::Hash(Arc::new(entries));
+            return Value::Hash(Value::hash_arc(entries));
         }
         if name != "MY" && name != "LEXICAL" {
             return self.interpreter.package_stash_value(name);
@@ -6391,7 +6414,7 @@ impl VM {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
-        Value::Hash(Arc::new(entries))
+        Value::Hash(Value::hash_arc(entries))
     }
 
     /// Add a sigil prefix to a variable name for display in pseudo-stash.
