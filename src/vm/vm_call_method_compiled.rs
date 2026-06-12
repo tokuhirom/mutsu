@@ -222,9 +222,12 @@ impl VM {
                             self.interpreter.pop_method_dispatch();
                         }
                         self.interpreter.pop_method_samewith_context();
-                        let (result, new_attrs) = method_result?;
+                        let (result, new_attrs, attrs_adjusted) = method_result?;
                         if let Some(id) = target_id {
-                            if let Some(cell) = &attrs_cell {
+                            // Commit only a `:=`-adjusted snapshot: an unadjusted
+                            // one equals the cell and the whole-map write would
+                            // race with concurrent cell-CAS (lost updates).
+                            if attrs_adjusted && let Some(cell) = &attrs_cell {
                                 cell.commit_attrs(new_attrs.clone());
                             }
                             if !self.interpreter.in_lvalue_assignment
@@ -1339,9 +1342,12 @@ impl VM {
             self.interpreter.pop_method_samewith_context();
             result
         };
-        let (result, new_attrs) = method_result?;
+        let (result, new_attrs, attrs_adjusted) = method_result?;
         if let Some(id) = target_id {
-            if let Some(cell) = &attrs_cell {
+            // Commit only a `:=`-adjusted snapshot: an unadjusted one equals the
+            // cell and the whole-map write would race with concurrent cell-CAS
+            // from another thread (lost updates).
+            if attrs_adjusted && let Some(cell) = &attrs_cell {
                 cell.commit_attrs(new_attrs.clone());
             }
             if !self.interpreter.in_lvalue_assignment
@@ -1579,9 +1585,12 @@ impl VM {
                             self.interpreter.pop_method_dispatch();
                         }
                         self.interpreter.pop_method_samewith_context();
-                        let (result, new_attrs) = method_result?;
+                        let (result, new_attrs, attrs_adjusted) = method_result?;
                         if let Some(id) = target_id {
-                            if let Some(cell) = &attrs_cell {
+                            // Commit only a `:=`-adjusted snapshot: an unadjusted
+                            // one equals the cell and the whole-map write would
+                            // race with concurrent cell-CAS (lost updates).
+                            if attrs_adjusted && let Some(cell) = &attrs_cell {
                                 cell.commit_attrs(new_attrs.clone());
                             }
                             if !self.interpreter.in_lvalue_assignment
@@ -1679,9 +1688,11 @@ impl VM {
                     self.interpreter.pop_method_dispatch();
                 }
                 self.interpreter.pop_method_samewith_context();
-                let (result, new_attrs) = method_result?;
+                let (result, new_attrs, attrs_adjusted) = method_result?;
                 if let Some(id) = target_id {
-                    if let Some(cell) = &attrs_cell {
+                    // Commit only a `:=`-adjusted snapshot (cell-CAS race
+                    // avoidance — see the primary dispatch site).
+                    if attrs_adjusted && let Some(cell) = &attrs_cell {
                         cell.commit_attrs(new_attrs.clone());
                     }
                     if !self.interpreter.in_lvalue_assignment
