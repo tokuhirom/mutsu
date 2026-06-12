@@ -1777,6 +1777,30 @@ impl VM {
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
         let container = self.get_env_with_main_alias(&name);
+        // `$c[0]++` / `$c<a>++` on a Capture: when the element is a shared
+        // `ContainerRef` cell (built from `\($a)` / `\(:$a)`), increment *through*
+        // the cell so the original variable observes the change. The generic
+        // Hash/Array path below does not understand Captures.
+        if let Some(Value::Capture { positional, named }) = container.as_ref() {
+            let elem = if let Ok(i) = key.parse::<usize>() {
+                positional.get(i).cloned()
+            } else {
+                named.get(&key).cloned()
+            };
+            if let Some(Value::ContainerRef(arc)) = elem {
+                let inner = arc.lock().unwrap().clone();
+                let effective = Self::normalize_incdec_source(inner);
+                let new_val = if increment {
+                    self.increment_value_smart(&effective)?
+                } else {
+                    self.decrement_value_smart(&effective)?
+                };
+                arc.lock().unwrap().clone_from(&new_val);
+                self.stack
+                    .push(if return_new { new_val } else { effective });
+                return Ok(());
+            }
+        }
         let current = if let Some(container_value) = container.as_ref() {
             match container_value {
                 Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),

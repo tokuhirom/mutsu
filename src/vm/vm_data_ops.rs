@@ -168,16 +168,85 @@ impl VM {
         self.stack.push(Value::hash(map));
     }
 
-    pub(super) fn exec_make_capture_op(&mut self, n: u32) {
+    /// Box the local scalar variable `name` into a shared `ContainerRef` cell and
+    /// return that cell, so a Capture positional built from `\($name)` aliases the
+    /// variable's container (`$c[0]++` writes through to `$name`). If the variable
+    /// is not a local slot in this frame (or is already a cell), fall back to the
+    /// captured `inner` value / existing cell. Mirrors `box_captured_lexicals`.
+    fn capture_var_cell(&mut self, code: &CompiledCode, name: &str, inner: Value) -> Value {
+        if inner.is_container_ref() {
+            return inner;
+        }
+        let Some(idx) = code.locals.iter().rposition(|n| n == name) else {
+            return inner;
+        };
+        if self.locals[idx].is_container_ref() {
+            return self.locals[idx].clone();
+        }
+        // Only box a plain scalar container; reference/type values are not
+        // re-containerized (mirrors the box-on-capture guard).
+        if matches!(
+            self.locals[idx],
+            Value::Package(_)
+                | Value::Array(..)
+                | Value::Hash(..)
+                | Value::Sub(..)
+                | Value::Instance { .. }
+                | Value::Proxy { .. }
+        ) {
+            return self.locals[idx].clone();
+        }
+        let cell = self.locals[idx].clone().into_container_ref();
+        self.locals[idx] = cell.clone();
+        self.flush_local_to_env(code, idx);
+        cell
+    }
+
+    pub(super) fn exec_make_capture_op(&mut self, code: &CompiledCode, n: u32) {
         let n = n as usize;
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
         let mut positional = Vec::new();
         let mut named = HashMap::new();
         for val in raw {
+            // A `WrapVarRef`-tagged scalar variable positional (`\($a)`): capture
+            // the variable's *container* so `$c[0]` aliases `$a` and `$c[0]++`
+            // writes through. Box the named local into a shared `ContainerRef`
+            // cell (same scope as `$c`, so sharing the slot's cell suffices) and
+            // store that cell as the positional element.
+            if let Value::Capture {
+                positional: p,
+                named: nm,
+            } = &val
+                && p.is_empty()
+                && let Some(Value::Str(source_name)) = nm.get("__mutsu_varref_name")
+                && let Some(inner) = nm.get("__mutsu_varref_value")
+            {
+                let source_name = source_name.to_string();
+                let inner = inner.clone();
+                positional.push(self.capture_var_cell(code, &source_name, inner));
+                continue;
+            }
             match val {
                 Value::Pair(k, v) => {
-                    named.insert(k, *v);
+                    // A named scalar-var element (`\(:$a)`): the value is a
+                    // WrapVarRef-tagged capture — box the named local so `$c<a>`
+                    // aliases `$a` and `$c<a>++` writes through.
+                    if let Value::Capture {
+                        positional: p,
+                        named: nm,
+                    } = v.as_ref()
+                        && p.is_empty()
+                        && let Some(Value::Str(source_name)) = nm.get("__mutsu_varref_name")
+                        && let Some(inner) = nm.get("__mutsu_varref_value")
+                    {
+                        let source_name = source_name.to_string();
+                        let inner = inner.clone();
+                        let cell = self.capture_var_cell(code, &source_name, inner);
+                        named.insert(k, cell);
+                    } else {
+                        named.insert(k, *v);
+                    }
                 }
                 Value::Capture {
                     positional: p,

@@ -154,7 +154,34 @@ impl Compiler {
             Expr::CaptureLiteral(items) => {
                 self.with_escape(true, |c| {
                     for item in items {
+                        // A named scalar-var element (`\(:$a)` -> `a => $a`)
+                        // captures the variable's container too, so `$c<a>` aliases
+                        // `$a`. Compile key + value, tag the value with WrapVarRef,
+                        // then MakePair; MakeCapture boxes the named local.
+                        if let Expr::Binary { op, left, right } = item
+                            && *op == crate::token_kind::TokenKind::FatArrow
+                            && let Expr::Var(name) = right.as_ref()
+                            && !name.contains("::")
+                        {
+                            c.compile_expr(left);
+                            c.compile_expr(right);
+                            let name_idx = c.code.add_constant(Value::str(name.clone()));
+                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                            c.code.emit(OpCode::MakePair);
+                            continue;
+                        }
                         c.compile_expr(item);
+                        // A plain scalar variable positional (`\($a)`) captures the
+                        // variable's *container*, so `$c[0]` aliases `$a` and
+                        // `$c[0]++` writes through. Tag it with its source name via
+                        // WrapVarRef; MakeCapture boxes the named local into a shared
+                        // cell. Non-variable items capture by value.
+                        if let Expr::Var(name) = item
+                            && !name.contains("::")
+                        {
+                            let name_idx = c.code.add_constant(Value::str(name.clone()));
+                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                        }
                     }
                 });
                 self.code.emit(OpCode::MakeCapture(items.len() as u32));
