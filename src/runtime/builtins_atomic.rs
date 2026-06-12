@@ -141,6 +141,11 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let name = self.atomic_var_name_arg(args)?;
+        // Phase 3 cell-CAS: attribute targets read the receiver's shared cell.
+        if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+            let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::Nil);
+            return Ok(val);
+        }
         let value_key = self.atomic_value_key_for_name(&name);
         let shared = self.shared_vars.read().unwrap();
         Ok(self.atomic_current_value(&shared, &name, &value_key))
@@ -158,6 +163,12 @@ impl Interpreter {
         let raw_name = args[0].to_string_value();
         let name = self.canonical_atomic_var_name(&raw_name, args.first());
         let value = self.atomic_assign_coerced_value(&name, args[1].clone())?;
+        // Phase 3 cell-CAS: attribute targets store into the receiver's cell.
+        if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+            attrs.insert(key, value.clone());
+            self.env.insert(name, value.clone());
+            return Ok(value);
+        }
         let value_key = self.atomic_value_key_for_name(&name);
         self.env.insert(name.clone(), value.clone());
         self.shared_vars
@@ -181,6 +192,18 @@ impl Interpreter {
         let name = self.canonical_atomic_var_name(&raw_name, args.first());
         let delta = args[1].clone();
         self.check_readonly_for_modify(&name)?;
+        // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
+        if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+            let (_, next) = attrs.fetch_update(&key, |cur| {
+                let base = match cur {
+                    Value::Nil | Value::Package(_) => Value::Int(0),
+                    other => other.clone(),
+                };
+                crate::builtins::arith_add(base, delta.clone())
+            })?;
+            self.env.insert(name, next.clone());
+            return Ok(next);
+        }
         let value_key = self.atomic_value_key_for_name(&name);
         let mut shared = self.shared_vars.write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
@@ -209,6 +232,18 @@ impl Interpreter {
         let name = self.canonical_atomic_var_name(&raw_name, args.first());
         let delta = args[1].clone();
         self.check_readonly_for_modify(&name)?;
+        // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
+        if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+            let (old, next) = attrs.fetch_update(&key, |cur| {
+                let base = match cur {
+                    Value::Nil | Value::Package(_) => Value::Int(0),
+                    other => other.clone(),
+                };
+                crate::builtins::arith_add(base, delta.clone())
+            })?;
+            self.env.insert(name, next);
+            return Ok(old);
+        }
         let value_key = self.atomic_value_key_for_name(&name);
         let mut shared = self.shared_vars.write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
@@ -231,29 +266,24 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let name = self.atomic_var_name_arg(args)?;
         self.check_readonly_for_modify(&name)?;
-        // For instance attribute variables (private `!attr` or public `.attr`),
-        // use a per-instance shared_vars key so that multiple method calls on the
-        // same object (via different Value clones, e.g. in Junction gist) see
-        // consistent state. The key includes the instance ID for isolation.
+        // Phase 3 cell-CAS: instance attribute variables (private `!attr` or
+        // public `.attr`) read-modify-write the receiver's shared attribute
+        // cell under its write lock — atomic across every alias and thread.
         if name.starts_with('!') || name.starts_with('.') {
-            let instance_id = match self.env.get("self") {
-                Some(Value::Instance { id, .. }) => Some(*id),
-                _ => None,
-            };
-            if let Some(id) = instance_id {
-                // Use shared_vars keyed by instance ID + attr name for atomicity
-                let instance_key = format!("__mutsu_atomic_attr::{}::{}", id, name);
-                let mut shared = self.shared_vars.write().unwrap();
-                let current = shared
-                    .get(&instance_key)
-                    .cloned()
-                    .or_else(|| self.env.get(&name).cloned())
-                    .unwrap_or(Value::Int(0));
-                let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
+            if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+                let (old, next) = attrs.fetch_update(&key, |cur| {
+                    let base = match cur {
+                        Value::Nil | Value::Package(_) => Value::Int(0),
+                        other => other.clone(),
+                    };
+                    crate::builtins::arith_add(base, Value::Int(delta))
+                })?;
+                let old = match old {
+                    Value::Nil | Value::Package(_) => Value::Int(0),
+                    other => other,
+                };
                 self.env.insert(name, next.clone());
-                shared.insert(instance_key, next.clone());
-                drop(shared);
-                return if return_old { Ok(current) } else { Ok(next) };
+                return if return_old { Ok(old) } else { Ok(next) };
             }
             // Fallback for non-instance context: use env directly
             let current = self.env.get(&name).cloned().unwrap_or(Value::Int(0));
@@ -315,24 +345,33 @@ impl Interpreter {
         let raw_name = args[0].to_string_value();
         let name = self.canonical_atomic_var_name(&raw_name, args.first());
         self.check_readonly_for_modify(&name)?;
-        // For instance attributes, use an instance-specific key to avoid
-        // stale data when a new instance reuses the same attribute name.
-        let effective_name = if name.starts_with('!') {
-            if let Some(Value::Instance { id, .. }) = self.env.get("self") {
-                format!("{}::{}", name, id)
-            } else {
-                name.clone()
-            }
+        // Phase 3 cell-CAS: an instance attribute target operates directly on
+        // the receiver's shared attribute cell — its write lock is the atomic
+        // primitive and every alias shares the cell, so the swap is visible to
+        // all frames and threads without the legacy shared_vars side channel.
+        let attr_cell = self.self_attr_cell_target(&name);
+        let value_key = if attr_cell.is_none() {
+            self.atomic_value_key_for_name(&name)
         } else {
-            name.clone()
+            String::new()
         };
-        let value_key = self.atomic_value_key_for_name(&effective_name);
 
         if args.len() == 3 {
             // 3-arg form: cas($var, $expected, $new)
             let expected = &args[1];
             let new_val = args[2].clone();
             let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+            if let Some((attrs, key)) = attr_cell {
+                let (current, swapped) = attrs.compare_and_swap(
+                    &key,
+                    |cur| Self::cas_retry_matches(cur, expected),
+                    coerced.clone(),
+                );
+                // Keep the frame's env copy coherent for legacy env readers.
+                let env_val = if swapped { coerced } else { current.clone() };
+                self.env.insert(name, env_val);
+                return Ok(current);
+            }
             let mut did_swap = false;
             let current = {
                 let mut shared = self.shared_vars.write().unwrap();
@@ -348,12 +387,6 @@ impl Interpreter {
                 if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(value_key);
                     dirty.insert(name.clone());
-                }
-                // If the variable is an instance attribute (!attr_name),
-                // also update the Instance in env and shared_vars so the
-                // main thread can pick up the change after await.
-                if let Some(attr_name) = name.strip_prefix('!') {
-                    self.sync_atomic_attribute_to_instance(attr_name, &coerced);
                 }
             } else {
                 self.env.insert(name.clone(), current.clone());
@@ -440,7 +473,13 @@ impl Interpreter {
                 }
             }
             loop {
-                let current = {
+                let current = if let Some((attrs, key)) = &attr_cell {
+                    attrs
+                        .as_map()
+                        .get(key.as_str())
+                        .cloned()
+                        .unwrap_or(Value::Nil)
+                } else {
                     let shared = self.shared_vars.read().unwrap();
                     self.atomic_current_value(&shared, &name, &value_key)
                 };
@@ -503,20 +542,33 @@ impl Interpreter {
                 // pre-block snapshot rather than the value the block may have modified.
                 self.env.insert(name.clone(), current.clone());
 
-                let mut updated = false;
-                {
+                let updated = if let Some((attrs, key)) = &attr_cell {
+                    let (seen, swapped) = attrs.compare_and_swap(
+                        key,
+                        |cur| Self::cas_retry_matches(&current, cur),
+                        coerced.clone(),
+                    );
+                    if !swapped {
+                        self.env.insert(name.clone(), seen);
+                    }
+                    swapped
+                } else {
                     let mut shared = self.shared_vars.write().unwrap();
                     let seen = self.atomic_current_value(&shared, &name, &value_key);
                     if Self::cas_retry_matches(&current, &seen) {
                         shared.insert(value_key.clone(), coerced.clone());
-                        updated = true;
+                        true
                     } else {
+                        drop(shared);
                         self.env.insert(name.clone(), seen);
+                        false
                     }
-                }
+                };
                 if updated {
                     self.env.insert(name.clone(), coerced.clone());
-                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                    if attr_cell.is_none()
+                        && let Ok(mut dirty) = self.shared_vars_dirty.write()
+                    {
                         dirty.insert(value_key.clone());
                         dirty.insert(name.clone());
                     }
@@ -723,38 +775,43 @@ impl Interpreter {
     /// After CAS updates an attribute variable (`!attr_name`), update the
     /// corresponding Instance object in env ("self") and store the updated
     /// Instance in shared_vars so the main thread can pick it up after await.
-    fn sync_atomic_attribute_to_instance(&mut self, attr_name: &str, new_val: &Value) {
-        if let Some(Value::Instance {
-            class_name,
-            attributes,
-            id,
-        }) = self.env.get("self").cloned()
+    /// Phase 3 cell-CAS: resolve an attribute-twigil atomic target (`!x`/`.x`)
+    /// to `self`'s shared attribute cell and the map key, preferring the method
+    /// owner class's qualified private key (Parent/Child same-named `$!priv`
+    /// disambiguation, matching the VM's cell-direct access). Returns `None`
+    /// when not in an instance method context, falling back to the shared_vars
+    /// atomic machinery for plain variables.
+    fn self_attr_cell_target(
+        &self,
+        name: &str,
+    ) -> Option<(std::sync::Arc<crate::value::InstanceAttrs>, String)> {
+        let bare = name.strip_prefix('!').or_else(|| name.strip_prefix('.'))?;
+        if !bare
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
         {
-            let new_attrs = (*attributes).clone();
-            new_attrs.insert(attr_name.to_string(), new_val.clone());
-            // Build a *detached* instance (fresh, unregistered cell) for the
-            // cross-thread sync. Using the cell-reusing `make_instance_with_id`
-            // here would let concurrent CAS winners write the shared cell out of
-            // order (the writes happen outside the CAS critical section),
-            // dropping updates. The atomic source of truth is shared_vars; the
-            // parent picks this instance up via the `__mutsu_instance::` key
-            // after `await`.
-            let updated_instance =
-                Value::make_instance_detached(class_name, new_attrs.to_map(), id);
-            self.env
-                .insert("self".to_string(), updated_instance.clone());
-            self.env
-                .insert("__ANON_STATE__".to_string(), updated_instance.clone());
-            // Store the updated instance in shared_vars keyed by instance id
-            let instance_key = format!("__mutsu_instance::{id}");
-            {
-                let mut shared = self.shared_vars.write().unwrap();
-                shared.insert(instance_key.clone(), updated_instance);
-            }
-            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                dirty.insert(instance_key);
-            }
+            return None;
         }
+        let Some(Value::Instance { attributes, .. }) = self.env.get("self") else {
+            return None;
+        };
+        let attrs = attributes.clone();
+        let key = {
+            let map = attrs.as_map();
+            match self.method_class_stack.last() {
+                Some(owner) => {
+                    let qualified = format!("{}\0{}", owner, bare);
+                    if map.contains_key(&qualified) {
+                        qualified
+                    } else {
+                        bare.to_string()
+                    }
+                }
+                None => bare.to_string(),
+            }
+        };
+        Some((attrs, key))
     }
 
     /// CAS on a hash element: cas(%hash{key}, &code)

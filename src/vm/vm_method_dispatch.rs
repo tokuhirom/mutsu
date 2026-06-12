@@ -17,7 +17,7 @@ impl VM {
         args: Vec<Value>,
         invocant: Option<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
             let cl = self.interpreter.env().get("?LINE").and_then(|v| match v {
@@ -573,12 +573,13 @@ impl VM {
             self.interpreter.set_state_var(key.clone(), val);
         }
 
+        let attrs_adjusted;
         if can_skip_merge {
             // Phase 3 Stage 2: all attributes (scalar/array/hash) are reconciled
             // against the live cell + local/env writes before the env is torn
             // down. The cell-direct reads + per-op mirrors make the cell the
             // single source; the legacy attribute writeback is gone.
-            self.reconcile_attrs(&base, cc, &mut attributes);
+            attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
 
             let method_var_bindings = self.interpreter.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -601,7 +602,7 @@ impl VM {
 
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
-            self.reconcile_attrs(&base, cc, &mut attributes);
+            attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
             let mut method_local_keys: HashSet<String> = HashSet::from_iter([
                 "self".to_string(),
                 "__ANON_STATE__".to_string(),
@@ -710,7 +711,11 @@ impl VM {
             }
         };
 
-        // Adjust return value if it's the same instance (update attributes)
+        // Adjust return value if it's the same instance (update attributes).
+        // Only commit the reconcile snapshot when it was adjusted beyond the
+        // cell contents (`:=` recovery): an unadjusted snapshot is already what
+        // the cell holds, and writing it back would race with concurrent
+        // cell-CAS / cell-direct writes from other threads (lost updates).
         final_result.map(|v| {
             let adjusted = match (&base, &v) {
                 (
@@ -721,11 +726,20 @@ impl VM {
                     },
                     Value::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => {
-                    Value::write_back_sharing(base_attrs, *class_name, attributes.clone(), *base_id)
+                    if attrs_adjusted {
+                        Value::write_back_sharing(
+                            base_attrs,
+                            *class_name,
+                            attributes.clone(),
+                            *base_id,
+                        )
+                    } else {
+                        Value::instance_sharing_cell(base_attrs, *class_name, *base_id)
+                    }
                 }
                 _ => v,
             };
-            (adjusted, attributes)
+            (adjusted, attributes, attrs_adjusted)
         })
     }
 
@@ -744,19 +758,27 @@ impl VM {
     /// an external `ContainerRef` held in env/locals rather than the cell. The
     /// cell-direct write path does not carry that binding, so recover it from
     /// env/locals here and let it win, keeping the alias alive past method exit.
+    ///
+    /// Returns `true` when the map was adjusted beyond the raw cell snapshot
+    /// (a `:=` ContainerRef was recovered). When `false`, the map is exactly the
+    /// cell's current contents, so committing it back would be a no-op at best —
+    /// and a lost-update race at worst: a concurrent cell-CAS / cell-direct write
+    /// from another thread between this snapshot and the commit would be
+    /// clobbered by the stale whole-map write. Callers skip the commit then.
     fn reconcile_attrs(
         &self,
         base: &Value,
         code: &CompiledCode,
         attributes: &mut HashMap<String, Value>,
-    ) {
+    ) -> bool {
         let Value::Instance {
             attributes: cell, ..
         } = base
         else {
-            return;
+            return false;
         };
         *attributes = cell.to_map();
+        let mut adjusted = false;
         // Preserve `:=`-bound attributes: their authoritative value is the shared
         // ContainerRef in env/locals, not the cell snapshot.
         let keys: Vec<String> = attributes.keys().cloned().collect();
@@ -781,10 +803,12 @@ impl VM {
                     && v.is_container_ref()
                 {
                     attributes.insert(k.clone(), v);
+                    adjusted = true;
                     break;
                 }
             }
         }
+        adjusted
     }
 
     /// Read the current value of `name` from the method's local slot if present,
@@ -833,7 +857,7 @@ impl VM {
         base: Value,
         compiled_fns: &HashMap<String, CompiledFunction>,
         can_skip_merge: bool,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
         if let Some(ref msg) = method_def.deprecated_message {
             self.interpreter.check_deprecation_for_method_with_line(
                 method_name,
@@ -1173,7 +1197,7 @@ impl VM {
         }
         // Phase 3 Stage 2: reconcile all attributes against the live cell +
         // local/env writes before the env is torn down.
-        self.reconcile_attrs(&base, cc, &mut attributes);
+        let attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
 
         let method_var_bindings = self.interpreter.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;
@@ -1260,6 +1284,8 @@ impl VM {
             }
         };
 
+        // Only commit the reconcile snapshot when `:=` recovery adjusted it
+        // beyond the cell contents (see `call_compiled_method` exit).
         final_result.map(|v| {
             let adjusted = match (&base, &v) {
                 (
@@ -1270,11 +1296,20 @@ impl VM {
                     },
                     Value::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => {
-                    Value::write_back_sharing(base_attrs, *class_name, attributes.clone(), *base_id)
+                    if attrs_adjusted {
+                        Value::write_back_sharing(
+                            base_attrs,
+                            *class_name,
+                            attributes.clone(),
+                            *base_id,
+                        )
+                    } else {
+                        Value::instance_sharing_cell(base_attrs, *class_name, *base_id)
+                    }
                 }
                 _ => v,
             };
-            (adjusted, attributes)
+            (adjusted, attributes, attrs_adjusted)
         })
     }
 }

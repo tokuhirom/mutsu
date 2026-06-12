@@ -5827,26 +5827,11 @@ impl Interpreter {
             }
             updates
         };
-        let mut instance_updates: Vec<(u64, Value)> = Vec::new();
+        // Instance attribute CAS updates need no propagation here: cell-CAS
+        // mutates the receiver's shared attribute cell in place, so every
+        // alias (including the parent thread's) observes the swap directly.
         for (key, val) in updates {
-            if let Some(id_str) = key.strip_prefix("__mutsu_instance::") {
-                if let Ok(id) = id_str.parse::<u64>() {
-                    instance_updates.push((id, val));
-                }
-            } else {
-                self.env.insert(key, val);
-            }
-        }
-        // Propagate Instance attribute updates from shared_vars into
-        // all matching Instance bindings in the local env.
-        for (target_id, updated_instance) in &instance_updates {
-            for value in self.env.values_mut() {
-                if let Value::Instance { id, .. } = value
-                    && *id == *target_id
-                {
-                    *value = updated_instance.clone();
-                }
-            }
+            self.env.insert(key, val);
         }
     }
 

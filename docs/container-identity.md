@@ -462,7 +462,22 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
               と等価になったが CAS の atomic-sync 意図マーカとして名前のみ残置（→ `make_instance_with_id` 委譲）。`_class_name` vestigial param 撤去。
               副次効果: グローバル Mutex registry の Weak エントリ蓄積（メモリリーク）解消、id-0 sentinel Supply の cell 誤共有 latent バグ解消。
               検証: cargo test 461、clippy 緑、whitelisted S12/S14/S17/S32-temporal/buf 40 ファイル + cross-frame/closure/temp-let/proxy/buf/iterator/grammar 全緑。
-        - [ ] **残（別 slice）**: CAS の cell-CAS 化（`make_instance_detached` + shared_vars 側道撤去、cell を atomic primitive に）。
+        - [x] **CAS cell-CAS 化（branch `phase3-cas-cell`）**: instance 属性の cas/atomic ops を shared_vars 側道
+              （`!attr::{id}` 値キー / `__mutsu_atomic_attr::{id}::{attr}` / `__mutsu_instance::{id}` 親回収 + env scan-replace /
+              `make_instance_detached` / `sync_atomic_attribute_to_instance`）から **cell 直接の atomic primitive** へ全面移行。
+              `InstanceAttrs::compare_and_swap(key, matches, new)`（単一 write lock 下で比較+格納）/ `fetch_update(key, f)`
+              （単一 write lock 下で RMW、atomic add/inc/dec 用）を新設し、`builtin_cas_var`（3-arg/2-arg）・
+              `builtin_atomic_update_unit`・`builtin_atomic_{add,fetch_add,fetch,store}_var` に attr-cell 分岐
+              （`self_attr_cell_target`: `!x`/`.x` → self の cell + qualified key 解決）。Stage 1 の livelock は
+              cell-direct read（2a）完備で解消（cas.t 5 連続 PASS で確認）。
+              **発見した第2の lost-update race**: method exit の reconcile snapshot を caller が毎回
+              `cell.commit_attrs(new_attrs)` で whole-map 書き戻し → 並行 cell-RMW を TOCTOU clobber
+              （8スレッド `$!count⚛++` ×500 が 2448/4000。main では親に全く伝播せず **0** だった）。
+              **修正**: `reconcile_attrs` が「cell snapshot を超える調整（`:=` ContainerRef 回収）があったか」の
+              bool を返し、`(Value, HashMap, bool)` で呼び出し元へ伝播 — 未調整なら exit commit / `write_back_sharing`
+              を **skip**（snapshot==cell なので no-op、かつ race 源）。調整あり（`:=`）のみ commit。
+              副次効果: 毎 method exit の冗長 whole-map 書き込み消滅（perf）。回帰テスト `t/cas-cell-attr.t`（14、
+              4スレッド increment/2-arg cas/await 後親可視を含む、raku 一致）。
   - 旧「一括」設計（下記）は Stage 2a/2b/2c に分割。以下は参照マップ。
 
   #### 現状メカニズム（CI 調査で確定したフルマップ）

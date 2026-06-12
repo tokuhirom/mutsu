@@ -739,6 +739,42 @@ impl InstanceAttrs {
         write_cell_respecting_reads(&self.attributes, map);
     }
 
+    /// Phase 3 cell-CAS: atomically compare-and-swap one attribute under a
+    /// single write lock. When `matches(current)` returns true the new value is
+    /// stored; returns `(current, swapped)`. The cell's write lock is the
+    /// atomic primitive for cross-thread `cas`/atomic ops on instance
+    /// attributes — every alias of the instance shares this cell, so the swap
+    /// is immediately visible everywhere (no shared_vars side channel).
+    pub(crate) fn compare_and_swap(
+        &self,
+        key: &str,
+        matches: impl FnOnce(&Value) -> bool,
+        new: Value,
+    ) -> (Value, bool) {
+        let mut guard = write_attrs(&self.attributes);
+        let current = guard.get(key).cloned().unwrap_or(Value::Nil);
+        let swapped = matches(&current);
+        if swapped {
+            guard.insert(key.to_string(), new);
+        }
+        (current, swapped)
+    }
+
+    /// Phase 3 cell-CAS: atomically read-modify-write one attribute under a
+    /// single write lock (atomic add / increment / decrement). Returns
+    /// `(old, new)`; an error from `f` leaves the attribute unchanged.
+    pub(crate) fn fetch_update(
+        &self,
+        key: &str,
+        f: impl FnOnce(&Value) -> Result<Value, RuntimeError>,
+    ) -> Result<(Value, Value), RuntimeError> {
+        let mut guard = write_attrs(&self.attributes);
+        let current = guard.get(key).cloned().unwrap_or(Value::Nil);
+        let next = f(&current)?;
+        guard.insert(key.to_string(), next.clone());
+        Ok((current, next))
+    }
+
     /// Build an `InstanceAttrs` that SHARES this cell but carries a different
     /// `class_name` (rebless / role mixin). The mutation visibility comes from the
     /// shared cell; only the class tag differs.
@@ -3085,19 +3121,6 @@ impl Value {
     ) -> Value {
         attrs.commit_attrs(map);
         Value::instance_sharing_cell(attrs, class_name, id)
-    }
-
-    /// Build an instance with the given id and a fresh cell, used by the
-    /// cross-thread atomic write-back where the authoritative store is
-    /// `shared_vars`. Equivalent to [`Self::make_instance_with_id`] now that
-    /// instances no longer share cells through a global registry; kept as a
-    /// distinct name to mark the atomic-sync intent at the call site.
-    pub(crate) fn make_instance_detached(
-        class_name: Symbol,
-        attributes: HashMap<String, Value>,
-        id: u64,
-    ) -> Self {
-        Self::make_instance_with_id(class_name, attributes, id)
     }
 
     /// An independent snapshot for `temp`/`let` saves. An instance is deep-copied
