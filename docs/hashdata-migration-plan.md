@@ -99,9 +99,21 @@ object keys are written into the same `&mut HashData` as the element insert.
   `Mu.new ~~ Any` wrongly returns True. Fix `Mu.new` construction/typing first
   (broad blast radius — smartmatch), THEN test 3 falls out for free.
 - STILL OPEN — `Hash.push` key/value type checks (tests 21, 23, 24).
-- STILL OPEN — object-hash in list→hash context (`my %c = (%objhash,)`) throws
-  "Odd number of elements" and aborts the file at block ~line 110 (rakudo #5165),
-  blocking tests 37–62.
+- DONE (#2959): the multidim Range-slice root cause of test 55
+  (`%a{1;1..3}:exists` returned a single `False`) — `resolve_multidim_indices`
+  now expands a `Range`/`Seq` dimension to its element list, joining the existing
+  comma-list multi-index path. NOTE: test 55 still won't show green in
+  objecthash.t until the abort below is fixed (it sits after it).
+- STILL OPEN (BLOCKER for tests 37–62) — object-hash (and ANY hash) in list→hash
+  context: `my %c = (%h,)` throws "Odd number of elements" and aborts the file
+  (rakudo #5165 block, ~line 110). A naive `build_hash_from_items` `Value::Hash`
+  flatten arm (#2958, REVERTED) regressed `S02-types/assigning-refs.t`: raku
+  flattens a bare `%h` into pairs but must NOT flatten an itemized `$hashitem`
+  (`%hash = ($hashitem,)` is meant to die odd) — and mutsu decontainerizes BOTH
+  to a bare `Value::Hash` by the time `build_hash_from_items` runs, so they're
+  indistinguishable there. The correct fix needs itemization tracking (preserve
+  the `Scalar` wrapper for `$`-sourced hashes through list construction) — a
+  container-identity Phase-2-level change. Do NOT re-add the unconditional flatten.
 
 ---
 (original plan below)
