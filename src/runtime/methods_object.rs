@@ -1110,11 +1110,14 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "IterationBuffer" => {
-                                if let Some(
-                                    Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals),
-                                ) = attributes.as_map().get("__mutsu_iterationbuffer_items")
-                                {
-                                    items.extend(vals.iter().cloned());
+                                match attributes.as_map().get("__mutsu_iterationbuffer_items") {
+                                    Some(Value::Array(vals, ..)) => {
+                                        items.extend(vals.iter().cloned())
+                                    }
+                                    Some(Value::Seq(vals)) | Some(Value::Slip(vals)) => {
+                                        items.extend(vals.iter().cloned())
+                                    }
+                                    _ => {}
                                 }
                             }
                             other => items.push(other.clone()),

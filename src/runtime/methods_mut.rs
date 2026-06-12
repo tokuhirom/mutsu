@@ -901,7 +901,7 @@ impl Interpreter {
                     return Ok(value);
                 }
                 let mut selected_hash: Option<std::sync::Arc<crate::value::HashData>> = None;
-                let mut selected_array: Option<std::sync::Arc<Vec<Value>>> = None;
+                let mut selected_array: Option<std::sync::Arc<crate::value::ArrayData>> = None;
 
                 if let Some(var_name) = target_var
                     && let Some(Value::Hash(candidate)) = self.env.get(var_name)
@@ -915,7 +915,7 @@ impl Interpreter {
                     && let Some(Value::Array(candidate, ..)) = self.env.get(var_name)
                     && candidate.get(i) == Some(current_value.as_ref())
                 {
-                    selected_array = Some(std::sync::Arc::new(candidate.clone().to_vec()));
+                    selected_array = Some(candidate.clone());
                 }
 
                 if selected_hash.is_none() {
@@ -947,7 +947,7 @@ impl Interpreter {
                     if let Some(first) = candidates.next()
                         && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
                     {
-                        selected_array = Some(std::sync::Arc::new(first.to_vec()));
+                        selected_array = Some(first);
                     }
                 }
 

@@ -63,7 +63,26 @@ impl Interpreter {
                 };
                 Some(format!("<{}>", full_name))
             }
-            Value::Array(ref elems, ..) | Value::Seq(ref elems) => {
+            Value::Array(ref elems, ..) => {
+                // Array/List -> alternation of escaped literals
+                let alts: Vec<String> = elems
+                    .iter()
+                    .map(|v| match v {
+                        Value::Regex(pat) => pat.to_string(),
+                        Value::RegexWithAdverbs { pattern, .. } => pattern.to_string(),
+                        other => {
+                            let s = other.to_string_value();
+                            // Quote as regex literal using single quotes
+                            format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
+                        }
+                    })
+                    .collect();
+                if alts.is_empty() {
+                    return None;
+                }
+                Some(format!("[ {} ]", alts.join(" | ")))
+            }
+            Value::Seq(ref elems) => {
                 // Array/List -> alternation of escaped literals
                 let alts: Vec<String> = elems
                     .iter()

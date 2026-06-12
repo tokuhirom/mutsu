@@ -618,7 +618,19 @@ impl Interpreter {
             }
             // Array/List ~~ Regex: iterate elements, match each individually
             (
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items),
+                Value::Array(items, ..),
+                Value::Regex(_) | Value::RegexWithAdverbs { .. },
+            ) => {
+                for item in items.iter() {
+                    if self.smart_match(item, right) {
+                        return true;
+                    }
+                }
+                self.clear_match_state();
+                false
+            }
+            (
+                Value::Seq(items) | Value::Slip(items),
                 Value::Regex(_) | Value::RegexWithAdverbs { .. },
             ) => {
                 for item in items.iter() {

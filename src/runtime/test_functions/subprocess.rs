@@ -147,13 +147,15 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         let run_args: Vec<String> = match Self::named_value(args, "args") {
-            Some(Value::Array(items, ..)) | Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
+            Some(Value::Array(items, ..)) => items.iter().map(|v| v.to_string_value()).collect(),
+            Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
                 items.iter().map(|v| v.to_string_value()).collect()
             }
             _ => Vec::new(),
         };
         let compiler_args: Vec<String> = match Self::named_value(args, "compiler-args") {
-            Some(Value::Array(items, ..)) | Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
+            Some(Value::Array(items, ..)) => items.iter().map(|v| v.to_string_value()).collect(),
+            Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
                 items.iter().map(|v| v.to_string_value()).collect()
             }
             _ => Vec::new(),
