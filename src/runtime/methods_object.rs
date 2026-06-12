@@ -60,6 +60,22 @@ impl Interpreter {
         if self.registry().cunion_classes.contains(cn_resolved) {
             return false;
         }
+        // A same-named attribute redeclared across the hierarchy (Parent and Child
+        // both `has $.x`) needs per-class private storage (`"Class\0attr"` keys),
+        // which only the full constructor path builds. Such classes are rare, so
+        // fall through to the interpreter rather than duplicate that logic here.
+        {
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for cls in self.mro_readonly(cn_resolved) {
+                if let Some(cd) = self.registry().classes.get(&cls) {
+                    for attr in &cd.attributes {
+                        if !seen.insert(attr.0.clone()) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
         let mut has_attribute = false;
         for cls in self.mro_readonly(cn_resolved) {
             if cls == "Any" || cls == "Mu" || cls == "Cool" {
@@ -3858,6 +3874,19 @@ impl Interpreter {
                 // Methods access $!attr via the qualified key for their owner class.
                 {
                     let per_class_attrs = self.collect_per_class_attrs(class_key);
+                    // Named-arg keys explicitly passed to the constructor. In Raku
+                    // each class's BUILD binds its own same-named attribute from the
+                    // named args (a provided named arg wins over the class's own
+                    // default), so EVERY declaring class's private copy gets that
+                    // value — not just the most-derived one. The most-derived value
+                    // already lives in the bare key, so reuse it.
+                    let provided_keys: std::collections::HashSet<String> = args
+                        .iter()
+                        .filter_map(|a| match a {
+                            Value::Pair(k, _) => Some(k.clone()),
+                            _ => None,
+                        })
+                        .collect();
                     for (
                         declaring_class,
                         (attr_name, _is_public, default, _is_rw, _is_required, sigil, _),
@@ -3865,6 +3894,15 @@ impl Interpreter {
                     {
                         let qualified_key = format!("{}\0{}", declaring_class, attr_name);
                         if attrs.contains_key(&qualified_key) {
+                            continue;
+                        }
+                        // Constructor named arg provided → initialize this class's
+                        // copy from it (per-class BUILD), regardless of which class
+                        // in the hierarchy declared it.
+                        if provided_keys.contains(&attr_name)
+                            && let Some(val) = attrs.get(&attr_name)
+                        {
+                            attrs.insert(qualified_key, val.clone());
                             continue;
                         }
                         // Use the unqualified value if it was provided via constructor args

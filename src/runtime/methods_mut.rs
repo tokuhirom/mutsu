@@ -105,6 +105,51 @@ impl Interpreter {
         }
     }
 
+    /// The class in `class_name`'s MRO (most-derived first) that *locally*
+    /// declares `attr`. For a same-named attribute redeclared in a child, this is
+    /// the child; the instance's bare attribute key mirrors this class's value
+    /// (what a public `$.attr` accessor reads). Returns `None` if undeclared.
+    fn most_derived_attr_declarer(&mut self, class_name: &str, attr: &str) -> Option<String> {
+        for cn in self.class_mro(class_name) {
+            if let Some(cd) = self.registry().classes.get(&cn)
+                && cd.attributes.iter().any(|a| a.0 == attr)
+            {
+                return Some(cn);
+            }
+        }
+        None
+    }
+
+    /// Write `value` for a class-qualified attribute assignment (`$o.C::attr = …`).
+    /// When `attr` is stored per-class (a same-named attribute redeclared across
+    /// the hierarchy, so the instance carries `"C\0attr"` keys), target the
+    /// qualifier's own key so sibling classes' copies are untouched, and keep the
+    /// bare key in sync only when `qualifier` is the most-derived declarer (the
+    /// bare key is what the public `$.attr` accessor reads). Otherwise (the common
+    /// single-class case, no qualified key) fall back to the bare key as before.
+    fn store_qualified_attr(
+        &mut self,
+        updated: &mut std::collections::HashMap<String, Value>,
+        instance_class: &str,
+        qualifier: &str,
+        attr: &str,
+        value: Value,
+    ) {
+        let qualified_key = format!("{}\0{}", qualifier, attr);
+        if updated.contains_key(&qualified_key) {
+            updated.insert(qualified_key, value.clone());
+            if self
+                .most_derived_attr_declarer(instance_class, attr)
+                .as_deref()
+                == Some(qualifier)
+            {
+                updated.insert(attr.to_string(), value);
+            }
+        } else {
+            updated.insert(attr.to_string(), value);
+        }
+    }
+
     fn normalize_rw_accessor_assignment(current: Option<Value>, value: Value) -> Value {
         let current = current.map(Value::into_descalarized);
         match current {
@@ -1111,8 +1156,14 @@ impl Interpreter {
                     {
                         assigned_value = def;
                     }
-                    updated.insert(attr_name, assigned_value.clone());
                     let cn = *class_name;
+                    self.store_qualified_attr(
+                        &mut updated,
+                        &cn.resolve(),
+                        qualifier,
+                        &attr_name,
+                        assigned_value.clone(),
+                    );
                     if let Some(var_name) = target_var {
                         self.overwrite_instance_bindings_by_identity(
                             &cn.resolve(),
@@ -1163,8 +1214,14 @@ impl Interpreter {
                     {
                         assigned_value = def;
                     }
-                    updated.insert(actual_method.to_string(), assigned_value.clone());
                     let cn = *class_name;
+                    self.store_qualified_attr(
+                        &mut updated,
+                        &cn.resolve(),
+                        qualifier,
+                        actual_method,
+                        assigned_value.clone(),
+                    );
                     if let Some(var_name) = target_var {
                         self.overwrite_instance_bindings_by_identity(
                             &cn.resolve(),
