@@ -83,17 +83,25 @@ object keys are written into the same `&mut HashData` as the element insert.
 
 `make test` green; no whitelisted regression.
 
-**NOT fixed by Stage 2 (separate object-hash *enforcement/construction*
-features, still failing in the non-whitelisted `S09-hashes/objecthash.t`):**
-- key-type check on assignment (`%h{Any}` must reject a `Mu` key — test 3; its
-  failure also makes the order-sensitive test 4 flaky by leaving an extra key)
-- `Hash.push` key/value type checks (tests 21, 23, 24)
-- `.new`/`.clone` on an object-hash instance must stay an object hash
-  (tests 34–35 see `Hash[Any,Any]` where `Hash` is expected)
-- mixin objects as keys (test 36 — aborts the file at line 104)
-
-These are object-hash *type enforcement*, independent of where the original keys
-are stored; tackle them next now that the key map is COW-stable.
+**Object-hash enforcement/construction follow-ups (non-whitelisted
+`S09-hashes/objecthash.t`):**
+- DONE (separate PR): mixin objects as keys (test 36) — `value_which_key` now has
+  a `Value::Mixin` arm folding the sorted role/mixin names into the key, so
+  `"x" but $r1` and `"x" but $r2` are distinct object-hash keys; the original key
+  objects come back via the COW-stable `original_keys`. Also fixes the
+  order-flaky test 4 in part.
+- DONE (same PR): `.new` on an object-hash instance stays an object hash
+  (tests 34–35) — `dispatch_new`'s Hash arm delegates to `Hash[vt,kt].new` when
+  the receiver carries a `key_type`, mirroring the typed-Array `.new` path.
+- STILL OPEN — key-type check rejecting a `Mu` key for `%h{Any}` (test 3, and the
+  dependent order-flaky test 4). ROOT CAUSE is NOT object-hash: `Mu.new` builds an
+  instance whose `.WHICH`/`value_type_name` is `Any` (`Any|46`), not `Mu`, so
+  `Mu.new ~~ Any` wrongly returns True. Fix `Mu.new` construction/typing first
+  (broad blast radius — smartmatch), THEN test 3 falls out for free.
+- STILL OPEN — `Hash.push` key/value type checks (tests 21, 23, 24).
+- STILL OPEN — object-hash in list→hash context (`my %c = (%objhash,)`) throws
+  "Odd number of elements" and aborts the file at block ~line 110 (rakudo #5165),
+  blocking tests 37–62.
 
 ---
 (original plan below)
