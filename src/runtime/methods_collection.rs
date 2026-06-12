@@ -175,10 +175,10 @@ impl Interpreter {
                         original_keys.insert(k.clone(), typed);
                     }
                 }
-                let result = Value::hash(map);
+                let mut result = Value::hash(map);
                 if has_typed {
                     original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                    super::utils::register_hash_original_keys(&result, original_keys);
+                    result = super::utils::set_hash_original_keys(result, original_keys);
                 }
                 Ok(result)
             }
@@ -194,10 +194,10 @@ impl Interpreter {
                         original_keys.insert(k.clone(), typed);
                     }
                 }
-                let result = Value::hash(map);
+                let mut result = Value::hash(map);
                 if has_typed {
                     original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                    super::utils::register_hash_original_keys(&result, original_keys);
+                    result = super::utils::set_hash_original_keys(result, original_keys);
                 }
                 Ok(result)
             }
@@ -213,10 +213,10 @@ impl Interpreter {
                         original_keys.insert(k.clone(), typed);
                     }
                 }
-                let result = Value::hash(map);
+                let mut result = Value::hash(map);
                 if has_typed {
                     original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
-                    super::utils::register_hash_original_keys(&result, original_keys);
+                    result = super::utils::set_hash_original_keys(result, original_keys);
                 }
                 Ok(result)
             }
