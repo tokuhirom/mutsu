@@ -2121,6 +2121,7 @@ impl Interpreter {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &normalized_args)?;
                     let result = self.push_to_shared_var(&key, normalized_args, &target);
+                    self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
                 "append" => {

@@ -31,6 +31,7 @@ use crate::value::{
     Value, make_rat, take_pending_instance_destroys,
 };
 use num_traits::Signed;
+use ptr_keyed::PtrKeyedMap;
 
 /// Flatten arguments for `append` using Raku's "one-arg rule":
 /// if exactly one non-itemized Array/List argument is passed, its elements
@@ -197,6 +198,7 @@ pub(crate) mod native_types;
 mod ops;
 mod output_sink;
 pub(crate) mod phasers;
+pub(crate) mod ptr_keyed;
 mod react_died;
 mod regex;
 pub(crate) mod regex_parse;
@@ -1020,20 +1022,26 @@ pub struct Interpreter {
     atomic_var_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
-    /// Container element defaults for arrays/hashes with `is default(...)`,
-    /// keyed by Arc pointer identity.
-    container_defaults: HashMap<usize, Value>,
+    /// Array element defaults for `is default(...)`, keyed by Arc pointer
+    /// identity with a Weak guard against pointer reuse (see `ptr_keyed`).
+    array_defaults: PtrKeyedMap<Vec<Value>, Value>,
+    /// Hash element defaults for `is default(...)` (guarded; see `ptr_keyed`).
+    hash_defaults: PtrKeyedMap<crate::value::HashData, Value>,
     /// Optional hash key type constraints (e.g. `%h{Str}`).
     var_hash_key_constraints: HashMap<String, String>,
-    /// Type metadata for Array values keyed by Arc pointer identity.
-    array_type_metadata: HashMap<usize, ContainerTypeInfo>,
-    /// Type metadata for Mix values keyed by Arc pointer identity.
-    mix_type_metadata: HashMap<usize, ContainerTypeInfo>,
-    /// Type metadata for Set values keyed by Arc pointer identity.
-    set_type_metadata: HashMap<usize, ContainerTypeInfo>,
-    /// Type metadata for Bag values keyed by Arc pointer identity.
-    bag_type_metadata: HashMap<usize, ContainerTypeInfo>,
-    /// Original key objects for object hashes, keyed by Hash Arc pointer identity.
+    /// Type metadata for Array values (pointer-keyed, Weak-guarded).
+    array_type_metadata: PtrKeyedMap<Vec<Value>, ContainerTypeInfo>,
+    /// Type metadata for Mix values (pointer-keyed, Weak-guarded).
+    mix_type_metadata: PtrKeyedMap<crate::value::MixData, ContainerTypeInfo>,
+    /// Type metadata for Set values (pointer-keyed, Weak-guarded).
+    set_type_metadata: PtrKeyedMap<crate::value::SetData, ContainerTypeInfo>,
+    /// Type metadata for Bag values (pointer-keyed, Weak-guarded).
+    bag_type_metadata: PtrKeyedMap<crate::value::BagData, ContainerTypeInfo>,
+    /// Original key objects for object hashes, keyed by Hash Arc pointer
+    /// identity. Deliberately NOT Weak-guarded: object-hash construction
+    /// mutates the hash repeatedly and relies on in-place pointer stability;
+    /// the structural fix is embedding `original_keys` in `HashData`
+    /// (docs/hashdata-migration-plan.md Stage 2), not a guard.
     hash_object_keys: HashMap<usize, HashMap<String, Value>>,
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
@@ -3122,12 +3130,13 @@ impl Interpreter {
             var_type_constraints: HashMap::new(),
             atomic_var_seen: false,
             var_defaults: HashMap::new(),
-            container_defaults: HashMap::new(),
+            array_defaults: PtrKeyedMap::new(),
+            hash_defaults: PtrKeyedMap::new(),
             var_hash_key_constraints: HashMap::new(),
-            array_type_metadata: HashMap::new(),
-            mix_type_metadata: HashMap::new(),
-            set_type_metadata: HashMap::new(),
-            bag_type_metadata: HashMap::new(),
+            array_type_metadata: PtrKeyedMap::new(),
+            mix_type_metadata: PtrKeyedMap::new(),
+            set_type_metadata: PtrKeyedMap::new(),
+            bag_type_metadata: PtrKeyedMap::new(),
             hash_object_keys: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
@@ -4474,19 +4483,6 @@ impl Interpreter {
         self.var_defaults.remove(name);
     }
 
-    /// Remove the pointer-keyed container default for the given value. Used
-    /// on variable redeclaration so a newly-allocated container whose Arc
-    /// pointer happens to collide with a previously-freed one does not
-    /// inherit the freed container's `is default(...)` value.
-    pub(crate) fn clear_container_default(&mut self, value: &Value) {
-        let id = match value {
-            Value::Array(items, ..) => Arc::as_ptr(items) as usize,
-            Value::Hash(map) => Arc::as_ptr(map) as usize,
-            _ => return,
-        };
-        self.container_defaults.remove(&id);
-    }
-
     /// Get the evaluated `is default(...)` value for a class attribute.
     pub(crate) fn class_attribute_default(
         &self,
@@ -4513,22 +4509,20 @@ impl Interpreter {
 
     /// Set the element default for a container (Array/Hash) by Arc pointer identity.
     pub(crate) fn set_container_default(&mut self, value: &Value, default: Value) {
-        let id = match value {
-            Value::Array(items, ..) => Arc::as_ptr(items) as usize,
-            Value::Hash(map) => Arc::as_ptr(map) as usize,
-            _ => return,
-        };
-        self.container_defaults.insert(id, default);
+        match value {
+            Value::Array(items, ..) => self.array_defaults.insert(items, default),
+            Value::Hash(map) => self.hash_defaults.insert(map, default),
+            _ => {}
+        }
     }
 
     /// Get the element default for a container (Array/Hash) by Arc pointer identity.
     pub(crate) fn container_default(&self, value: &Value) -> Option<&Value> {
-        let id = match value {
-            Value::Array(items, ..) => Arc::as_ptr(items) as usize,
-            Value::Hash(map) => Arc::as_ptr(map) as usize,
-            _ => return None,
-        };
-        self.container_defaults.get(&id)
+        match value {
+            Value::Array(items, ..) => self.array_defaults.get_arc(items),
+            Value::Hash(map) => self.hash_defaults.get_arc(map),
+            _ => None,
+        }
     }
 
     pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
@@ -4664,22 +4658,10 @@ impl Interpreter {
         info: ContainerTypeInfo,
     ) {
         match value {
-            Value::Array(items, ..) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.array_type_metadata.insert(id, info);
-            }
-            Value::Mix(items, _) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.mix_type_metadata.insert(id, info);
-            }
-            Value::Set(items, _) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.set_type_metadata.insert(id, info);
-            }
-            Value::Bag(items, _) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.bag_type_metadata.insert(id, info);
-            }
+            Value::Array(items, ..) => self.array_type_metadata.insert(items, info),
+            Value::Mix(items, _) => self.mix_type_metadata.insert(items, info),
+            Value::Set(items, _) => self.set_type_metadata.insert(items, info),
+            Value::Bag(items, _) => self.bag_type_metadata.insert(items, info),
             Value::Hash(_) => {
                 // Hash type metadata is embedded in `HashData` — see
                 // `tag_container_metadata`. Reaching here means a hash flowed
@@ -4721,15 +4703,47 @@ impl Interpreter {
     }
 
     pub(crate) fn set_type_metadata_get(&self, id: usize) -> Option<ContainerTypeInfo> {
-        self.set_type_metadata.get(&id).cloned()
+        self.set_type_metadata.get(id).cloned()
+    }
+
+    /// Capture a container's pointer-keyed metadata (type info + `is default`)
+    /// before an in-place mutation. `Arc::make_mut` relocates the payload of a
+    /// guarded container (the metadata tables hold a `Weak` per entry), so the
+    /// post-mutation value carries a fresh pointer; pair with
+    /// `restore_container_meta` to move the metadata along.
+    pub(crate) fn capture_container_meta(
+        &self,
+        value: &Value,
+    ) -> (Option<ContainerTypeInfo>, Option<Value>) {
+        (
+            self.container_type_metadata(value),
+            self.container_default(value).cloned(),
+        )
+    }
+
+    /// Re-attach metadata captured by `capture_container_meta` to the
+    /// post-mutation container value.
+    pub(crate) fn restore_container_meta(
+        &mut self,
+        value: &Value,
+        saved: (Option<ContainerTypeInfo>, Option<Value>),
+    ) {
+        let (info, default) = saved;
+        if let Some(info) = info
+            && !matches!(value, Value::Hash(_))
+        {
+            self.register_container_type_metadata(value, info);
+        }
+        if let Some(default) = default {
+            self.set_container_default(value, default);
+        }
     }
 
     /// Remove container type metadata for a value, breaking the association.
     pub(crate) fn unregister_container_type_metadata(&mut self, value: &Value) {
         match value {
             Value::Array(items, ..) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.array_type_metadata.remove(&id);
+                self.array_type_metadata.remove(ptr_keyed::ptr_key(items));
             }
             Value::Hash(_) => {
                 // Hash type metadata lives in `HashData`; clearing it requires
@@ -4754,22 +4768,10 @@ impl Interpreter {
 
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
         match value {
-            Value::Array(items, ..) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.array_type_metadata.get(&id).cloned()
-            }
-            Value::Mix(items, _) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.mix_type_metadata.get(&id).cloned()
-            }
-            Value::Set(items, _) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.set_type_metadata.get(&id).cloned()
-            }
-            Value::Bag(items, _) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.bag_type_metadata.get(&id).cloned()
-            }
+            Value::Array(items, ..) => self.array_type_metadata.get_arc(items).cloned(),
+            Value::Mix(items, _) => self.mix_type_metadata.get_arc(items).cloned(),
+            Value::Set(items, _) => self.set_type_metadata.get_arc(items).cloned(),
+            Value::Bag(items, _) => self.bag_type_metadata.get_arc(items).cloned(),
             Value::Hash(items) => Self::hashdata_type_info(items),
             Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
             Value::Mixin(inner, _) => self.container_type_metadata(inner),
@@ -5550,7 +5552,8 @@ impl Interpreter {
             // running the atomic-variable read check.
             atomic_var_seen: self.atomic_var_seen,
             var_defaults: self.var_defaults.clone(),
-            container_defaults: self.container_defaults.clone(),
+            array_defaults: self.array_defaults.clone(),
+            hash_defaults: self.hash_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             array_type_metadata: self.array_type_metadata.clone(),
             mix_type_metadata: self.mix_type_metadata.clone(),

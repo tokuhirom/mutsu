@@ -131,9 +131,17 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 - [ ] **トラック B — 第一級コンテナ Phase 2（要素セル）** ＝ データ表現（A と完全独立）
       設計・段階導入は 🟣第2優先「第一級コンテナ」セクション参照（Phase 1 = landed）。
       - [ ] Phase 0.5 第2段（スタック不変条件 + lvalue opcode）を Phase 2 と同一 PR で。
-      - [ ] 配列/ハッシュ要素の COW セル化 → array-backed mut・shaped/non-simple push・hyper temp・take-rw・`@a[0]:=`・
-            深い `>>++` を解く。
-      - [ ] **Q2 の型メタ Arc-ptr keying をセルへ吸収**（間欠 flaky の根を構造的に除去）。レバー C 残（単一脱出/汎用捕捉）も合流。
+      - [ ] 配列/ハッシュ要素の COW セル化 → array-backed mut・shaped/non-simple push・hyper temp・
+            深い `>>++` を解く（take-rw は #2930、`@a[0]:=`/束縛要素セルは #2902-#2925 で landed）。
+      - [~] **Q2 の型メタ Arc-ptr flaky の構造的除去**（2026-06-12、2 本立てで進行中）:
+            ① **Hash = HashData 埋め込み（完全吸収）DONE (#2952)** — `Value::Hash(Arc<HashData>)` に
+            value_type/key_type/declared_type を埋め込み `hash_type_metadata` 副テーブル削除。
+            残 = original_keys の埋め込み（Stage 2、docs/hashdata-migration-plan.md）→ その後 Array/Set/Bag/Mix へ
+            同じ wrapper を展開。
+            ② **未 wrapper のテーブルは Weak-guard `PtrKeyedMap` で interim 構造防御 (#2953)** —
+            array/set/bag/mix 型メタ・container defaults・shaped dims・grep-view。Weak が ArcInner を pin ＝
+            アドレス再利用が不可能。hash original-keys 2 テーブルは対象外（①Stage 2 が正解、guard は COW 安定性と干渉）。
+            レバー C 残（単一脱出/汎用捕捉）も合流。
 - [ ] **トラック C — 並行 / lever B（共有セル）** ＝ 並行（A と独立。要素セルは B と共有基盤なので B に弱依存）
       - [ ] `clone_for_thread` のスナップショットコピー → 共有すべき lexical/state/global を `Arc<Mutex>` ライブセルへ
             （ANALYSIS §8.3/§2.2。`start` 間で `$counter`/`state $n` 共有）。
@@ -205,16 +213,16 @@ STATUS で撤回済み。
 
 各項目は深い。**ROI が明確なとき**（特定 whitelist 候補ファイルが残り 1–2 subtest で、原因が該当バグ）にだけ着手する。
 
-- [ ] **`is rw` を writeback → 真の共有セルへ** — `$a := $arg`（rw param への束縛持続）が live alias にならない
-      （`S03-binding/scalars.t` tests 24/27、他 2 subtest だけ落ちる）。現状 `apply_rw_bindings_to_env` の
-      writeback 方式。hot な call path 全体に触れる高リスク改修。
 - [ ] **`.VAR.^name` 束縛コンテナ反映** — `my $l := (1,2,3); $l.VAR.^name` が `Scalar`（raku `List`）。
       格納時コンテナ status が要る。
-- [ ] **配列/ハッシュ要素のセル化（COW）= Phase 2** — take-rw（gather.t 38）/ `@a[0] :=` / 深い `>>++`・
-      `deepmap(++*)`（hyper.t 330-333）/ object-hash。最ホット表現に触る大改修。下記「設計の鍵」を適用。
+- [ ] **配列/ハッシュ要素のセル化（COW）= Phase 2 残り** — 深い `>>++`・`deepmap(++*)`（hyper.t 330-333）/
+      object-hash。最ホット表現に触る大改修。下記「設計の鍵」を適用。（`is rw` 共有セル #2928・take-rw #2930・
+      束縛要素セル #2902-#2925 は landed）
 - [ ] **属性セル + 属性束縛 = Phase 3** — `$!x :=` / per-attribute container template（S03-binding/attributes,
       S14-traits/attributes 5-8）。
-- [ ] **型メタを Arc ポインタ keying からセルへ（Q2 項目）** — 要素/属性セルが入れば吸収（間欠 flaky の根）。
+- [~] **型メタを Arc ポインタ keying からセルへ（Q2 項目）** — Hash は HashData 埋め込みで完全吸収 DONE (#2952)、
+      未 wrapper テーブルは Weak-guard で interim 防御 (#2953)。残 = original_keys 埋め込み（Stage 2）と
+      Array/Set/Bag/Mix の wrapper 展開（上記トラック B 参照）。
 
 注: 既に通るようになった項目（観測 2026-06-08）— reduce.t 62 の `:=` 束縛リスト平坦化（`@a.elems`=3）、
 `is rw` の**基本** persistent（`f($a);f($a)`）は現状 PASS。バックログから外す。

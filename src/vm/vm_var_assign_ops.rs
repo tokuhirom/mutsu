@@ -3837,7 +3837,19 @@ impl VM {
             self.locals[slot] = Value::Nil;
         }
         if let Some(Value::Hash(outer_hash)) = self.env_root_descended_mut(&var_name) {
-            let oh = Arc::make_mut(outer_hash);
+            // At refcount 1, write in place via the raw pointer (same pattern
+            // as the bound-cell Array arm below): `Arc::make_mut` relocates a
+            // Weak-guarded (metadata-bearing, e.g. object-hash / `is default`)
+            // hash even when it is the only strong holder, which would break
+            // `.WHICH` pointer identity. When shared, keep the make_mut COW
+            // detach. The cast MUST target `HashData` (not its inner map) —
+            // see docs/hashdata-migration-plan.md "Latent UB found & fixed".
+            // SAFETY: single strong holder and mutsu is single-threaded.
+            let oh: &mut crate::value::HashData = if Arc::strong_count(outer_hash) == 1 {
+                unsafe { &mut *(Arc::as_ptr(outer_hash) as *mut crate::value::HashData) }
+            } else {
+                Arc::make_mut(outer_hash)
+            };
             // Vivify the missing entry as Array if the OUTER (second) subscript
             // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
             let inner_val = oh.entry(inner_key).or_insert_with(|| {
@@ -4890,11 +4902,6 @@ impl VM {
         if is_vardecl {
             let name = &code.locals[idx];
             self.interpreter.clear_var_default(name);
-            // Clear pointer-keyed container default for the OLD value being
-            // shadowed. This prevents a stale `is default(...)` entry from
-            // being found when a newly-allocated container reuses the freed
-            // Arc pointer address (ABA problem with pointer-based identity).
-            self.interpreter.clear_container_default(&self.locals[idx]);
             // Clear the deleted-index tracker left over from a previous
             // same-named variable in an outer scope.
             let deleted_key = format!("__mutsu_deleted_index::{}", name);
@@ -5507,13 +5514,6 @@ impl VM {
         // Skip typed container coercion for `:=` binding — it would create
         // a new Arc and lose container identity (e.g. Map metadata).
         if !is_bind && (name.starts_with('@') || name.starts_with('%')) {
-            // Clear stale pointer-keyed container defaults for the intermediate
-            // Array/Hash before coercion replaces it with a new Arc. Without this,
-            // the freed intermediate pointer can be reused by a later allocation
-            // and inherit a stale `is default(...)` from a previous scope.
-            if is_vardecl {
-                self.interpreter.clear_container_default(&val);
-            }
             val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
@@ -5764,27 +5764,13 @@ impl VM {
         {
             return Err(err);
         }
-        // For variable redeclarations (`my @a` in a new scope), drop any
-        // pointer-keyed container default that an earlier same-named
-        // variable left behind. Arc pointers can be reused across
-        // allocations (especially in release builds) and would otherwise
-        // cause a freed container's `is default(...)` to leak into the
-        // new scope.
-        if is_vardecl {
-            self.interpreter.clear_container_default(&val);
-        }
         self.locals[idx] = val.clone();
-        // When assigning (not binding) to an untyped hash/array variable, clear
-        // stale container type metadata from Arc pointer reuse. The pointer-keyed
-        // `*_type_metadata` maps are never pruned when a typed container is
-        // dropped, so a freshly-built untyped `@a`/`%h` whose backing `Arc`
-        // reuses a freed typed container's heap address inherits its stale
-        // `Array[Int]`/`Hash[...]` metadata (alloc-order-dependent, intermittent).
-        // The variable is provably untyped here (`var_type_constraint` is `None`),
-        // so any metadata found on its value is necessarily that stale alias and
-        // is safe to remove (a live typed container cannot share the address).
-        // Skip for attribute variables (.h, !h) which get typed metadata from
-        // the class definition, not from var_type_constraints.
+        // When assigning (not binding) to an untyped hash/array variable, drop
+        // container type metadata still attached to the assigned value. The
+        // value may share its backing `Arc` with a typed source container
+        // (`my @a = @typed`), and an untyped declaration must not present its
+        // value as typed. Skip for attribute variables (.h, !h) which get
+        // typed metadata from the class definition, not var_type_constraints.
         if !is_bind
             && (name.starts_with('%') || name.starts_with('@'))
             && !name.contains('.')

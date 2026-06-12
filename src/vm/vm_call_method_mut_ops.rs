@@ -1506,15 +1506,6 @@ impl VM {
             }
             _ => unreachable!(),
         };
-        // `Arc::make_mut` may reallocate the backing buffer, giving the array a
-        // fresh heap pointer. Container type metadata is keyed by that pointer
-        // (`array_type_metadata`), and the map is not cleaned when an Arc is
-        // freed, so the new pointer can collide with a stale entry left by a
-        // freed typed array and spuriously type this (guaranteed-untyped) array.
-        // Defensively drop any such aliased entry for the post-mutation array.
-        if let Some(stored @ Value::Array(..)) = self.interpreter.env().get(target_name).cloned() {
-            self.interpreter.unregister_container_type_metadata(&stored);
-        }
         Some(Ok(result))
     }
 
@@ -1610,12 +1601,6 @@ impl VM {
         let removed: Vec<Value> = items.drain(start..end).collect();
         for (i, item) in replacement.into_iter().enumerate() {
             items.insert(start + i, item);
-        }
-        // `Arc::make_mut` may reallocate the backing buffer; drop any stale
-        // pointer-keyed type metadata that could alias the fresh pointer (same
-        // hazard handled in `try_native_array_mut`).
-        if let Some(stored @ Value::Array(..)) = self.interpreter.env().get(target_name).cloned() {
-            self.interpreter.unregister_container_type_metadata(&stored);
         }
         Some(Ok(Value::real_array(removed)))
     }
