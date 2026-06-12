@@ -130,6 +130,29 @@ Concrete steps:
 Array/Set/Bag/Mix have the SAME Arc-ptr side tables (array_type_metadata, …) and
 the same flaky; apply the same wrapper (ArrayData, …) after the hash one lands.
 
+### Stage 3 — Set/Bag/Mix type metadata embedded (DONE, 2026-06-13)
+
+`SetData`/`BagData`/`MixData` already existed as wrapper structs (with
+`original_keys`), so no `Value` variant change was needed: added
+`value_type`/`key_type`/`declared_type` + `has_type_meta()` to each,
+extended `tag_container_metadata` with Set/Bag/Mix arms (same skip-if-same
+COW guard preserving `.WHICH`), migrated the four QuantHash writer sites
+(`SetHash[T].new` type_args, `.MixHash` coerces ×2, `is SetHash/...` var
+trait) to tag + write-back, pointed `container_type_metadata` at the
+embedded fields, replaced the one raw-id reader (`set_type_metadata_get`),
+and deleted the three side tables. The Hash/Set/Bag/Mix arms of
+`register_container_type_metadata` are a shared `debug_assert` tripwire.
+
+**Remaining: ArrayData only.** `Value::Array(Arc<Vec<Value>>, ArrayKind)`
+has no wrapper yet — that is the real Stage-1a-scale migration (Deref
+absorbs reads; structural sites: `Arc::new`, `Arc::make_mut`, `Arc::ptr_eq`,
+and CRITICALLY every `Arc::as_ptr(..) as *mut Vec<Value>` unsafe in-place
+site, which becomes UB against a wrapper — see "Latent UB found & fixed").
+Until it lands, `array_type_metadata` stays on the Weak-guarded
+`PtrKeyedMap` (#2953). Candidates to embed alongside type metadata in
+`ArrayData`: the array `is default(...)` value and the shaped-array dims
+(both currently pointer-keyed side tables).
+
 ## Why staged this way
 
 Stage 1a (wrapper, intended-invariant) is the mechanical foundation; 1b (embed +

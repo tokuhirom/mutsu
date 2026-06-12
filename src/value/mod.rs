@@ -230,6 +230,15 @@ pub(crate) struct BagData {
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Bag is created from mixed-type data.
     pub original_keys: Option<HashMap<String, Value>>,
+    /// Element value-type constraint (e.g. `Int` for `BagHash[Int]`), if any.
+    pub value_type: Option<String>,
+    /// Key-type constraint for parameterized QuantHashes, if any.
+    pub key_type: Option<String>,
+    /// Declared container type name (e.g. `BagHash`, `Bag[Int]`), if any.
+    /// Embedded here (not in a pointer-keyed side table) so it travels with
+    /// the container through copy-on-write and can never be inherited by an
+    /// unrelated container via Arc-pointer reuse.
+    pub declared_type: Option<String>,
 }
 
 impl BagData {
@@ -237,6 +246,9 @@ impl BagData {
         BagData {
             counts,
             original_keys: None,
+            value_type: None,
+            key_type: None,
+            declared_type: None,
         }
     }
 
@@ -247,7 +259,15 @@ impl BagData {
         BagData {
             counts,
             original_keys: Some(original_keys),
+            value_type: None,
+            key_type: None,
+            declared_type: None,
         }
+    }
+
+    /// Whether container *type* metadata (element/key/declared type) is attached.
+    pub fn has_type_meta(&self) -> bool {
+        self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
     /// Get the original Value for a key, falling back to Str.
@@ -288,6 +308,15 @@ pub(crate) struct SetData {
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Set is created from mixed-type data.
     pub original_keys: Option<HashMap<String, Value>>,
+    /// Element value-type constraint (e.g. `Str` for `SetHash[Str]`), if any.
+    pub value_type: Option<String>,
+    /// Key-type constraint for parameterized QuantHashes, if any.
+    pub key_type: Option<String>,
+    /// Declared container type name (e.g. `SetHash`, `Set[Int]`), if any.
+    /// Embedded here (not in a pointer-keyed side table) so it travels with
+    /// the container through copy-on-write and can never be inherited by an
+    /// unrelated container via Arc-pointer reuse.
+    pub declared_type: Option<String>,
 }
 
 impl SetData {
@@ -295,6 +324,9 @@ impl SetData {
         SetData {
             elements,
             original_keys: None,
+            value_type: None,
+            key_type: None,
+            declared_type: None,
         }
     }
 
@@ -305,7 +337,15 @@ impl SetData {
         SetData {
             elements,
             original_keys: Some(original_keys),
+            value_type: None,
+            key_type: None,
+            declared_type: None,
         }
+    }
+
+    /// Whether container *type* metadata (element/key/declared type) is attached.
+    pub fn has_type_meta(&self) -> bool {
+        self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
     /// Get the original Value for a key, falling back to Str.
@@ -346,6 +386,15 @@ pub(crate) struct MixData {
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Mix is created from mixed-type data.
     pub original_keys: Option<HashMap<String, Value>>,
+    /// Element value-type constraint (e.g. `Real` for `MixHash`), if any.
+    pub value_type: Option<String>,
+    /// Key-type constraint for parameterized QuantHashes, if any.
+    pub key_type: Option<String>,
+    /// Declared container type name (e.g. `MixHash`, `Mix[Int]`), if any.
+    /// Embedded here (not in a pointer-keyed side table) so it travels with
+    /// the container through copy-on-write and can never be inherited by an
+    /// unrelated container via Arc-pointer reuse.
+    pub declared_type: Option<String>,
 }
 
 impl MixData {
@@ -353,6 +402,9 @@ impl MixData {
         MixData {
             weights,
             original_keys: None,
+            value_type: None,
+            key_type: None,
+            declared_type: None,
         }
     }
 
@@ -363,7 +415,15 @@ impl MixData {
         MixData {
             weights,
             original_keys: Some(original_keys),
+            value_type: None,
+            key_type: None,
+            declared_type: None,
         }
+    }
+
+    /// Whether container *type* metadata (element/key/declared type) is attached.
+    pub fn has_type_meta(&self) -> bool {
+        self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
     /// Get the original Value for a key, falling back to Str.
