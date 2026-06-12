@@ -1634,7 +1634,7 @@ impl VM {
 
         // React callbacks run through the interpreter path and capture from env.
         // First, pull any pending env updates into locals (e.g., instance attribute
-        // mutations from overwrite_instance_bindings_by_identity after bind-stdin).
+        // mutations written into the shared cell after bind-stdin).
         // Then flush all locals to env so captured vars are visible/mutable from
         // whenever callbacks.
         self.ensure_locals_synced(code);
