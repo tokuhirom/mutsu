@@ -843,6 +843,37 @@ impl VM {
         }
     }
 
+    /// Coerce a value assigned to a Bag/BagHash weight to an `i64` count, with
+    /// the same numeric validation as Mix: a non-numeric `Str` raises
+    /// X::Str::Numeric rather than being silently treated as truthy (1).
+    fn bag_assignment_count(value: &Value) -> Result<i64, RuntimeError> {
+        match value {
+            Value::Int(i) => Ok(*i),
+            Value::Num(n) => Ok(*n as i64),
+            Value::Rat(n, d) if *d != 0 => Ok(*n / *d),
+            Value::Bool(flag) => Ok(i64::from(*flag)),
+            Value::Str(s) => {
+                if let Ok(n) = s.parse::<i64>() {
+                    Ok(n)
+                } else if let Ok(n) = s.parse::<f64>() {
+                    Ok(n as i64)
+                } else {
+                    Err(RuntimeError::str_numeric(
+                        s,
+                        "base-10 number must begin with valid digits or '.'",
+                    ))
+                }
+            }
+            _ => {
+                if value.truthy() {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }
+        }
+    }
+
     const LAZY_ASSIGN_PRESERVE_MARKER: &str = "__mutsu_preserve_lazy_on_array_assign";
     const MAX_ASSIGN_SLICE_EXPAND: i64 = 100_000;
 
@@ -2869,7 +2900,18 @@ impl VM {
                     idx.to_string_value()
                 };
                 let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
+                // A `%h is BagHash`/`MixHash`/`SetHash` (or `Bag`/`Mix`/`Set`)
+                // variable IS that QuantHash: the constraint names the *whole*
+                // container, not the element type, and `%h<k> = weight` sets a
+                // weight (validated/handled by the QuantHash weight-assign path
+                // below), so it must not be element-type-checked against the
+                // container type.
+                let target_is_quanthash = matches!(
+                    &index_target,
+                    Some(Value::Mix(..) | Value::Bag(..) | Value::Set(..))
+                );
                 if let Some(constraint) = array_elem_constraint
+                    && !target_is_quanthash
                     && !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
                     // For `$`-sigil variables holding a container (e.g. a `Hash $h`
@@ -3338,18 +3380,7 @@ impl VM {
                                 return Err(RuntimeError::assignment_ro(Some("Bag")));
                             }
                             let b = Arc::make_mut(bag);
-                            let count = match &val {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => *n as i64,
-                                Value::Bool(flag) => i64::from(*flag),
-                                _ => {
-                                    if val.truthy() {
-                                        1
-                                    } else {
-                                        0
-                                    }
-                                }
-                            };
+                            let count = Self::bag_assignment_count(&val)?;
                             if count == 0 {
                                 b.remove(&key);
                             } else {
@@ -3387,10 +3418,9 @@ impl VM {
                                 }
                                 "BagHash" => {
                                     let mut counts = HashMap::new();
-                                    if let Value::Int(n) = &val
-                                        && *n > 0
-                                    {
-                                        counts.insert(key.clone(), *n);
+                                    let count = Self::bag_assignment_count(&val)?;
+                                    if count > 0 {
+                                        counts.insert(key.clone(), count);
                                     }
                                     *container = Value::bag_hash(counts);
                                 }
