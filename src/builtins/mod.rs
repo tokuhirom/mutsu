@@ -8,6 +8,7 @@ pub(crate) mod collation;
 pub(crate) mod comb;
 pub(crate) mod exception_message;
 mod functions;
+pub(crate) mod iterator_construct;
 pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod parse_base;

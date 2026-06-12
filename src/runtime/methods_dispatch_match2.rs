@@ -318,29 +318,9 @@ impl Interpreter {
                 return Ok(Value::make_instance(Symbol::intern("Iterator"), attrs));
             }
         }
-        let lazy = crate::builtins::methods_0arg::is_value_lazy(&target);
-        // A lazy list with a known logical element count (e.g. `42 xx 10**9`,
-        // `42 xx ∞`) carries that count so `.count-only` can report it without
-        // materializing — the cached `items` are only a bounded prefix.
-        let known_count = match &target {
-            Value::LazyList(ll) => ll.elems_count.clone(),
-            _ => None,
-        };
-        let items = if crate::runtime::utils::is_shaped_array(&target) {
-            crate::runtime::utils::shaped_array_leaves(&target)
-        } else {
-            crate::runtime::utils::value_to_list(&target)
-        };
-        let mut attrs = HashMap::new();
-        attrs.insert("items".to_string(), Value::array(items));
-        attrs.insert("index".to_string(), Value::Int(0));
-        if lazy {
-            attrs.insert("is_lazy".to_string(), Value::Bool(true));
-        }
-        if let Some(count) = known_count {
-            attrs.insert("known_count".to_string(), count);
-        }
-        Ok(Value::make_instance(Symbol::intern("Iterator"), attrs))
+        // Pure construction (no env / no re-entry): shared with the VM's native
+        // `.iterator` dispatch via the single `builtins::iterator_construct` impl.
+        Ok(crate::builtins::iterator_construct::build_iterator_instance(&target))
     }
 
     /// Dispatch the "produce" method.
