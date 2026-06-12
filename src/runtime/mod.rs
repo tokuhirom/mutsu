@@ -17,6 +17,12 @@ use std::thread;
 
 static ROLE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+/// Process-wide monotonic flag: set once any `atomicint` variable / atomic
+/// storage has been registered, by ANY thread. Gates the atomic-variable
+/// checks on the hot read and declaration paths. See
+/// [`Interpreter::atomic_var_seen`] for why this must not be per-interpreter.
+static ATOMIC_VAR_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub(crate) fn next_role_id() -> u64 {
     ROLE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
@@ -1010,14 +1016,6 @@ pub struct Interpreter {
     pub(crate) attributes_pragma: String,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
-    /// Monotonic flag: set once any `atomicint` variable / atomic storage has been
-    /// registered in this interpreter (or inherited from a parent thread). The
-    /// per-`GetGlobal`/`GetLocal` atomic-variable check is expensive (a `format!`
-    /// plus two `var_type_constraint` lookups, each itself a `format!`), yet
-    /// atomics are exotic; when this flag is clear the entire check is skipped,
-    /// which removes that cost from the hot variable-read path. Never cleared, so
-    /// a program that stops using an atomic still resolves correctly.
-    atomic_var_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
     /// Container element defaults for arrays/hashes with `is default(...)`,
@@ -3125,7 +3123,6 @@ impl Interpreter {
             variables_pragma: String::new(),
             attributes_pragma: String::new(),
             var_type_constraints: HashMap::new(),
-            atomic_var_seen: false,
             var_defaults: HashMap::new(),
             container_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
@@ -4399,7 +4396,7 @@ impl Interpreter {
         if let Some(constraint) = constraint {
             let info = Self::parse_container_constraint(name, &constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
-                self.atomic_var_seen = true;
+                self.mark_atomic_var_seen();
             }
             self.var_type_constraints
                 .insert(key.clone(), info.value_type.clone());
@@ -4450,17 +4447,25 @@ impl Interpreter {
     }
 
     /// Whether any `atomicint`/atomic-storage variable has ever been registered
-    /// (monotonic). When false, the hot variable-read path can skip the entire
-    /// atomic-variable check (which otherwise costs `format!`s and constraint
-    /// lookups on every `GetGlobal`/`GetLocal`).
+    /// (monotonic, **process-wide**). When false, the hot variable-read path can
+    /// skip the entire atomic-variable check (which otherwise costs `format!`s
+    /// and constraint lookups on every `GetGlobal`/`GetLocal`), and variable
+    /// (re)declaration can skip the stale-atomic-key reset.
+    ///
+    /// This must be process-global, NOT a per-interpreter field: `cas $a` inside
+    /// a scheduler/thread cue block marks the *thread clone's* interpreter, while
+    /// the main thread later re-declares `my $a` and must see the flag to reset
+    /// the stale `__mutsu_atomic_name::` mapping in the shared `shared_vars`
+    /// (S17-scheduler/every.t pattern — a per-interpreter flag left the stale key
+    /// alive and the next block's `$a` inherited the previous block's count).
     #[inline(always)]
     pub(crate) fn atomic_var_seen(&self) -> bool {
-        self.atomic_var_seen
+        ATOMIC_VAR_SEEN.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Mark that an atomic variable / atomic storage has been registered.
     pub(crate) fn mark_atomic_var_seen(&mut self) {
-        self.atomic_var_seen = true;
+        ATOMIC_VAR_SEEN.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Set the default value for a variable declared with `is default(...)`.
@@ -5527,10 +5532,6 @@ impl Interpreter {
             variables_pragma: self.variables_pragma.clone(),
             attributes_pragma: self.attributes_pragma.clone(),
             var_type_constraints: self.var_type_constraints.clone(),
-            // Inherit monotonically: if the parent ever registered an atomic var,
-            // the child (which shares the atomic storage via shared_vars) must keep
-            // running the atomic-variable read check.
-            atomic_var_seen: self.atomic_var_seen,
             var_defaults: self.var_defaults.clone(),
             container_defaults: self.container_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
@@ -5862,6 +5863,14 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
+        // No atomic variable has ever been registered (monotonic flag, set
+        // before any `__mutsu_atomic_name::` key is created), so there is
+        // nothing to reset. Skip the per-assignment `format!` + env remove +
+        // shared_vars write lock on the hot path — the same gate the atomic
+        // read paths already use (GetGlobal / SetLocal).
+        if !self.atomic_var_seen() {
+            return;
+        }
         let name_key = format!("__mutsu_atomic_name::{name}");
         let Some(Value::Str(value_key)) = self.env.remove(&name_key) else {
             return;
@@ -5872,6 +5881,10 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
+        // See reset_atomic_var_key: nothing to reset when no atomics exist.
+        if !self.atomic_var_seen() {
+            return;
+        }
         let name_key = format!("__mutsu_atomic_name::{name}");
         self.env.remove(&name_key);
         let mut shared = self.shared_vars.write().unwrap();
