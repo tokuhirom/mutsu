@@ -1281,9 +1281,26 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_make_pair_op(&mut self) {
-        let right = self.stack.pop().unwrap();
+    pub(super) fn exec_make_pair_op(&mut self, code: &crate::opcode::CompiledCode) {
+        let mut right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // `key => $var`: the RHS scalar variable was tagged with `WrapVarRef`, so
+        // capture its container. The Pair's value becomes a `ContainerRef` shared
+        // with `$var`, giving Raku's write-through semantics: `$pair.value = X`
+        // updates `$var`, and `$pair.value<k> = v` writes through to `$var`'s
+        // backing Array/Hash. (See S02:1704 / roast S02-types/pair.t.)
+        if let Value::Capture {
+            positional,
+            named,
+        } = &right
+            && positional.is_empty()
+            && let Some(Value::Str(source_name)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            let source_name = source_name.to_string();
+            let inner = inner.clone();
+            right = self.capture_var_cell(code, &source_name, inner);
+        }
         // Preserve the original key type for `.key` to return the correct type.
         // Use ValuePair for non-string keys, Pair for string keys.
         match &left {

@@ -114,6 +114,14 @@ pub(crate) struct Compiler {
     /// EVAL). Used to detect placeholder variables (`$^x`, `@_`, ...) that appear
     /// outside any sub or block -> X::Placeholder::Mainline.
     pub(crate) is_mainline: bool,
+    /// When true, a `key => $var` Pair must NOT capture `$var`'s container.
+    /// Set while compiling call arguments: a named argument's value is passed
+    /// to the callee by the call's binding rules (and decontainerized for plain
+    /// params / attribute stores), so capturing the container there breaks code
+    /// that reads the bound value without deref (e.g. `.new(prefix => $dir)`).
+    /// Standalone Pair literals (`my $p = (k => $v)`) still capture for
+    /// write-through (S02:1704).
+    suppress_pair_capture: bool,
 }
 
 impl Compiler {
@@ -145,7 +153,23 @@ impl Compiler {
             current_distribution: None,
             escaping_position: false,
             is_mainline: false,
+            suppress_pair_capture: false,
         }
+    }
+
+    /// Run `f` with the pair-capture-suppression flag set, restoring the previous
+    /// value afterward. Used to mark call-argument position, where `key => $var`
+    /// must pass the value (not a write-through container) to the callee.
+    pub(super) fn with_suppress_pair_capture<R>(
+        &mut self,
+        suppress: bool,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let saved = self.suppress_pair_capture;
+        self.suppress_pair_capture = suppress;
+        let r = f(self);
+        self.suppress_pair_capture = saved;
+        r
     }
 
     /// Run `f` with the escaping-position flag set to `escaping`, restoring the

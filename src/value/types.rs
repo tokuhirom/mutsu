@@ -17,11 +17,15 @@ impl Value {
         if let Value::Scalar(inner) = other {
             return self.eqv(inner);
         }
+        // Deref to an OWNED clone (releasing the cell lock) before recursing:
+        // when both sides alias the SAME cell (e.g. two pairs built from the same
+        // `key => $var`), holding the lock across the recursive `eqv` would lock
+        // the same non-reentrant Mutex twice and deadlock.
         if matches!(self, Value::ContainerRef(_)) {
-            return self.with_deref(|inner| inner.eqv(other));
+            return self.deref_container().eqv(other);
         }
         if matches!(other, Value::ContainerRef(_)) {
-            return other.with_deref(|inner| self.eqv(inner));
+            return self.eqv(&other.deref_container());
         }
         // Junction threading: if either side is a junction, thread eqv
         // through it and return the boolean result of the junction.

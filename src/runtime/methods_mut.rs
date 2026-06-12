@@ -862,6 +862,15 @@ impl Interpreter {
                 _ => None,
             };
             if let Some((key, current_value)) = pair_data {
+                // A Pair whose value is a shared `ContainerRef` (built by `key =>
+                // $var`) aliases the source variable's container. Writing `.value`
+                // updates the cell in place, so `$pair.value = X` writes through to
+                // `$var` (S02:1704). The type constraint, if any, is enforced by
+                // the cell itself on assignment.
+                if let Value::ContainerRef(cell) = current_value.as_ref() {
+                    *cell.lock().unwrap() = value.clone();
+                    return Ok(value);
+                }
                 let mut selected_hash: Option<
                     std::sync::Arc<std::collections::HashMap<String, Value>>,
                 > = None;

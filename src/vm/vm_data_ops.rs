@@ -173,7 +173,12 @@ impl VM {
     /// variable's container (`$c[0]++` writes through to `$name`). If the variable
     /// is not a local slot in this frame (or is already a cell), fall back to the
     /// captured `inner` value / existing cell. Mirrors `box_captured_lexicals`.
-    fn capture_var_cell(&mut self, code: &CompiledCode, name: &str, inner: Value) -> Value {
+    pub(super) fn capture_var_cell(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        inner: Value,
+    ) -> Value {
         if inner.is_container_ref() {
             return inner;
         }
@@ -198,7 +203,14 @@ impl VM {
         }
         let cell = self.locals[idx].clone().into_container_ref();
         self.locals[idx] = cell.clone();
-        self.flush_local_to_env(code, idx);
+        // The captured local is now a shared `ContainerRef`. It MUST also reach
+        // env unconditionally: a later interpreter-side mutation (e.g. `$pair.value
+        // = X` writing through the cell) triggers an env->locals resync that would
+        // otherwise overwrite the local with a stale by-value env copy, breaking
+        // the alias. `flush_local_to_env` only flushes "simple" locals, so set env
+        // directly here.
+        let sym = code.locals_sym.get(idx).copied();
+        self.set_env_with_main_alias_sym(name, sym, cell.clone());
         cell
     }
 

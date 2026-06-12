@@ -508,14 +508,18 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut i = 0;
             while i < flat.len() {
                 if let Value::Pair(k, v) = &flat[i] {
-                    map.insert(k.clone(), *v.clone());
+                    // A Pair value built by `key => $var` is a write-through
+                    // `ContainerRef`; storing into a Hash decontainerizes (copies
+                    // the value), matching Raku (`%h = k => $v; $v = 2` leaves
+                    // `%h<k>` unchanged).
+                    map.insert(k.clone(), v.deref_container());
                     i += 1;
                 } else if let Value::ValuePair(k, v) = &flat[i] {
                     let str_key = k.to_string_value();
                     if !matches!(k.as_ref(), Value::Str(_)) {
                         original_keys.insert(str_key.clone(), *k.clone());
                     }
-                    map.insert(str_key, *v.clone());
+                    map.insert(str_key, v.deref_container());
                     i += 1;
                 } else {
                     let key_val = &flat[i];
@@ -541,10 +545,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut i = 0;
             while i < items.len() {
                 if let Value::Pair(k, v) = &items[i] {
-                    map.insert(k.clone(), *v.clone());
+                    map.insert(k.clone(), v.deref_container());
                     i += 1;
                 } else if let Value::ValuePair(k, v) = &items[i] {
-                    map.insert(k.to_string_value(), *v.clone());
+                    map.insert(k.to_string_value(), v.deref_container());
                     i += 1;
                 } else {
                     let key = items[i].to_string_value();
@@ -561,12 +565,12 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         Value::Pair(k, v) => {
             let mut map = HashMap::new();
-            map.insert(k, *v);
+            map.insert(k, v.deref_container());
             Value::hash(map)
         }
         Value::ValuePair(k, v) => {
             let mut map = HashMap::new();
-            map.insert(k.to_string_value(), *v);
+            map.insert(k.to_string_value(), v.deref_container());
             Value::hash(map)
         }
         Value::Set(items, _) => {
