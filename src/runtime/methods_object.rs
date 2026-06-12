@@ -76,6 +76,16 @@ impl Interpreter {
                 }
             }
         }
+        // An attribute with a `does Role` trait mixes the role into its value at
+        // construction (full path only) — fall through.
+        if self.mro_readonly(cn_resolved).iter().any(|cls| {
+            self.registry()
+                .class_attribute_does_roles
+                .keys()
+                .any(|(c, _)| c == cls)
+        }) {
+            return false;
+        }
         let mut has_attribute = false;
         for cls in self.mro_readonly(cn_resolved) {
             if cls == "Any" || cls == "Mu" || cls == "Cool" {
@@ -4017,6 +4027,34 @@ impl Interpreter {
                     }
                     if let Some(val) = attrs.get(attr_name).cloned() {
                         self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, &val)?;
+                    }
+                }
+                // Apply `has $.x does Role` attribute traits: mix each declared
+                // role into the attribute's value so `$o.x` does the role and
+                // `$o.x.method` dispatches into it. (raku mixes into the Scalar
+                // *container*; mutsu has no per-attribute container, so the value
+                // carries the mixin — enough for method dispatch.)
+                {
+                    let mro = self.class_mro(class_key);
+                    let does_attrs: Vec<(String, Vec<String>)> = self
+                        .registry()
+                        .class_attribute_does_roles
+                        .iter()
+                        .filter(|((c, _), _)| mro.contains(c))
+                        .map(|((_, a), roles)| (a.clone(), roles.clone()))
+                        .collect();
+                    for (attr_name, roles) in does_attrs {
+                        let Some(base) = attrs.get(&attr_name).cloned() else {
+                            continue;
+                        };
+                        // Role mixins are keyed `__mutsu_role__<Name>` with a marker
+                        // value; method dispatch resolves the role from the registry
+                        // by that name (mirrors the `does`/role-pun construction).
+                        let mut mixins = HashMap::new();
+                        for role in &roles {
+                            mixins.insert(format!("__mutsu_role__{}", role), Value::Bool(true));
+                        }
+                        attrs.insert(attr_name, Value::mixin(base, mixins));
                     }
                 }
                 let instance = Value::make_instance(*class_name, attrs);

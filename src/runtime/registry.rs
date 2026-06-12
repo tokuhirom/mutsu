@@ -81,6 +81,10 @@ pub(crate) struct Registry {
     pub(crate) class_attribute_defaults: HashMap<(String, String), Value>,
     /// Per-attribute declared type: (class, attr) -> type name.
     pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
+    /// Per-attribute `does Role` traits: (class, attr) -> role names mixed into
+    /// the attribute's container (`has $.x does Foo`). Applied to the attribute's
+    /// value at construction so `$o.x` does the role.
+    pub(crate) class_attribute_does_roles: HashMap<(String, String), Vec<String>>,
     /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
     pub(crate) class_attribute_deprecated: HashMap<(String, String), String>,
 
