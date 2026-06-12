@@ -515,6 +515,21 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
     instance を bare 値に戻して救済。
 - [ ] **Stage 3 — 仕上げ / perf**: escape 解析で「捕捉も `.clone` もされない instance はセル省略」（hot path 救済。
       Phase 1 のスカラーと同型）。型メタ副テーブルの Arc-ptr keying もセルに載せて廃止（Q2 flaky 吸収）。
+      **再評価（2026-06-12 perf 計測で確定）**: 両サブ項目とも**現時点では着手しない**。
+      - **escape 解析セル省略は数値が支持しない**: bench-class heavy の release プロファイルで cell の
+        RwLock は self-time top30 に**現れない**。支配的コストは **allocator ~48%**（`_int_malloc` 18% +
+        `memmove` 12% + realloc/free）＝ `Value::clone` + HashMap churn。startup 補正後の実効倍率は
+        bench-class **~4x** / method-call **~5.5x** raku（startup 込みでは 2.1x/2.2x、mutsu startup 0.01s vs
+        raku 0.09s）。セル省略より alloc 削減が先。
+      - **型メタの instance 側は既に安定キー**: `instance_type_metadata` は `HashMap<u64(instance id), _>`
+        で Arc-ptr ではない（flaky 無関係）。Q2 flaky の根は Array/Hash/Set/Bag/Mix の Arc-ptr keyed
+        副テーブル → **要素セル Phase 2（トラック B）の領域**であり本 Phase 3 では扱えない。
+      - **プロファイルで見つけた安い perf 候補**（Stage 3 の代替実体）:
+        (a) `reset_atomic_var_key_decl`（self 3.7%）— VarDecl 毎に `format!` + shared_vars **write lock**、
+        atomic 未使用でも。既存の `atomic_var_seen()` process-sticky bool でゲートするだけ。
+        (b) method exit の `reconcile_attrs` が毎呼び出し `cell.to_map()`（attr map 全 clone）— 返り値の
+        HashMap は今や proxy_fetch と（gated）commit でしか使われない。lazy 化／必要時のみ clone へ。
+        (c) 残りは `Value::clone`/env insert の alloc 削減＝より大きな独立プロジェクト。
 
 #### 必須の正しさ監査（切替時に同梱）
 
