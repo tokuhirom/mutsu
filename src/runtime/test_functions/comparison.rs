@@ -456,15 +456,22 @@ impl Interpreter {
 
         // Helper: check if two f64 values are approximately equal
         let approx_eq = |g: f64, e: f64| -> bool {
-            if let Some(at) = explicit_abs_tol {
-                (g - e).abs() <= at
-            } else if let Some(rt) = explicit_rel_tol {
+            let rel_ok = |rt: f64| -> bool {
                 let max = g.abs().max(e.abs());
                 if max == 0.0 {
                     true
                 } else {
                     (g - e).abs() / max <= rt
                 }
+            };
+            if let (Some(at), Some(rt)) = (explicit_abs_tol, explicit_rel_tol) {
+                // Both tolerances given: BOTH must be satisfied (Raku Test module
+                // semantics — `$abs-tol-ok and $rel-tol-ok`).
+                (g - e).abs() <= at && rel_ok(rt)
+            } else if let Some(at) = explicit_abs_tol {
+                (g - e).abs() <= at
+            } else if let Some(rt) = explicit_rel_tol {
+                rel_ok(rt)
             } else if e.abs() < 1e-6 {
                 // DWIM: near-zero expected -> use absolute tolerance
                 (g - e).abs() <= 1e-5
