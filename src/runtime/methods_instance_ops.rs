@@ -874,7 +874,7 @@ impl Interpreter {
                                     key_type: None,
                                     declared_type: Some(tc.clone()),
                                 };
-                                self.register_container_type_metadata(&val, info);
+                                return Ok(self.tag_container_metadata(val, info));
                             }
                             return Ok(val);
                         }

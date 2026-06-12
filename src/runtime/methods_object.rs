@@ -494,11 +494,15 @@ impl Interpreter {
             let Some(elem_type) = type_constraints.get(attr_name).cloned() else {
                 continue;
             };
-            if let Some(val) = attrs.get(attr_name).cloned()
-                && let Err(e) =
-                    self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, &val)
-            {
-                return Some(Err(e));
+            if let Some(val) = attrs.get(attr_name).cloned() {
+                match self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, val) {
+                    // Hashes embed the element type in `HashData`, so store the
+                    // tagged value back into the attrs that move into the instance.
+                    Ok(tagged) => {
+                        attrs.insert(attr_name.clone(), tagged);
+                    }
+                    Err(e) => return Some(Err(e)),
+                }
             }
         }
         // Add alias metadata for `has $x` (no twigil) attributes
@@ -1403,7 +1407,7 @@ impl Interpreter {
                             key_type,
                             declared_type: Some(class_name.resolve()),
                         };
-                        self.register_container_type_metadata(&result, info);
+                        return Ok(self.tag_container_metadata(result, info));
                     }
                     return Ok(result);
                 }
@@ -3065,15 +3069,12 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or_else(|| "Any".to_string());
                     let key_type = type_args.get(1).cloned();
-                    self.register_container_type_metadata(
-                        &result,
-                        crate::runtime::ContainerTypeInfo {
-                            value_type,
-                            key_type,
-                            declared_type: Some(class_name.resolve()),
-                        },
-                    );
-                    return Ok(result);
+                    let info = crate::runtime::ContainerTypeInfo {
+                        value_type,
+                        key_type,
+                        declared_type: Some(class_name.resolve()),
+                    };
+                    return Ok(self.tag_container_metadata(result, info));
                 }
             }
             // Hoist clone to a `let` so the guard drops before the body re-enters
@@ -3618,16 +3619,17 @@ impl Interpreter {
                                         .and_then(|cd| cd.attribute_types.get(&attr_name))
                                         .cloned();
                                     if let Some(tc) = tc {
-                                        self.register_container_type_metadata(
-                                            &h,
+                                        self.tag_container_metadata(
+                                            h,
                                             super::ContainerTypeInfo {
                                                 value_type: tc,
                                                 key_type: None,
                                                 declared_type: None,
                                             },
-                                        );
+                                        )
+                                    } else {
+                                        h
                                     }
-                                    h
                                 }
                             }
                             _ => Value::Nil,
@@ -4037,7 +4039,9 @@ impl Interpreter {
                         continue;
                     }
                     if let Some(val) = attrs.get(attr_name).cloned() {
-                        self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, &val)?;
+                        let tagged =
+                            self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, val)?;
+                        attrs.insert(attr_name.clone(), tagged);
                     }
                 }
                 // Apply `has $.x does Role` attribute traits: mix each declared

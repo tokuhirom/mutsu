@@ -657,8 +657,8 @@ impl Interpreter {
             }
             let result = Value::hash(map);
             // Mark as Map (immutable hash)
-            self.register_container_type_metadata(
-                &result,
+            let result = self.tag_container_metadata(
+                result,
                 ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,

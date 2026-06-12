@@ -1202,6 +1202,10 @@ pub struct HashData {
     /// Object-hash key-type constraint (e.g. `Mu` for `my %h{Mu}`), if any.
     /// `Some(..)` marks this as an object hash (`.WHICH`-keyed).
     pub key_type: Option<String>,
+    /// Declared container type name (e.g. `Map`, `Hash[Int]`, `array[int]`) —
+    /// mirrors `ContainerTypeInfo::declared_type`. Distinguishes an immutable
+    /// `Map` from a plain `Hash`, etc.
+    pub declared_type: Option<String>,
     /// For object hashes / typed-key hashes: maps each stored `.WHICH` key
     /// string back to the original key object (so `.keys`/subscript see the
     /// real key, not the WHICH string).
@@ -1214,13 +1218,29 @@ impl HashData {
             map,
             value_type: None,
             key_type: None,
+            declared_type: None,
             original_keys: None,
         }
     }
 
     /// Whether any container metadata is attached (type or object-hash keys).
     pub fn has_meta(&self) -> bool {
-        self.value_type.is_some() || self.key_type.is_some() || self.original_keys.is_some()
+        self.has_type_meta() || self.original_keys.is_some()
+    }
+
+    /// Whether container *type* metadata (element/key/declared type) is attached.
+    /// This is the authoritative replacement for the `hash_type_metadata` side
+    /// table: a freshly-built hash literal has `false` here, so it can never
+    /// inherit a stale typed-hash entry via Arc-pointer reuse.
+    pub fn has_type_meta(&self) -> bool {
+        self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
+    }
+
+    /// Clear all container *type* metadata (used when re-tagging in place).
+    pub fn clear_type_meta(&mut self) {
+        self.value_type = None;
+        self.key_type = None;
+        self.declared_type = None;
     }
 }
 
@@ -2659,11 +2679,11 @@ impl Value {
         if let Value::Hash(arc) = self {
             // SAFETY: mutsu is single-threaded.  We ensure no immutable
             // references into the HashMap are alive when we mutate.
-            let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+            let ptr = Arc::as_ptr(arc) as *mut HashData;
             unsafe {
-                if !(*ptr).contains_key(key) {
+                if !(*ptr).map.contains_key(key) {
                     let new_hash = Value::hash(HashMap::new());
-                    (*ptr).insert(key.to_string(), new_hash);
+                    (*ptr).map.insert(key.to_string(), new_hash);
                 }
             }
             Some(Value::HashSlotRef {
@@ -2711,9 +2731,9 @@ impl Value {
         if let Value::Hash(arc) = self {
             // SAFETY: mutsu is single-threaded; no immutable borrow into the
             // map is alive across this mutation.
-            let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+            let ptr = Arc::as_ptr(arc) as *mut HashData;
             unsafe {
-                match (*ptr).get_mut(key) {
+                match (*ptr).map.get_mut(key) {
                     Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
                     Some(elem @ (Value::Array(..) | Value::Hash(..))) if !terminal => {
                         // Intermediate container: preserve traversal via SlotRef.

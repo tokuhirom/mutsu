@@ -775,9 +775,7 @@ impl VM {
                         key_type: None,
                         declared_type: Some("Map".to_string()),
                     };
-                    self.interpreter
-                        .register_container_type_metadata(&mapped_val, info);
-                    Ok(mapped_val)
+                    Ok(self.interpreter.tag_container_metadata(mapped_val, info))
                 }
             }
             // Non-Associative values: coerce to Map
@@ -788,9 +786,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&hash, info);
-                Ok(hash)
+                Ok(self.interpreter.tag_container_metadata(hash, info))
             }
             Value::Seq(items) | Value::Slip(items) => {
                 let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
@@ -799,9 +795,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&hash, info);
-                Ok(hash)
+                Ok(self.interpreter.tag_container_metadata(hash, info))
             }
             _ => {
                 // For other types (Int, Str, etc.), coerce to Map via
@@ -813,9 +807,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                self.interpreter
-                    .register_container_type_metadata(&hash, info);
-                Ok(hash)
+                Ok(self.interpreter.tag_container_metadata(hash, info))
             }
         }
     }
@@ -2200,8 +2192,7 @@ impl VM {
                     None
                 };
                 // Reject if there's container type metadata
-                let id = Arc::as_ptr(hash_arc) as usize;
-                if self.interpreter.hash_type_metadata_exists(id) {
+                if hash_arc.has_type_meta() {
                     return None;
                 }
                 // Peek at the key to check if the existing element is a bound ref
@@ -2316,13 +2307,9 @@ impl VM {
         // metadata key. Reapply them on the final container so typed-array
         // hole semantics and `is default(...)` are preserved.
         let save_var_name = Self::const_str(code, name_idx).to_string();
-        // Heal the hash's Arc-pointer-keyed type metadata from its authoritative
-        // name-based key constraint before assigning, so object-hash semantics
-        // survive across copy-on-write and Arc-pointer reuse (otherwise typed
-        // `%h{$int} = ...` intermittently loses its key constraint and stores the
-        // value under a stringified key, returning Nil on later reads).
-        self.interpreter
-            .reconcile_hash_type_metadata_from_name(&save_var_name);
+        // Hash type metadata (including the object-hash key constraint) is now
+        // embedded in `HashData` and travels with the hash across copy-on-write,
+        // so the old name-based reconcile healing is no longer needed.
         let saved_type_meta_outer = self
             .interpreter
             .env()
@@ -2365,11 +2352,15 @@ impl VM {
                 .as_ref()
                 != Some(&info)
         {
+            // Hashes embed metadata in `HashData`, so the re-tagged value must
+            // be written back into both env and the fast-path local slot
+            // (`tag_container_metadata` returns the same Arc for non-hash
+            // containers, whose Arc-pointer side table is updated in place).
+            let tagged = self.interpreter.tag_container_metadata(container, info);
             self.interpreter
-                .register_container_type_metadata(&container, info);
-            // Sync the refreshed container pointer into locals so fast-path
-            // reads see the preserved metadata.
-            self.locals_set_by_name(code, &save_var_name, container);
+                .env_mut()
+                .insert(save_var_name.clone(), tagged.clone());
+            self.locals_set_by_name(code, &save_var_name, tagged);
         }
         if let Some(def) = saved_default_outer
             && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
@@ -5798,7 +5789,14 @@ impl VM {
             && self.interpreter.var_type_constraint(name).is_none()
             && self.interpreter.container_type_metadata(&val).is_some()
         {
+            // Arrays: drop the stale Arc-pointer side-table entry.
             self.interpreter.unregister_container_type_metadata(&val);
+            // Hashes: clear the embedded `HashData` type metadata in place so an
+            // untyped variable never reports a typed element/key constraint.
+            let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(
+                std::mem::replace(&mut self.locals[idx], Value::Nil),
+            );
+            self.locals[idx] = cleared;
         }
         // When binding a typed hash/array to a variable, propagate the container's
         // type constraints to the variable so that subsequent element assignments
@@ -5836,6 +5834,32 @@ impl VM {
         // a true circular reference (matching Raku container semantics).
         if name.starts_with('@') && !is_bind && !is_constant {
             Self::fixup_circular_array_refs(&mut self.locals[idx], &old_array_arc);
+        }
+        // Apply the variable's declared element/key type to the stored
+        // container. For hashes this embeds the metadata in `HashData` so it
+        // travels with the value through later copy-on-write; for arrays it
+        // updates the Arc-pointer side table. Done before the value is cloned
+        // and propagated to env/aliases below, so every copy carries it.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+        {
+            let info = crate::runtime::ContainerTypeInfo {
+                declared_type: if name.starts_with('@')
+                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
+                {
+                    Some(format!("array[{value_type}]"))
+                } else {
+                    None
+                },
+                value_type,
+                key_type: if name.starts_with('%') {
+                    self.interpreter.var_hash_key_constraint(name)
+                } else {
+                    None
+                },
+            };
+            let stored = std::mem::replace(&mut self.locals[idx], Value::Nil);
+            self.locals[idx] = self.interpreter.tag_container_metadata(stored, info);
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();
@@ -5919,27 +5943,6 @@ impl VM {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, val.clone());
             self.update_local_if_exists(code, &sv, &val);
-        }
-        if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = self.interpreter.var_type_constraint(name)
-        {
-            let info = crate::runtime::ContainerTypeInfo {
-                declared_type: if name.starts_with('@')
-                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
-                {
-                    Some(format!("array[{value_type}]"))
-                } else {
-                    None
-                },
-                value_type,
-                key_type: if name.starts_with('%') {
-                    self.interpreter.var_hash_key_constraint(name)
-                } else {
-                    None
-                },
-            };
-            self.interpreter
-                .register_container_type_metadata(&val, info);
         }
         Ok(())
     }
@@ -6263,6 +6266,29 @@ impl VM {
         {
             return Err(err);
         }
+        // Apply the variable's declared element/key type to the container value
+        // before it is stored, so the embedded `HashData` metadata (or array
+        // side-table entry) is carried by every copy below.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+        {
+            let info = crate::runtime::ContainerTypeInfo {
+                declared_type: if name.starts_with('@')
+                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
+                {
+                    Some(format!("array[{value_type}]"))
+                } else {
+                    None
+                },
+                value_type,
+                key_type: if name.starts_with('%') {
+                    self.interpreter.var_hash_key_constraint(name)
+                } else {
+                    None
+                },
+            };
+            val = self.interpreter.tag_container_metadata(val, info);
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
@@ -6283,27 +6309,6 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
-        }
-        if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = self.interpreter.var_type_constraint(name)
-        {
-            let info = crate::runtime::ContainerTypeInfo {
-                declared_type: if name.starts_with('@')
-                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
-                {
-                    Some(format!("array[{value_type}]"))
-                } else {
-                    None
-                },
-                value_type,
-                key_type: if name.starts_with('%') {
-                    self.interpreter.var_hash_key_constraint(name)
-                } else {
-                    None
-                },
-            };
-            self.interpreter
-                .register_container_type_metadata(&val, info);
         }
         self.stack.push(val);
         Ok(())

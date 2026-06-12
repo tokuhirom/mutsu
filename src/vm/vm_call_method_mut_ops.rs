@@ -894,8 +894,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        self.interpreter
-                            .register_container_type_metadata(&new_hash, meta);
+                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
                         self.interpreter
                             .env_mut()
                             .insert(target_name.to_string(), new_hash);
@@ -1002,8 +1001,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        self.interpreter
-                            .register_container_type_metadata(&new_hash, meta);
+                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
                         self.interpreter
                             .env_mut()
                             .insert(target_name.to_string(), new_hash);
@@ -1100,8 +1098,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        self.interpreter
-                            .register_container_type_metadata(&new_hash, meta);
+                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
                         self.interpreter
                             .env_mut()
                             .insert(target_name.to_string(), new_hash);

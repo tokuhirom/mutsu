@@ -191,12 +191,12 @@ impl Interpreter {
                     && !is_capture_param
                     && !is_subsig_capture
                 {
-                    let missing = Self::missing_optional_param_value(pd);
+                    let mut missing = Self::missing_optional_param_value(pd);
                     if let Some(constraint) = &pd.type_constraint
                         && (pd.name.starts_with('@') || pd.name.starts_with('%'))
                     {
                         let info = Self::parse_container_constraint(&pd.name, constraint);
-                        self.register_container_type_metadata(&missing, info);
+                        missing = self.tag_container_metadata(missing, info);
                     }
                     arg_for_checks = Some(missing);
                 }

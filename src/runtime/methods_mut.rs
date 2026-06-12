@@ -680,7 +680,7 @@ impl Interpreter {
                     key_type: None,
                     declared_type: None,
                 });
-                self.register_container_type_metadata(&new_hash, meta);
+                let new_hash = self.tag_container_metadata(new_hash, meta);
                 if let Some(var_name) = target_var {
                     self.env.insert(var_name.to_string(), new_hash);
                 }

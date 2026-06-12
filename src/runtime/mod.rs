@@ -1033,8 +1033,6 @@ pub struct Interpreter {
     set_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Bag values keyed by Arc pointer identity.
     bag_type_metadata: HashMap<usize, ContainerTypeInfo>,
-    /// Type metadata for Hash values keyed by Arc pointer identity.
-    hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Original key objects for object hashes, keyed by Hash Arc pointer identity.
     hash_object_keys: HashMap<usize, HashMap<String, Value>>,
     /// Type metadata for instance values keyed by stable instance id.
@@ -3130,7 +3128,6 @@ impl Interpreter {
             mix_type_metadata: HashMap::new(),
             set_type_metadata: HashMap::new(),
             bag_type_metadata: HashMap::new(),
-            hash_type_metadata: HashMap::new(),
             hash_object_keys: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
@@ -4599,6 +4596,64 @@ impl Interpreter {
         Ok(Some(result))
     }
 
+    /// Build a `ContainerTypeInfo` from a hash's embedded type metadata, or
+    /// `None` when the hash carries no type metadata. This is the authoritative
+    /// source of hash type metadata, replacing the old `hash_type_metadata`
+    /// Arc-pointer-keyed side table: the metadata travels WITH the `HashData`
+    /// through copy-on-write and rebuilds, so a freshly-built hash literal can
+    /// never inherit a stale typed-hash entry via pointer reuse.
+    pub(crate) fn hashdata_type_info(hd: &crate::value::HashData) -> Option<ContainerTypeInfo> {
+        if !hd.has_type_meta() {
+            return None;
+        }
+        Some(ContainerTypeInfo {
+            value_type: hd.value_type.clone().unwrap_or_default(),
+            key_type: hd.key_type.clone(),
+            declared_type: hd.declared_type.clone(),
+        })
+    }
+
+    /// Write a `ContainerTypeInfo`'s type fields into a hash's embedded metadata.
+    fn apply_type_info_to_hashdata(hd: &mut crate::value::HashData, info: &ContainerTypeInfo) {
+        hd.value_type = (!info.value_type.is_empty()).then(|| info.value_type.clone());
+        hd.key_type = info.key_type.clone();
+        hd.declared_type = info.declared_type.clone();
+    }
+
+    /// Attach container type metadata to `value`, returning the (possibly
+    /// rebuilt) value. For hashes the metadata is embedded in the `HashData`
+    /// (via copy-on-write `Arc::make_mut`), so callers MUST use the returned
+    /// value — store it back into the env/local slot it came from. For other
+    /// container types this defers to the Arc-pointer side tables (unchanged)
+    /// and returns the value untouched.
+    pub(crate) fn tag_container_metadata(&mut self, value: Value, info: ContainerTypeInfo) -> Value {
+        match value {
+            Value::Hash(mut arc) => {
+                // Skip the copy-on-write clone when the metadata is already
+                // present. `Arc::make_mut` on a shared hash clones the backing
+                // `HashData`, which changes the hash's identity (`.WHICH` is
+                // pointer-based) — so a no-op re-tag of e.g. `$map.Map` would
+                // otherwise break `$map.Map === $map`.
+                let new_vt = (!info.value_type.is_empty()).then(|| info.value_type.clone());
+                if arc.value_type != new_vt
+                    || arc.key_type != info.key_type
+                    || arc.declared_type != info.declared_type
+                {
+                    Self::apply_type_info_to_hashdata(Arc::make_mut(&mut arc), &info);
+                }
+                Value::Hash(arc)
+            }
+            Value::Mixin(inner, m) if matches!(inner.as_ref(), Value::Hash(_)) => {
+                let tagged = self.tag_container_metadata((*inner).clone(), info);
+                Value::Mixin(Arc::new(tagged), m)
+            }
+            other => {
+                self.register_container_type_metadata(&other, info);
+                other
+            }
+        }
+    }
+
     pub(crate) fn register_container_type_metadata(
         &mut self,
         value: &Value,
@@ -4621,9 +4676,16 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.bag_type_metadata.insert(id, info);
             }
-            Value::Hash(items) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.hash_type_metadata.insert(id, info);
+            Value::Hash(_) => {
+                // Hash type metadata is embedded in `HashData` — see
+                // `tag_container_metadata`. Reaching here means a hash flowed
+                // through the by-reference register path, which cannot embed
+                // (it has no owning slot to write back). Such sites are migrated
+                // to `tag_container_metadata`; this arm is intentionally a no-op.
+                debug_assert!(
+                    false,
+                    "register_container_type_metadata called on a Hash; use tag_container_metadata"
+                );
             }
             Value::Instance { id, .. } => {
                 self.instance_type_metadata.insert(*id, info);
@@ -4665,13 +4727,25 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.remove(&id);
             }
-            Value::Hash(items) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.hash_type_metadata.remove(&id);
+            Value::Hash(_) => {
+                // Hash type metadata lives in `HashData`; clearing it requires
+                // an owning slot. See `clear_hash_type_metadata`.
             }
             Value::Mixin(inner, _) => self.unregister_container_type_metadata(inner),
             _ => {}
         }
+    }
+
+    /// Clear a hash's embedded type metadata, returning the rebuilt value.
+    /// Callers must store the returned value back into its slot.
+    pub(crate) fn clear_hash_type_metadata(value: Value) -> Value {
+        if let Value::Hash(mut arc) = value {
+            if arc.has_type_meta() {
+                Arc::make_mut(&mut arc).clear_type_meta();
+            }
+            return Value::Hash(arc);
+        }
+        value
     }
 
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
@@ -4692,21 +4766,11 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.bag_type_metadata.get(&id).cloned()
             }
-            Value::Hash(items) => {
-                let id = Arc::as_ptr(items) as usize;
-                self.hash_type_metadata.get(&id).cloned()
-            }
+            Value::Hash(items) => Self::hashdata_type_info(items),
             Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
             Value::Mixin(inner, _) => self.container_type_metadata(inner),
             _ => None,
         }
-    }
-
-    /// Fast check whether a hash (by pointer id) has type metadata registered.
-    /// Used by the hash-assignment fast path to avoid the full
-    /// `container_type_metadata` lookup.
-    pub(crate) fn hash_type_metadata_exists(&self, id: usize) -> bool {
-        self.hash_type_metadata.contains_key(&id)
     }
 
     /// Store an original key object for an object hash entry.
@@ -4738,70 +4802,26 @@ impl Interpreter {
 
     /// Check if a hash is an object hash (has a key_type constraint).
     pub(crate) fn is_object_hash(&self, hash: &Value) -> bool {
-        if let Value::Hash(arc) = hash {
-            let id = Arc::as_ptr(arc) as usize;
-            if let Some(info) = self.hash_type_metadata.get(&id) {
-                return info.key_type.is_some();
-            }
-        }
-        false
+        self.hash_key_type(hash).is_some()
     }
 
     /// Get the key type constraint for an object hash, if any.
     pub(crate) fn hash_key_type(&self, hash: &Value) -> Option<String> {
         if let Value::Hash(arc) = hash {
-            let id = Arc::as_ptr(arc) as usize;
-            if let Some(info) = self.hash_type_metadata.get(&id) {
-                return info.key_type.clone();
-            }
+            return arc.key_type.clone();
         }
         None
     }
 
     fn register_var_container_type_metadata(&mut self, name: &str, info: &ContainerTypeInfo) {
         if let Some(value) = self.env.get(name).cloned() {
-            self.register_container_type_metadata(&value, info.clone());
+            // Hashes embed metadata in `HashData`, so the tagged value must be
+            // stored back; non-hash containers use the Arc-pointer side tables
+            // and `tag_container_metadata` returns the same Arc (re-insert is a
+            // no-op for them).
+            let tagged = self.tag_container_metadata(value, info.clone());
+            self.env.insert(name.to_string(), tagged);
         }
-    }
-
-    /// Re-establish a named typed hash's Arc-pointer-keyed metadata from its
-    /// authoritative, scope-correct name-based key constraint.
-    ///
-    /// `hash_type_metadata` is keyed by the hash's `Arc` pointer, which is
-    /// reused after the hash is dropped and changes across copy-on-write. Across
-    /// block scopes (e.g. a `my %h{Int}` declared after an earlier exited
-    /// `my Int %h`) the pointer-keyed entry can intermittently go missing while
-    /// the name-based `var_hash_key_constraints` entry stays correct — making
-    /// `%h{$int} = ...` lose object-hash (`.WHICH`-keyed) semantics so the value
-    /// is stored under a stringified key and later reads return Nil. Healing the
-    /// pointer-keyed entry from the name-based constraint before each typed-hash
-    /// element assignment removes that nondeterminism. No-op for hashes without
-    /// a key constraint (the common case).
-    pub(crate) fn reconcile_hash_type_metadata_from_name(&mut self, name: &str) {
-        let Some(name_key) = self.var_hash_key_constraint(name) else {
-            return;
-        };
-        let Some(value @ Value::Hash(_)) = self.env.get(name).cloned() else {
-            return;
-        };
-        let current = self.container_type_metadata(&value);
-        if current.as_ref().and_then(|i| i.key_type.clone()) == Some(name_key.clone()) {
-            return; // already correct
-        }
-        let info = match current {
-            Some(mut i) => {
-                i.key_type = Some(name_key);
-                i
-            }
-            None => ContainerTypeInfo {
-                value_type: self
-                    .var_type_constraint(name)
-                    .unwrap_or_else(|| "Mu".to_string()),
-                key_type: Some(name_key),
-                declared_type: None,
-            },
-        };
-        self.register_container_type_metadata(&value, info);
     }
 
     fn parse_container_constraint(name: &str, raw: &str) -> ContainerTypeInfo {
@@ -4902,8 +4922,8 @@ impl Interpreter {
         attr_name: &str,
         sigil: char,
         elem_type: &str,
-        value: &Value,
-    ) -> Result<(), RuntimeError> {
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
         if elem_type != "Mu" && elem_type != "Any" {
             let display = format!("{}!{}", sigil, attr_name);
             // Collect the values to type-check. A shaped array (`has Int @.g[2;2]`)
@@ -4921,7 +4941,7 @@ impl Interpreter {
                 }
             }
             let mut elems: Vec<&Value> = Vec::new();
-            match value {
+            match &value {
                 Value::Array(items, ArrayKind::Shaped) => {
                     for it in items.iter() {
                         collect_leaves(it, true, &mut elems);
@@ -4939,15 +4959,12 @@ impl Interpreter {
                 }
             }
         }
-        self.register_container_type_metadata(
-            value,
-            ContainerTypeInfo {
-                value_type: elem_type.to_string(),
-                key_type: None,
-                declared_type: None,
-            },
-        );
-        Ok(())
+        let info = ContainerTypeInfo {
+            value_type: elem_type.to_string(),
+            key_type: None,
+            declared_type: None,
+        };
+        Ok(self.tag_container_metadata(value, info))
     }
 
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
@@ -5535,7 +5552,6 @@ impl Interpreter {
             mix_type_metadata: self.mix_type_metadata.clone(),
             set_type_metadata: self.set_type_metadata.clone(),
             bag_type_metadata: self.bag_type_metadata.clone(),
-            hash_type_metadata: self.hash_type_metadata.clone(),
             hash_object_keys: self.hash_object_keys.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),

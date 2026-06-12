@@ -1965,8 +1965,11 @@ impl VM {
                         },
                         declared_type: None,
                     };
-                    self.interpreter
-                        .register_container_type_metadata(&value, info);
+                    // Hashes embed metadata in `HashData`; write the tagged value
+                    // back (no-op Arc for array/instance side-table containers).
+                    let tagged = self.interpreter.tag_container_metadata(value, info);
+                    self.set_env_with_main_alias(&name, tagged.clone());
+                    self.update_local_if_exists(code, &name, &tagged);
                 }
                 *ip += 1;
             }

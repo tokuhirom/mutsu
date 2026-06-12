@@ -37,7 +37,43 @@ does not throw `X::TypeCheck::Binding`. (Repro:
 `my Int %a; %a<x>=1; my Cool %b := %a; my Int %h := { a => 1 }` — should throw.)
 This is exactly the flaky 1b removes; 1a alone perturbs it into determinism.
 
-## Stage 1b — embed hash metadata in HashData (the remaining work)
+## Stage 1b — embed hash *type* metadata in HashData (DONE)
+
+**Status (2026-06-12): type metadata embedded; `hash_type_metadata` side table
+deleted.** The canary `t/typed-hash-bind-typecheck.t` (11/11) and the original
+repro now throw correctly; `S02-types/hash.t` is 112/112 again (it had been
+SEGV-ing — see below). value_type/key_type/declared_type live in `HashData` and
+travel through copy-on-write; `container_type_metadata`/`is_object_hash`/
+`hash_key_type` read them directly (no side table for hashes).
+
+Key mechanism: `Interpreter::tag_container_metadata(value, info) -> Value` embeds
+the type info into the `HashData` (via `Arc::make_mut`) for hashes and falls back
+to the Arc-pointer side tables for Array/Set/Bag/Mix/Instance (returning the same
+Arc). Every hash-reachable `register_container_type_metadata` writer was migrated
+to `tag_container_metadata` + write-back of the returned value into its owning
+slot (env/local). `register_container_type_metadata`'s Hash arm is now a
+`debug_assert!(false)` tripwire to catch any missed site. The name-based
+`reconcile_hash_type_metadata_from_name` healing workaround is deleted (no longer
+needed — embedded metadata is COW-stable).
+
+**Latent UB found & fixed:** `hash_autovivify` / `hash_slot_ref`
+(`src/value/mod.rs`) still cast `Arc::as_ptr(arc) as *mut HashMap` — reading the
+`HashData` as a bare `HashMap`. This was accidentally working on the Stage-1a
+branch only because `map` happened to land at offset 0; adding the
+`declared_type` field reordered the struct and turned it into a SEGV. Fixed to
+cast to `*mut HashData` and go through `.map`.
+
+### Remaining (Stage 2 — object-hash original_keys)
+
+`original_keys` (the `.WHICH`-string → original-key-object map) is STILL on the
+two Arc-pointer side tables (`hash_object_keys` + the `hash_original_keys_registry`
+in `runtime/utils.rs`). Object-hash tests `S09-hashes/objecthash.t` (7 fail) and
+`S32-list/classify.t` (1 fail) — both NOT whitelisted — remain blocked on this;
+they are unchanged by Stage 1b. Embed `original_keys` in `HashData` next, using
+the same `tag`/write-back pattern, then delete those two side tables.
+
+---
+(original plan below)
 
 The fix is to make HashData the **authoritative** source of hash metadata and
 delete the side-table fallback, so a fresh hash (HashData fields = None) cannot
