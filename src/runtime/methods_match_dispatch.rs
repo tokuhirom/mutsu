@@ -216,7 +216,75 @@ impl Interpreter {
                 Self::validate_nth_value(i)?;
                 indices.push(i as usize);
             }
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Array(items, _) => {
+                // Check if any item is a LazyList (indicates partially-evaluated sequence)
+                let has_lazy = items.iter().any(|v| matches!(v, Value::LazyList(_)));
+                if has_lazy {
+                    // Array contains lazy list items (e.g., from sequence operator
+                    // `2, 4 ... *` stored as `[Int(2), LazyList(...)]`).
+                    // Collect all non-lazy prefix items and peek into lazy list
+                    // to detect the arithmetic step, then generate indices.
+                    let mut seed_values: Vec<i64> = Vec::new();
+                    let mut lazy_ref: Option<&crate::value::LazyList> = None;
+                    for item in items.iter() {
+                        if let Value::LazyList(ll) = item {
+                            lazy_ref = Some(ll.as_ref());
+                            // Peek at the first cached element to get the next seed
+                            if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
+                                for cv in cached.iter() {
+                                    if let Ok(v) = Self::value_to_nth_int(cv) {
+                                        seed_values.push(v);
+                                        break;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                        seed_values.push(Self::value_to_nth_int(item)?);
+                    }
+                    if seed_values.len() >= 2 {
+                        // Arithmetic sequence detected
+                        let step = seed_values[1] - seed_values[0];
+                        let mut last: i64 = 0;
+                        let mut current = seed_values[0];
+                        loop {
+                            if current <= 0 {
+                                return Err(RuntimeError::new(format!(
+                                    "Unexpected value ({}) for :nth; must be a positive integer",
+                                    current
+                                )));
+                            }
+                            if current <= last {
+                                return Err(RuntimeError::new(format!(
+                                    "Unexpected value ({}) for :nth; must be greater than {}",
+                                    current, last
+                                )));
+                            }
+                            if (current as usize) > total_matches {
+                                break;
+                            }
+                            last = current;
+                            indices.push(current as usize);
+                            current += step;
+                        }
+                    } else if !seed_values.is_empty() {
+                        // Only one seed value — force the lazy list
+                        Self::validate_nth_value(seed_values[0])?;
+                        indices.push(seed_values[0] as usize);
+                        if let Some(ll) = lazy_ref {
+                            let forced = self.force_lazy_list(ll)?;
+                            let filtered: Vec<Value> = forced
+                                .into_iter()
+                                .filter(|v| !matches!(v, Value::LazyList(_)))
+                                .collect();
+                            Self::collect_nth_list_indices(&filtered, total_matches, &mut indices)?;
+                        }
+                    }
+                } else {
+                    Self::collect_nth_list_indices(items, total_matches, &mut indices)?;
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => {
                 // Check if any item is a LazyList (indicates partially-evaluated sequence)
                 let has_lazy = items.iter().any(|v| matches!(v, Value::LazyList(_)));
                 if has_lazy {

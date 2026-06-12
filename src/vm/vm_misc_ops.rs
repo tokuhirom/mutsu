@@ -109,7 +109,25 @@ pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
         | Value::RangeExclStart(a, b)
         | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
         Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
-        Value::Array(items, _) | Value::Seq(items) => {
+        Value::Array(items, _) => {
+            if items.is_empty() {
+                (Value::Nil, Value::Nil)
+            } else {
+                let mut lo = items[0].clone();
+                let mut hi = items[0].clone();
+                for item in items.iter().skip(1) {
+                    let (item_lo, item_hi) = minmax_bounds_of_value(item);
+                    if crate::runtime::compare_values(&item_lo, &lo) < 0 {
+                        lo = item_lo;
+                    }
+                    if crate::runtime::compare_values(&item_hi, &hi) > 0 {
+                        hi = item_hi;
+                    }
+                }
+                (lo, hi)
+            }
+        }
+            Value::Seq(items) => {
             if items.is_empty() {
                 (Value::Nil, Value::Nil)
             } else {
@@ -377,7 +395,20 @@ impl VM {
             "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
         );
         match value {
-            Value::Array(items, ..) | Value::Seq(items) => {
+            Value::Array(items, ..) => {
+                if is_container_constraint {
+                    // Each element is checked as a whole against the constraint
+                    items
+                        .iter()
+                        .all(|item| self.interpreter.type_matches_value(constraint, item))
+                } else {
+                    // Recurse into sub-arrays for simple element types
+                    items
+                        .iter()
+                        .all(|item| self.array_elements_match_constraint(constraint, item))
+                }
+            }
+            Value::Seq(items) => {
                 if is_container_constraint {
                     // Each element is checked as a whole against the constraint
                     items
@@ -439,7 +470,19 @@ impl VM {
             "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
         );
         match value {
-            Value::Array(items, ..) | Value::Seq(items) => {
+            Value::Array(items, ..) => {
+                for item in items.iter() {
+                    if is_container_constraint {
+                        if !self.interpreter.type_matches_value(constraint, item) {
+                            return Some(item.clone());
+                        }
+                    } else if let Some(bad) = self.first_array_element_mismatch(constraint, item) {
+                        return Some(bad);
+                    }
+                }
+                None
+            }
+            Value::Seq(items) => {
                 for item in items.iter() {
                     if is_container_constraint {
                         if !self.interpreter.type_matches_value(constraint, item) {

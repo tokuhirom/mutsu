@@ -962,7 +962,10 @@ impl Interpreter {
             {
                 // Collect LHS elements as string keys (same representation as Set uses)
                 let lhs_keys: std::collections::HashSet<String> = match left {
-                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    Value::Array(items, ..) => {
+                        items.iter().map(|v| v.to_string_value()).collect()
+                    }
+            Value::Seq(items) | Value::Slip(items) => {
                         items.iter().map(|v| v.to_string_value()).collect()
                     }
                     Value::Bag(b, _) => b.keys().cloned().collect(),

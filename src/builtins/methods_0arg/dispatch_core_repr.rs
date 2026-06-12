@@ -17,7 +17,10 @@ fn gist_needs_method_dispatch(v: &Value) -> bool {
         | Value::CustomType { .. }
         | Value::CustomTypeInstance { .. }
         | Value::Package(..) => true,
-        Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+        Value::Array(items, _) => {
+            items.iter().any(gist_needs_method_dispatch)
+        }
+            Value::Seq(items) | Value::Slip(items) => {
             items.iter().any(gist_needs_method_dispatch)
         }
         Value::Hash(map) => map.values().any(gist_needs_method_dispatch),

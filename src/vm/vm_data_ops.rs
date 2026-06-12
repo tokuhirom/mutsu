@@ -20,11 +20,8 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // A collection whose gist embeds an element's gist must be rendered via
         // method dispatch when any element needs it (e.g. an instance/type-object
         // with a custom `method gist`), so the per-element gist is honored.
-        Value::Array(items, _)
-        | Value::Seq(items)
-        | Value::HyperSeq(items)
-        | Value::RaceSeq(items)
-        | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        Value::Array(items, _) => items.iter().any(element_needs_method_dispatch),
+            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
         Value::Hash(map) => map.values().any(element_needs_method_dispatch),
         Value::Pair(_, val) => element_needs_method_dispatch(val),
         Value::ValuePair(k, val) => {
@@ -44,11 +41,8 @@ fn element_needs_method_dispatch(v: &Value) -> bool {
         | Value::CustomType { .. }
         | Value::CustomTypeInstance { .. }
         | Value::Package(..) => true,
-        Value::Array(items, _)
-        | Value::Seq(items)
-        | Value::HyperSeq(items)
-        | Value::RaceSeq(items)
-        | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        Value::Array(items, _) => items.iter().any(element_needs_method_dispatch),
+            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
         Value::Hash(map) => map.values().any(element_needs_method_dispatch),
         Value::Pair(_, val) => element_needs_method_dispatch(val),
         Value::ValuePair(k, val) => {

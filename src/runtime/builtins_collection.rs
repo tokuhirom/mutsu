@@ -1347,7 +1347,10 @@ impl Interpreter {
                 list_items.push(arg.clone());
             } else {
                 match arg {
-                    Value::Array(items, ..) | Value::Seq(items) => {
+                    Value::Array(items, ..) => {
+                        list_items.extend(items.iter().cloned())
+                    }
+            Value::Seq(items) => {
                         list_items.extend(items.iter().cloned())
                     }
                     Value::Hash(map) => {
@@ -1527,7 +1530,10 @@ impl Interpreter {
         // Extract the list of matchers: if matcher is a list/array of callables/types,
         // use them in sequence; otherwise treat as a single matcher.
         let matchers: Vec<Value> = match &matcher {
-            Value::Array(elems, ..) | Value::Seq(elems) | Value::Slip(elems) => {
+            Value::Array(elems, ..) => {
+                elems.iter().cloned().collect()
+            }
+            Value::Seq(elems) | Value::Slip(elems) => {
                 elems.iter().cloned().collect()
             }
             other => vec![other.clone()],
@@ -1723,7 +1729,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         fn as_items(value: &Value) -> Option<Vec<Value>> {
             match value {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                Value::Array(items, ..) => {
+                    Some(items.iter().cloned().collect())
+                }
+            Value::Seq(items) | Value::Slip(items) => {
                     Some(items.iter().cloned().collect())
                 }
                 _ => None,
@@ -1896,7 +1905,10 @@ impl Interpreter {
         let mut items = Vec::new();
         for arg in &positional {
             match arg {
-                Value::Array(values, ..) | Value::Seq(values) | Value::Slip(values) => {
+                Value::Array(values, ..) => {
+                    items.extend(values.iter().cloned())
+                }
+            Value::Seq(values) | Value::Slip(values) => {
                     items.extend(values.iter().cloned())
                 }
                 Value::LazyList(ll) => items.extend(self.force_lazy_list_bridge(ll)?),

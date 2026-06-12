@@ -88,7 +88,7 @@ impl Interpreter {
                 let _ = Self::apply_hash_assignment_entry(&mut updated, normalized_value);
                 Value::hash(updated)
             }
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Array(items, _) => {
                 let mut updated = existing_hash;
                 let mut iter = items.iter().cloned();
                 if let Some(first) = iter.next()
@@ -99,6 +99,21 @@ impl Interpreter {
                 for item in iter {
                     if !Self::apply_hash_assignment_entry(&mut updated, item) {
                         return Value::Array(items.clone(), ArrayKind::List);
+                    }
+                }
+                Value::hash(updated)
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                let mut updated = existing_hash;
+                let mut iter = items.iter().cloned();
+                if let Some(first) = iter.next()
+                    && !Self::apply_hash_assignment_entry(&mut updated, first)
+                {
+                    // Preserve existing hash when comma assignment returns [<hash>, <pair>].
+                }
+                for item in iter {
+                    if !Self::apply_hash_assignment_entry(&mut updated, item) {
+                        return Value::Array(crate::value::Value::array_arc(items.clone().to_vec()), ArrayKind::List);
                     }
                 }
                 Value::hash(updated)
@@ -2472,7 +2487,8 @@ impl Interpreter {
                     let squished = self.dispatch_squish(current, &args)?;
                     if self.in_lvalue_assignment {
                         let squished_items = match &squished {
-                            Value::Array(items, ..) | Value::Seq(items) => items.to_vec(),
+                            Value::Array(items, ..) => items.to_vec(),
+            Value::Seq(items) => items.to_vec(),
                             other => vec![other.clone()],
                         };
                         self.env.insert(key, Value::real_array(squished_items));
@@ -3850,7 +3866,11 @@ impl Interpreter {
         for a in args {
             match &a {
                 Value::Int(_) => result.push(a),
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                Value::Array(items, ..) => {
+                    // Recursively flatten
+                    result.extend(Self::flatten_buf_args(items.to_vec()));
+                }
+            Value::Seq(items) | Value::Slip(items) => {
                     // Recursively flatten
                     result.extend(Self::flatten_buf_args(items.to_vec()));
                 }

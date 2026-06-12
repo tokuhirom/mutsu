@@ -4858,9 +4858,13 @@ impl Interpreter {
                                 .or_else(|| self.env.get(&bare_name).cloned())
                                 .unwrap_or(Value::Nil);
                             let entries: Vec<String> = match value {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items
+                                Value::Array(items, ..) => items
+                                    .iter()
+                                    .map(|v| {
+                                        Self::escape_regex_scalar_literal(&v.to_string_value())
+                                    })
+                                    .collect(),
+            Value::Seq(items) | Value::Slip(items) => items
                                     .iter()
                                     .map(|v| {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())

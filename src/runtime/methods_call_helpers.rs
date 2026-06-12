@@ -326,7 +326,10 @@ impl Interpreter {
                 let mut replacement: Vec<Value> = Vec::new();
                 for arg in args.iter().skip(2) {
                     match arg {
-                        Value::Array(arr, ..) | Value::Seq(arr) | Value::Slip(arr) => {
+                        Value::Array(arr, ..) => {
+                            replacement.extend(arr.iter().cloned())
+                        }
+            Value::Seq(arr) | Value::Slip(arr) => {
                             replacement.extend(arr.iter().cloned())
                         }
                         other => replacement.push(other.clone()),
@@ -365,7 +368,17 @@ impl Interpreter {
         let byte_vals: Vec<Value> = if let Some(fill) = fill_arg {
             match fill {
                 Value::Int(n) => vec![Value::Int(*n); size],
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                Value::Array(items, ..) => {
+                    let pattern: Vec<Value> = items.to_vec();
+                    if pattern.is_empty() {
+                        vec![Value::Int(0); size]
+                    } else {
+                        (0..size)
+                            .map(|i| pattern[i % pattern.len()].clone())
+                            .collect()
+                    }
+                }
+            Value::Seq(items) | Value::Slip(items) => {
                     let pattern: Vec<Value> = items.to_vec();
                     if pattern.is_empty() {
                         vec![Value::Int(0); size]

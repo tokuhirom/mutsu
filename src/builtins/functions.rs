@@ -83,7 +83,12 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match v {
         // Lists, Seqs, and Slips are always flattened; their children
         // inherit flatten_arrays=true since Lists don't itemize.
-        Value::Array(items, ArrayKind::List) | Value::Seq(items) | Value::Slip(items) => {
+        Value::Array(items, ArrayKind::List) => {
+            for item in items.iter() {
+                flat_val(item, out, true);
+            }
+        }
+            Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flat_val(item, out, true);
             }
@@ -1656,7 +1661,10 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             // fold with junction-aware addition
             let has_junction = args.iter().any(|a| match a {
                 Value::Junction { .. } => true,
-                Value::Array(items, ..) | Value::Seq(items) => {
+                Value::Array(items, ..) => {
+                    items.iter().any(|v| matches!(v, Value::Junction { .. }))
+                }
+            Value::Seq(items) => {
                     items.iter().any(|v| matches!(v, Value::Junction { .. }))
                 }
                 _ => false,
@@ -1665,7 +1673,10 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                 let items: Vec<Value> = args
                     .iter()
                     .flat_map(|a| match a {
-                        Value::Array(items, ..) | Value::Seq(items) => {
+                        Value::Array(items, ..) => {
+                            items.iter().cloned().collect::<Vec<_>>()
+                        }
+            Value::Seq(items) => {
                             items.iter().cloned().collect::<Vec<_>>()
                         }
                         other => vec![other.clone()],
@@ -1840,7 +1851,19 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                             }
                         }
                     }
-                    Value::Array(items, ..) | Value::Seq(items) => {
+                    Value::Array(items, ..) => {
+                        for item in items.iter() {
+                            if has_num {
+                                total_f += item.to_f64();
+                            } else if let Value::Num(_) = item {
+                                total_f = total as f64 + item.to_f64();
+                                has_num = true;
+                            } else {
+                                total += item.to_f64() as i64;
+                            }
+                        }
+                    }
+            Value::Seq(items) => {
                         for item in items.iter() {
                             if has_num {
                                 total_f += item.to_f64();

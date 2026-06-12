@@ -723,7 +723,23 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             "List",
         )),
         // Array/List.Capture → positional args, with Pair values becoming named
-        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+        Value::Array(items, ..) => {
+            let mut positional = vec![];
+            let mut named = HashMap::new();
+            for item in items.iter() {
+                match item {
+                    Value::Pair(k, v) => {
+                        named.insert(k.clone(), *v.clone());
+                    }
+                    Value::ValuePair(k, v) => {
+                        named.insert(k.to_string_value(), *v.clone());
+                    }
+                    _ => positional.push(item.clone()),
+                }
+            }
+            Ok(Value::Capture { positional, named })
+        }
+            Value::Seq(items) | Value::Slip(items) => {
             let mut positional = vec![];
             let mut named = HashMap::new();
             for item in items.iter() {

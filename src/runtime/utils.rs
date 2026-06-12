@@ -944,7 +944,24 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                 ));
             }
             // Quantified capture: a list of Match values under one index.
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Array(items, _) => {
+                for item in items.iter() {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = item
+                        && class_name == "Match"
+                    {
+                        entries.push((
+                            match_from(&(attributes).as_map()),
+                            label.to_string(),
+                            item.clone(),
+                        ));
+                    }
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => {
                 for item in items.iter() {
                     if let Value::Instance {
                         class_name,

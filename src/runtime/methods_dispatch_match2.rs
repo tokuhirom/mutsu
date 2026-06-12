@@ -193,7 +193,10 @@ impl Interpreter {
                     let mut flat_items = Vec::new();
                     for item in items {
                         match item {
-                            Value::Array(sub_items, _) | Value::Seq(sub_items) => {
+                            Value::Array(sub_items, _) => {
+                                flat_items.extend(sub_items.iter().cloned());
+                            }
+            Value::Seq(sub_items) => {
                                 flat_items.extend(sub_items.iter().cloned());
                             }
                             other => flat_items.push(other),

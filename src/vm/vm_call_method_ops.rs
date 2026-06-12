@@ -917,9 +917,10 @@ impl VM {
                                     let mut flat = Vec::new();
                                     for arg in &args {
                                         match arg {
-                                            Value::Array(items, _)
-                                            | Value::Seq(items)
-                                            | Value::Slip(items) => {
+                                            Value::Array(items, _) => {
+                                                flat.extend(items.iter().cloned());
+                                            }
+            Value::Seq(items) | Value::Slip(items) => {
                                                 flat.extend(items.iter().cloned());
                                             }
                                             other => flat.push(other.clone()),
@@ -994,9 +995,10 @@ impl VM {
                             let mut flat = Vec::new();
                             for arg in &args {
                                 match arg {
-                                    Value::Array(items, _)
-                                    | Value::Seq(items)
-                                    | Value::Slip(items) => {
+                                    Value::Array(items, _) => {
+                                        flat.extend(items.iter().cloned());
+                                    }
+            Value::Seq(items) | Value::Slip(items) => {
                                         flat.extend(items.iter().cloned());
                                     }
                                     other => flat.push(other.clone()),

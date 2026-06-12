@@ -3707,7 +3707,8 @@ impl Value {
     /// Returns the inner items if this value is an Array, Seq, or Slip.
     pub(crate) fn as_list_items(&self) -> Option<&Arc<Vec<Value>>> {
         match self {
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => Some(items),
+            Value::Array(items, _) => Some(items),
+            Value::Seq(items) | Value::Slip(items) => Some(items),
             _ => None,
         }
     }

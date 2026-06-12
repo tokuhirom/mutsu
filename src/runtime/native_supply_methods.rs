@@ -991,7 +991,8 @@ impl Interpreter {
                 let source_values = self.supply_get_values(attributes)?;
                 let squished = self.dispatch_squish(Value::array(source_values), &args)?;
                 let items = match squished {
-                    Value::Seq(items) | Value::Array(items, ..) => items.to_vec(),
+                    Value::Array(items, ..) => items.to_vec(),
+            Value::Seq(items) => items.to_vec(),
                     other => vec![other],
                 };
                 Ok(self.make_supply_from_values(items, attributes))
@@ -1161,7 +1162,8 @@ impl Interpreter {
                 let source_values = self.supply_get_values(attributes)?;
                 let rotored = self.dispatch_rotor(Value::array(source_values), &args)?;
                 let items = match rotored {
-                    Value::Seq(items) | Value::Array(items, ..) => items.to_vec(),
+                    Value::Array(items, ..) => items.to_vec(),
+            Value::Seq(items) => items.to_vec(),
                     other => vec![other],
                 };
                 Ok(self.make_supply_from_values(items, attributes))
@@ -1197,7 +1199,8 @@ impl Interpreter {
                     .collect();
                 let result = self.call_method_with_values(target, "comb", positional_args)?;
                 let combed: Vec<Value> = match result {
-                    Value::Seq(items) | Value::Array(items, ..) => items.iter().cloned().collect(),
+                    Value::Array(items, ..) => items.iter().cloned().collect(),
+            Value::Seq(items) => items.iter().cloned().collect(),
                     other => vec![other],
                 };
                 Ok(self.make_supply_from_values(combed, attributes))

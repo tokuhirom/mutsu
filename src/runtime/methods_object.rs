@@ -1099,7 +1099,10 @@ impl Interpreter {
                     let mut items = Vec::new();
                     for arg in &args {
                         match arg {
-                            Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals) => {
+                            Value::Array(vals, ..) => {
+                                items.extend(vals.iter().cloned())
+                            }
+            Value::Seq(vals) | Value::Slip(vals) => {
                                 items.extend(vals.iter().cloned())
                             }
                             Value::Instance {
@@ -1167,9 +1170,8 @@ impl Interpreter {
                         if let Some(data_val) = data {
                             // Populate the shaped array with data
                             let data_items = match data_val {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items.to_vec(),
+                                Value::Array(items, ..) => items.to_vec(),
+            Value::Seq(items) | Value::Slip(items) => items.to_vec(),
                                 Value::Range(..)
                                 | Value::RangeExcl(..)
                                 | Value::RangeExclStart(..)
@@ -1185,9 +1187,10 @@ impl Interpreter {
                                 let mut flat = Vec::new();
                                 for item in data_items {
                                     match item {
-                                        Value::Array(inner, ..)
-                                        | Value::Seq(inner)
-                                        | Value::Slip(inner) => {
+                                        Value::Array(inner, ..) => {
+                                            flat.extend(inner.iter().cloned());
+                                        }
+            Value::Seq(inner) | Value::Slip(inner) => {
                                             flat.extend(inner.iter().cloned());
                                         }
                                         Value::Range(..)
@@ -1431,7 +1434,12 @@ impl Interpreter {
                     let mut flat_args: Vec<&Value> = Vec::new();
                     for a in &args {
                         match a {
-                            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                            Value::Array(items, ..) => {
+                                for item in items.iter() {
+                                    flat_args.push(item);
+                                }
+                            }
+            Value::Seq(items) | Value::Slip(items) => {
                                 for item in items.iter() {
                                     flat_args.push(item);
                                 }
@@ -2991,9 +2999,8 @@ impl Interpreter {
                         let shaped = Self::make_shaped_array(&dims);
                         let result = if let Some(data_val) = data {
                             let data_items = match data_val {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items.to_vec(),
+                                Value::Array(items, ..) => items.to_vec(),
+            Value::Seq(items) | Value::Slip(items) => items.to_vec(),
                                 other => vec![other],
                             };
                             if let Value::Array(ref items, is_arr) = shaped {
