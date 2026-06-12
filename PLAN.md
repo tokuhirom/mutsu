@@ -133,15 +133,13 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
       - [ ] Phase 0.5 第2段（スタック不変条件 + lvalue opcode）を Phase 2 と同一 PR で。
       - [ ] 配列/ハッシュ要素の COW セル化 → array-backed mut・shaped/non-simple push・hyper temp・
             深い `>>++` を解く（take-rw は #2930、`@a[0]:=`/束縛要素セルは #2902-#2925 で landed）。
-      - [~] **Q2 の型メタ Arc-ptr flaky の構造的除去**（2026-06-12〜、2 本立てで進行中）:
-            ① **埋め込み（完全吸収）**: Hash = HashData DONE (#2952、original_keys も Stage 2 #2954 で完了)。
-            **Set/Bag/Mix = 既存 *Data struct への埋め込み DONE (2026-06-13)** — 3 副テーブル削除。
-            **残 = ArrayData wrapper のみ**（`Value::Array(Arc<Vec<Value>>, _)` の表現変更 — 唯一の大物。
-            `Arc::as_ptr as *mut Vec<Value>` unsafe サイトの全監査が必須。is default/shape dims の同時埋め込み候補。
-            docs/hashdata-migration-plan.md Stage 3 節参照）。
-            ② **未 wrapper のテーブルは Weak-guard `PtrKeyedMap` で interim 構造防御 (#2953)** —
-            残対象 = array 型メタ・container defaults・shaped dims・grep-view。Weak が ArcInner を pin ＝
-            アドレス再利用が不可能。レバー C 残（単一脱出/汎用捕捉）も合流。
+      - [x] **Q2 の型メタ Arc-ptr flaky の構造的除去 = 完全吸収 DONE（2026-06-12〜13）**:
+            Hash = HashData (#2952、original_keys = #2954)、Set/Bag/Mix = 既存 *Data 埋め込み (#2957)、
+            **Array = ArrayData wrapper（2026-06-13）— 全 5 コンテナ型の型メタがコンテナ値に埋め込まれ、
+            型メタ副テーブルは全廃**。経緯・監査済み hazard（unsafe cast / Arc identity / iterator 共有）=
+            docs/hashdata-migration-plan.md Stage 3-4 節。
+            **残の ptr-keyed（Weak-guard #2953 で防御中）**: container defaults・shaped dims・grep-view —
+            ArrayData への後続埋め込み候補。レバー C 残（単一脱出/汎用捕捉）も合流。
 - [ ] **トラック C — 並行 / lever B（共有セル）** ＝ 並行（A と独立。要素セルは B と共有基盤なので B に弱依存）
       - [ ] `clone_for_thread` のスナップショットコピー → 共有すべき lexical/state/global を `Arc<Mutex>` ライブセルへ
             （ANALYSIS §8.3/§2.2。`start` 間で `$counter`/`state $n` 共有）。
@@ -228,10 +226,10 @@ STATUS で撤回済み。
       #2958 revert 済）。
 - [ ] **属性セル + 属性束縛 = Phase 3** — `$!x :=` / per-attribute container template（S03-binding/attributes,
       S14-traits/attributes 5-8）。
-- [~] **型メタを Arc ポインタ keying からセルへ（Q2 項目）** — Hash 完全吸収 DONE（型メタ #2952 ＋
-      original_keys Stage 2 #2954）、Set/Bag/Mix も *Data struct 埋め込み DONE (#2957)。**残 = Array の
-      ArrayData wrapper のみ**（最後の大物。`Arc::as_ptr as *mut Vec<Value>` unsafe 全監査が必須 —
-      メモリ `hashdata-layout-unsafe-cast-audit`。docs/hashdata-migration-plan.md Stage 3 節 / 上記トラック B 参照）。
+- [x] **型メタを Arc ポインタ keying からセルへ（Q2 項目）= 完全吸収 DONE（2026-06-13）** — Hash #2952/#2954、
+      Set/Bag/Mix #2957、Array = ArrayData wrapper。全 5 コンテナ型で型メタ副テーブル全廃
+      （docs/hashdata-migration-plan.md Stage 3-4 節 / 上記トラック B 参照）。残 ptr-keyed は
+      defaults/shaped/grep-view（Weak-guard 防御中、ArrayData 後続埋め込み候補）。
 
 注: 既に通るようになった項目（観測 2026-06-08）— reduce.t 62 の `:=` 束縛リスト平坦化（`@a.elems`=3）、
 `is rw` の**基本** persistent（`f($a);f($a)`）は現状 PASS。バックログから外す。
