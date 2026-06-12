@@ -3155,7 +3155,9 @@ impl VM {
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {
+                let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
                 self.exec_delete_index_named_op(code, *name_idx)?;
+                self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::DeleteIndexExpr => {

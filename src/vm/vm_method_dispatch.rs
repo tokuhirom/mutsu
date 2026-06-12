@@ -964,30 +964,11 @@ impl VM {
             } else {
                 env.remove("?ROLE");
             }
-            // Array/hash attribute env copies are still materialized here: an
-            // inner closure that mutates `@!a`/`%!h` by element (`%!h<k> = v`)
-            // observes them through the captured env copy, not the cell, so
-            // removing them drops the first such mutation (Stage 2c (iii-b) keeps
-            // the cell-direct *read* path but this write-capture path still needs
-            // the copy; see tmp closure hash-element test).
-            for (attr_name, attr_val) in &attributes {
-                if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
-                    continue;
-                }
-                let qualified_key = format!("{}\0{}", owner_class, attr_name);
-                let private_val = attributes.get(&qualified_key).unwrap_or(attr_val);
-                match private_val {
-                    Value::Array(..) => {
-                        env.insert(format!("@!{}", attr_name), private_val.clone());
-                        env.insert(format!("@.{}", attr_name), attr_val.clone());
-                    }
-                    Value::Hash(..) => {
-                        env.insert(format!("%!{}", attr_name), private_val.clone());
-                        env.insert(format!("%.{}", attr_name), attr_val.clone());
-                    }
-                    _ => {}
-                }
-            }
+            // Array/hash attribute env copies are no longer materialized here:
+            // reads are cell-direct (Stage 2b) and the mutating ops refresh
+            // env/locals from the live cell pre-op (`array_hash_attr_env_snapshot`),
+            // so a closure capturing this env resolves `@!a`/`%!h` through the
+            // captured `self` instead of a stale env snapshot.
             for (param_name, param_val) in &param_values {
                 env.insert(param_name.to_string(), param_val.clone());
             }

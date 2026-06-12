@@ -4483,8 +4483,15 @@ impl VM {
     /// mutation (env value changed) from a non-mutating method call (`@!a.join`)
     /// on a stale env copy — mirroring the stale copy would clobber a cross-frame
     /// cell mutation. Returns `None` for non-attribute targets (cheap fast path).
+    ///
+    /// Also refreshes the env/local copy from `self`'s live cell before the op
+    /// runs: a closure-captured env copy is a stale snapshot from closure
+    /// creation, so letting the op mutate it (and mirroring the result) would
+    /// clobber keys written by earlier calls — `%!h{$k} = $v` inside a returned
+    /// closure kept only the last write. After the refresh the op starts from
+    /// the live cell value and the mirror's pre-snapshot is that same value.
     pub(super) fn array_hash_attr_env_snapshot(
-        &self,
+        &mut self,
         code: &CompiledCode,
         name_idx: u32,
     ) -> Option<Value> {
@@ -4493,8 +4500,44 @@ impl VM {
             return None;
         }
         let name = name.to_string();
-        self.get_env_with_main_alias(&name)
-            .or_else(|| self.interpreter.get_shared_var(&name))
+        let env_val = self
+            .get_env_with_main_alias(&name)
+            .or_else(|| self.interpreter.get_shared_var(&name));
+        // `:=` bindings / slot refs keep their legacy env handling.
+        if env_val
+            .as_ref()
+            .is_some_and(Self::is_non_mirrorable_attr_value)
+        {
+            return env_val;
+        }
+        if let Some(cell_val) = self.read_self_attr_cell(&name) {
+            // Env copies share the cell value's Arc until a copy-on-write fork;
+            // pointer inequality means the copy is stale (or absent) — adopt the
+            // live cell value so the op mutates current state.
+            if !env_val
+                .as_ref()
+                .is_some_and(|v| Self::same_container_arc(v, &cell_val))
+            {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), cell_val.clone());
+                if let Some(slot) = self.find_local_slot(code, &name) {
+                    self.locals[slot] = cell_val.clone();
+                }
+            }
+            return Some(cell_val);
+        }
+        env_val
+    }
+
+    /// Cheap container identity check: true when both values are the same
+    /// Array/Hash Arc (a clone that has not been copy-on-write forked).
+    fn same_container_arc(a: &Value, b: &Value) -> bool {
+        match (a, b) {
+            (Value::Array(x, _), Value::Array(y, _)) => Arc::ptr_eq(x, y),
+            (Value::Hash(x), Value::Hash(y)) => Arc::ptr_eq(x, y),
+            _ => false,
+        }
     }
 
     /// Mirror an array/hash attribute variable's post-mutation value into `self`'s

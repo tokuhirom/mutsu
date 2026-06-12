@@ -440,10 +440,16 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
                 `%!attr`/`%.attr`、~30行）を撤去。reads は全 cell-direct（2a/2b/2c-ii）、exit reconcile は cell.to_map()（iii-a）なので冗長。
                 sigilless alias テーブル設定 + `is default` 登録は保持。検証: make test 6265、S12/S14/S04/S03-binding/S06 144 ファイル 3076 PASS、
                 closure が private/array/hash/sigilless attr を捕捉・読み書きするケース（reader/writer 返却・nested+closure・map/gather）すべて raku 一致。
-                **fast-path（`call_compiled_method_fast`）の array/hash env コピーは保持**: closure が `%!h<k>=v` 要素変異する経路は
-                **captured env コピー経由**で cell 非経由（撤去すると最初の要素変異が落ちる）。これは pre-existing な hash-element-via-closure の
-                cell 非対応（main でも `%!cache{k}=v` の closure 経由で最初の write が `(Any)` になる既知バグ）に依存しており、cell 化は別件。
-                fast-path scalar attr は locals 直挿入（env 非経由）のため対象外。
+                ~~**fast-path（`call_compiled_method_fast`）の array/hash env コピーは保持**~~ → **(iii-c) で撤去済み（下記）**。
+          - [x] **(iii-c) 変異 op の pre-op cell sync + fast-path env コピー撤去（branch `phase3-attr-cell-presync`）**:
+                `array_hash_attr_env_snapshot`（全変異 op サイトの pre-snapshot）を「**self の live cell から env/locals を refresh**
+                してから cell 値を pre として返す」へ拡張（Arc ptr 比較で同一なら no-op、`:=` ContainerRef は legacy 維持）。
+                これで closure-captured env コピー（closure 生成時の stale snapshot）を変異してミラーする事故が消え、
+                **pre-existing バグ「closure 経由 `%!h{$k}=$v` は最後の write しか残らない（最初の write が `(Any)`）」を修正**。
+                各 closure 呼び出しが live cell 値から開始する。修正後、`call_compiled_method_fast` の array/hash attr env コピー
+                （iii-b で保持した分）を撤去 — 読みは cell-direct（2b）、変異は pre-op sync が env を埋めるので不要。
+                **おまけ: `DeleteIndexNamed`（`%!h{$k}:delete`）にも同じ pre-sync + mirror を配線**し、Stage 2b の
+                pre-existing gap「DELETE-KEY がミラー外で cell に届かない」も修正。回帰テスト `t/closure-attr-element-write.t`（16）。
         - [x] **registry 撤去（done, branch `phase3-drop-instance-cell-registry`）**: `instance_cells`（`id -> Weak<cell>` グローバル
               Mutex registry）+ `register_instance_cell`/`lookup_instance_cell`/`update_instance_cell`/`overwrite_instance_bindings_by_identity`
               を**全廃**。~98 の writeback/rebuild サイト（`overwrite_*` 47 + rebuild `make_instance_with_id` 51）を、receiver の
