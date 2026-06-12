@@ -2890,7 +2890,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::MakeCapture(n) => {
-                self.exec_make_capture_op(*n);
+                self.exec_make_capture_op(code, *n);
                 *ip += 1;
             }
 
