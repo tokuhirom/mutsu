@@ -228,14 +228,15 @@ impl Interpreter {
                 "prepend" => flatten_append_args(args),
                 _ => unreachable!(),
             };
-            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
             unsafe {
+                let data = &mut *ptr;
                 if matches!(method, "unshift" | "prepend") {
                     let mut combined = vals;
-                    combined.append(&mut (*ptr));
-                    *ptr = combined;
+                    combined.append(&mut data.items);
+                    data.items = combined;
                 } else {
-                    (*ptr).extend(vals);
+                    data.items.extend(vals);
                 }
             }
             return Ok(target);

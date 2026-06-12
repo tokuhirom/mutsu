@@ -132,7 +132,7 @@ pub(super) fn dispatch(
                 return Some(Some(Ok(target.clone())));
             }
             let items = if let Some(items) = target.as_list_items() {
-                items.as_ref().clone()
+                items.to_vec()
             } else if matches!(
                 target,
                 Value::Range(..)

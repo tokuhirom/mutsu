@@ -856,16 +856,16 @@ impl Interpreter {
                         continue;
                     };
                     let comparable_actual_args = if actual_base == constraint_base {
-                        actual_args.as_ref().clone()
+                        actual_args.to_vec()
                     } else if let Some(parent_args) =
                         self.role_parent_args_for(actual_base, actual_args, &constraint_base)
                     {
                         parent_args
                     } else if self.role_is_subtype(actual_base, &constraint_base) {
-                        actual_args.as_ref().clone()
+                        actual_args.to_vec()
                     } else {
                         continue;
-                    }.items.items.items.items.items.items.items.items;
+                    };
                     if comparable_actual_args.len() == expected_args.len()
                         && comparable_actual_args.iter().zip(expected_args.iter()).all(
                             |(actual, expected)| self.parametric_arg_subtypes(actual, expected),

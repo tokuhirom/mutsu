@@ -137,7 +137,7 @@ pub(crate) struct VM {
     /// for-loop iterable is a grep result with a registered grep-view binding,
     /// this holds (source array Arc, per-filtered-index source indices, kind)
     /// so the loop can write modified topics back to the original array slots.
-    for_grep_view: Option<(Arc<Vec<Value>>, Vec<usize>, crate::value::ArrayKind)>,
+    for_grep_view: Option<(Arc<crate::value::ArrayData>, Vec<usize>, crate::value::ArrayKind)>,
     /// Names of multi-param for-loop bindings (`-> %a, %b`) whose `%`/`@` params
     /// must preserve a QuantHash (Set/Bag/Mix) value rather than coercing it to
     /// a plain Hash, matching Raku's parameter-binding semantics.
@@ -3252,8 +3252,8 @@ impl VM {
                 if let Some(val) = self.get_env_with_main_alias(name) {
                     match &val {
                         Value::Array(arc, _) => {
-                            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
+                            unsafe { (&mut *ptr).items.clear() };
                         }
                         Value::Hash(arc) => {
                             let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
@@ -3266,8 +3266,8 @@ impl VM {
                 if let Some(slot) = self.find_local_slot(code, name) {
                     match &self.locals[slot] {
                         Value::Array(arc, _) => {
-                            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
+                            unsafe { (&mut *ptr).items.clear() };
                         }
                         Value::Hash(arc) => {
                             let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;

@@ -1632,7 +1632,7 @@ impl Interpreter {
     /// Extract list items from a value, expanding ranges.
     fn extract_list_items(v: &Value) -> Vec<Value> {
         if let Some(items) = v.as_list_items() {
-            items.as_ref().clone()
+            items.to_vec()
         } else if v.is_range() {
             Self::value_to_list(v)
         } else {

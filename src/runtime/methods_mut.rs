@@ -964,7 +964,8 @@ impl Interpreter {
                     let mut updated = (*source_array).clone();
                     if i < updated.len() {
                         updated[i] = value.clone();
-                        let replacement = Value::array(updated);
+                        let replacement =
+                            Value::Array(std::sync::Arc::new(updated), ArrayKind::List);
                         self.overwrite_array_bindings_by_identity(&source_array, replacement);
                         return Ok(value);
                     }

@@ -367,13 +367,13 @@ impl VM {
     fn replace_array_refs_in_value(
         v: &mut Value,
         old_ptr: usize,
-        new_array: &Arc<Vec<Value>>,
+        new_array: &Arc<crate::value::ArrayData>,
         kind: ArrayKind,
         seen_hashes: &mut Vec<usize>,
     ) {
         match v {
             Value::Array(inner_arc, _) if Arc::as_ptr(inner_arc) as usize == old_ptr => {
-                *v = Value::Array(crate::value::Value::array_arc(new_array.clone().to_vec()), kind);
+                *v = Value::Array(new_array.clone(), kind);
             }
             Value::Hash(map) => {
                 let hash_ptr = Arc::as_ptr(map) as usize;
@@ -466,18 +466,19 @@ impl VM {
                     new_items.push(v.clone());
                 }
             }
-            let result_arc = Arc::new(new_items);
-            let items_ptr = Arc::as_ptr(&result_arc) as *mut Vec<Value>;
+            let result_arc = crate::value::Value::array_arc(new_items);
+            let items_ptr = Arc::as_ptr(&result_arc) as *mut crate::value::ArrayData;
             // SAFETY: We just created result_arc and hold the only reference,
             // so no other thread can access it.
             unsafe {
+                let data = &mut *items_ptr;
                 for idx in &circular_indices {
-                    (&mut *items_ptr)[*idx] = Value::Array(crate::value::Value::array_arc(result_arc.clone().to_vec()), *kind);
+                    data.items[*idx] = Value::Array(result_arc.clone(), *kind);
                 }
                 for idx in &hash_fixup_indices {
                     let mut seen = Vec::new();
                     Self::replace_array_refs_in_value(
-                        &mut (&mut *items_ptr)[*idx],
+                        &mut data.items[*idx],
                         *old_ptr,
                         &result_arc,
                         *kind,
@@ -485,7 +486,7 @@ impl VM {
                     );
                 }
             }
-            *new_arc = crate::value::Value::array_arc(result_arc.to_vec());
+            *new_arc = result_arc;
         }
     }
 
@@ -1930,8 +1931,8 @@ impl VM {
                         // matching the behavior of index assignment.
                         // SAFETY: mutsu is single-threaded.
                         let use_inplace = Arc::strong_count(arr) > 1 && !name.starts_with('@');
-                        let a: &mut Vec<Value> = if use_inplace {
-                            unsafe { &mut *(Arc::as_ptr(arr) as *mut _) }
+                        let a: &mut crate::value::ArrayData = if use_inplace {
+                            unsafe { &mut *(Arc::as_ptr(arr) as *mut crate::value::ArrayData) }
                         } else {
                             Arc::make_mut(arr)
                         };
@@ -3235,8 +3236,11 @@ impl VM {
                                     // SAFETY: mutsu is single-threaded.
                                     let use_inplace =
                                         Arc::strong_count(items) > 1 && !var_name.starts_with('@');
-                                    let arr: &mut Vec<Value> = if use_inplace {
-                                        unsafe { &mut *(Arc::as_ptr(items) as *mut _) }
+                                    let arr: &mut crate::value::ArrayData = if use_inplace {
+                                        unsafe {
+                                            &mut *(Arc::as_ptr(items)
+                                                as *mut crate::value::ArrayData)
+                                        }
                                     } else {
                                         Arc::make_mut(items)
                                     };
@@ -3540,7 +3544,7 @@ impl VM {
                                     if Arc::as_ptr(array) as usize == old_ptr
                                         && let Value::Array(new_arc, _) = container
                                     {
-                                        *array = std::sync::Arc::new(new_arc.clone().to_vec());
+                                        *array = new_arc.clone();
                                     }
                                 }
                                 Value::HashSlotRef { hash, .. } => {
@@ -3734,9 +3738,10 @@ impl VM {
                         // Use interior mutation when the inner array is shared
                         // (e.g., by an ArraySlotRef from := binding).
                         if Arc::strong_count(inner_arr) > 1 {
-                            let ptr = Arc::as_ptr(inner_arr) as *mut Vec<Value>;
+                            let ptr =
+                                Arc::as_ptr(inner_arr) as *mut crate::value::ArrayData;
                             unsafe {
-                                let v = &mut *ptr;
+                                let v = &mut (*ptr).items;
                                 while v.len() <= j {
                                     v.push(Value::Nil);
                                 }
@@ -3830,9 +3835,9 @@ impl VM {
                 if let Ok(i) = outer_key.parse::<usize>() {
                     if Arc::strong_count(arr) > 1 {
                         // SAFETY: mutsu is single-threaded.
-                        let ptr = Arc::as_ptr(arr) as *mut Vec<Value>;
+                        let ptr = Arc::as_ptr(arr) as *mut crate::value::ArrayData;
                         unsafe {
-                            let v = &mut *ptr;
+                            let v = &mut (*ptr).items;
                             while v.len() <= i {
                                 v.push(Value::Nil);
                             }
@@ -4200,9 +4205,9 @@ impl VM {
                 // Interior mutation: write into the array via raw pointer
                 // so the change is visible to all holders of the same Arc.
                 if let Ok(i) = key.parse::<usize>() {
-                    let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+                    let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
                     unsafe {
-                        let v = &mut *ptr;
+                        let v = &mut (*ptr).items;
                         while v.len() <= i {
                             v.push(Value::Nil);
                         }
@@ -4221,7 +4226,7 @@ impl VM {
                     // For bind mode, set up an ArraySlotRef on the source variable
                     if let Some(source_name) = &bind_source {
                         let slot_ref = Value::ArraySlotRef {
-                            array: std::sync::Arc::new(arc.clone().to_vec()),
+                            array: arc.clone(),
                             index: i,
                         };
                         self.interpreter

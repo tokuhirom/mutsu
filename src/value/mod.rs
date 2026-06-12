@@ -1618,7 +1618,7 @@ pub enum Value {
     /// Reading this value returns the current value at the index (or Nil).
     /// Assigning to it writes back to the parent array via interior mutation.
     ArraySlotRef {
-        array: Arc<Vec<Value>>,
+        array: Arc<ArrayData>,
         index: usize,
     },
     /// A deferred hash access path for binding. Acts as Any for reads.
@@ -2316,7 +2316,7 @@ impl PartialEq for SharedChannel {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        let match_equals_pair_array = |attrs: &Arc<InstanceAttrs>, arr: &Arc<Vec<Value>>| {
+        let match_equals_pair_array = |attrs: &Arc<InstanceAttrs>, arr: &Arc<ArrayData>| {
             if arr.len() != 2 {
                 return false;
             }
@@ -2361,9 +2361,10 @@ impl PartialEq for Value {
             (Value::Array(a, ..), Value::Seq(b))
             | (Value::Seq(b), Value::Array(a, ..))
             | (Value::Array(a, ..), Value::Slip(b))
-            | (Value::Slip(b), Value::Array(a, ..))
-            | (Value::Seq(a), Value::Slip(b))
-            | (Value::Slip(b), Value::Seq(a)) => a.as_ref() == b.as_ref(),
+            | (Value::Slip(b), Value::Array(a, ..)) => a.items == **b,
+            (Value::Seq(a), Value::Slip(b)) | (Value::Slip(b), Value::Seq(a)) => {
+                a.as_ref() == b.as_ref()
+            }
             (Value::Hash(a), Value::Hash(b)) => a == b,
             (Value::Rat(a1, b1), Value::Rat(a2, b2)) => {
                 if *b1 == 0 && *b2 == 0 && *a1 == 0 && *a2 == 0 {
@@ -2985,9 +2986,9 @@ impl Value {
     /// concurrent reads/writes to the same Arc.
     pub fn array_push_in_place(&self, val: Value) -> bool {
         if let Value::Array(arc, _) = self {
-            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(arc) as *mut ArrayData;
             unsafe {
-                (*ptr).push(val);
+                (&mut *ptr).items.push(val);
             }
             true
         } else {
@@ -3028,7 +3029,7 @@ impl Value {
     pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
         if let Value::Array(arc, _kind) = self {
             // SAFETY: mutsu is single-threaded.
-            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(arc) as *mut ArrayData;
             unsafe {
                 while (&(*ptr)).len() <= idx {
                     (&mut (*ptr)).push(Value::Nil);
@@ -3044,7 +3045,7 @@ impl Value {
                 // lands in the same physical Vec the stored element points to.
                 if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
                     return Some(Value::ArraySlotRef {
-                        array: std::sync::Arc::new(arc.clone().to_vec()),
+                        array: arc.clone(),
                         index: idx,
                     });
                 }
@@ -3070,12 +3071,13 @@ impl Value {
     /// Write a value to an ArraySlotRef's parent array at the stored index.
     pub fn array_slot_write(&self, val: Value) {
         if let Value::ArraySlotRef { array, index } = self {
-            let ptr = Arc::as_ptr(array) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(array) as *mut ArrayData;
             unsafe {
-                while (&(*ptr)).len() <= *index {
-                    (&mut (*ptr)).push(Value::Nil);
+                let data = &mut *ptr;
+                while data.items.len() <= *index {
+                    data.items.push(Value::Nil);
                 }
-                (&mut (*ptr))[*index] = val;
+                data.items[*index] = val;
             }
         }
     }
@@ -3705,10 +3707,10 @@ impl Value {
 
     /// Check if this value is a numeric type (Int, Num, Rat, FatRat, BigInt).
     /// Returns the inner items if this value is an Array, Seq, or Slip.
-    pub(crate) fn as_list_items(&self) -> Option<&Arc<Vec<Value>>> {
+    pub(crate) fn as_list_items(&self) -> Option<&[Value]> {
         match self {
-            Value::Array(items, _) => Some(items),
-            Value::Seq(items) | Value::Slip(items) => Some(items),
+            Value::Array(items, _) => Some(&items.items[..]),
+            Value::Seq(items) | Value::Slip(items) => Some(&items[..]),
             _ => None,
         }
     }
