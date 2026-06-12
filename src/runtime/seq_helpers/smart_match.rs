@@ -617,10 +617,7 @@ impl Interpreter {
                 true
             }
             // Array/List ~~ Regex: iterate elements, match each individually
-            (
-                Value::Array(items, ..),
-                Value::Regex(_) | Value::RegexWithAdverbs { .. },
-            ) => {
+            (Value::Array(items, ..), Value::Regex(_) | Value::RegexWithAdverbs { .. }) => {
                 for item in items.iter() {
                     if self.smart_match(item, right) {
                         return true;
@@ -974,10 +971,8 @@ impl Interpreter {
             {
                 // Collect LHS elements as string keys (same representation as Set uses)
                 let lhs_keys: std::collections::HashSet<String> = match left {
-                    Value::Array(items, ..) => {
-                        items.iter().map(|v| v.to_string_value()).collect()
-                    }
-            Value::Seq(items) | Value::Slip(items) => {
+                    Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
+                    Value::Seq(items) | Value::Slip(items) => {
                         items.iter().map(|v| v.to_string_value()).collect()
                     }
                     Value::Bag(b, _) => b.keys().cloned().collect(),
@@ -1169,9 +1164,9 @@ impl Interpreter {
                                     ]));
                                 }
                             } else if vt != "Any" && vt != "Mu" {
-                                return Some(crate::value::ArrayData::new(vec![Value::Package(crate::symbol::Symbol::intern(
-                                    vt,
-                                ))]));
+                                return Some(crate::value::ArrayData::new(vec![Value::Package(
+                                    crate::symbol::Symbol::intern(vt),
+                                )]));
                             }
                         }
                         None
@@ -1181,9 +1176,9 @@ impl Interpreter {
                         if let Some(info) = self.container_type_metadata(left_value) {
                             let vt = &info.value_type;
                             if vt != "Any" && vt != "Mu" {
-                                return Some(crate::value::ArrayData::new(vec![Value::Package(crate::symbol::Symbol::intern(
-                                    vt,
-                                ))]));
+                                return Some(crate::value::ArrayData::new(vec![Value::Package(
+                                    crate::symbol::Symbol::intern(vt),
+                                )]));
                             }
                         }
                         None

@@ -639,7 +639,10 @@ impl Interpreter {
             }
             changed.push(path_value.clone());
         }
-        Ok(Value::Array(crate::value::Value::array_arc(changed), ArrayKind::List))
+        Ok(Value::Array(
+            crate::value::Value::array_arc(changed),
+            ArrayKind::List,
+        ))
     }
 
     pub(super) fn builtin_mkdir(&self, args: &[Value]) -> Result<Value, RuntimeError> {

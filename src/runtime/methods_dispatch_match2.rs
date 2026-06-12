@@ -196,7 +196,7 @@ impl Interpreter {
                             Value::Array(sub_items, _) => {
                                 flat_items.extend(sub_items.iter().cloned());
                             }
-            Value::Seq(sub_items) => {
+                            Value::Seq(sub_items) => {
                                 flat_items.extend(sub_items.iter().cloned());
                             }
                             other => flat_items.push(other),
@@ -506,7 +506,10 @@ impl Interpreter {
         let mut env = self.env.clone();
         env.insert(
             "__mutsu_lazy_map_items".to_string(),
-            Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(items)), crate::value::ArrayKind::List),
+            Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            ),
         );
         env.insert(
             "__mutsu_lazy_map_func".to_string(),

@@ -644,7 +644,7 @@ pub(crate) fn to_mix(target: Value) -> Result<Value, RuntimeError> {
                 mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
             }
         }
-            Value::Seq(items) | Value::Slip(items) => {
+        Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
             }

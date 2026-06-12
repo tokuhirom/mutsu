@@ -88,7 +88,7 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
                 flat_val(item, out, true);
             }
         }
-            Value::Seq(items) | Value::Slip(items) => {
+        Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flat_val(item, out, true);
             }
@@ -1664,21 +1664,15 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                 Value::Array(items, ..) => {
                     items.iter().any(|v| matches!(v, Value::Junction { .. }))
                 }
-            Value::Seq(items) => {
-                    items.iter().any(|v| matches!(v, Value::Junction { .. }))
-                }
+                Value::Seq(items) => items.iter().any(|v| matches!(v, Value::Junction { .. })),
                 _ => false,
             });
             if has_junction {
                 let items: Vec<Value> = args
                     .iter()
                     .flat_map(|a| match a {
-                        Value::Array(items, ..) => {
-                            items.iter().cloned().collect::<Vec<_>>()
-                        }
-            Value::Seq(items) => {
-                            items.iter().cloned().collect::<Vec<_>>()
-                        }
+                        Value::Array(items, ..) => items.iter().cloned().collect::<Vec<_>>(),
+                        Value::Seq(items) => items.iter().cloned().collect::<Vec<_>>(),
                         other => vec![other.clone()],
                     })
                     .collect();
@@ -1863,7 +1857,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                             }
                         }
                     }
-            Value::Seq(items) => {
+                    Value::Seq(items) => {
                         for item in items.iter() {
                             if has_num {
                                 total_f += item.to_f64();

@@ -829,7 +829,8 @@ impl VM {
                                 }
                             })
                             .collect();
-                        let new_arr = Value::Array(Arc::new(crate::value::ArrayData::new(replaced)), kind);
+                        let new_arr =
+                            Value::Array(Arc::new(crate::value::ArrayData::new(replaced)), kind);
                         self.interpreter
                             .set_container_default(&new_arr, default_value.clone());
                         self.locals_set_by_name(code, &name, new_arr.clone());

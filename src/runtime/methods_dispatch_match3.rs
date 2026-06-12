@@ -775,7 +775,7 @@ impl Interpreter {
                         }
                     }
                 }
-            Value::Seq(elems) | Value::Slip(elems) => {
+                Value::Seq(elems) | Value::Slip(elems) => {
                     for elem in elems.iter() {
                         let i = elem.to_f64() as i64;
                         if i >= 0 {

@@ -71,7 +71,10 @@ impl Interpreter {
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(vec![])), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -98,7 +101,10 @@ impl Interpreter {
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(vec![])), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "not-p" => {
@@ -271,11 +277,17 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, Value::Bool(exists)])),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![
+                            key,
+                            Value::Bool(exists),
+                        ])),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(vec![])), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -550,7 +562,10 @@ impl Interpreter {
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(vec![])), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -654,11 +669,17 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, Value::Bool(exists)])),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![
+                            key,
+                            Value::Bool(exists),
+                        ])),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(vec![])), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {

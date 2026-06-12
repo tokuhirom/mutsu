@@ -253,12 +253,18 @@ impl Interpreter {
             "push" => {
                 let normalized = Self::normalize_push_args_for_copy(args);
                 items.extend(normalized);
-                Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items)), kind))
+                Ok(Value::Array(
+                    Arc::new(crate::value::ArrayData::new(items)),
+                    kind,
+                ))
             }
             "append" => {
                 let flat = flatten_append_args(args);
                 items.extend(flat);
-                Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items)), kind))
+                Ok(Value::Array(
+                    Arc::new(crate::value::ArrayData::new(items)),
+                    kind,
+                ))
             }
             "pop" => {
                 if !args.is_empty() {
@@ -271,10 +277,16 @@ impl Interpreter {
                     return Err(RuntimeError::cannot_lazy("pop"));
                 }
                 if items.is_empty() {
-                    Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items)), kind))
+                    Ok(Value::Array(
+                        Arc::new(crate::value::ArrayData::new(items)),
+                        kind,
+                    ))
                 } else {
                     items.pop();
-                    Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items)), kind))
+                    Ok(Value::Array(
+                        Arc::new(crate::value::ArrayData::new(items)),
+                        kind,
+                    ))
                 }
             }
             "shift" => {
@@ -285,10 +297,16 @@ impl Interpreter {
                     )));
                 }
                 if items.is_empty() {
-                    Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items)), kind))
+                    Ok(Value::Array(
+                        Arc::new(crate::value::ArrayData::new(items)),
+                        kind,
+                    ))
                 } else {
                     items.remove(0);
-                    Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items)), kind))
+                    Ok(Value::Array(
+                        Arc::new(crate::value::ArrayData::new(items)),
+                        kind,
+                    ))
                 }
             }
             "unshift" | "prepend" => {
@@ -296,7 +314,10 @@ impl Interpreter {
                 for (i, arg) in normalized.into_iter().enumerate() {
                     items.insert(i, arg);
                 }
-                Ok(Value::Array(Arc::new(crate::value::ArrayData::new(items)), kind))
+                Ok(Value::Array(
+                    Arc::new(crate::value::ArrayData::new(items)),
+                    kind,
+                ))
             }
             "splice" => {
                 // On a bare Array value (not a named variable) there is no
@@ -327,10 +348,8 @@ impl Interpreter {
                 let mut replacement: Vec<Value> = Vec::new();
                 for arg in args.iter().skip(2) {
                     match arg {
-                        Value::Array(arr, ..) => {
-                            replacement.extend(arr.iter().cloned())
-                        }
-            Value::Seq(arr) | Value::Slip(arr) => {
+                        Value::Array(arr, ..) => replacement.extend(arr.iter().cloned()),
+                        Value::Seq(arr) | Value::Slip(arr) => {
                             replacement.extend(arr.iter().cloned())
                         }
                         other => replacement.push(other.clone()),
@@ -379,7 +398,7 @@ impl Interpreter {
                             .collect()
                     }
                 }
-            Value::Seq(items) | Value::Slip(items) => {
+                Value::Seq(items) | Value::Slip(items) => {
                     let pattern: Vec<Value> = items.to_vec();
                     if pattern.is_empty() {
                         vec![Value::Int(0); size]

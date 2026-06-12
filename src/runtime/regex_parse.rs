@@ -4864,7 +4864,7 @@ impl Interpreter {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())
                                     })
                                     .collect(),
-            Value::Seq(items) | Value::Slip(items) => items
+                                Value::Seq(items) | Value::Slip(items) => items
                                     .iter()
                                     .map(|v| {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())

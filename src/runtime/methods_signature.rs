@@ -1202,7 +1202,10 @@ impl Interpreter {
     ) {
         self.overwrite_array_bindings_by_identity(
             needle,
-            Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(updated_items)), kind),
+            Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(updated_items)),
+                kind,
+            ),
         );
     }
 }

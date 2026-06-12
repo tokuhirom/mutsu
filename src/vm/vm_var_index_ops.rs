@@ -417,9 +417,15 @@ impl VM {
                 return Err(crate::value::seq_consumed_error());
             }
             crate::value::seq_mark_cached(&items);
-            target = Value::Array(crate::value::Value::array_arc(items.to_vec()), crate::value::ArrayKind::List);
+            target = Value::Array(
+                crate::value::Value::array_arc(items.to_vec()),
+                crate::value::ArrayKind::List,
+            );
         } else if let Value::Slip(items) = target {
-            target = Value::Array(crate::value::Value::array_arc(items.to_vec()), crate::value::ArrayKind::List);
+            target = Value::Array(
+                crate::value::Value::array_arc(items.to_vec()),
+                crate::value::ArrayKind::List,
+            );
         }
         // Normalize index: convert Seq/LazyList indices to Array for
         // uniform handling in the match below.
@@ -428,7 +434,10 @@ impl VM {
             let items = self.force_lazy_list_vm(ll)?;
             Value::array(items)
         } else if let Value::Seq(items) = index {
-            Value::Array(crate::value::Value::array_arc(items.to_vec()), crate::value::ArrayKind::List)
+            Value::Array(
+                crate::value::Value::array_arc(items.to_vec()),
+                crate::value::ArrayKind::List,
+            )
         } else {
             index
         };
@@ -1828,7 +1837,10 @@ impl VM {
         let actual_end = if excl_end { end } else { end + 1 };
         let start = start.max(0) as usize;
         let actual_end = (actual_end.max(0) as usize).min(items.len());
-        let default = vm.typed_container_default(&Value::Array(crate::value::Value::array_arc(items.clone().to_vec()), kind));
+        let default = vm.typed_container_default(&Value::Array(
+            crate::value::Value::array_arc(items.clone().to_vec()),
+            kind,
+        ));
         let mut result = Vec::new();
         for i in start..actual_end {
             result.push(vm.resolve_array_entry(items, kind, i, default.clone()));

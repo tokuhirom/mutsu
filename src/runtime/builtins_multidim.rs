@@ -171,7 +171,10 @@ pub(super) fn make_key_tuple(indices: &[Value]) -> Value {
     if indices.len() == 1 {
         return indices[0].clone();
     }
-    Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(indices.to_vec())), ArrayKind::List)
+    Value::Array(
+        std::sync::Arc::new(crate::value::ArrayData::new(indices.to_vec())),
+        ArrayKind::List,
+    )
 }
 
 /// Collect (path, value) leaves from a multi-dimensional array,

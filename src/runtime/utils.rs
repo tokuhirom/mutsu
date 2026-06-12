@@ -241,7 +241,10 @@ pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
     mark_shaped_array_items(items, shape);
 }
 
-pub(crate) fn mark_shaped_array_items(items: &Arc<crate::value::ArrayData>, shape: Option<&[usize]>) {
+pub(crate) fn mark_shaped_array_items(
+    items: &Arc<crate::value::ArrayData>,
+    shape: Option<&[usize]>,
+) {
     if shape.is_none() {
         return;
     }
@@ -589,19 +592,31 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         Value::Range(a, b) => {
             let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
+            coerce_to_hash(Value::Array(
+                crate::value::Value::array_arc(items),
+                ArrayKind::List,
+            ))
         }
         Value::RangeExcl(a, b) => {
             let items: Vec<Value> = (a..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
+            coerce_to_hash(Value::Array(
+                crate::value::Value::array_arc(items),
+                ArrayKind::List,
+            ))
         }
         Value::RangeExclStart(a, b) => {
             let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
+            coerce_to_hash(Value::Array(
+                crate::value::Value::array_arc(items),
+                ArrayKind::List,
+            ))
         }
         Value::RangeExclBoth(a, b) => {
             let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(crate::value::Value::array_arc(items), ArrayKind::List))
+            coerce_to_hash(Value::Array(
+                crate::value::Value::array_arc(items),
+                ArrayKind::List,
+            ))
         }
         Value::Nil => Value::hash(HashMap::new()),
         Value::Instance {
@@ -771,13 +786,19 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         Value::GenericRange { ref end, .. } => {
             let end_f = end.to_f64();
             if end_f.is_infinite() && end_f.is_sign_positive() {
-                Value::Array(Arc::new(crate::value::ArrayData::new(value_to_list(&value))), ArrayKind::Lazy)
+                Value::Array(
+                    Arc::new(crate::value::ArrayData::new(value_to_list(&value))),
+                    ArrayKind::Lazy,
+                )
             } else {
                 Value::real_array(value_to_list(&value))
             }
         }
         Value::Slip(items) | Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
-            Value::Array(crate::value::Value::array_arc(items.to_vec()), ArrayKind::Array)
+            Value::Array(
+                crate::value::Value::array_arc(items.to_vec()),
+                ArrayKind::Array,
+            )
         }
         Value::LazyList(_) => value,
         Value::Hash(ref map) => {
@@ -1701,7 +1722,10 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
         "(.)" | "⊍" | "(+)" | "⊎" => Value::bag(HashMap::new()),
         // Comma: empty list
-        "," => Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())), ArrayKind::List),
+        "," => Value::Array(
+            std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+            ArrayKind::List,
+        ),
         // Zip: empty Seq (Raku returns a Seq for arity-0 Z)
         "Z" => Value::Seq(std::sync::Arc::new(Vec::new())),
         _ => {

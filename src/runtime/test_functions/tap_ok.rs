@@ -459,7 +459,10 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                Value::Array(Arc::new(crate::value::ArrayData::new(vec![Value::bag(map)])), *kind)
+                Value::Array(
+                    Arc::new(crate::value::ArrayData::new(vec![Value::bag(map)])),
+                    *kind,
+                )
             }
             _ => expected_expanded.clone(),
         };

@@ -20,7 +20,7 @@ fn extend_buffer_from_value(out: &mut Vec<u8>, v: &Value) {
                 }
             }
         }
-            Value::Slip(items) => {
+        Value::Slip(items) => {
             for item in items.iter() {
                 if let Some(b) = value_to_byte(item) {
                     out.push(b);

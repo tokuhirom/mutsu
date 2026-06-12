@@ -200,7 +200,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 crate::value::seq_mark_cached(items);
                 Some(Ok(Value::Slip(items.clone())))
             }
-            Value::Array(items, ..) => Some(Ok(Value::Slip(std::sync::Arc::new(items.clone().to_vec())))),
+            Value::Array(items, ..) => {
+                Some(Ok(Value::Slip(std::sync::Arc::new(items.clone().to_vec()))))
+            }
             Value::Slip(_) => Some(Ok(target.clone())),
             Value::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
@@ -739,7 +741,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             }
             Ok(Value::Capture { positional, named })
         }
-            Value::Seq(items) | Value::Slip(items) => {
+        Value::Seq(items) | Value::Slip(items) => {
             let mut positional = vec![];
             let mut named = HashMap::new();
             for item in items.iter() {

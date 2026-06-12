@@ -1340,7 +1340,10 @@ impl VM {
         let scalarized = match value {
             Value::Nil => Value::Int(0),
             Value::Array(items, _) => Value::Int(items.len() as i64),
-            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => Value::Int(items.len() as i64),
+            Value::Seq(items)
+            | Value::HyperSeq(items)
+            | Value::RaceSeq(items)
+            | Value::Slip(items) => Value::Int(items.len() as i64),
             Value::Capture { positional, .. } => Value::Int(positional.len() as i64),
             Value::Instance {
                 class_name,

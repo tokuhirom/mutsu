@@ -22,7 +22,7 @@ impl Interpreter {
                             .iter()
                             .map(|v| v.to_string_value())
                             .collect::<Vec<_>>(),
-            Value::Seq(items) => items
+                        Value::Seq(items) => items
                             .iter()
                             .map(|v| v.to_string_value())
                             .collect::<Vec<_>>(),

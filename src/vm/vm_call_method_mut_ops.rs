@@ -180,7 +180,10 @@ impl VM {
                         return Ok(());
                     }
                     "map" | "grep" => {
-                        let array_target = Value::Array(crate::value::Value::array_arc(items_arc.to_vec()), crate::value::ArrayKind::List);
+                        let array_target = Value::Array(
+                            crate::value::Value::array_arc(items_arc.to_vec()),
+                            crate::value::ArrayKind::List,
+                        );
                         let call_result = if let Some(nr) =
                             self.try_native_method(&array_target, Symbol::intern(&method), &args)
                         {
@@ -201,7 +204,10 @@ impl VM {
                     }
                     _ => {
                         // Convert to array and delegate
-                        let array_target = Value::Array(crate::value::Value::array_arc(items_arc.to_vec()), crate::value::ArrayKind::List);
+                        let array_target = Value::Array(
+                            crate::value::Value::array_arc(items_arc.to_vec()),
+                            crate::value::ArrayKind::List,
+                        );
                         let call_result = if let Some(nr) =
                             self.try_native_method(&array_target, Symbol::intern(&method), &args)
                         {
@@ -818,7 +824,10 @@ impl VM {
                         Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    let array_target = Value::Array(crate::value::Value::array_arc(items_arc.to_vec()), crate::value::ArrayKind::List);
+                    let array_target = Value::Array(
+                        crate::value::Value::array_arc(items_arc.to_vec()),
+                        crate::value::ArrayKind::List,
+                    );
                     let call_result = if let Some(native_result) =
                         self.try_native_method(&array_target, Symbol::intern(&method), &args)
                     {
@@ -849,9 +858,10 @@ impl VM {
         }
         // Convert HyperSeq/RaceSeq to List for remaining method dispatch
         let target = match target {
-            Value::HyperSeq(items) | Value::RaceSeq(items) => {
-                Value::Array(crate::value::Value::array_arc(items.to_vec()), crate::value::ArrayKind::List)
-            }
+            Value::HyperSeq(items) | Value::RaceSeq(items) => Value::Array(
+                crate::value::Value::array_arc(items.to_vec()),
+                crate::value::ArrayKind::List,
+            ),
             other => other,
         };
 

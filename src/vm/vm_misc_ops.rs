@@ -127,7 +127,7 @@ pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
                 (lo, hi)
             }
         }
-            Value::Seq(items) => {
+        Value::Seq(items) => {
             if items.is_empty() {
                 (Value::Nil, Value::Nil)
             } else {
@@ -3365,7 +3365,10 @@ impl VM {
         match val {
             Value::Array(arc_vec, kind) => {
                 let copied: Vec<Value> = arc_vec.iter().map(Self::deep_copy_value).collect();
-                Value::Array(std::sync::Arc::new(crate::value::ArrayData::new(copied)), *kind)
+                Value::Array(
+                    std::sync::Arc::new(crate::value::ArrayData::new(copied)),
+                    *kind,
+                )
             }
             Value::Hash(arc_map) => {
                 let copied: std::collections::HashMap<String, Value> = arc_map
