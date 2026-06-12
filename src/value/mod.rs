@@ -1331,6 +1331,83 @@ impl PartialEq for HashData {
     }
 }
 
+/// Backing data for `Value::Array`: the element vector plus embedded
+/// container type metadata (mirrors `HashData`). `Deref`/`DerefMut` to
+/// `Vec<Value>` keep the overwhelming majority of read sites
+/// (`.iter`/`.len`/`.get`/indexing/…) unchanged; only structural
+/// mutation/rebuild sites touch the wrapper. Embedding the metadata in the
+/// container (instead of an `Arc`-pointer-keyed side table) means it travels
+/// through copy-on-write and can never be inherited by an unrelated array
+/// via pointer reuse.
+#[derive(Debug, Clone, Default)]
+pub struct ArrayData {
+    pub items: Vec<Value>,
+    /// Element value-type constraint (e.g. `Int` for `my Int @a`), if any.
+    pub value_type: Option<String>,
+    /// Key-type constraint — unused for arrays, present so the shared
+    /// embed/tag machinery treats all containers uniformly.
+    pub key_type: Option<String>,
+    /// Declared container type name (e.g. `Array[Int]`, `array[int]`), if any.
+    pub declared_type: Option<String>,
+}
+
+impl ArrayData {
+    pub fn new(items: Vec<Value>) -> Self {
+        ArrayData {
+            items,
+            value_type: None,
+            key_type: None,
+            declared_type: None,
+        }
+    }
+
+    /// Whether container *type* metadata (element/key/declared type) is attached.
+    pub fn has_type_meta(&self) -> bool {
+        self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
+    }
+}
+
+impl std::ops::Deref for ArrayData {
+    type Target = Vec<Value>;
+    fn deref(&self) -> &Vec<Value> {
+        &self.items
+    }
+}
+
+impl std::ops::DerefMut for ArrayData {
+    fn deref_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.items
+    }
+}
+
+impl From<Vec<Value>> for ArrayData {
+    fn from(items: Vec<Value>) -> Self {
+        ArrayData::new(items)
+    }
+}
+
+/// Array equality ignores container metadata — only the elements matter
+/// (preserves the prior `Arc<Vec<Value>>` PartialEq semantics).
+impl PartialEq for ArrayData {
+    fn eq(&self, other: &Self) -> bool {
+        self.items == other.items
+    }
+}
+
+impl FromIterator<Value> for ArrayData {
+    fn from_iter<I: IntoIterator<Item = Value>>(iter: I) -> Self {
+        ArrayData::new(iter.into_iter().collect())
+    }
+}
+
+impl<'a> IntoIterator for &'a ArrayData {
+    type Item = &'a Value;
+    type IntoIter = std::slice::Iter<'a, Value>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
+
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnumValue {
@@ -1387,7 +1464,7 @@ pub enum Value {
         excl_end: bool,
     },
     /// Distinguishes Array, List, and their itemized (Scalar-wrapped) variants.
-    Array(Arc<Vec<Value>>, ArrayKind),
+    Array(Arc<ArrayData>, ArrayKind),
     Hash(Arc<HashData>),
     Rat(i64, i64),
     FatRat(i64, i64),
@@ -2595,15 +2672,30 @@ impl Value {
         }
     }
     pub fn array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), ArrayKind::List)
+        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::List)
     }
     /// Create a true Array value (from [...] literals).
     pub fn real_array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), ArrayKind::Array)
+        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Array)
     }
     /// Create a shaped (multidimensional) Array value.
     pub fn shaped_array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), ArrayKind::Shaped)
+        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Shaped)
+    }
+    /// Build an `Arc<ArrayData>` from a plain element vector.
+    pub fn array_arc(items: Vec<Value>) -> Arc<ArrayData> {
+        Arc::new(ArrayData::new(items))
+    }
+    /// Rebuild an array's backing data with new elements, preserving the
+    /// embedded container type metadata of `like` (used by mutators that
+    /// reconstruct the vector, so a typed `Array[Int]` stays typed).
+    pub fn array_data_like(like: &ArrayData, items: Vec<Value>) -> Arc<ArrayData> {
+        Arc::new(ArrayData {
+            items,
+            value_type: like.value_type.clone(),
+            key_type: like.key_type.clone(),
+            declared_type: like.declared_type.clone(),
+        })
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
