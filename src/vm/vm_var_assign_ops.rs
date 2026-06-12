@@ -2369,7 +2369,11 @@ impl VM {
             && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
             && self.interpreter.container_default(&container).is_none()
         {
-            self.interpreter.set_container_default(&container, def);
+            let tagged = self.interpreter.tag_container_default(container, def);
+            self.interpreter
+                .env_mut()
+                .insert(save_var_name.clone(), tagged.clone());
+            self.locals_set_by_name(code, &save_var_name, tagged);
         }
         // Object-hash original keys are embedded in `HashData` and travel with
         // the hash across copy-on-write, so no pointer migration is needed.
@@ -3529,10 +3533,15 @@ impl VM {
                 self.set_env_with_main_alias(&source_name, updated.clone());
                 self.update_local_if_exists(code, &source_name, &updated);
             }
-            // Re-register container default for `is default(...)` after mutation,
-            // since Arc::make_mut may have changed the pointer identity.
-            if let Some(def) = self.interpreter.var_default(&var_name).cloned() {
-                self.interpreter.set_container_default(&updated, def);
+            // Re-attach the `is default(...)` element default after mutation
+            // when a rebuild dropped it (embedded in ArrayData, so plain
+            // Arc::make_mut mutations carry it on their own).
+            if let Some(def) = self.interpreter.var_default(&var_name).cloned()
+                && self.interpreter.container_default(&updated).is_none()
+            {
+                let tagged = self.interpreter.tag_container_default(updated.clone(), def);
+                self.set_env_with_main_alias(&var_name, tagged.clone());
+                self.update_local_if_exists(code, &var_name, &tagged);
             }
         }
         // When operating through a sigilless alias (e.g., `h` → `%a`),

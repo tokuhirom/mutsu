@@ -201,7 +201,22 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(Value::Slip(items.clone())))
             }
             Value::Array(items, ..) => {
-                Some(Ok(Value::Slip(std::sync::Arc::new(items.clone().to_vec()))))
+                // `.Slip` materializes array holes with the container's
+                // `is default(...)` value (Rakudo semantics: the .List keeps
+                // holes as Nil, while .Slip uses the default). The default is
+                // embedded in `ArrayData`, so this pure coercion can read it.
+                let vec: Vec<Value> = if let Some(def) = items.default.as_deref() {
+                    items
+                        .iter()
+                        .map(|v| match v {
+                            Value::Package(n) if n == "Any" => def.clone(),
+                            other => other.clone(),
+                        })
+                        .collect()
+                } else {
+                    items.to_vec()
+                };
+                Some(Ok(Value::Slip(std::sync::Arc::new(vec))))
             }
             Value::Slip(_) => Some(Ok(target.clone())),
             Value::LazyList(ll) => {

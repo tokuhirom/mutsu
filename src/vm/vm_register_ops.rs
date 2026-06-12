@@ -805,8 +805,11 @@ impl VM {
             if (name.starts_with('@') || name.starts_with('%'))
                 && let Some(container) = self.locals_get_by_name(code, &name)
             {
-                self.interpreter
-                    .set_container_default(&container, default_value.clone());
+                let container = self
+                    .interpreter
+                    .tag_container_default(container, default_value.clone());
+                self.locals_set_by_name(code, &name, container.clone());
+                self.set_env_with_main_alias(&name, container.clone());
                 // Replace existing Nil and uninitialized (Package("Any"))
                 // elements with the default value (Raku container semantics:
                 // Nil/uninitialized slots in a defaulted container become
@@ -831,8 +834,9 @@ impl VM {
                             .collect();
                         let new_arr =
                             Value::Array(Arc::new(crate::value::ArrayData::new(replaced)), kind);
-                        self.interpreter
-                            .set_container_default(&new_arr, default_value.clone());
+                        let new_arr = self
+                            .interpreter
+                            .tag_container_default(new_arr, default_value.clone());
                         self.locals_set_by_name(code, &name, new_arr.clone());
                         self.set_env_with_main_alias(&name, new_arr);
                     }

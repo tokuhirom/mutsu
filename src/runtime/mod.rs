@@ -1022,9 +1022,7 @@ pub struct Interpreter {
     atomic_var_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
-    /// Array element defaults for `is default(...)`, keyed by Arc pointer
-    /// identity with a Weak guard against pointer reuse (see `ptr_keyed`).
-    array_defaults: PtrKeyedMap<crate::value::ArrayData, Value>,
+    // Array element defaults are embedded in `ArrayData.default`.
     /// Hash element defaults for `is default(...)` (guarded; see `ptr_keyed`).
     hash_defaults: PtrKeyedMap<crate::value::HashData, Value>,
     /// Optional hash key type constraints (e.g. `%h{Str}`).
@@ -3119,7 +3117,6 @@ impl Interpreter {
             var_type_constraints: HashMap::new(),
             atomic_var_seen: false,
             var_defaults: HashMap::new(),
-            array_defaults: PtrKeyedMap::new(),
             hash_defaults: PtrKeyedMap::new(),
             var_hash_key_constraints: HashMap::new(),
             instance_type_metadata: HashMap::new(),
@@ -4492,18 +4489,31 @@ impl Interpreter {
     }
 
     /// Set the element default for a container (Array/Hash) by Arc pointer identity.
-    pub(crate) fn set_container_default(&mut self, value: &Value, default: Value) {
+    /// Attach an `is default(...)` element default to a container, returning
+    /// the (possibly rebuilt) value. For arrays the default is embedded in the
+    /// `ArrayData` (callers MUST store the returned value back into the slot it
+    /// came from); for hashes it stays on the pointer-keyed side table and the
+    /// same value is returned.
+    pub(crate) fn tag_container_default(&mut self, value: Value, default: Value) -> Value {
         match value {
-            Value::Array(items, ..) => self.array_defaults.insert(items, default),
-            Value::Hash(map) => self.hash_defaults.insert(map, default),
-            _ => {}
+            Value::Array(mut arc, kind) => {
+                if arc.default.as_deref() != Some(&default) {
+                    Arc::make_mut(&mut arc).default = Some(Box::new(default));
+                }
+                Value::Array(arc, kind)
+            }
+            Value::Hash(map) => {
+                self.hash_defaults.insert(&map, default);
+                Value::Hash(map)
+            }
+            other => other,
         }
     }
 
-    /// Get the element default for a container (Array/Hash) by Arc pointer identity.
-    pub(crate) fn container_default(&self, value: &Value) -> Option<&Value> {
+    /// Get the element default for a container (Array/Hash).
+    pub(crate) fn container_default<'v>(&'v self, value: &'v Value) -> Option<&'v Value> {
         match value {
-            Value::Array(items, ..) => self.array_defaults.get_arc(items),
+            Value::Array(items, ..) => items.default.as_deref(),
             Value::Hash(map) => self.hash_defaults.get_arc(map),
             _ => None,
         }
@@ -4712,25 +4722,6 @@ impl Interpreter {
         {
             let tagged = self.tag_container_metadata(arr, info.clone());
             self.env.insert(key.to_string(), tagged);
-        }
-    }
-
-    /// Capture a container's pointer-keyed `is default(...)` value before an
-    /// in-place mutation. `Arc::make_mut` relocates the payload of a guarded
-    /// container (the defaults tables hold a `Weak` per entry), so the
-    /// post-mutation value carries a fresh pointer; pair with
-    /// `restore_container_meta` to move the default along. (Container *type*
-    /// metadata is embedded in the backing data struct and travels with the
-    /// copy-on-write clone on its own.)
-    pub(crate) fn capture_container_meta(&self, value: &Value) -> Option<Value> {
-        self.container_default(value).cloned()
-    }
-
-    /// Re-attach the default captured by `capture_container_meta` to the
-    /// post-mutation container value.
-    pub(crate) fn restore_container_meta(&mut self, value: &Value, saved: Option<Value>) {
-        if let Some(default) = saved {
-            self.set_container_default(value, default);
         }
     }
 
@@ -5533,7 +5524,6 @@ impl Interpreter {
             // running the atomic-variable read check.
             atomic_var_seen: self.atomic_var_seen,
             var_defaults: self.var_defaults.clone(),
-            array_defaults: self.array_defaults.clone(),
             hash_defaults: self.hash_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),

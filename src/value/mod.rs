@@ -1349,6 +1349,11 @@ pub struct ArrayData {
     pub key_type: Option<String>,
     /// Declared container type name (e.g. `Array[Int]`, `array[int]`), if any.
     pub declared_type: Option<String>,
+    /// `is default(...)` element default. Embedded so it travels with the
+    /// container through copy-on-write (the pointer-keyed side table broke
+    /// whenever the backing Arc was rebuilt), and so pure value-level code
+    /// (e.g. the Array→Slip coercion materializing holes) can read it.
+    pub default: Option<Box<Value>>,
 }
 
 impl ArrayData {
@@ -1358,6 +1363,7 @@ impl ArrayData {
             value_type: None,
             key_type: None,
             declared_type: None,
+            default: None,
         }
     }
 
@@ -2696,6 +2702,7 @@ impl Value {
             value_type: like.value_type.clone(),
             key_type: like.key_type.clone(),
             declared_type: like.declared_type.clone(),
+            default: like.default.clone(),
         })
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
