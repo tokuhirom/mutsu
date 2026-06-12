@@ -575,7 +575,11 @@ pub(super) fn dispatch(
                 attributes,
                 ..
             } if class_name == "Failure" => {
-                if let Some(ex) = attributes.as_map().get("exception") {
+                // Sinking a *handled* Failure is a no-op; only an unhandled
+                // Failure throws its exception when sunk.
+                if target.is_failure_handled() {
+                    Some(Ok(Value::Nil))
+                } else if let Some(ex) = attributes.as_map().get("exception") {
                     let mut err = RuntimeError::new(ex.to_string_value());
                     err.exception = Some(Box::new(ex.clone()));
                     Some(Err(err))

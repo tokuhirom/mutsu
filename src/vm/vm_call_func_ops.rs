@@ -25,6 +25,73 @@ impl VM {
         }
     }
 
+    /// Control-flow / dispatch-control names that must never be taken over by
+    /// the lexical `&`-var VM dispatch: the interpreter's call_function match
+    /// implements their non-local semantics (loop control, gather/take,
+    /// multi-dispatch redirection), and a lexical `&return`-style binding
+    /// dispatched as a plain closure would lose them (or recurse infinitely).
+    fn is_control_flow_function_name(name: &str) -> bool {
+        matches!(
+            name,
+            "return"
+                | "return-rw"
+                | "take"
+                | "take-rw"
+                | "emit"
+                | "done"
+                | "last"
+                | "next"
+                | "redo"
+                | "proceed"
+                | "succeed"
+                | "leave"
+                | "die"
+                | "fail"
+                | "warn"
+                | "exit"
+                | "callsame"
+                | "nextsame"
+                | "callwith"
+                | "nextwith"
+                | "samewith"
+                | "nextcallee"
+                | "lastcall"
+                | "make"
+                | "start"
+        )
+    }
+
+    /// Resolve a *pure* lexical `&name` callable for VM-native dispatch
+    /// (Track A): a `&code` parameter binding (local slot) or a `my &f = ...`
+    /// env binding, for a name with NO same-named package sub / proto / multi
+    /// (the shadow case is handled separately via `lexical_override` in
+    /// `exec_call_func_op`). Restricted to plain `Sub`/`WeakSub` values —
+    /// `Routine` (builtin references like `&r = &return`), `Mixin` (CALL-ME)
+    /// and anything else keep the interpreter terminal, whose dispatch handles
+    /// their special semantics. Returns `None` for builtin / interpreter-handled
+    /// / carrier / control-flow names so precedence is unchanged.
+    pub(super) fn lexical_amp_var_callable(
+        &mut self,
+        code: Option<&CompiledCode>,
+        name: &str,
+    ) -> Option<Value> {
+        if Self::is_control_flow_function_name(name)
+            || crate::runtime::Interpreter::is_builtin_function(name)
+            || Self::is_interpreter_carrier_function(name)
+            || self.is_interpreter_handled_function(name)
+            || self.has_function(name)
+            || self.has_proto(name)
+            || self.has_multi_candidates_cached(name)
+        {
+            return None;
+        }
+        let ampname = format!("&{}", name);
+        let candidate = code
+            .and_then(|c| self.locals_get_by_name(c, &ampname))
+            .or_else(|| self.interpreter.env().get(&ampname).cloned());
+        candidate.filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_)))
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -798,6 +865,17 @@ impl VM {
                 } else if let Some(result) = self.try_native_test_function(name, &args) {
                     // Dispatch Test functions straight to their typed handler (lever A).
                     result
+                } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), name) {
+                    // Pure lexical `&name` callable (a `&code` parameter or
+                    // `my &f = ...` with no same-named package sub): dispatch
+                    // VM-natively via vm_call_on_value instead of the interpreter
+                    // terminal (Track A, ledger §2). Builtin priority is preserved
+                    // because try_native_function already ran above. Dynamic vars
+                    // (`my $*ERR` in the caller) stay visible because
+                    // call_compiled_closure roots the closure frame at the live
+                    // caller env (scoped_child) and the captured-env merge is
+                    // or_insert (parent-chain aware), so it never shadows them.
+                    self.vm_call_on_value(callable, args, Some(compiled_fns))
                 } else {
                     // Sync VM locals to env before spawning threads so closures capture them
                     if name == "start" {
