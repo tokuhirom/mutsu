@@ -233,9 +233,23 @@ impl VM {
                             if !self.interpreter.in_lvalue_assignment
                                 && let Value::Proxy { ref fetcher, .. } = result
                             {
-                                return self
-                                    .interpreter
-                                    .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                                // Without a `:=` adjustment the triple's map is
+                                // the stale entry snapshot (the lazy reconcile
+                                // skips the cell clone) — re-snapshot the live
+                                // cell for the proxy fetcher.
+                                let proxy_attrs = if !attrs_adjusted && let Some(cell) = &attrs_cell
+                                {
+                                    cell.to_map()
+                                } else {
+                                    new_attrs
+                                };
+                                return self.interpreter.proxy_fetch(
+                                    fetcher,
+                                    None,
+                                    &cn,
+                                    &proxy_attrs,
+                                    id,
+                                );
                             }
                         }
                         return Ok(result);
@@ -1353,9 +1367,17 @@ impl VM {
             if !self.interpreter.in_lvalue_assignment
                 && let Value::Proxy { ref fetcher, .. } = result
             {
+                // Without a `:=` adjustment the triple's map is the stale entry
+                // snapshot (the lazy reconcile skips the cell clone) —
+                // re-snapshot the live cell for the proxy fetcher.
+                let proxy_attrs = if !attrs_adjusted && let Some(cell) = &attrs_cell {
+                    cell.to_map()
+                } else {
+                    new_attrs
+                };
                 return self
                     .interpreter
-                    .proxy_fetch(fetcher, None, cn, &new_attrs, id);
+                    .proxy_fetch(fetcher, None, cn, &proxy_attrs, id);
             }
         }
         Ok(result)
@@ -1596,9 +1618,23 @@ impl VM {
                             if !self.interpreter.in_lvalue_assignment
                                 && let Value::Proxy { ref fetcher, .. } = result
                             {
-                                return self
-                                    .interpreter
-                                    .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                                // Without a `:=` adjustment the triple's map is
+                                // the stale entry snapshot (the lazy reconcile
+                                // skips the cell clone) — re-snapshot the live
+                                // cell for the proxy fetcher.
+                                let proxy_attrs = if !attrs_adjusted && let Some(cell) = &attrs_cell
+                                {
+                                    cell.to_map()
+                                } else {
+                                    new_attrs
+                                };
+                                return self.interpreter.proxy_fetch(
+                                    fetcher,
+                                    None,
+                                    &cn,
+                                    &proxy_attrs,
+                                    id,
+                                );
                             }
                         }
                         return Ok(result);
@@ -1698,9 +1734,17 @@ impl VM {
                     if !self.interpreter.in_lvalue_assignment
                         && let Value::Proxy { ref fetcher, .. } = result
                     {
+                        // Without a `:=` adjustment the triple's map is the stale
+                        // entry snapshot (lazy reconcile) — re-snapshot the live
+                        // cell for the proxy fetcher.
+                        let proxy_attrs = if !attrs_adjusted && let Some(cell) = &attrs_cell {
+                            cell.to_map()
+                        } else {
+                            new_attrs
+                        };
                         return self
                             .interpreter
-                            .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                            .proxy_fetch(fetcher, None, &cn, &proxy_attrs, id);
                     }
                 }
                 return Ok(result);
