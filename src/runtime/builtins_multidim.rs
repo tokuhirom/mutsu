@@ -393,9 +393,15 @@ impl Interpreter {
         // same array/hash container).
         if let Some(old_arc) = &old_array_arc {
             self.propagate_shared_array_in_instances(old_arc, &updated);
+            // Also propagate to plain variables sharing the same Arc, so a
+            // mutation through a Pair value (`$pair.value[0] = x`) writes back
+            // to the source variable the Pair aliases (`my $a = [...]; $p = ($a
+            // => $a); $p.value[0] = x` updates `$a`). See roast S02-types/pair.t.
+            self.overwrite_array_bindings_by_identity(old_arc, updated.clone());
         }
         if let Some(old_arc) = &old_hash_arc {
             self.propagate_shared_hash_in_instances(old_arc, &updated);
+            self.overwrite_hash_bindings_by_identity(old_arc, updated.clone());
         }
 
         // Write back via the setter
