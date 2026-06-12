@@ -2094,18 +2094,28 @@ impl Interpreter {
     }
 
     /// Restore one `let`/`temp` save. For an instance, write the saved
-    /// attributes back into the *live* shared cell (via cell reuse) so every
-    /// alias sees the restoration and object identity (id + cell) is preserved,
-    /// rather than rebinding the name to a detached copy.
+    /// attributes back into the *live* shared cell of the variable's current
+    /// binding so every alias sees the restoration and object identity (id +
+    /// cell) is preserved, rather than rebinding the name to a detached copy.
     fn restore_let_value(&mut self, name: String, restored: Value) {
         if let Value::Instance {
-            class_name,
-            id,
-            attributes,
+            attributes: saved_attrs,
+            ..
         } = &restored
         {
-            let inst = Value::make_instance_with_id(*class_name, attributes.to_map(), *id);
-            self.env.insert(name, inst);
+            // The current binding for `name` holds the live instance (the same
+            // shared cell that was mutated during the dynamic scope). Write the
+            // saved snapshot straight back into that cell; the env binding already
+            // aliases it, so no re-insert is needed.
+            if let Some(Value::Instance {
+                attributes: live_attrs,
+                ..
+            }) = self.env.get(&name)
+            {
+                live_attrs.commit_attrs(saved_attrs.to_map());
+                return;
+            }
+            self.env.insert(name, restored);
         } else {
             self.env.insert(name, restored);
         }

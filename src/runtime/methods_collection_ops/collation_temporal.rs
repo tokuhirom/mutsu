@@ -55,7 +55,7 @@ impl Interpreter {
                     }
                 }
 
-                let result = Value::make_instance_with_id(*class_name, new_attrs, *id);
+                let result = Value::write_back_sharing(attributes, *class_name, new_attrs, *id);
                 // Also update the target in-place (Collation.set mutates and returns self)
                 Ok(result)
             }

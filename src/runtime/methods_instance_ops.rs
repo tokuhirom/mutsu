@@ -89,11 +89,7 @@ impl Interpreter {
                         args,
                         Some(target.clone()),
                     )?;
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        *target_id,
-                        updated,
-                    );
+                    attributes.commit_attrs(updated);
                     return Ok(result);
                 }
                 // Private method not found — fall back to private attribute access.
@@ -135,18 +131,13 @@ impl Interpreter {
                         _ => Self::value_to_list(value),
                     }
                 };
-                let mut update_items = |new_items: Vec<Value>| {
+                let update_items = |new_items: Vec<Value>| {
                     let mut updated_attrs = attributes.to_map();
                     updated_attrs.insert(
                         "__mutsu_iterationbuffer_items".to_string(),
                         Value::real_array(new_items),
                     );
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        *target_id,
-                        updated_attrs.clone(),
-                    );
-                    Value::make_instance_with_id(*class_name, updated_attrs, *target_id)
+                    Value::write_back_sharing(attributes, *class_name, updated_attrs, *target_id)
                 };
                 match method {
                     "elems" if args.is_empty() => return Ok(Value::Int(items.len() as i64)),
@@ -316,18 +307,13 @@ impl Interpreter {
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         if let Value::Instance {
-                            class_name: obj_class,
                             attributes: obj_attrs,
-                            id: obj_id,
+                            ..
                         } = &args[0]
                         {
-                            let updated = (**obj_attrs).clone();
+                            let mut updated = obj_attrs.to_map();
                             updated.insert(attr_name, new_val);
-                            self.overwrite_instance_bindings_by_identity(
-                                &obj_class.resolve(),
-                                *obj_id,
-                                (updated).to_map(),
-                            );
+                            obj_attrs.commit_attrs(updated);
                         }
                         return Ok(Value::Nil);
                     }
@@ -652,11 +638,7 @@ impl Interpreter {
                         method,
                         args,
                     )?;
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        *target_id,
-                        updated,
-                    );
+                    attributes.commit_attrs(updated);
                     return Ok(result);
                 }
                 if matches!(
@@ -840,11 +822,7 @@ impl Interpreter {
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    *target_id,
-                    updated.clone(),
-                );
+                attributes.commit_attrs(updated.clone());
                 // Auto-FETCH if the method returned a Proxy
                 if !self.in_lvalue_assignment
                     && let Value::Proxy { ref fetcher, .. } = result

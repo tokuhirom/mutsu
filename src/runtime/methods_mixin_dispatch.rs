@@ -109,13 +109,11 @@ impl Interpreter {
                 // attributes like `@.order`) so that `$.attr` accessors inside
                 // the role method see and can mutate the class's state, then
                 // overlay the role's own `__mutsu_attr__` attributes.
-                let (inner_class, inner_id, mut method_attrs) = match inner.as_ref() {
-                    Value::Instance {
-                        class_name,
-                        attributes,
-                        id,
-                    } => (Some(class_name.resolve()), Some(*id), attributes.to_map()),
-                    _ => (None, None, HashMap::new()),
+                let (inner_cell, mut method_attrs) = match inner.as_ref() {
+                    Value::Instance { attributes, .. } => {
+                        (Some(attributes.clone()), attributes.to_map())
+                    }
+                    _ => (None, HashMap::new()),
                 };
                 for (key, value) in mixins.iter() {
                     if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
@@ -146,8 +144,8 @@ impl Interpreter {
                 // `push @.order, ...`) are visible after the call returns. This
                 // updates every binding in scope that holds the same instance
                 // (including the one wrapped inside this Mixin).
-                if let (Some(class_name), Some(id)) = (inner_class, inner_id) {
-                    self.overwrite_instance_bindings_by_identity(&class_name, id, updated);
+                if let Some(cell) = &inner_cell {
+                    cell.commit_attrs(updated);
                 }
                 return Some(Ok(result));
             }

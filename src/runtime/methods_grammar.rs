@@ -277,9 +277,9 @@ impl Interpreter {
                     ..
                 } = &result
                 {
-                    let attrs = attributes.as_ref().clone();
+                    let mut attrs = attributes.to_map();
                     attrs.insert("actions".to_string(), actions.clone());
-                    Value::make_instance_with_id(*class_name, (attrs).to_map(), *id)
+                    Value::write_back_sharing(attributes, *class_name, attrs, *id)
                 } else {
                     result
                 }

@@ -625,7 +625,7 @@ impl Interpreter {
         {
             let mut attrs = attributes.to_map();
             attrs.insert("formatter".to_string(), formatter_value.clone());
-            let dt_with_formatter = Value::make_instance_with_id(class_name, attrs, id);
+            let dt_with_formatter = Value::write_back_sharing(attributes, class_name, attrs, id);
             let saved_env = self.env().clone();
             let saved_readonly = self.save_readonly_vars();
             let rendered =
@@ -641,11 +641,12 @@ impl Interpreter {
                 id,
             } = dt_with_formatter
             {
-                let updated = (*attributes).clone();
+                let mut updated = attributes.to_map();
                 updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
-                return Some(Ok(Value::make_instance_with_id(
+                return Some(Ok(Value::write_back_sharing(
+                    &attributes,
                     class_name,
-                    (updated).to_map(),
+                    updated,
                     id,
                 )));
             }

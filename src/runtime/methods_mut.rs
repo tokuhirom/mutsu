@@ -1,8 +1,10 @@
 use super::methods_signature::make_x_immutable_error;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::InstanceAttrs;
 use num_bigint::BigInt;
 use num_traits::Signed;
+use std::sync::Arc;
 
 fn value_to_bigint(value: &Value) -> BigInt {
     match value {
@@ -297,31 +299,23 @@ impl Interpreter {
         needle: &std::sync::Arc<Vec<Value>>,
         replacement: &Value,
     ) {
-        let mut updates: Vec<(Symbol, Symbol, u64, String)> = Vec::new();
+        let mut updates: Vec<(Symbol, String)> = Vec::new();
         for (var_name, value) in self.env.iter() {
-            if let Value::Instance {
-                class_name,
-                attributes,
-                id,
-            } = value
-            {
+            if let Value::Instance { attributes, .. } = value {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let Value::Array(arc, ..) = attr_val
                         && std::sync::Arc::ptr_eq(arc, needle)
                     {
-                        updates.push((*var_name, *class_name, *id, attr_key.clone()));
+                        updates.push((*var_name, attr_key.clone()));
                     }
                 }
             }
         }
-        for (var_name, class_name, id, attr_key) in updates {
+        for (var_name, attr_key) in updates {
             if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
-                let mut updated = attributes.to_map();
-                updated.insert(attr_key, replacement.clone());
-                self.env.insert_sym(
-                    var_name,
-                    Value::make_instance_with_id(class_name, updated, id),
-                );
+                // The env binding shares this instance's live cell, so the in-place
+                // insert is visible without rebuilding/re-inserting the value.
+                attributes.insert(attr_key, replacement.clone());
             }
         }
     }
@@ -332,31 +326,22 @@ impl Interpreter {
         needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
         replacement: &Value,
     ) {
-        let mut updates: Vec<(Symbol, Symbol, u64, String)> = Vec::new();
+        let mut updates: Vec<(Symbol, String)> = Vec::new();
         for (var_name, value) in self.env.iter() {
-            if let Value::Instance {
-                class_name,
-                attributes,
-                id,
-            } = value
-            {
+            if let Value::Instance { attributes, .. } = value {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let Value::Hash(arc) = attr_val
                         && std::sync::Arc::ptr_eq(arc, needle)
                     {
-                        updates.push((*var_name, *class_name, *id, attr_key.clone()));
+                        updates.push((*var_name, attr_key.clone()));
                     }
                 }
             }
         }
-        for (var_name, class_name, id, attr_key) in updates {
+        for (var_name, attr_key) in updates {
             if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
-                let mut updated = attributes.to_map();
-                updated.insert(attr_key, replacement.clone());
-                self.env.insert_sym(
-                    var_name,
-                    Value::make_instance_with_id(class_name, updated, id),
-                );
+                // Shared live cell — in-place insert is visible to the env binding.
+                attributes.insert(attr_key, replacement.clone());
             }
         }
     }
@@ -455,28 +440,6 @@ impl Interpreter {
                 }
             }
         }
-    }
-
-    pub(crate) fn overwrite_instance_bindings_by_identity(
-        &mut self,
-        _class_name: &str,
-        id: u64,
-        updated: std::collections::HashMap<String, Value>,
-    ) {
-        // Phase 3, Stage 2c: write the new attributes straight into the live
-        // shared cell. Because every alias of this instance — in this frame, any
-        // caller frame, a `ContainerRef`-boxed capture, a role `Mixin`, or a
-        // nested attribute of another instance — shares that cell (the
-        // `Arc<InstanceAttrs>` is cloned by reference, never deep-copied except
-        // for an explicit `.clone`), this single write makes the mutation visible
-        // everywhere. The former by-identity scan over `self.env`/`self.locals`
-        // that rebuilt each holder via `make_instance_with_id` is now redundant —
-        // those rebuilds reused the very same cell — and has been removed.
-        //
-        // `_class_name` is vestigial (the cell is keyed by `id` alone); it is kept
-        // on the signature to avoid churning ~40 call sites in this slice and will
-        // be dropped when this choke point is retired in a later Stage 2c slice.
-        crate::value::update_instance_cell(id, &updated);
     }
 
     /// Call a Proxy callback (FETCH or STORE) in the context of an instance's attributes.
@@ -590,13 +553,17 @@ impl Interpreter {
     }
 
     /// Call Proxy STORE with a new value, propagating attribute updates to the instance.
+    ///
+    /// `attributes` is the (post-method-run) snapshot fed to the STORE callback;
+    /// `attrs_cell` is the receiver instance's live shared cell that the updated
+    /// attributes are written back into in place (Phase 3 registry-removal).
     pub(crate) fn proxy_store(
         &mut self,
         storer: &Value,
         target_var: Option<&str>,
-        class_name: &str,
+        class_name: Symbol,
         attributes: &HashMap<String, Value>,
-        target_id: u64,
+        attrs_cell: &Arc<InstanceAttrs>,
         new_value: Value,
     ) -> Result<Value, RuntimeError> {
         let proxy_val = Value::Proxy {
@@ -607,12 +574,12 @@ impl Interpreter {
         };
         let (_result, updated) =
             self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
-        // Propagate attribute changes back to the instance
+        // Propagate attribute changes back to the instance's live cell.
         if let Some(var_name) = target_var {
-            self.overwrite_instance_bindings_by_identity(class_name, target_id, updated.clone());
+            attrs_cell.commit_attrs(updated);
             self.env.insert(
                 var_name.to_string(),
-                Value::make_instance_with_id(Symbol::intern(class_name), updated, target_id),
+                Value::instance_sharing_cell(attrs_cell, class_name, attrs_cell.instance_id()),
             );
         }
         // Assignment returns the assigned value, not the STORE callback's return value
@@ -861,15 +828,11 @@ impl Interpreter {
             let mut new_attrs = attributes.to_map();
             new_attrs.insert("chomp".to_string(), Value::Bool(new_chomp));
             let tid = *inst_id;
-            self.overwrite_instance_bindings_by_identity(
-                &class_name.resolve(),
-                tid,
-                new_attrs.clone(),
-            );
+            attributes.commit_attrs(new_attrs);
             if let Some(var_name) = target_var {
                 self.env.insert(
                     var_name.to_string(),
-                    Value::make_instance_with_id(*class_name, new_attrs, tid),
+                    Value::instance_sharing_cell(attributes, *class_name, tid),
                 );
             }
             return Ok(value);
@@ -1101,18 +1064,12 @@ impl Interpreter {
             let mut updated = attributes.to_map();
             updated.insert(attr_name, value.clone());
             let cn = *class_name;
+            attributes.commit_attrs(updated);
             if let Some(var_name) = target_var {
-                self.overwrite_instance_bindings_by_identity(
-                    &cn.resolve(),
-                    target_id,
-                    updated.clone(),
-                );
                 self.env.insert(
                     var_name.to_string(),
-                    Value::make_instance_with_id(cn, updated, target_id),
+                    Value::instance_sharing_cell(attributes, cn, target_id),
                 );
-            } else {
-                self.overwrite_instance_bindings_by_identity(&cn.resolve(), target_id, updated);
             }
             return Ok(value);
         }
@@ -1165,14 +1122,9 @@ impl Interpreter {
                         assigned_value.clone(),
                     );
                     if let Some(var_name) = target_var {
-                        self.overwrite_instance_bindings_by_identity(
-                            &cn.resolve(),
-                            target_id,
-                            updated.clone(),
-                        );
                         self.env.insert(
                             var_name.to_string(),
-                            Value::make_instance_with_id(cn, updated, target_id),
+                            Value::write_back_sharing(attributes, cn, updated, target_id),
                         );
                     }
                     return Ok(assigned_value);
@@ -1223,14 +1175,9 @@ impl Interpreter {
                         assigned_value.clone(),
                     );
                     if let Some(var_name) = target_var {
-                        self.overwrite_instance_bindings_by_identity(
-                            &cn.resolve(),
-                            target_id,
-                            updated.clone(),
-                        );
                         self.env.insert(
                             var_name.to_string(),
-                            Value::make_instance_with_id(cn, updated, target_id),
+                            Value::write_back_sharing(attributes, cn, updated, target_id),
                         );
                     }
                     return Ok(assigned_value);
@@ -1428,11 +1375,9 @@ impl Interpreter {
                 } else {
                     method.to_string()
                 };
-                let updated = (*attributes).clone();
-                let mut assigned_value = Self::normalize_rw_accessor_assignment(
-                    updated.as_map().get(&attr_key).cloned(),
-                    value,
-                );
+                let mut updated = attributes.to_map();
+                let mut assigned_value =
+                    Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
                 if matches!(assigned_value, Value::Nil)
@@ -1449,20 +1394,15 @@ impl Interpreter {
                     assigned_value = Value::Package(crate::symbol::Symbol::intern(&tc));
                 }
                 updated.insert(attr_key.clone(), assigned_value.clone());
-                // Always propagate the change to all env bindings referencing
-                // this instance (by identity). This handles chained accessor
-                // assignment like `$outer.inner.arr = ...` where target_var
-                // may be None but the instance is reachable through other
-                // env bindings.
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    target_id,
-                    (updated.clone()).to_map(),
-                );
+                // Always propagate the change into this instance's live shared
+                // cell. This handles chained accessor assignment like
+                // `$outer.inner.arr = ...` where target_var may be None but the
+                // instance is reachable through other aliases.
+                attributes.commit_attrs(updated);
                 if let Some(var_name) = target_var {
                     self.env.insert(
                         var_name.to_string(),
-                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
+                        Value::instance_sharing_cell(&attributes, class_name, target_id),
                     );
                     // Also update attribute env variables so compiled method
                     // writeback picks up the change (e.g. $.cnt += 4 inside a method)
@@ -1479,20 +1419,16 @@ impl Interpreter {
                 all_args.push(value.clone());
                 match self.call_native_instance_method_mut(
                     &class_name.resolve(),
-                    ((*attributes).clone()).to_map(),
+                    attributes.to_map(),
                     method,
                     all_args,
                 ) {
                     Ok((result, updated_attrs)) => {
-                        self.overwrite_instance_bindings_by_identity(
-                            &class_name.resolve(),
-                            target_id,
-                            updated_attrs.clone(),
-                        );
+                        attributes.commit_attrs(updated_attrs);
                         if let Some(var_name) = target_var {
                             self.env.insert(
                                 var_name.to_string(),
-                                Value::make_instance_with_id(class_name, updated_attrs, target_id),
+                                Value::instance_sharing_cell(&attributes, class_name, target_id),
                             );
                         }
                         return Ok(result);
@@ -1537,17 +1473,12 @@ impl Interpreter {
                 )?;
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
                 self.env.remove(&temp_var);
-                let updated = (*attributes).clone();
+                let mut updated = attributes.to_map();
                 updated.insert(attr_key.to_string(), updated_delegate);
                 if let Some(var_name) = target_var {
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        target_id,
-                        (updated.clone()).to_map(),
-                    );
                     self.env.insert(
                         var_name.to_string(),
-                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
+                        Value::write_back_sharing(&attributes, class_name, updated, target_id),
                     );
                 }
                 return Ok(result);
@@ -1560,7 +1491,7 @@ impl Interpreter {
             )));
         }
         if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
-            let updated = (*attributes).clone();
+            let mut updated = attributes.to_map();
             let current = if method_args.is_empty() {
                 self.call_method_with_values(
                     Value::Instance {
@@ -1589,14 +1520,9 @@ impl Interpreter {
             }
             updated.insert(attr_name, assigned_value.clone());
             if let Some(var_name) = target_var {
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    target_id,
-                    (updated.clone()).to_map(),
-                );
                 self.env.insert(
                     var_name.to_string(),
-                    Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
+                    Value::write_back_sharing(&attributes, class_name, updated, target_id),
                 );
             }
             return Ok(assigned_value);
@@ -1629,18 +1555,13 @@ impl Interpreter {
                 // Read back the potentially-updated delegate
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
                 self.env.remove(&temp_var);
-                // Write the updated delegate back into the frontend's attributes
-                let updated = (*attributes).clone();
+                // Write the updated delegate back into the frontend's live cell.
+                let mut updated = attributes.to_map();
                 updated.insert(attr_key.to_string(), updated_delegate);
                 if let Some(var_name) = target_var {
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        target_id,
-                        (updated.clone()).to_map(),
-                    );
                     self.env.insert(
                         var_name.to_string(),
-                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
+                        Value::write_back_sharing(&attributes, class_name, updated, target_id),
                     );
                 }
                 return Ok(result);
@@ -1652,10 +1573,9 @@ impl Interpreter {
         // results, allowing the raw Proxy to flow back for STORE dispatch.
         let was_lvalue = self.in_lvalue_assignment;
         self.in_lvalue_assignment = true;
-        let attrs_map = (*attributes).clone();
         let method_result = self.run_instance_method(
             &class_name.resolve(),
-            (attrs_map).to_map(),
+            attributes.to_map(),
             method,
             method_args,
             None,
@@ -1666,9 +1586,9 @@ impl Interpreter {
             return self.proxy_store(
                 storer,
                 target_var,
-                &class_name.resolve(),
+                class_name,
                 &updated_attrs,
-                target_id,
+                &attributes,
                 value,
             );
         }
@@ -1902,7 +1822,7 @@ impl Interpreter {
                     ));
                 };
                 let written = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
-                let updated_attrs = attributes.as_ref().clone();
+                let mut updated_attrs = attributes.to_map();
                 updated_attrs.insert(
                     "bytes".to_string(),
                     Value::array(
@@ -1912,14 +1832,10 @@ impl Interpreter {
                             .collect::<Vec<_>>(),
                     ),
                 );
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    *id,
-                    (updated_attrs.clone()).to_map(),
-                );
-                return Ok(Value::make_instance_with_id(
+                return Ok(Value::write_back_sharing(
+                    attributes,
                     *class_name,
-                    (updated_attrs).to_map(),
+                    updated_attrs,
                     *id,
                 ));
             }
@@ -1977,17 +1893,12 @@ impl Interpreter {
             crate::builtins::buf_write_num::apply_write_num(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
-            let updated_attrs = attributes.as_ref().clone();
+            let mut updated_attrs = attributes.to_map();
             updated_attrs.insert(
                 "bytes".to_string(),
                 Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
             );
-            self.overwrite_instance_bindings_by_identity(
-                &class_name.resolve(),
-                *id,
-                (updated_attrs.clone()).to_map(),
-            );
-            let updated = Value::make_instance_with_id(*class_name, (updated_attrs).to_map(), *id);
+            let updated = Value::write_back_sharing(attributes, *class_name, updated_attrs, *id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
@@ -2079,17 +1990,12 @@ impl Interpreter {
             crate::builtins::buf_write_int::apply_write_int(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
-            let updated_attrs = attributes.as_ref().clone();
+            let mut updated_attrs = attributes.to_map();
             updated_attrs.insert(
                 "bytes".to_string(),
                 Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
             );
-            self.overwrite_instance_bindings_by_identity(
-                &class_name.resolve(),
-                *id,
-                (updated_attrs.clone()).to_map(),
-            );
-            let updated = Value::make_instance_with_id(*class_name, (updated_attrs).to_map(), *id);
+            let updated = Value::write_back_sharing(attributes, *class_name, updated_attrs, *id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
@@ -3050,9 +2956,8 @@ impl Interpreter {
                 }
                 let from = from as usize;
                 let bits = bits as usize;
-                let updated = (*attributes).clone();
-                let mut bytes = if let Some(Value::Array(items, ..)) = updated.as_map().get("bytes")
-                {
+                let mut updated = attributes.to_map();
+                let mut bytes = if let Some(Value::Array(items, ..)) = updated.get("bytes") {
                     items
                         .iter()
                         .map(|v| match v {
@@ -3076,46 +2981,34 @@ impl Interpreter {
                     "bytes".to_string(),
                     Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
                 );
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    target_id,
-                    (updated.clone()).to_map(),
-                );
                 let updated_instance =
-                    Value::make_instance_with_id(class_name, (updated).to_map(), target_id);
+                    Value::write_back_sharing(&attributes, class_name, updated, target_id);
                 self.env
                     .insert(target_var.to_string(), updated_instance.clone());
                 return Ok(updated_instance);
             }
 
             if class_name == "Iterator" {
-                let updated = (*attributes).clone();
-                // Bind the source out in its own statement so the `as_map()` read
-                // guard is released before the body mutates `updated` in place
-                // (`updated.insert` below) — an `if let … = updated.as_map()…`
-                // would hold the guard for the whole body and self-deadlock.
-                let squish_source = updated.as_map().get("squish_source").cloned();
+                // A detached working copy of the attribute map; written back into
+                // the instance's live shared cell at the end.
+                let mut updated = attributes.to_map();
+                let squish_source = updated.get("squish_source").cloned();
                 if let Some(Value::Array(source, ..)) = squish_source {
-                    let mut scan_index = match updated.as_map().get("squish_scan_index") {
+                    let mut scan_index = match updated.get("squish_scan_index") {
                         Some(Value::Int(i)) if *i >= 0 => *i as usize,
                         _ => 0,
                     };
                     let mut prev_key = updated
-                        .as_map()
                         .get("squish_prev_key")
                         .cloned()
                         .unwrap_or(Value::Nil);
-                    let mut initialized = matches!(
-                        updated.as_map().get("squish_initialized"),
-                        Some(Value::Bool(true))
-                    );
+                    let mut initialized =
+                        matches!(updated.get("squish_initialized"), Some(Value::Bool(true)));
                     let as_func = updated
-                        .as_map()
                         .get("squish_as")
                         .cloned()
                         .filter(|v| !matches!(v, Value::Nil));
                     let with_func = updated
-                        .as_map()
                         .get("squish_with")
                         .cloned()
                         .filter(|v| !matches!(v, Value::Nil));
@@ -3164,10 +3057,10 @@ impl Interpreter {
 
                     let ret = match method {
                         "count-only" => self
-                            .iterator_count_only_from_attrs(&updated.as_map())?
+                            .iterator_count_only_from_attrs(&updated)?
                             .unwrap_or_else(|| Value::Int(0)),
                         "bool-only" => self
-                            .iterator_bool_only_from_attrs(&updated.as_map())?
+                            .iterator_bool_only_from_attrs(&updated)?
                             .unwrap_or(Value::Bool(false)),
                         "pull-one" => pull_one_squish(self)?,
                         "push-all" | "push-until-lazy" => {
@@ -3225,11 +3118,7 @@ impl Interpreter {
                                         "squish_initialized".to_string(),
                                         Value::Bool(initialized),
                                     );
-                                    self.overwrite_instance_bindings_by_identity(
-                                        &class_name.resolve(),
-                                        target_id,
-                                        (updated.clone()).to_map(),
-                                    );
+                                    attributes.commit_attrs(updated.clone());
                                     return Ok(Value::str_from("IterationEnd"));
                                 }
                             }
@@ -3305,23 +3194,18 @@ impl Interpreter {
                     );
                     updated.insert("squish_prev_key".to_string(), prev_key);
                     updated.insert("squish_initialized".to_string(), Value::Bool(initialized));
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        target_id,
-                        (updated.clone()).to_map(),
-                    );
                     let updated_instance =
-                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id);
+                        Value::write_back_sharing(&attributes, class_name, updated, target_id);
                     self.env
                         .insert(target_var.to_string(), updated_instance.clone());
                     return Ok(ret);
                 }
 
-                let items = match updated.as_map().get("items") {
+                let items = match updated.get("items") {
                     Some(Value::Array(values, ..)) => values.to_vec(),
                     _ => Vec::new(),
                 };
-                let mut index = match updated.as_map().get("index") {
+                let mut index = match updated.get("index") {
                     Some(Value::Int(i)) if *i >= 0 => *i as usize,
                     _ => 0,
                 };
@@ -3329,7 +3213,7 @@ impl Interpreter {
                 // A known logical count (set for `LHS xx N` lazy repeats) overrides
                 // the materialized prefix length, so `.count-only` / `.bool-only`
                 // on a stored iterator report the true (possibly infinite) count.
-                let known_count = updated.as_map().get("known_count").cloned();
+                let known_count = updated.get("known_count").cloned();
 
                 let mut append_to_first_array_arg = |vals: &[Value]| {
                     if vals.is_empty() {
@@ -3450,14 +3334,9 @@ impl Interpreter {
                 };
 
                 updated.insert("index".to_string(), Value::Int(index as i64));
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    target_id,
-                    (updated.clone()).to_map(),
-                );
                 self.env.insert(
                     target_var.to_string(),
-                    Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
+                    Value::write_back_sharing(&attributes, class_name, updated, target_id),
                 );
                 return Ok(ret);
             }
@@ -3478,11 +3357,8 @@ impl Interpreter {
                     .trim_start_matches('!');
                 let delegate = if is_method_based {
                     let source_method = attr_var_name.trim_start_matches('&').to_string();
-                    let invocant_val = Value::make_instance_with_id(
-                        class_name,
-                        ((*attributes).clone()).to_map(),
-                        target_id,
-                    );
+                    let invocant_val =
+                        Value::instance_sharing_cell(&attributes, class_name, target_id);
                     self.call_method_with_values(invocant_val, &source_method, Vec::new())?
                 } else {
                     attributes
@@ -3512,17 +3388,12 @@ impl Interpreter {
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
                 self.env.remove(&temp_var);
                 if !is_method_based {
-                    // Write the updated delegate back into the frontend's attributes
-                    let updated = (*attributes).clone();
+                    // Write the updated delegate back into the frontend's live cell.
+                    let mut updated = attributes.to_map();
                     updated.insert(attr_key.to_string(), updated_delegate);
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        target_id,
-                        (updated.clone()).to_map(),
-                    );
                     self.env.insert(
                         target_var.to_string(),
-                        Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
+                        Value::write_back_sharing(&attributes, class_name, updated, target_id),
                     );
                 }
                 // Restore skip_pseudo for the outer caller.
@@ -3547,17 +3418,12 @@ impl Interpreter {
                         .resolve_method(&class_name.resolve(), method, &[])
                         .is_some_and(|m| m.is_rw);
                     if !has_rw_method {
-                        let updated = (*attributes).clone();
+                        let mut updated = attributes.to_map();
                         let assigned = args[0].clone();
                         updated.insert(method.to_string(), assigned.clone());
-                        self.overwrite_instance_bindings_by_identity(
-                            &class_name.resolve(),
-                            target_id,
-                            (updated.clone()).to_map(),
-                        );
                         self.env.insert(
                             target_var.to_string(),
-                            Value::make_instance_with_id(class_name, (updated).to_map(), target_id),
+                            Value::write_back_sharing(&attributes, class_name, updated, target_id),
                         );
                         return Ok(assigned);
                     }
@@ -3598,19 +3464,14 @@ impl Interpreter {
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut(
                     &class_name.resolve(),
-                    ((*attributes).clone()).to_map(),
+                    attributes.to_map(),
                     method,
                     args.clone(),
                 ) {
                     Ok((result, updated)) => {
-                        self.overwrite_instance_bindings_by_identity(
-                            &class_name.resolve(),
-                            target_id,
-                            updated.clone(),
-                        );
                         self.env.insert(
                             target_var.to_string(),
-                            Value::make_instance_with_id(class_name, updated, target_id),
+                            Value::write_back_sharing(&attributes, class_name, updated, target_id),
                         );
                         return Ok(result);
                     }
@@ -3643,20 +3504,16 @@ impl Interpreter {
             {
                 let (result, updated) = self.run_instance_method(
                     &class_name.resolve(),
-                    ((*attributes).clone()).to_map(),
+                    attributes.to_map(),
                     method,
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    target_id,
-                    updated.clone(),
-                );
                 let updated_clone = updated.clone();
+                attributes.commit_attrs(updated);
                 self.env.insert(
                     target_var.to_string(),
-                    Value::make_instance_with_id(class_name, updated, target_id),
+                    Value::instance_sharing_cell(&attributes, class_name, target_id),
                 );
                 // Auto-FETCH if the method returned a Proxy
                 if !self.in_lvalue_assignment
@@ -3911,7 +3768,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let (class_name_sym, mut bytes, orig_id) = if let Value::Instance {
+        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let Value::Instance {
             class_name,
             attributes,
             id,
@@ -3931,7 +3788,7 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            (*class_name, items, *id)
+            (*class_name, items, *id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -3942,7 +3799,7 @@ impl Interpreter {
         bytes.resize(new_size, Value::Int(0));
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(bytes));
-        let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+        let updated = Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
@@ -3996,7 +3853,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (class_name_sym, mut bytes, orig_id) = if let Value::Instance {
+        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let Value::Instance {
             class_name,
             attributes,
             id,
@@ -4008,7 +3865,7 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            (*class_name, items, *id)
+            (*class_name, items, *id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -4045,7 +3902,7 @@ impl Interpreter {
 
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(bytes));
-        let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+        let updated = Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
@@ -4057,7 +3914,7 @@ impl Interpreter {
         method: &str,
         _args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (class_name_sym, mut bytes, orig_id) = if let Value::Instance {
+        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let Value::Instance {
             class_name,
             attributes,
             id,
@@ -4077,7 +3934,7 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            (*class_name, items, *id)
+            (*class_name, items, *id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -4103,7 +3960,8 @@ impl Interpreter {
                 let popped = bytes.pop().unwrap();
                 let mut attrs = HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));
-                let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+                let updated =
+                    Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
                 self.env.insert(target_var.to_string(), updated);
                 Ok(popped)
             }
@@ -4127,7 +3985,8 @@ impl Interpreter {
                 let shifted = bytes.remove(0);
                 let mut attrs = HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));
-                let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+                let updated =
+                    Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
                 self.env.insert(target_var.to_string(), updated);
                 Ok(shifted)
             }
@@ -4137,7 +3996,8 @@ impl Interpreter {
                 bytes.clear();
                 let mut attrs = HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));
-                let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+                let updated =
+                    Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
                 self.env.insert(target_var.to_string(), updated);
                 // Return a Buf with the spliced elements
                 let mut result_attrs = HashMap::new();

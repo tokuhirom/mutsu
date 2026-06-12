@@ -186,6 +186,10 @@ impl VM {
                             Value::Instance { id, .. } => Some(*id),
                             _ => None,
                         };
+                        let attrs_cell = match &target {
+                            Value::Instance { attributes, .. } => Some(attributes.clone()),
+                            _ => None,
+                        };
                         let attributes = match &target {
                             Value::Instance { attributes, .. } => attributes.to_map(),
                             _ => std::collections::HashMap::new(),
@@ -220,11 +224,9 @@ impl VM {
                         self.interpreter.pop_method_samewith_context();
                         let (result, new_attrs) = method_result?;
                         if let Some(id) = target_id {
-                            self.interpreter.overwrite_instance_bindings_by_identity(
-                                &cn,
-                                id,
-                                new_attrs.clone(),
-                            );
+                            if let Some(cell) = &attrs_cell {
+                                cell.commit_attrs(new_attrs.clone());
+                            }
                             if !self.interpreter.in_lvalue_assignment
                                 && let Value::Proxy { ref fetcher, .. } = result
                             {
@@ -1124,7 +1126,7 @@ impl VM {
         let Value::Instance {
             class_name,
             attributes,
-            id,
+            ..
         } = target
         else {
             return None;
@@ -1212,16 +1214,6 @@ impl VM {
             // Write through the shared cell in place: every alias of this
             // iterator instance (caller var, locals) sees the advance directly.
             attributes.insert("index".to_string(), Value::Int(index as i64));
-            let cn = class_name.resolve();
-            let inst_id = *id;
-            let snapshot = attributes.to_map();
-            // Legacy by-identity propagation (redundant now that the cell is
-            // shared; removed in Stage 2).
-            self.interpreter.overwrite_instance_bindings_by_identity(
-                &cn,
-                inst_id,
-                snapshot.clone(),
-            );
             self.env_dirty = true;
         }
         Some(Ok(ret))
@@ -1276,6 +1268,10 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         let target_id = match &target {
             Value::Instance { id, .. } => Some(*id),
+            _ => None,
+        };
+        let attrs_cell = match &target {
+            Value::Instance { attributes, .. } => Some(attributes.clone()),
             _ => None,
         };
         let attributes = match &target {
@@ -1345,8 +1341,9 @@ impl VM {
         };
         let (result, new_attrs) = method_result?;
         if let Some(id) = target_id {
-            self.interpreter
-                .overwrite_instance_bindings_by_identity(cn, id, new_attrs.clone());
+            if let Some(cell) = &attrs_cell {
+                cell.commit_attrs(new_attrs.clone());
+            }
             if !self.interpreter.in_lvalue_assignment
                 && let Value::Proxy { ref fetcher, .. } = result
             {
@@ -1546,6 +1543,10 @@ impl VM {
                             Value::Instance { id, .. } => Some(*id),
                             _ => None,
                         };
+                        let attrs_cell = match &target {
+                            Value::Instance { attributes, .. } => Some(attributes.clone()),
+                            _ => None,
+                        };
                         let attributes = match &target {
                             Value::Instance { attributes, .. } => attributes.to_map(),
                             _ => std::collections::HashMap::new(),
@@ -1580,11 +1581,9 @@ impl VM {
                         self.interpreter.pop_method_samewith_context();
                         let (result, new_attrs) = method_result?;
                         if let Some(id) = target_id {
-                            self.interpreter.overwrite_instance_bindings_by_identity(
-                                &cn,
-                                id,
-                                new_attrs.clone(),
-                            );
+                            if let Some(cell) = &attrs_cell {
+                                cell.commit_attrs(new_attrs.clone());
+                            }
                             if !self.interpreter.in_lvalue_assignment
                                 && let Value::Proxy { ref fetcher, .. } = result
                             {
@@ -1644,6 +1643,10 @@ impl VM {
                     Value::Instance { id, .. } => Some(*id),
                     _ => None,
                 };
+                let attrs_cell = match &target {
+                    Value::Instance { attributes, .. } => Some(attributes.clone()),
+                    _ => None,
+                };
                 let attributes = match &target {
                     Value::Instance { attributes, .. } => attributes.to_map(),
                     _ => std::collections::HashMap::new(),
@@ -1678,11 +1681,9 @@ impl VM {
                 self.interpreter.pop_method_samewith_context();
                 let (result, new_attrs) = method_result?;
                 if let Some(id) = target_id {
-                    self.interpreter.overwrite_instance_bindings_by_identity(
-                        &cn,
-                        id,
-                        new_attrs.clone(),
-                    );
+                    if let Some(cell) = &attrs_cell {
+                        cell.commit_attrs(new_attrs.clone());
+                    }
                     if !self.interpreter.in_lvalue_assignment
                         && let Value::Proxy { ref fetcher, .. } = result
                     {

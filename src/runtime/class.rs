@@ -1460,12 +1460,12 @@ impl Interpreter {
                 (
                     Value::Instance {
                         class_name,
+                        attributes: base_attrs,
                         id: base_id,
-                        ..
                     },
                     Value::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => {
-                    Value::make_instance_with_id(*class_name, attributes.clone(), *base_id)
+                    Value::write_back_sharing(base_attrs, *class_name, attributes.clone(), *base_id)
                 }
                 _ => v,
             };

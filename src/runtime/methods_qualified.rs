@@ -66,7 +66,7 @@ impl Interpreter {
         let Value::Instance {
             class_name: inst_class,
             attributes,
-            id: target_id,
+            ..
         } = target
         else {
             return None;
@@ -132,8 +132,6 @@ impl Interpreter {
             self.resolve_method_with_owner(qualifier, actual_method, &args)
         {
             let attrs_map = attributes.to_map();
-            let inst_cn = inst_cn_str.to_string();
-            let tid = *target_id;
             let (result, updated) = match self.run_instance_method(
                 qualifier,
                 attrs_map,
@@ -144,7 +142,7 @@ impl Interpreter {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
-            self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
+            attributes.commit_attrs(updated);
             if !self.in_lvalue_assignment
                 && let Value::Proxy { ref fetcher, .. } = result
             {
@@ -169,7 +167,6 @@ impl Interpreter {
                 {
                     let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str.to_string();
-                    let tid = *target_id;
                     let (result, updated) = match self.run_instance_method_resolved(
                         &inst_cn,
                         qualifier,
@@ -181,7 +178,7 @@ impl Interpreter {
                         Ok(v) => v,
                         Err(e) => return Some(Err(e)),
                     };
-                    self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
+                    attributes.commit_attrs(updated);
                     return Some(Ok(result));
                 }
             }
@@ -203,7 +200,6 @@ impl Interpreter {
                 if !def.is_private && self.method_args_match(&args, &def.param_defs) {
                     let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str.to_string();
-                    let tid = *target_id;
                     let (result, updated) = match self.run_instance_method_resolved(
                         &inst_cn,
                         qualifier,
@@ -215,7 +211,7 @@ impl Interpreter {
                         Ok(v) => v,
                         Err(e) => return Some(Err(e)),
                     };
-                    self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
+                    attributes.commit_attrs(updated);
                     return Some(Ok(result));
                 }
             }

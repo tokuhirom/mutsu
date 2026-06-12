@@ -2929,10 +2929,9 @@ impl Interpreter {
                 id,
             }) = self.env.get(key).cloned()
             {
-                let mut new_attrs: HashMap<String, Value> =
-                    (crate::value::InstanceAttrs::clone(&attributes)).to_map();
+                let mut new_attrs = attributes.to_map();
                 new_attrs.insert("version".to_string(), new_version.clone());
-                let new_val = Value::make_instance_with_id(class_name, new_attrs, id);
+                let new_val = Value::write_back_sharing(&attributes, class_name, new_attrs, id);
                 self.env.insert(key.to_string(), new_val);
             }
         }

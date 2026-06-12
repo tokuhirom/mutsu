@@ -546,36 +546,6 @@ impl Drop for AttrReadGuard<'_> {
     }
 }
 
-/// Registry mapping an instance id to its live attribute cell.
-///
-/// Phase 3, Stage 1 scaffolding: the legacy mutation path computes an updated
-/// `HashMap` and then rebuilds the instance via [`Value::make_instance_with_id`]
-/// / `overwrite_instance_bindings_by_identity`. With shared cells, rebuilding
-/// must reuse the *existing* cell (not allocate a detached one), or aliases in
-/// other call frames would stop seeing mutations. This `id -> Weak<cell>` map
-/// lets `make_instance_with_id` find and write through the live cell, which is
-/// what makes the by-reference sharing visible across frames and fixes the
-/// cross-frame mutation bug (see docs/container-identity.md Phase 3). Stage 2
-/// removes the rebuild hacks and this registry along with them.
-type InstanceCellRegistry = HashMap<u64, Weak<RwLock<HashMap<String, Value>>>>;
-
-fn instance_cells() -> &'static Mutex<InstanceCellRegistry> {
-    static INSTANCE_CELLS: OnceLock<Mutex<InstanceCellRegistry>> = OnceLock::new();
-    INSTANCE_CELLS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Register a freshly created cell for `id`.
-fn register_instance_cell(id: u64, cell: &AttrCell) {
-    if let Ok(mut map) = instance_cells().lock() {
-        map.insert(id, Arc::downgrade(cell));
-    }
-}
-
-/// Return the live cell for `id`, if one still exists.
-fn lookup_instance_cell(id: u64) -> Option<AttrCell> {
-    instance_cells().lock().ok()?.get(&id)?.upgrade()
-}
-
 #[derive(Debug)]
 pub(crate) struct InstanceAttrs {
     class_name: Symbol,
@@ -594,12 +564,10 @@ pub(crate) struct InstanceAttrs {
 }
 
 impl Clone for InstanceAttrs {
-    /// Deep, independent copy: a fresh cell with a snapshot of the map. This is
-    /// the rare explicit struct clone (writeback "updated" copies); it must NOT
-    /// share the cell — sharing flows through `Arc<InstanceAttrs>`. The copy is
-    /// transient, so it does not register in `instance_cells` (which must keep
-    /// pointing at the live shared cell) and does not participate in DESTROY
-    /// refcounting (`queue_destroy = false`).
+    /// Deep, independent copy: a fresh cell with a snapshot of the map. Used for
+    /// `.clone`-style independent copies and `temp`/`let` snapshots; it must NOT
+    /// share the cell — sharing flows through `Arc<InstanceAttrs>`. The copy does
+    /// not participate in DESTROY refcounting (`queue_destroy = false`).
     fn clone(&self) -> Self {
         Self {
             class_name: self.class_name,
@@ -614,7 +582,7 @@ impl Clone for InstanceAttrs {
 /// guard on it.
 ///
 /// If this thread is mid-read of the cell, a blocking write would self-deadlock
-/// (the `RwLock` is not reentrant): this happens when the legacy writeback runs
+/// (the `RwLock` is not reentrant): this happens when an attribute writeback runs
 /// while an outer call frame on the same thread still holds an `as_map()` borrow
 /// on this instance (e.g. the `$obj.attr = v` accessor, whose let-chain
 /// condition keeps the guard alive across the write-back). We can't skip the
@@ -624,8 +592,6 @@ impl Clone for InstanceAttrs {
 /// When this thread is *not* reading the cell we take a blocking write lock,
 /// which is required for correctness under genuine cross-thread contention
 /// (e.g. concurrent `cas` on a shared instance attribute must not drop updates).
-/// Stage 2 replaces this writeback with a mutate-at-the-source model where the
-/// guard is never held across the write.
 fn write_cell_respecting_reads(cell: &AttrCell, map: HashMap<String, Value>) {
     let addr = cell_addr(cell);
     if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
@@ -633,15 +599,6 @@ fn write_cell_respecting_reads(cell: &AttrCell, map: HashMap<String, Value>) {
         return;
     }
     *write_attrs(cell) = map;
-}
-
-pub(crate) fn update_instance_cell(id: u64, map: &HashMap<String, Value>) -> bool {
-    if let Some(cell) = lookup_instance_cell(id) {
-        write_cell_respecting_reads(&cell, map.clone());
-        true
-    } else {
-        false
-    }
 }
 
 /// Recover the map from a poisoned lock instead of propagating the panic. A
@@ -670,7 +627,6 @@ impl InstanceAttrs {
             *counts.entry(id).or_insert(0) += 1;
         }
         let cell: AttrCell = Arc::new(RwLock::new(attributes));
-        register_instance_cell(id, &cell);
         Self {
             class_name,
             attributes: cell,
@@ -710,6 +666,11 @@ impl InstanceAttrs {
         self.as_map().clone()
     }
 
+    /// This instance's stable identity id.
+    pub(crate) fn instance_id(&self) -> u64 {
+        self.id
+    }
+
     pub(crate) fn contains_key(&self, key: &str) -> bool {
         self.as_map().contains_key(key)
     }
@@ -731,6 +692,31 @@ impl InstanceAttrs {
     /// idiom), in place under the write lock.
     pub(crate) fn insert_if_absent(&self, key: String, value: Value) {
         write_attrs(&self.attributes).entry(key).or_insert(value);
+    }
+
+    /// Phase 3 registry-removal: replace the whole attribute map in place through
+    /// this instance's shared cell, deadlock-safe with respect to a same-thread
+    /// read guard (see [`write_cell_respecting_reads`]). Because every alias of the
+    /// instance shares this `Arc<InstanceAttrs>` cell, the new map is visible
+    /// everywhere — in this frame, any caller frame, a `ContainerRef`-boxed
+    /// capture, a role `Mixin`, or a nested attribute of another instance. This is
+    /// the in-place replacement for the legacy id→cell registry writeback
+    /// (`overwrite_instance_bindings_by_identity` / `update_instance_cell`), which
+    /// computed an updated `HashMap` and looked the cell up by id.
+    pub(crate) fn commit_attrs(&self, map: HashMap<String, Value>) {
+        write_cell_respecting_reads(&self.attributes, map);
+    }
+
+    /// Build an `InstanceAttrs` that SHARES this cell but carries a different
+    /// `class_name` (rebless / role mixin). The mutation visibility comes from the
+    /// shared cell; only the class tag differs.
+    fn with_class(&self, class_name: Symbol) -> Self {
+        Self::from_cell(
+            class_name,
+            Arc::clone(&self.attributes),
+            self.id,
+            self.queue_destroy,
+        )
     }
 }
 
@@ -3014,27 +3000,16 @@ impl Value {
         Self::make_instance_with_destroy(class_name, attributes, false)
     }
 
+    /// Build an instance with the given id and a fresh attribute cell. Used for
+    /// constructing a value with an explicit id (genuinely new instances, or
+    /// sentinel ids). Cross-frame sharing of mutations comes from cloning an
+    /// existing instance's `Arc<InstanceAttrs>` (see [`Value::instance_sharing_cell`]),
+    /// not from this constructor — so this never reuses another holder's cell.
     pub(crate) fn make_instance_with_id(
         class_name: Symbol,
         attributes: HashMap<String, Value>,
         id: u64,
     ) -> Self {
-        // Phase 3, Stage 1: if a live cell already exists for this id, this is a
-        // rebuild of an existing logical instance (the legacy writeback path).
-        // Write the new attributes through the *existing* shared cell and return
-        // an instance aliasing it, so every other holder of the instance — even
-        // ones in caller frames the scan never visits — sees the mutation.
-        if let Some(cell) = lookup_instance_cell(id) {
-            // Reuse the live cell. The write respects an outstanding same-thread
-            // read guard (see `write_cell_respecting_reads`) to avoid a
-            // self-deadlock, while still blocking for cross-thread contention.
-            write_cell_respecting_reads(&cell, attributes);
-            return Value::Instance {
-                class_name,
-                attributes: Arc::new(InstanceAttrs::from_cell(class_name, cell, id, true)),
-                id,
-            };
-        }
         Value::Instance {
             class_name,
             attributes: Arc::new(InstanceAttrs::new(class_name, attributes, id, true)),
@@ -3042,28 +3017,55 @@ impl Value {
         }
     }
 
-    /// Build an instance with the given id but a *fresh, unregistered* cell.
-    ///
-    /// Unlike [`Self::make_instance_with_id`], this does NOT reuse or register
-    /// the live shared cell for `id`, so it produces a value that is independent
-    /// of the in-flight instance. Used by the cross-thread atomic write-back,
-    /// where the authoritative store is `shared_vars` and reusing the shared
-    /// cell would let concurrent writers clobber it out of order.
+    /// Phase 3 registry-removal: return a `Value::Instance` that SHARES `attrs`'s
+    /// live cell, optionally under a new `class_name` (rebless / role mixin). This
+    /// replaces the `make_instance_with_id` rebuild branch, which reused the cell
+    /// by looking it up in the global `instance_cells` registry. Sharing the
+    /// `Arc<InstanceAttrs>` directly keeps in-place mutations visible to every
+    /// existing alias and to the returned value, without the registry.
+    pub(crate) fn instance_sharing_cell(
+        attrs: &Arc<InstanceAttrs>,
+        class_name: Symbol,
+        id: u64,
+    ) -> Value {
+        debug_assert_eq!(attrs.id, id, "instance_sharing_cell id mismatch");
+        let attributes = if attrs.class_name == class_name {
+            Arc::clone(attrs)
+        } else {
+            Arc::new(attrs.with_class(class_name))
+        };
+        Value::Instance {
+            class_name,
+            attributes,
+            id,
+        }
+    }
+
+    /// Phase 3 registry-removal: write `map` into `attrs`'s shared cell in place
+    /// and return a `Value::Instance` aliasing that same cell. The single helper
+    /// for the common writeback-then-rebuild pattern: it replaces the paired
+    /// `overwrite_instance_bindings_by_identity(..) + make_instance_with_id(..)`.
+    pub(crate) fn write_back_sharing(
+        attrs: &Arc<InstanceAttrs>,
+        class_name: Symbol,
+        map: HashMap<String, Value>,
+        id: u64,
+    ) -> Value {
+        attrs.commit_attrs(map);
+        Value::instance_sharing_cell(attrs, class_name, id)
+    }
+
+    /// Build an instance with the given id and a fresh cell, used by the
+    /// cross-thread atomic write-back where the authoritative store is
+    /// `shared_vars`. Equivalent to [`Self::make_instance_with_id`] now that
+    /// instances no longer share cells through a global registry; kept as a
+    /// distinct name to mark the atomic-sync intent at the call site.
     pub(crate) fn make_instance_detached(
         class_name: Symbol,
         attributes: HashMap<String, Value>,
         id: u64,
     ) -> Self {
-        Value::Instance {
-            class_name,
-            attributes: Arc::new(InstanceAttrs::from_cell(
-                class_name,
-                Arc::new(RwLock::new(attributes)),
-                id,
-                true,
-            )),
-            id,
-        }
+        Self::make_instance_with_id(class_name, attributes, id)
     }
 
     /// An independent snapshot for `temp`/`let` saves. An instance is deep-copied

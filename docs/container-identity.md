@@ -444,9 +444,19 @@ instance の binding に届かない。同一 id でも変異が frame 復帰で
                 **captured env コピー経由**で cell 非経由（撤去すると最初の要素変異が落ちる）。これは pre-existing な hash-element-via-closure の
                 cell 非対応（main でも `%!cache{k}=v` の closure 経由で最初の write が `(Any)` になる既知バグ）に依存しており、cell 化は別件。
                 fast-path scalar attr は locals 直挿入（env 非経由）のため対象外。
-        - [ ] **registry 撤去（別 slice・後回し）**: `instance_cells` + `make_instance_detached`/`update_instance_cell` 撤去
-              （callers が `self` の Arc を直接 in-place 変異する形へ。~50 の make_instance_with_id rebuild を全変換する all-or-nothing 大改修）+
-              CAS の cell-CAS 化。
+        - [x] **registry 撤去（done, branch `phase3-drop-instance-cell-registry`）**: `instance_cells`（`id -> Weak<cell>` グローバル
+              Mutex registry）+ `register_instance_cell`/`lookup_instance_cell`/`update_instance_cell`/`overwrite_instance_bindings_by_identity`
+              を**全廃**。~98 の writeback/rebuild サイト（`overwrite_*` 47 + rebuild `make_instance_with_id` 51）を、receiver の
+              `Arc<InstanceAttrs>` cell を直接 in-place 変異する 3 つの新ヘルパへ全変換:
+              `InstanceAttrs::commit_attrs(map)`（live cell へ in-place 書き、deadlock-safe な `write_cell_respecting_reads` 経由）/
+              `Value::instance_sharing_cell(attrs, class, id)`（Arc を共有して rebuild、class 変更時のみ cell 共有の新 InstanceAttrs）/
+              `Value::write_back_sharing(attrs, class, map, id)`（commit + share の複合）。**`make_instance_with_id` から id→cell reuse 分岐を削除**
+              （以後 fresh cell 専用＝genuinely-new / sentinel id 用のみ）。snapshot+id しか持たなかった `proxy_store`・buf write・MRO multi
+              invocant 等は receiver の Arc を呼び出しチェーンへ通して解決。`make_instance_detached` は registry 撤去後 `make_instance_with_id`
+              と等価になったが CAS の atomic-sync 意図マーカとして名前のみ残置（→ `make_instance_with_id` 委譲）。`_class_name` vestigial param 撤去。
+              副次効果: グローバル Mutex registry の Weak エントリ蓄積（メモリリーク）解消、id-0 sentinel Supply の cell 誤共有 latent バグ解消。
+              検証: cargo test 461、clippy 緑、whitelisted S12/S14/S17/S32-temporal/buf 40 ファイル + cross-frame/closure/temp-let/proxy/buf/iterator/grammar 全緑。
+        - [ ] **残（別 slice）**: CAS の cell-CAS 化（`make_instance_detached` + shared_vars 側道撤去、cell を atomic primitive に）。
   - 旧「一括」設計（下記）は Stage 2a/2b/2c に分割。以下は参照マップ。
 
   #### 現状メカニズム（CI 調査で確定したフルマップ）
