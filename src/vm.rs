@@ -2375,7 +2375,7 @@ impl VM {
 
             // -- Pair --
             OpCode::MakePair => {
-                self.exec_make_pair_op();
+                self.exec_make_pair_op(code);
                 *ip += 1;
             }
             OpCode::ContainerizePair => {

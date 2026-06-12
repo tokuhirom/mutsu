@@ -423,6 +423,23 @@ impl Compiler {
             return;
         }
 
+        // `key => $var`: capture the RHS scalar variable's container so the
+        // Pair's value aliases `$var` (Raku write-through, S02:1704). Tag the
+        // value with `WrapVarRef`; `MakePair` boxes the named local into a
+        // shared `ContainerRef` cell. Only plain (non-`::`) scalar variables
+        // are captured; literals and other expressions stay by-value.
+        if matches!(op, TokenKind::FatArrow)
+            && !self.suppress_pair_capture
+            && let Expr::Var(name) = right
+            && !name.contains("::")
+        {
+            self.compile_expr(left);
+            self.compile_expr(right);
+            let name_idx = self.code.add_constant(Value::str(name.clone()));
+            self.code.emit(OpCode::WrapVarRef(name_idx));
+            self.code.emit(OpCode::MakePair);
+            return;
+        }
         if let Some(opcode) = Self::binary_opcode(op) {
             if matches!(op, TokenKind::Ident(name) if name == "does") {
                 let var_name = match left {
