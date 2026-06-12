@@ -2407,11 +2407,21 @@ impl Interpreter {
                     if named_key.is_some() || named_value.is_some() {
                         let key = named_key.unwrap_or(Value::Nil);
                         let value = named_value.unwrap_or(Value::Nil);
-                        return Ok(Value::Pair(key.to_string_value(), Box::new(value)));
+                        // Preserve the original key type: a string key uses Pair,
+                        // any other key type uses ValuePair (mirrors the `=>` and
+                        // positional Pair.new behavior).
+                        return Ok(match &key {
+                            Value::Str(_) => Value::Pair(key.to_string_value(), Box::new(value)),
+                            _ => Value::ValuePair(Box::new(key), Box::new(value)),
+                        });
                     }
                     let key = positional.first().cloned().unwrap_or(Value::Nil);
                     let value = positional.get(1).cloned().unwrap_or(Value::Nil);
-                    return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
+                    // A string positional key also uses Pair for consistent display.
+                    return Ok(match &key {
+                        Value::Str(_) => Value::Pair(key.to_string_value(), Box::new(value)),
+                        _ => Value::ValuePair(Box::new(key), Box::new(value)),
+                    });
                 }
                 "Set" | "SetHash" => {
                     // Check for lazy inputs

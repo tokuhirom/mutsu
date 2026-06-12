@@ -1635,6 +1635,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // Parse regular method name
         let (r, method_name) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let r_before_ws = r;
         let (r, _) = ws(r)?;
         // Parse optional args in parens or colon-form
         let (rest, args) = if r.starts_with('(') {
@@ -1662,8 +1663,8 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 let (r, _) = parse_char(r, ')')?;
                 (r, args)
             }
-        } else if r.starts_with(':') && !r.starts_with("::") {
-            // Colon-arg syntax: .=method: arg, arg2
+        } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2 (no space before colon)
             let r = &r[1..];
             let (r, _) = ws(r)?;
             let (r, first_arg) = parse_colon_method_arg(r)?;
@@ -1693,6 +1694,20 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 let (r2, next) = parse_colon_method_arg(r2)?;
                 args.push(next);
                 r_inner = r2;
+            }
+            (r_inner, args)
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Fake-infix adverb form: .=method :key<val> (space before colon)
+            let mut args = Vec::new();
+            let mut r_inner = r;
+            while r_inner.starts_with(':') && !r_inner.starts_with("::") {
+                if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r_inner) {
+                    args.push(arg);
+                    let (r3, _) = ws(r2)?;
+                    r_inner = r3;
+                } else {
+                    break;
+                }
             }
             (r_inner, args)
         } else {
