@@ -3807,10 +3807,13 @@ impl VM {
                 }
                 Value::Hash(inner_hash) => {
                     if Arc::strong_count(inner_hash) > 1 {
-                        let ptr = Arc::as_ptr(inner_hash)
-                            as *mut std::collections::HashMap<String, Value>;
+                        let ptr = Arc::as_ptr(inner_hash) as *mut crate::value::HashData;
                         unsafe {
-                            Value::hash_insert_through(&mut *ptr, outer_key.clone(), val.clone());
+                            Value::hash_insert_through(
+                                &mut (*ptr).map,
+                                outer_key.clone(),
+                                val.clone(),
+                            );
                         }
                     } else {
                         let h = Arc::make_mut(inner_hash);
@@ -4217,9 +4220,9 @@ impl VM {
                 }
                 // Interior mutation: write into the hash via raw pointer
                 // so the change is visible to all holders of the same Arc.
-                let ptr = Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
                 unsafe {
-                    Value::hash_insert_through(&mut *ptr, key.clone(), val.clone());
+                    Value::hash_insert_through(&mut (*ptr).map, key.clone(), val.clone());
                 }
                 // For bind mode, set up a HashSlotRef on the source variable
                 if let Some(source_name) = &bind_source {

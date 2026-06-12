@@ -1414,6 +1414,23 @@ impl Interpreter {
                 {
                     assigned_value = Value::Package(crate::symbol::Symbol::intern(&tc));
                 }
+                // Embed the attribute's declared element type into the stored
+                // container so it survives later reads (`$o.h.of`, `.push` type
+                // enforcement). Hash metadata lives in `HashData`; without this
+                // an assignment to a typed `%`/`@` attribute would drop the type
+                // (the old side table re-derived it on every read).
+                if matches!(attr_sigil, '@' | '%')
+                    && matches!(assigned_value, Value::Hash(_) | Value::Array(..))
+                    && let Some(tc) = self.get_attr_type_constraint(&class_name.resolve(), method)
+                    && !matches!(tc.as_str(), "Mu" | "Any")
+                {
+                    let info = ContainerTypeInfo {
+                        value_type: tc,
+                        key_type: None,
+                        declared_type: None,
+                    };
+                    assigned_value = self.tag_container_metadata(assigned_value, info);
+                }
                 updated.insert(attr_key.clone(), assigned_value.clone());
                 // Always propagate the change into this instance's live shared
                 // cell. This handles chained accessor assignment like

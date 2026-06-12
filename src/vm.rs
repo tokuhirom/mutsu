@@ -3256,9 +3256,8 @@ impl VM {
                             unsafe { (*ptr).clear() };
                         }
                         Value::Hash(arc) => {
-                            let ptr =
-                                Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
+                            unsafe { (*ptr).map.clear() };
                         }
                         _ => {}
                     }
@@ -3271,9 +3270,8 @@ impl VM {
                             unsafe { (*ptr).clear() };
                         }
                         Value::Hash(arc) => {
-                            let ptr =
-                                Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
+                            unsafe { (*ptr).map.clear() };
                         }
                         _ => {
                             self.locals[slot] = Value::Nil;

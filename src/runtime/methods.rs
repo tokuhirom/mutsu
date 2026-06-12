@@ -1060,13 +1060,13 @@ impl Interpreter {
             };
             // Check if we can mutate in-place (shared reference)
             if Arc::strong_count(arc) > 1 {
-                let ptr = Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
                 unsafe {
                     for arg in args {
                         match arg {
                             Value::Pair(k, v) => {
                                 let key = k.as_str().to_string();
-                                let map = &mut *ptr;
+                                let map = &mut (*ptr).map;
                                 if let Some(existing) = map.get(&key) {
                                     // Key exists: create itemized array
                                     let arr = Value::Array(
@@ -1080,7 +1080,7 @@ impl Interpreter {
                             }
                             Value::ValuePair(k, v) => {
                                 let key = k.to_string_value();
-                                let map = &mut *ptr;
+                                let map = &mut (*ptr).map;
                                 if let Some(existing) = map.get(&key) {
                                     let arr = Value::Array(
                                         Arc::new(vec![existing.clone(), *v]),
