@@ -563,6 +563,34 @@ pub(crate) struct InstanceAttrs {
     queue_destroy: bool,
 }
 
+/// Type constraints for typed scalar `ContainerRef` cells, keyed by the cell's
+/// `Arc` pointer. A free typed container (e.g. `my Int $` used as a value, then
+/// stored as a `Pair` value) carries no name, so its `of`-type cannot live in
+/// the name-keyed `var_type_constraint` map; this side table lets the
+/// `ContainerRef` write chokepoint enforce the constraint and raise
+/// `X::TypeCheck::Assignment` on a bad assignment. Only `my T $` typed-anonymous
+/// scalars register here, so the table stays tiny.
+static TYPED_CONTAINER_CONSTRAINTS: OnceLock<Mutex<HashMap<usize, String>>> = OnceLock::new();
+
+fn typed_container_constraints() -> &'static Mutex<HashMap<usize, String>> {
+    TYPED_CONTAINER_CONSTRAINTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record that the `ContainerRef` cell `cell` has the `of`-type `type_name`.
+pub fn register_container_constraint(cell: &Arc<Mutex<Value>>, type_name: &str) {
+    let ptr = Arc::as_ptr(cell) as usize;
+    typed_container_constraints()
+        .lock()
+        .unwrap()
+        .insert(ptr, type_name.to_string());
+}
+
+/// Look up the `of`-type constraint of a `ContainerRef` cell, if any.
+pub fn lookup_container_constraint(cell: &Arc<Mutex<Value>>) -> Option<String> {
+    let ptr = Arc::as_ptr(cell) as usize;
+    typed_container_constraints().lock().unwrap().get(&ptr).cloned()
+}
+
 impl Clone for InstanceAttrs {
     /// Deep, independent copy: a fresh cell with a snapshot of the map. Used for
     /// `.clone`-style independent copies and `temp`/`let` snapshots; it must NOT
