@@ -543,6 +543,19 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
+    // `does Role` trait on an attribute, e.g. `has $.x does Foo` — mixes the role
+    // into the attribute's container. Parsed here as an attribute trait (recorded
+    // in `unknown_traits` as `("does", role, None)`); without this it is left for
+    // the statement parser, which mis-reads it as a class-level `does Foo`
+    // composition. Applied to the attribute's value at construction.
+    while let Some(r) = keyword("does", rest) {
+        let Ok((r, _)) = ws1(r) else { break };
+        let Ok((r, role_name)) = ident(r) else { break };
+        unknown_traits.push(("does".to_string(), role_name.to_string(), None));
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
+
     // `handles` trait, e.g. `has $.x handles <a b>`
     let mut handles = Vec::new();
     while let Some(r) = keyword("handles", rest) {

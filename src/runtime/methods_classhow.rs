@@ -2337,6 +2337,17 @@ impl Interpreter {
         type_constraint: Option<&str>,
     ) -> Result<(), RuntimeError> {
         for (kind, trait_name, trait_arg) in unknown_traits {
+            // `has $.x does Foo` — record the role so construction mixes it into
+            // the attribute's value (its container does the role). Not a
+            // `trait_mod:<does>` dispatch.
+            if kind == "does" {
+                self.registry_mut()
+                    .class_attribute_does_roles
+                    .entry((owner.to_string(), attr_name_str.to_string()))
+                    .or_default()
+                    .push(trait_name.clone());
+                continue;
+            }
             let trait_mod_name = format!("trait_mod:<{}>", kind);
             let has_handler =
                 self.has_proto(&trait_mod_name) || self.has_multi_candidates(&trait_mod_name);
