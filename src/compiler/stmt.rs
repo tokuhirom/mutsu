@@ -769,6 +769,21 @@ impl Compiler {
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
+                } else if scalar_bind_decont && matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
+                {
+                    // A scalar `:=` bind to a *whole* container variable
+                    // (`my $ref := @a` / `my $ref := %h`) must alias the same
+                    // container, not snapshot it (so `$ref.push` mutates `@a`).
+                    // Route through compile_call_arg so WrapVarRef is emitted and
+                    // SetLocal's whole-container bind path shares one cell, just
+                    // like `my @b := @a`. (Scalar binds normally take the
+                    // assignment path below, which only Arc-shares — a COW push
+                    // would then detach the alias.)
+                    self.scalar_bind_autovivify = true;
+                    self.bind_terminal = true;
+                    self.compile_call_arg(expr);
+                    self.scalar_bind_autovivify = false;
+                    self.bind_terminal = false;
                 } else {
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')

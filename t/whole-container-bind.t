@@ -6,7 +6,7 @@ use Test;
 # fix, the two slots only shared the inner Arc and a COW mutation (`.push`)
 # detached them.
 
-plan 26;
+plan 33;
 
 # --- Array: push through either alias propagates both ways ---
 {
@@ -134,4 +134,28 @@ plan 26;
     my Int %a;
     my Cool %b := %a;
     is %b.of, Int, 'bound hash keeps the source declared element type';
+}
+
+# --- Scalar bound to a whole container (`my $r := @a`) shares it too ---
+{
+    my @a = 1, 2, 3;
+    my $r := @a;
+    $r.push(4);
+    is-deeply @a, [1, 2, 3, 4], 'push via scalar-bound array propagates to source';
+    @a.push(5);
+    is-deeply $r, [1, 2, 3, 4, 5], 'push via source propagates to scalar alias';
+    $r[0] = 99;
+    is-deeply @a, [99, 2, 3, 4, 5], 'index assign via scalar alias';
+    $r.pop;
+    is-deeply @a, [99, 2, 3, 4], 'pop via scalar alias propagates to source';
+    $r.splice(1, 1);
+    is-deeply @a, [99, 3, 4], 'splice via scalar alias propagates to source';
+}
+{
+    my %h = a => 1;
+    my $hr := %h;
+    $hr<b> = 2;
+    is %h<b>, 2, 'hash element assign via scalar alias propagates to source';
+    $hr<a>:delete;
+    is-deeply %h.keys.sort, ('b',), 'hash delete via scalar alias seen by source';
 }
