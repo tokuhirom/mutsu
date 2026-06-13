@@ -1601,6 +1601,19 @@ impl Interpreter {
         err
     }
 
+    /// Normalize a single `await` target. A `Supply` is awaited via its
+    /// `.Promise` (kept with the last emitted value when the supply completes,
+    /// broken if it quits) — `await $supply` ≡ `await $supply.Promise`. All other
+    /// values pass through unchanged (Promises and Channels are handled inline).
+    fn await_normalize(&mut self, v: Value) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &v
+            && class_name == "Supply"
+        {
+            return self.call_method_with_values(v, "Promise", vec![]);
+        }
+        Ok(v)
+    }
+
     pub(super) fn builtin_await(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
             return Err(RuntimeError::new(
@@ -1609,11 +1622,14 @@ impl Interpreter {
         }
         let mut await_targets: Vec<Value> = Vec::new();
         for arg in args {
-            match arg {
-                _ if arg.as_list_items().is_some() => {
-                    await_targets.extend(arg.as_list_items().unwrap().iter().cloned());
+            if let Some(items) = arg.as_list_items() {
+                let items: Vec<Value> = items.to_vec();
+                for it in items {
+                    await_targets.push(self.await_normalize(it)?);
                 }
-                other => await_targets.push(other.clone()),
+            } else {
+                let normalized = self.await_normalize(arg.clone())?;
+                await_targets.push(normalized);
             }
         }
         let mut results = Vec::new();
@@ -1701,6 +1717,19 @@ impl Interpreter {
                         }
                     }
                 }
+                // `await $channel` blocks for the next value (like `.receive`):
+                // returns it, or throws X::Channel::ReceiveOnClosed when the
+                // channel is drained and closed, or the failure cause when failed.
+                Value::Channel(ch) => match ch.receive_result() {
+                    Ok(Value::Nil) => return Err(Self::channel_receive_closed_error()),
+                    Ok(value) => results.push(value),
+                    Err(cause) => {
+                        let ex = Self::as_exception_value(cause);
+                        let mut err = RuntimeError::new(ex.to_string_value());
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                },
                 _ => results.push(arg.clone()),
             }
         }
