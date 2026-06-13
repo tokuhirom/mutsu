@@ -168,7 +168,7 @@ impl Interpreter {
         match args {
             [] => None,
             [single] => Some(single.clone()),
-            _ => Some(Value::Slip(std::sync::Arc::new(args.to_vec()))),
+            _ => Some(Value::Slip(std::sync::Arc::new(args.to_vec().into()))),
         }
     }
 
@@ -367,21 +367,21 @@ impl Interpreter {
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Array(std::sync::Arc::new(mapped), kind))
+                    Ok(Value::Array(std::sync::Arc::new(mapped.into()), kind))
                 }
                 Value::Seq(items) => {
                     let mut mapped = Vec::with_capacity(items.len());
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Seq(std::sync::Arc::new(mapped)))
+                    Ok(Value::Seq(std::sync::Arc::new(mapped.into())))
                 }
                 Value::Slip(items) => {
                     let mut mapped = Vec::with_capacity(items.len());
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Slip(std::sync::Arc::new(mapped)))
+                    Ok(Value::Slip(std::sync::Arc::new(mapped.into())))
                 }
                 other => interp.call_function(routine, vec![other]),
             }
@@ -411,7 +411,7 @@ impl Interpreter {
             for item in items.iter() {
                 results.push(apply_hyper_prefix(self, &routine, item.clone())?);
             }
-            let result = Value::Array(std::sync::Arc::new(results), *kind);
+            let result = Value::Array(std::sync::Arc::new(results.into()), *kind);
             if mutating {
                 self.overwrite_array_bindings_by_identity(items, result.clone());
             }

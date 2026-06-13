@@ -278,7 +278,7 @@ impl Interpreter {
         }
 
         if rotor_specs.is_empty() {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
+            return Ok(Value::Seq(Arc::new(Vec::new().into())));
         }
 
         // Get the items to rotor over (force LazyList if needed)
@@ -294,7 +294,7 @@ impl Interpreter {
         };
 
         if items.is_empty() {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
+            return Ok(Value::Seq(Arc::new(Vec::new().into())));
         }
 
         let mut result: Vec<Value> = Vec::new();
@@ -379,7 +379,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(Arc::new(result)))
+        Ok(Value::Seq(Arc::new(result.into())))
     }
 
     /// Implements the `.toggle` method.
@@ -453,6 +453,6 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(Arc::new(result)))
+        Ok(Value::Seq(Arc::new(result.into())))
     }
 }

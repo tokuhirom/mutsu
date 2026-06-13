@@ -111,5 +111,5 @@ pub(crate) fn native_comb_method(
     };
     let matcher = positional.first().copied();
 
-    comb_pure(&text, matcher, limit).map(|items| Ok(Value::Seq(std::sync::Arc::new(items))))
+    comb_pure(&text, matcher, limit).map(|items| Ok(Value::Seq(std::sync::Arc::new(items.into()))))
 }

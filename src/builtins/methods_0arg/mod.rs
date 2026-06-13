@@ -346,7 +346,7 @@ pub(crate) fn native_method_0arg(
     if method == "pending" {
         let failures = crate::value::get_pending_failures();
         return Some(Ok(Value::Array(
-            std::sync::Arc::new(failures),
+            std::sync::Arc::new(failures.into()),
             crate::value::ArrayKind::List,
         )));
     }
@@ -456,7 +456,7 @@ pub(crate) fn native_method_0arg(
             }
             "comb" => {
                 let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
-                return Some(Ok(Value::Seq(std::sync::Arc::new(parts))));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(parts.into()))));
             }
             "Str" => {
                 use unicode_normalization::UnicodeNormalization;
@@ -606,14 +606,14 @@ fn dispatch_capture(
                 positional: positional.to_vec(),
                 named: named.clone(),
             };
-            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+            Some(Ok(Value::Seq(Arc::new(vec![cap].into()))))
         }
         "Seq" | "List" => {
             let cap = Value::Capture {
                 positional: positional.to_vec(),
                 named: named.clone(),
             };
-            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+            Some(Ok(Value::Seq(Arc::new(vec![cap].into()))))
         }
         _ => None,
     }

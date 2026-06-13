@@ -861,7 +861,7 @@ impl VM {
                         }
                     } else {
                         match self.vm_call_on_value(func, vec![elem], None)? {
-                            Value::Slip(items) => items.as_ref().clone(),
+                            Value::Slip(items) => items.as_ref().to_vec(),
                             v => vec![v],
                         }
                     };
@@ -1065,7 +1065,7 @@ impl VM {
     fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
         if let Value::LazyList(ll) = &val {
             let items = self.force_lazy_list_vm(ll)?;
-            Ok(Value::Seq(std::sync::Arc::new(items)))
+            Ok(Value::Seq(std::sync::Arc::new(items.into())))
         } else {
             Ok(val)
         }
@@ -1360,7 +1360,7 @@ impl VM {
                     other => other.clone(),
                 })
                 .collect();
-            Value::Array(std::sync::Arc::new(resolved), kind)
+            Value::Array(std::sync::Arc::new(resolved.into()), kind)
         } else {
             val
         }

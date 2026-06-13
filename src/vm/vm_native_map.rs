@@ -215,7 +215,7 @@ impl VM {
         // On a real array, mutsu's `.map` yields a List-kind array (matching the
         // interpreter's return shape).
         Some(Ok(Value::Array(
-            std::sync::Arc::new(result),
+            std::sync::Arc::new(result.into()),
             ArrayKind::List,
         )))
     }

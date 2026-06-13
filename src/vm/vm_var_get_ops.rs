@@ -80,7 +80,7 @@ impl VM {
             // A user-declared type named `Empty` shadows the empty-Slip term
             // (it is resolved to a Package by the `has_type` branch below).
             // `Inf`/`NaN` are numeric literals and are not shadowable.
-            Value::Slip(std::sync::Arc::new(vec![]))
+            Value::Slip(std::sync::Arc::new(vec![].into()))
         } else if name == "GLOBALish" {
             // GLOBALish is the per-compunit alias for the GLOBAL package.
             Value::Package(Symbol::intern("GLOBAL"))

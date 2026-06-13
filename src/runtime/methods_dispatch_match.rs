@@ -214,12 +214,12 @@ impl Interpreter {
         if let Some(lim) = limit
             && lim <= 0
         {
-            return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
+            return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new().into()))));
         }
 
         let matcher = positional.first().copied();
 
-        let make_seq = |items: Vec<Value>| Value::Seq(std::sync::Arc::new(items));
+        let make_seq = |items: Vec<Value>| Value::Seq(std::sync::Arc::new(items.into()));
 
         match matcher {
             // Pure Int-chunk / Str-fixed split: single shared impl in

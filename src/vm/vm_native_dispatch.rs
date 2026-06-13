@@ -201,11 +201,12 @@ impl VM {
             match self.force_lazy_list_vm(ll) {
                 Ok(items) => {
                     let val = match method_name.as_str() {
-                        "Slip" => Value::Slip(std::sync::Arc::new(items)),
-                        "List" => {
-                            Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
-                        }
-                        "Seq" => Value::Seq(std::sync::Arc::new(items)),
+                        "Slip" => Value::Slip(std::sync::Arc::new(items.into())),
+                        "List" => Value::Array(
+                            std::sync::Arc::new(items.into()),
+                            crate::value::ArrayKind::List,
+                        ),
+                        "Seq" => Value::Seq(std::sync::Arc::new(items.into())),
                         "Array" => Value::real_array(items),
                         _ => unreachable!(),
                     };
@@ -330,7 +331,7 @@ impl VM {
                     if let Value::LazyList(ll) = arg {
                         match self.force_lazy_list_vm(ll) {
                             Ok(items) => {
-                                forced_args.push(Value::Seq(std::sync::Arc::new(items)));
+                                forced_args.push(Value::Seq(std::sync::Arc::new(items.into())));
                             }
                             Err(e) => return Some(Err(e)),
                         }

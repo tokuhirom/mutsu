@@ -29,11 +29,11 @@ impl Interpreter {
                     } else {
                         Vec::new()
                     };
-                Value::Seq(std::sync::Arc::new(values))
+                Value::Seq(std::sync::Arc::new(values.into()))
             }
             Value::LazyList(ll) => {
                 let items = self.force_lazy_list_bridge(&ll)?;
-                Value::Seq(std::sync::Arc::new(items))
+                Value::Seq(std::sync::Arc::new(items.into()))
             }
             other @ (Value::Range(..)
             | Value::RangeExcl(..)
@@ -41,7 +41,7 @@ impl Interpreter {
             | Value::RangeExclBoth(..)
             | Value::GenericRange { .. }) => {
                 let items = Self::value_to_list(&other);
-                Value::Seq(std::sync::Arc::new(items))
+                Value::Seq(std::sync::Arc::new(items.into()))
             }
             Value::Instance {
                 class_name,
@@ -62,10 +62,10 @@ impl Interpreter {
                 if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
                     Value::Seq(items.clone())
                 } else {
-                    Value::Seq(std::sync::Arc::new(Vec::new()))
+                    Value::Seq(std::sync::Arc::new(Vec::new().into()))
                 }
             }
-            other => Value::Seq(std::sync::Arc::new(vec![other])),
+            other => Value::Seq(std::sync::Arc::new(vec![other].into())),
         })
     }
 
@@ -91,14 +91,14 @@ impl Interpreter {
                     return Ok(Value::Array(items.clone(), crate::value::ArrayKind::List));
                 }
                 return Ok(Value::Array(
-                    std::sync::Arc::new(Vec::new()),
+                    std::sync::Arc::new(Vec::new().into()),
                     crate::value::ArrayKind::List,
                 ));
             }
         }
         let items = Self::value_to_list(&target);
         Ok(Value::Array(
-            std::sync::Arc::new(items),
+            std::sync::Arc::new(items.into()),
             crate::value::ArrayKind::List,
         ))
     }

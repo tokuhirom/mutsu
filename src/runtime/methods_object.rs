@@ -549,7 +549,7 @@ impl Interpreter {
             let inner = inner.trim().to_string();
             let items = match Self::coerce_attr_value_by_sigil(value, '@') {
                 Value::Array(items, _) => (*items).clone(),
-                other => vec![other],
+                other => vec![other].into(),
             };
             if inner.starts_with(char::is_uppercase) {
                 for it in &items {
@@ -560,7 +560,7 @@ impl Interpreter {
                     }
                 }
             }
-            let arr = Value::real_array(items);
+            let arr = Value::real_array(items.to_vec());
             self.register_container_type_metadata(
                 &arr,
                 super::ContainerTypeInfo {
@@ -1461,7 +1461,7 @@ impl Interpreter {
                         if matches!(iterator, Value::Instance { .. })
                             && self.type_matches_value("PredictiveIterator", iterator)
                         {
-                            let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+                            let seq = Value::Seq(std::sync::Arc::new(Vec::new().into()));
                             if let Value::Seq(items) = &seq {
                                 let seq_id = std::sync::Arc::as_ptr(items) as usize;
                                 // Store off the scoped env so the association
@@ -1479,13 +1479,13 @@ impl Interpreter {
                             if let Some(Value::Array(items, ..)) =
                                 map.get("items").or_else(|| map.get("stuff"))
                             {
-                                return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
+                                return Ok(Value::Seq(std::sync::Arc::new(items.to_vec().into())));
                             }
                         }
                         // Register deferred iterator: don't pull eagerly.
                         // Raku's Seq.new(iterator) creates a lazy Seq; pulling
                         // happens only when the Seq is actually consumed/iterated.
-                        let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+                        let seq = Value::Seq(std::sync::Arc::new(Vec::new().into()));
                         if let Value::Seq(items) = &seq {
                             crate::value::seq_register_deferred_iter(items, iterator.clone());
                         }
@@ -1495,7 +1495,7 @@ impl Interpreter {
                     // This matches Raku: Seq.new() has no iterator, so it's
                     // immediately consumed. This is what .raku returns for
                     // consumed Seqs ("Seq.new()") so the EVAL roundtrip works.
-                    let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+                    let seq = Value::Seq(std::sync::Arc::new(Vec::new().into()));
                     if let Value::Seq(items) = &seq {
                         let _ = crate::value::seq_consume(items);
                     }
@@ -3435,7 +3435,7 @@ impl Interpreter {
                     {
                         let items = match val {
                             Value::Array(items, _) => (**items).clone(),
-                            _ => vec![val.clone()],
+                            _ => vec![val.clone()].into(),
                         };
                         let shaped = Value::Array(std::sync::Arc::new(items), ArrayKind::Shaped);
                         crate::runtime::utils::mark_shaped_array(&shaped, Some(&dims));

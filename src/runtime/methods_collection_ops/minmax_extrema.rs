@@ -65,13 +65,13 @@ impl Interpreter {
                     ));
                 }
             }
-            Value::Seq(Arc::new(out))
+            Value::Seq(Arc::new(out.into()))
         };
         Ok(match target {
             Value::Array(items, ..) => to_pairs(&items),
             Value::Set(ref set, ..) => {
                 if set.elements.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::Seq(Arc::new(Vec::new().into()))
                 } else {
                     // All Set weights are True, so min == max == all elements
                     let out: Vec<Value> = set
@@ -79,12 +79,12 @@ impl Interpreter {
                         .iter()
                         .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
                         .collect();
-                    Value::Seq(Arc::new(out))
+                    Value::Seq(Arc::new(out.into()))
                 }
             }
             Value::Bag(ref bag, ..) => {
                 if bag.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::Seq(Arc::new(Vec::new().into()))
                 } else {
                     let mut best_count: Option<i64> = None;
                     let mut out: Vec<Value> = Vec::new();
@@ -105,12 +105,12 @@ impl Interpreter {
                             out.push(Value::Pair(key.clone(), Box::new(Value::Int(*count))));
                         }
                     }
-                    Value::Seq(Arc::new(out))
+                    Value::Seq(Arc::new(out.into()))
                 }
             }
             Value::Mix(ref mix, ..) => {
                 if mix.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::Seq(Arc::new(Vec::new().into()))
                 } else {
                     let mut best_weight: Option<f64> = None;
                     let mut out: Vec<Value> = Vec::new();
@@ -139,12 +139,12 @@ impl Interpreter {
                             ));
                         }
                     }
-                    Value::Seq(Arc::new(out))
+                    Value::Seq(Arc::new(out.into()))
                 }
             }
             Value::Hash(ref hash) => {
                 if hash.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::Seq(Arc::new(Vec::new().into()))
                 } else {
                     // For Hash, compare values
                     let mut best: Option<&Value> = None;
@@ -169,13 +169,12 @@ impl Interpreter {
                             out.push(Value::Pair(key.clone(), Box::new(value.clone())));
                         }
                     }
-                    Value::Seq(Arc::new(out))
+                    Value::Seq(Arc::new(out.into()))
                 }
             }
-            other => Value::Seq(Arc::new(vec![Value::ValuePair(
-                Box::new(Value::Int(0)),
-                Box::new(other),
-            )])),
+            other => Value::Seq(Arc::new(
+                vec![Value::ValuePair(Box::new(Value::Int(0)), Box::new(other))].into(),
+            )),
         })
     }
 

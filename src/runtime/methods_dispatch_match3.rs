@@ -350,7 +350,7 @@ impl Interpreter {
             return Some(Ok(if grabbed.len() == 1 && args.is_empty() {
                 grabbed.into_iter().next().unwrap()
             } else {
-                Value::Seq(Arc::new(grabbed))
+                Value::Seq(Arc::new(grabbed.into()))
             }));
         }
         // BagHash.grab: select and remove random element(s)
@@ -382,7 +382,7 @@ impl Interpreter {
             }
         };
         if mix.is_empty() || count == 0 {
-            return Some(Ok(Value::Seq(Arc::new(Vec::new()))));
+            return Some(Ok(Value::Seq(Arc::new(Vec::new().into()))));
         }
         use crate::builtins::rng::builtin_rand;
         let mut grabbed = Vec::new();
@@ -399,7 +399,7 @@ impl Interpreter {
             grabbed.push(Value::Pair(key, Box::new(weight_val)));
         }
         // TODO: compile to bytecode - should mutate the original variable
-        Some(Ok(Value::Seq(Arc::new(grabbed))))
+        Some(Ok(Value::Seq(Arc::new(grabbed.into()))))
     }
 
     /// Helper for BagHash.grab (works on a clone, does not mutate the original).
@@ -421,7 +421,7 @@ impl Interpreter {
             if args.is_empty() {
                 return Ok(Value::Nil);
             }
-            return Ok(Value::Seq(Arc::new(Vec::new())));
+            return Ok(Value::Seq(Arc::new(Vec::new().into())));
         }
         let mut grabbed = Vec::new();
         let mut remaining = bag.clone();
@@ -454,7 +454,7 @@ impl Interpreter {
         Ok(if grabbed.len() == 1 && args.is_empty() {
             grabbed.into_iter().next().unwrap()
         } else {
-            Value::Seq(Arc::new(grabbed))
+            Value::Seq(Arc::new(grabbed.into()))
         })
     }
 
@@ -474,7 +474,7 @@ impl Interpreter {
             }
         };
         if bag.is_empty() || count == 0 {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
+            return Ok(Value::Seq(Arc::new(Vec::new().into())));
         }
         let mut grabbed = Vec::new();
         let mut remaining = bag.clone();
@@ -488,7 +488,7 @@ impl Interpreter {
             let val = remaining.remove(&key).unwrap_or(0);
             grabbed.push(Value::Pair(key, Box::new(Value::Int(val))));
         }
-        Ok(Value::Seq(Arc::new(grabbed)))
+        Ok(Value::Seq(Arc::new(grabbed.into())))
     }
 
     /// Dispatch the "skip" method.
@@ -518,7 +518,7 @@ impl Interpreter {
             args[0].to_f64().max(0.0) as usize
         };
         let result: Vec<Value> = items.into_iter().skip(n).collect();
-        Ok(Value::Seq(Arc::new(result)))
+        Ok(Value::Seq(Arc::new(result.into())))
     }
 
     /// Dispatch the "join" method.
@@ -756,7 +756,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let items = crate::runtime::utils::value_to_list(&target);
         if args.is_empty() {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
+            return Ok(Value::Seq(Arc::new(Vec::new().into())));
         }
         // Collect all indices from args (flattening lists/arrays)
         let mut indices: Vec<usize> = Vec::new();
@@ -787,6 +787,6 @@ impl Interpreter {
             .into_iter()
             .map(|i| items.get(i).cloned().unwrap_or(Value::Nil))
             .collect();
-        Ok(Value::Seq(Arc::new(result)))
+        Ok(Value::Seq(Arc::new(result.into())))
     }
 }

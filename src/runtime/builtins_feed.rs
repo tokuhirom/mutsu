@@ -81,14 +81,14 @@ impl Interpreter {
         }
         let count = crate::runtime::to_int(&args[0]);
         if count <= 0 {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new().into())));
         }
         let thunk = args[1].clone();
         let mut values = Vec::with_capacity(count as usize);
         for _ in 0..count {
             values.push(self.eval_call_on_value(thunk.clone(), Vec::new())?);
         }
-        Ok(Value::Seq(std::sync::Arc::new(values)))
+        Ok(Value::Seq(std::sync::Arc::new(values.into())))
     }
 
     pub(super) fn builtin_reverse_andthen(
@@ -351,12 +351,12 @@ impl Interpreter {
                 let val = self.eval_call_on_value(thunk.clone(), Vec::new())?;
                 let items = crate::runtime::value_to_list(&val);
                 if i >= items.len() {
-                    return Ok(Value::Seq(std::sync::Arc::new(out)));
+                    return Ok(Value::Seq(std::sync::Arc::new(out.into())));
                 }
                 repeated.push(items.into_iter().nth(i).unwrap_or(Value::Nil));
             }
-            out.push(Value::Seq(std::sync::Arc::new(repeated)));
+            out.push(Value::Seq(std::sync::Arc::new(repeated.into())));
         }
-        Ok(Value::Seq(std::sync::Arc::new(out)))
+        Ok(Value::Seq(std::sync::Arc::new(out.into())))
     }
 }

@@ -93,9 +93,9 @@ impl Interpreter {
             .unwrap_or_default();
 
         match target {
-            Value::Package(class_name) if class_name == "Supply" => {
-                Ok(Value::Seq(Arc::new(vec![Value::Package(class_name)])))
-            }
+            Value::Package(class_name) if class_name == "Supply" => Ok(Value::Seq(Arc::new(
+                vec![Value::Package(class_name)].into(),
+            ))),
             Value::Instance {
                 class_name,
                 attributes,
@@ -112,13 +112,12 @@ impl Interpreter {
                 attrs.insert("live".to_string(), Value::Bool(false));
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
-            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(collate_sort(
-                items.to_vec(),
-                &settings,
-            )))),
+            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(
+                collate_sort(items.to_vec(), &settings).into(),
+            ))),
             other => {
                 let values = Self::value_to_list(&other);
-                Ok(Value::Seq(Arc::new(collate_sort(values, &settings))))
+                Ok(Value::Seq(Arc::new(collate_sort(values, &settings).into())))
             }
         }
     }

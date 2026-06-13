@@ -78,8 +78,8 @@ impl VM {
         let actual_n = n.min(items.len());
         let result = if is_shift {
             let rest = items.split_off(actual_n);
-            let shifted = items;
-            items = rest;
+            let shifted = std::mem::take(&mut items.items);
+            items.items = rest;
             shifted
         } else {
             // pop
@@ -905,11 +905,11 @@ impl VM {
             let n = n.max(0) as usize;
             // Fast path: @var.shift xx N or @var.pop xx N — bulk drain
             if let Some(items) = self.try_bulk_shift_pop(&data, n)? {
-                self.stack.push(Value::Seq(Arc::new(items)));
+                self.stack.push(Value::Seq(Arc::new(items.into())));
                 return Ok(());
             }
             let items = self.vm_xx_repeat_thunk(data.as_ref(), n)?;
-            self.stack.push(Value::Seq(Arc::new(items)));
+            self.stack.push(Value::Seq(Arc::new(items.into())));
             return Ok(());
         }
 
@@ -965,7 +965,7 @@ impl VM {
             let count = crate::runtime::Interpreter::repeat_logical_count(&right);
             crate::runtime::Interpreter::make_repeat_lazy_cache_counted(items, count)
         } else {
-            Value::Seq(Arc::new(items))
+            Value::Seq(Arc::new(items.into()))
         };
         self.stack.push(result);
         Ok(())

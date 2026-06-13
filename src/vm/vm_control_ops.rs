@@ -1850,7 +1850,7 @@ impl VM {
         }
         let mut updated = items.to_vec();
         updated[actual_idx] = current_topic;
-        let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+        let updated_value = Value::Array(std::sync::Arc::new(updated.into()), kind);
         self.set_env_with_main_alias(source, updated_value.clone());
         self.update_local_if_exists(code, source, &updated_value);
     }
@@ -1945,7 +1945,7 @@ impl VM {
                 {
                     let mut updated = items.to_vec();
                     updated[idx] = val;
-                    let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+                    let updated_value = Value::Array(std::sync::Arc::new(updated.into()), kind);
                     self.set_env_with_main_alias(source, updated_value.clone());
                     self.update_local_if_exists(code, source, &updated_value);
                 }
@@ -1960,7 +1960,7 @@ impl VM {
                         updated[base + j] = val;
                     }
                 }
-                let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+                let updated_value = Value::Array(std::sync::Arc::new(updated.into()), kind);
                 self.set_env_with_main_alias(source, updated_value.clone());
                 self.update_local_if_exists(code, source, &updated_value);
             } else {
@@ -1974,7 +1974,7 @@ impl VM {
                 }
                 let mut updated = items.to_vec();
                 updated[idx] = current_val;
-                let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+                let updated_value = Value::Array(std::sync::Arc::new(updated.into()), kind);
                 self.set_env_with_main_alias(source, updated_value.clone());
                 self.update_local_if_exists(code, source, &updated_value);
             }

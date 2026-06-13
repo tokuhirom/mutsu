@@ -178,7 +178,9 @@ impl Interpreter {
                     }
                     "List" if args.is_empty() => return Ok(Value::array(items)),
                     "Slip" if args.is_empty() => return Ok(Value::slip(items)),
-                    "Seq" if args.is_empty() => return Ok(Value::Seq(std::sync::Arc::new(items))),
+                    "Seq" if args.is_empty() => {
+                        return Ok(Value::Seq(std::sync::Arc::new(items.into())));
+                    }
                     "append" if args.len() == 1 => {
                         items.extend(iterationbuffer_values(&args[0]));
                         return Ok(update_items(items));
@@ -1644,11 +1646,11 @@ impl Interpreter {
                         }
                     }
                     new_items.append(items);
-                    *items = new_items;
+                    **items = new_items;
                 }
                 _ => {}
             }
-            Ok(Value::real_array(items.clone()))
+            Ok(Value::real_array(items.to_vec()))
         } else {
             Err(RuntimeError::new(format!(
                 "Cannot call '{}' on non-Array attribute",

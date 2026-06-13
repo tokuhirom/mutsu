@@ -39,7 +39,7 @@ pub(super) fn dispatch(
         "flat" => Some(match target {
             Value::Array(_, crate::value::ArrayKind::Shaped) => {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                Some(Ok(Value::Seq(Arc::new(leaves))))
+                Some(Ok(Value::Seq(Arc::new(leaves.into()))))
             }
             other if is_infinite_range(other) => Some(Ok(other.clone())),
             Value::LazyList(_) => Some(Ok(target.clone())), // flat of a lazy list is still lazy
@@ -53,7 +53,7 @@ pub(super) fn dispatch(
                 // `false` for Seq children and so left them un-flattened.
                 let mut result = Vec::new();
                 crate::builtins::flat_val(target, &mut result, true);
-                Some(Ok(Value::Seq(Arc::new(result))))
+                Some(Ok(Value::Seq(Arc::new(result.into()))))
             }
         }),
         "sort" => Some(match target {
@@ -63,7 +63,7 @@ pub(super) fn dispatch(
                 {
                     crate::runtime::utils::shaped_array_leaves(target)
                 } else {
-                    (**items).clone()
+                    (**items).to_vec()
                 };
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                 Some(Ok(Value::array(sorted)))
@@ -99,7 +99,7 @@ pub(super) fn dispatch(
                     let mut reversed = crate::runtime::utils::value_to_list(target);
                     reversed.reverse();
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(reversed),
+                        std::sync::Arc::new(reversed.into()),
                         crate::value::ArrayKind::List,
                     )))
                 }
@@ -111,7 +111,7 @@ pub(super) fn dispatch(
                 if end_is_neg_inf {
                     // Empty range -- reverse is empty
                     return Some(Some(Ok(Value::Array(
-                        std::sync::Arc::new(Vec::new()),
+                        std::sync::Arc::new(Vec::new().into()),
                         crate::value::ArrayKind::List,
                     ))));
                 }
@@ -124,7 +124,7 @@ pub(super) fn dispatch(
                     let mut reversed = items;
                     reversed.reverse();
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(reversed),
+                        std::sync::Arc::new(reversed.into()),
                         crate::value::ArrayKind::List,
                     )))
                 }

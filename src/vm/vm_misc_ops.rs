@@ -729,7 +729,7 @@ impl VM {
                 return Ok(());
             }
             let items = self.force_lazy_list_vm(ll)?;
-            Value::Seq(std::sync::Arc::new(items))
+            Value::Seq(std::sync::Arc::new(items.into()))
         } else {
             val
         };
@@ -1405,7 +1405,7 @@ impl VM {
                         shaped_items.resize(shape[0], Value::Nil);
                     }
                     assigned = Value::Array(
-                        std::sync::Arc::new(shaped_items),
+                        std::sync::Arc::new(shaped_items.into()),
                         crate::value::ArrayKind::Shaped,
                     );
                     crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
@@ -1776,7 +1776,7 @@ impl VM {
                     prefix.push(item);
                     out.push(Value::array(prefix.clone()));
                 }
-                self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+                self.stack.push(Value::Seq(std::sync::Arc::new(out.into())));
             } else {
                 self.stack.push(Value::array(list));
             }
@@ -1798,7 +1798,8 @@ impl VM {
 
         if scan {
             if list.is_empty() {
-                self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
+                self.stack
+                    .push(Value::Seq(std::sync::Arc::new(Vec::new().into())));
                 return Ok(());
             }
             if list.len() == 1 {
@@ -1808,7 +1809,8 @@ impl VM {
                 } else {
                     list[0].clone()
                 };
-                self.stack.push(Value::Seq(std::sync::Arc::new(vec![val])));
+                self.stack
+                    .push(Value::Seq(std::sync::Arc::new(vec![val].into())));
                 return Ok(());
             }
             let out = match assoc {
@@ -1897,7 +1899,7 @@ impl VM {
                                     let inner_op = &base_op[1..];
                                     let items = runtime::value_to_list(&list[0]);
                                     if items.is_empty() {
-                                        Value::Seq(std::sync::Arc::new(vec![]))
+                                        Value::Seq(std::sync::Arc::new(vec![].into()))
                                     } else {
                                         let mut acc0 = items[0].clone();
                                         for item in items.iter().skip(1) {
@@ -1905,7 +1907,7 @@ impl VM {
                                                 inner_op, &acc0, item,
                                             )?;
                                         }
-                                        Value::Seq(std::sync::Arc::new(vec![acc0]))
+                                        Value::Seq(std::sync::Arc::new(vec![acc0].into()))
                                     }
                                 } else {
                                     // Apply the Z/X op to all prefix elements
@@ -1931,7 +1933,7 @@ impl VM {
                                 let zx_prefix = (base_op.starts_with('Z') && base_op.len() > 1)
                                     || (base_op.starts_with('X') && base_op.len() > 1);
                                 if zx_prefix {
-                                    acc = Value::Seq(std::sync::Arc::new(vec![acc]));
+                                    acc = Value::Seq(std::sync::Arc::new(vec![acc].into()));
                                 } else if base_op == "minmax" {
                                     // [minmax](x) = x..x for scalars,
                                     // or min(x)..max(x) for array/list x.
@@ -1966,7 +1968,7 @@ impl VM {
                     out
                 }
             };
-            self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+            self.stack.push(Value::Seq(std::sync::Arc::new(out.into())));
             return Ok(());
         }
         // [^^] and [xor] are list-associative: they check that exactly one element
@@ -2160,7 +2162,8 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         if thunks.is_empty() {
             if scan {
-                self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
+                self.stack
+                    .push(Value::Seq(std::sync::Arc::new(Vec::new().into())));
             } else {
                 // Identity values
                 let identity = match op {
@@ -2230,7 +2233,8 @@ impl VM {
                 last_val
             };
             if scan {
-                self.stack.push(Value::Seq(std::sync::Arc::new(results)));
+                self.stack
+                    .push(Value::Seq(std::sync::Arc::new(results.into())));
             } else {
                 self.stack.push(final_result);
             }
@@ -2284,7 +2288,7 @@ impl VM {
                         if runtime::types::value_is_defined(&acc) {
                             val
                         } else {
-                            Value::Slip(std::sync::Arc::new(vec![]))
+                            Value::Slip(std::sync::Arc::new(vec![].into()))
                         }
                     }
                     _ => val,
@@ -2295,7 +2299,8 @@ impl VM {
             }
         }
         if scan {
-            self.stack.push(Value::Seq(std::sync::Arc::new(results)));
+            self.stack
+                .push(Value::Seq(std::sync::Arc::new(results.into())));
         } else {
             self.stack.push(acc);
         }
@@ -3168,7 +3173,8 @@ impl VM {
                 }
                 Err(e) if e.is_next && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
-                    self.stack.push(Value::Slip(std::sync::Arc::new(vec![])));
+                    self.stack
+                        .push(Value::Slip(std::sync::Arc::new(vec![].into())));
                     break Ok(());
                 }
                 Err(e)
@@ -3180,7 +3186,7 @@ impl VM {
                     self.stack.truncate(stack_base);
                     self.stack.push(
                         e.return_value
-                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
+                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![].into()))),
                     );
                     break Ok(());
                 }
@@ -3188,7 +3194,7 @@ impl VM {
                     self.stack.truncate(stack_base);
                     self.stack.push(
                         e.return_value
-                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
+                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![].into()))),
                     );
                     break Ok(());
                 }
@@ -3322,7 +3328,7 @@ impl VM {
         match val {
             Value::Array(arc_vec, kind) => {
                 let copied: Vec<Value> = arc_vec.iter().map(Self::deep_copy_value).collect();
-                Value::Array(std::sync::Arc::new(copied), *kind)
+                Value::Array(std::sync::Arc::new(copied.into()), *kind)
             }
             Value::Hash(arc_map) => {
                 let copied: std::collections::HashMap<String, Value> = arc_map

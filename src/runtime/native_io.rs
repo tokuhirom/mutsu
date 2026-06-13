@@ -744,7 +744,7 @@ impl Interpreter {
                 if let Some(n) = limit {
                     parts.truncate(n);
                 }
-                Ok(Value::Seq(std::sync::Arc::new(parts)))
+                Ok(Value::Seq(std::sync::Arc::new(parts.into())))
             }
             "words" => {
                 let content = fs::read_to_string(&path_buf)
@@ -766,7 +766,7 @@ impl Interpreter {
                 if let Some(n) = limit {
                     parts.truncate(n);
                 }
-                Ok(Value::Seq(std::sync::Arc::new(parts)))
+                Ok(Value::Seq(std::sync::Arc::new(parts.into())))
             }
             "comb" => {
                 let content = fs::read_to_string(&path_buf)
@@ -780,7 +780,7 @@ impl Interpreter {
                     .collect();
                 match self.dispatch_comb_with_args(Value::str(content), &comb_args) {
                     Some(res) => res,
-                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new()))),
+                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new().into()))),
                 }
             }
             "slurp" => {
@@ -2499,7 +2499,7 @@ impl Interpreter {
                     if close_after {
                         self.close_handle_value(&target_val)?;
                     }
-                    Ok(Value::Seq(std::sync::Arc::new(lines)))
+                    Ok(Value::Seq(std::sync::Arc::new(lines.into())))
                 } else {
                     // No limit: return a lazy IO lines iterator so that
                     // consumers (e.g. for-loop) can read on demand and
@@ -2559,7 +2559,7 @@ impl Interpreter {
                 if close_after {
                     self.close_handle_value(&target_val)?;
                 }
-                Ok(Value::Seq(std::sync::Arc::new(words)))
+                Ok(Value::Seq(std::sync::Arc::new(words.into())))
             }
             "read" => {
                 // .read() always returns a Buf (Buf[uint8]) in Raku
@@ -2848,7 +2848,7 @@ impl Interpreter {
                 }
                 match self.dispatch_comb_with_args(Value::str(text), &comb_args) {
                     Some(res) => res,
-                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new()))),
+                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new().into()))),
                 }
             }
             "Supply" => self.handle_supply(target, &args),

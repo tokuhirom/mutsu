@@ -538,7 +538,7 @@ pub(crate) fn sort_value_generic(
                     )))
                 } else {
                     sort_items_generic(caller, &mut leaves, callable_ref, arity);
-                    Ok(Value::Seq(Arc::new(leaves)))
+                    Ok(Value::Seq(Arc::new(leaves.into())))
                 }
             } else {
                 let Value::Array(mut items, ..) = target else {
@@ -554,7 +554,7 @@ pub(crate) fn sort_value_generic(
                     )))
                 } else {
                     sort_items_generic(caller, items_mut, callable_ref, arity);
-                    Ok(Value::Seq(Arc::new(items_mut.to_vec())))
+                    Ok(Value::Seq(Arc::new(items_mut.to_vec().into())))
                 }
             }
         }
@@ -587,7 +587,7 @@ pub(crate) fn sort_value_generic(
                 )))
             } else {
                 sort_items_generic(caller, &mut sorted, callable_ref, arity);
-                Ok(Value::Seq(Arc::new(sorted)))
+                Ok(Value::Seq(Arc::new(sorted.into())))
             }
         }
         Value::Hash(map) => {

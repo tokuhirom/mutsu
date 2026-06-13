@@ -639,7 +639,7 @@ impl Interpreter {
             }
             changed.push(path_value.clone());
         }
-        Ok(Value::Array(changed.into(), ArrayKind::List))
+        Ok(Value::Array(Value::array_arc(changed), ArrayKind::List))
     }
 
     pub(super) fn builtin_mkdir(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1191,7 +1191,7 @@ impl Interpreter {
             if close_after {
                 self.close_handle_value(&handle)?;
             }
-            return Ok(Value::Seq(std::sync::Arc::new(lines)));
+            return Ok(Value::Seq(std::sync::Arc::new(lines.into())));
         }
         Ok(Value::array(Vec::new()))
     }
@@ -1252,7 +1252,7 @@ impl Interpreter {
             if close_after {
                 self.close_handle_value(&handle)?;
             }
-            return Ok(Value::Seq(std::sync::Arc::new(words)));
+            return Ok(Value::Seq(std::sync::Arc::new(words.into())));
         }
         // Non-handle argument: delegate to string-splitting words (native function)
         if !args.is_empty()

@@ -230,7 +230,7 @@ impl Interpreter {
         let source_items = items.clone();
 
         if items.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new().into())));
         }
 
         let env_before_callbacks = if as_func.is_some() || with_func.is_some() {
@@ -268,7 +268,7 @@ impl Interpreter {
             prev_key = key;
         }
 
-        let result = Value::Seq(std::sync::Arc::new(squished_items));
+        let result = Value::Seq(std::sync::Arc::new(squished_items.into()));
         if (as_func.is_some() || with_func.is_some())
             && let Value::Seq(items) = &result
         {

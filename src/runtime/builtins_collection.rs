@@ -717,7 +717,7 @@ impl Interpreter {
         };
 
         if items.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(vec![])));
+            return Ok(Value::Seq(std::sync::Arc::new(vec![].into())));
         }
 
         // Find all indices matching the extremum
@@ -735,11 +735,11 @@ impl Interpreter {
                     .iter()
                     .map(|&i| Value::Int(i as i64))
                     .collect();
-                Ok(Value::Seq(std::sync::Arc::new(keys)))
+                Ok(Value::Seq(std::sync::Arc::new(keys.into())))
             }
             "v" => {
                 let vals: Vec<Value> = matching_indices.iter().map(|&i| items[i].clone()).collect();
-                Ok(Value::Seq(std::sync::Arc::new(vals)))
+                Ok(Value::Seq(std::sync::Arc::new(vals.into())))
             }
             "kv" => {
                 let mut kvs = Vec::new();
@@ -747,7 +747,7 @@ impl Interpreter {
                     kvs.push(Value::Int(i as i64));
                     kvs.push(items[i].clone());
                 }
-                Ok(Value::Seq(std::sync::Arc::new(kvs)))
+                Ok(Value::Seq(std::sync::Arc::new(kvs.into())))
             }
             "p" => {
                 let pairs: Vec<Value> = matching_indices
@@ -756,7 +756,7 @@ impl Interpreter {
                         Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(items[i].clone()))
                     })
                     .collect();
-                Ok(Value::Seq(std::sync::Arc::new(pairs)))
+                Ok(Value::Seq(std::sync::Arc::new(pairs.into())))
             }
             _ => Ok(result),
         }
@@ -1097,12 +1097,12 @@ impl Interpreter {
         // copy unconditionally flattened nested `[...]`, which over-flattened
         // `flat(1, [2, [3, 4]], (5, 6))` (raku keeps the inner `[3 4]`).
         let list = Value::Array(
-            std::sync::Arc::new(args.to_vec()),
+            std::sync::Arc::new(args.to_vec().into()),
             crate::value::ArrayKind::List,
         );
         let mut result = Vec::new();
         crate::builtins::flat_val(&list, &mut result, true);
-        Ok(Value::Seq(std::sync::Arc::new(result)))
+        Ok(Value::Seq(std::sync::Arc::new(result.into())))
     }
 
     pub(super) fn builtin_slip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1142,7 +1142,7 @@ impl Interpreter {
                 lines.push(Value::str(line));
             }
             lines.reverse();
-            return Ok(Value::Array(Arc::new(lines), ArrayKind::List));
+            return Ok(Value::Array(Arc::new(lines.into()), ArrayKind::List));
         }
         // Single arg: delegate to the single shared native `reverse` (Array / Seq
         // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy
@@ -2072,10 +2072,10 @@ impl Interpreter {
                     {
                         match single {
                             Value::Array(items, _) => {
-                                values = items.as_ref().clone();
+                                values = items.as_ref().to_vec();
                             }
                             Value::Seq(items) | Value::Slip(items) => {
-                                values = items.as_ref().clone();
+                                values = items.as_ref().to_vec();
                             }
                             _ => {}
                         }
@@ -2120,7 +2120,7 @@ impl Interpreter {
 
     pub(super) fn builtin_roundrobin(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new().into())));
         }
 
         // Implement Raku's single-arg rule (+@lol): when called with a single
@@ -2137,7 +2137,7 @@ impl Interpreter {
         };
 
         if effective_args.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new().into())));
         }
 
         let streams: Vec<Vec<Value>> = effective_args
@@ -2176,7 +2176,7 @@ impl Interpreter {
             rounds.push(Value::array(tuple));
         }
 
-        Ok(Value::Seq(std::sync::Arc::new(rounds)))
+        Ok(Value::Seq(std::sync::Arc::new(rounds.into())))
     }
 
     /// `duckmap(&block, \obj)` — apply block to each element; on type mismatch
@@ -2234,7 +2234,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::Seq(std::sync::Arc::new(result)))
+                Ok(Value::Seq(std::sync::Arc::new(result.into())))
             }
             Value::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
@@ -2309,7 +2309,7 @@ impl Interpreter {
                 } else {
                     crate::value::ArrayKind::List
                 };
-                Ok(Value::Array(std::sync::Arc::new(result), arr_kind))
+                Ok(Value::Array(std::sync::Arc::new(result.into()), arr_kind))
             }
             Value::Seq(items) => {
                 let mut result = Vec::new();
@@ -2323,11 +2323,11 @@ impl Interpreter {
                 if itemize_result {
                     // Itemize the result as a list
                     Ok(Value::Array(
-                        std::sync::Arc::new(result),
+                        std::sync::Arc::new(result.into()),
                         crate::value::ArrayKind::ItemList,
                     ))
                 } else {
-                    Ok(Value::Seq(std::sync::Arc::new(result)))
+                    Ok(Value::Seq(std::sync::Arc::new(result.into())))
                 }
             }
             Value::Hash(map) => {
@@ -2418,7 +2418,7 @@ impl Interpreter {
                         for item in items.iter() {
                             result.push(self.duckmap_element(block, item)?);
                         }
-                        Ok(Value::Seq(std::sync::Arc::new(result)))
+                        Ok(Value::Seq(std::sync::Arc::new(result.into())))
                     }
                     Value::Hash(map) => {
                         let mut result = std::collections::HashMap::new();

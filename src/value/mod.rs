@@ -12,18 +12,18 @@ use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 /// Global list tracking consumed Seq instances via Weak references.
-/// Uses Weak<Vec<Value>> so that when the Seq is dropped, the Weak expires
+/// Uses Weak<ArrayData> so that when the Seq is dropped, the Weak expires
 /// and won't cause false positives from address reuse.
-static CONSUMED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
+static CONSUMED_SEQS: OnceLock<Mutex<Vec<Weak<ArrayData>>>> = OnceLock::new();
 
-fn consumed_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
+fn consumed_seqs() -> &'static Mutex<Vec<Weak<ArrayData>>> {
     CONSUMED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// Global set tracking "cached" Seq instances (have called .cache).
-static CACHED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
+static CACHED_SEQS: OnceLock<Mutex<Vec<Weak<ArrayData>>>> = OnceLock::new();
 
-fn cached_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
+fn cached_seqs() -> &'static Mutex<Vec<Weak<ArrayData>>> {
     CACHED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
@@ -36,14 +36,14 @@ fn deferred_seq_iters() -> &'static Mutex<HashMap<usize, Value>> {
 }
 
 /// Global set tracking lazy Seq instances (e.g. from Seq.from-loop without condition).
-static LAZY_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
+static LAZY_SEQS: OnceLock<Mutex<Vec<Weak<ArrayData>>>> = OnceLock::new();
 
-fn lazy_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
+fn lazy_seqs() -> &'static Mutex<Vec<Weak<ArrayData>>> {
     LAZY_SEQS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// Mark a Seq as lazy (infinite, from Seq.from-loop without condition).
-pub(crate) fn seq_mark_lazy(arc_ptr: &Arc<Vec<Value>>) {
+pub(crate) fn seq_mark_lazy(arc_ptr: &Arc<ArrayData>) {
     let mut list = lazy_seqs().lock().unwrap();
     let target_ptr = Arc::as_ptr(arc_ptr);
     list.retain(|w| w.strong_count() > 0);
@@ -58,7 +58,7 @@ pub(crate) fn seq_mark_lazy(arc_ptr: &Arc<Vec<Value>>) {
 }
 
 /// Check if a Seq has been marked as lazy.
-pub(crate) fn seq_is_lazy(arc_ptr: &Arc<Vec<Value>>) -> bool {
+pub(crate) fn seq_is_lazy(arc_ptr: &Arc<ArrayData>) -> bool {
     let list = lazy_seqs().lock().unwrap();
     let target_ptr = Arc::as_ptr(arc_ptr);
     for w in list.iter() {
@@ -79,21 +79,21 @@ fn consumed_lazylists() -> &'static Mutex<Vec<Weak<LazyList>>> {
 }
 
 /// Register a deferred iterator for a Seq. Called by Seq.new(iterator).
-pub(crate) fn seq_register_deferred_iter(arc_ptr: &Arc<Vec<Value>>, iterator: Value) {
+pub(crate) fn seq_register_deferred_iter(arc_ptr: &Arc<ArrayData>, iterator: Value) {
     let key = Arc::as_ptr(arc_ptr) as usize;
     let mut map = deferred_seq_iters().lock().unwrap();
     map.insert(key, iterator);
 }
 
 /// Take the deferred iterator for a Seq (if any). Removes and returns it.
-pub(crate) fn seq_take_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> Option<Value> {
+pub(crate) fn seq_take_deferred_iter(arc_ptr: &Arc<ArrayData>) -> Option<Value> {
     let key = Arc::as_ptr(arc_ptr) as usize;
     let mut map = deferred_seq_iters().lock().unwrap();
     map.remove(&key)
 }
 
 /// Check if a Seq has a deferred iterator.
-pub(crate) fn seq_has_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> bool {
+pub(crate) fn seq_has_deferred_iter(arc_ptr: &Arc<ArrayData>) -> bool {
     let key = Arc::as_ptr(arc_ptr) as usize;
     let map = deferred_seq_iters().lock().unwrap();
     map.contains_key(&key)
@@ -130,7 +130,7 @@ pub(crate) fn lazylist_is_consumed(arc_ptr: &Arc<LazyList>) -> bool {
 }
 
 /// Mark a Seq as cached (called .cache on it). Cached Seqs do not get consumed.
-pub(crate) fn seq_mark_cached(arc_ptr: &Arc<Vec<Value>>) {
+pub(crate) fn seq_mark_cached(arc_ptr: &Arc<ArrayData>) {
     let mut list = cached_seqs().lock().unwrap();
     let target_ptr = Arc::as_ptr(arc_ptr);
     list.retain(|w| w.strong_count() > 0);
@@ -145,7 +145,7 @@ pub(crate) fn seq_mark_cached(arc_ptr: &Arc<Vec<Value>>) {
 }
 
 /// Check if a Seq has been marked as cached.
-pub(crate) fn seq_is_cached(arc_ptr: &Arc<Vec<Value>>) -> bool {
+pub(crate) fn seq_is_cached(arc_ptr: &Arc<ArrayData>) -> bool {
     let list = cached_seqs().lock().unwrap();
     let target_ptr = Arc::as_ptr(arc_ptr);
     for w in list.iter() {
@@ -175,7 +175,7 @@ pub(crate) fn seq_consumed_error() -> RuntimeError {
 /// Mark a Seq (identified by its Arc) as consumed.
 /// Returns Err if the Seq was already consumed.
 #[allow(clippy::result_large_err)]
-pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError> {
+pub(crate) fn seq_consume(arc_ptr: &Arc<ArrayData>) -> Result<(), RuntimeError> {
     let mut list = consumed_seqs().lock().unwrap();
     // Clean up expired Weak references and check for duplicates
     let target_ptr = Arc::as_ptr(arc_ptr);
@@ -192,7 +192,7 @@ pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError>
 }
 
 /// Check if a Seq (identified by its Arc) has been consumed.
-pub(crate) fn seq_is_consumed(arc_ptr: &Arc<Vec<Value>>) -> bool {
+pub(crate) fn seq_is_consumed(arc_ptr: &Arc<ArrayData>) -> bool {
     let list = consumed_seqs().lock().unwrap();
     let target_ptr = Arc::as_ptr(arc_ptr);
     for w in list.iter() {
@@ -207,7 +207,7 @@ pub(crate) fn seq_is_consumed(arc_ptr: &Arc<Vec<Value>>) -> bool {
 
 /// For sink: if cached, do nothing; if consumed, do nothing (re-sink is ok);
 /// if not cached and not consumed, mark as consumed.
-pub(crate) fn seq_sink(arc_ptr: &Arc<Vec<Value>>) {
+pub(crate) fn seq_sink(arc_ptr: &Arc<ArrayData>) {
     if seq_is_cached(arc_ptr) {
         seq_take_deferred_iter(arc_ptr); // discard deferred iter if any
         return;
@@ -1331,6 +1331,100 @@ impl PartialEq for HashData {
     }
 }
 
+/// Backing storage for the list-like `Value` variants (`Array`, `Seq`,
+/// `HyperSeq`, `RaceSeq`, `Slip`). Bundles the element `Vec` with its container
+/// type metadata (element value-type / declared container type), so the
+/// metadata travels WITH the array through copy-on-write — replacing the
+/// fragile `Arc::as_ptr`-keyed `array_type_metadata` side table (the last
+/// Arc-pointer-identity flaky source). `Deref`s to the inner `Vec` so the
+/// overwhelming majority of read sites (`.iter()`/`.len()`/indexing/…) are
+/// unchanged; only structural mutation/rebuild sites touch the wrapper.
+///
+/// Only `Array` ever carries metadata; `Seq`/`Slip`/`HyperSeq`/`RaceSeq` leave
+/// the metadata fields `None`. (Stage 1a: the fields exist but the
+/// `array_type_metadata` side table remains authoritative; Stage 1b wires them
+/// and deletes the table.)
+#[derive(Debug, Clone, Default)]
+pub struct ArrayData {
+    pub items: Vec<Value>,
+    /// Element value-type constraint (e.g. `int` for `my int @a`), if any.
+    /// Mirrors `ContainerTypeInfo::value_type`.
+    pub value_type: Option<String>,
+    /// Declared container type name (e.g. `array[int]`, `Array[Int]`), if any.
+    /// Mirrors `ContainerTypeInfo::declared_type`.
+    pub declared_type: Option<String>,
+}
+
+impl ArrayData {
+    pub fn new(items: Vec<Value>) -> Self {
+        ArrayData {
+            items,
+            value_type: None,
+            declared_type: None,
+        }
+    }
+
+    /// Whether any container *type* metadata is attached.
+    pub fn has_type_meta(&self) -> bool {
+        self.value_type.is_some() || self.declared_type.is_some()
+    }
+
+    /// Clear all container type metadata (used when re-tagging in place).
+    pub fn clear_type_meta(&mut self) {
+        self.value_type = None;
+        self.declared_type = None;
+    }
+}
+
+impl std::ops::Deref for ArrayData {
+    type Target = Vec<Value>;
+    fn deref(&self) -> &Vec<Value> {
+        &self.items
+    }
+}
+
+impl std::ops::DerefMut for ArrayData {
+    fn deref_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.items
+    }
+}
+
+impl From<Vec<Value>> for ArrayData {
+    fn from(items: Vec<Value>) -> Self {
+        ArrayData::new(items)
+    }
+}
+
+impl FromIterator<Value> for ArrayData {
+    fn from_iter<I: IntoIterator<Item = Value>>(iter: I) -> Self {
+        ArrayData::new(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for ArrayData {
+    type Item = Value;
+    type IntoIter = std::vec::IntoIter<Value>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ArrayData {
+    type Item = &'a Value;
+    type IntoIter = std::slice::Iter<'a, Value>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
+
+/// Array equality ignores container metadata — only the element vec matters
+/// (preserves the prior `Arc<Vec<Value>>` PartialEq semantics).
+impl PartialEq for ArrayData {
+    fn eq(&self, other: &Self) -> bool {
+        self.items == other.items
+    }
+}
+
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnumValue {
@@ -1387,7 +1481,7 @@ pub enum Value {
         excl_end: bool,
     },
     /// Distinguishes Array, List, and their itemized (Scalar-wrapped) variants.
-    Array(Arc<Vec<Value>>, ArrayKind),
+    Array(Arc<ArrayData>, ArrayKind),
     Hash(Arc<HashData>),
     Rat(i64, i64),
     FatRat(i64, i64),
@@ -1446,12 +1540,12 @@ pub enum Value {
         kind: JunctionKind,
         values: Arc<Vec<Value>>,
     },
-    Seq(Arc<Vec<Value>>),
+    Seq(Arc<ArrayData>),
     /// HyperSeq: result of `.hyper` — preserves order, single-threaded implementation.
-    HyperSeq(Arc<Vec<Value>>),
+    HyperSeq(Arc<ArrayData>),
     /// RaceSeq: result of `.race` — unordered parallel, single-threaded implementation.
-    RaceSeq(Arc<Vec<Value>>),
-    Slip(Arc<Vec<Value>>),
+    RaceSeq(Arc<ArrayData>),
+    Slip(Arc<ArrayData>),
     LazyList(Arc<LazyList>),
     Version {
         parts: Vec<VersionPart>,
@@ -1541,7 +1635,7 @@ pub enum Value {
     /// Reading this value returns the current value at the index (or Nil).
     /// Assigning to it writes back to the parent array via interior mutation.
     ArraySlotRef {
-        array: Arc<Vec<Value>>,
+        array: Arc<ArrayData>,
         index: usize,
     },
     /// A deferred hash access path for binding. Acts as Any for reads.
@@ -2239,7 +2333,7 @@ impl PartialEq for SharedChannel {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        let match_equals_pair_array = |attrs: &Arc<InstanceAttrs>, arr: &Arc<Vec<Value>>| {
+        let match_equals_pair_array = |attrs: &Arc<InstanceAttrs>, arr: &Arc<ArrayData>| {
             if arr.len() != 2 {
                 return false;
             }
@@ -2595,15 +2689,23 @@ impl Value {
         }
     }
     pub fn array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), ArrayKind::List)
+        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::List)
     }
     /// Create a true Array value (from [...] literals).
     pub fn real_array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), ArrayKind::Array)
+        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Array)
     }
     /// Create a shaped (multidimensional) Array value.
     pub fn shaped_array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), ArrayKind::Shaped)
+        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Shaped)
+    }
+
+    /// Build an `Arc<ArrayData>` from a bare `Vec`. Lets call sites that
+    /// constructed `Value::Array(Arc::new(v), kind)` keep their shape as
+    /// `Value::Array(Value::array_arc(v), kind)` after the variant moved to
+    /// `ArrayData`.
+    pub fn array_arc(items: Vec<Value>) -> Arc<ArrayData> {
+        Arc::new(ArrayData::new(items))
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
@@ -2893,7 +2995,7 @@ impl Value {
     /// concurrent reads/writes to the same Arc.
     pub fn array_push_in_place(&self, val: Value) -> bool {
         if let Value::Array(arc, _) = self {
-            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(arc) as *mut ArrayData;
             unsafe {
                 (*ptr).push(val);
             }
@@ -2936,7 +3038,7 @@ impl Value {
     pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
         if let Value::Array(arc, _kind) = self {
             // SAFETY: mutsu is single-threaded.
-            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(arc) as *mut ArrayData;
             unsafe {
                 while (&(*ptr)).len() <= idx {
                     (&mut (*ptr)).push(Value::Nil);
@@ -2978,7 +3080,7 @@ impl Value {
     /// Write a value to an ArraySlotRef's parent array at the stored index.
     pub fn array_slot_write(&self, val: Value) {
         if let Value::ArraySlotRef { array, index } = self {
-            let ptr = Arc::as_ptr(array) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(array) as *mut ArrayData;
             unsafe {
                 while (&(*ptr)).len() <= *index {
                     (&mut (*ptr)).push(Value::Nil);
@@ -3115,7 +3217,7 @@ impl Value {
         )
     }
     pub fn slip(items: Vec<Value>) -> Self {
-        Value::Slip(Arc::new(items))
+        Value::Slip(Arc::new(items.into()))
     }
     pub fn junction(kind: JunctionKind, values: Vec<Value>) -> Self {
         Value::Junction {
@@ -3613,7 +3715,7 @@ impl Value {
 
     /// Check if this value is a numeric type (Int, Num, Rat, FatRat, BigInt).
     /// Returns the inner items if this value is an Array, Seq, or Slip.
-    pub(crate) fn as_list_items(&self) -> Option<&Arc<Vec<Value>>> {
+    pub(crate) fn as_list_items(&self) -> Option<&Arc<ArrayData>> {
         match self {
             Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => Some(items),
             _ => None,

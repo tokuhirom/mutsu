@@ -118,7 +118,7 @@ impl Interpreter {
                             results.push(v);
                         }
                         return Ok(Value::Array(
-                            std::sync::Arc::new(results),
+                            std::sync::Arc::new(results.into()),
                             crate::value::ArrayKind::List,
                         ));
                     }
@@ -201,7 +201,7 @@ impl Interpreter {
                                 results.push(v);
                             }
                             return Ok(Value::Array(
-                                std::sync::Arc::new(results),
+                                std::sync::Arc::new(results.into()),
                                 crate::value::ArrayKind::List,
                             ));
                         }
@@ -1019,7 +1019,7 @@ impl Interpreter {
                 for rhs in &args[1..] {
                     if !crate::runtime::types::value_is_defined(&acc) {
                         // Return Empty (empty Slip) when LHS is not defined
-                        return Ok(Value::Slip(std::sync::Arc::new(vec![])));
+                        return Ok(Value::Slip(std::sync::Arc::new(vec![].into())));
                     }
                     acc = rhs.clone();
                 }
@@ -1416,7 +1416,7 @@ impl Interpreter {
                 result
             }
             // Seq → List when used as xx LHS (Raku caches/listifies Seq on repeat)
-            Value::Seq(items) => Ok(Value::array(items.as_ref().clone())),
+            Value::Seq(items) => Ok(Value::array(items.as_ref().to_vec())),
             // xx thunks the LHS: each repetition must be an independent copy
             Value::Array(items, kind) => Ok(Value::Array(Arc::new(items.as_ref().clone()), *kind)),
             Value::Hash(map) => Ok(Value::Hash(Value::hash_arc(map.as_ref().clone()))),
@@ -1544,7 +1544,7 @@ impl Interpreter {
                         let count = Self::repeat_logical_count(rhs);
                         Self::make_repeat_lazy_cache_counted(items, count)
                     } else {
-                        Value::Seq(std::sync::Arc::new(items))
+                        Value::Seq(std::sync::Arc::new(items.into()))
                     };
                 }
                 _ => unreachable!(),
@@ -1818,7 +1818,7 @@ impl Interpreter {
         let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
         if !left_is_array && !right_is_array {
             Ok(Value::Array(
-                std::sync::Arc::new(results),
+                std::sync::Arc::new(results.into()),
                 crate::value::ArrayKind::List,
             ))
         } else {

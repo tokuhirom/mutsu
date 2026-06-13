@@ -953,8 +953,8 @@ impl Interpreter {
                 let expr = variants[0].1.as_ref().unwrap();
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 let raw_items: Vec<Value> = match &v {
-                    Value::Array(items, _) => items.as_ref().clone(),
-                    Value::Slip(items) => items.as_ref().clone(),
+                    Value::Array(items, _) => items.as_ref().to_vec(),
+                    Value::Slip(items) => items.as_ref().to_vec(),
                     Value::Hash(map) => map
                         .iter()
                         .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
@@ -966,7 +966,7 @@ impl Interpreter {
                     .into_iter()
                     .flat_map(|item| match item {
                         Value::Slip(inner) => inner.as_ref().clone(),
-                        other => vec![other],
+                        other => vec![other].into(),
                     })
                     .collect();
                 expanded = items

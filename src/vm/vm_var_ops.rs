@@ -148,7 +148,7 @@ impl VM {
 
     pub(super) fn resolve_array_entry(
         &self,
-        items: &Arc<Vec<Value>>,
+        items: &Arc<crate::value::ArrayData>,
         kind: ArrayKind,
         idx: usize,
         default: Value,

@@ -3761,7 +3761,7 @@ impl Interpreter {
                                         self.env.get(&env_key).cloned().unwrap_or(Value::Nil);
                                     let elements = match &value {
                                         Value::Array(arr, _) => arr.as_ref().clone(),
-                                        _ => vec![value],
+                                        _ => vec![value].into(),
                                     };
                                     let mut alt_patterns = Vec::new();
                                     for elt in &elements {
@@ -5039,7 +5039,7 @@ impl Interpreter {
                             .unwrap_or(Value::Nil);
                         let elements = match &value {
                             Value::Array(arr, _) => arr.as_ref().clone(),
-                            _ => vec![value],
+                            _ => vec![value].into(),
                         };
                         let mut alts = Vec::new();
                         for elt in &elements {
@@ -5075,7 +5075,7 @@ impl Interpreter {
                         .unwrap_or(Value::Nil);
                     let elements = match &value {
                         Value::Array(arr, _) => arr.as_ref().clone(),
-                        _ => vec![value],
+                        _ => vec![value].into(),
                     };
                     let mut alts = Vec::new();
                     for elt in &elements {
@@ -5110,7 +5110,7 @@ impl Interpreter {
                     let val = self.eval_string_as_source(&expr_str);
                     let elements = match &val {
                         Value::Array(arr, _) => arr.as_ref().clone(),
-                        _ => vec![val],
+                        _ => vec![val].into(),
                     };
                     let mut alts = Vec::new();
                     for elt in elements.iter() {

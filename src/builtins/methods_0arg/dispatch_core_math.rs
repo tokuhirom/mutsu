@@ -623,7 +623,7 @@ pub(super) fn dispatch(
             }
             // Single-threaded: materialize and wrap in HyperSeq/RaceSeq
             let items = runtime::value_to_list(target);
-            let arc = std::sync::Arc::new(items);
+            let arc = std::sync::Arc::new(crate::value::ArrayData::new(items));
             let result = if method == "hyper" {
                 Value::HyperSeq(arc)
             } else {

@@ -223,7 +223,7 @@ impl Interpreter {
             }
             lines.push(line);
         }
-        Ok(Value::Seq(Arc::new(lines)))
+        Ok(Value::Seq(Arc::new(lines.into())))
     }
 
     /// Create a Buf instance from raw bytes

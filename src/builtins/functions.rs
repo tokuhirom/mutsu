@@ -174,7 +174,7 @@ fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Value, RuntimeE
     let flattened: Vec<Value>;
     let actual_args = if rest.len() == 1 {
         if let Value::Array(items, ..) = &rest[0] {
-            flattened = items.as_ref().clone();
+            flattened = items.as_ref().to_vec();
             &flattened[..]
         } else {
             rest
@@ -311,18 +311,18 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             let items = match arg {
                 Value::Int(n) => {
                     if *n < 0 {
-                        return Some(Ok(Value::Seq(Vec::new().into())));
+                        return Some(Ok(Value::Seq(Value::array_arc(Vec::new()))));
                     }
                     let items: Vec<Value> = (0..*n).map(Value::Int).collect();
-                    return Some(Ok(Value::Seq(
-                        super::methods_0arg::collection::combinations_all(&items).into(),
-                    )));
+                    return Some(Ok(Value::Seq(Value::array_arc(
+                        super::methods_0arg::collection::combinations_all(&items),
+                    ))));
                 }
                 _ => runtime::value_to_list(arg),
             };
-            Some(Ok(Value::Seq(
-                super::methods_0arg::collection::combinations_all(&items).into(),
-            )))
+            Some(Ok(Value::Seq(Value::array_arc(
+                super::methods_0arg::collection::combinations_all(&items),
+            ))))
         }
         "permutations" => {
             // permutations($n) where $n is Int => (0, 1, ..., $n-1).permutations
@@ -330,7 +330,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             let items = match arg {
                 Value::Int(n) => {
                     if *n <= 0 {
-                        return Some(Ok(Value::Seq(vec![Value::array(Vec::new())].into())));
+                        return Some(Ok(Value::Seq(Value::array_arc(vec![Value::array(
+                            Vec::new(),
+                        )]))));
                     }
                     if *n > 20 {
                         // For large n, return a lazy list that knows its count (n!)
@@ -351,9 +353,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                         return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
                     }
                     let items: Vec<Value> = (0..*n).map(Value::Int).collect();
-                    return Some(Ok(Value::Seq(
-                        super::methods_0arg::collection::all_permutations(&items).into(),
-                    )));
+                    return Some(Ok(Value::Seq(Value::array_arc(
+                        super::methods_0arg::collection::all_permutations(&items),
+                    ))));
                 }
                 _ => runtime::value_to_list(arg),
             };
@@ -374,9 +376,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }
-            Some(Ok(Value::Seq(
-                super::methods_0arg::collection::all_permutations(&items).into(),
-            )))
+            Some(Ok(Value::Seq(Value::array_arc(
+                super::methods_0arg::collection::all_permutations(&items),
+            ))))
         }
         "srand" => {
             let seed = match arg {
@@ -434,7 +436,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 .split_whitespace()
                 .map(|p| Value::str(p.to_string()))
                 .collect();
-            Some(Ok(Value::Seq(std::sync::Arc::new(parts))))
+            Some(Ok(Value::Seq(std::sync::Arc::new(parts.into()))))
         }
         "chars" => Some(Ok(Value::Int(
             arg.to_string_value().graphemes(true).count() as i64,
@@ -893,12 +895,12 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Value::Array(items, ..) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::array(reversed)
+                    Value::array(reversed.to_vec())
                 }
                 Value::Seq(items) | Value::Slip(items) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::array(reversed)
+                    Value::array(reversed.to_vec())
                 }
                 Value::Range(..)
                 | Value::RangeExcl(..)
@@ -923,7 +925,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Value::Array(items, ..) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::array(sorted)
+                    Value::array(sorted.to_vec())
                 }
                 _ => Value::Nil,
             }))
@@ -968,7 +970,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "flat" => {
             if crate::runtime::utils::is_shaped_array(arg) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(arg);
-                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves.into()))));
             }
             if is_infinite_range(arg) {
                 return Some(Ok(arg.clone()));
@@ -978,7 +980,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             // top-level arrays (including @a in `flat (6, @a)`) are
             // flattened, while nested arrays inside [...] are preserved.
             flat_val(arg, &mut flat, true);
-            Some(Ok(Value::Seq(std::sync::Arc::new(flat))))
+            Some(Ok(Value::Seq(std::sync::Arc::new(flat.into()))))
         }
         "first" => Some(Ok(match arg {
             Value::Array(items, ..) => items.first().cloned().unwrap_or(Value::Nil),
@@ -1373,7 +1375,7 @@ fn native_function_2arg(
             if let Some(n) = limit {
                 words.truncate(n);
             }
-            Some(Ok(Value::Seq(std::sync::Arc::new(words))))
+            Some(Ok(Value::Seq(std::sync::Arc::new(words.into()))))
         }
         "uniprop" => {
             // uniprop(target, property_name)
@@ -1619,7 +1621,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             };
             let lists: Vec<Vec<Value>> = raw_inputs.iter().map(runtime::value_to_list).collect();
             if lists.is_empty() {
-                return Some(Ok(Value::Seq(std::sync::Arc::new(vec![]))));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(vec![].into()))));
             }
             let max_expand: usize = 1_000;
             let min_len = lists
@@ -1649,7 +1651,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             for arg in args {
                 flat_val(arg, &mut result, true);
             }
-            Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+            Some(Ok(Value::Seq(std::sync::Arc::new(result.into()))))
         }
         "sum" => {
             // If any argument (or element inside an array arg) is a Junction,
@@ -1882,12 +1884,12 @@ fn builtin_times() -> Result<Value, RuntimeError> {
             let user = usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0;
             let sys = usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0;
             Ok(Value::Array(
-                vec![Value::Num(user), Value::Num(sys)].into(),
+                Value::array_arc(vec![Value::Num(user), Value::Num(sys)]),
                 ArrayKind::List,
             ))
         } else {
             Ok(Value::Array(
-                vec![Value::Num(0.0), Value::Num(0.0)].into(),
+                Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
                 ArrayKind::List,
             ))
         }
@@ -1895,7 +1897,7 @@ fn builtin_times() -> Result<Value, RuntimeError> {
     #[cfg(not(unix))]
     {
         Ok(Value::Array(
-            vec![Value::Num(0.0), Value::Num(0.0)].into(),
+            Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
             ArrayKind::List,
         ))
     }
@@ -1958,7 +1960,7 @@ fn builtin_localtime_gmtime(name: &str, args: &[Value]) -> Result<Value, Runtime
         } else {
             // List context: return the 9-element list
             Ok(Value::Array(
-                vec![
+                Value::array_arc(vec![
                     Value::Int(sec as i64),
                     Value::Int(min as i64),
                     Value::Int(hour as i64),
@@ -1968,8 +1970,7 @@ fn builtin_localtime_gmtime(name: &str, args: &[Value]) -> Result<Value, Runtime
                     Value::Int(wday as i64),
                     Value::Int(yday as i64),
                     Value::Int(isdst as i64),
-                ]
-                .into(),
+                ]),
                 ArrayKind::List,
             ))
         }

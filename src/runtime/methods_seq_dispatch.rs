@@ -39,7 +39,7 @@ impl Interpreter {
         }
 
         let Some(body_callable) = positional.first().cloned() else {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new().into())));
         };
         let cond_callable = positional.get(1).cloned();
         let step_callable = positional.get(2).cloned();
@@ -54,7 +54,7 @@ impl Interpreter {
             let iter =
                 Value::make_instance(crate::symbol::Symbol::intern("FromLoopIterator"), attrs);
             // Wrap in a deferred-iterator Seq
-            let arc = std::sync::Arc::new(Vec::<Value>::new());
+            let arc = std::sync::Arc::new(crate::value::ArrayData::new(Vec::<Value>::new()));
             crate::value::seq_register_deferred_iter(&arc, iter.clone());
             crate::value::seq_mark_lazy(&arc);
             return Ok(Value::Seq(arc));
@@ -104,6 +104,6 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(std::sync::Arc::new(items)))
+        Ok(Value::Seq(std::sync::Arc::new(items.into())))
     }
 }

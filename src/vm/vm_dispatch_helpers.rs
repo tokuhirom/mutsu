@@ -94,7 +94,7 @@ impl VM {
                     &right_list[i],
                 )?);
             }
-            return Ok(Value::Seq(std::sync::Arc::new(results)));
+            return Ok(Value::Seq(std::sync::Arc::new(results.into())));
         }
         // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
         // Apply inner op element-wise to two lists.

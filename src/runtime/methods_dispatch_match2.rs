@@ -158,12 +158,12 @@ impl Interpreter {
                 // Seq.slice(@indices) — return elements at the given indices as a Seq.
                 // Seq.slice() with no args returns an empty Seq.
                 let items = if let Value::Seq(ref arc) = target {
-                    arc.as_ref().clone()
+                    arc.to_vec()
                 } else {
                     crate::runtime::utils::value_to_list(&target)
                 };
                 if args.is_empty() {
-                    Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))))
+                    Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new().into()))))
                 } else {
                     let mut result = Vec::with_capacity(args.len());
                     for arg in &args {
@@ -178,7 +178,7 @@ impl Interpreter {
                             result.push(items[i].clone());
                         }
                     }
-                    Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+                    Some(Ok(Value::Seq(Value::array_arc(result))))
                 }
             }
             "iterator" if args.is_empty() => Some(self.dispatch_iterator_method(target)),
@@ -199,7 +199,7 @@ impl Interpreter {
                             other => flat_items.push(other),
                         }
                     }
-                    Value::Seq(std::sync::Arc::new(flat_items))
+                    Value::Seq(std::sync::Arc::new(flat_items.into()))
                 }))
             }
             "duckmap" => {
@@ -503,7 +503,10 @@ impl Interpreter {
         let mut env = self.env.clone();
         env.insert(
             "__mutsu_lazy_map_items".to_string(),
-            Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List),
+            Value::Array(
+                std::sync::Arc::new(items.into()),
+                crate::value::ArrayKind::List,
+            ),
         );
         env.insert(
             "__mutsu_lazy_map_func".to_string(),
@@ -600,7 +603,7 @@ impl Interpreter {
         if let Value::Package(name) = &target
             && name == "Supply"
         {
-            return Ok(Value::Seq(std::sync::Arc::new(vec![target])));
+            return Ok(Value::Seq(std::sync::Arc::new(vec![target].into())));
         }
         let mut caller = crate::runtime::methods_collection_ops::sort::InterpCaller(self);
         crate::runtime::methods_collection_ops::sort::sort_value_generic(&mut caller, target, &args)

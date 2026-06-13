@@ -254,7 +254,7 @@ impl Interpreter {
 
     pub(crate) fn overwrite_array_bindings_by_identity(
         &mut self,
-        needle: &std::sync::Arc<Vec<Value>>,
+        needle: &std::sync::Arc<crate::value::ArrayData>,
         replacement: Value,
     ) {
         let keys: Vec<Symbol> = self
@@ -296,7 +296,7 @@ impl Interpreter {
     /// share the same array container.
     pub(crate) fn propagate_shared_array_in_instances(
         &mut self,
-        needle: &std::sync::Arc<Vec<Value>>,
+        needle: &std::sync::Arc<crate::value::ArrayData>,
         replacement: &Value,
     ) {
         let mut updates: Vec<(Symbol, String)> = Vec::new();
@@ -707,7 +707,7 @@ impl Interpreter {
                 let mut updated = items.to_vec();
                 if idx < updated.len() {
                     updated[idx] = value.clone();
-                    let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+                    let replacement = Value::Array(std::sync::Arc::new(updated.into()), *kind);
                     if let Some(var_name) = target_var {
                         self.env.insert(var_name.to_string(), replacement);
                     }
@@ -724,7 +724,7 @@ impl Interpreter {
             let idx = if method == "head" { 0 } else { items.len() - 1 };
             let mut updated = items.to_vec();
             updated[idx] = value.clone();
-            let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+            let replacement = Value::Array(std::sync::Arc::new(updated.into()), *kind);
             if let Some(var_name) = target_var {
                 self.env.insert(var_name.to_string(), replacement);
             }
@@ -886,7 +886,7 @@ impl Interpreter {
                     return Ok(value);
                 }
                 let mut selected_hash: Option<std::sync::Arc<crate::value::HashData>> = None;
-                let mut selected_array: Option<std::sync::Arc<Vec<Value>>> = None;
+                let mut selected_array: Option<std::sync::Arc<crate::value::ArrayData>> = None;
 
                 if let Some(var_name) = target_var
                     && let Some(Value::Hash(candidate)) = self.env.get(var_name)
@@ -949,7 +949,7 @@ impl Interpreter {
                     let mut updated = (*source_array).clone();
                     if i < updated.len() {
                         updated[i] = value.clone();
-                        let replacement = Value::array(updated);
+                        let replacement = Value::array(updated.to_vec());
                         self.overwrite_array_bindings_by_identity(&source_array, replacement);
                         return Ok(value);
                     }
@@ -2579,7 +2579,7 @@ impl Interpreter {
                     } else {
                         items.extend(normalized_args);
                     }
-                    let result = Value::Array(Arc::new(items), array_flag);
+                    let result = Value::Array(Arc::new(items.into()), array_flag);
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -2614,7 +2614,7 @@ impl Interpreter {
                         items.pop().unwrap_or(Value::Nil)
                     };
                     self.env
-                        .insert(key, Value::Array(Arc::new(items), array_flag));
+                        .insert(key, Value::Array(Arc::new(items.into()), array_flag));
                     return Ok(out);
                 }
                 "unshift" => {
@@ -2633,7 +2633,7 @@ impl Interpreter {
                     for (i, arg) in normalized_args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result = Value::Array(Arc::new(items), array_flag);
+                    let result = Value::Array(Arc::new(items.into()), array_flag);
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -2652,9 +2652,9 @@ impl Interpreter {
                     };
                     let mut pref: Vec<Value> = flat_values;
                     pref.extend(items);
-                    let result = Value::Array(Arc::new(pref.clone()), array_flag);
+                    let result = Value::Array(Arc::new(pref.clone().into()), array_flag);
                     self.env
-                        .insert(key, Value::Array(Arc::new(pref), array_flag));
+                        .insert(key, Value::Array(Arc::new(pref.into()), array_flag));
                     return Ok(result);
                 }
                 "shift" => {
@@ -2683,7 +2683,7 @@ impl Interpreter {
                         items.remove(0)
                     };
                     self.env
-                        .insert(key, Value::Array(Arc::new(items), array_flag));
+                        .insert(key, Value::Array(Arc::new(items.into()), array_flag));
                     return Ok(out);
                 }
                 _ => {}
@@ -2753,7 +2753,7 @@ impl Interpreter {
                 if method == "grab" && args.is_empty() {
                     return Ok(Value::Nil);
                 }
-                return Ok(Value::Seq(Arc::new(Vec::new())));
+                return Ok(Value::Seq(Arc::new(Vec::new().into())));
             }
             use crate::builtins::rng::builtin_rand;
             let mut grabbed = Vec::new();
@@ -2776,7 +2776,7 @@ impl Interpreter {
                 if grabbed.len() == 1 && args.is_empty() && method == "grab" {
                     grabbed.into_iter().next().unwrap()
                 } else {
-                    Value::Seq(Arc::new(grabbed))
+                    Value::Seq(Arc::new(grabbed.into()))
                 },
             );
         }
@@ -2836,7 +2836,7 @@ impl Interpreter {
                 if method == "grab" && args.is_empty() {
                     return Ok(Value::Nil);
                 }
-                return Ok(Value::Seq(Arc::new(Vec::new())));
+                return Ok(Value::Seq(Arc::new(Vec::new().into())));
             }
             use crate::builtins::rng::builtin_rand;
             let mut grabbed = Vec::new();
@@ -2887,7 +2887,7 @@ impl Interpreter {
             return Ok(if grabbed.len() == 1 && args.is_empty() {
                 grabbed.into_iter().next().unwrap()
             } else {
-                Value::Seq(Arc::new(grabbed))
+                Value::Seq(Arc::new(grabbed.into()))
             });
         }
 
@@ -2942,7 +2942,7 @@ impl Interpreter {
             };
             let keys: Vec<String> = mix.keys().cloned().collect();
             if keys.is_empty() || count == 0 {
-                return Ok(Value::Seq(Arc::new(Vec::new())));
+                return Ok(Value::Seq(Arc::new(Vec::new().into())));
             }
             use crate::builtins::rng::builtin_rand;
             let mut grabbed = Vec::new();
@@ -2969,7 +2969,7 @@ impl Interpreter {
             return Ok(if grabbed.len() == 1 && args.is_empty() {
                 grabbed.into_iter().next().unwrap()
             } else {
-                Value::Seq(Arc::new(grabbed))
+                Value::Seq(Arc::new(grabbed.into()))
             });
         }
 
@@ -3118,7 +3118,7 @@ impl Interpreter {
                                 let mut next = existing.to_vec();
                                 next.extend(collected);
                                 let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
+                                    Value::Array(std::sync::Arc::new(next.into()), *arr_kind);
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             Value::str_from("IterationEnd")
@@ -3180,7 +3180,7 @@ impl Interpreter {
                                 let mut next = existing.to_vec();
                                 next.extend(collected.clone());
                                 let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
+                                    Value::Array(std::sync::Arc::new(next.into()), *arr_kind);
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             if collected.len() >= want {
@@ -3261,7 +3261,8 @@ impl Interpreter {
                     if let Some(Value::Array(existing, arr_kind)) = args.first() {
                         let mut next = existing.to_vec();
                         next.extend(vals.iter().cloned());
-                        let updated_array = Value::Array(std::sync::Arc::new(next), *arr_kind);
+                        let updated_array =
+                            Value::Array(std::sync::Arc::new(next.into()), *arr_kind);
                         self.overwrite_array_bindings_by_identity(existing, updated_array);
                     }
                 };

@@ -610,7 +610,7 @@ impl Interpreter {
             if !shared.contains_key(&atomic_key) {
                 drop(shared);
                 let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
-                    std::sync::Arc::new(Vec::new()),
+                    std::sync::Arc::new(Vec::new().into()),
                     crate::value::ArrayKind::Array,
                 ));
                 let mut shared = self.shared_vars.write().unwrap();
@@ -625,7 +625,7 @@ impl Interpreter {
         {
             let mut shared = self.shared_vars.write().unwrap();
             let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
-                std::sync::Arc::new(Vec::new()),
+                std::sync::Arc::new(Vec::new().into()),
                 crate::value::ArrayKind::Array,
             ));
             if let Value::Array(ref elements, kind) = arr {
@@ -694,7 +694,7 @@ impl Interpreter {
             if !shared.contains_key(&atomic_key) {
                 drop(shared);
                 let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
-                    std::sync::Arc::new(Vec::new()),
+                    std::sync::Arc::new(Vec::new().into()),
                     crate::value::ArrayKind::Array,
                 ));
                 let mut shared = self.shared_vars.write().unwrap();
@@ -709,7 +709,7 @@ impl Interpreter {
         {
             let mut shared = self.shared_vars.write().unwrap();
             let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
-                std::sync::Arc::new(Vec::new()),
+                std::sync::Arc::new(Vec::new().into()),
                 crate::value::ArrayKind::Array,
             ));
             // Navigate to the element using the dimension indices

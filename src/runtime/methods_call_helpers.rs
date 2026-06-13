@@ -228,12 +228,12 @@ impl Interpreter {
                 "prepend" => flatten_append_args(args),
                 _ => unreachable!(),
             };
-            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
             unsafe {
                 if matches!(method, "unshift" | "prepend") {
                     let mut combined = vals;
-                    combined.append(&mut (*ptr));
-                    *ptr = combined;
+                    combined.append(&mut (*ptr).items);
+                    (*ptr).items = combined;
                 } else {
                     (*ptr).extend(vals);
                 }
@@ -252,12 +252,12 @@ impl Interpreter {
             "push" => {
                 let normalized = Self::normalize_push_args_for_copy(args);
                 items.extend(normalized);
-                Ok(Value::Array(Arc::new(items), kind))
+                Ok(Value::Array(Arc::new(items.into()), kind))
             }
             "append" => {
                 let flat = flatten_append_args(args);
                 items.extend(flat);
-                Ok(Value::Array(Arc::new(items), kind))
+                Ok(Value::Array(Arc::new(items.into()), kind))
             }
             "pop" => {
                 if !args.is_empty() {
@@ -270,10 +270,10 @@ impl Interpreter {
                     return Err(RuntimeError::cannot_lazy("pop"));
                 }
                 if items.is_empty() {
-                    Ok(Value::Array(Arc::new(items), kind))
+                    Ok(Value::Array(Arc::new(items.into()), kind))
                 } else {
                     items.pop();
-                    Ok(Value::Array(Arc::new(items), kind))
+                    Ok(Value::Array(Arc::new(items.into()), kind))
                 }
             }
             "shift" => {
@@ -284,10 +284,10 @@ impl Interpreter {
                     )));
                 }
                 if items.is_empty() {
-                    Ok(Value::Array(Arc::new(items), kind))
+                    Ok(Value::Array(Arc::new(items.into()), kind))
                 } else {
                     items.remove(0);
-                    Ok(Value::Array(Arc::new(items), kind))
+                    Ok(Value::Array(Arc::new(items.into()), kind))
                 }
             }
             "unshift" | "prepend" => {
@@ -295,7 +295,7 @@ impl Interpreter {
                 for (i, arg) in normalized.into_iter().enumerate() {
                     items.insert(i, arg);
                 }
-                Ok(Value::Array(Arc::new(items), kind))
+                Ok(Value::Array(Arc::new(items.into()), kind))
             }
             "splice" => {
                 // On a bare Array value (not a named variable) there is no

@@ -3,7 +3,7 @@ use super::*;
 impl Interpreter {
     pub(super) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = if args.len() > 1 {
-            Value::Slip(std::sync::Arc::new(args.to_vec()))
+            Value::Slip(std::sync::Arc::new(args.to_vec().into()))
         } else {
             args.first().cloned().unwrap_or(Value::Nil)
         };

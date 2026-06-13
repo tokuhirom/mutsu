@@ -1196,13 +1196,13 @@ impl Interpreter {
 
     pub(crate) fn overwrite_array_items_by_identity_for_vm(
         &mut self,
-        needle: &std::sync::Arc<Vec<Value>>,
+        needle: &std::sync::Arc<crate::value::ArrayData>,
         updated_items: Vec<Value>,
         kind: ArrayKind,
     ) {
         self.overwrite_array_bindings_by_identity(
             needle,
-            Value::Array(std::sync::Arc::new(updated_items), kind),
+            Value::Array(std::sync::Arc::new(updated_items.into()), kind),
         );
     }
 }

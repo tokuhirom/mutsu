@@ -1057,7 +1057,7 @@ impl Interpreter {
                     out.push(Self::apply_reduction_op(inner_op, l, r)?);
                 }
             }
-            return Ok(Value::Seq(std::sync::Arc::new(out)));
+            return Ok(Value::Seq(std::sync::Arc::new(out.into())));
         }
         if let Some(inner_op) = op.strip_prefix('Z')
             && !inner_op.is_empty()
@@ -1073,7 +1073,7 @@ impl Interpreter {
                     &right_list[i],
                 )?);
             }
-            return Ok(Value::Seq(std::sync::Arc::new(out)));
+            return Ok(Value::Seq(std::sync::Arc::new(out.into())));
         }
         match op {
             "+" => {
@@ -1136,7 +1136,7 @@ impl Interpreter {
                     Ok(right.clone())
                 } else {
                     // Return Empty (empty Slip) when left is undefined
-                    Ok(Value::Slip(std::sync::Arc::new(vec![])))
+                    Ok(Value::Slip(std::sync::Arc::new(vec![].into())))
                 }
             }
             "xor" => {
@@ -1575,7 +1575,7 @@ impl Interpreter {
                         crate::value::LazyList::new_cached(items),
                     )))
                 } else {
-                    Ok(Value::Seq(std::sync::Arc::new(items)))
+                    Ok(Value::Seq(std::sync::Arc::new(items.into())))
                 }
             }
             "," => {

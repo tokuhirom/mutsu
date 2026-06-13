@@ -57,7 +57,7 @@ impl SplitOpts {
             let mut attrs = HashMap::new();
             attrs.insert("what".to_string(), Value::str("split".to_string()));
             attrs.insert("source".to_string(), Value::str(source.to_string()));
-            attrs.insert("nogo".to_string(), Value::Seq(Arc::new(nogo)));
+            attrs.insert("nogo".to_string(), Value::Seq(Arc::new(nogo.into())));
             let msg = format!(
                 "Only one of :v, :k, :kv, :p may be specified on {}.split",
                 source
@@ -425,7 +425,7 @@ pub(crate) fn native_split_method(
     };
 
     let result = apply_split_opts(parts, &opts);
-    Some(Ok(Value::Seq(Arc::new(result))))
+    Some(Ok(Value::Seq(Arc::new(result.into()))))
 }
 
 /// Perform string split as function: split($splitter, $string, ...).
@@ -457,5 +457,5 @@ pub(crate) fn native_split_function(args: &[Value]) -> Option<Result<Value, Runt
     };
 
     let result = apply_split_opts(parts, &opts);
-    Some(Ok(Value::Seq(Arc::new(result))))
+    Some(Ok(Value::Seq(Arc::new(result.into()))))
 }

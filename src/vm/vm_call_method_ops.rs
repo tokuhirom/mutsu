@@ -555,7 +555,7 @@ impl VM {
             if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.interpreter.env_mut() = saved_env;
             }
-            Value::Seq(std::sync::Arc::new(items))
+            Value::Seq(std::sync::Arc::new(items.into()))
         } else {
             target
         };
@@ -609,7 +609,7 @@ impl VM {
             }
             // Materialize and wrap
             let items = crate::runtime::value_to_list(&target);
-            let arc = std::sync::Arc::new(items);
+            let arc = std::sync::Arc::new(crate::value::ArrayData::new(items));
             let result = if method == "hyper" {
                 Value::HyperSeq(arc)
             } else {
@@ -706,9 +706,9 @@ impl VM {
                         let result =
                             self.exec_hyper_race_map_grep(&items_arc, block, is_map, is_hyper)?;
                         let wrapped = if is_hyper {
-                            Value::HyperSeq(Arc::new(result))
+                            Value::HyperSeq(Arc::new(result.into()))
                         } else {
-                            Value::RaceSeq(Arc::new(result))
+                            Value::RaceSeq(Arc::new(result.into()))
                         };
                         self.stack.push(wrapped);
                         self.env_dirty = true;
@@ -968,7 +968,7 @@ impl VM {
                         "ords" if args.is_empty() => {
                             return Err(RuntimeError::warn_signal_with_resume(
                                 "Use of Nil in string context".to_string(),
-                                Value::Seq(Arc::new(vec![])),
+                                Value::Seq(Arc::new(vec![].into())),
                             ));
                         }
                         "chrs" if args.is_empty() => {
@@ -1102,7 +1102,7 @@ impl VM {
                                 .collect();
                             // Pure array transform: env-pure.
                             self.method_dispatch_pure = true;
-                            Ok(Value::Slip(std::sync::Arc::new(converted)))
+                            Ok(Value::Slip(std::sync::Arc::new(converted.into())))
                         } else if let Some(native_result) =
                             self.try_native_method(&target, Symbol::intern(method), &args)
                         {
@@ -1156,9 +1156,9 @@ impl VM {
                 {
                     let result_items = crate::runtime::value_to_list(&result);
                     let wrapped = if is_hyper {
-                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                        Value::HyperSeq(std::sync::Arc::new(result_items.into()))
                     } else {
-                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                        Value::RaceSeq(std::sync::Arc::new(result_items.into()))
                     };
                     self.stack.push(wrapped);
                 }

@@ -205,10 +205,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
                     let items = ll.force_scan_to(200_000);
-                    Some(Ok(Value::Slip(std::sync::Arc::new(items))))
+                    Some(Ok(Value::Slip(std::sync::Arc::new(items.into()))))
                 } else {
                     let items = ll.cache.lock().unwrap().clone().unwrap_or_default();
-                    Some(Ok(Value::Slip(std::sync::Arc::new(items))))
+                    Some(Ok(Value::Slip(std::sync::Arc::new(items.into()))))
                 }
             }
             Value::Range(..)
@@ -244,7 +244,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     )))
                 } else {
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(Vec::new()),
+                        std::sync::Arc::new(Vec::new().into()),
                         crate::value::ArrayKind::List,
                     )))
                 }

@@ -403,7 +403,7 @@ fn flatten_target(target: &Value, depth: Option<usize>, flatten_arrays: bool) ->
     } else {
         flatten_with_depth(target, depth, &mut flat, flatten_arrays);
     }
-    Value::Seq(Arc::new(flat))
+    Value::Seq(Arc::new(flat.into()))
 }
 
 pub(crate) fn fmt_joinable_target(target: &Value) -> bool {
@@ -1119,7 +1119,7 @@ pub(crate) fn native_method_1arg(
                             .into_iter()
                             .map(Value::str)
                             .collect();
-                    return Some(Ok(Value::Seq(std::sync::Arc::new(lines))));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(lines.into()))));
                 }
                 return None;
             }
@@ -1141,7 +1141,7 @@ pub(crate) fn native_method_1arg(
                 lines.truncate(n);
             }
             let lines: Vec<Value> = lines.into_iter().map(Value::str).collect();
-            Some(Ok(Value::Seq(std::sync::Arc::new(lines))))
+            Some(Ok(Value::Seq(std::sync::Arc::new(lines.into()))))
         }
         "words" => {
             let s = target.to_string_value();
@@ -1164,7 +1164,7 @@ pub(crate) fn native_method_1arg(
             if let Some(n) = limit {
                 words.truncate(n);
             }
-            Some(Ok(Value::Seq(std::sync::Arc::new(words))))
+            Some(Ok(Value::Seq(std::sync::Arc::new(words.into()))))
         }
         "join" => {
             // Shaped arrays: join over leaves
@@ -1317,19 +1317,18 @@ pub(crate) fn native_method_1arg(
                 .map(|items| items.to_vec())
                 .unwrap_or_else(|| runtime::value_to_list(target));
             match arg {
-                Value::Range(a, b) => Some(Ok(Value::Seq(
-                    super::methods_0arg::collection::combinations_range(&items, *a, *b).into(),
-                ))),
-                Value::RangeExcl(a, b) => Some(Ok(Value::Seq(
-                    super::methods_0arg::collection::combinations_range(&items, *a, *b - 1).into(),
-                ))),
-                Value::RangeExclStart(a, b) => Some(Ok(Value::Seq(
-                    super::methods_0arg::collection::combinations_range(&items, *a + 1, *b).into(),
-                ))),
-                Value::RangeExclBoth(a, b) => Some(Ok(Value::Seq(
-                    super::methods_0arg::collection::combinations_range(&items, *a + 1, *b - 1)
-                        .into(),
-                ))),
+                Value::Range(a, b) => Some(Ok(Value::Seq(Value::array_arc(
+                    super::methods_0arg::collection::combinations_range(&items, *a, *b),
+                )))),
+                Value::RangeExcl(a, b) => Some(Ok(Value::Seq(Value::array_arc(
+                    super::methods_0arg::collection::combinations_range(&items, *a, *b - 1),
+                )))),
+                Value::RangeExclStart(a, b) => Some(Ok(Value::Seq(Value::array_arc(
+                    super::methods_0arg::collection::combinations_range(&items, *a + 1, *b),
+                )))),
+                Value::RangeExclBoth(a, b) => Some(Ok(Value::Seq(Value::array_arc(
+                    super::methods_0arg::collection::combinations_range(&items, *a + 1, *b - 1),
+                )))),
                 Value::GenericRange {
                     start,
                     end,
@@ -1344,19 +1343,18 @@ pub(crate) fn native_method_1arg(
                     if *excl_end {
                         hi -= 1;
                     }
-                    Some(Ok(Value::Seq(
-                        super::methods_0arg::collection::combinations_range(&items, lo, hi).into(),
-                    )))
+                    Some(Ok(Value::Seq(Value::array_arc(
+                        super::methods_0arg::collection::combinations_range(&items, lo, hi),
+                    ))))
                 }
                 _ => {
                     let k = runtime::to_int(arg);
                     if k < 0 {
-                        Some(Ok(Value::Seq(Vec::new().into())))
+                        Some(Ok(Value::Seq(Value::array_arc(Vec::new()))))
                     } else {
-                        Some(Ok(Value::Seq(
-                            super::methods_0arg::collection::combinations_k(&items, k as usize)
-                                .into(),
-                        )))
+                        Some(Ok(Value::Seq(Value::array_arc(
+                            super::methods_0arg::collection::combinations_k(&items, k as usize),
+                        ))))
                     }
                 }
             }
@@ -1387,7 +1385,7 @@ pub(crate) fn native_method_1arg(
                 .chunks(n)
                 .map(|chunk| Value::array(chunk.to_vec()))
                 .collect();
-            Some(Ok(Value::Seq(batches.into())))
+            Some(Ok(Value::Seq(Value::array_arc(batches))))
         }
         "rindex" => {
             // Fall through to runtime dispatch for arrays (list of needles)
@@ -1651,7 +1649,7 @@ pub(crate) fn native_method_1arg(
             };
             let (non_repeating, repeating) = rat_base_repeating(n, d, radix);
             Some(Ok(Value::Array(
-                Arc::new(vec![Value::str(non_repeating), Value::str(repeating)]),
+                Arc::new(vec![Value::str(non_repeating), Value::str(repeating)].into()),
                 ArrayKind::List,
             )))
         }
@@ -2061,7 +2059,7 @@ pub(crate) fn native_method_1arg(
             if let Value::Set(items, _) = target {
                 let keys: Vec<&String> = items.iter().collect();
                 if keys.is_empty() {
-                    return Some(Ok(Value::Seq(Arc::new(Vec::new()))));
+                    return Some(Ok(Value::Seq(Arc::new(Vec::new().into()))));
                 }
                 if count.is_none() {
                     let generated = 131_072usize;
@@ -2080,7 +2078,7 @@ pub(crate) fn native_method_1arg(
                 }
                 let count = count.unwrap_or(0);
                 if count == 0 {
-                    return Some(Ok(Value::Seq(Arc::new(Vec::new()))));
+                    return Some(Ok(Value::Seq(Arc::new(Vec::new().into()))));
                 }
                 let mut result = Vec::with_capacity(count);
                 for _ in 0..count {

@@ -80,9 +80,9 @@ pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
     failure_attrs.insert("handled".to_string(), Value::Bool(false));
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
-type GrepViewBinding = (Arc<Vec<Value>>, Vec<usize>, ArrayKind);
-type GrepViewMap = PtrKeyedMap<Vec<Value>, GrepViewBinding>;
-type ShapedArrayIds = PtrKeyedMap<Vec<Value>, Vec<usize>>;
+type GrepViewBinding = (Arc<crate::value::ArrayData>, Vec<usize>, ArrayKind);
+type GrepViewMap = PtrKeyedMap<crate::value::ArrayData, GrepViewBinding>;
+type ShapedArrayIds = PtrKeyedMap<crate::value::ArrayData, Vec<usize>>;
 
 fn shaped_array_ids() -> &'static Mutex<ShapedArrayIds> {
     static SHAPED_ARRAY_IDS: OnceLock<Mutex<ShapedArrayIds>> = OnceLock::new();
@@ -130,13 +130,13 @@ fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
     GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(PtrKeyedMap::new()))
 }
 
-fn shaped_array_key(items: &Arc<Vec<Value>>) -> usize {
+fn shaped_array_key(items: &Arc<crate::value::ArrayData>) -> usize {
     crate::runtime::ptr_keyed::ptr_key(items)
 }
 
 pub(crate) fn register_grep_view_binding(
-    filtered: &Arc<Vec<Value>>,
-    source: &Arc<Vec<Value>>,
+    filtered: &Arc<crate::value::ArrayData>,
+    source: &Arc<crate::value::ArrayData>,
     source_indices: Vec<usize>,
     source_is_array: ArrayKind,
 ) {
@@ -146,8 +146,8 @@ pub(crate) fn register_grep_view_binding(
 }
 
 pub(crate) fn get_grep_view_binding(
-    filtered: &Arc<Vec<Value>>,
-) -> Option<(Arc<Vec<Value>>, Vec<usize>, ArrayKind)> {
+    filtered: &Arc<crate::value::ArrayData>,
+) -> Option<(Arc<crate::value::ArrayData>, Vec<usize>, ArrayKind)> {
     let bindings = grep_view_bindings().lock().ok()?;
     bindings.get_arc(filtered).cloned()
 }
@@ -241,7 +241,10 @@ pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
     mark_shaped_array_items(items, shape);
 }
 
-pub(crate) fn mark_shaped_array_items(items: &Arc<Vec<Value>>, shape: Option<&[usize]>) {
+pub(crate) fn mark_shaped_array_items(
+    items: &Arc<crate::value::ArrayData>,
+    shape: Option<&[usize]>,
+) {
     if shape.is_none() {
         return;
     }
@@ -589,19 +592,19 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         Value::Range(a, b) => {
             let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(Value::array_arc(items), ArrayKind::List))
         }
         Value::RangeExcl(a, b) => {
             let items: Vec<Value> = (a..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(Value::array_arc(items), ArrayKind::List))
         }
         Value::RangeExclStart(a, b) => {
             let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(Value::array_arc(items), ArrayKind::List))
         }
         Value::RangeExclBoth(a, b) => {
             let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+            coerce_to_hash(Value::Array(Value::array_arc(items), ArrayKind::List))
         }
         Value::Nil => Value::hash(HashMap::new()),
         Value::Instance {
@@ -679,7 +682,7 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 const MAX_ARRAY_EXPAND: i64 = 100_000;
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
-    fn metadata_shape_for_items(items: &Arc<Vec<Value>>) -> Option<Vec<usize>> {
+    fn metadata_shape_for_items(items: &Arc<crate::value::ArrayData>) -> Option<Vec<usize>> {
         shaped_array_ids()
             .lock()
             .ok()
@@ -771,7 +774,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         Value::GenericRange { ref end, .. } => {
             let end_f = end.to_f64();
             if end_f.is_infinite() && end_f.is_sign_positive() {
-                Value::Array(Arc::new(value_to_list(&value)), ArrayKind::Lazy)
+                Value::Array(Arc::new(value_to_list(&value).into()), ArrayKind::Lazy)
             } else {
                 Value::real_array(value_to_list(&value))
             }
@@ -1684,9 +1687,9 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
         "(.)" | "⊍" | "(+)" | "⊎" => Value::bag(HashMap::new()),
         // Comma: empty list
-        "," => Value::Array(std::sync::Arc::new(Vec::new()), ArrayKind::List),
+        "," => Value::Array(std::sync::Arc::new(Vec::new().into()), ArrayKind::List),
         // Zip: empty Seq (Raku returns a Seq for arity-0 Z)
-        "Z" => Value::Seq(std::sync::Arc::new(Vec::new())),
+        "Z" => Value::Seq(std::sync::Arc::new(Vec::new().into())),
         _ => {
             // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
             if let Some(inner) = strip_hyper_delimiters_for_identity(op) {

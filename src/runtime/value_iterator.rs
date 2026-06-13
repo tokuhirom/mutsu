@@ -22,7 +22,10 @@ use std::sync::Arc;
 /// A pull source over `Value` elements.
 pub(crate) enum ValueIterator {
     /// Already-materialized elements (Array / Seq / Slip). Shares the source `Arc`.
-    Slice { items: Arc<Vec<Value>>, idx: usize },
+    Slice {
+        items: Arc<crate::value::ArrayData>,
+        idx: usize,
+    },
     /// Lazy integer counter. `end == i64::MAX` with `inclusive` represents an
     /// open-ended (infinite) range and must never be eagerly collected.
     IntRange { cur: i64, end: i64, inclusive: bool },

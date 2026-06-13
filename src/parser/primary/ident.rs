@@ -570,7 +570,7 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("Nil", Value::Nil) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("Empty", Value::Slip(std::sync::Arc::new(vec![]))) {
+    if let Ok(r) = try_kw("Empty", Value::Slip(std::sync::Arc::new(vec![].into()))) {
         return Ok(r);
     }
     if let Ok(r) = try_kw("Any", Value::Package(Symbol::intern("Any"))) {

@@ -19,7 +19,7 @@ pub(super) fn dispatch(
                 .split_whitespace()
                 .map(|w| Value::str(w.to_string()))
                 .collect();
-            Some(Some(Ok(Value::Seq(std::sync::Arc::new(words)))))
+            Some(Some(Ok(Value::Seq(std::sync::Arc::new(words.into())))))
         }
         "codes" => {
             let s = target.to_string_value();
@@ -40,7 +40,7 @@ pub(super) fn dispatch(
                 .into_iter()
                 .map(Value::str)
                 .collect();
-            Some(Some(Ok(Value::Seq(Arc::new(lines)))))
+            Some(Some(Ok(Value::Seq(Arc::new(lines.into())))))
         }
         "trim" => Some(Some(Ok(Value::str(
             target.to_string_value().trim().to_string(),
@@ -132,7 +132,7 @@ pub(super) fn dispatch(
                 return Some(Some(Ok(target.clone())));
             }
             let items = if let Some(items) = target.as_list_items() {
-                items.as_ref().clone()
+                items.to_vec()
             } else if matches!(
                 target,
                 Value::Range(..)
@@ -199,7 +199,7 @@ pub(super) fn dispatch(
                 .graphemes(true)
                 .map(|g| Value::str(g.to_string()))
                 .collect();
-            Some(Some(Ok(Value::Seq(std::sync::Arc::new(parts)))))
+            Some(Some(Ok(Value::Seq(std::sync::Arc::new(parts.into())))))
         }
         "fmt" => {
             // .fmt() with no arguments: use default format and separator

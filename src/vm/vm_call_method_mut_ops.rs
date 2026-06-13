@@ -125,7 +125,7 @@ impl VM {
                 }
                 // Create HyperSeq/RaceSeq
                 let items = crate::runtime::value_to_list(&target);
-                let arc = std::sync::Arc::new(items);
+                let arc = std::sync::Arc::new(crate::value::ArrayData::new(items));
                 let result = if method == "hyper" {
                     Value::HyperSeq(arc)
                 } else {
@@ -191,9 +191,9 @@ impl VM {
                         let result_val = call_result?;
                         let result_items = crate::runtime::value_to_list(&result_val);
                         let wrapped = if is_hyper {
-                            Value::HyperSeq(Arc::new(result_items))
+                            Value::HyperSeq(Arc::new(result_items.into()))
                         } else {
-                            Value::RaceSeq(Arc::new(result_items))
+                            Value::RaceSeq(Arc::new(result_items.into()))
                         };
                         self.stack.push(wrapped);
                         self.env_dirty = true;
@@ -401,7 +401,7 @@ impl VM {
             if !matches!(method.as_str(), "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.interpreter.env_mut() = saved_env;
             }
-            Value::Seq(std::sync::Arc::new(items))
+            Value::Seq(std::sync::Arc::new(items.into()))
         } else {
             target
         };
@@ -774,7 +774,7 @@ impl VM {
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
             }
             let items = crate::runtime::value_to_list(&target);
-            let arc = std::sync::Arc::new(items);
+            let arc = std::sync::Arc::new(crate::value::ArrayData::new(items));
             let result = if method == "hyper" {
                 Value::HyperSeq(arc)
             } else {
@@ -834,9 +834,9 @@ impl VM {
                     let result_val = call_result?;
                     let result_items = crate::runtime::value_to_list(&result_val);
                     let wrapped = if is_hyper {
-                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                        Value::HyperSeq(std::sync::Arc::new(result_items.into()))
                     } else {
-                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                        Value::RaceSeq(std::sync::Arc::new(result_items.into()))
                     };
                     self.stack.push(wrapped);
                     self.env_dirty = true;

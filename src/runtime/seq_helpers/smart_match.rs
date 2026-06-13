@@ -491,7 +491,7 @@ impl Interpreter {
                     self.env.insert(
                         "/".to_string(),
                         Value::Array(
-                            std::sync::Arc::new(Vec::new()),
+                            std::sync::Arc::new(Vec::new().into()),
                             crate::value::ArrayKind::List,
                         ),
                     );
@@ -502,7 +502,7 @@ impl Interpreter {
                         self.env.insert(
                             "/".to_string(),
                             Value::Array(
-                                std::sync::Arc::new(Vec::new()),
+                                std::sync::Arc::new(Vec::new().into()),
                                 crate::value::ArrayKind::List,
                             ),
                         );
@@ -1148,15 +1148,18 @@ impl Interpreter {
                             let vt = &info.value_type;
                             if let Some(ref kt) = info.key_type {
                                 if vt != "Any" || kt != "Str" {
-                                    return Some(vec![
-                                        Value::Package(crate::symbol::Symbol::intern(vt)),
-                                        Value::Package(crate::symbol::Symbol::intern(kt)),
-                                    ]);
+                                    return Some(
+                                        vec![
+                                            Value::Package(crate::symbol::Symbol::intern(vt)),
+                                            Value::Package(crate::symbol::Symbol::intern(kt)),
+                                        ]
+                                        .into(),
+                                    );
                                 }
                             } else if vt != "Any" && vt != "Mu" {
-                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
-                                    vt,
-                                ))]);
+                                return Some(
+                                    vec![Value::Package(crate::symbol::Symbol::intern(vt))].into(),
+                                );
                             }
                         }
                         None
@@ -1166,9 +1169,9 @@ impl Interpreter {
                         if let Some(info) = self.container_type_metadata(left_value) {
                             let vt = &info.value_type;
                             if vt != "Any" && vt != "Mu" {
-                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
-                                    vt,
-                                ))]);
+                                return Some(
+                                    vec![Value::Package(crate::symbol::Symbol::intern(vt))].into(),
+                                );
                             }
                         }
                         None
@@ -1617,7 +1620,7 @@ impl Interpreter {
     /// Extract list items from a value, expanding ranges.
     fn extract_list_items(v: &Value) -> Vec<Value> {
         if let Some(items) = v.as_list_items() {
-            items.as_ref().clone()
+            items.as_ref().to_vec()
         } else if v.is_range() {
             Self::value_to_list(v)
         } else {

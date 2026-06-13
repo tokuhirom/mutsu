@@ -1281,7 +1281,7 @@ impl Interpreter {
             }
         }
         Ok(Value::Array(
-            std::sync::Arc::new(results),
+            std::sync::Arc::new(results.into()),
             crate::value::ArrayKind::List,
         ))
     }

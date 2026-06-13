@@ -23,7 +23,7 @@ impl Interpreter {
         let flattened: Vec<Value>;
         let actual_args = if rest.len() == 1 {
             if let Value::Array(items, ..) = &rest[0] {
-                flattened = items.as_ref().clone();
+                flattened = items.as_ref().to_vec();
                 &flattened
             } else {
                 rest
@@ -154,7 +154,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
         let result = apply_split_opts(parts, &opts);
-        Ok(Value::Seq(std::sync::Arc::new(result)))
+        Ok(Value::Seq(std::sync::Arc::new(result.into())))
     }
 
     /// Handle split() function with full support for regex splitters.
@@ -180,7 +180,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
         let result = apply_split_opts(parts, &opts);
-        Ok(Value::Seq(std::sync::Arc::new(result)))
+        Ok(Value::Seq(std::sync::Arc::new(result.into())))
     }
 
     /// Core split implementation that handles string, regex, and list splitters.

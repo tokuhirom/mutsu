@@ -241,7 +241,7 @@ impl VM {
         }
         match source {
             Value::Array(_, kind) if kind.is_real_array() => Value::array(items),
-            _ => Value::Seq(Arc::new(items)),
+            _ => Value::Seq(Arc::new(items.into())),
         }
     }
 
@@ -715,7 +715,7 @@ impl VM {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                Value::Seq(Arc::new(slice))
+                Value::Seq(Arc::new(slice.into()))
             }
             (Value::Seq(items), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
@@ -730,7 +730,7 @@ impl VM {
                         items[start..end_excl].to_vec()
                     }
                 };
-                Value::Seq(Arc::new(slice))
+                Value::Seq(Arc::new(slice.into()))
             }
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
             (Value::Seq(items), Value::Sub(ref data)) => {
@@ -1601,7 +1601,7 @@ impl VM {
             // Role parameterization: e.g. R1[C1] → ParametricRole
             (Value::Package(name), idx) if self.interpreter.is_role(&name.resolve()) => {
                 let type_args = match idx {
-                    Value::Array(items, ..) => items.as_ref().clone(),
+                    Value::Array(items, ..) => items.as_ref().to_vec(),
                     other => vec![other],
                 };
                 Value::ParametricRole {
@@ -1620,7 +1620,7 @@ impl VM {
             (Value::Package(name), idx) => {
                 let type_args = match idx {
                     Value::Array(items, ..) => items.as_ref().clone(),
-                    other => vec![other],
+                    other => vec![other].into(),
                 };
                 let args = type_args
                     .into_iter()
@@ -1803,7 +1803,7 @@ impl VM {
     /// to a sublist (slice). Returns `None` if the index is not a range.
     pub(super) fn resolve_range_index_slice(
         idx: &Value,
-        items: &std::sync::Arc<Vec<Value>>,
+        items: &std::sync::Arc<crate::value::ArrayData>,
         kind: crate::value::ArrayKind,
         _len: i64,
         vm: &mut VM,

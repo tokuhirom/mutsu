@@ -459,7 +459,7 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                Value::Array(Arc::new(vec![Value::bag(map)]), *kind)
+                Value::Array(Arc::new(vec![Value::bag(map)].into()), *kind)
             }
             _ => expected_expanded.clone(),
         };

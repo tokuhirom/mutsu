@@ -297,7 +297,7 @@ impl Interpreter {
             && let Ok(forced) = self.force_lazy_io_lines(handle, *words)
         {
             let items = crate::runtime::utils::value_to_list(&forced);
-            return Value::Seq(std::sync::Arc::new(items));
+            return Value::Seq(std::sync::Arc::new(items.into()));
         }
         v
     }
@@ -306,7 +306,7 @@ impl Interpreter {
         match v {
             Value::Seq(items) => Value::Array(items.clone(), ArrayKind::List),
             Value::LazyList(list) => match self.force_lazy_list(list) {
-                Ok(items) => Value::Array(std::sync::Arc::new(items), ArrayKind::List),
+                Ok(items) => Value::Array(std::sync::Arc::new(items.into()), ArrayKind::List),
                 Err(_) => v.clone(),
             },
             // A lazy IO words/lines iterator must be drained before comparison so
@@ -315,7 +315,7 @@ impl Interpreter {
                 match self.force_lazy_io_lines(handle, *words) {
                     Ok(forced) => {
                         let items = crate::runtime::utils::value_to_list(&forced);
-                        Value::Array(std::sync::Arc::new(items), ArrayKind::List)
+                        Value::Array(std::sync::Arc::new(items.into()), ArrayKind::List)
                     }
                     Err(_) => v.clone(),
                 }

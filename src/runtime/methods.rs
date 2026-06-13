@@ -179,7 +179,7 @@ pub(super) fn multidim_assign_pos(
         }
         updated[i] = new_child;
     }
-    Ok(Value::Array(std::sync::Arc::new(updated), *arr_kind))
+    Ok(Value::Array(std::sync::Arc::new(updated.into()), *arr_kind))
 }
 
 /// Recursively bind value at indices. The innermost slot is stored as
@@ -215,7 +215,7 @@ pub(super) fn multidim_bind_pos(
         }
         updated[i] = new_child;
     }
-    Ok(Value::Array(std::sync::Arc::new(updated), *arr_kind))
+    Ok(Value::Array(std::sync::Arc::new(updated.into()), *arr_kind))
 }
 
 /// Recursively delete the innermost slot. Returns (deleted_value, updated_outer_array).
@@ -257,7 +257,7 @@ pub(super) fn multidim_delete_pos(
     }
     Ok((
         deleted,
-        Value::Array(std::sync::Arc::new(updated), *arr_kind),
+        Value::Array(std::sync::Arc::new(updated.into()), *arr_kind),
     ))
 }
 
@@ -382,7 +382,7 @@ impl Interpreter {
                         }
                         pulled_items.push(val);
                     }
-                    let new_seq = Value::Seq(std::sync::Arc::new(pulled_items));
+                    let new_seq = Value::Seq(std::sync::Arc::new(pulled_items.into()));
                     // Transfer cached state from old Seq to new Seq
                     if crate::value::seq_is_cached(&items_arc)
                         && let Value::Seq(new_items) = &new_seq
@@ -1070,7 +1070,7 @@ impl Interpreter {
                                 if let Some(existing) = map.get(&key) {
                                     // Key exists: create itemized array
                                     let arr = Value::Array(
-                                        Arc::new(vec![existing.clone(), *v]),
+                                        Arc::new(vec![existing.clone(), *v].into()),
                                         crate::value::ArrayKind::ItemArray,
                                     );
                                     map.insert(key, arr);
@@ -1083,7 +1083,7 @@ impl Interpreter {
                                 let map = &mut (*ptr).map;
                                 if let Some(existing) = map.get(&key) {
                                     let arr = Value::Array(
-                                        Arc::new(vec![existing.clone(), *v]),
+                                        Arc::new(vec![existing.clone(), *v].into()),
                                         crate::value::ArrayKind::ItemArray,
                                     );
                                     map.insert(key, arr);
@@ -1105,7 +1105,7 @@ impl Interpreter {
                         let key = k.as_str().to_string();
                         if let Some(existing) = new_map.get(&key) {
                             let arr = Value::Array(
-                                Arc::new(vec![existing.clone(), *v]),
+                                Arc::new(vec![existing.clone(), *v].into()),
                                 crate::value::ArrayKind::ItemArray,
                             );
                             new_map.insert(key, arr);
@@ -1117,7 +1117,7 @@ impl Interpreter {
                         let key = k.to_string_value();
                         if let Some(existing) = new_map.get(&key) {
                             let arr = Value::Array(
-                                Arc::new(vec![existing.clone(), *v]),
+                                Arc::new(vec![existing.clone(), *v].into()),
                                 crate::value::ArrayKind::ItemArray,
                             );
                             new_map.insert(key, arr);
@@ -1244,13 +1244,13 @@ impl Interpreter {
                     }
                     "path" => {
                         if is_win32 {
-                            return Ok(Value::Seq(
-                                std::sync::Arc::new(Self::win32_path_from_env()),
-                            ));
+                            return Ok(Value::Seq(std::sync::Arc::new(
+                                Self::win32_path_from_env().into(),
+                            )));
                         }
                         let path_env = std::env::var("PATH").unwrap_or_default();
                         if path_env.is_empty() {
-                            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+                            return Ok(Value::Seq(std::sync::Arc::new(Vec::new().into())));
                         }
                         let parts: Vec<Value> = path_env
                             .split(':')
@@ -1262,7 +1262,7 @@ impl Interpreter {
                                 }
                             })
                             .collect();
-                        return Ok(Value::Seq(std::sync::Arc::new(parts)));
+                        return Ok(Value::Seq(std::sync::Arc::new(parts.into())));
                     }
                     "splitpath" => {
                         let mut positional: Vec<&Value> = Vec::new();
@@ -1304,11 +1304,10 @@ impl Interpreter {
                                 }
                             };
                             return Ok(Value::Array(
-                                std::sync::Arc::new(vec![
-                                    Value::str(volume),
-                                    Value::str(dir),
-                                    Value::str(file),
-                                ]),
+                                std::sync::Arc::new(
+                                    vec![Value::str(volume), Value::str(dir), Value::str(file)]
+                                        .into(),
+                                ),
                                 crate::value::ArrayKind::List,
                             ));
                         }
@@ -1326,11 +1325,14 @@ impl Interpreter {
                                 ("", path.as_str())
                             };
                         return Ok(Value::Array(
-                            std::sync::Arc::new(vec![
-                                Value::str_from(""),
-                                Value::str(dir.to_string()),
-                                Value::str(file.to_string()),
-                            ]),
+                            std::sync::Arc::new(
+                                vec![
+                                    Value::str_from(""),
+                                    Value::str(dir.to_string()),
+                                    Value::str(file.to_string()),
+                                ]
+                                .into(),
+                            ),
                             crate::value::ArrayKind::List,
                         ));
                     }
@@ -1487,7 +1489,7 @@ impl Interpreter {
                             .unwrap_or_default();
                         if path.is_empty() {
                             return Ok(Value::Array(
-                                std::sync::Arc::new(vec![Value::str_from("")]),
+                                std::sync::Arc::new(vec![Value::str_from("")].into()),
                                 crate::value::ArrayKind::List,
                             ));
                         }
@@ -1499,7 +1501,7 @@ impl Interpreter {
                             path.split('/').map(|s| Value::str(s.to_string())).collect()
                         };
                         return Ok(Value::Array(
-                            std::sync::Arc::new(parts),
+                            std::sync::Arc::new(parts.into()),
                             crate::value::ArrayKind::List,
                         ));
                     }
@@ -2375,7 +2377,7 @@ impl Interpreter {
                         updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
                     }
                     updated[index] = value.clone();
-                    let replacement = Value::Array(std::sync::Arc::new(updated), *arr_kind);
+                    let replacement = Value::Array(std::sync::Arc::new(updated.into()), *arr_kind);
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }
@@ -2399,7 +2401,7 @@ impl Interpreter {
                         updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
                     }
                     updated[index] = Value::Scalar(Box::new(value.clone()));
-                    let replacement = Value::Array(std::sync::Arc::new(updated), *arr_kind);
+                    let replacement = Value::Array(std::sync::Arc::new(updated.into()), *arr_kind);
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }
@@ -2430,7 +2432,7 @@ impl Interpreter {
                     } else {
                         Value::Nil
                     };
-                    let replacement = Value::Array(std::sync::Arc::new(updated), *arr_kind);
+                    let replacement = Value::Array(std::sync::Arc::new(updated.into()), *arr_kind);
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }
@@ -2439,7 +2441,7 @@ impl Interpreter {
                 }
                 ("clone", _) => {
                     let cloned = items.to_vec();
-                    return Ok(Value::Array(Arc::new(cloned), *arr_kind));
+                    return Ok(Value::Array(Arc::new(cloned.into()), *arr_kind));
                 }
                 _ => {}
             }
@@ -2941,7 +2943,7 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
             }
             let items = value_to_list(&target);
-            let arc = std::sync::Arc::new(items);
+            let arc = std::sync::Arc::new(crate::value::ArrayData::new(items));
             return Ok(if method == "hyper" {
                 Value::HyperSeq(arc)
             } else {
@@ -2965,9 +2967,9 @@ impl Interpreter {
                     let result = self.call_method_with_values(array_target, method, args)?;
                     let result_items = value_to_list(&result);
                     return Ok(if is_hyper {
-                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                        Value::HyperSeq(std::sync::Arc::new(result_items.into()))
                     } else {
-                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                        Value::RaceSeq(std::sync::Arc::new(result_items.into()))
                     });
                 }
                 _ => {
@@ -2993,7 +2995,7 @@ impl Interpreter {
             if !matches!(method, "elems" | "hyper" | "race") {
                 self.env = saved_env;
             }
-            let seq = Value::Seq(std::sync::Arc::new(items));
+            let seq = Value::Seq(std::sync::Arc::new(items.into()));
             return self.call_method_with_values(seq, method, args);
         }
 

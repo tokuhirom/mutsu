@@ -1173,7 +1173,7 @@ impl Interpreter {
             dispatcher_env.insert(
                 "__mutsu_multi_dispatch_candidates".to_string(),
                 Value::Array(
-                    std::sync::Arc::new(candidate_subs),
+                    std::sync::Arc::new(candidate_subs.into()),
                     crate::value::ArrayKind::List,
                 ),
             );

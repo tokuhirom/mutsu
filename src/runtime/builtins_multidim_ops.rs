@@ -67,11 +67,14 @@ impl Interpreter {
                 if exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, v]),
+                        std::sync::Arc::new(vec![key, v].into()),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![].into()),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -94,11 +97,14 @@ impl Interpreter {
                 if !exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, v]),
+                        std::sync::Arc::new(vec![key, v].into()),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![].into()),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "not-p" => {
@@ -271,11 +277,14 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        std::sync::Arc::new(vec![key, Value::Bool(exists)].into()),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![].into()),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -546,11 +555,14 @@ impl Interpreter {
                 if exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, v]),
+                        std::sync::Arc::new(vec![key, v].into()),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![].into()),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -654,11 +666,14 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        std::sync::Arc::new(vec![key, Value::Bool(exists)].into()),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![].into()),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {

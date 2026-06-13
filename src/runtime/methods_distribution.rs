@@ -1,7 +1,6 @@
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value};
 use std::collections::HashMap;
-use std::sync::Arc;
 
 impl Interpreter {
     /// Parse a JSON string into a Value::Hash.
@@ -616,7 +615,7 @@ impl Interpreter {
         // Find candidates and pick the highest matching version.
         let candidates = match self.cur_inst_candidates(prefix, &depspec)? {
             Value::Array(arr, _) => arr,
-            _ => Arc::new(Vec::new()),
+            _ => crate::value::Value::array_arc(Vec::new()),
         };
         let dist_meta = |dist: &Value| -> Value {
             match dist {

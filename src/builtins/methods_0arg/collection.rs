@@ -192,7 +192,7 @@ fn invert_value(target: &Value) -> Option<Value> {
         }
         _ => return None,
     }
-    Some(Value::Seq(result.into()))
+    Some(Value::Seq(Value::array_arc(result)))
 }
 
 fn push_permutations(
@@ -401,10 +401,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     };
                     Some(Ok(Value::array(keys)))
                 }
-                Value::Pair(key, _) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![Value::str(key.clone())]))))
+                Value::Pair(key, _) => Some(Ok(Value::Seq(Arc::new(
+                    vec![Value::str(key.clone())].into(),
+                )))),
+                Value::ValuePair(key, _) => {
+                    Some(Ok(Value::Seq(Arc::new(vec![*key.clone()].into()))))
                 }
-                Value::ValuePair(key, _) => Some(Ok(Value::Seq(Arc::new(vec![*key.clone()])))),
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
                 Value::Set(s, _) => {
                     Some(Ok(Value::array(s.iter().map(|k| s.typed_key(k)).collect())))
@@ -438,7 +440,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array(values)))
                 }
                 Value::Pair(_, value) | Value::ValuePair(_, value) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![*value.clone()]))))
+                    Some(Ok(Value::Seq(Arc::new(vec![*value.clone()].into()))))
                 }
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
                 Value::Set(s, _) => Some(Ok(Value::array(
@@ -491,13 +493,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::array(kv)))
                 }
-                Value::Pair(key, value) => Some(Ok(Value::Seq(Arc::new(vec![
-                    Value::str(key.clone()),
-                    *value.clone(),
-                ])))),
-                Value::ValuePair(key, value) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![*key.clone(), *value.clone()]))))
-                }
+                Value::Pair(key, value) => Some(Ok(Value::Seq(Arc::new(
+                    vec![Value::str(key.clone()), *value.clone()].into(),
+                )))),
+                Value::ValuePair(key, value) => Some(Ok(Value::Seq(Arc::new(
+                    vec![*key.clone(), *value.clone()].into(),
+                )))),
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
                 Value::Set(s, _) => {
                     let mut kv = Vec::new();
@@ -523,10 +524,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::array(kv)))
                 }
-                Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
-                    Value::str(key.resolve()),
-                    value.to_value(),
-                ])))),
+                Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(
+                    vec![Value::str(key.resolve()), value.to_value()].into(),
+                )))),
                 Value::Package(_) => None, // let runtime handle (may be enum type)
                 Value::LazyIoLines { handle, words, .. } => {
                     // Wrap the lazy IO lines with kv flag so the for-loop can
@@ -611,7 +611,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
         }
         "pairup" => match target {
-            Value::Package(name) if name == "Any" => Some(Ok(Value::Seq(Vec::new().into()))),
+            Value::Package(name) if name == "Any" => {
+                Some(Ok(Value::Seq(Value::array_arc(Vec::new()))))
+            }
             _ => {
                 let items = crate::runtime::utils::value_to_list(target);
                 if !items.len().is_multiple_of(2) {
@@ -638,7 +640,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         Value::ValuePair(Box::new(chunk[0].clone()), Box::new(chunk[1].clone()))
                     })
                     .collect();
-                Some(Ok(Value::Seq(pairs.into())))
+                Some(Ok(Value::Seq(Value::array_arc(pairs))))
             }
         },
         "antipairs" => {
@@ -1066,7 +1068,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         result.push(item.clone());
                     }
                 }
-                Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+                Some(Ok(Value::Seq(std::sync::Arc::new(result.into()))))
             }
             _ => None,
         },
@@ -1097,7 +1099,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }
-            Some(Ok(Value::Seq(all_permutations(&items).into())))
+            Some(Ok(Value::Seq(Value::array_arc(all_permutations(&items)))))
         }
         "combinations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
@@ -1108,7 +1110,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .map(|items| items.to_vec())
                     .unwrap_or_else(|| runtime::value_to_list(target))
             };
-            Some(Ok(Value::Seq(combinations_all(&items).into())))
+            Some(Ok(Value::Seq(Value::array_arc(combinations_all(&items)))))
         }
         "cache" => {
             let items = target
