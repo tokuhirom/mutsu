@@ -2760,7 +2760,11 @@ impl VM {
                         let bt_val = Self::backtrace_value_from_string(bt);
                         exc_attrs.insert("backtrace".to_string(), bt_val);
                     }
-                    Value::make_instance(Symbol::intern("Exception"), exc_attrs)
+                    // An untyped runtime error surfaces as X::AdHoc in Raku (the
+                    // class a bare `die "msg"` produces), not the abstract base
+                    // Exception. X::AdHoc IS-A Exception, so `throws-like
+                    // ..., Exception` / `isa-ok $!, Exception` still match.
+                    Value::make_instance(Symbol::intern("X::AdHoc"), exc_attrs)
                 };
                 let saved_topic = self.interpreter.env().get("_").cloned();
                 self.interpreter

@@ -2888,7 +2888,8 @@ impl VM {
             } else {
                 let mut exc_attrs = std::collections::HashMap::new();
                 exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
-                Value::make_instance(crate::symbol::Symbol::intern("Exception"), exc_attrs)
+                // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
+                Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
             };
             self.interpreter
                 .env_mut()
@@ -2945,7 +2946,8 @@ impl VM {
                 } else {
                     let mut exc_attrs = std::collections::HashMap::new();
                     exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
-                    Value::make_instance(crate::symbol::Symbol::intern("Exception"), exc_attrs)
+                    // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
+                    Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
                 };
                 self.interpreter
                     .env_mut()

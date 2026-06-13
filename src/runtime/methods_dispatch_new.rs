@@ -90,7 +90,9 @@ impl Interpreter {
                 let default_exception = || {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("message".to_string(), Value::str("Failed".to_string()));
-                    Value::make_instance(Symbol::intern("Exception"), attrs)
+                    // `Failure.new` with no explicit exception defaults to
+                    // X::AdHoc in Raku, not the abstract base Exception.
+                    Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                 };
                 let raw_exception = args
                     .first()
