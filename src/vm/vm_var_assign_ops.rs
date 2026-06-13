@@ -4364,6 +4364,70 @@ impl VM {
         Ok(())
     }
 
+    /// Phase 2 phantom-entry: materialize a missing-key `:=` bind on the first
+    /// write through the bound variable. A local holding a `HashSlotRef` (single
+    /// missing key, `$e := %m<solo>`) or a `DeferredHashAccess` (missing nested
+    /// key, `$d := %k<p><q>`) is converted into a shared `ContainerRef` cell:
+    /// the path is materialized and the cell is installed at the terminal hash
+    /// entry, and the local is replaced with the same cell. After this the bound
+    /// var and the hash entry alias bidirectionally — the old plain-value
+    /// materialization (`hash_slot_write`/`deferred_hash_write`) lost the alias
+    /// so a later cross-write was not observed (the case-C bug). Returns `true`
+    /// when it handled `idx`; the deferred token is unchanged until first write,
+    /// so `:exists` and pre-write reads keep their lazy semantics.
+    pub(super) fn materialize_bound_slot_to_cell(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+        val: Value,
+    ) -> bool {
+        let cell = match &self.locals[idx] {
+            Value::HashSlotRef { hash, key } => {
+                let cell = Arc::new(std::sync::Mutex::new(val));
+                // SAFETY: mutsu is single-threaded; no live borrow into the map.
+                let ptr = Arc::as_ptr(hash) as *mut crate::value::HashData;
+                unsafe {
+                    Value::hash_insert_through(
+                        &mut (*ptr).map,
+                        key.clone(),
+                        Value::ContainerRef(cell.clone()),
+                    );
+                }
+                cell
+            }
+            Value::DeferredHashAccess { parent_slot, key } => {
+                let key = key.clone();
+                // Materialize the intermediate level: ensure the parent slot
+                // holds a hash, creating one and writing it back if missing.
+                let parent_value = parent_slot.hash_slot_read();
+                let inner_hash = if let Value::Hash(_) = &parent_value {
+                    parent_value
+                } else {
+                    let new_hash = Value::hash(std::collections::HashMap::new());
+                    parent_slot.hash_slot_write(new_hash.clone());
+                    new_hash
+                };
+                let cell = Arc::new(std::sync::Mutex::new(val));
+                if let Value::Hash(arc) = &inner_hash {
+                    // SAFETY: mutsu is single-threaded; no live borrow into the map.
+                    let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
+                    unsafe {
+                        Value::hash_insert_through(
+                            &mut (*ptr).map,
+                            key,
+                            Value::ContainerRef(cell.clone()),
+                        );
+                    }
+                }
+                cell
+            }
+            _ => return false,
+        };
+        self.locals[idx] = Value::ContainerRef(cell);
+        self.flush_local_to_env(code, idx);
+        true
+    }
+
     // --- Phase 3 Stage 2: scalar instance attributes as cell-direct (slice 1) ---
     //
     // For scalar attribute-twigil locals (`$!x` -> `!x`, `$.x` -> `.x`) the
@@ -4994,18 +5058,18 @@ impl VM {
                 self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
                 return Ok(());
             }
-            // If the current value is a HashSlotRef, write back to the parent hash
-            // (unless rebinding, which replaces the ref with a new value).
-            if !is_rebind && let Value::HashSlotRef { .. } = &self.locals[idx] {
-                self.locals[idx].hash_slot_write(val);
-                self.flush_local_to_env(code, idx);
-                return Ok(());
-            }
-            // If the current value is a DeferredHashAccess (from lazy binding),
-            // autovivify the path and write the value.
-            if !is_rebind && let Value::DeferredHashAccess { .. } = &self.locals[idx] {
-                self.locals[idx].deferred_hash_write(val);
-                self.flush_local_to_env(code, idx);
+            // First write through a missing-key `:=` bind (a local holding a
+            // `HashSlotRef` or `DeferredHashAccess`): materialize the path into a
+            // shared `ContainerRef` cell so the bound var and the hash entry
+            // alias bidirectionally (phantom-entry; replaces the old plain-value
+            // materialization that lost the alias).
+            if !is_rebind
+                && matches!(
+                    self.locals[idx],
+                    Value::HashSlotRef { .. } | Value::DeferredHashAccess { .. }
+                )
+            {
+                self.materialize_bound_slot_to_cell(code, idx, val);
                 return Ok(());
             }
             if !name.starts_with('@') && !name.starts_with('%') {
@@ -5750,24 +5814,17 @@ impl VM {
             self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
             return Ok(());
         }
-        // If the current value is a HashSlotRef, write back to the parent hash
-        // (unless rebinding, which replaces the ref with a new value).
+        // First write through a missing-key `:=` bind: materialize the path into
+        // a shared `ContainerRef` cell (phantom-entry; see
+        // `materialize_bound_slot_to_cell`).
         if !is_bind
             && !is_rebind
-            && let Value::HashSlotRef { .. } = &self.locals[idx]
+            && matches!(
+                self.locals[idx],
+                Value::HashSlotRef { .. } | Value::DeferredHashAccess { .. }
+            )
         {
-            self.locals[idx].hash_slot_write(val);
-            self.flush_local_to_env(code, idx);
-            return Ok(());
-        }
-        // If the current value is a DeferredHashAccess (from lazy binding),
-        // autovivify the path and write the value.
-        if !is_bind
-            && !is_rebind
-            && let Value::DeferredHashAccess { .. } = &self.locals[idx]
-        {
-            self.locals[idx].deferred_hash_write(val);
-            self.flush_local_to_env(code, idx);
+            self.materialize_bound_slot_to_cell(code, idx, val);
             return Ok(());
         }
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs
