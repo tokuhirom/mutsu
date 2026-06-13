@@ -816,29 +816,60 @@ impl VM {
     /// callable_id lookup, and full bind_function_args_values. Parameters are
     /// bound directly to pre-computed local slots AND written to env so that
     /// closures and dynamic lookups work correctly.
+    /// Build the common `X::TypeCheck::Argument` attribute map (message,
+    /// objname, signature, arguments) shared by the positional-light arity and
+    /// type-mismatch error paths. Type-mismatch callers additionally insert
+    /// `expected`/`got`. Mirrors the interpreter path in
+    /// `Interpreter::enhance_binding_error`.
+    fn type_check_argument_attrs(
+        func_name: &str,
+        param_defs: &[crate::ast::ParamDef],
+        args: &[Value],
+        message: String,
+    ) -> std::collections::HashMap<String, Value> {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message));
+        attrs.insert("objname".to_string(), Value::str(func_name.to_string()));
+        attrs.insert(
+            "signature".to_string(),
+            Value::str(crate::runtime::Interpreter::build_signature_string(
+                param_defs,
+            )),
+        );
+        let arg_type_values: Vec<Value> = crate::runtime::Interpreter::arg_type_names(args)
+            .into_iter()
+            .map(Value::str)
+            .collect();
+        attrs.insert("arguments".to_string(), Value::array(arg_type_values));
+        attrs
+    }
+
     pub(super) fn call_compiled_function_positional_light(
         &mut self,
         cf: &CompiledFunction,
         args: &[Value],
         compiled_fns: &HashMap<String, CompiledFunction>,
+        func_name: &str,
     ) -> Result<Value, RuntimeError> {
         self.record_cf_deprecation(cf);
         let param_slots = cf.param_local_slots.as_ref().unwrap();
         let positional_count = param_slots.len();
         let actual_count = args.len();
 
+        // Every positional-light-eligible parameter is a mandatory positional
+        // (no default, optional `?`, or slurpy -- see
+        // `is_positional_light_call_eligible`), so any shortfall is a "too few
+        // positionals" arity error. Report it as a typed X::TypeCheck::Argument
+        // carrying objname/signature/arguments, matching the interpreter path.
         if actual_count < positional_count {
-            let required = cf
-                .param_defs
-                .iter()
-                .filter(|pd| !pd.named && pd.required)
-                .count();
-            if actual_count < required {
-                return Err(RuntimeError::new(format!(
-                    "Too few positionals passed; expected {} arguments but got {}",
-                    positional_count, actual_count
-                )));
-            }
+            let msg = format!(
+                "Too few positionals passed; expected {} arguments but got {}",
+                positional_count, actual_count
+            );
+            return Err(RuntimeError::typed(
+                "X::TypeCheck::Argument",
+                Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
+            ));
         }
 
         let saved_locals = std::mem::take(&mut self.locals);
@@ -896,10 +927,10 @@ impl VM {
                             "Type check failed in binding ${}: expected {}, got {}",
                             param_name, tc, got
                         );
-                        let mut attrs = std::collections::HashMap::new();
+                        let mut attrs =
+                            Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg);
                         attrs.insert("expected".to_string(), Value::str(tc.to_string()));
                         attrs.insert("got".to_string(), Value::str(got.to_string()));
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
                         return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
                     }
                 }

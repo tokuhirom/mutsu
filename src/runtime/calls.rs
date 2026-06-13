@@ -461,20 +461,12 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Enhance a binding error with function name, call profile, and signature info.
-    pub(crate) fn enhance_binding_error(
-        err: RuntimeError,
-        func_name: &str,
-        param_defs: &[crate::ast::ParamDef],
-        args: &[Value],
-    ) -> RuntimeError {
-        // Don't enhance errors that are already enhanced or are control flow
-        if err.is_return || err.is_last || err.is_next || func_name.is_empty() {
-            return err;
-        }
-        // Build call profile: func_name(Type1, Type2, ...)
-        let arg_types: Vec<String> = args
-            .iter()
+    /// Build the positional/named argument type-name list used for the
+    /// `arguments` attribute of `X::TypeCheck::Argument` (and call profiles).
+    /// Skips the internal callsite-line pair and all named (Pair) arguments,
+    /// matching Rakudo's `.arguments` which lists only positional argument types.
+    pub(crate) fn arg_type_names(args: &[Value]) -> Vec<String> {
+        args.iter()
             .filter(|a| {
                 !matches!(
                     a,
@@ -483,10 +475,13 @@ impl Interpreter {
             })
             .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
             .map(|a| super::value_type_name(a).to_string())
-            .collect();
-        let call_profile = format!("{}({})", func_name, arg_types.join(", "));
+            .collect()
+    }
 
-        // Build signature string: (Type $name, ...)
+    /// Build the Raku signature string `(Type $name, ...)` from parameter
+    /// definitions, used for the `signature` attribute of
+    /// `X::TypeCheck::Argument` and in enhanced error messages.
+    pub(crate) fn build_signature_string(param_defs: &[crate::ast::ParamDef]) -> String {
         let sig_parts: Vec<String> = param_defs
             .iter()
             .filter(|pd| !pd.traits.iter().any(|t| t == "invocant"))
@@ -517,7 +512,26 @@ impl Interpreter {
                 }
             })
             .collect();
-        let signature = format!("({})", sig_parts.join(", "));
+        format!("({})", sig_parts.join(", "))
+    }
+
+    /// Enhance a binding error with function name, call profile, and signature info.
+    pub(crate) fn enhance_binding_error(
+        err: RuntimeError,
+        func_name: &str,
+        param_defs: &[crate::ast::ParamDef],
+        args: &[Value],
+    ) -> RuntimeError {
+        // Don't enhance errors that are already enhanced or are control flow
+        if err.is_return || err.is_last || err.is_next || func_name.is_empty() {
+            return err;
+        }
+        // Build call profile: func_name(Type1, Type2, ...)
+        let arg_types: Vec<String> = Self::arg_type_names(args);
+        let call_profile = format!("{}({})", func_name, arg_types.join(", "));
+
+        // Build signature string: (Type $name, ...)
+        let signature = Self::build_signature_string(param_defs);
 
         // Enhance the error message, preserving the original for exception type matching
         let enhanced_msg = format!(
