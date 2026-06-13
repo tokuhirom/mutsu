@@ -252,10 +252,13 @@ STATUS で撤回済み。
       whole-container `:=` bind 共有（`@b:=@a`/`$r:=@a` #2990/#2993）、nested-element hyper writeback
       （`@b[0]>>++` #2996）、hyper lvalue-precise writeback（`@a>>++` が COW コピーを破壊しない #2999）。
       （`is rw` 共有セル #2928・take-rw #2930・束縛要素セル #2902-#2925 も landed）
-- [ ] **配列/ハッシュ param の別名束縛（parameter-binding cells）= 残る最大の container 正しさ項目** —
-      raku は plain `@x`/`%h` param を caller に alias 束縛（`sub f(@x){@x.push}` が伝播）。**mutsu は配列 param を
-      コピー**（hash param と `is raw` は既に alias 動作）。全関数呼び出しに影響する大改修・高 blast radius のため
-      **専用セッション**で。設計・調査・現状の事実表は **`docs/param-binding-cells-plan.md`**。
+- [x] **配列/ハッシュ param の別名束縛（parameter aliasing）= 残る最大の container 正しさ項目 (DONE)** —
+      plain `@x`/`%h` positional param を caller に alias 束縛。`@x.push`・`@x[0]=v`・`@x>>++`・`splice`・
+      whole-container `@x=(...)`/`%h=(...)` が全て伝播。手法=`is rw`/`is raw` の writeback 機構
+      （`apply_rw_bindings_to_env`）へ plain `@`/`%` positional param を載せ、`readonly_vars` から `@`/`%` を除外
+      （scalar `$` は readonly 維持）。`is copy` はコピー継続。`t/param-array-alias.t`(15)。
+      既知の残り: 同一変数を 2 つの param に渡す `f(@z,@z)`（writeback 上書き、main から非回帰）と `return-rw @x` 越し
+      の live alias は writeback では非対応（cell 化が必要・極めて稀）。設計メモ=`docs/param-binding-cells-plan.md`。
 - [~] **object-hash（`%h{KeyType}`）** — キー保存（original_keys）は HashData 埋め込みで **COW-stable 化済み**
       (#2954)。mixin キー・`.new`/`.clone` 維持 (#2956)、multidim Range slice `:exists` (#2959) も landed。
       残る `S09-hashes/objecthash.t`（非whitelist）の失敗は**型強制/構築の別系統課題**（互いに独立）:
