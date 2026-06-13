@@ -3349,7 +3349,8 @@ impl Interpreter {
                 match sub.receiver.recv_timeout(poll_timeout) {
                     Ok(SupplyEvent::Emit(value)) => {
                         any_active = true;
-                        let cb_result = self.call_sub_value(sub.callback.clone(), vec![value], true);
+                        let cb_result =
+                            self.call_sub_value(sub.callback.clone(), vec![value], true);
                         // `done`/`last` etc. inside the whenever resolve the
                         // promise via the Supplier.done handler.
                         if promise.is_resolved() {
