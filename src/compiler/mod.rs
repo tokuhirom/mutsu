@@ -586,6 +586,21 @@ impl Compiler {
         )
     }
 
+    /// Detect if the for-loop iterable's outermost transform yields `Pair`
+    /// objects that *wrap* the source element (`.pairs`/`.antipairs`), so the
+    /// loop variable is a `Pair`, not the element. The per-element source
+    /// writeback must be disabled for these (it would overwrite the element
+    /// with the Pair); the Pair's rw `.value` alias propagates instead.
+    /// `.kv`/`.values` are excluded (`.values` IS the element; `.kv` has its
+    /// own `kv_mode` writeback).
+    fn for_iterable_wraps_pair(iterable: &Expr) -> bool {
+        matches!(
+            iterable,
+            Expr::MethodCall { name, args, .. }
+                if args.is_empty() && (*name == "pairs" || *name == "antipairs")
+        )
+    }
+
     fn normalize_for_iterable(&self, iterable: &Expr) -> Expr {
         match iterable {
             // Scalar variables are item containers in `for` and should not be flattened.

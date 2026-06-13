@@ -21,6 +21,9 @@ pub(super) struct ForLoopSpec {
     /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
     /// Used to temporarily clear sigilless readonly flags before binding.
     pub(super) multi_param_names: Vec<String>,
+    /// When true (`.pairs`/`.antipairs`), the loop variable is a `Pair` wrapping
+    /// the element, so the plain per-element source writeback is suppressed.
+    pub(super) loop_var_wraps_element: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -590,7 +593,13 @@ impl VM {
         // guard in `write_back_for_topic_item` keeps read-only loops O(n).
         let writes_back_named_param =
             !spec.is_rw && !rw_writeback && spec.arity <= 1 && param_name.is_some();
-        let writes_back_loop_var = writes_back_topic || writes_back_named_param;
+        // `.pairs`/`.antipairs` loop variables are `Pair`s wrapping the element,
+        // not the element itself — writing one back would overwrite the source
+        // element with the Pair (S32-array/pairs.t 14). The Pair's rw `.value`
+        // alias handles propagation (and immutability for Mix), so suppress the
+        // plain writeback here while keeping the source tag.
+        let writes_back_loop_var =
+            (writes_back_topic || writes_back_named_param) && !spec.loop_var_wraps_element;
         let chunked_items: Vec<Value> = if arity > 1 {
             items
                 .chunks(arity)

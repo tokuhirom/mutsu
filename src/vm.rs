@@ -3445,6 +3445,7 @@ impl VM {
                 autothread_junctions,
                 explicit_zero_params,
                 multi_param_names,
+                loop_var_wraps_element,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -3463,6 +3464,7 @@ impl VM {
                     autothread_junctions: *autothread_junctions,
                     explicit_zero_params: *explicit_zero_params,
                     multi_param_names: multi_param_names.clone(),
+                    loop_var_wraps_element: *loop_var_wraps_element,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

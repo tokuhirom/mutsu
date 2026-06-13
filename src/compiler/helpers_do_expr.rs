@@ -280,6 +280,7 @@ impl Compiler {
             autothread_junctions: false,
             explicit_zero_params: false,
             multi_param_names: Vec::new(),
+            loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);

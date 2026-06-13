@@ -1381,6 +1381,7 @@ impl Compiler {
                         .iter()
                         .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
                         .collect(),
+                    loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);
