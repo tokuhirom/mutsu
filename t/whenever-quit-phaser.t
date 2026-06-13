@@ -1,5 +1,5 @@
 use Test;
-plan 6;
+plan 9;
 
 # A QUIT phaser inside a `whenever` runs when the source quits. If it handles
 # the exception (a when/default matches), the supply completes with `done` and
@@ -59,4 +59,26 @@ plan 6;
     $s.tap(quit => { $q++ });
     $trigger.quit('boom');
     is $q, 1, 'quit propagates when there is no QUIT phaser';
+}
+
+# A QUIT that matches with an explicit `done` inside: emit forwards, the
+# supply completes with done, and no quit fires. (The `when` match must be
+# recorded even though the block exits via the `done` control flow.)
+{
+    my class OMGBears is Exception { }
+    my $trigger = Supplier.new;
+    my @got; my $d = 0; my $q = 0;
+    my $s = supply {
+        whenever $trigger {
+            emit $_;
+            QUIT { when OMGBears { emit "Run!"; done; } }
+        }
+    }
+    $s.tap({ @got.push($_) }, done => { $d++ }, quit => { $q++ });
+    $trigger.emit("A");
+    $trigger.emit("B");
+    $trigger.quit(OMGBears.new);
+    is @got, ["A", "B", "Run!"], 'emit before and inside a matched QUIT all come out';
+    is $d, 1, 'done inside a matched QUIT completes the supply';
+    is $q, 0, 'a handled QUIT with done does not fire the downstream quit';
 }
