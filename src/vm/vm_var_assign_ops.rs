@@ -3753,6 +3753,44 @@ impl VM {
             }
             other => other,
         };
+
+        // Junction / slice outer subscript (`%h<x>{any('p','q')} = v`,
+        // `%h<x>{@k} = (...)`): autothread per outer key. The rest of this op
+        // handles a single scalar outer key, so re-dispatch for each expanded
+        // key (previously the junction/array was stringified into one garbage
+        // entry, so a later read of any real key returned Any).
+        if matches!(outer_idx, Value::Junction { .. } | Value::Array(..)) {
+            let outer_keys: Vec<Value> = match &outer_idx {
+                Value::Junction { values, .. } => values.as_ref().clone(),
+                Value::Array(a, ..) => a.items.to_vec(),
+                _ => unreachable!(),
+            };
+            // A scalar RHS goes to every junction key; a slice/junction RHS
+            // pairs element-wise.
+            let vals: Vec<Value> = match (&outer_idx, &val) {
+                (Value::Junction { .. }, Value::Junction { values: jv, .. }) => jv.as_ref().clone(),
+                (Value::Junction { .. }, _) => vec![val.clone(); outer_keys.len()],
+                _ => self.assignment_rhs_values(&val)?,
+            };
+            for (i, ok) in outer_keys.into_iter().enumerate() {
+                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                // Re-dispatch with a single scalar outer key. Stack order
+                // (bottom→top): value, outer_idx, inner_idx.
+                self.stack.push(v);
+                self.stack.push(ok);
+                self.stack.push(inner_idx.clone());
+                self.exec_index_assign_expr_nested_op(
+                    code,
+                    name_idx,
+                    outer_positional,
+                    inner_positional,
+                )?;
+                self.stack.pop();
+            }
+            self.stack.push(val);
+            return Ok(());
+        }
+
         let inner_key = inner_idx.to_string_value();
         let outer_key = outer_idx.to_string_value();
 
@@ -4015,14 +4053,57 @@ impl VM {
         let depth = depth as usize;
 
         // Pop indices from stack: innermost first (top of stack)
-        let mut indices: Vec<String> = Vec::with_capacity(depth);
+        let mut indices_val: Vec<Value> = Vec::with_capacity(depth);
         for _ in 0..depth {
-            let idx = self.stack.pop().unwrap_or(Value::Nil);
-            indices.push(idx.to_string_value());
+            indices_val.push(self.stack.pop().unwrap_or(Value::Nil));
         }
-        // indices[0] = innermost, indices[depth-1] = outermost
+        // indices_val[0] = innermost, indices_val[depth-1] = outermost
 
-        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_val_for_junction = self.stack.pop().unwrap_or(Value::Nil);
+
+        // Junction / slice OUTERMOST subscript (`%h<a><b>{any('p','q')} = v`):
+        // autothread per outer key. The rest of this op handles a single scalar
+        // outermost key, so re-dispatch for each expanded key (previously the
+        // junction/array was stringified into one garbage entry).
+        let outermost = &indices_val[depth - 1];
+        if !matches!(&raw_val_for_junction, Value::Pair(n, _) if n == "__mutsu_bind_index_value")
+            && matches!(outermost, Value::Junction { .. } | Value::Array(..))
+        {
+            let outer_keys: Vec<Value> = match outermost {
+                Value::Junction { values, .. } => values.as_ref().clone(),
+                Value::Array(a, ..) => a.items.to_vec(),
+                _ => unreachable!(),
+            };
+            let vals: Vec<Value> = match (outermost, &raw_val_for_junction) {
+                (Value::Junction { .. }, Value::Junction { values: jv, .. }) => jv.as_ref().clone(),
+                (Value::Junction { .. }, _) => {
+                    vec![raw_val_for_junction.clone(); outer_keys.len()]
+                }
+                _ => self.assignment_rhs_values(&raw_val_for_junction)?,
+            };
+            for (i, ok) in outer_keys.into_iter().enumerate() {
+                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                // Re-push for recursion. Stack (bottom→top): value, outermost,
+                // ..., innermost. Replace the outermost with the scalar key.
+                self.stack.push(v);
+                self.stack.push(ok);
+                for j in (0..depth - 1).rev() {
+                    self.stack.push(indices_val[j].clone());
+                }
+                self.exec_index_assign_deep_nested_op(
+                    code,
+                    name_idx,
+                    depth as u32,
+                    positional_flags_idx,
+                )?;
+                self.stack.pop();
+            }
+            self.stack.push(raw_val_for_junction);
+            return Ok(());
+        }
+
+        let indices: Vec<String> = indices_val.iter().map(|v| v.to_string_value()).collect();
+        let val = raw_val_for_junction;
 
         // LHS binding (`$struct[..]<..>[..] := $scalar`): unwrap the bind
         // payload and promote the deep leaf element to a first-class
@@ -4290,6 +4371,43 @@ impl VM {
             None
         };
 
+        // Junction / slice key on a stack-computed target
+        // (`%h<x>{any('p','q')} = v`, `%h<x>{@k} = (...)`). The named-handler op
+        // autothreads these; the generic op (computed target) previously
+        // stringified the multi-key index and wrote a single garbage entry, so a
+        // later read of any real key returned Any. Only plain assignment is
+        // handled here (a multi-key `:=` bind is a separate, exotic path).
+        if bind_cell.is_none() && matches!(idx, Value::Junction { .. } | Value::Array(..)) {
+            let resolved = match &target {
+                Value::HashSlotRef { .. } => target.hash_slot_read(),
+                Value::Scalar(inner) => inner.as_ref().clone(),
+                other => other.clone(),
+            };
+            if matches!(resolved, Value::Hash(_) | Value::Array(..)) {
+                let (keys, vals): (Vec<Value>, Vec<Value>) = match &idx {
+                    Value::Junction { values, .. } => {
+                        // A scalar RHS is assigned to every junction key; a
+                        // junction RHS pairs element-wise.
+                        let vals = match &val {
+                            Value::Junction { values: jv, .. } => jv.as_ref().clone(),
+                            _ => vec![val.clone(); values.len()],
+                        };
+                        (values.as_ref().clone(), vals)
+                    }
+                    Value::Array(keys, ..) => {
+                        (keys.items.to_vec(), self.assignment_rhs_values(&val)?)
+                    }
+                    _ => unreachable!(),
+                };
+                for (i, k) in keys.iter().enumerate() {
+                    let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                    self.assign_into_computed_target(&resolved, k, v);
+                }
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
+
         match &target {
             Value::Hash(arc) => {
                 // Check for callframe .my hash with depth marker
@@ -4410,6 +4528,38 @@ impl VM {
             }
         }
         Ok(())
+    }
+
+    /// Assign a single value into a stack-computed Hash/Array `target` at `key`
+    /// via interior mutation, writing through an existing `:=`-bound
+    /// `ContainerRef` cell. Used by junction/slice autothreading in the generic
+    /// index-assign op, where the target is a resolved inner container reached
+    /// through a nested subscript (`%h<x>{...}`).
+    fn assign_into_computed_target(&self, target: &Value, key: &Value, val: Value) {
+        match target {
+            Value::Hash(arc) => {
+                let k = Value::hash_key_encode(key);
+                // SAFETY: mutsu is single-threaded; no live borrow into the map.
+                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
+                unsafe {
+                    Value::hash_insert_through(&mut (*ptr).map, k, val);
+                }
+            }
+            Value::Array(arc, _) => {
+                if let Some(i) = Self::index_to_usize(key) {
+                    // SAFETY: mutsu is single-threaded.
+                    let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
+                    unsafe {
+                        let v = &mut (*ptr).items;
+                        while v.len() <= i {
+                            v.push(Value::Nil);
+                        }
+                        Value::assign_element_slot(&mut v[i], val);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Phase 2 phantom-entry: materialize a missing-key `:=` bind on the first
