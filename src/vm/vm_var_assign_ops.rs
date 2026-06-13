@@ -4201,7 +4201,10 @@ impl VM {
     /// Generic index assignment on a stack-computed target.
     /// Stack order: target (bottom), index, value (top).
     /// If the target hash has `__callframe_depth`, routes through set_caller_var.
-    pub(super) fn exec_index_assign_generic_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_index_assign_generic_op(
+        &mut self,
+        code: &CompiledCode,
+    ) -> Result<(), RuntimeError> {
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let target = self.stack.pop().unwrap_or(Value::Nil);
@@ -4228,6 +4231,31 @@ impl VM {
             other => (other, None),
         };
 
+        // Phase 2 Stage 2: a `:=` bind to a stack-computed element target
+        // (`f()<k> := $s`, `($ref)[i] := $s`) stores a shared `ContainerRef`
+        // cell at the element and writes the same cell back to the source
+        // variable, so a later write to either side reaches the other. This is
+        // the computed-target analogue of the named-handler cell bind (slice
+        // 3/4); the old `HashSlotRef`/`ArraySlotRef` by-reference into the env
+        // was stale (the alias never propagated). Pre-read before any container
+        // borrow. An element source (`:= @b[j]`, encoded with `\0`) is left to a
+        // later slice unless it already arrived promoted to a cell.
+        let bind_cell: Option<BindSourceCell> = if let Value::ContainerRef(cell) = &val {
+            Some((None, cell.clone()))
+        } else if let Some(source_name) = &bind_source
+            && !source_name.contains('\0')
+        {
+            match self.interpreter.env().get(source_name) {
+                Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
+                _ => Some((
+                    Some(source_name.clone()),
+                    Arc::new(std::sync::Mutex::new(val.clone())),
+                )),
+            }
+        } else {
+            None
+        };
+
         match &target {
             Value::Hash(arc) => {
                 // Check for callframe .my hash with depth marker
@@ -4247,19 +4275,22 @@ impl VM {
                 }
                 // Interior mutation: write into the hash via raw pointer
                 // so the change is visible to all holders of the same Arc.
+                // In bind mode, store the shared cell at the key; otherwise the
+                // plain value.
+                let stored = match &bind_cell {
+                    Some((_, cell)) => Value::ContainerRef(cell.clone()),
+                    None => val.clone(),
+                };
                 let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
                 unsafe {
-                    Value::hash_insert_through(&mut (*ptr).map, key.clone(), val.clone());
+                    Value::hash_insert_through(&mut (*ptr).map, key.clone(), stored);
                 }
-                // For bind mode, set up a HashSlotRef on the source variable
-                if let Some(source_name) = &bind_source {
-                    let slot_ref = Value::HashSlotRef {
-                        hash: arc.clone(),
-                        key,
-                    };
-                    self.interpreter
-                        .env_mut()
-                        .insert(source_name.clone(), slot_ref.clone());
+                // For a fresh-cell bind, write the cell back to the source var
+                // so both sides alias the same container.
+                if let Some((Some(src), cell)) = &bind_cell {
+                    let cell_val = Value::ContainerRef(cell.clone());
+                    self.set_env_with_main_alias(src, cell_val.clone());
+                    self.update_local_if_exists(code, src, &cell_val);
                     self.env_dirty = true;
                 }
                 self.stack.push(val);
@@ -4274,27 +4305,29 @@ impl VM {
                         while v.len() <= i {
                             v.push(Value::Nil);
                         }
-                        if bind_source.is_some() {
-                            // Bind mode installs the payload directly (the
-                            // ArraySlotRef back-reference below aliases it).
-                            v[i] = val.clone();
-                        } else {
-                            // Write THROUGH an existing `:=`-bound cell so an
-                            // assignment reached via a stack target (e.g.
-                            // `get()<subkey>[1] = …`) updates the shared cell
-                            // instead of clobbering it (nested.t 11-12).
-                            Value::assign_element_slot(&mut v[i], val.clone());
+                        match &bind_cell {
+                            // Bind mode installs the shared cell at the element;
+                            // the same cell is written back to the source var
+                            // below so both sides alias.
+                            Some((_, cell)) => v[i] = Value::ContainerRef(cell.clone()),
+                            // An element source (`:= @b[j]`) not promoted to a
+                            // cell installs the payload directly (rare; left to a
+                            // later slice).
+                            None if bind_source.is_some() => v[i] = val.clone(),
+                            None => {
+                                // Write THROUGH an existing `:=`-bound cell so an
+                                // assignment reached via a stack target (e.g.
+                                // `get()<subkey>[1] = …`) updates the shared cell
+                                // instead of clobbering it (nested.t 11-12).
+                                Value::assign_element_slot(&mut v[i], val.clone());
+                            }
                         }
                     }
-                    // For bind mode, set up an ArraySlotRef on the source variable
-                    if let Some(source_name) = &bind_source {
-                        let slot_ref = Value::ArraySlotRef {
-                            array: arc.clone(),
-                            index: i,
-                        };
-                        self.interpreter
-                            .env_mut()
-                            .insert(source_name.clone(), slot_ref.clone());
+                    // For a fresh-cell bind, write the cell back to the source var.
+                    if let Some((Some(src), cell)) = &bind_cell {
+                        let cell_val = Value::ContainerRef(cell.clone());
+                        self.set_env_with_main_alias(src, cell_val.clone());
+                        self.update_local_if_exists(code, src, &cell_val);
                         self.env_dirty = true;
                     }
                 }
@@ -4306,7 +4339,7 @@ impl VM {
                 self.stack.push(resolved);
                 self.stack.push(idx);
                 self.stack.push(val);
-                return self.exec_index_assign_generic_op();
+                return self.exec_index_assign_generic_op(code);
             }
             Value::ArraySlotRef { .. } => {
                 // Resolve the ArraySlotRef and assign into the resolved container.
@@ -4314,7 +4347,7 @@ impl VM {
                 self.stack.push(resolved);
                 self.stack.push(idx);
                 self.stack.push(val);
-                return self.exec_index_assign_generic_op();
+                return self.exec_index_assign_generic_op(code);
             }
             Value::Instance {
                 class_name,
