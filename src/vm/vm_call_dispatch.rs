@@ -1235,10 +1235,13 @@ impl VM {
                     self.interpreter.set_env(caller_env);
                     self.locals = saved_locals;
                     self.env_dirty = saved_env_dirty;
-                    return Err(RuntimeError::new(format!(
-                        "Required named parameter '{}' not passed",
-                        param_name
-                    )));
+                    // Missing required named parameter is a runtime X::AdHoc in
+                    // Raku (see binding.rs); carry the typed exception so it does
+                    // not fall back to the bare "Exception" default.
+                    return Err(RuntimeError::typed_msg(
+                        "X::AdHoc",
+                        format!("Required named parameter '{}' not passed", param_name),
+                    ));
                 } else {
                     None
                 }

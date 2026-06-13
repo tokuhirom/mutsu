@@ -771,10 +771,14 @@ impl Interpreter {
                         bind_named_rename_sub_signature(self, sub_params, &Box::new(value))?;
                     }
                 } else if !found && pd.required {
-                    return Err(RuntimeError::new(format!(
-                        "Required named parameter '{}' not passed",
-                        pd.name
-                    )));
+                    // A missing required named parameter is a runtime X::AdHoc in
+                    // Raku (not the compile-time arity X::TypeCheck::Argument that
+                    // a missing positional yields). Carry the typed exception so it
+                    // surfaces as X::AdHoc instead of the bare "Exception" default.
+                    return Err(RuntimeError::typed_msg(
+                        "X::AdHoc",
+                        format!("Required named parameter '{}' not passed", pd.name),
+                    ));
                 } else if !found && !pd.name.is_empty() {
                     // Only bind a default if the env doesn't already have a value
                     // (e.g. BUILD/TWEAK attribute bindings pre-populate the env).
