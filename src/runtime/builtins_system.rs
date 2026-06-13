@@ -1721,6 +1721,22 @@ impl Interpreter {
             }
         }
 
+        // Slip results flatten into the surrounding await result list (slip
+        // semantics): `await start { (2, 3).Slip }, start { 4 }` yields
+        // `(2, 3, 4)`, not `((2, 3), 4)`. A plain List/Array result is NOT a
+        // Slip and stays nested, matching Raku.
+        if results.iter().any(|r| matches!(r, Value::Slip(_))) {
+            let mut flat = Vec::with_capacity(results.len());
+            for r in results {
+                if let Value::Slip(items) = r {
+                    flat.extend(items.iter().cloned());
+                } else {
+                    flat.push(r);
+                }
+            }
+            results = flat;
+        }
+
         if results.len() == 1 {
             Ok(results.into_iter().next().unwrap())
         } else {
