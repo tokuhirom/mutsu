@@ -1328,6 +1328,12 @@ impl VM {
                             Value::Nil
                         }
                     });
+                // A whole-container `:=` bind (`my @b := @a`) stores a shared
+                // `ContainerRef` cell in the slot so both aliases observe
+                // mutations. Decontainerize the top-level cell here so the read
+                // yields the inner Array/Hash (the cell is a binding alias, not
+                // an array element). Element-level cells are handled at Index.
+                let val = val.into_deref();
                 // When @-sigil dereferences a Hash, convert to a list of pairs
                 let val = match val {
                     Value::Hash(ref map) => {
@@ -1394,7 +1400,10 @@ impl VM {
                         }
                     });
                 match val {
-                    Some(v) => self.stack.push(v),
+                    // Decontainerize a top-level `ContainerRef` cell from a
+                    // whole-container `:=` bind (`my %h2 := %h`); the read
+                    // yields the inner Hash.
+                    Some(v) => self.stack.push(v.into_deref()),
                     None => {
                         // %ENV (without * twigil) is not declared in Raku;
                         // only %*ENV is valid. Throw an undeclared error for %ENV specifically.

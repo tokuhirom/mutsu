@@ -2779,7 +2779,11 @@ impl VM {
                         }
                     }
                 }
-                if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
+                // Descend through a whole-container `:=` bound cell (`my @x :=
+                // @a`) so an array slice assignment mutates the shared inner
+                // Array (every alias observes it) instead of falling through to
+                // the hash-slice path below.
+                if let Some(container) = self.env_root_descended_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
                     let is_shaped =
@@ -4028,7 +4032,7 @@ impl VM {
     /// SAFETY: single-threaded; the returned reference points into the cell's
     /// mutex data, kept alive by the `Arc` stored in env (see
     /// `descend_container_ref`).
-    fn env_root_descended_mut(&mut self, var_name: &str) -> Option<&mut Value> {
+    pub(crate) fn env_root_descended_mut(&mut self, var_name: &str) -> Option<&mut Value> {
         let root = self.interpreter.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref(root) };
         Some(unsafe { &mut *descended })
@@ -5882,15 +5886,6 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert(readonly_key, Value::Bool(false));
-            // Record local-slot binding pair for write propagation.
-            // Only record if the source is also a local in the same code unit,
-            // so cross-scope name collisions do not cause spurious propagation.
-            if is_vardecl
-                && let Some(source_idx) = code.locals.iter().position(|n| n == &resolved_source)
-                && source_idx != idx
-            {
-                self.local_bind_pairs.push((source_idx, idx));
-            }
             // Create a shared ContainerRef for cross-scope binding (source in
             // outer call frame) OR same-scope rebinding (`:=` on existing vars).
             // ContainerRef ensures bidirectional container sharing: writing to
@@ -5900,6 +5895,96 @@ impl VM {
                 .iter()
                 .any(|f| f.saved_env.contains_key(&resolved_source));
             let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
+            // Whole-container `:=` bind (`my @b := @a`, `my %h2 := %h`,
+            // `my $ref := @a`): share a single `ContainerRef` cell between the
+            // source and target so mutations through either alias (push,
+            // element assignment) are observed by both, as in Raku. Without
+            // this the two slots only share the inner `Arc`, and a COW mutation
+            // (`.push`) detaches them. (Mirrors the element-bind cell pattern in
+            // the index-assign path; the cell IS the alias so no
+            // `local_bind_pairs` entry is recorded.)
+            let val_is_container = matches!(
+                val,
+                Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
+            );
+            if val_is_container
+                && (source_in_same_scope || source_in_outer_frame)
+                && !name.starts_with('&')
+            {
+                // Reuse the source's existing cell if it already has one (so a
+                // third alias `my @c := @b` joins the same cell); otherwise wrap
+                // the bound value in a fresh cell.
+                let cell = match &val {
+                    Value::ContainerRef(arc) => arc.clone(),
+                    _ => match self.interpreter.env().get(&resolved_source) {
+                        Some(Value::ContainerRef(arc)) => arc.clone(),
+                        _ => std::sync::Arc::new(std::sync::Mutex::new(val.clone())),
+                    },
+                };
+                // A bound `@`/`%` variable adopts the *source* container's
+                // declared element/key type, not its own (`my Int %a; my Cool
+                // %b := %a` ⇒ `%b.of` is `Int`). Propagate the inner container's
+                // embedded type metadata to this variable's constraint (same as
+                // the typed-bind propagation at the end of the slow path, which
+                // the early return below skips).
+                if name.starts_with('@') || name.starts_with('%') {
+                    let inner = cell.lock().unwrap().clone();
+                    if let Some(info) = self.interpreter.container_type_metadata(&inner)
+                        && !info.value_type.is_empty()
+                    {
+                        let constraint_str = if name.starts_with('%') {
+                            if let Some(ref kt) = info.key_type {
+                                format!("{}{{{}}}", info.value_type, kt)
+                            } else {
+                                info.value_type.clone()
+                            }
+                        } else {
+                            info.value_type.clone()
+                        };
+                        self.interpreter
+                            .set_var_type_constraint(name, Some(constraint_str));
+                    } else {
+                        // Untyped source: clear any declared constraint inherited
+                        // from this variable's own declaration so it does not
+                        // over-constrain the shared container.
+                        self.interpreter.set_var_type_constraint(name, None);
+                    }
+                }
+                let container = Value::ContainerRef(cell);
+                self.locals[idx] = container.clone();
+                if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
+                    self.locals[source_idx] = container.clone();
+                    self.flush_local_to_env(code, source_idx);
+                }
+                self.set_env_with_main_alias(&resolved_source, container.clone());
+                // Propagate the shared cell into saved call frames so the
+                // binding survives method returns (env restore) without
+                // reverting to a stale value (same as the scalar path below).
+                for frame in self.call_frames.iter_mut().rev() {
+                    if frame.saved_env.contains_key(&resolved_source) {
+                        frame
+                            .saved_env
+                            .insert(resolved_source.clone(), container.clone());
+                    }
+                    for (i, local_name) in code.locals.iter().enumerate() {
+                        if local_name == &resolved_source && i < frame.saved_locals.len() {
+                            frame.saved_locals[i] = container.clone();
+                        }
+                    }
+                }
+                self.set_env_with_main_alias(name, container.clone());
+                self.flush_local_to_env(code, idx);
+                return Ok(());
+            }
+            // Record local-slot binding pair for write propagation.
+            // Only record if the source is also a local in the same code unit,
+            // so cross-scope name collisions do not cause spurious propagation.
+            if is_vardecl
+                && let Some(source_idx) = code.locals.iter().position(|n| n == &resolved_source)
+                && source_idx != idx
+            {
+                self.local_bind_pairs.push((source_idx, idx));
+            }
             // Only use ContainerRef for same-scope rebind when the value is a
             // simple scalar (not a type object, array, hash, etc.)
             let val_is_simple_scalar = !matches!(
