@@ -31,7 +31,6 @@ use crate::value::{
     Value, make_rat, take_pending_instance_destroys,
 };
 use num_traits::Signed;
-use ptr_keyed::PtrKeyedMap;
 
 /// Flatten arguments for `append` using Raku's "one-arg rule":
 /// if exactly one non-itemized Array/List argument is passed, its elements
@@ -198,7 +197,6 @@ pub(crate) mod native_types;
 mod ops;
 mod output_sink;
 pub(crate) mod phasers;
-pub(crate) mod ptr_keyed;
 mod react_died;
 mod regex;
 pub(crate) mod regex_parse;
@@ -1022,9 +1020,8 @@ pub struct Interpreter {
     atomic_var_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
-    // Array element defaults are embedded in `ArrayData.default`.
-    /// Hash element defaults for `is default(...)` (guarded; see `ptr_keyed`).
-    hash_defaults: PtrKeyedMap<crate::value::HashData, Value>,
+    // Array/Hash element defaults are embedded in `ArrayData.default` /
+    // `HashData.default`.
     /// Optional hash key type constraints (e.g. `%h{Str}`).
     var_hash_key_constraints: HashMap<String, String>,
     // Array/Hash/Set/Bag/Mix type metadata and object-hash original keys are
@@ -3117,7 +3114,6 @@ impl Interpreter {
             var_type_constraints: HashMap::new(),
             atomic_var_seen: false,
             var_defaults: HashMap::new(),
-            hash_defaults: PtrKeyedMap::new(),
             var_hash_key_constraints: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
@@ -4488,12 +4484,11 @@ impl Interpreter {
             .cloned()
     }
 
-    /// Set the element default for a container (Array/Hash) by Arc pointer identity.
     /// Attach an `is default(...)` element default to a container, returning
-    /// the (possibly rebuilt) value. For arrays the default is embedded in the
-    /// `ArrayData` (callers MUST store the returned value back into the slot it
-    /// came from); for hashes it stays on the pointer-keyed side table and the
-    /// same value is returned.
+    /// the (possibly rebuilt) value. For both arrays and hashes the default is
+    /// embedded in the backing `ArrayData`/`HashData` so it travels with the
+    /// container through copy-on-write; callers MUST store the returned value
+    /// back into the slot it came from.
     pub(crate) fn tag_container_default(&mut self, value: Value, default: Value) -> Value {
         match value {
             Value::Array(mut arc, kind) => {
@@ -4502,8 +4497,10 @@ impl Interpreter {
                 }
                 Value::Array(arc, kind)
             }
-            Value::Hash(map) => {
-                self.hash_defaults.insert(&map, default);
+            Value::Hash(mut map) => {
+                if map.default.as_deref() != Some(&default) {
+                    Arc::make_mut(&mut map).default = Some(Box::new(default));
+                }
                 Value::Hash(map)
             }
             other => other,
@@ -4514,7 +4511,7 @@ impl Interpreter {
     pub(crate) fn container_default<'v>(&'v self, value: &'v Value) -> Option<&'v Value> {
         match value {
             Value::Array(items, ..) => items.default.as_deref(),
-            Value::Hash(map) => self.hash_defaults.get_arc(map),
+            Value::Hash(map) => map.default.as_deref(),
             _ => None,
         }
     }
@@ -5568,7 +5565,6 @@ impl Interpreter {
             // running the atomic-variable read check.
             atomic_var_seen: self.atomic_var_seen,
             var_defaults: self.var_defaults.clone(),
-            hash_defaults: self.hash_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),

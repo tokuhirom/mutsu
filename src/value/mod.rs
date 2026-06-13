@@ -1270,6 +1270,12 @@ pub struct HashData {
     /// string back to the original key object (so `.keys`/subscript see the
     /// real key, not the WHICH string).
     pub original_keys: Option<HashMap<String, Value>>,
+    /// `is default(...)` element default — the value a missing-key read yields.
+    /// Embedded (replacing the former `Arc::as_ptr`-keyed `hash_defaults` side
+    /// table) so it travels with the hash through copy-on-write — the pointer
+    /// table broke whenever the backing `Arc` was rebuilt. Mirrors the array
+    /// `ArrayData::default` field.
+    pub default: Option<Box<Value>>,
 }
 
 impl HashData {
@@ -1280,6 +1286,7 @@ impl HashData {
             key_type: None,
             declared_type: None,
             original_keys: None,
+            default: None,
         }
     }
 

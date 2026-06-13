@@ -138,8 +138,12 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             **Array = ArrayData wrapper（2026-06-13）— 全 5 コンテナ型の型メタがコンテナ値に埋め込まれ、
             型メタ副テーブルは全廃**。経緯・監査済み hazard（unsafe cast / Arc identity / iterator 共有）=
             docs/hashdata-migration-plan.md Stage 3-4 節。
-            **残の ptr-keyed（Weak-guard #2953 で防御中）**: container defaults・shaped dims・grep-view —
-            ArrayData への後続埋め込み候補。レバー C 残（単一脱出/汎用捕捉）も合流。
+      - [x] **全 ptr-keyed 副テーブル撲滅 = DONE（2026-06-13）**: 残っていた `Arc::as_ptr`-keyed 副テーブルを
+            すべてコンテナ値に埋め込み完了。shaped dims = `ArrayData.shape`、array default = `ArrayData.default`
+            （既存）、**grep-view = `ArrayData.grep_source`（#2985）**、**hash default = `HashData.default`**。
+            最後のユーザーを失った `PtrKeyedMap` / `ptr_keyed.rs`（#2953 の Weak-guard interim 防御機構ごと）を
+            **削除**。これで `Arc::as_ptr` ポインタ identity に依存する副テーブルはゼロ＝Q2 の間欠 flaky の構造的
+            根を全廃。レバー C 残（単一脱出/汎用捕捉）は要素セル本体（Phase 2）へ合流。
 - [ ] **トラック C — 並行 / lever B（共有セル）** ＝ 並行（A と独立。要素セルは B と共有基盤なので B に弱依存）
       - [~] `clone_for_thread` のスナップショットコピー → 共有すべき lexical/global を `ContainerRef`
             （`Arc<Mutex<Value>>`）ライブセルへ（ANALYSIS §8.3/§2.2）。**スライス 1 LANDED**:
@@ -248,8 +252,9 @@ STATUS で撤回済み。
       S14-traits/attributes 5-8）。
 - [x] **型メタを Arc ポインタ keying からセルへ（Q2 項目）= 完全吸収 DONE（2026-06-13）** — Hash #2952/#2954、
       Set/Bag/Mix #2957、Array = ArrayData wrapper。全 5 コンテナ型で型メタ副テーブル全廃
-      （docs/hashdata-migration-plan.md Stage 3-4 節 / 上記トラック B 参照）。残 ptr-keyed は
-      defaults/shaped/grep-view（Weak-guard 防御中、ArrayData 後続埋め込み候補）。
+      （docs/hashdata-migration-plan.md Stage 3-4 節 / 上記トラック B 参照）。**残っていた非型メタ ptr-keyed
+      （defaults/shaped/grep-view）も全て埋め込み完了し `ptr_keyed.rs`（Weak-guard 機構）ごと削除（2026-06-13、
+      grep-view #2985 + hash default）。`Arc::as_ptr`-keyed 副テーブルはゼロ。**
 
 注: 既に通るようになった項目（観測 2026-06-08）— reduce.t 62 の `:=` 束縛リスト平坦化（`@a.elems`=3）、
 `is rw` の**基本** persistent（`f($a);f($a)`）は現状 PASS。バックログから外す。
@@ -325,7 +330,8 @@ escape 解析で統合・削除。
    `__mutsu_sigilless_alias` 文字列機構を削除**。reduce.t 62 平坦化・`.VAR.^name` 束縛反映もここで落ちる。
 
 4. **配列/ハッシュ要素のセル化（COW）= Phase 2**: 要素を COW セルに。**`HashSlotRef`/`ArraySlotRef` の場当たり +
-   grep-rw-view binding + name-based writeback reconcile を削除**。take-rw / `@a[0]:=` / 深い `>>++` が落ちる。
+   grep-rw-view binding（now embedded `ArrayData.grep_source`, side-table 撤去済 #2985）+ name-based writeback
+   reconcile を削除**。take-rw / `@a[0]:=` / 深い `>>++` が落ちる。
    要素にセルが載るので、**値スタック不変条件 + lvalue opcode（旧 Phase 0.5 第2段: `GetArrayVar`/`Index`
    auto-decont）を同梱**。
 
@@ -382,8 +388,9 @@ NaN-boxing で payload 8byte 化。**各ステップで int.t 等の重量級 ro
 ### 「最速 × メンテしやすい」をどう両立するか
 
 - **メンテ性（直接の勝ち筋）**: 統一コンテナモデルは散在する workaround を**削除**する — dual-store
-  env↔locals、Arc-pointer-keyed 副テーブル（＝ flaky の根。下記 Q2 項目を吸収）、ad-hoc itemization
-  フラグ、grep-rw-view binding、name-based writeback reconcile。**1 つの概念が十数個の特例を置換**する。
+  env↔locals、Arc-pointer-keyed 副テーブル（＝ flaky の根。**2026-06-13 に全廃済 — `ptr_keyed.rs` 削除**）、
+  ad-hoc itemization フラグ、grep-rw-view binding（embedded 化済、要素セルで最終撤去）、name-based writeback
+  reconcile。**1 つの概念が十数個の特例を置換**する。
   これが「世界最高 ＝ 最もメンテしやすい」の核。
 - **速度（設計で担保）**: コンテナは間接参照を足すので、(a) **エスケープ解析でコンテナを省略** — 捕捉も
   `.VAR` もエイリアスもされないローカルは裸値のまま（コンパイラが判定。MoarVM の spesh と同型）、
@@ -475,14 +482,14 @@ NaN-boxing で payload 8byte 化。**各ステップで int.t 等の重量級 ro
       240 件は**全く減らず**（reconcile が native 配列のメタライフサイクルに届かない）→ これも破棄。
       **結論: Weak + name-reconcile の安価なパッチは native 配列で行き止まり。** 部分対処の積み増しでは
       family を根治できない。
-    - **本筋（埋め込みで構造的に解消 — 大半 DONE）**: 生ポインタ keying を廃止し型メタを**コンテナ Value
-      自体に載せる**方針を採用。**Hash = HashData 埋め込み DONE（型メタ #2952 ＋ original_keys #2954）、
-      Set/Bag/Mix = *Data struct 埋め込み DONE (#2957)**。これで `S02-types/hash.t` の `.clone` flaky・
-      object-hash の Nil 読み・hash 系 typed flaky は根絶。**残 = Array のみ**（`Value::Array(Arc<Vec<Value>>, _)`
-      → ArrayData wrapper。`S02-names-vars/perl.t` の EVAL 生成リスト aliasing flaky を断つ最後の一手。
-      `Arc::as_ptr as *mut Vec<Value>` の unsafe 全監査が前提 — メモリ `hashdata-layout-unsafe-cast-audit`）。
-      手順は **docs/hashdata-migration-plan.md Stage 3 節**。未 wrapper の間は #2953 の Weak-guard
-      `PtrKeyedMap` が interim 防御。再現手順・失敗した2手法はメモリ `project_known_failing_tests_reclassified`。
+    - **本筋（埋め込みで構造的に解消 — ✅ 完了 2026-06-13）**: 生ポインタ keying を廃止し型メタを**コンテナ
+      Value 自体に載せる**方針を完遂。**Hash = HashData 埋め込み（型メタ #2952 ＋ original_keys #2954）、
+      Set/Bag/Mix = *Data struct 埋め込み (#2957)、Array = ArrayData wrapper（型メタ + default + shape +
+      grep-view #2985）**。これで `S02-types/hash.t` の `.clone` flaky・object-hash の Nil 読み・
+      `S02-names-vars/perl.t` の EVAL 生成リスト aliasing flaky の構造的根を全廃。**最後に残っていた非型メタの
+      ptr-keyed 副テーブル（hash default）も `HashData.default` へ埋め込み、`PtrKeyedMap`/`ptr_keyed.rs`
+      （#2953 の Weak-guard interim 防御機構）ごと削除。`Arc::as_ptr`-keyed 副テーブルはコードベースから消滅。**
+      再現手順・失敗した2手法はメモリ `project_known_failing_tests_reclassified`。
 
 ---
 
