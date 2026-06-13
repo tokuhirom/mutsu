@@ -938,7 +938,11 @@ impl VM {
             return;
         }
         if is_bind {
-            let is_positional = match val {
+            // A scalar bound to a container (`$x := @a` / `:= %h` / `:= (1,2,3)`)
+            // is not a Scalar container of its own: it aliases the container, so
+            // `@a = $bound` flattens (ItemizeVar) and `$bound.VAR.^name` reflects
+            // the container type (List/Array/Hash/Set/Bag/Mix) rather than Scalar.
+            let is_container = match &val {
                 Value::Array(_, k) => !k.is_itemized(),
                 Value::Seq(_)
                 | Value::Slip(_)
@@ -946,10 +950,24 @@ impl VM {
                 | Value::Range(..)
                 | Value::RangeExcl(..)
                 | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..) => true,
+                | Value::RangeExclBoth(..)
+                | Value::Hash(_)
+                | Value::Set(..)
+                | Value::Bag(..)
+                | Value::Mix(..) => true,
+                // A `:=` bind to a whole-container `@`/`%` variable holds a
+                // shared cell whose inner value is the container.
+                Value::ContainerRef(cell) => matches!(
+                    &*cell.lock().unwrap(),
+                    Value::Array(..)
+                        | Value::Hash(_)
+                        | Value::Set(..)
+                        | Value::Bag(..)
+                        | Value::Mix(..)
+                ),
                 _ => false,
             };
-            if is_positional {
+            if is_container {
                 let key = format!("__mutsu_bound_decont::{}", name);
                 self.interpreter.env_mut().insert(key, Value::Bool(true));
                 self.bound_decont_active = true;
