@@ -1306,8 +1306,39 @@ impl Interpreter {
                             .collect::<Vec<_>>()
                             .join(", ")
                     ));
+                    let signature = format!(
+                        "({})",
+                        def.param_defs
+                            .iter()
+                            .map(|p| {
+                                // Type-only params (`Str`) carry a synthetic name;
+                                // render just the type constraint.
+                                if p.name.starts_with("__") {
+                                    return p
+                                        .type_constraint
+                                        .as_deref()
+                                        .unwrap_or("Any")
+                                        .to_string();
+                                }
+                                if let Some(tc) = &p.type_constraint {
+                                    format!("{} {}", tc, p.name)
+                                } else {
+                                    p.name.clone()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    attrs.insert("objname".to_string(), Value::str(proto_name.to_string()));
+                    attrs.insert("signature".to_string(), Value::str(signature));
+                    attrs.insert(
+                        "arguments".to_string(),
+                        Value::array(type_names.iter().cloned().map(Value::str).collect()),
+                    );
+                    // This dispatch failure is against a `proto` signature.
+                    attrs.insert("protoguilt".to_string(), Value::Bool(true));
                     err.exception = Some(Box::new(Value::make_instance(
                         Symbol::intern("X::TypeCheck::Argument"),
                         attrs,
