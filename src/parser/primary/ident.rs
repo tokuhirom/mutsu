@@ -220,6 +220,13 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             name,
             body: rewrite_supply_body(body, emitter_name),
         },
+        // Phaser bodies (LAST/QUIT/FIRST/NEXT/...) inside a supply/whenever
+        // can also `emit`/`done`; rewrite them to the emitter just like the
+        // main body so e.g. `LAST { emit "done" }` forwards to the supply.
+        Stmt::Phaser { kind, body } => Stmt::Phaser {
+            kind,
+            body: rewrite_supply_body(body, emitter_name),
+        },
         Stmt::Label { name, stmt } => Stmt::Label {
             name,
             stmt: Box::new(rewrite_supply_stmt(*stmt, emitter_name)),

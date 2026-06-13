@@ -658,6 +658,21 @@ impl Interpreter {
                                 if let Some(ref qf) = quit_cb {
                                     register_supplier_quit_callback(supplier_id, qf.clone());
                                 }
+                                // Register the whenever's own LAST phaser
+                                // callbacks (arr[2]) as done callbacks on the
+                                // inner supplier, BEFORE the group marker, so
+                                // that when the inner supplier signals done the
+                                // LAST blocks run first. Their `emit` routes to
+                                // the supply block's emitter (and out to the
+                                // outer tap) just like the main body's emit.
+                                if let Value::Array(last_arr, ..) = &arr[2] {
+                                    for last_cb in last_arr.iter() {
+                                        register_supplier_done_callback(
+                                            supplier_id,
+                                            last_cb.clone(),
+                                        );
+                                    }
+                                }
                                 // Register done callback: use the group marker
                                 // so done only fires when ALL whenevers complete.
                                 if let Some(ref marker) = done_group_marker {
@@ -2625,6 +2640,21 @@ impl Interpreter {
                                 }
                                 if let Some(ref qf) = quit_cb {
                                     register_supplier_quit_callback(supplier_id, qf.clone());
+                                }
+                                // Register the whenever's own LAST phaser
+                                // callbacks (arr[2]) as done callbacks on the
+                                // inner supplier, BEFORE the group marker, so
+                                // that when the inner supplier signals done the
+                                // LAST blocks run first. Their `emit` routes to
+                                // the supply block's emitter (and out to the
+                                // outer tap) just like the main body's emit.
+                                if let Value::Array(last_arr, ..) = &arr[2] {
+                                    for last_cb in last_arr.iter() {
+                                        register_supplier_done_callback(
+                                            supplier_id,
+                                            last_cb.clone(),
+                                        );
+                                    }
                                 }
                                 // Register done callback: use the group marker
                                 // so done only fires when ALL whenevers complete.
