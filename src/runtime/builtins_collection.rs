@@ -2263,6 +2263,27 @@ impl Interpreter {
         self.deepmap_iterate_inner(block, target, false)
     }
 
+    /// Call the deepmap block on a leaf element through a transient
+    /// `ContainerRef` cell, so a mutating callable (`++*`, `*--`, `$_++`)
+    /// writes through — Raku's `deepmap` passes each leaf as a *container*
+    /// and mutations are visible in the source structure. Returns the
+    /// block's (decontainerized) result plus the cell's post-call value for
+    /// the caller to write back into the source slot.
+    fn deepmap_leaf_call(
+        &mut self,
+        block: &Value,
+        leaf: &Value,
+    ) -> Result<(Value, Value), RuntimeError> {
+        let cell = std::sync::Arc::new(std::sync::Mutex::new(leaf.clone()));
+        let res = self.call_sub_value(
+            block.clone(),
+            vec![Value::ContainerRef(cell.clone())],
+            false,
+        )?;
+        let new_val = cell.lock().unwrap().clone();
+        Ok((res.deref_container(), new_val))
+    }
+
     /// Inner recursive helper. `itemize_result` is true for nested calls
     /// so that sublists get wrapped in Scalar containers.
     fn deepmap_iterate_inner(
@@ -2281,7 +2302,34 @@ impl Interpreter {
                 // `[1,[2,3]].deepmap(*+1)` -> `[2, [3, 4]]`.
                 let child_itemize = !kind.is_real_array();
                 let mut result = Vec::new();
-                for item in items.iter() {
+                for (idx, item) in items.iter().enumerate() {
+                    let is_leaf = !matches!(
+                        item,
+                        Value::Package(_) | Value::Array(..) | Value::Seq(_) | Value::Hash(_)
+                    );
+                    if is_leaf {
+                        match self.deepmap_leaf_call(block, item) {
+                            Ok((v, new_src)) => {
+                                if new_src != *item {
+                                    // Write the mutated leaf back into the
+                                    // source array in place so all holders of
+                                    // the Arc see it (Raku container
+                                    // semantics). SAFETY: mutsu is
+                                    // single-threaded; same pattern as the
+                                    // other interior-mutation sites.
+                                    let ptr = std::sync::Arc::as_ptr(items)
+                                        as *mut crate::value::ArrayData;
+                                    unsafe {
+                                        (&mut *ptr).items[idx] = new_src;
+                                    }
+                                }
+                                result.push(v);
+                            }
+                            Err(e) if e.is_next => continue,
+                            Err(e) => return Err(e),
+                        }
+                        continue;
+                    }
                     match self.deepmap_iterate_inner(block, item, child_itemize) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next => continue,
@@ -2335,6 +2383,31 @@ impl Interpreter {
             Value::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
+                    let is_leaf = !matches!(
+                        v,
+                        Value::Package(_) | Value::Array(..) | Value::Seq(_) | Value::Hash(_)
+                    );
+                    if is_leaf {
+                        match self.deepmap_leaf_call(block, v) {
+                            Ok((Value::Slip(items), _)) if items.is_empty() => continue,
+                            Ok((val, new_src)) => {
+                                if new_src != *v {
+                                    // Write the mutated leaf back into the
+                                    // source hash in place (see the Array arm).
+                                    // SAFETY: mutsu is single-threaded.
+                                    let ptr =
+                                        std::sync::Arc::as_ptr(map) as *mut crate::value::HashData;
+                                    unsafe {
+                                        (&mut *ptr).map.insert(k.clone(), new_src);
+                                    }
+                                }
+                                result.insert(k.clone(), val);
+                            }
+                            Err(e) if e.is_next => continue,
+                            Err(e) => return Err(e),
+                        }
+                        continue;
+                    }
                     match self.deepmap_iterate_inner(block, v, true) {
                         Ok(Value::Slip(items)) if items.is_empty() => {
                             // Empty slip means the block returned Empty;
@@ -2350,8 +2423,9 @@ impl Interpreter {
                 }
                 Ok(Value::Hash(Value::hash_arc(result)))
             }
-            // Leaf value: apply the block
-            _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
+            // Leaf value: apply the block (through a transient container so
+            // mutating callables write through to a bare top-level leaf too).
+            _ => self.deepmap_leaf_call(block, target).map(|(v, _)| v),
         }
     }
 
