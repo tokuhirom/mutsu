@@ -305,15 +305,23 @@ impl Interpreter {
                             scan_from = absolute.saturating_add(1);
                         }
                     }
-                    if !indices.is_empty() {
-                        crate::runtime::utils::register_grep_view_binding(
-                            filtered_items,
-                            &updated_source,
-                            indices.clone(),
-                            arr_kind,
-                        );
-                    }
                 }
+                // Embed the rw-view binding into the filtered ArrayData so it
+                // travels with the value through copy-on-write (no Arc-pointer
+                // side table). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array
+                // in `transform_result`, which naturally drops the binding.
+                let filtered = match filtered {
+                    Value::Array(filtered_items, fkind) if !indices.is_empty() => {
+                        let mut data = (*filtered_items).clone();
+                        data.grep_source = Some(Box::new(crate::value::GrepView {
+                            source: updated_source.clone(),
+                            indices: indices.clone(),
+                            source_kind: arr_kind,
+                        }));
+                        Value::Array(std::sync::Arc::new(data), fkind)
+                    }
+                    other => other,
+                };
                 grep_adverb.transform_result(filtered, &indices)
             }
             Value::Range(..)

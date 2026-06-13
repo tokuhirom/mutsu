@@ -1359,6 +1359,27 @@ pub struct ArrayData {
     /// `Arc::as_ptr`-keyed `ShapedArrayIds` side table) so the shape travels
     /// with the container through copy-on-write.
     pub shape: Option<Vec<usize>>,
+    /// rw aggregate-view binding for `for @a.grep(...) { $_++ }`. A grep result
+    /// over an array carries the source array and the matched source indices so
+    /// the for-loop can write modified topics back to the original slots.
+    /// Embedded (replacing the former `Arc::as_ptr`-keyed grep-view side table)
+    /// so the binding travels with the filtered value through copy-on-write and
+    /// can never be inherited by an unrelated array via pointer reuse. A `=`
+    /// assignment / any rebuild via `array_data_like` drops it (the named-array
+    /// copy owns its elements and must not leak writeback into the source).
+    pub grep_source: Option<Box<GrepView>>,
+}
+
+/// The source binding embedded in a grep result so `for @a.grep(...) { $_++ }`
+/// can mirror modified topics back to the original array's matched slots.
+#[derive(Debug, Clone)]
+pub struct GrepView {
+    /// The (post-grep) source array whose slots the filtered elements alias.
+    pub source: Arc<ArrayData>,
+    /// For each filtered element, its 0-based index in `source`.
+    pub indices: Vec<usize>,
+    /// The source array's kind (preserved through writeback).
+    pub source_kind: ArrayKind,
 }
 
 impl ArrayData {
@@ -1370,6 +1391,7 @@ impl ArrayData {
             declared_type: None,
             default: None,
             shape: None,
+            grep_source: None,
         }
     }
 
@@ -2703,6 +2725,8 @@ impl Value {
             declared_type: like.declared_type.clone(),
             default: like.default.clone(),
             shape: like.shape.clone(),
+            // A rebuilt array never inherits a stale grep rw-view binding.
+            grep_source: None,
         })
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)

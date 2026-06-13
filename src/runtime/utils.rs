@@ -1,8 +1,7 @@
 use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
-use crate::runtime::ptr_keyed::PtrKeyedMap;
 use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value};
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -80,9 +79,6 @@ pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
     failure_attrs.insert("handled".to_string(), Value::Bool(false));
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
-type GrepViewBinding = (Arc<crate::value::ArrayData>, Vec<usize>, ArrayKind);
-type GrepViewMap = PtrKeyedMap<crate::value::ArrayData, GrepViewBinding>;
-
 /// Embed original (non-string) keys for an object hash into its `HashData`,
 /// returning the (possibly rebuilt) value. The map travels WITH the hash
 /// through copy-on-write — replacing the old Arc-pointer-keyed side tables, so
@@ -117,29 +113,6 @@ pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
         return orig.clone();
     }
     Value::str(str_key.to_string())
-}
-
-fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
-    static GREP_VIEW_BINDINGS: OnceLock<Mutex<GrepViewMap>> = OnceLock::new();
-    GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(PtrKeyedMap::new()))
-}
-
-pub(crate) fn register_grep_view_binding(
-    filtered: &Arc<crate::value::ArrayData>,
-    source: &Arc<crate::value::ArrayData>,
-    source_indices: Vec<usize>,
-    source_is_array: ArrayKind,
-) {
-    if let Ok(mut bindings) = grep_view_bindings().lock() {
-        bindings.insert(filtered, (source.clone(), source_indices, source_is_array));
-    }
-}
-
-pub(crate) fn get_grep_view_binding(
-    filtered: &Arc<crate::value::ArrayData>,
-) -> Option<(Arc<crate::value::ArrayData>, Vec<usize>, ArrayKind)> {
-    let bindings = grep_view_bindings().lock().ok()?;
-    bindings.get_arc(filtered).cloned()
 }
 
 /// Check if an array is a shaped (multidimensional) array.
