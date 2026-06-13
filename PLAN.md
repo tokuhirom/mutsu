@@ -174,7 +174,31 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             テスト `t/concurrent-state-var.t`。
             **残**: `state @`/`%`（配列/ハッシュ）のスレッド共有（要素セル＝Track B 依存）、
             lexical `@`/`%` 共有・複合代入（`+=`）のアトミック化。
-      - [ ] `run_react_event_loop[_drain]` を VM ネイティブ実行へ（react/supply の async 状態所有）。
+      - [ ] **react/supply ランタイムの VM ネイティブ化**（`run_react_event_loop[_drain]` /
+            `run_whenever_with_value`）。**調査済み（2026-06-13、次セッションで実装）**:
+            - **重複の実態**: 「source 解決→event poll→body 実行→done/last/quit/close phaser」の駆動ループが
+              **4 箇所に二重化**: ① `run_react_event_loop`（`subtest.rs:180`、`ReactSubscription` struct）=
+              `react{}`、② `supply_promise_on_demand`（`native_supply_methods.rs:3542`、`SupplyPromiseSub`）=
+              `await $supply`、③ `native_supply` tap/act（同 515）、④ `native_supply_mut` tap/act（同 2663、
+              `$s.tap` が実際に効く方）。`native_supply_methods.rs` は 4070 行でその大半がこの二重化。
+            - **台帳の前提を訂正**: 「blocked-by: async state ownership (lever B)」は**部分的に誤り**。
+              supplier レジストリ・channel（`register_supplier_tap`/`supplier_snapshot`/`take_supply_channel`）は
+              `OnceLock` ベースの**プロセスグローバル static**（`native_methods/state.rs`/`state_supplier.rs`）で
+              Interpreter 非所有 ＝ VM から直接触れる。ループが Interpreter に縛られている真因は
+              `call_sub_value`（compiled body 実行）と `supply_emit_buffer`（emit 捕捉/subscription staging の Vec）
+              **だけ**。body callback は既に compiled sub。
+            - **段階プラン**:
+              - **Stage 1（最初の PR・着手点）**: 4 駆動ループを**単一エンジン**へ統合。完了ポリシーを enum 化
+                （`React`=全 done まで / `Promise`=last value で resolve / `Tap`=永続 tap 登録）。
+                `native_supply`↔`native_supply_mut` の tap/act 二重化を削除し、`supply_promise_on_demand` と
+                `run_react_event_loop` を共有コアへ畳む。**削除機構＝2〜3 コピー分**（arch-first の主目的＝重複削除）。
+                VM 化の前提（4 コピーは移行できない、まず 1 つに）。既存 S17 ＋ `t/supply-await-static-whenever.t`/
+                `t/done-paren-stmt-modifier.t` で検証。高 blast-radius なので release CI を最終安全網に。
+              - **Stage 2**: 統合エンジンを VM 所有境界へ。ループが `Interpreter::call_sub_value` ではなく VM の
+                compiled-function dispatch を直接呼ぶ形にし、`supply_emit_buffer` staging を VM/グローバル側へ。
+                `ReactScope`/`WheneverScope` opcode が tree-walk 非経由で駆動 → 台帳から `run_react_event_loop`/
+                `run_whenever_with_value` 真フォールバック行を削除。
+              - **Stage 3**: `vm_register_ops.rs:1670` の `// TODO: compile to bytecode` 除去・台帳/PLAN 更新。
       - [ ] **unsafe aliasing 撤廃**（ANALYSIS §2.3, `Arc::as_ptr as *mut` 11 箇所）— B の要素セル基盤の上で。
 
 #### Phase II（収束・逐次）: state 移管 → carrier 確定 → dual-store 削除 → Interpreter 撤去

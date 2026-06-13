@@ -35,7 +35,7 @@
 | ~~`vm_smart_match.rs` key-method~~ | ~~smartmatch のキーメソッド抽出~~ | — | **✅消化 (PR2)**: 統一 compiled-first へ |
 | ~~`vm_call_method_compiled.rs` QuantHash coercion~~ | ~~`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`（list-like 受け手）~~ | — | **✅消化 (③ PR-8)**: `try_native_quanthash_coerce` で VM ネイティブ。pure 折り畳みは `builtins/quanthash_coerce` に一本化。`.MixHash`（型メタ登録）/ Instance/Package 受け手は interpreter 維持 |
 | `vm_call_helpers.rs` hyper temp | temp-bind した item への hyper メソッド | MEDIUM | 第一級コンテナ Phase 2 |
-| `vm_register_ops.rs` react loop | `run_react_event_loop[_drain]` | HARD | lever B（async state 所有） |
+| `vm_register_ops.rs` react loop | `run_react_event_loop[_drain]` / `run_whenever_with_value` | MEDIUM-HARD | **訂正(2026-06-13)**: async レジストリはプロセスグローバル static で VM から触れる＝lever B 非依存。真因は `call_sub_value`＋`supply_emit_buffer` のみ。駆動ループが **4 箇所に二重化**（react / await-promise / tap×2）。Stage 1=単一エンジンへ統合（重複削除）→ Stage 2=VM 所有境界へ。詳細 [PLAN.md](../PLAN.md) Track C「react/supply ランタイムの VM ネイティブ化」 |
 
 ## §2 — 関数ディスパッチの真フォールバック（`call_function` / `call_function_fallback`）
 
