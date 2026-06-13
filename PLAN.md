@@ -141,8 +141,19 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             **残の ptr-keyed（Weak-guard #2953 で防御中）**: container defaults・shaped dims・grep-view —
             ArrayData への後続埋め込み候補。レバー C 残（単一脱出/汎用捕捉）も合流。
 - [ ] **トラック C — 並行 / lever B（共有セル）** ＝ 並行（A と独立。要素セルは B と共有基盤なので B に弱依存）
-      - [ ] `clone_for_thread` のスナップショットコピー → 共有すべき lexical/state/global を `Arc<Mutex>` ライブセルへ
-            （ANALYSIS §8.3/§2.2。`start` 間で `$counter`/`state $n` 共有）。
+      - [~] `clone_for_thread` のスナップショットコピー → 共有すべき lexical/global を `ContainerRef`
+            （`Arc<Mutex<Value>>`）ライブセルへ（ANALYSIS §8.3/§2.2）。**スライス 1 LANDED**:
+            `start` で捕捉・変異される lexical scalar をエスケープ解析でセル化し、スレッド間で同一 Arc を共有。
+            ① `start` 引数を escaping position 化（`compile_call_arg_with_escape`）、
+            ② エスケープ信号をネストした非エスケープクロージャ越しに親へ伝播（`needs_cell_free_vars` —
+            `map { start { $outer++ } }` のような中間 map ブロック越しの捕捉を解く）、
+            ③ `++`/`--` を ContainerRef のロック保持下でアトミック RMW 化（`atomic_container_incdec` —
+            並列加算が lost-update しない。raku より決定的）、
+            ④ box 時に stale な `shared_vars` スナップショットをセルに張り替え
+            （mainline `start` 後の `sync_shared_vars_to_env` writeback がセルを clobber する回帰を防止）。
+            `await (^N).map: { start { $c++ } }` が正しく N を返す。テスト `t/concurrent-shared-cell.t`。
+            **残**: `state $n` のスレッド間共有（`state_vars`/`closure_captured_state` は clone_for_thread で
+            リセットされる別機構 — 次スライス）。`@`/`%` 共有・複合代入（`+=`）のアトミック化。
       - [ ] `run_react_event_loop[_drain]` を VM ネイティブ実行へ（react/supply の async 状態所有）。
       - [ ] **unsafe aliasing 撤廃**（ANALYSIS §2.3, `Arc::as_ptr as *mut` 11 箇所）— B の要素セル基盤の上で。
 

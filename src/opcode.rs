@@ -1132,6 +1132,17 @@ pub(crate) struct CompiledCode {
     /// call args / control blocks) non-boxed, avoiding the broad-boxing
     /// perf/correctness regression (see #2749).
     pub(crate) needs_cell_locals: Vec<Symbol>,
+    /// Free variables (names NOT in this code's own locals) that must become a
+    /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
+    /// because they are captured-and-mutated by an ESCAPING closure somewhere in
+    /// this code's closure subtree. This bubbles the escape signal up through
+    /// intermediate NON-escaping closures (e.g. a `map {...}` block — itself an
+    /// immediately-invoked call arg — that contains `start { $outer++ }`): the
+    /// `start` escapes, so `$outer` needs a cell, but the enclosing `map` block
+    /// doesn't escape and would otherwise hide that requirement. The ancestor
+    /// that owns the local folds these into its own `needs_cell_locals`
+    /// (see `compute_free_vars`).
+    pub(crate) needs_cell_free_vars: Vec<Symbol>,
     /// True if this code contains any call opcode (function/method/closure
     /// invocation). Set during `emit()`. The closure exit-writeback skip uses
     /// this as the "is this a leaf closure" test: a non-leaf closure may have a
@@ -1164,6 +1175,7 @@ impl CompiledCode {
             free_var_writes: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
+            needs_cell_free_vars: Vec::new(),
             has_calls: false,
         }
     }
@@ -1464,14 +1476,37 @@ impl CompiledCode {
         let mut captured_mutated: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
         let mut needs_cell: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        // Free vars that must be cells in an ancestor (escape bubbling up through
+        // this frame's NON-escaping closures — see `needs_cell_free_vars`).
+        let mut needs_cell_free: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         for (i, nested) in self.closure_compiled_codes.iter().enumerate() {
             let escapes = self.closure_escapes.get(i).copied().unwrap_or(false);
             for sym in &nested.free_var_syms {
-                if sym.with_str(|s| own.contains(s)) && self_mutated.contains(sym) {
+                let is_own = sym.with_str(|s| own.contains(s));
+                if is_own && self_mutated.contains(sym) {
                     captured_mutated.insert(*sym);
                     if escapes {
                         needs_cell.insert(*sym);
                     }
+                }
+                // An escaping child closure that captures-and-mutates a var which
+                // is NOT our local: that var needs a cell in the ancestor that
+                // owns it. Bubble it up. (Mutation is checked against the union
+                // of free-var writes folded in above.)
+                if escapes && !is_own && free_writes.contains(sym) {
+                    needs_cell_free.insert(*sym);
+                }
+            }
+            // Bubble cell requirements that originated deeper in the subtree.
+            for sym in &nested.needs_cell_free_vars {
+                if sym.with_str(|s| own.contains(s)) {
+                    // We declare this local; it must be a shared cell here.
+                    captured_mutated.insert(*sym);
+                    needs_cell.insert(*sym);
+                } else {
+                    // Still a free var here; keep bubbling toward the owner.
+                    needs_cell_free.insert(*sym);
                 }
             }
         }
@@ -1479,6 +1514,7 @@ impl CompiledCode {
         self.free_var_writes = free_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
         self.needs_cell_locals = needs_cell.into_iter().collect();
+        self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
     }
 
     /// Store a compiled closure body and return its index. `escapes` records

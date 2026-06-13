@@ -313,6 +313,17 @@ impl VM {
                 self.interpreter
                     .env_mut()
                     .insert(s.to_string(), container.clone());
+                // Track C: if a thread is already running (shared_vars active) and a
+                // stale plain snapshot of this name lives in `shared_vars` (seeded
+                // by an earlier `start` before this local was boxed), replace it
+                // with the cell. Otherwise the stale value, marked dirty, would be
+                // written back over the cell by `sync_shared_vars_to_env` after the
+                // next await — disconnecting the parent from the shared cell.
+                // `set_shared_var` only updates entries that already exist, so this
+                // is a no-op when the name was never snapshotted.
+                if self.interpreter.shared_vars_active {
+                    self.interpreter.set_shared_var(s, container.clone());
+                }
             });
         }
     }
