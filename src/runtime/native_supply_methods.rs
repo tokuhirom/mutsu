@@ -3,6 +3,17 @@ use super::*;
 use crate::symbol::Symbol;
 use unicode_segmentation::UnicodeSegmentation;
 
+/// How a `whenever` QUIT phaser handled (or did not handle) an exception.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum QuitOutcome {
+    /// Nothing matched / it rethrew — the quit propagates downstream.
+    Unhandled,
+    /// Matched, but did not call `done`; the caller completes the supply.
+    Handled,
+    /// Called `done`, which already completed the supply via the emitter.
+    HandledViaDone,
+}
+
 impl Interpreter {
     fn supply_has_active_callback(callback: &Value) -> bool {
         !matches!(callback, Value::Nil)
@@ -41,8 +52,44 @@ impl Interpreter {
             }
             return Ok(());
         }
+        // When an on-demand supply with `whenever`s completes via `done` (an
+        // explicit `done` in the block or a `done` inside a whenever body), the
+        // whole supply finishes: each whenever source's on-close callbacks run
+        // and the downstream `done` handler fires.
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &done_cb
+            && *class_name == "__SupplyOnDemandComplete"
+        {
+            let attrs = attributes.as_map();
+            if let Some(Value::Array(on_close, ..)) = attrs.get("on_close") {
+                for cb in on_close.iter().cloned().collect::<Vec<_>>() {
+                    self.call_sub_value(cb, vec![], true)?;
+                }
+            }
+            if let Some(down) = attrs.get("done_cb")
+                && Self::supply_has_active_callback(down)
+            {
+                let _ = self.call_sub_value(down.clone(), vec![], true);
+            }
+            return Ok(());
+        }
         let _ = self.call_sub_value(done_cb, Vec::new(), true);
         Ok(())
+    }
+
+    /// Marker registered on the emitter's done so that a supply terminating via
+    /// `done` fires every whenever source's on-close callbacks plus the
+    /// downstream done handler.
+    fn make_on_demand_complete_marker(done_cb: Option<Value>, on_close: Vec<Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("on_close".to_string(), Value::array(on_close));
+        if let Some(cb) = done_cb {
+            attrs.insert("done_cb".to_string(), cb);
+        }
+        Value::make_instance(Symbol::intern("__SupplyOnDemandComplete"), attrs)
     }
 
     /// Marker registered as a done callback so the emitter's CLOSE-phaser
@@ -106,27 +153,37 @@ impl Interpreter {
         }
     }
 
-    /// Run a single `whenever` QUIT phaser body with `reason` bound as `$_`.
-    /// Returns true if the phaser handled the exception — a `when`/`default`
-    /// matched, or it called `done`/`succeed` — meaning the supply should
-    /// complete with `done` and the downstream quit handler is suppressed.
-    /// A QUIT that matched nothing (ran to completion without a match) or
-    /// rethrew leaves the exception unhandled.
-    pub(super) fn run_whenever_quit_phaser(&mut self, quit_cb: Value, reason: Value) -> bool {
+    /// Run a single `whenever` QUIT phaser body with `reason` bound as `$_`,
+    /// reporting how it handled the exception:
+    /// - `Unhandled`: nothing matched / it rethrew — the quit propagates.
+    /// - `Handled`: a `when`/`default` matched (or `succeed`) but it did not
+    ///   call `done`, so the caller still completes the supply with done.
+    /// - `HandledViaDone`: it called `done`, which rewrites to
+    ///   `$emitter.done()` + return — the emitter completion already fired the
+    ///   downstream done, so the caller must NOT fire it again.
+    pub(super) fn run_whenever_quit_phaser(
+        &mut self,
+        quit_cb: Value,
+        reason: Value,
+    ) -> QuitOutcome {
         let saved_when = self.when_matched();
         self.set_when_matched(false);
+        let done_before = supplier_done_count();
         let result = self.call_sub_value(quit_cb, vec![reason], true);
         let matched = self.when_matched();
         self.set_when_matched(saved_when);
+        // If the phaser called `done` (it ran `$emitter.done()`), the supply
+        // was already completed via the emitter — don't let the caller fire the
+        // downstream done a second time. The `done` rewrite returns from the
+        // phaser sub normally, so this is the reliable signal.
+        if supplier_done_count() > done_before {
+            return QuitOutcome::HandledViaDone;
+        }
         match result {
-            Ok(_) => matched,
-            // `done`/`succeed` inside the phaser means it is handling the
-            // exception and completing the supply. A `done` is rewritten to
-            // `$emitter.done()` + return, so it surfaces as is_return (the
-            // return unwinds the when-scope, so `matched` is no longer visible
-            // here — the done itself is the handled signal).
-            Err(err) if err.is_react_done || err.is_succeed || err.is_return => true,
-            Err(_) => false,
+            Ok(_) if matched => QuitOutcome::Handled,
+            Ok(_) => QuitOutcome::Unhandled,
+            Err(err) if err.is_react_done || err.is_succeed => QuitOutcome::Handled,
+            Err(_) => QuitOutcome::Unhandled,
         }
     }
 
@@ -616,8 +673,10 @@ impl Interpreter {
                     });
                     // Use supply_emit_buffer to collect emitted values
                     self.supply_emit_buffer.push(Vec::new());
+                    let done_before = supplier_done_count();
                     let callback_result =
                         self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                    let body_ran_done = supplier_done_count() > done_before;
                     let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                     if let Err(err) = callback_result {
                         on_demand_quit = Some(
@@ -672,6 +731,11 @@ impl Interpreter {
 
                     let mut plain_values = Vec::new();
                     let mut outer_tap_registered = false;
+                    // on-close callbacks from each whenever source supply,
+                    // fired when the supply completes via `done`.
+                    let mut whenever_on_close: Vec<Value> = Vec::new();
+                    // true when the block body itself ran `done`.
+                    let body_done = body_ran_done;
                     for item in emitted {
                         if let Value::Array(ref arr, ..) = item
                             && arr.len() == 4
@@ -756,6 +820,13 @@ impl Interpreter {
                                         Self::make_supply_close_marker(cid),
                                     );
                                 }
+                                // Collect this source's on-close callbacks so a
+                                // `done`-driven supply completion can fire them.
+                                if let Some(Value::Array(cbs, ..)) =
+                                    inner_attrs.as_map().get("on_close_callbacks")
+                                {
+                                    whenever_on_close.extend(cbs.iter().cloned());
+                                }
                             } else {
                                 // Non-supplier supply: run body_cb for each
                                 // value synchronously (cold supply path).
@@ -791,6 +862,25 @@ impl Interpreter {
                             }
                         } else {
                             plain_values.push(item);
+                        }
+                    }
+                    // A `done` that terminates the whole supply (an explicit
+                    // `done` in the block body, or a `done` inside a whenever
+                    // body) fires every whenever source's on-close plus the
+                    // downstream done. If the body itself ran `done`, complete
+                    // now; otherwise register the marker so a later `done`
+                    // inside a whenever body (via the emitter's done) fires it.
+                    // Only whenever-backed supplies need this completion path;
+                    // a cold supply's done callback is handled below as usual.
+                    if whenever_supplier_count > 0 {
+                        let complete_marker = Self::make_on_demand_complete_marker(
+                            done_cb.clone(),
+                            std::mem::take(&mut whenever_on_close),
+                        );
+                        if body_done {
+                            self.invoke_done_callback(complete_marker)?;
+                        } else {
+                            register_supplier_done_callback(emitter_supplier_id, complete_marker);
                         }
                     }
                     plain_values
@@ -2044,6 +2134,11 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             "done" => {
+                // Bumped so the on-demand tap handler can tell (by comparing
+                // the count before/after running the block body) that the body
+                // itself called `done` — the supplier's own done state is reset
+                // below, so it can't be read back later.
+                bump_supplier_done_count();
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_done(supplier_id);
                     close_supplier_channel_taps(supplier_id, None);
@@ -2125,14 +2220,27 @@ impl Interpreter {
                         // the exception, the supply completes with done and the
                         // downstream quit handler is suppressed.
                         let mut handled = false;
+                        let mut via_done = false;
                         for qcb in take_supplier_whenever_quit_callbacks(supplier_id) {
-                            if self.run_whenever_quit_phaser(qcb, reason.clone()) {
-                                handled = true;
+                            match self.run_whenever_quit_phaser(qcb, reason.clone()) {
+                                QuitOutcome::HandledViaDone => {
+                                    handled = true;
+                                    via_done = true;
+                                }
+                                QuitOutcome::Handled => handled = true,
+                                QuitOutcome::Unhandled => {}
                             }
                         }
                         if handled {
-                            for done_cb in take_supplier_done_callbacks(supplier_id) {
-                                let _ = self.invoke_done_callback(done_cb);
+                            // When the QUIT called `done`, the emitter completion
+                            // already fired the downstream done — just drop the
+                            // pending done callbacks so it does not fire twice.
+                            if via_done {
+                                let _ = take_supplier_done_callbacks(supplier_id);
+                            } else {
+                                for done_cb in take_supplier_done_callbacks(supplier_id) {
+                                    let _ = self.invoke_done_callback(done_cb);
+                                }
                             }
                         } else {
                             for quit_cb in take_supplier_quit_callbacks(supplier_id) {
@@ -2384,6 +2492,7 @@ impl Interpreter {
                 Ok((Value::Nil, attrs))
             }
             "done" => {
+                bump_supplier_done_count();
                 attrs.insert("done".to_string(), Value::Bool(true));
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_done(supplier_id);
@@ -2484,14 +2593,27 @@ impl Interpreter {
                     // supply completes with done and the downstream quit handler
                     // is suppressed.
                     let mut handled = false;
+                    let mut via_done = false;
                     for qcb in take_supplier_whenever_quit_callbacks(sid) {
-                        if self.run_whenever_quit_phaser(qcb, reason.clone()) {
-                            handled = true;
+                        match self.run_whenever_quit_phaser(qcb, reason.clone()) {
+                            QuitOutcome::HandledViaDone => {
+                                handled = true;
+                                via_done = true;
+                            }
+                            QuitOutcome::Handled => handled = true,
+                            QuitOutcome::Unhandled => {}
                         }
                     }
                     if handled {
-                        for done_cb in take_supplier_done_callbacks(sid) {
-                            let _ = self.invoke_done_callback(done_cb);
+                        // When the QUIT called `done`, the emitter completion
+                        // already fired the downstream done — just drop the
+                        // pending done callbacks so it does not fire twice.
+                        if via_done {
+                            let _ = take_supplier_done_callbacks(sid);
+                        } else {
+                            for done_cb in take_supplier_done_callbacks(sid) {
+                                let _ = self.invoke_done_callback(done_cb);
+                            }
                         }
                     } else {
                         for quit_cb in take_supplier_quit_callbacks(sid) {
@@ -2692,7 +2814,9 @@ impl Interpreter {
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
+                    let done_before = supplier_done_count();
                     let callback_result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+                    let body_ran_done = supplier_done_count() > done_before;
                     let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                     if let Err(err) = callback_result {
                         on_demand_quit = Some(
@@ -2737,6 +2861,11 @@ impl Interpreter {
 
                     let mut plain_values = Vec::new();
                     let mut outer_tap_registered = false;
+                    // on-close callbacks from each whenever source supply,
+                    // fired when the supply completes via `done`.
+                    let mut whenever_on_close: Vec<Value> = Vec::new();
+                    // true when the block body itself ran `done`.
+                    let body_done = body_ran_done;
                     for item in emitted {
                         if let Value::Array(ref arr, ..) = item
                             && arr.len() == 4
@@ -2813,6 +2942,13 @@ impl Interpreter {
                                         Self::make_supply_close_marker(cid),
                                     );
                                 }
+                                // Collect this source's on-close callbacks so a
+                                // `done`-driven supply completion can fire them.
+                                if let Some(Value::Array(cbs, ..)) =
+                                    inner_attrs.as_map().get("on_close_callbacks")
+                                {
+                                    whenever_on_close.extend(cbs.iter().cloned());
+                                }
                             } else {
                                 let inner_vals =
                                     if let Value::Instance { attributes: a, .. } = inner_supply {
@@ -2849,6 +2985,25 @@ impl Interpreter {
                             }
                         } else {
                             plain_values.push(item);
+                        }
+                    }
+                    // A `done` that terminates the whole supply (an explicit
+                    // `done` in the block body, or a `done` inside a whenever
+                    // body) fires every whenever source's on-close plus the
+                    // downstream done. If the body itself ran `done`, complete
+                    // now; otherwise register the marker so a later `done`
+                    // inside a whenever body (via the emitter's done) fires it.
+                    // Only whenever-backed supplies need this completion path;
+                    // a cold supply's done callback is handled below as usual.
+                    if whenever_supplier_count > 0 {
+                        let complete_marker = Self::make_on_demand_complete_marker(
+                            done_cb.clone(),
+                            std::mem::take(&mut whenever_on_close),
+                        );
+                        if body_done {
+                            self.invoke_done_callback(complete_marker)?;
+                        } else {
+                            register_supplier_done_callback(emitter_supplier_id, complete_marker);
                         }
                     }
                     plain_values
