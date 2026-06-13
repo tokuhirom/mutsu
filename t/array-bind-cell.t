@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 14;
+plan 20;
 
 # Phase 2 Stage 2: array-element `:=` binds (`@x[i] := <source>`) install a
 # shared ContainerRef cell at the element (no BOUND_ARRAY_REF_SENTINEL
@@ -51,15 +51,44 @@ plan 14;
     is @it.gist, "[7]", 'gist sees the current bound value';
 }
 
-# Array-valued source: push through the source is visible.
-# (Deep write *through the bound element* into an array-valued source —
-# `@holder[0][0] = 9` reaching `@inner[0]` — is a separate later slice: the
-# whole-container source copies into the cell rather than aliasing.)
+# Array-valued source: push and deep write through the bound element are
+# both visible — the bound element and the source alias one container.
 {
     my @inner = 1, 2; my @holder;
     @holder[0] := @inner;
     @inner.push(3);
     is-deeply @holder[0], [1, 2, 3], 'array source: push through source visible';
+    @holder[0][0] = 9;
+    is @inner[0], 9, 'array source: deep write through bound element reaches source';
+    @inner[1] = 5;
+    is @holder[0][1], 5, 'array source: source write visible through bound element';
+}
+
+# Hash-valued source: deep write through the bound array element
+{
+    my %hsrc = a => 1, b => 2; my @h;
+    @h[0] := %hsrc;
+    @h[0]<a> = 99;
+    is %hsrc<a>, 99, 'hash source: deep write through bound array element';
+}
+
+# Array-valued source bound to a hash key: deep write reaches the source
+{
+    my @arr = 10, 20; my %hold;
+    %hold<k> := @arr;
+    %hold<k>[1] = 88;
+    is @arr[1], 88, 'array source via hash key: deep write reaches source';
+}
+
+# Two bound elements aliasing the same source: a deep write is visible
+# through both (and through the source).
+{
+    my @src = 1, 2; my @x; my @y;
+    @x[0] := @src;
+    @y[0] := @src;
+    @x[0][0] = 7;
+    is @y[0][0], 7, 'shared source: deep write visible through sibling bound element';
+    is @src[0], 7, 'shared source: deep write visible through source';
 }
 
 # Assignment snapshots: copying an array with a bound element deconts the cell
