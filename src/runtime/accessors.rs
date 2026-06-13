@@ -669,6 +669,25 @@ impl Interpreter {
         self.state_vars.insert(key, value);
     }
 
+    /// Track C: get-or-create a shared `ContainerRef` cell for a `state` variable
+    /// in `shared_vars` (the cross-thread store), keyed by `key`. Used while a
+    /// thread is running so that concurrent calls to the same routine — e.g.
+    /// `await (^3).map: { start f() }` where `f` has `state $n` — share one live
+    /// cell instead of each thread initializing its own snapshot. The get-or-init
+    /// is atomic under the `shared_vars` write lock, so the first caller seeds the
+    /// cell (from `initial`) and the rest observe it. Returns the cell value.
+    pub(crate) fn get_or_init_shared_state_cell(&self, key: &str, initial: Value) -> Value {
+        let mut sv = self.shared_vars.write().unwrap();
+        if let Some(existing) = sv.get(key)
+            && matches!(existing, Value::ContainerRef(_))
+        {
+            return existing.clone();
+        }
+        let cell = initial.into_container_ref();
+        sv.insert(key.to_string(), cell.clone());
+        cell
+    }
+
     /// Read per-closure-instance captured-variable state (hot closure-call path).
     pub(crate) fn get_closure_captured_state(&self, id: u64, name: Symbol) -> Option<&Value> {
         self.closure_captured_state.get(&(id, name))

@@ -2794,7 +2794,50 @@ impl VM {
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];
-        let val = if let Some(stored) = self.interpreter.get_state_var(&scoped_key) {
+        // Track C: while a thread is running, a user `state` variable lives in a
+        // shared `ContainerRef` cell (keyed in shared_vars) so concurrent calls
+        // to the same routine across threads — `await (^3).map: { start f() }`
+        // where `f` has `state $n` — share one live cell. The cell makes the
+        // increment atomic (the ContainerRef inc/dec chokepoint) and visible to
+        // the parent after `await`. `StateVarInit` is emitted only for genuine
+        // `state` declarations, so `ff`/`fff`/smart-match internal state (which
+        // uses `set_state_var` directly, never a cell) is unaffected.
+        let val = if self.interpreter.shared_vars_active {
+            let coerced_initial = if name.starts_with('@') {
+                runtime::coerce_to_array(init_val)
+            } else if name.starts_with('%') {
+                runtime::coerce_to_hash(init_val)
+            } else {
+                init_val
+            };
+            // Seed the shared cell from any value the local snapshot already
+            // holds (state mutated before the first thread spawned), else from
+            // this declaration's initializer.
+            let initial = self
+                .interpreter
+                .get_state_var(&scoped_key)
+                .cloned()
+                .unwrap_or(coerced_initial);
+            // The cross-thread cell key must be stable across mutsu's two
+            // compilations of the same routine (the registered body `&f` and the
+            // on-the-fly multi-candidate body `&f/0` reach `state $n` under
+            // different `current_package` suffixes and opcode positions, so
+            // `scoped_key` alone differs between `start f()` and a direct `f()`).
+            // Normalize away the `/<n>` candidate suffix and the trailing
+            // `@<ip>` position so both paths share one cell.
+            let shared_key = format!(
+                "__mutsu_shared_state::{}",
+                crate::runtime::Interpreter::normalize_state_key(&scoped_key)
+            );
+            let cell = self
+                .interpreter
+                .get_or_init_shared_state_cell(&shared_key, initial);
+            // Keep the local store pointing at the cell too, so the exit-time
+            // writeback and any non-cell reader observe the same Arc.
+            self.interpreter
+                .set_state_var(scoped_key.clone(), cell.clone());
+            cell
+        } else if let Some(stored) = self.interpreter.get_state_var(&scoped_key) {
             stored.clone()
         } else {
             // Coerce @ variables to Array and % variables to Hash,
