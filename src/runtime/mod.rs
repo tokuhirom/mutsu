@@ -1511,10 +1511,16 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["emit", "done", "quit", "Supply"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                native_methods: [
+                    "emit",
+                    "done",
+                    "quit",
+                    "Supply",
+                    "__mutsu_register_close_phaser",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
                 mro: vec!["Supplier".to_string()],
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),

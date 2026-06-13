@@ -117,6 +117,10 @@ struct SupplierSubscriptions {
     /// source quits: if a QUIT phaser handles the exception the supply
     /// completes with `done` and the downstream quit is suppressed.
     whenever_quit_callbacks: Vec<Value>,
+    /// CLOSE phaser bodies from a `supply { ... }` block. They run once when
+    /// the tap is closed or the supply terminates normally — whichever
+    /// happens first (taking them empties the list, giving run-once).
+    close_callbacks: Vec<Value>,
 }
 
 type SupplierSubscriptionsMap = std::sync::Mutex<HashMap<u64, SupplierSubscriptions>>;
@@ -1063,6 +1067,27 @@ pub(in crate::runtime) fn register_supplier_whenever_quit_callback(
             .or_default()
             .whenever_quit_callbacks
             .push(quit_cb);
+    }
+}
+
+pub(in crate::runtime) fn take_supplier_close_callbacks(supplier_id: u64) -> Vec<Value> {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        if let Some(subs) = map.get_mut(&supplier_id) {
+            std::mem::take(&mut subs.close_callbacks)
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    }
+}
+
+pub(in crate::runtime) fn register_supplier_close_callback(supplier_id: u64, close_cb: Value) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .close_callbacks
+            .push(close_cb);
     }
 }
 

@@ -25,8 +25,35 @@ impl Interpreter {
             }
             return Ok(());
         }
+        // A close marker fires the supply's CLOSE-phaser callbacks (registered
+        // on the emitter) when the supply terminates normally. Taking them
+        // gives run-once across normal termination and an explicit tap close.
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &done_cb
+            && *class_name == "__SupplyCloseMarker"
+            && let Some(Value::Int(cid)) = attributes.as_map().get("close_supplier_id")
+        {
+            for cb in take_supplier_close_callbacks(*cid as u64) {
+                self.call_sub_value(cb, vec![], true)?;
+            }
+            return Ok(());
+        }
         let _ = self.call_sub_value(done_cb, Vec::new(), true);
         Ok(())
+    }
+
+    /// Marker registered as a done callback so the emitter's CLOSE-phaser
+    /// callbacks fire when the supply terminates normally.
+    fn make_supply_close_marker(close_supplier_id: u64) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "close_supplier_id".to_string(),
+            Value::Int(close_supplier_id as i64),
+        );
+        Value::make_instance(Symbol::intern("__SupplyCloseMarker"), attrs)
     }
 
     /// Create a WheneverDoneGroup marker Value for registering as a done
@@ -517,7 +544,7 @@ impl Interpreter {
 
                 // Build a Tap handle referencing the registered subscription so
                 // `.close` can stop it later.
-                let tap_handle_attrs =
+                let mut tap_handle_attrs =
                     if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
                         let sid = *supplier_id as u64;
                         let mut h = HashMap::new();
@@ -529,6 +556,10 @@ impl Interpreter {
                     } else {
                         HashMap::new()
                     };
+                // For on-demand supplies, the emitter created below owns any
+                // CLOSE-phaser callbacks; remember its id on the Tap handle so
+                // `.close` can fire them.
+                let mut close_supplier_id: Option<u64> = None;
 
                 // If this Supply has a supply_id, register the tap globally
                 // so that .start (Proc::Async) can find and call it later
@@ -572,6 +603,7 @@ impl Interpreter {
                     // be registered lazily below only when `whenever` subscriptions
                     // are found, to avoid double-delivery for plain `emit` calls.
                     let emitter_supplier_id = next_supplier_id();
+                    close_supplier_id = Some(emitter_supplier_id);
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
@@ -715,6 +747,15 @@ impl Interpreter {
                                 if let Some(ref marker) = done_group_marker {
                                     register_supplier_done_callback(supplier_id, marker.clone());
                                 }
+                                // Fire CLOSE phasers when this source signals
+                                // done (normal termination), in addition to an
+                                // explicit tap close.
+                                if let Some(cid) = close_supplier_id {
+                                    register_supplier_done_callback(
+                                        supplier_id,
+                                        Self::make_supply_close_marker(cid),
+                                    );
+                                }
                             } else {
                                 // Non-supplier supply: run body_cb for each
                                 // value synchronously (cold supply path).
@@ -848,6 +889,10 @@ impl Interpreter {
                     } else if let Some(reason) = attributes.get("quit_reason").cloned() {
                         self.call_supply_quit_handler(quit_fn, reason)?;
                     }
+                }
+                if let Some(cid) = close_supplier_id {
+                    tap_handle_attrs
+                        .insert("close_supplier_id".to_string(), Value::Int(cid as i64));
                 }
                 Ok(Value::make_instance(
                     Symbol::intern("Tap"),
@@ -1772,6 +1817,17 @@ impl Interpreter {
                 }
                 Ok(Value::make_instance(Symbol::intern("Supply"), supply_attrs))
             }
+            "__mutsu_register_close_phaser" => {
+                // A CLOSE phaser in a supply block registers its body here, on
+                // the emitter's supplier_id, to run when the tap closes or the
+                // supply terminates (see take_supplier_close_callbacks).
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes)
+                    && let Some(cb) = args.into_iter().next()
+                {
+                    register_supplier_close_callback(supplier_id, cb);
+                }
+                Ok(Value::Nil)
+            }
             "emit" => {
                 // Push to supply_emit_buffer (works for on-demand callbacks)
                 let value = args.first().cloned().unwrap_or(Value::Nil);
@@ -2563,7 +2619,7 @@ impl Interpreter {
 
                 // Build a Tap handle referencing the registered subscription so
                 // `.close` can stop it later.
-                let tap_handle_attrs =
+                let mut tap_handle_attrs =
                     if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                         let sid = *supplier_id as u64;
                         let mut h = HashMap::new();
@@ -2575,6 +2631,9 @@ impl Interpreter {
                     } else {
                         HashMap::new()
                     };
+                // The on-demand emitter (created below) owns any CLOSE-phaser
+                // callbacks; remember its id on the Tap so `.close` fires them.
+                let mut close_supplier_id: Option<u64> = None;
 
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
@@ -2621,6 +2680,7 @@ impl Interpreter {
                     // be registered lazily below only when `whenever` subscriptions
                     // are found, to avoid double-delivery for plain `emit` calls.
                     let emitter_supplier_id = next_supplier_id();
+                    close_supplier_id = Some(emitter_supplier_id);
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
@@ -2743,6 +2803,15 @@ impl Interpreter {
                                 // so done only fires when ALL whenevers complete.
                                 if let Some(ref marker) = done_group_marker {
                                     register_supplier_done_callback(supplier_id, marker.clone());
+                                }
+                                // Fire CLOSE phasers when this source signals
+                                // done (normal termination), in addition to an
+                                // explicit tap close.
+                                if let Some(cid) = close_supplier_id {
+                                    register_supplier_done_callback(
+                                        supplier_id,
+                                        Self::make_supply_close_marker(cid),
+                                    );
                                 }
                             } else {
                                 let inner_vals =
@@ -2944,6 +3013,10 @@ impl Interpreter {
                     } else if let Some(reason) = attrs.get("quit_reason").cloned() {
                         self.call_supply_quit_handler(quit_fn, reason)?;
                     }
+                }
+                if let Some(cid) = close_supplier_id {
+                    tap_handle_attrs
+                        .insert("close_supplier_id".to_string(), Value::Int(cid as i64));
                 }
                 let tap_instance = Value::make_instance(Symbol::intern("Tap"), tap_handle_attrs);
                 Ok((tap_instance, attrs))
