@@ -82,12 +82,6 @@ pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
 }
 type GrepViewBinding = (Arc<crate::value::ArrayData>, Vec<usize>, ArrayKind);
 type GrepViewMap = PtrKeyedMap<crate::value::ArrayData, GrepViewBinding>;
-type ShapedArrayIds = PtrKeyedMap<crate::value::ArrayData, Vec<usize>>;
-
-fn shaped_array_ids() -> &'static Mutex<ShapedArrayIds> {
-    static SHAPED_ARRAY_IDS: OnceLock<Mutex<ShapedArrayIds>> = OnceLock::new();
-    SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(PtrKeyedMap::new()))
-}
 
 /// Embed original (non-string) keys for an object hash into its `HashData`,
 /// returning the (possibly rebuilt) value. The map travels WITH the hash
@@ -130,10 +124,6 @@ fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
     GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(PtrKeyedMap::new()))
 }
 
-fn shaped_array_key(items: &Arc<crate::value::ArrayData>) -> usize {
-    crate::runtime::ptr_keyed::ptr_key(items)
-}
-
 pub(crate) fn register_grep_view_binding(
     filtered: &Arc<crate::value::ArrayData>,
     source: &Arc<crate::value::ArrayData>,
@@ -171,7 +161,6 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     if *kind != ArrayKind::Shaped {
         return None;
     }
-    let key = shaped_array_key(items);
 
     fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {
         if shape.is_empty() {
@@ -195,15 +184,16 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         return None;
     }
 
-    fn infer_shape_from_array(items: &[Value], ids: &ShapedArrayIds) -> Option<Vec<usize>> {
+    // Infer this array's shape from its children's embedded shapes.
+    fn infer_shape_from_array(items: &[Value]) -> Option<Vec<usize>> {
         let first = items.first()?;
         let Value::Array(first_items, ..) = first else {
             return None;
         };
-        let first_shape = ids.get(shaped_array_key(first_items))?;
+        let first_shape = first_items.shape.as_ref()?;
         if !items.iter().all(|child| {
             if let Value::Array(child_items, ..) = child {
-                ids.get(shaped_array_key(child_items)) == Some(first_shape)
+                child_items.shape.as_ref() == Some(first_shape)
             } else {
                 false
             }
@@ -216,21 +206,19 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         Some(shape)
     }
 
-    let ids = shaped_array_ids().lock().ok()?;
-    let cached_shape = ids.get(key).cloned();
-    if let Some(cached_shape) = cached_shape
-        && shape_matches_structure(value, &cached_shape)
+    // Prefer the shape embedded on this array's `ArrayData`, validated against
+    // the current element structure (a stale cached shape after restructuring
+    // is rejected and re-inferred).
+    if let Some(cached_shape) = &items.shape
+        && shape_matches_structure(value, cached_shape)
     {
-        return Some(cached_shape);
+        return Some(cached_shape.clone());
     }
-    let inferred_shape = infer_shape_from_array(items.as_ref(), &ids)?;
+    let inferred_shape = infer_shape_from_array(items.as_ref())?;
     if !shape_matches_structure(value, &inferred_shape) {
         return None;
     }
-    drop(ids);
-    if let Ok(mut ids) = shaped_array_ids().lock() {
-        ids.insert(items, inferred_shape.clone());
-    }
+    mark_shaped_array_items(items, Some(&inferred_shape));
     Some(inferred_shape)
 }
 
@@ -245,17 +233,20 @@ pub(crate) fn mark_shaped_array_items(
     items: &Arc<crate::value::ArrayData>,
     shape: Option<&[usize]>,
 ) {
-    if shape.is_none() {
+    let Some(shape) = shape else {
+        return;
+    };
+    if items.shape.as_deref() == Some(shape) {
         return;
     }
-    let key = shaped_array_key(items);
-    if let Ok(mut ids) = shaped_array_ids().lock() {
-        if let Some(current_shape) = ids.get(key)
-            && shape.is_some_and(|s| current_shape.as_slice() == s)
-        {
-            return;
-        }
-        ids.insert(items, shape.unwrap_or(&[]).to_vec());
+    // SAFETY: mutsu is single-threaded. The shape is metadata about this one
+    // logical array, shared by every holder of the `Arc` — matching the prior
+    // pointer-keyed side-table semantics (any holder of the same pointer saw
+    // the shape). Interior mutation preserves "mark after the array Value is
+    // already placed" without requiring a write-back through the caller.
+    let ptr = Arc::as_ptr(items) as *mut crate::value::ArrayData;
+    unsafe {
+        (*ptr).shape = Some(shape.to_vec());
     }
 }
 
@@ -695,10 +686,7 @@ const MAX_ARRAY_EXPAND: i64 = 100_000;
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     fn metadata_shape_for_items(items: &Arc<crate::value::ArrayData>) -> Option<Vec<usize>> {
-        shaped_array_ids()
-            .lock()
-            .ok()
-            .and_then(|ids| ids.get_arc(items).cloned())
+        items.shape.clone()
     }
 
     match value {
