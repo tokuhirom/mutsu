@@ -129,6 +129,7 @@ impl VM {
                                 cf,
                                 &args,
                                 compiled_fns,
+                                name_str,
                             )?;
                             self.stack.push(result);
                             // Compiled path: positional_light's scoped-overlay
@@ -208,7 +209,12 @@ impl VM {
                         let result = if Self::is_light_call_eligible(&cf, name_str) {
                             self.call_compiled_function_light(&cf, args, compiled_fns)
                         } else if Self::is_positional_light_call_eligible(&cf, name_str) {
-                            self.call_compiled_function_positional_light(&cf, &args, compiled_fns)
+                            self.call_compiled_function_positional_light(
+                                &cf,
+                                &args,
+                                compiled_fns,
+                                name_str,
+                            )
                         } else {
                             let pkg = self.current_package().to_string();
                             self.interpreter.push_samewith_context(name_str, None);
@@ -710,7 +716,7 @@ impl VM {
                         }
                     }
                     let result =
-                        self.call_compiled_function_positional_light(cf, &args, compiled_fns);
+                        self.call_compiled_function_positional_light(cf, &args, compiled_fns, name);
                     return self.interpreter.maybe_fetch_rw_proxy(result?, true);
                 }
                 // Try light call path for simple functions in tight loops.
