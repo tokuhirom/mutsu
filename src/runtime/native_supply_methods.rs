@@ -79,6 +79,30 @@ impl Interpreter {
         }
     }
 
+    /// Run a single `whenever` QUIT phaser body with `reason` bound as `$_`.
+    /// Returns true if the phaser handled the exception — a `when`/`default`
+    /// matched, or it called `done`/`succeed` — meaning the supply should
+    /// complete with `done` and the downstream quit handler is suppressed.
+    /// A QUIT that matched nothing (ran to completion without a match) or
+    /// rethrew leaves the exception unhandled.
+    pub(super) fn run_whenever_quit_phaser(&mut self, quit_cb: Value, reason: Value) -> bool {
+        let saved_when = self.when_matched();
+        self.set_when_matched(false);
+        let result = self.call_sub_value(quit_cb, vec![reason], true);
+        let matched = self.when_matched();
+        self.set_when_matched(saved_when);
+        match result {
+            Ok(_) => matched,
+            // `done`/`succeed` inside the phaser means it is handling the
+            // exception and completing the supply. A `done` is rewritten to
+            // `$emitter.done()` + return, so it surfaces as is_return (the
+            // return unwinds the when-scope, so `matched` is no longer visible
+            // here — the done itself is the handled signal).
+            Err(err) if err.is_react_done || err.is_succeed || err.is_return => true,
+            Err(_) => false,
+        }
+    }
+
     pub(super) fn native_supply(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -670,6 +694,19 @@ impl Interpreter {
                                         register_supplier_done_callback(
                                             supplier_id,
                                             last_cb.clone(),
+                                        );
+                                    }
+                                }
+                                // Register the whenever's own QUIT phaser
+                                // callbacks (arr[3]) as whenever-quit handlers.
+                                // On quit they run before the downstream quit
+                                // handler; if one handles the exception the
+                                // supply completes with done instead of quit.
+                                if let Value::Array(quit_arr, ..) = &arr[3] {
+                                    for qcb in quit_arr.iter() {
+                                        register_supplier_whenever_quit_callback(
+                                            supplier_id,
+                                            qcb.clone(),
                                         );
                                     }
                                 }
@@ -2028,11 +2065,28 @@ impl Interpreter {
                     }
                     let (_, _, quit_reason) = supplier_snapshot(supplier_id);
                     if let Some(reason) = quit_reason {
-                        for quit_cb in take_supplier_quit_callbacks(supplier_id) {
-                            self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                        // Run any `whenever` QUIT phasers first. If one handles
+                        // the exception, the supply completes with done and the
+                        // downstream quit handler is suppressed.
+                        let mut handled = false;
+                        for qcb in take_supplier_whenever_quit_callbacks(supplier_id) {
+                            if self.run_whenever_quit_phaser(qcb, reason.clone()) {
+                                handled = true;
+                            }
                         }
+                        if handled {
+                            for done_cb in take_supplier_done_callbacks(supplier_id) {
+                                let _ = self.invoke_done_callback(done_cb);
+                            }
+                        } else {
+                            for quit_cb in take_supplier_quit_callbacks(supplier_id) {
+                                self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                            }
+                            let _ = take_supplier_done_callbacks(supplier_id);
+                        }
+                    } else {
+                        let _ = take_supplier_done_callbacks(supplier_id);
                     }
-                    let _ = take_supplier_done_callbacks(supplier_id);
                     close_all_supplier_taps(supplier_id);
                     supplier_reset_keep_quit(supplier_id);
                 }
@@ -2369,10 +2423,26 @@ impl Interpreter {
                     for (tap, emitted) in flush_supplier_words_taps(sid) {
                         self.call_sub_value(tap, vec![emitted], true)?;
                     }
-                    for quit_cb in take_supplier_quit_callbacks(sid) {
-                        self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                    // Run any `whenever` QUIT phasers first. If one handles the
+                    // exception (a when/default matched, or it called done), the
+                    // supply completes with done and the downstream quit handler
+                    // is suppressed.
+                    let mut handled = false;
+                    for qcb in take_supplier_whenever_quit_callbacks(sid) {
+                        if self.run_whenever_quit_phaser(qcb, reason.clone()) {
+                            handled = true;
+                        }
                     }
-                    let _ = take_supplier_done_callbacks(sid);
+                    if handled {
+                        for done_cb in take_supplier_done_callbacks(sid) {
+                            let _ = self.invoke_done_callback(done_cb);
+                        }
+                    } else {
+                        for quit_cb in take_supplier_quit_callbacks(sid) {
+                            self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                        }
+                        let _ = take_supplier_done_callbacks(sid);
+                    }
                     close_all_supplier_taps(sid);
                     supplier_reset_keep_quit(sid);
                 }
@@ -2653,6 +2723,19 @@ impl Interpreter {
                                         register_supplier_done_callback(
                                             supplier_id,
                                             last_cb.clone(),
+                                        );
+                                    }
+                                }
+                                // Register the whenever's own QUIT phaser
+                                // callbacks (arr[3]) as whenever-quit handlers.
+                                // On quit they run before the downstream quit
+                                // handler; if one handles the exception the
+                                // supply completes with done instead of quit.
+                                if let Value::Array(quit_arr, ..) = &arr[3] {
+                                    for qcb in quit_arr.iter() {
+                                        register_supplier_whenever_quit_callback(
+                                            supplier_id,
+                                            qcb.clone(),
                                         );
                                     }
                                 }
