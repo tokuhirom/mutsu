@@ -1,6 +1,37 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// The `:samecase`/`:samemark`/`:samespace` substitution adverbs, applied to a
+/// computed replacement against the matched text (shared with the `s///`
+/// operator via `apply_subst_case_transforms`).
+#[derive(Clone, Copy, Default)]
+pub(super) struct SubstCaseTransforms {
+    pub samecase: bool,
+    pub samemark: bool,
+    pub sigspace: bool,
+    pub samespace: bool,
+}
+
+impl SubstCaseTransforms {
+    fn any(&self) -> bool {
+        self.samecase || self.samemark || self.samespace
+    }
+
+    fn apply(&self, replacement: &str, matched: &str) -> String {
+        if !self.any() {
+            return replacement.to_string();
+        }
+        crate::vm::vm_string_regex_ops::apply_subst_case_transforms(
+            replacement,
+            matched,
+            self.samecase,
+            self.samemark,
+            self.sigspace,
+            self.samespace,
+        )
+    }
+}
+
 impl Interpreter {
     pub(super) fn translate_newlines_for_encode(&self, input: &str) -> String {
         match self.newline_mode {
@@ -544,9 +575,7 @@ impl Interpreter {
         let mut x_count: Option<Value> = None;
         let mut pos_start: Option<usize> = None;
         let mut continue_from: Option<usize> = None;
-        let mut _samecase = false;
-        let mut _samemark = false;
-        let mut _samespace = false;
+        let mut transforms = SubstCaseTransforms::default();
         for arg in args {
             if let Value::Pair(key, value) = arg {
                 match key.as_str() {
@@ -565,9 +594,10 @@ impl Interpreter {
                     "4th" | "fourth" if value.truthy() => nth = Some(vec![4]),
                     "p" | "pos" => pos_start = Some(value.to_f64() as usize),
                     "c" | "continue" => continue_from = Some(value.to_f64() as usize),
-                    "samecase" | "ii" => _samecase = value.truthy(),
-                    "samemark" | "mm" => _samemark = value.truthy(),
-                    "samespace" | "ss" => _samespace = value.truthy(),
+                    "samecase" | "ii" => transforms.samecase = value.truthy(),
+                    "samemark" | "mm" => transforms.samemark = value.truthy(),
+                    "samespace" | "ss" => transforms.samespace = value.truthy(),
+                    "sigspace" | "s" => transforms.sigspace = value.truthy(),
                     _ => {}
                 }
             } else {
@@ -717,13 +747,14 @@ impl Interpreter {
                     for captures in &selected {
                         let prefix: String = chars[last_end..captures.from].iter().collect();
                         result.push_str(&prefix);
-                        let repl = self.eval_subst_replacement(
+                        let repl = self.eval_subst_replacement_cased(
                             &replacement_val,
                             is_closure,
                             &replacement_str,
                             &captures.matched,
                             Some(captures),
                             Some(&text),
+                            transforms,
                         )?;
                         result.push_str(&repl);
                         last_end = captures.to;
@@ -760,13 +791,14 @@ impl Interpreter {
                     self.env.insert("/".to_string(), match_obj);
                     let prefix: String = chars[..captures.from].iter().collect();
                     let suffix: String = chars[captures.to..].iter().collect();
-                    let repl = self.eval_subst_replacement(
+                    let repl = self.eval_subst_replacement_cased(
                         &replacement_val,
                         is_closure,
                         &replacement_str,
                         &captures.matched,
                         Some(&captures),
                         Some(&text),
+                        transforms,
                     )?;
                     Ok(Value::str(format!("{}{}{}", prefix, repl, suffix)))
                 } else {
@@ -837,28 +869,34 @@ impl Interpreter {
                     for &idx in &keep {
                         let (start, end) = str_matches[idx];
                         result.push_str(&text[last_end..start]);
-                        result.push_str(&replacement_str);
+                        result.push_str(&transforms.apply(&replacement_str, &text[start..end]));
                         last_end = end;
                     }
                     result.push_str(&text[last_end..]);
                     Ok(Value::str(result))
                 } else {
-                    Ok(Value::str(text.replacen(pat.as_str(), &replacement_str, 1)))
+                    let repl = transforms.apply(&replacement_str, pat.as_str());
+                    Ok(Value::str(text.replacen(pat.as_str(), &repl, 1)))
                 }
             }
             _ => {
                 let pat_str = pattern.to_string_value();
+                let repl = transforms.apply(&replacement_str, &pat_str);
                 if global {
-                    Ok(Value::str(text.replace(&pat_str, &replacement_str)))
+                    Ok(Value::str(text.replace(&pat_str, &repl)))
                 } else {
-                    Ok(Value::str(text.replacen(&pat_str, &replacement_str, 1)))
+                    Ok(Value::str(text.replacen(&pat_str, &repl, 1)))
                 }
             }
         }
     }
 
     /// Evaluate a subst replacement — either a static string or a closure call.
-    pub(super) fn eval_subst_replacement(
+    /// Evaluate a subst replacement — either a static string or a closure call —
+    /// and apply the `:samecase`/`:samemark`/`:samespace` transforms (against
+    /// `matched_text`) to the result, matching the `s///` operator.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn eval_subst_replacement_cased(
         &mut self,
         replacement_val: &Option<Value>,
         is_closure: bool,
@@ -866,7 +904,9 @@ impl Interpreter {
         matched_text: &str,
         captures: Option<&RegexCaptures>,
         orig_text: Option<&str>,
+        transforms: SubstCaseTransforms,
     ) -> Result<String, RuntimeError> {
+        let cased = |s: String| -> String { transforms.apply(&s, matched_text) };
         if !is_closure {
             // Expand $0, $1, ... capture references in string replacements
             if let Some(caps) = captures
@@ -876,9 +916,9 @@ impl Interpreter {
                     replacement_str,
                     &caps.positional,
                 );
-                return Ok(expanded);
+                return Ok(cased(expanded));
             }
-            return Ok(replacement_str.to_string());
+            return Ok(cased(replacement_str.to_string()));
         }
         let sub_data = match replacement_val {
             Some(Value::Sub(data)) => data.clone(),
@@ -939,7 +979,7 @@ impl Interpreter {
         }
         let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
         self.env = saved;
-        Ok(result.to_string_value())
+        Ok(cased(result.to_string_value()))
     }
 
     pub(super) fn dispatch_contains(
