@@ -850,6 +850,30 @@ impl Interpreter {
                                 .and_then(|name| name.as_ref())
                                 .cloned()
                         });
+                    // Plain positional `@`/`%` params bind the caller's container
+                    // by alias (Raku readonly-container semantics): element
+                    // assignment, `.push`, `splice`, and whole-container `=`
+                    // assignment all propagate to the caller, while `is copy`
+                    // copies and `:=` rebinding is forbidden. mutsu reaches this
+                    // by routing the param through the same writeback machinery
+                    // `is rw`/`is raw` use: at return `apply_rw_bindings_to_env`
+                    // writes the param's final container value back to the
+                    // caller's variable. Scalar `$` params remain readonly.
+                    let is_copy = pd.traits.iter().any(|t| t == "copy");
+                    let alias_plain_container = !is_rw
+                        && !is_raw
+                        && !is_copy
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && !pd.onearg
+                        && !pd.is_invocant
+                        && pd.sub_signature.is_none()
+                        && (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                        // Exclude attribute-binding twigil params (@!x, %.y, ...).
+                        && !pd.name[1..].starts_with(['!', '.']);
+                    if alias_plain_container && let Some(source_name) = &source_name {
+                        rw_bindings.push((pd.name.clone(), source_name.clone()));
+                    }
                     let source_type_constraint = source_name.as_deref().and_then(|source_name| {
                         self.var_type_constraint(source_name).or_else(|| {
                             self.var_type_constraint(
@@ -1469,7 +1493,16 @@ impl Interpreter {
                 .traits
                 .iter()
                 .any(|t| t == "rw" || t == "copy" || t == "raw");
-            if !has_mutable_trait || raw_nonlvalue_params.contains(&pd.name) {
+            // Plain `@`/`%` params are NOT readonly the way `$` params are: the
+            // bound container is writable (element/whole-container assignment and
+            // `.push` are allowed and propagate to the caller); only `:=`
+            // rebinding is forbidden. So keep `$` scalar params readonly but let
+            // array/hash params through. (`@!attr`/`%.attr` twigil params are
+            // attribute binds, already skipped above.)
+            let is_container_param = pd.name.starts_with('@') || pd.name.starts_with('%');
+            if !is_container_param
+                && (!has_mutable_trait || raw_nonlvalue_params.contains(&pd.name))
+            {
                 self.readonly_vars.insert(pd.name.clone());
             }
         }

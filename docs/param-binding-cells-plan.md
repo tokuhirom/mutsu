@@ -1,9 +1,10 @@
 # Parameter aliasing for array/hash params — design plan (handoff)
 
-> **Status: NOT STARTED. This is a handoff for a fresh session.** It is the
-> largest remaining Track B / first-class-container correctness gap. It changes
-> core function-call argument binding (high blast radius), so it deserves its
-> own session with CI as the safety net.
+> **Status: DONE (2026-06-13).** Implemented via the writeback approach, not the
+> cell approach sketched in §3 below. Plain `@`/`%` positional params now bind
+> the caller's container by alias: `.push`, element assign, `>>++`, `splice`,
+> and whole-container `=` assignment all propagate; `is copy` copies; scalar `$`
+> params stay readonly. See §6 for what shipped.
 >
 > Read alongside `docs/container-identity.md` (Phase 2 element cells) and the
 > memory file `project_track_b_phase2_element_cells.md`. The cell machinery this
@@ -117,3 +118,40 @@ All MERGED unless noted (2026-06-13):
 Remaining Track B after param aliasing: write-autoviv `HashSlotRef` (concluded
 **not removable** — deferred-token + `is raw` reduce lvalue-read semantics);
 that campaign is effectively complete.
+
+---
+
+## 6. What shipped (2026-06-13)
+
+Chose the **writeback approach over the cell approach** of §3. The caller's
+variable is not reachable at bind time (it lives in the saved call frame /
+caller VM locals, restored only at return), so promoting it to a live shared
+cell during binding is impractical. The proven `is rw`/`is raw` writeback
+machinery already propagates a param's final container value to the caller at
+return — and that handles `.push`, element assign, `splice`, `>>++`, and
+whole-container `=` uniformly, because they all leave the param holding the
+correct final value. Two small edits in `src/runtime/types/binding.rs`:
+
+1. In the positional-param loop, push plain `@`/`%` positional params (not
+   `is copy`/`is rw`/`is raw`, not slurpy/`onearg`/invocant, no sub-signature,
+   not an attribute twigil) with a caller lvalue source onto `rw_bindings`, so
+   `apply_rw_bindings_to_env` writes the final value back at return.
+2. In the readonly-marking loop, exclude `@`/`%` params from `readonly_vars`
+   (scalar `$` stays readonly). Raku array/hash params are writable containers:
+   `@x = (...)` / `%h = (...)` / `.push` are allowed; only `:=` rebinding is
+   forbidden (a separate signature-bound check).
+
+Propagates through every dispatch path (VM, `dispatch.rs`, `calls.rs`,
+`class.rs`, closures, …) because they all call `apply_rw_bindings_to_env`.
+Tests: `t/param-array-alias.t` (15). `make test` clean; whitelisted S06/S12/S02/
+S03/S29/S17 roast samples clean.
+
+**Known limitations (writeback ≠ live cell), both pre-existing, not regressions:**
+- `f(@z, @z)` — same caller var bound to two params, mutate one: the
+  unmutated param's writeback clobbers the mutated one (last write wins). raku:
+  live alias → both see it.
+- `return-rw @x` of a param, then mutate the returned alias after the call: the
+  writeback already fired at return, so later mutations don't propagate.
+
+Both need true shared-cell aliasing (caller var promoted to a cell at the call
+site, in the VM arg-eval path) and are extremely rare; deferred.
