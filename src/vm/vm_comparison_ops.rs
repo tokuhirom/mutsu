@@ -589,7 +589,8 @@ impl VM {
     }
 
     /// Container identity (`=:=`) for indexed expressions (array/hash elements).
-    /// Checks if one element has a binding sentinel pointing to the other's source.
+    /// A `:=`-bound element holds a shared `ContainerRef` cell, so two bound
+    /// elements are the same container iff they hold the same cell `Arc`.
     pub(super) fn exec_container_eq_indexed_op(
         &mut self,
         code: &CompiledCode,
@@ -601,21 +602,11 @@ impl VM {
         let left_source = Self::const_str(code, left_name_idx);
         let right_source = Self::const_str(code, right_name_idx);
 
-        // Check if left element's binding sentinel points to right source.
-        let left_bound_to = self.get_binding_source_of_indexed(left_source);
-        if left_bound_to.as_deref() == Some(right_source) {
-            self.stack.push(Value::Bool(true));
-            return;
-        }
-        // Check if right element's binding sentinel points to left source.
-        let right_bound_to = self.get_binding_source_of_indexed(right_source);
-        if right_bound_to.as_deref() == Some(left_source) {
-            self.stack.push(Value::Bool(true));
-            return;
-        }
-        // Both point to the same third source.
-        if let (Some(lb), Some(rb)) = (&left_bound_to, &right_bound_to)
-            && lb == rb
+        // Same cell `Arc` at both slots → same container.
+        if let (Some(Value::ContainerRef(l)), Some(Value::ContainerRef(r))) = (
+            self.raw_element_at_encoded(left_source),
+            self.raw_element_at_encoded(right_source),
+        ) && Arc::ptr_eq(&l, &r)
         {
             self.stack.push(Value::Bool(true));
             return;
@@ -702,20 +693,22 @@ impl VM {
         }
     }
 
-    /// For an encoded source like "@b\0idx\01", look up the raw array element
-    /// and if it has a BOUND_ARRAY_REF_SENTINEL, return the bound source name.
-    fn get_binding_source_of_indexed(&self, encoded: &str) -> Option<String> {
+    /// For an encoded source like "@b\0idx\01" (or "%h\0idx\0k"), look up the
+    /// raw element value stored at that array/hash slot — without
+    /// decontainerizing, so a `:=`-bound `ContainerRef` cell is returned as-is
+    /// for identity comparison.
+    fn raw_element_at_encoded(&self, encoded: &str) -> Option<Value> {
         let sep_pos = encoded.find("\x00idx\x00")?;
         let var_name = &encoded[..sep_pos];
         let idx_str = &encoded[sep_pos + 5..];
-        let i = idx_str.parse::<usize>().ok()?;
-        if let Some(Value::Array(items, _)) = self.interpreter.env().get(var_name)
-            && let Some(Value::Pair(name, source)) = items.get(i)
-            && name == super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL
-        {
-            return Some(source.to_string_value());
+        match self.interpreter.env().get(var_name) {
+            Some(Value::Array(items, _)) => {
+                let i = idx_str.parse::<usize>().ok()?;
+                items.get(i).cloned()
+            }
+            Some(Value::Hash(hash)) => hash.get(idx_str).cloned(),
+            _ => None,
         }
-        None
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
