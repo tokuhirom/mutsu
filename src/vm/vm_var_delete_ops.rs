@@ -164,6 +164,40 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // A whole-container `:=` bound variable (`my %g := %h`) holds a shared
+        // `ContainerRef` cell. The delete logic operates on plain Hash/Array
+        // values read from env, so temporarily unwrap the cell's inner container
+        // into env for the duration of the op, then write the mutated result
+        // back through the cell (so every alias observes the delete) and restore
+        // the cell in env and the local slot.
+        let var_name = Self::const_str(code, name_idx).to_string();
+        let bound_cell = match self.interpreter.env().get(&var_name) {
+            Some(Value::ContainerRef(cell)) => Some(cell.clone()),
+            _ => None,
+        };
+        if let Some(ref cell) = bound_cell {
+            let inner = cell.lock().unwrap().clone();
+            self.interpreter.env_mut().insert(var_name.clone(), inner);
+        }
+        let result = self.exec_delete_index_named_op_inner(code, name_idx);
+        if let Some(cell) = bound_cell {
+            if let Some(mutated) = self.interpreter.env().get(&var_name).cloned() {
+                *cell.lock().unwrap() = mutated;
+            }
+            let cell_val = Value::ContainerRef(cell);
+            self.interpreter
+                .env_mut()
+                .insert(var_name.clone(), cell_val.clone());
+            self.locals_set_by_name(code, &var_name, cell_val);
+        }
+        result
+    }
+
+    fn exec_delete_index_named_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         // Fast path for simple hash delete

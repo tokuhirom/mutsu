@@ -1493,9 +1493,11 @@ impl VM {
             return None;
         }
         // The receiver must be exactly the array currently bound to this name, so
-        // an in-place `Arc::make_mut` writeback is correct.
+        // an in-place `Arc::make_mut` writeback is correct. Descend through a
+        // whole-container `:=` bound cell (`my @x := @a`) so the mutation writes
+        // back through the shared cell (every alias observes it).
         let Some(Value::Array(arc_items, crate::value::ArrayKind::Array)) =
-            self.interpreter.env_mut().get_mut(target_name)
+            self.env_root_descended_mut(target_name)
         else {
             return None;
         };
@@ -1613,9 +1615,10 @@ impl VM {
         }
         // The receiver must be exactly the array currently bound to this name, so
         // an in-place `Arc::make_mut` writeback is correct. Compute the splice
-        // bounds from the live binding's length (not `target`).
+        // bounds from the live binding's length (not `target`). Descend through a
+        // whole-container `:=` bound cell so the splice writes through the cell.
         let Some(Value::Array(arc_items, crate::value::ArrayKind::Array)) =
-            self.interpreter.env_mut().get_mut(target_name)
+            self.env_root_descended_mut(target_name)
         else {
             return None;
         };
