@@ -1575,7 +1575,54 @@ impl Interpreter {
     /// mark it with `__mutsu_does_await_died` (recognized by `isa_check`) and
     /// re-raise it unchanged, preserving its gist/backtrace. A plain (non-instance)
     /// cause is wrapped in a fresh `X::Await::Died`.
-    fn await_died_error(cause: Value) -> RuntimeError {
+    /// Format the current routine stack (the point where `await` was called) as
+    /// a Raku-style backtrace string, innermost frame first. Used to append the
+    /// await/re-throw location to a broken-Promise exception's backtrace.
+    fn await_site_backtrace(&self) -> String {
+        let stack = self.routine_stack();
+        let mut lines = Vec::new();
+        for frame in stack.iter().rev() {
+            let loc = match (frame.file.as_deref(), frame.line) {
+                (Some(f), Some(l)) => format!(" at {} line {}", f, l),
+                (Some(f), None) => format!(" at {}", f),
+                _ => String::new(),
+            };
+            if frame.is_block || frame.name.is_empty() || frame.name == "<unit>" {
+                lines.push(format!("  in block <unit>{}", loc));
+            } else {
+                lines.push(format!("  in sub {}{}", frame.name, loc));
+            }
+        }
+        lines.join("\n")
+    }
+
+    fn await_died_error(&self, cause: Value) -> RuntimeError {
+        // Append the await call-site to the exception's backtrace, so the gist
+        // surfaces both where the Promise's code died (preserved) and where it
+        // was awaited (the re-throw location) — matching Raku's X::Await::Died.
+        if let Value::Instance { attributes, .. } = &cause {
+            let await_bt = self.await_site_backtrace();
+            if !await_bt.is_empty()
+                && let Some(Value::Instance {
+                    class_name: bt_cn,
+                    attributes: bt_attrs,
+                    ..
+                }) = attributes.as_map().get("backtrace").cloned()
+                && bt_cn == "Backtrace"
+            {
+                let old = bt_attrs
+                    .as_map()
+                    .get("text")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default();
+                let combined = if old.is_empty() {
+                    await_bt
+                } else {
+                    format!("{old}\n{await_bt}")
+                };
+                bt_attrs.insert("text".to_string(), Value::str(combined));
+            }
+        }
         let msg = match &cause {
             Value::Instance { attributes, .. } => {
                 attributes.insert("__mutsu_does_await_died".to_string(), Value::Bool(true));
@@ -1657,7 +1704,7 @@ impl Interpreter {
                     if shared.status() == "Broken" {
                         self.sync_shared_vars_to_env();
                         // Raku wraps the broken Promise's cause in X::Await::Died.
-                        return Err(Self::await_died_error(result));
+                        return Err(self.await_died_error(result));
                     }
                     // Replay deferred Proc::Async taps
                     if let Value::Instance {
@@ -1696,7 +1743,7 @@ impl Interpreter {
                                 self.output_sink_mut().stderr_output.push_str(&stderr);
                                 if shared.status() == "Broken" {
                                     self.sync_shared_vars_to_env();
-                                    return Err(Self::await_died_error(result));
+                                    return Err(self.await_died_error(result));
                                 }
                                 let result = Self::unwrap_async_status_result(result)?;
                                 results.push(result);
