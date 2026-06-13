@@ -75,6 +75,39 @@ fn apply_case_function(word: &str, case_fn: &str) -> String {
     }
 }
 
+/// Apply the `:samecase`/`:samemark`/`:samespace` substitution transforms to a
+/// computed replacement string against the matched text. Shared by the `s///`
+/// operator and the `.subst` method so both behave identically. `sigspace`
+/// selects per-word vs whole-string samecase (as `s///` does).
+pub(crate) fn apply_subst_case_transforms(
+    replacement: &str,
+    matched: &str,
+    samecase: bool,
+    samemark: bool,
+    sigspace: bool,
+    samespace: bool,
+) -> String {
+    let mut repl = if samecase {
+        if sigspace {
+            samecase_per_word(replacement, matched)
+        } else {
+            crate::builtins::samecase_string(replacement, matched)
+        }
+    } else if samemark {
+        if matched.contains(char::is_whitespace) && replacement.contains(char::is_whitespace) {
+            samemark_per_word(replacement, matched)
+        } else {
+            crate::builtins::samemark_string(replacement, matched)
+        }
+    } else {
+        replacement.to_string()
+    };
+    if samespace {
+        repl = samespace_replace(&repl, matched);
+    }
+    repl
+}
+
 /// Apply samecase on a per-word basis: detect the case pattern of each word in the
 /// matched text, then apply that pattern to each corresponding word in the replacement.
 fn samecase_per_word(replacement: &str, matched: &str) -> String {
