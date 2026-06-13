@@ -1624,7 +1624,7 @@ impl Interpreter {
             Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
             Value::Hash(items) => items
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .map(|(k, v)| items.typed_pair(k, v.clone()))
                 .collect(),
             Value::Range(a, b) => {
                 let end = (*b).min(*a + 1_000_000);

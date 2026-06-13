@@ -861,10 +861,18 @@ impl Interpreter {
                             .map(|t| Value::Package(Symbol::intern(&t)))
                     })
                     .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                // Object hashes (`my %h{Int}`) store `.WHICH`-encoded keys, so
+                // the subscript value must be encoded the same way to find the
+                // entry; the *displayed* key is the original typed subscript.
+                let is_object_hash = map.key_type.is_some();
                 for idx in &indices {
-                    let key_str = idx.to_string_value();
-                    let key =
-                        super::builtins_collection::builtin_val(&[Value::str(key_str.clone())]);
+                    let (key_str, key) = if is_object_hash {
+                        (crate::runtime::utils::value_which_key(idx), idx.clone())
+                    } else {
+                        let s = idx.to_string_value();
+                        let k = super::builtins_collection::builtin_val(&[Value::str(s.clone())]);
+                        (s, k)
+                    };
                     let exists = map.contains_key(&key_str);
                     let value = map
                         .get(&key_str)

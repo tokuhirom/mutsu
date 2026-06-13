@@ -766,7 +766,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             // Hash assigned to @-var: flatten into pairs
             let pairs: Vec<Value> = map
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .map(|(k, v)| map.typed_pair(k, v.clone()))
                 .collect();
             Value::real_array(pairs)
         }
@@ -1753,7 +1753,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
         Value::Hash(items) => items
             .iter()
-            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+            .map(|(k, v)| items.typed_pair(k, v.clone()))
             .collect(),
         Value::Range(a, b) => {
             let end = (*b).min(*a + MAX_RANGE_EXPAND);

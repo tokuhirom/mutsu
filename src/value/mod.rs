@@ -1309,6 +1309,31 @@ impl HashData {
         self.key_type = None;
         self.declared_type = None;
     }
+
+    /// Get the original (typed) key Value for a stored string key. For object
+    /// hashes (`my %h{Int}`) the stored key is a `.WHICH` string (e.g.
+    /// `"Int|1"`); this returns the real key object (`Int(1)`). Plain hashes
+    /// have no `original_keys`, so this returns a `Str`. Mirrors
+    /// `BagData::typed_key`.
+    pub fn typed_key(&self, str_key: &str) -> Value {
+        if let Some(ref orig) = self.original_keys
+            && let Some(v) = orig.get(str_key)
+        {
+            return v.clone();
+        }
+        Value::Str(Arc::new(str_key.to_string()))
+    }
+
+    /// Build a `Pair` for a hash entry, using the original typed key for object
+    /// hashes. Plain string keys yield `Value::Pair`; non-string typed keys
+    /// (object hashes) yield `Value::ValuePair`. Behaviour-neutral for plain
+    /// hashes (returns `Value::Pair(str_key, value)` as before).
+    pub fn typed_pair(&self, str_key: &str, value: Value) -> Value {
+        match self.typed_key(str_key) {
+            Value::Str(s) => Value::Pair((*s).clone(), Box::new(value)),
+            other => Value::ValuePair(Box::new(other), Box::new(value)),
+        }
+    }
 }
 
 impl std::ops::Deref for HashData {

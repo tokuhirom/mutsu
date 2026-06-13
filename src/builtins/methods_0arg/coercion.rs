@@ -484,7 +484,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Hash(map) => {
                 let pairs: Vec<Value> = map
                     .iter()
-                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                    .map(|(k, v)| map.typed_pair(k, v.clone()))
                     .collect();
                 Some(Ok(Value::array(pairs)))
             }

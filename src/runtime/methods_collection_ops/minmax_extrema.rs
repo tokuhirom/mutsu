@@ -164,9 +164,9 @@ impl Interpreter {
                         if replace {
                             best = Some(value);
                             out.clear();
-                            out.push(Value::Pair(key.clone(), Box::new(value.clone())));
+                            out.push(hash.typed_pair(key, value.clone()));
                         } else if ord == std::cmp::Ordering::Equal {
-                            out.push(Value::Pair(key.clone(), Box::new(value.clone())));
+                            out.push(hash.typed_pair(key, value.clone()));
                         }
                     }
                     Value::Seq(Arc::new(out))
