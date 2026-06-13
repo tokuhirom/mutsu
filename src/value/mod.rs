@@ -2896,12 +2896,12 @@ impl Value {
                 match (*ptr).map.get_mut(key) {
                     Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
                     Some(elem @ (Value::Array(..) | Value::Hash(..))) if !terminal => {
-                        // Intermediate container: preserve traversal via SlotRef.
-                        let _ = elem;
-                        Some(Value::HashSlotRef {
-                            hash: arc.clone(),
-                            key: key.to_string(),
-                        })
+                        // Intermediate container: return the element value
+                        // itself — it shares the inner Arc, so the eventual
+                        // leaf promotion by the next index op lands in the
+                        // physical map the entry points to (Stage 2: no
+                        // `HashSlotRef` back-reference needed).
+                        Some(elem.clone())
                     }
                     Some(elem) => {
                         let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
@@ -3047,14 +3047,13 @@ impl Value {
                 }
                 // Only promote a *scalar* leaf to a cell. A container element
                 // (Array/Hash) is an intermediate level of a deeper path
-                // (`$s[1][1]`, `$s[1]<k>`); keep the old `ArraySlotRef`, whose
-                // resolution shares the inner Arc, so the eventual leaf promotion
-                // lands in the same physical Vec the stored element points to.
+                // (`$s[1][1]`, `$s[1]<k>`); return the element value itself —
+                // it shares the inner Arc, so the eventual leaf promotion by
+                // the next index op lands in the same physical Vec/HashMap the
+                // stored element points to (Stage 2: no `ArraySlotRef`
+                // back-reference needed).
                 if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
-                    return Some(Value::ArraySlotRef {
-                        array: arc.clone(),
-                        index: idx,
-                    });
+                    return Some(elem.clone());
                 }
                 let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
                 *elem = Value::ContainerRef(cell.clone());
