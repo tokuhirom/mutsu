@@ -1354,6 +1354,11 @@ pub struct ArrayData {
     /// whenever the backing Arc was rebuilt), and so pure value-level code
     /// (e.g. the Array→Slip coercion materializing holes) can read it.
     pub default: Option<Box<Value>>,
+    /// Dimensions of a shaped (multidimensional) array (`my @a[2;3]`). `Some`
+    /// only on `ArrayKind::Shaped` arrays. Embedded (replacing the former
+    /// `Arc::as_ptr`-keyed `ShapedArrayIds` side table) so the shape travels
+    /// with the container through copy-on-write.
+    pub shape: Option<Vec<usize>>,
 }
 
 impl ArrayData {
@@ -1364,6 +1369,7 @@ impl ArrayData {
             key_type: None,
             declared_type: None,
             default: None,
+            shape: None,
         }
     }
 
@@ -2703,6 +2709,7 @@ impl Value {
             key_type: like.key_type.clone(),
             declared_type: like.declared_type.clone(),
             default: like.default.clone(),
+            shape: like.shape.clone(),
         })
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
