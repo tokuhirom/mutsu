@@ -222,6 +222,18 @@ impl Interpreter {
         if let Value::Scalar(inner) = value {
             return self.type_matches_value(constraint, inner.as_ref());
         }
+        // X::Await::Died role mixed into an exception by `await` of a broken
+        // Promise (see `await_died_error`): the cause keeps its own class but
+        // also does X::Await::Died.
+        if constraint == "X::Await::Died"
+            && let Value::Instance { attributes, .. } = value
+            && matches!(
+                attributes.as_map().get("__mutsu_does_await_died"),
+                Some(Value::Bool(true))
+            )
+        {
+            return true;
+        }
         if constraint == "Inf" {
             return matches!(value, Value::Num(n) if n.is_infinite() && n.is_sign_positive());
         }

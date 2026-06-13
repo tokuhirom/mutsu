@@ -1567,6 +1567,40 @@ impl Interpreter {
     }
 
     /// `await` — block until Promise(s) resolve, then return their results.
+    /// Build the `RuntimeError` carrying an `X::Await::Died` exception for a
+    /// broken Promise observed by `await`. Raku mixes the `X::Await::Died` role
+    /// INTO the original failure cause (`.^name` is e.g. `X::AdHoc+{X::Await::Died}`),
+    /// so it keeps its class, message and backtrace while also doing
+    /// `X::Await::Died`. We mirror that: when the cause is an exception instance,
+    /// mark it with `__mutsu_does_await_died` (recognized by `isa_check`) and
+    /// re-raise it unchanged, preserving its gist/backtrace. A plain (non-instance)
+    /// cause is wrapped in a fresh `X::Await::Died`.
+    fn await_died_error(cause: Value) -> RuntimeError {
+        let msg = match &cause {
+            Value::Instance { attributes, .. } => {
+                attributes.insert("__mutsu_does_await_died".to_string(), Value::Bool(true));
+                attributes
+                    .as_map()
+                    .get("message")
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| cause.to_string_value())
+            }
+            other => other.to_string_value(),
+        };
+        let mut err = RuntimeError::new(msg.clone());
+        let exc = if matches!(cause, Value::Instance { .. }) {
+            cause
+        } else {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("payload".to_string(), Value::str(msg));
+            attrs.insert("__mutsu_does_await_died".to_string(), Value::Bool(true));
+            Value::make_instance(Symbol::intern("X::Await::Died"), attrs)
+        };
+        err.exception = Some(Box::new(exc));
+        err
+    }
+
     pub(super) fn builtin_await(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
             return Err(RuntimeError::new(
@@ -1606,33 +1640,8 @@ impl Interpreter {
                     }
                     if shared.status() == "Broken" {
                         self.sync_shared_vars_to_env();
-                        let msg = result.to_string_value();
-                        let mut err = RuntimeError::new(msg);
-                        // Preserve exception object if it's already an exception instance
-                        match &result {
-                            Value::Instance { class_name, .. }
-                                if class_name.resolve().starts_with("X::")
-                                    || class_name == "Exception"
-                                    || class_name.resolve().ends_with("Exception") =>
-                            {
-                                err.exception = Some(Box::new(result));
-                            }
-                            _ => {
-                                // Wrap in X::AdHoc
-                                let mut attrs = std::collections::HashMap::new();
-                                attrs.insert(
-                                    "payload".to_string(),
-                                    Value::str(result.to_string_value()),
-                                );
-                                attrs.insert(
-                                    "message".to_string(),
-                                    Value::str(result.to_string_value()),
-                                );
-                                let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
-                                err.exception = Some(Box::new(ex));
-                            }
-                        }
-                        return Err(err);
+                        // Raku wraps the broken Promise's cause in X::Await::Died.
+                        return Err(Self::await_died_error(result));
                     }
                     // Replay deferred Proc::Async taps
                     if let Value::Instance {
@@ -1671,8 +1680,7 @@ impl Interpreter {
                                 self.output_sink_mut().stderr_output.push_str(&stderr);
                                 if shared.status() == "Broken" {
                                     self.sync_shared_vars_to_env();
-                                    let msg = result.to_string_value();
-                                    return Err(RuntimeError::new(msg));
+                                    return Err(Self::await_died_error(result));
                                 }
                                 let result = Self::unwrap_async_status_result(result)?;
                                 results.push(result);
