@@ -2962,30 +2962,6 @@ impl Value {
         }
     }
 
-    /// Write a value through a DeferredHashAccess, autovivifying the path.
-    /// Creates intermediate hashes as needed and inserts the final value.
-    pub fn deferred_hash_write(&self, val: Value) {
-        if let Value::DeferredHashAccess { parent_slot, key } = self {
-            // First, ensure the parent slot has a hash
-            let parent_value = parent_slot.hash_slot_read();
-            let inner_hash = if let Value::Hash(_) = &parent_value {
-                parent_value
-            } else {
-                // Create a new hash and write it to the parent slot
-                let new_hash = Value::hash(HashMap::new());
-                parent_slot.hash_slot_write(new_hash.clone());
-                new_hash
-            };
-            // Now write the value to the inner hash at the given key
-            if let Value::Hash(arc) = &inner_hash {
-                let ptr = Arc::as_ptr(arc) as *mut HashData;
-                unsafe {
-                    (*ptr).map.insert(key.clone(), val);
-                }
-            }
-        }
-    }
-
     /// Push a value to an Array in-place using interior mutation.
     /// This allows shared references (Arc refcount > 1) to see the mutation,
     /// matching Raku's container semantics where all references share state.
