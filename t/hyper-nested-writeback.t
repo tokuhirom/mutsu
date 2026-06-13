@@ -6,7 +6,7 @@ use Test;
 # variable bindings by Arc identity, missing nested elements, so `@b[0]>>++`
 # left `@b[0]` unchanged. (Track B element-cell: deep `>>++`.)
 
-plan 10;
+plan 13;
 
 # --- Hyper increment on an array element that is itself an array ---
 {
@@ -63,4 +63,23 @@ plan 10;
     my $inner := @b[0];
     @b[0]>>++;
     is-deeply $inner, [2, 3], 'a separate bind to @b[0] sees the hyper mutation';
+}
+
+# --- A whole-variable hyper mutation must NOT corrupt a copy ---
+# (lvalue-precise writeback: `@a>>++` writes to @a's binding, not to every
+# Arc-identity-sharing binding, so the independent copy `@x` is preserved.)
+{
+    my @a = 1, 2, 3;
+    my @x = @a;
+    @a>>++;
+    is-deeply @x, [1, 2, 3], 'copy is not corrupted by hyper ++ on the source';
+    is-deeply @a, [2, 3, 4], 'source is incremented';
+}
+
+# --- A whole-container `:=` bound alias DOES see the hyper mutation ---
+{
+    my @a = 1, 2, 3;
+    my $b := @a;
+    @a>>++;
+    is-deeply $b, [2, 3, 4], 'bound alias sees hyper ++ through the shared cell';
 }

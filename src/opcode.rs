@@ -818,6 +818,12 @@ pub(crate) enum OpCode {
         arity: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        /// The lvalue variable name when the hyper target is a plain `@`/`%`
+        /// variable (`@a>>++`), so a mutating hyper writes back *precisely* to
+        /// that binding (cell-write if bound, COW-detach otherwise) instead of
+        /// the Arc-identity scan that over-reaches COW-shared copies. `None` for
+        /// non-variable targets (`@b[0]>>++`, `(1,2,3)>>.uc`).
+        target_name_idx: Option<u32>,
     },
     HyperMethodCallDynamic {
         arity: u32,

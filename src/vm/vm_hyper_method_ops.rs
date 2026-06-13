@@ -2,6 +2,29 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl VM {
+    /// Write a mutating hyper's result back to its *named* `@`/`%` target
+    /// variable precisely. If the variable is bound (holds a shared
+    /// `ContainerRef` cell, e.g. `$b := @a`), write through the cell so all
+    /// aliases observe the change; otherwise replace the binding (COW-detach) so
+    /// a copy (`my @x = @a`) keeps its own backing and is not corrupted. This is
+    /// the lvalue-precise alternative to the Arc-identity binding scan, which
+    /// cannot tell a bound alias from a COW copy.
+    fn write_back_hyper_target_var(&mut self, code: &CompiledCode, var: &str, new_val: Value) {
+        if let Some(Value::ContainerRef(cell)) = self.interpreter.env().get(var) {
+            *cell.lock().unwrap() = new_val;
+            return;
+        }
+        if let Some(slot) = self.find_local_slot(code, var)
+            && let Value::ContainerRef(cell) = &self.locals[slot]
+        {
+            *cell.lock().unwrap() = new_val;
+            return;
+        }
+        self.set_env_with_main_alias(var, new_val.clone());
+        self.locals_set_by_name(code, var, new_val);
+        self.env_dirty = true;
+    }
+
     pub(super) fn exec_hyper_method_call_op(
         &mut self,
         code: &CompiledCode,
@@ -9,8 +32,11 @@ impl VM {
         arity: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        target_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let method_raw = Self::const_str(code, name_idx);
+        let target_var: Option<String> =
+            target_name_idx.map(|idx| Self::const_str(code, idx).to_string());
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
@@ -358,25 +384,38 @@ impl VM {
             }
         }
         if let Value::Array(existing, kind) = &target {
-            // In-place write back through the target's `Arc<ArrayData>` so a
-            // hyper mutation on a *nested* element (`@b[0]>>++`, `%h<a>>>++`,
-            // `$r>>++` where `$r := @a`) reaches the element: the read shares the
-            // inner Arc with the slot that holds it, so mutating the Arc's items
-            // is observed there. The by-identity binding scan below only reaches
-            // top-level variable bindings (it misses array/hash elements).
-            // SAFETY: mutsu is single-threaded; no immutable borrow into this
-            // ArrayData is alive across the write.
-            {
-                let ptr = std::sync::Arc::as_ptr(existing) as *mut crate::value::ArrayData;
-                unsafe {
-                    (*ptr).items = items.clone();
+            if let Some(var) = &target_var {
+                // Precise writeback to the *named* `@`-variable's binding only.
+                // A bound variable holds a shared `ContainerRef` cell (e.g.
+                // `$b := @a`): write the new array through the cell so aliases
+                // observe it. A plain array binding is replaced (COW-detach), so
+                // a copy `my @x = @a` keeps its own Arc and is NOT corrupted —
+                // unlike the Arc-identity scan, which over-reaches COW copies.
+                let new_arr = Value::Array(
+                    std::sync::Arc::new(crate::value::ArrayData::new(items.clone())),
+                    *kind,
+                );
+                self.write_back_hyper_target_var(code, var, new_arr);
+            } else {
+                // Non-variable target (`@b[0]>>++`, `(1,2,3)>>.uc`): write back
+                // in place through the target's `Arc<ArrayData>` so a hyper
+                // mutation on a *nested* element reaches it (the read shares the
+                // inner Arc with the slot holding it), plus the by-identity scan
+                // for any top-level binding that COW-detached.
+                // SAFETY: mutsu is single-threaded; no immutable borrow into
+                // this ArrayData is alive across the write.
+                {
+                    let ptr = std::sync::Arc::as_ptr(existing) as *mut crate::value::ArrayData;
+                    unsafe {
+                        (*ptr).items = items.clone();
+                    }
                 }
+                self.interpreter.overwrite_array_items_by_identity_for_vm(
+                    existing,
+                    items.clone(),
+                    *kind,
+                );
             }
-            self.interpreter.overwrite_array_items_by_identity_for_vm(
-                existing,
-                items.clone(),
-                *kind,
-            );
             if let Some(gv) = existing.grep_source.as_deref() {
                 let mut source_items = gv.source.to_vec();
                 for (filtered_idx, source_idx) in gv.indices.iter().enumerate() {
@@ -403,8 +442,15 @@ impl VM {
             for (key, item) in keys.iter().zip(items.iter()) {
                 map.insert(key.clone(), item.clone());
             }
-            self.interpreter
-                .overwrite_hash_bindings_by_identity(existing, Value::Hash(Value::hash_arc(map)));
+            let new_hash = Value::Hash(Value::hash_arc(map));
+            if let Some(var) = &target_var {
+                // Precise writeback to the named `%`-variable (see the Array
+                // arm); avoids corrupting a COW copy `my %g = %h`.
+                self.write_back_hyper_target_var(code, var, new_hash);
+            } else {
+                self.interpreter
+                    .overwrite_hash_bindings_by_identity(existing, new_hash);
+            }
             self.env_dirty = true;
         }
         // Preserve the container type of the target for QuantHash types.
