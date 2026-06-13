@@ -2368,7 +2368,14 @@ impl VM {
                     self.interpreter.set_when_matched(true);
                     return Err(e);
                 }
-                Err(e) => return Err(e),
+                // The `when` matched, so record the match before propagating any
+                // other control signal (e.g. an is_return produced by `done`
+                // inside the block). Otherwise a `when` body that exits via a
+                // control flow signal would lose the fact that it matched.
+                Err(e) => {
+                    self.interpreter.set_when_matched(true);
+                    return Err(e);
+                }
             }
             if !did_proceed {
                 self.interpreter.set_when_matched(true);
