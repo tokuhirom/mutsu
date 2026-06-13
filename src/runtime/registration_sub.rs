@@ -180,6 +180,72 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Reject a sub return type (`--> NoSuchType` / `returns NoSuchType`) that
+    /// names a type unknown to this compilation unit -> X::Undeclared (with
+    /// `what` => "Type", `symbol` => the bad name). Mirrors the parameter-type
+    /// check but uses the X::Undeclared hierarchy, matching rakudo
+    /// ("Type 'NoSuchType' is not declared").
+    pub(crate) fn validate_return_type_constraint(
+        &self,
+        return_type: Option<&str>,
+        param_defs: &[ParamDef],
+        declared_types: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        let Some(rt) = return_type else {
+            return Ok(());
+        };
+        // Type-capture names declared in this signature (e.g. `::T`) are valid
+        // return type names too (`sub f(::T $x --> T) {...}`).
+        let captures: std::collections::HashSet<&str> = param_defs
+            .iter()
+            .filter_map(|pd| pd.type_constraint.as_deref())
+            .filter_map(|tc| tc.strip_prefix("::"))
+            .collect();
+        // Only a bare identifier starting uppercase is considered; anything
+        // decorated (`Positional[Int]`, `Int:D`, lowercase native, …) is skipped.
+        if rt.is_empty()
+            || !rt.starts_with(|c: char| c.is_ascii_uppercase())
+            || !rt
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return Ok(());
+        }
+        // Well-known core constant terms are valid as literal return types
+        // (`--> Empty`, `--> True`); they are not type names so
+        // `is_resolvable_type` does not cover them.
+        if matches!(rt, "Empty" | "True" | "False" | "NaN" | "Inf") {
+            return Ok(());
+        }
+        if captures.contains(rt)
+            || declared_types.contains(rt)
+            || self.is_resolvable_type(rt)
+            || self.has_type(rt)
+        {
+            return Ok(());
+        }
+        let suggestions = self.suggest_type_names(rt);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("what".to_string(), Value::str("Type".to_string()));
+        attrs.insert("symbol".to_string(), Value::str(rt.to_string()));
+        attrs.insert(
+            "suggestions".to_string(),
+            Value::array(suggestions.iter().cloned().map(Value::str).collect()),
+        );
+        let mut message = format!("Type '{}' is not declared", rt);
+        if suggestions.len() == 1 {
+            message.push_str(&format!(". Did you mean '{}'?", suggestions[0]));
+        } else if suggestions.len() > 1 {
+            let quoted: Vec<String> = suggestions.iter().map(|s| format!("'{}'", s)).collect();
+            message.push_str(&format!(
+                ". Did you mean any of these: {}?",
+                quoted.join(", ")
+            ));
+        }
+        attrs.insert("message".to_string(), Value::str(message));
+        Err(RuntimeError::typed("X::Undeclared", attrs))
+    }
+
     fn validate_static_default_typechecks(
         &mut self,
         param_defs: &[ParamDef],

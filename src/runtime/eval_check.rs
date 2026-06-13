@@ -33,9 +33,17 @@ fn walk_validate_sub_param_types(
     for stmt in stmts {
         match stmt {
             Stmt::SubDecl {
-                param_defs, body, ..
+                param_defs,
+                body,
+                return_type,
+                ..
             } => {
                 interp.validate_param_type_constraints(param_defs, declared)?;
+                interp.validate_return_type_constraint(
+                    return_type.as_deref(),
+                    param_defs,
+                    declared,
+                )?;
                 walk_validate_sub_param_types(interp, body, declared)?;
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
