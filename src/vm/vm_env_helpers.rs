@@ -296,13 +296,10 @@ impl VM {
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         crate::vm::vm_stats::record_locals_pull();
         for (i, name) in code.locals.iter().enumerate() {
-            // Don't overwrite ArraySlotRef/HashSlotRef locals with env values.
+            // Don't overwrite HashSlotRef locals with env values.
             // These are live container references from `:=` binding and must
             // not be replaced by stale env copies.
-            if matches!(
-                self.locals[i],
-                Value::ArraySlotRef { .. } | Value::HashSlotRef { .. }
-            ) {
+            if matches!(self.locals[i], Value::HashSlotRef { .. }) {
                 continue;
             }
             // Attribute locals (!attr) are managed exclusively via GetLocal/SetLocal.
