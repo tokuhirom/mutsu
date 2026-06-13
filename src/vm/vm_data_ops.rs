@@ -20,11 +20,10 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // A collection whose gist embeds an element's gist must be rendered via
         // method dispatch when any element needs it (e.g. an instance/type-object
         // with a custom `method gist`), so the per-element gist is honored.
-        Value::Array(items, _)
-        | Value::Seq(items)
-        | Value::HyperSeq(items)
-        | Value::RaceSeq(items)
-        | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        Value::Array(items, _) => items.iter().any(element_needs_method_dispatch),
+        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
+            items.iter().any(element_needs_method_dispatch)
+        }
         Value::Hash(map) => map.values().any(element_needs_method_dispatch),
         Value::Pair(_, val) => element_needs_method_dispatch(val),
         Value::ValuePair(k, val) => {
@@ -44,11 +43,10 @@ fn element_needs_method_dispatch(v: &Value) -> bool {
         | Value::CustomType { .. }
         | Value::CustomTypeInstance { .. }
         | Value::Package(..) => true,
-        Value::Array(items, _)
-        | Value::Seq(items)
-        | Value::HyperSeq(items)
-        | Value::RaceSeq(items)
-        | Value::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        Value::Array(items, _) => items.iter().any(element_needs_method_dispatch),
+        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
+            items.iter().any(element_needs_method_dispatch)
+        }
         Value::Hash(map) => map.values().any(element_needs_method_dispatch),
         Value::Pair(_, val) => element_needs_method_dispatch(val),
         Value::ValuePair(k, val) => {
@@ -518,13 +516,6 @@ impl VM {
             self.locals[slot] = Value::Nil;
         }
 
-        // `Arc::make_mut` below relocates a metadata-bearing (Weak-guarded)
-        // array; carry its type info / `is default` over to the new pointer.
-        let saved_meta = match self.interpreter.env().get(target_name) {
-            Some(v @ Value::Array(..)) => self.interpreter.capture_container_meta(v),
-            _ => (None, None),
-        };
-
         let result = if let Some(Value::Array(arr, kind)) =
             self.interpreter.env_mut().get_mut(target_name)
         {
@@ -545,8 +536,6 @@ impl VM {
                 .insert(target_name.to_string(), arr.clone());
             arr
         };
-
-        self.interpreter.restore_container_meta(&result, saved_meta);
 
         // Restore local slot
         if let Some(slot) = local_slot {

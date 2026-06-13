@@ -63,7 +63,7 @@ pub(super) fn dispatch(
                 {
                     crate::runtime::utils::shaped_array_leaves(target)
                 } else {
-                    (**items).clone()
+                    (**items).clone().items
                 };
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                 Some(Ok(Value::array(sorted)))
@@ -99,7 +99,7 @@ pub(super) fn dispatch(
                     let mut reversed = crate::runtime::utils::value_to_list(target);
                     reversed.reverse();
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(reversed),
+                        std::sync::Arc::new(crate::value::ArrayData::new(reversed)),
                         crate::value::ArrayKind::List,
                     )))
                 }
@@ -111,7 +111,7 @@ pub(super) fn dispatch(
                 if end_is_neg_inf {
                     // Empty range -- reverse is empty
                     return Some(Some(Ok(Value::Array(
-                        std::sync::Arc::new(Vec::new()),
+                        std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                         crate::value::ArrayKind::List,
                     ))));
                 }
@@ -124,7 +124,7 @@ pub(super) fn dispatch(
                     let mut reversed = items;
                     reversed.reverse();
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(reversed),
+                        std::sync::Arc::new(crate::value::ArrayData::new(reversed)),
                         crate::value::ArrayKind::List,
                     )))
                 }

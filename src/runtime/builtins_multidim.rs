@@ -96,7 +96,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
     }
     // List/Array as index means "multiple indices in this dimension"
     if let Value::Array(idx_items, ..) = head {
-        let idx_list: Vec<Value> = idx_items.as_ref().clone();
+        let idx_list: Vec<Value> = idx_items.as_ref().clone().items;
         let mut out = Vec::with_capacity(idx_list.len());
         for idx in &idx_list {
             let mut sub_indices = vec![idx.clone()];
@@ -171,7 +171,10 @@ pub(super) fn make_key_tuple(indices: &[Value]) -> Value {
     if indices.len() == 1 {
         return indices[0].clone();
     }
-    Value::Array(std::sync::Arc::new(indices.to_vec()), ArrayKind::List)
+    Value::Array(
+        std::sync::Arc::new(crate::value::ArrayData::new(indices.to_vec())),
+        ArrayKind::List,
+    )
 }
 
 /// Collect (path, value) leaves from a multi-dimensional array,

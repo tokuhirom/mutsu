@@ -3761,7 +3761,7 @@ impl Interpreter {
                                         self.env.get(&env_key).cloned().unwrap_or(Value::Nil);
                                     let elements = match &value {
                                         Value::Array(arr, _) => arr.as_ref().clone(),
-                                        _ => vec![value],
+                                        _ => crate::value::ArrayData::new(vec![value]),
                                     };
                                     let mut alt_patterns = Vec::new();
                                     for elt in &elements {
@@ -4858,9 +4858,13 @@ impl Interpreter {
                                 .or_else(|| self.env.get(&bare_name).cloned())
                                 .unwrap_or(Value::Nil);
                             let entries: Vec<String> = match value {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items
+                                Value::Array(items, ..) => items
+                                    .iter()
+                                    .map(|v| {
+                                        Self::escape_regex_scalar_literal(&v.to_string_value())
+                                    })
+                                    .collect(),
+                                Value::Seq(items) | Value::Slip(items) => items
                                     .iter()
                                     .map(|v| {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())
@@ -5039,7 +5043,7 @@ impl Interpreter {
                             .unwrap_or(Value::Nil);
                         let elements = match &value {
                             Value::Array(arr, _) => arr.as_ref().clone(),
-                            _ => vec![value],
+                            _ => crate::value::ArrayData::new(vec![value]),
                         };
                         let mut alts = Vec::new();
                         for elt in &elements {
@@ -5075,7 +5079,7 @@ impl Interpreter {
                         .unwrap_or(Value::Nil);
                     let elements = match &value {
                         Value::Array(arr, _) => arr.as_ref().clone(),
-                        _ => vec![value],
+                        _ => crate::value::ArrayData::new(vec![value]),
                     };
                     let mut alts = Vec::new();
                     for elt in &elements {
@@ -5110,7 +5114,7 @@ impl Interpreter {
                     let val = self.eval_string_as_source(&expr_str);
                     let elements = match &val {
                         Value::Array(arr, _) => arr.as_ref().clone(),
-                        _ => vec![val],
+                        _ => crate::value::ArrayData::new(vec![val]),
                     };
                     let mut alts = Vec::new();
                     for elt in elements.iter() {

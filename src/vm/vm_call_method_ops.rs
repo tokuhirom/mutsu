@@ -724,9 +724,10 @@ impl VM {
         };
         // Convert HyperSeq/RaceSeq to List for method dispatch
         let target = match target {
-            Value::HyperSeq(items) | Value::RaceSeq(items) => {
-                Value::Array(items, crate::value::ArrayKind::List)
-            }
+            Value::HyperSeq(items) | Value::RaceSeq(items) => Value::Array(
+                crate::value::Value::array_arc(items.to_vec()),
+                crate::value::ArrayKind::List,
+            ),
             other => other,
         };
         // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
@@ -917,9 +918,10 @@ impl VM {
                                     let mut flat = Vec::new();
                                     for arg in &args {
                                         match arg {
-                                            Value::Array(items, _)
-                                            | Value::Seq(items)
-                                            | Value::Slip(items) => {
+                                            Value::Array(items, _) => {
+                                                flat.extend(items.iter().cloned());
+                                            }
+                                            Value::Seq(items) | Value::Slip(items) => {
                                                 flat.extend(items.iter().cloned());
                                             }
                                             other => flat.push(other.clone()),
@@ -994,9 +996,10 @@ impl VM {
                             let mut flat = Vec::new();
                             for arg in &args {
                                 match arg {
-                                    Value::Array(items, _)
-                                    | Value::Seq(items)
-                                    | Value::Slip(items) => {
+                                    Value::Array(items, _) => {
+                                        flat.extend(items.iter().cloned());
+                                    }
+                                    Value::Seq(items) | Value::Slip(items) => {
                                         flat.extend(items.iter().cloned());
                                     }
                                     other => flat.push(other.clone()),

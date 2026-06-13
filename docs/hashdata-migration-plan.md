@@ -163,15 +163,49 @@ embedded fields, replaced the one raw-id reader (`set_type_metadata_get`),
 and deleted the three side tables. The Hash/Set/Bag/Mix arms of
 `register_container_type_metadata` are a shared `debug_assert` tripwire.
 
-**Remaining: ArrayData only.** `Value::Array(Arc<Vec<Value>>, ArrayKind)`
-has no wrapper yet — that is the real Stage-1a-scale migration (Deref
-absorbs reads; structural sites: `Arc::new`, `Arc::make_mut`, `Arc::ptr_eq`,
-and CRITICALLY every `Arc::as_ptr(..) as *mut Vec<Value>` unsafe in-place
-site, which becomes UB against a wrapper — see "Latent UB found & fixed").
-Until it lands, `array_type_metadata` stays on the Weak-guarded
-`PtrKeyedMap` (#2953). Candidates to embed alongside type metadata in
-`ArrayData`: the array `is default(...)` value and the shaped-array dims
-(both currently pointer-keyed side tables).
+### Stage 4 — ArrayData wrapper + embedded array type metadata (DONE, 2026-06-13)
+
+`Value::Array(Arc<Vec<Value>>, ArrayKind)` → `Value::Array(Arc<ArrayData>,
+ArrayKind)` with `value_type`/`key_type`/`declared_type` embedded;
+`array_type_metadata` (the last per-type side table) deleted. **All five
+container types now carry their type metadata in the value — the Q2
+Arc-pointer-keyed type-metadata flaky class is fully closed.**
+
+Migration notes (the Stage-1a-scale grind, ~380 compile errors / 75 files):
+- Deref/DerefMut to `Vec<Value>` absorbed almost all read sites; a
+  cargo-JSON-driven span rewriter handled the mechanical type mismatches and
+  a second script split the ~50 `Value::Array(b, ..) | Value::Seq(b)` joint
+  match arms (duplicating the arm body — the same text compiles against both
+  binding types thanks to Deref).
+- **Hand-audited hazards the scripts could not see** (each would have been a
+  silent semantic break):
+  - every `Arc::as_ptr(..) as *mut Vec<Value>` unsafe in-place site → cast to
+    `*mut ArrayData` (the offset-0 UB precedent from Stage 1a);
+  - `Arc`-identity-sensitive rewrites: `ArraySlotRef.array` must SHARE the
+    parent arc (not copy), circular-array self-references must share
+    `result_arc`, grep-view updated_source, `selected_array` ptr_eq probes;
+  - `ValueIterator` gained an `ArraySlice` variant so the for-loop hot path
+    keeps sharing the backing Arc (no per-iteration O(n) copy).
+- `tag_container_metadata` gained the Array arm (skip-if-unchanged COW guard
+  preserves `.WHICH`); `register_container_type_metadata` is now a tripwire
+  for all five container types; ~16 register sites converted by script to
+  tag + write-back. `reattach_array_type_metadata` re-tags by name (rebuild
+  paths); plain `Arc::make_mut` mutators carry metadata automatically now.
+  `capture/restore_container_meta` shrank to `is default` only;
+  `unregister_container_type_metadata` deleted (untyped redeclaration clears
+  the embedded meta via `clear_hash_type_metadata`, which handles arrays too).
+- Bonus correctness fix: `my @copy = @typed; @copy.push(...)` no longer
+  strips the SOURCE's type metadata (the old shared-side-table scrub); the
+  embedded clear COW-detaches, matching raku.
+
+Array⇄Seq conversions now copy the element vector (the Arc can no longer be
+shared across the two representations); int.t / bench-class canaries show no
+measurable cliff.
+
+**Remaining candidates to embed in `ArrayData` later**: the array
+`is default(...)` value and the shaped-array dims (both still pointer-keyed,
+Weak-guarded side tables from #2953); the grep rw-view binding (slated for
+removal with the SlotRef machinery in container-identity Stage 2).
 
 ## Why staged this way
 

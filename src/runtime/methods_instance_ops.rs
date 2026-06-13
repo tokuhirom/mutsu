@@ -109,9 +109,8 @@ impl Interpreter {
 
             if class_name == "IterationBuffer" {
                 let mut items = match attributes.as_map().get("__mutsu_iterationbuffer_items") {
-                    Some(Value::Array(values, ..))
-                    | Some(Value::Seq(values))
-                    | Some(Value::Slip(values)) => values.to_vec(),
+                    Some(Value::Array(values, ..)) => values.to_vec(),
+                    Some(Value::Seq(values)) | Some(Value::Slip(values)) => values.to_vec(),
                     _ => Vec::new(),
                 };
                 let iterationbuffer_values = |value: &Value| -> Vec<Value> {
@@ -122,9 +121,10 @@ impl Interpreter {
                             ..
                         } if class_name == "IterationBuffer" => {
                             match attributes.as_map().get("__mutsu_iterationbuffer_items") {
-                                Some(Value::Array(values, ..))
-                                | Some(Value::Seq(values))
-                                | Some(Value::Slip(values)) => values.to_vec(),
+                                Some(Value::Array(values, ..)) => values.to_vec(),
+                                Some(Value::Seq(values)) | Some(Value::Slip(values)) => {
+                                    values.to_vec()
+                                }
                                 _ => Vec::new(),
                             }
                         }
@@ -1644,11 +1644,11 @@ impl Interpreter {
                         }
                     }
                     new_items.append(items);
-                    *items = new_items;
+                    *items = crate::value::ArrayData::new(new_items);
                 }
                 _ => {}
             }
-            Ok(Value::real_array(items.clone()))
+            Ok(Value::real_array(items.clone().items))
         } else {
             Err(RuntimeError::new(format!(
                 "Cannot call '{}' on non-Array attribute",

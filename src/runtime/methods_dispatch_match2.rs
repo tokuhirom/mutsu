@@ -193,7 +193,10 @@ impl Interpreter {
                     let mut flat_items = Vec::new();
                     for item in items {
                         match item {
-                            Value::Array(sub_items, _) | Value::Seq(sub_items) => {
+                            Value::Array(sub_items, _) => {
+                                flat_items.extend(sub_items.iter().cloned());
+                            }
+                            Value::Seq(sub_items) => {
                                 flat_items.extend(sub_items.iter().cloned());
                             }
                             other => flat_items.push(other),
@@ -483,7 +486,7 @@ impl Interpreter {
         let result = self.eval_map_over_items(args.first().cloned(), items)?;
         // .map() returns a Seq per Raku spec
         Ok(match result {
-            Value::Array(items, _) => Value::Seq(items),
+            Value::Array(items, _) => Value::Seq(std::sync::Arc::new(items.to_vec())),
             other => other,
         })
     }
@@ -503,7 +506,10 @@ impl Interpreter {
         let mut env = self.env.clone();
         env.insert(
             "__mutsu_lazy_map_items".to_string(),
-            Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List),
+            Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            ),
         );
         env.insert(
             "__mutsu_lazy_map_func".to_string(),

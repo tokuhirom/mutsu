@@ -953,7 +953,7 @@ impl Interpreter {
                 let expr = variants[0].1.as_ref().unwrap();
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 let raw_items: Vec<Value> = match &v {
-                    Value::Array(items, _) => items.as_ref().clone(),
+                    Value::Array(items, _) => items.as_ref().clone().items,
                     Value::Slip(items) => items.as_ref().clone(),
                     Value::Hash(map) => map
                         .iter()

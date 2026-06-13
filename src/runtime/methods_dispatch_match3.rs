@@ -260,7 +260,7 @@ impl Interpreter {
                 Some(self.dispatch_grep(target, &args).map(|v| {
                     if !is_real_array && let Value::Array(items, crate::value::ArrayKind::List) = v
                     {
-                        return Value::Seq(items);
+                        return Value::Seq(std::sync::Arc::new(items.to_vec()));
                     }
                     v
                 }))
@@ -767,7 +767,15 @@ impl Interpreter {
                         indices.push(*i as usize);
                     }
                 }
-                Value::Array(elems, _) | Value::Seq(elems) | Value::Slip(elems) => {
+                Value::Array(elems, _) => {
+                    for elem in elems.iter() {
+                        let i = elem.to_f64() as i64;
+                        if i >= 0 {
+                            indices.push(i as usize);
+                        }
+                    }
+                }
+                Value::Seq(elems) | Value::Slip(elems) => {
                     for elem in elems.iter() {
                         let i = elem.to_f64() as i64;
                         if i >= 0 {

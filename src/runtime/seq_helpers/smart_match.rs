@@ -491,7 +491,7 @@ impl Interpreter {
                     self.env.insert(
                         "/".to_string(),
                         Value::Array(
-                            std::sync::Arc::new(Vec::new()),
+                            std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                             crate::value::ArrayKind::List,
                         ),
                     );
@@ -502,7 +502,7 @@ impl Interpreter {
                         self.env.insert(
                             "/".to_string(),
                             Value::Array(
-                                std::sync::Arc::new(Vec::new()),
+                                std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                                 crate::value::ArrayKind::List,
                             ),
                         );
@@ -617,8 +617,17 @@ impl Interpreter {
                 true
             }
             // Array/List ~~ Regex: iterate elements, match each individually
+            (Value::Array(items, ..), Value::Regex(_) | Value::RegexWithAdverbs { .. }) => {
+                for item in items.iter() {
+                    if self.smart_match(item, right) {
+                        return true;
+                    }
+                }
+                self.clear_match_state();
+                false
+            }
             (
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items),
+                Value::Seq(items) | Value::Slip(items),
                 Value::Regex(_) | Value::RegexWithAdverbs { .. },
             ) => {
                 for item in items.iter() {
@@ -962,7 +971,8 @@ impl Interpreter {
             {
                 // Collect LHS elements as string keys (same representation as Set uses)
                 let lhs_keys: std::collections::HashSet<String> = match left {
-                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
+                    Value::Seq(items) | Value::Slip(items) => {
                         items.iter().map(|v| v.to_string_value()).collect()
                     }
                     Value::Bag(b, _) => b.keys().cloned().collect(),
@@ -1148,15 +1158,15 @@ impl Interpreter {
                             let vt = &info.value_type;
                             if let Some(ref kt) = info.key_type {
                                 if vt != "Any" || kt != "Str" {
-                                    return Some(vec![
+                                    return Some(crate::value::ArrayData::new(vec![
                                         Value::Package(crate::symbol::Symbol::intern(vt)),
                                         Value::Package(crate::symbol::Symbol::intern(kt)),
-                                    ]);
+                                    ]));
                                 }
                             } else if vt != "Any" && vt != "Mu" {
-                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
-                                    vt,
-                                ))]);
+                                return Some(crate::value::ArrayData::new(vec![Value::Package(
+                                    crate::symbol::Symbol::intern(vt),
+                                )]));
                             }
                         }
                         None
@@ -1166,9 +1176,9 @@ impl Interpreter {
                         if let Some(info) = self.container_type_metadata(left_value) {
                             let vt = &info.value_type;
                             if vt != "Any" && vt != "Mu" {
-                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
-                                    vt,
-                                ))]);
+                                return Some(crate::value::ArrayData::new(vec![Value::Package(
+                                    crate::symbol::Symbol::intern(vt),
+                                )]));
                             }
                         }
                         None
@@ -1617,7 +1627,7 @@ impl Interpreter {
     /// Extract list items from a value, expanding ranges.
     fn extract_list_items(v: &Value) -> Vec<Value> {
         if let Some(items) = v.as_list_items() {
-            items.as_ref().clone()
+            items.to_vec()
         } else if v.is_range() {
             Self::value_to_list(v)
         } else {

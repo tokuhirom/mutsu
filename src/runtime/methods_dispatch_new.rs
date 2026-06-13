@@ -18,7 +18,11 @@ impl Interpreter {
                     .iter()
                     .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
                     .flat_map(|a| match a {
-                        Value::Array(items, ..) | Value::Seq(items) => items
+                        Value::Array(items, ..) => items
+                            .iter()
+                            .map(|v| v.to_string_value())
+                            .collect::<Vec<_>>(),
+                        Value::Seq(items) => items
                             .iter()
                             .map(|v| v.to_string_value())
                             .collect::<Vec<_>>(),

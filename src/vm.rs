@@ -137,7 +137,11 @@ pub(crate) struct VM {
     /// for-loop iterable is a grep result with a registered grep-view binding,
     /// this holds (source array Arc, per-filtered-index source indices, kind)
     /// so the loop can write modified topics back to the original array slots.
-    for_grep_view: Option<(Arc<Vec<Value>>, Vec<usize>, crate::value::ArrayKind)>,
+    for_grep_view: Option<(
+        Arc<crate::value::ArrayData>,
+        Vec<usize>,
+        crate::value::ArrayKind,
+    )>,
     /// Names of multi-param for-loop bindings (`-> %a, %b`) whose `%`/`@` params
     /// must preserve a QuantHash (Set/Bag/Mix) value rather than coercing it to
     /// a plain Hash, matching Raku's parameter-binding semantics.
@@ -1612,13 +1616,15 @@ impl VM {
                                 raw_val
                             } else {
                                 Value::Array(
-                                    std::sync::Arc::new(vec![raw_val]),
+                                    std::sync::Arc::new(crate::value::ArrayData::new(vec![
+                                        raw_val,
+                                    ])),
                                     crate::value::ArrayKind::List,
                                 )
                             }
                         }
                         other => Value::Array(
-                            std::sync::Arc::new(vec![other]),
+                            std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
                             crate::value::ArrayKind::List,
                         ),
                     }
@@ -2671,7 +2677,7 @@ impl VM {
                     // Comma lists and other non-real arrays become Lists.
                     Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
                     Value::Seq(items) => Value::Array(
-                        std::sync::Arc::new(items.to_vec()),
+                        std::sync::Arc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
                     // Hash values are flattened to pairs for constant @.
@@ -2680,7 +2686,10 @@ impl VM {
                             .iter()
                             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                             .collect();
-                        Value::Array(std::sync::Arc::new(pairs), crate::value::ArrayKind::List)
+                        Value::Array(
+                            std::sync::Arc::new(crate::value::ArrayData::new(pairs)),
+                            crate::value::ArrayKind::List,
+                        )
                     }
                     // Instance objects: check if Positional; if so keep as-is,
                     // otherwise call .cache for coercion (constant @ semantics).
@@ -2752,18 +2761,20 @@ impl VM {
                                     Value::Array(items, crate::value::ArrayKind::List)
                                 }
                                 Value::Seq(items) => Value::Array(
-                                    std::sync::Arc::new(items.to_vec()),
+                                    std::sync::Arc::new(crate::value::ArrayData::new(
+                                        items.to_vec(),
+                                    )),
                                     crate::value::ArrayKind::List,
                                 ),
                                 other => Value::Array(
-                                    std::sync::Arc::new(vec![other]),
+                                    std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
                                     crate::value::ArrayKind::List,
                                 ),
                             }
                         }
                     }
                     other => Value::Array(
-                        std::sync::Arc::new(vec![other]),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
                         crate::value::ArrayKind::List,
                     ),
                 };
@@ -3252,8 +3263,8 @@ impl VM {
                 if let Some(val) = self.get_env_with_main_alias(name) {
                     match &val {
                         Value::Array(arc, _) => {
-                            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
+                            unsafe { (&mut *ptr).items.clear() };
                         }
                         Value::Hash(arc) => {
                             let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
@@ -3266,8 +3277,8 @@ impl VM {
                 if let Some(slot) = self.find_local_slot(code, name) {
                     match &self.locals[slot] {
                         Value::Array(arc, _) => {
-                            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
-                            unsafe { (*ptr).clear() };
+                            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
+                            unsafe { (&mut *ptr).items.clear() };
                         }
                         Value::Hash(arc) => {
                             let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;

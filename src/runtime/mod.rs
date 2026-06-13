@@ -1022,18 +1022,14 @@ pub struct Interpreter {
     atomic_var_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
-    /// Array element defaults for `is default(...)`, keyed by Arc pointer
-    /// identity with a Weak guard against pointer reuse (see `ptr_keyed`).
-    array_defaults: PtrKeyedMap<Vec<Value>, Value>,
+    // Array element defaults are embedded in `ArrayData.default`.
     /// Hash element defaults for `is default(...)` (guarded; see `ptr_keyed`).
     hash_defaults: PtrKeyedMap<crate::value::HashData, Value>,
     /// Optional hash key type constraints (e.g. `%h{Str}`).
     var_hash_key_constraints: HashMap<String, String>,
-    /// Type metadata for Array values (pointer-keyed, Weak-guarded).
-    array_type_metadata: PtrKeyedMap<Vec<Value>, ContainerTypeInfo>,
-    // Hash/Set/Bag/Mix type metadata and object-hash original keys are
-    // embedded in their backing data structs (HashData/SetData/BagData/
-    // MixData) — no side tables.
+    // Array/Hash/Set/Bag/Mix type metadata and object-hash original keys are
+    // embedded in their backing data structs (ArrayData/HashData/SetData/
+    // BagData/MixData) — no side tables.
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value, bool)>,
@@ -3121,10 +3117,8 @@ impl Interpreter {
             var_type_constraints: HashMap::new(),
             atomic_var_seen: false,
             var_defaults: HashMap::new(),
-            array_defaults: PtrKeyedMap::new(),
             hash_defaults: PtrKeyedMap::new(),
             var_hash_key_constraints: HashMap::new(),
-            array_type_metadata: PtrKeyedMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
@@ -4495,18 +4489,31 @@ impl Interpreter {
     }
 
     /// Set the element default for a container (Array/Hash) by Arc pointer identity.
-    pub(crate) fn set_container_default(&mut self, value: &Value, default: Value) {
+    /// Attach an `is default(...)` element default to a container, returning
+    /// the (possibly rebuilt) value. For arrays the default is embedded in the
+    /// `ArrayData` (callers MUST store the returned value back into the slot it
+    /// came from); for hashes it stays on the pointer-keyed side table and the
+    /// same value is returned.
+    pub(crate) fn tag_container_default(&mut self, value: Value, default: Value) -> Value {
         match value {
-            Value::Array(items, ..) => self.array_defaults.insert(items, default),
-            Value::Hash(map) => self.hash_defaults.insert(map, default),
-            _ => {}
+            Value::Array(mut arc, kind) => {
+                if arc.default.as_deref() != Some(&default) {
+                    Arc::make_mut(&mut arc).default = Some(Box::new(default));
+                }
+                Value::Array(arc, kind)
+            }
+            Value::Hash(map) => {
+                self.hash_defaults.insert(&map, default);
+                Value::Hash(map)
+            }
+            other => other,
         }
     }
 
-    /// Get the element default for a container (Array/Hash) by Arc pointer identity.
-    pub(crate) fn container_default(&self, value: &Value) -> Option<&Value> {
+    /// Get the element default for a container (Array/Hash).
+    pub(crate) fn container_default<'v>(&'v self, value: &'v Value) -> Option<&'v Value> {
         match value {
-            Value::Array(items, ..) => self.array_defaults.get_arc(items),
+            Value::Array(items, ..) => items.default.as_deref(),
             Value::Hash(map) => self.hash_defaults.get_arc(map),
             _ => None,
         }
@@ -4625,6 +4632,10 @@ impl Interpreter {
             }};
         }
         match value {
+            Value::Array(mut arc, kind) => {
+                embed_type_info!(arc, info);
+                Value::Array(arc, kind)
+            }
             Value::Hash(mut arc) => {
                 embed_type_info!(arc, info);
                 Value::Hash(arc)
@@ -4644,7 +4655,11 @@ impl Interpreter {
             Value::Mixin(inner, m)
                 if matches!(
                     inner.as_ref(),
-                    Value::Hash(_) | Value::Set(..) | Value::Bag(..) | Value::Mix(..)
+                    Value::Array(..)
+                        | Value::Hash(_)
+                        | Value::Set(..)
+                        | Value::Bag(..)
+                        | Value::Mix(..)
                 ) =>
             {
                 let tagged = self.tag_container_metadata((*inner).clone(), info);
@@ -4663,9 +4678,12 @@ impl Interpreter {
         info: ContainerTypeInfo,
     ) {
         match value {
-            Value::Array(items, ..) => self.array_type_metadata.insert(items, info),
-            Value::Hash(_) | Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
-                // Hash/Set/Bag/Mix type metadata is embedded in the backing
+            Value::Array(..)
+            | Value::Hash(_)
+            | Value::Set(..)
+            | Value::Bag(..)
+            | Value::Mix(..) => {
+                // Array/Hash/Set/Bag/Mix type metadata is embedded in the backing
                 // data struct — see `tag_container_metadata`. Reaching here
                 // means such a value flowed through the by-reference register
                 // path, which cannot embed (it has no owning slot to write
@@ -4702,55 +4720,8 @@ impl Interpreter {
         if let Some(info) = saved
             && let Some(arr @ Value::Array(..)) = self.env.get(key).cloned()
         {
-            self.register_container_type_metadata(&arr, info.clone());
-        }
-    }
-
-    /// Capture a container's pointer-keyed metadata (type info + `is default`)
-    /// before an in-place mutation. `Arc::make_mut` relocates the payload of a
-    /// guarded container (the metadata tables hold a `Weak` per entry), so the
-    /// post-mutation value carries a fresh pointer; pair with
-    /// `restore_container_meta` to move the metadata along.
-    pub(crate) fn capture_container_meta(
-        &self,
-        value: &Value,
-    ) -> (Option<ContainerTypeInfo>, Option<Value>) {
-        (
-            self.container_type_metadata(value),
-            self.container_default(value).cloned(),
-        )
-    }
-
-    /// Re-attach metadata captured by `capture_container_meta` to the
-    /// post-mutation container value.
-    pub(crate) fn restore_container_meta(
-        &mut self,
-        value: &Value,
-        saved: (Option<ContainerTypeInfo>, Option<Value>),
-    ) {
-        let (info, default) = saved;
-        if let Some(info) = info
-            && !matches!(value, Value::Hash(_))
-        {
-            self.register_container_type_metadata(value, info);
-        }
-        if let Some(default) = default {
-            self.set_container_default(value, default);
-        }
-    }
-
-    /// Remove container type metadata for a value, breaking the association.
-    pub(crate) fn unregister_container_type_metadata(&mut self, value: &Value) {
-        match value {
-            Value::Array(items, ..) => {
-                self.array_type_metadata.remove(ptr_keyed::ptr_key(items));
-            }
-            Value::Hash(_) => {
-                // Hash type metadata lives in `HashData`; clearing it requires
-                // an owning slot. See `clear_hash_type_metadata`.
-            }
-            Value::Mixin(inner, _) => self.unregister_container_type_metadata(inner),
-            _ => {}
+            let tagged = self.tag_container_metadata(arr, info.clone());
+            self.env.insert(key.to_string(), tagged);
         }
     }
 
@@ -4762,6 +4733,15 @@ impl Interpreter {
                 Arc::make_mut(&mut arc).clear_type_meta();
             }
             return Value::Hash(arc);
+        }
+        if let Value::Array(mut arc, kind) = value {
+            if arc.has_type_meta() {
+                let data = Arc::make_mut(&mut arc);
+                data.value_type = None;
+                data.key_type = None;
+                data.declared_type = None;
+            }
+            return Value::Array(arc, kind);
         }
         value
     }
@@ -4782,7 +4762,7 @@ impl Interpreter {
             };
         }
         match value {
-            Value::Array(items, ..) => self.array_type_metadata.get_arc(items).cloned(),
+            Value::Array(items, ..) => embedded_type_info!(items),
             Value::Mix(items, _) => embedded_type_info!(items),
             Value::Set(items, _) => embedded_type_info!(items),
             Value::Bag(items, _) => embedded_type_info!(items),
@@ -5544,10 +5524,8 @@ impl Interpreter {
             // running the atomic-variable read check.
             atomic_var_seen: self.atomic_var_seen,
             var_defaults: self.var_defaults.clone(),
-            array_defaults: self.array_defaults.clone(),
             hash_defaults: self.hash_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
-            array_type_metadata: self.array_type_metadata.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),

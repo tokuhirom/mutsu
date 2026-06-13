@@ -13,7 +13,14 @@ fn decoder_buffer(attrs: &HashMap<String, Value>) -> Vec<u8> {
 
 fn extend_buffer_from_value(out: &mut Vec<u8>, v: &Value) {
     match v {
-        Value::Array(items, ..) | Value::Slip(items) => {
+        Value::Array(items, ..) => {
+            for item in items.iter() {
+                if let Some(b) = value_to_byte(item) {
+                    out.push(b);
+                }
+            }
+        }
+        Value::Slip(items) => {
             for item in items.iter() {
                 if let Some(b) = value_to_byte(item) {
                     out.push(b);

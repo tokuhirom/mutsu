@@ -426,7 +426,7 @@ impl Interpreter {
                     proc_attrs.insert(
                         "command".to_string(),
                         Value::Array(
-                            std::sync::Arc::new(cmd_arr_clone),
+                            std::sync::Arc::new(crate::value::ArrayData::new(cmd_arr_clone)),
                             crate::value::ArrayKind::List,
                         ),
                     );

@@ -88,7 +88,7 @@ impl Interpreter {
                 let _ = Self::apply_hash_assignment_entry(&mut updated, normalized_value);
                 Value::hash(updated)
             }
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Array(items, _) => {
                 let mut updated = existing_hash;
                 let mut iter = items.iter().cloned();
                 if let Some(first) = iter.next()
@@ -99,6 +99,24 @@ impl Interpreter {
                 for item in iter {
                     if !Self::apply_hash_assignment_entry(&mut updated, item) {
                         return Value::Array(items.clone(), ArrayKind::List);
+                    }
+                }
+                Value::hash(updated)
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                let mut updated = existing_hash;
+                let mut iter = items.iter().cloned();
+                if let Some(first) = iter.next()
+                    && !Self::apply_hash_assignment_entry(&mut updated, first)
+                {
+                    // Preserve existing hash when comma assignment returns [<hash>, <pair>].
+                }
+                for item in iter {
+                    if !Self::apply_hash_assignment_entry(&mut updated, item) {
+                        return Value::Array(
+                            crate::value::Value::array_arc(items.clone().to_vec()),
+                            ArrayKind::List,
+                        );
                     }
                 }
                 Value::hash(updated)
@@ -254,7 +272,7 @@ impl Interpreter {
 
     pub(crate) fn overwrite_array_bindings_by_identity(
         &mut self,
-        needle: &std::sync::Arc<Vec<Value>>,
+        needle: &std::sync::Arc<crate::value::ArrayData>,
         replacement: Value,
     ) {
         let keys: Vec<Symbol> = self
@@ -296,7 +314,7 @@ impl Interpreter {
     /// share the same array container.
     pub(crate) fn propagate_shared_array_in_instances(
         &mut self,
-        needle: &std::sync::Arc<Vec<Value>>,
+        needle: &std::sync::Arc<crate::value::ArrayData>,
         replacement: &Value,
     ) {
         let mut updates: Vec<(Symbol, String)> = Vec::new();
@@ -673,14 +691,14 @@ impl Interpreter {
                     _ => std::collections::HashMap::new(),
                 };
                 hash.insert(key, value.clone());
-                let new_hash = Value::Hash(Value::hash_arc(hash));
+                let mut new_hash = Value::Hash(Value::hash_arc(hash));
                 // Propagate container type metadata to avoid stale pointer reuse
                 let meta = old_meta.unwrap_or(ContainerTypeInfo {
                     value_type: "Any".to_string(),
                     key_type: None,
                     declared_type: None,
                 });
-                let new_hash = self.tag_container_metadata(new_hash, meta);
+                new_hash = self.tag_container_metadata(new_hash, meta);
                 if let Some(var_name) = target_var {
                     self.env.insert(var_name.to_string(), new_hash);
                 }
@@ -707,7 +725,10 @@ impl Interpreter {
                 let mut updated = items.to_vec();
                 if idx < updated.len() {
                     updated[idx] = value.clone();
-                    let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+                    let replacement = Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+                        *kind,
+                    );
                     if let Some(var_name) = target_var {
                         self.env.insert(var_name.to_string(), replacement);
                     }
@@ -724,7 +745,10 @@ impl Interpreter {
             let idx = if method == "head" { 0 } else { items.len() - 1 };
             let mut updated = items.to_vec();
             updated[idx] = value.clone();
-            let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+            let replacement = Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+                *kind,
+            );
             if let Some(var_name) = target_var {
                 self.env.insert(var_name.to_string(), replacement);
             }
@@ -886,7 +910,7 @@ impl Interpreter {
                     return Ok(value);
                 }
                 let mut selected_hash: Option<std::sync::Arc<crate::value::HashData>> = None;
-                let mut selected_array: Option<std::sync::Arc<Vec<Value>>> = None;
+                let mut selected_array: Option<std::sync::Arc<crate::value::ArrayData>> = None;
 
                 if let Some(var_name) = target_var
                     && let Some(Value::Hash(candidate)) = self.env.get(var_name)
@@ -949,7 +973,8 @@ impl Interpreter {
                     let mut updated = (*source_array).clone();
                     if i < updated.len() {
                         updated[i] = value.clone();
-                        let replacement = Value::array(updated);
+                        let replacement =
+                            Value::Array(std::sync::Arc::new(updated), ArrayKind::List);
                         self.overwrite_array_bindings_by_identity(&source_array, replacement);
                         return Ok(value);
                     }
@@ -2461,9 +2486,9 @@ impl Interpreter {
                     // typed container as the receiver (`array[int]` splices to
                     // `array[int]`), so propagate the declared type onto the
                     // returned slice too.
-                    let removed_arr = Value::real_array(removed);
+                    let mut removed_arr = Value::real_array(removed);
                     if let Some(info) = &saved_meta {
-                        self.register_container_type_metadata(&removed_arr, info.clone());
+                        removed_arr = self.tag_container_metadata(removed_arr, info.clone());
                     }
                     return Ok(removed_arr);
                 }
@@ -2472,7 +2497,8 @@ impl Interpreter {
                     let squished = self.dispatch_squish(current, &args)?;
                     if self.in_lvalue_assignment {
                         let squished_items = match &squished {
-                            Value::Array(items, ..) | Value::Seq(items) => items.to_vec(),
+                            Value::Array(items, ..) => items.to_vec(),
+                            Value::Seq(items) => items.to_vec(),
                             other => vec![other.clone()],
                         };
                         self.env.insert(key, Value::real_array(squished_items));
@@ -2579,7 +2605,8 @@ impl Interpreter {
                     } else {
                         items.extend(normalized_args);
                     }
-                    let result = Value::Array(Arc::new(items), array_flag);
+                    let result =
+                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag);
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -2613,8 +2640,10 @@ impl Interpreter {
                     } else {
                         items.pop().unwrap_or(Value::Nil)
                     };
-                    self.env
-                        .insert(key, Value::Array(Arc::new(items), array_flag));
+                    self.env.insert(
+                        key,
+                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag),
+                    );
                     return Ok(out);
                 }
                 "unshift" => {
@@ -2633,7 +2662,8 @@ impl Interpreter {
                     for (i, arg) in normalized_args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result = Value::Array(Arc::new(items), array_flag);
+                    let result =
+                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag);
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -2652,9 +2682,14 @@ impl Interpreter {
                     };
                     let mut pref: Vec<Value> = flat_values;
                     pref.extend(items);
-                    let result = Value::Array(Arc::new(pref.clone()), array_flag);
-                    self.env
-                        .insert(key, Value::Array(Arc::new(pref), array_flag));
+                    let result = Value::Array(
+                        Arc::new(crate::value::ArrayData::new(pref.clone())),
+                        array_flag,
+                    );
+                    self.env.insert(
+                        key,
+                        Value::Array(Arc::new(crate::value::ArrayData::new(pref)), array_flag),
+                    );
                     return Ok(result);
                 }
                 "shift" => {
@@ -2682,8 +2717,10 @@ impl Interpreter {
                     } else {
                         items.remove(0)
                     };
-                    self.env
-                        .insert(key, Value::Array(Arc::new(items), array_flag));
+                    self.env.insert(
+                        key,
+                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag),
+                    );
                     return Ok(out);
                 }
                 _ => {}
@@ -3117,8 +3154,10 @@ impl Interpreter {
                             {
                                 let mut next = existing.to_vec();
                                 next.extend(collected);
-                                let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
+                                let updated_array = Value::Array(
+                                    std::sync::Arc::new(crate::value::ArrayData::new(next)),
+                                    *arr_kind,
+                                );
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             Value::str_from("IterationEnd")
@@ -3179,8 +3218,10 @@ impl Interpreter {
                             {
                                 let mut next = existing.to_vec();
                                 next.extend(collected.clone());
-                                let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
+                                let updated_array = Value::Array(
+                                    std::sync::Arc::new(crate::value::ArrayData::new(next)),
+                                    *arr_kind,
+                                );
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             if collected.len() >= want {
@@ -3261,7 +3302,10 @@ impl Interpreter {
                     if let Some(Value::Array(existing, arr_kind)) = args.first() {
                         let mut next = existing.to_vec();
                         next.extend(vals.iter().cloned());
-                        let updated_array = Value::Array(std::sync::Arc::new(next), *arr_kind);
+                        let updated_array = Value::Array(
+                            std::sync::Arc::new(crate::value::ArrayData::new(next)),
+                            *arr_kind,
+                        );
                         self.overwrite_array_bindings_by_identity(existing, updated_array);
                     }
                 };
@@ -3850,7 +3894,11 @@ impl Interpreter {
         for a in args {
             match &a {
                 Value::Int(_) => result.push(a),
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                Value::Array(items, ..) => {
+                    // Recursively flatten
+                    result.extend(Self::flatten_buf_args(items.to_vec()));
+                }
+                Value::Seq(items) | Value::Slip(items) => {
                     // Recursively flatten
                     result.extend(Self::flatten_buf_args(items.to_vec()));
                 }

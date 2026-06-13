@@ -346,7 +346,7 @@ pub(crate) fn native_method_0arg(
     if method == "pending" {
         let failures = crate::value::get_pending_failures();
         return Some(Ok(Value::Array(
-            std::sync::Arc::new(failures),
+            std::sync::Arc::new(crate::value::ArrayData::new(failures)),
             crate::value::ArrayKind::List,
         )));
     }

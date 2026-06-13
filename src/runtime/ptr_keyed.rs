@@ -93,14 +93,6 @@ impl<T, V> PtrKeyedMap<T, V> {
         self.get(ptr_key(arc))
     }
 
-    /// Remove and return the metadata for `id`, dead or alive. The guard
-    /// pins the entry's address, so an entry at `id` is always the container
-    /// that registered it — callers that recover metadata from a pre-COW
-    /// pointer (whose Arc may already be dropped) rely on this.
-    pub(crate) fn remove(&mut self, id: usize) -> Option<V> {
-        self.entries.remove(&id).map(|(_, value)| value)
-    }
-
     #[cfg(test)]
     pub(crate) fn raw_len(&self) -> usize {
         self.entries.len()
@@ -139,9 +131,6 @@ mod tests {
         map.insert(&a, "typed");
         drop(a);
         assert_eq!(map.get(key), None);
-        // `remove` still recovers the value (pre-COW migration relies on it).
-        assert_eq!(map.remove(key), Some("typed"));
-        assert_eq!(map.remove(key), None);
     }
 
     /// The flaky-killer invariant: after a guarded container dies, no

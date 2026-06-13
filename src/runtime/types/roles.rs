@@ -247,7 +247,7 @@ impl Interpreter {
             }
             Value::Pair(name, boxed) if self.registry().roles.contains_key(name) => {
                 if let Value::Array(args, ..) = boxed.as_ref() {
-                    Some((name.clone(), args.as_ref().clone()))
+                    Some((name.clone(), args.as_ref().clone().items))
                 } else {
                     None
                 }

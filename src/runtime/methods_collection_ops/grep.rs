@@ -287,7 +287,7 @@ impl Interpreter {
             Value::Array(items, arr_kind) => {
                 let (filtered, mutated_items) =
                     self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
-                let updated_source = std::sync::Arc::new(mutated_items);
+                let updated_source = crate::value::Value::array_data_like(&items, mutated_items);
                 self.overwrite_array_bindings_by_identity(
                     &items,
                     Value::Array(updated_source.clone(), arr_kind),

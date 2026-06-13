@@ -1097,7 +1097,7 @@ impl Interpreter {
         // copy unconditionally flattened nested `[...]`, which over-flattened
         // `flat(1, [2, [3, 4]], (5, 6))` (raku keeps the inner `[3 4]`).
         let list = Value::Array(
-            std::sync::Arc::new(args.to_vec()),
+            std::sync::Arc::new(crate::value::ArrayData::new(args.to_vec())),
             crate::value::ArrayKind::List,
         );
         let mut result = Vec::new();
@@ -1142,7 +1142,10 @@ impl Interpreter {
                 lines.push(Value::str(line));
             }
             lines.reverse();
-            return Ok(Value::Array(Arc::new(lines), ArrayKind::List));
+            return Ok(Value::Array(
+                Arc::new(crate::value::ArrayData::new(lines)),
+                ArrayKind::List,
+            ));
         }
         // Single arg: delegate to the single shared native `reverse` (Array / Seq
         // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy
@@ -1347,9 +1350,8 @@ impl Interpreter {
                 list_items.push(arg.clone());
             } else {
                 match arg {
-                    Value::Array(items, ..) | Value::Seq(items) => {
-                        list_items.extend(items.iter().cloned())
-                    }
+                    Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                    Value::Seq(items) => list_items.extend(items.iter().cloned()),
                     Value::Hash(map) => {
                         // Hashes in list context flatten to key-value Pairs
                         for (k, v) in map.iter() {
@@ -1527,9 +1529,8 @@ impl Interpreter {
         // Extract the list of matchers: if matcher is a list/array of callables/types,
         // use them in sequence; otherwise treat as a single matcher.
         let matchers: Vec<Value> = match &matcher {
-            Value::Array(elems, ..) | Value::Seq(elems) | Value::Slip(elems) => {
-                elems.iter().cloned().collect()
-            }
+            Value::Array(elems, ..) => elems.iter().cloned().collect(),
+            Value::Seq(elems) | Value::Slip(elems) => elems.iter().cloned().collect(),
             other => vec![other.clone()],
         };
 
@@ -1723,9 +1724,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         fn as_items(value: &Value) -> Option<Vec<Value>> {
             match value {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                    Some(items.iter().cloned().collect())
-                }
+                Value::Array(items, ..) => Some(items.iter().cloned().collect()),
+                Value::Seq(items) | Value::Slip(items) => Some(items.iter().cloned().collect()),
                 _ => None,
             }
         }
@@ -1896,9 +1896,8 @@ impl Interpreter {
         let mut items = Vec::new();
         for arg in &positional {
             match arg {
-                Value::Array(values, ..) | Value::Seq(values) | Value::Slip(values) => {
-                    items.extend(values.iter().cloned())
-                }
+                Value::Array(values, ..) => items.extend(values.iter().cloned()),
+                Value::Seq(values) | Value::Slip(values) => items.extend(values.iter().cloned()),
                 Value::LazyList(ll) => items.extend(self.force_lazy_list_bridge(ll)?),
                 v if v.is_range() => items.extend(crate::runtime::utils::value_to_list(v)),
                 other => items.push(other.clone()),
@@ -2072,7 +2071,7 @@ impl Interpreter {
                     {
                         match single {
                             Value::Array(items, _) => {
-                                values = items.as_ref().clone();
+                                values = items.as_ref().clone().items;
                             }
                             Value::Seq(items) | Value::Slip(items) => {
                                 values = items.as_ref().clone();
@@ -2309,7 +2308,10 @@ impl Interpreter {
                 } else {
                     crate::value::ArrayKind::List
                 };
-                Ok(Value::Array(std::sync::Arc::new(result), arr_kind))
+                Ok(Value::Array(
+                    std::sync::Arc::new(crate::value::ArrayData::new(result)),
+                    arr_kind,
+                ))
             }
             Value::Seq(items) => {
                 let mut result = Vec::new();
@@ -2323,7 +2325,7 @@ impl Interpreter {
                 if itemize_result {
                     // Itemize the result as a list
                     Ok(Value::Array(
-                        std::sync::Arc::new(result),
+                        std::sync::Arc::new(crate::value::ArrayData::new(result)),
                         crate::value::ArrayKind::ItemList,
                     ))
                 } else {

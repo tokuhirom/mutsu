@@ -200,7 +200,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 crate::value::seq_mark_cached(items);
                 Some(Ok(Value::Slip(items.clone())))
             }
-            Value::Array(items, ..) => Some(Ok(Value::Slip(items.clone()))),
+            Value::Array(items, ..) => {
+                // `.Slip` materializes array holes with the container's
+                // `is default(...)` value (Rakudo semantics: the .List keeps
+                // holes as Nil, while .Slip uses the default). The default is
+                // embedded in `ArrayData`, so this pure coercion can read it.
+                let vec: Vec<Value> = if let Some(def) = items.default.as_deref() {
+                    items
+                        .iter()
+                        .map(|v| match v {
+                            Value::Package(n) if n == "Any" => def.clone(),
+                            other => other.clone(),
+                        })
+                        .collect()
+                } else {
+                    items.to_vec()
+                };
+                Some(Ok(Value::Slip(std::sync::Arc::new(vec))))
+            }
             Value::Slip(_) => Some(Ok(target.clone())),
             Value::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
@@ -244,7 +261,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     )))
                 } else {
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(Vec::new()),
+                        std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                         crate::value::ArrayKind::List,
                     )))
                 }
@@ -723,7 +740,23 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             "List",
         )),
         // Array/List.Capture → positional args, with Pair values becoming named
-        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+        Value::Array(items, ..) => {
+            let mut positional = vec![];
+            let mut named = HashMap::new();
+            for item in items.iter() {
+                match item {
+                    Value::Pair(k, v) => {
+                        named.insert(k.clone(), *v.clone());
+                    }
+                    Value::ValuePair(k, v) => {
+                        named.insert(k.to_string_value(), *v.clone());
+                    }
+                    _ => positional.push(item.clone()),
+                }
+            }
+            Ok(Value::Capture { positional, named })
+        }
+        Value::Seq(items) | Value::Slip(items) => {
             let mut positional = vec![];
             let mut named = HashMap::new();
             for item in items.iter() {

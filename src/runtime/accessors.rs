@@ -1029,7 +1029,7 @@ impl Interpreter {
         // The `...` operator returns a Seq in Raku, not a List/Array.
         // Convert finite Array results to Seq; LazyList results stay as-is.
         match result {
-            Value::Array(items, _) => Ok(Value::Seq(items)),
+            Value::Array(items, _) => Ok(Value::Seq(std::sync::Arc::new(items.to_vec()))),
             other => Ok(other),
         }
     }
@@ -1173,7 +1173,7 @@ impl Interpreter {
             dispatcher_env.insert(
                 "__mutsu_multi_dispatch_candidates".to_string(),
                 Value::Array(
-                    std::sync::Arc::new(candidate_subs),
+                    std::sync::Arc::new(crate::value::ArrayData::new(candidate_subs)),
                     crate::value::ArrayKind::List,
                 ),
             );

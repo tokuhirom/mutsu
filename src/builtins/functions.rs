@@ -83,7 +83,12 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match v {
         // Lists, Seqs, and Slips are always flattened; their children
         // inherit flatten_arrays=true since Lists don't itemize.
-        Value::Array(items, ArrayKind::List) | Value::Seq(items) | Value::Slip(items) => {
+        Value::Array(items, ArrayKind::List) => {
+            for item in items.iter() {
+                flat_val(item, out, true);
+            }
+        }
+        Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flat_val(item, out, true);
             }
@@ -174,7 +179,7 @@ fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Value, RuntimeE
     let flattened: Vec<Value>;
     let actual_args = if rest.len() == 1 {
         if let Value::Array(items, ..) = &rest[0] {
-            flattened = items.as_ref().clone();
+            flattened = items.as_ref().clone().items;
             &flattened[..]
         } else {
             rest
@@ -893,7 +898,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Value::Array(items, ..) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::array(reversed)
+                    Value::array(reversed.items)
                 }
                 Value::Seq(items) | Value::Slip(items) => {
                     let mut reversed = (**items).clone();
@@ -923,7 +928,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Value::Array(items, ..) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::array(sorted)
+                    Value::array(sorted.items)
                 }
                 _ => Value::Nil,
             }))
@@ -1656,18 +1661,18 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             // fold with junction-aware addition
             let has_junction = args.iter().any(|a| match a {
                 Value::Junction { .. } => true,
-                Value::Array(items, ..) | Value::Seq(items) => {
+                Value::Array(items, ..) => {
                     items.iter().any(|v| matches!(v, Value::Junction { .. }))
                 }
+                Value::Seq(items) => items.iter().any(|v| matches!(v, Value::Junction { .. })),
                 _ => false,
             });
             if has_junction {
                 let items: Vec<Value> = args
                     .iter()
                     .flat_map(|a| match a {
-                        Value::Array(items, ..) | Value::Seq(items) => {
-                            items.iter().cloned().collect::<Vec<_>>()
-                        }
+                        Value::Array(items, ..) => items.iter().cloned().collect::<Vec<_>>(),
+                        Value::Seq(items) => items.iter().cloned().collect::<Vec<_>>(),
                         other => vec![other.clone()],
                     })
                     .collect();
@@ -1840,7 +1845,19 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                             }
                         }
                     }
-                    Value::Array(items, ..) | Value::Seq(items) => {
+                    Value::Array(items, ..) => {
+                        for item in items.iter() {
+                            if has_num {
+                                total_f += item.to_f64();
+                            } else if let Value::Num(_) = item {
+                                total_f = total as f64 + item.to_f64();
+                                has_num = true;
+                            } else {
+                                total += item.to_f64() as i64;
+                            }
+                        }
+                    }
+                    Value::Seq(items) => {
                         for item in items.iter() {
                             if has_num {
                                 total_f += item.to_f64();
@@ -1882,12 +1899,12 @@ fn builtin_times() -> Result<Value, RuntimeError> {
             let user = usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0;
             let sys = usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0;
             Ok(Value::Array(
-                vec![Value::Num(user), Value::Num(sys)].into(),
+                crate::value::Value::array_arc(vec![Value::Num(user), Value::Num(sys)]),
                 ArrayKind::List,
             ))
         } else {
             Ok(Value::Array(
-                vec![Value::Num(0.0), Value::Num(0.0)].into(),
+                crate::value::Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
                 ArrayKind::List,
             ))
         }
@@ -1895,7 +1912,7 @@ fn builtin_times() -> Result<Value, RuntimeError> {
     #[cfg(not(unix))]
     {
         Ok(Value::Array(
-            vec![Value::Num(0.0), Value::Num(0.0)].into(),
+            crate::value::Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
             ArrayKind::List,
         ))
     }
@@ -1958,7 +1975,7 @@ fn builtin_localtime_gmtime(name: &str, args: &[Value]) -> Result<Value, Runtime
         } else {
             // List context: return the 9-element list
             Ok(Value::Array(
-                vec![
+                crate::value::Value::array_arc(vec![
                     Value::Int(sec as i64),
                     Value::Int(min as i64),
                     Value::Int(hour as i64),
@@ -1968,8 +1985,7 @@ fn builtin_localtime_gmtime(name: &str, args: &[Value]) -> Result<Value, Runtime
                     Value::Int(wday as i64),
                     Value::Int(yday as i64),
                     Value::Int(isdst as i64),
-                ]
-                .into(),
+                ]),
                 ArrayKind::List,
             ))
         }

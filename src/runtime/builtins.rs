@@ -353,13 +353,13 @@ impl Interpreter {
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(Value::Array(
-                    std::sync::Arc::new(vec![
+                    std::sync::Arc::new(crate::value::ArrayData::new(vec![
                         args.first().cloned().unwrap_or(Value::Nil),
                         args.get(1).cloned().unwrap_or(Value::Array(
-                            std::sync::Arc::new(Vec::new()),
+                            std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                             crate::value::ArrayKind::List,
                         )),
-                    ]),
+                    ])),
                     crate::value::ArrayKind::List,
                 )),
             )),
@@ -614,7 +614,7 @@ impl Interpreter {
                 } else {
                     // take with multiple args creates a single list element
                     Value::Array(
-                        std::sync::Arc::new(args.clone()),
+                        std::sync::Arc::new(crate::value::ArrayData::new(args.clone())),
                         crate::value::ArrayKind::List,
                     )
                 };

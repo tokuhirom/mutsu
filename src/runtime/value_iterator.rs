@@ -21,8 +21,14 @@ use std::sync::Arc;
 
 /// A pull source over `Value` elements.
 pub(crate) enum ValueIterator {
-    /// Already-materialized elements (Array / Seq / Slip). Shares the source `Arc`.
+    /// Already-materialized elements (Seq / Slip). Shares the source `Arc`.
     Slice { items: Arc<Vec<Value>>, idx: usize },
+    /// Already-materialized Array elements. Shares the source `Arc` (the
+    /// `ArrayData` wrapper derefs to the element vector — no copy).
+    ArraySlice {
+        items: Arc<crate::value::ArrayData>,
+        idx: usize,
+    },
     /// Lazy integer counter. `end == i64::MAX` with `inclusive` represents an
     /// open-ended (infinite) range and must never be eagerly collected.
     IntRange { cur: i64, end: i64, inclusive: bool },
@@ -38,7 +44,7 @@ impl ValueIterator {
     pub(crate) fn from_value(val: &Value) -> Option<ValueIterator> {
         match val {
             // Already-materialized sequences: share the backing Arc, no copy.
-            Value::Array(items, kind) if !kind.is_itemized() => Some(ValueIterator::Slice {
+            Value::Array(items, kind) if !kind.is_itemized() => Some(ValueIterator::ArraySlice {
                 items: items.clone(),
                 idx: 0,
             }),
@@ -78,6 +84,11 @@ impl ValueIterator {
     pub(crate) fn pull_one(&mut self) -> Option<Value> {
         match self {
             ValueIterator::Slice { items, idx } => {
+                let v = items.get(*idx).cloned()?;
+                *idx += 1;
+                Some(v)
+            }
+            ValueIterator::ArraySlice { items, idx } => {
                 let v = items.get(*idx).cloned()?;
                 *idx += 1;
                 Some(v)

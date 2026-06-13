@@ -342,7 +342,12 @@ impl Interpreter {
                 }
             }
             Value::Whatever => out.push(Self::parse_nth_token("*", total)?),
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Array(items, ..) => {
+                for item in items.iter() {
+                    self.collect_nth_indices_from_value(item, total, out)?;
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => {
                 for item in items.iter() {
                     self.collect_nth_indices_from_value(item, total, out)?;
                 }

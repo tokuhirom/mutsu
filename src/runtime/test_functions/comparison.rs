@@ -304,9 +304,15 @@ impl Interpreter {
 
     fn seq_to_list(&mut self, v: &Value) -> Value {
         match v {
-            Value::Seq(items) => Value::Array(items.clone(), ArrayKind::List),
+            Value::Seq(items) => Value::Array(
+                crate::value::Value::array_arc(items.clone().to_vec()),
+                ArrayKind::List,
+            ),
             Value::LazyList(list) => match self.force_lazy_list(list) {
-                Ok(items) => Value::Array(std::sync::Arc::new(items), ArrayKind::List),
+                Ok(items) => Value::Array(
+                    std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                    ArrayKind::List,
+                ),
                 Err(_) => v.clone(),
             },
             // A lazy IO words/lines iterator must be drained before comparison so
@@ -315,7 +321,10 @@ impl Interpreter {
                 match self.force_lazy_io_lines(handle, *words) {
                     Ok(forced) => {
                         let items = crate::runtime::utils::value_to_list(&forced);
-                        Value::Array(std::sync::Arc::new(items), ArrayKind::List)
+                        Value::Array(
+                            std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                            ArrayKind::List,
+                        )
                     }
                     Err(_) => v.clone(),
                 }

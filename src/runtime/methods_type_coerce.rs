@@ -6,7 +6,7 @@ impl Interpreter {
     pub(super) fn dispatch_seq_coercion(&mut self, target: Value) -> Result<Value, RuntimeError> {
         Ok(match target {
             Value::Seq(_) => target,
-            Value::Array(items, ..) => Value::Seq(items),
+            Value::Array(items, ..) => Value::Seq(std::sync::Arc::new(items.to_vec())),
             Value::Slip(items) => Value::Seq(items),
             Value::Instance {
                 class_name,
@@ -60,7 +60,7 @@ impl Interpreter {
             } =>
             {
                 if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                    Value::Seq(items.clone())
+                    Value::Seq(std::sync::Arc::new(items.clone().to_vec()))
                 } else {
                     Value::Seq(std::sync::Arc::new(Vec::new()))
                 }
@@ -91,14 +91,14 @@ impl Interpreter {
                     return Ok(Value::Array(items.clone(), crate::value::ArrayKind::List));
                 }
                 return Ok(Value::Array(
-                    std::sync::Arc::new(Vec::new()),
+                    std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
                     crate::value::ArrayKind::List,
                 ));
             }
         }
         let items = Self::value_to_list(&target);
         Ok(Value::Array(
-            std::sync::Arc::new(items),
+            std::sync::Arc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         ))
     }

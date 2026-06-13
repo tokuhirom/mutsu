@@ -549,7 +549,7 @@ impl Interpreter {
             let inner = inner.trim().to_string();
             let items = match Self::coerce_attr_value_by_sigil(value, '@') {
                 Value::Array(items, _) => (*items).clone(),
-                other => vec![other],
+                other => crate::value::ArrayData::new(vec![other]),
             };
             if inner.starts_with(char::is_uppercase) {
                 for it in &items {
@@ -560,9 +560,9 @@ impl Interpreter {
                     }
                 }
             }
-            let arr = Value::real_array(items);
-            self.register_container_type_metadata(
-                &arr,
+            let mut arr = Value::real_array(items.items);
+            arr = self.tag_container_metadata(
+                arr,
                 super::ContainerTypeInfo {
                     value_type: inner,
                     key_type: None,
@@ -1099,7 +1099,8 @@ impl Interpreter {
                     let mut items = Vec::new();
                     for arg in &args {
                         match arg {
-                            Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals) => {
+                            Value::Array(vals, ..) => items.extend(vals.iter().cloned()),
+                            Value::Seq(vals) | Value::Slip(vals) => {
                                 items.extend(vals.iter().cloned())
                             }
                             Value::Instance {
@@ -1107,11 +1108,14 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "IterationBuffer" => {
-                                if let Some(
-                                    Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals),
-                                ) = attributes.as_map().get("__mutsu_iterationbuffer_items")
-                                {
-                                    items.extend(vals.iter().cloned());
+                                match attributes.as_map().get("__mutsu_iterationbuffer_items") {
+                                    Some(Value::Array(vals, ..)) => {
+                                        items.extend(vals.iter().cloned())
+                                    }
+                                    Some(Value::Seq(vals)) | Some(Value::Slip(vals)) => {
+                                        items.extend(vals.iter().cloned())
+                                    }
+                                    _ => {}
                                 }
                             }
                             other => items.push(other.clone()),
@@ -1154,7 +1158,7 @@ impl Interpreter {
                         } else {
                             data
                         };
-                        let shaped = Self::make_shaped_array(&dims);
+                        let mut shaped = Self::make_shaped_array(&dims);
                         if let Some(ref data_val) = data
                             && let Some(source_shape) =
                                 crate::runtime::utils::shaped_array_shape(data_val)
@@ -1167,9 +1171,8 @@ impl Interpreter {
                         if let Some(data_val) = data {
                             // Populate the shaped array with data
                             let data_items = match data_val {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items.to_vec(),
+                                Value::Array(items, ..) => items.to_vec(),
+                                Value::Seq(items) | Value::Slip(items) => items.to_vec(),
                                 Value::Range(..)
                                 | Value::RangeExcl(..)
                                 | Value::RangeExclStart(..)
@@ -1185,9 +1188,10 @@ impl Interpreter {
                                 let mut flat = Vec::new();
                                 for item in data_items {
                                     match item {
-                                        Value::Array(inner, ..)
-                                        | Value::Seq(inner)
-                                        | Value::Slip(inner) => {
+                                        Value::Array(inner, ..) => {
+                                            flat.extend(inner.iter().cloned());
+                                        }
+                                        Value::Seq(inner) | Value::Slip(inner) => {
                                             flat.extend(inner.iter().cloned());
                                         }
                                         Value::Range(..)
@@ -1242,7 +1246,8 @@ impl Interpreter {
                                         new_items[i] = val;
                                     }
                                 }
-                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                                let mut result =
+                                    Value::Array(std::sync::Arc::new(new_items), is_arr);
                                 crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
                                 // Register type metadata for typed shaped arrays (e.g. array[str].new(:shape(5), ...))
                                 if let Some(ref ta) = type_args
@@ -1257,7 +1262,7 @@ impl Interpreter {
                                             class_name.resolve()
                                         }),
                                     };
-                                    self.register_container_type_metadata(&result, info);
+                                    result = self.tag_container_metadata(result, info);
                                 }
                                 return Ok(result);
                             }
@@ -1275,7 +1280,7 @@ impl Interpreter {
                                     class_name.resolve()
                                 }),
                             };
-                            self.register_container_type_metadata(&shaped, info);
+                            shaped = self.tag_container_metadata(shaped, info);
                         }
                         return Ok(shaped);
                     }
@@ -1330,7 +1335,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    let result = if matches!(base_class_name, "Array" | "array") {
+                    let mut result = if matches!(base_class_name, "Array" | "array") {
                         Value::real_array(items)
                     } else {
                         Value::array(items)
@@ -1348,7 +1353,7 @@ impl Interpreter {
                                 class_name.resolve()
                             }),
                         };
-                        self.register_container_type_metadata(&result, info);
+                        result = self.tag_container_metadata(result, info);
                     }
                     return Ok(result);
                 }
@@ -1431,7 +1436,12 @@ impl Interpreter {
                     let mut flat_args: Vec<&Value> = Vec::new();
                     for a in &args {
                         match a {
-                            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                            Value::Array(items, ..) => {
+                                for item in items.iter() {
+                                    flat_args.push(item);
+                                }
+                            }
+                            Value::Seq(items) | Value::Slip(items) => {
                                 for item in items.iter() {
                                     flat_args.push(item);
                                 }
@@ -2989,11 +2999,10 @@ impl Interpreter {
                             data
                         };
                         let shaped = Self::make_shaped_array(&dims);
-                        let result = if let Some(data_val) = data {
+                        let mut result = if let Some(data_val) = data {
                             let data_items = match data_val {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items.to_vec(),
+                                Value::Array(items, ..) => items.to_vec(),
+                                Value::Seq(items) | Value::Slip(items) => items.to_vec(),
                                 other => vec![other],
                             };
                             if let Value::Array(ref items, is_arr) = shaped {
@@ -3016,8 +3025,8 @@ impl Interpreter {
                             .first()
                             .cloned()
                             .unwrap_or_else(|| "Any".to_string());
-                        self.register_container_type_metadata(
-                            &result,
+                        result = self.tag_container_metadata(
+                            result,
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type: None,
@@ -3037,7 +3046,7 @@ impl Interpreter {
                             other => items.push(other.clone()),
                         }
                     }
-                    let result = if matches!(base_class_name, "Array" | "array") {
+                    let mut result = if matches!(base_class_name, "Array" | "array") {
                         Value::real_array(items)
                     } else {
                         Value::array(items)
@@ -3046,8 +3055,8 @@ impl Interpreter {
                         .first()
                         .cloned()
                         .unwrap_or_else(|| "Any".to_string());
-                    self.register_container_type_metadata(
-                        &result,
+                    result = self.tag_container_metadata(
+                        result,
                         crate::runtime::ContainerTypeInfo {
                             value_type,
                             key_type: None,
@@ -3435,7 +3444,7 @@ impl Interpreter {
                     {
                         let items = match val {
                             Value::Array(items, _) => (**items).clone(),
-                            _ => vec![val.clone()],
+                            _ => crate::value::ArrayData::new(vec![val.clone()]),
                         };
                         let shaped = Value::Array(std::sync::Arc::new(items), ArrayKind::Shaped);
                         crate::runtime::utils::mark_shaped_array(&shaped, Some(&dims));
@@ -3572,9 +3581,9 @@ impl Interpreter {
                                         .or_else(|| type_name.strip_prefix("array["))
                                         .and_then(|s| s.strip_suffix(']'))
                                     {
-                                        let arr = Value::real_array(Vec::new());
-                                        self.register_container_type_metadata(
-                                            &arr,
+                                        let mut arr = Value::real_array(Vec::new());
+                                        arr = self.tag_container_metadata(
+                                            arr,
                                             super::ContainerTypeInfo {
                                                 value_type: inner.trim().to_string(),
                                                 key_type: None,
@@ -3593,7 +3602,7 @@ impl Interpreter {
                                         }
                                     }
                                 } else {
-                                    let arr = Value::real_array(Vec::new());
+                                    let mut arr = Value::real_array(Vec::new());
                                     // Register element type constraint for typed array attributes
                                     let tc = self
                                         .registry()
@@ -3602,8 +3611,8 @@ impl Interpreter {
                                         .and_then(|cd| cd.attribute_types.get(&attr_name))
                                         .cloned();
                                     if let Some(tc) = tc {
-                                        self.register_container_type_metadata(
-                                            &arr,
+                                        arr = self.tag_container_metadata(
+                                            arr,
                                             super::ContainerTypeInfo {
                                                 value_type: tc,
                                                 key_type: None,
@@ -3989,9 +3998,9 @@ impl Interpreter {
                                     .or_else(|| type_name.strip_prefix("array["))
                                     .and_then(|s| s.strip_suffix(']'))
                                 {
-                                    let arr = Value::real_array(Vec::new());
-                                    self.register_container_type_metadata(
-                                        &arr,
+                                    let mut arr = Value::real_array(Vec::new());
+                                    arr = self.tag_container_metadata(
+                                        arr,
                                         super::ContainerTypeInfo {
                                             value_type: inner.trim().to_string(),
                                             key_type: None,
@@ -4091,15 +4100,15 @@ impl Interpreter {
                         attrs.insert(attr_name, Value::mixin(base, mixins));
                     }
                 }
-                let instance = Value::make_instance(*class_name, attrs);
+                let mut instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
                     if self.class_mro(class_key).iter().any(|n| n == "Array") {
                         let value_type = type_args
                             .first()
                             .cloned()
                             .unwrap_or_else(|| "Any".to_string());
-                        self.register_container_type_metadata(
-                            &instance,
+                        instance = self.tag_container_metadata(
+                            instance,
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type: None,
@@ -4112,8 +4121,8 @@ impl Interpreter {
                             .cloned()
                             .unwrap_or_else(|| "Any".to_string());
                         let key_type = type_args.get(1).cloned();
-                        self.register_container_type_metadata(
-                            &instance,
+                        instance = self.tag_container_metadata(
+                            instance,
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type,

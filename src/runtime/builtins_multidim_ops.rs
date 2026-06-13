@@ -67,11 +67,14 @@ impl Interpreter {
                 if exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, v]),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, v])),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -94,11 +97,14 @@ impl Interpreter {
                 if !exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, v]),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, v])),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "not-p" => {
@@ -271,11 +277,17 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![
+                            key,
+                            Value::Bool(exists),
+                        ])),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -546,11 +558,14 @@ impl Interpreter {
                 if exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, v]),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, v])),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {
@@ -654,11 +669,17 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![
+                            key,
+                            Value::Bool(exists),
+                        ])),
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                    Ok(Value::Array(
+                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        ArrayKind::List,
+                    ))
                 }
             }
             "p" => {

@@ -348,7 +348,18 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         }
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
-        Value::Array(ref items, crate::value::ArrayKind::List) | Value::Seq(ref items) => {
+        Value::Array(ref items, crate::value::ArrayKind::List) => {
+            for item in items.iter() {
+                flatten_into(
+                    &mut counts,
+                    &mut original_keys,
+                    &mut has_non_str_keys,
+                    item,
+                    true,
+                )?;
+            }
+        }
+        Value::Seq(ref items) => {
             for item in items.iter() {
                 flatten_into(
                     &mut counts,
@@ -628,9 +639,12 @@ pub(crate) fn to_mix(target: Value) -> Result<Value, RuntimeError> {
         Value::Mix(_, _) => return Ok(target),
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
-        Value::Array(items, crate::value::ArrayKind::List)
-        | Value::Seq(items)
-        | Value::Slip(items) => {
+        Value::Array(items, crate::value::ArrayKind::List) => {
+            for item in items.iter() {
+                mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
+            }
+        }
+        Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
             }

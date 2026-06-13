@@ -378,7 +378,8 @@ impl VM {
             && let Some(container) = self.interpreter.env().get(&var_name).cloned()
             && self.interpreter.container_default(&container).is_none()
         {
-            self.interpreter.set_container_default(&container, def);
+            let tagged = self.interpreter.tag_container_default(container, def);
+            self.interpreter.env_mut().insert(var_name.clone(), tagged);
         }
         // Sync env value to locals so reads through locals see the
         // updated container after delete (Arc::make_mut may have changed

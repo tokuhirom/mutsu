@@ -23,7 +23,7 @@ impl Interpreter {
         let flattened: Vec<Value>;
         let actual_args = if rest.len() == 1 {
             if let Value::Array(items, ..) = &rest[0] {
-                flattened = items.as_ref().clone();
+                flattened = items.as_ref().clone().items;
                 &flattened
             } else {
                 rest
