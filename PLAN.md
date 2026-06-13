@@ -248,9 +248,14 @@ STATUS で撤回済み。
       ContainerRef へ拡張し、VAR ハンドラ（methods_mut.rs）が marker を見て target を返す。scalar rebind
       （`$r := ...`、VarDecl でないので `__scalar_bind` 無し）も `MarkScalarBindContext` を emit して marker 維持。
       `t/var-name-bind.t`(16)。
-- [ ] **配列/ハッシュ要素のセル化（COW）= Phase 2 残り** — 深い `>>++`・`deepmap(++*)`（hyper.t 330-333）。
-      最ホット表現に触る大改修。下記「設計の鍵」を適用。（`is rw` 共有セル #2928・take-rw #2930・
-      束縛要素セル #2902-#2925 は landed）
+- [x] **配列/ハッシュ要素のセル化（COW）= Phase 2 残り (DONE)** — 深い `>>++`・`deepmap(++*)`。
+      whole-container `:=` bind 共有（`@b:=@a`/`$r:=@a` #2990/#2993）、nested-element hyper writeback
+      （`@b[0]>>++` #2996）、hyper lvalue-precise writeback（`@a>>++` が COW コピーを破壊しない #2999）。
+      （`is rw` 共有セル #2928・take-rw #2930・束縛要素セル #2902-#2925 も landed）
+- [ ] **配列/ハッシュ param の別名束縛（parameter-binding cells）= 残る最大の container 正しさ項目** —
+      raku は plain `@x`/`%h` param を caller に alias 束縛（`sub f(@x){@x.push}` が伝播）。**mutsu は配列 param を
+      コピー**（hash param と `is raw` は既に alias 動作）。全関数呼び出しに影響する大改修・高 blast radius のため
+      **専用セッション**で。設計・調査・現状の事実表は **`docs/param-binding-cells-plan.md`**。
 - [~] **object-hash（`%h{KeyType}`）** — キー保存（original_keys）は HashData 埋め込みで **COW-stable 化済み**
       (#2954)。mixin キー・`.new`/`.clone` 維持 (#2956)、multidim Range slice `:exists` (#2959) も landed。
       残る `S09-hashes/objecthash.t`（非whitelist）の失敗は**型強制/構築の別系統課題**（互いに独立）:
