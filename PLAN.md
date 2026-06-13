@@ -131,8 +131,15 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 - [ ] **トラック B — 第一級コンテナ Phase 2（要素セル）** ＝ データ表現（A と完全独立）
       設計・段階導入は 🟣第2優先「第一級コンテナ」セクション参照（Phase 1 = landed）。
       - [ ] Phase 0.5 第2段（スタック不変条件 + lvalue opcode）を Phase 2 と同一 PR で。
-      - [ ] 配列/ハッシュ要素の COW セル化 → array-backed mut・shaped/non-simple push・hyper temp・
+      - [~] 配列/ハッシュ要素の COW セル化 → array-backed mut・shaped/non-simple push・hyper temp・
             深い `>>++` を解く（take-rw は #2930、`@a[0]:=`/束縛要素セルは #2902-#2925 で landed）。
+            - [x] **whole-container `:=` bind 共有（`my @b := @a` / `my %g := %h`）**: 両変数が単一の
+                  共有 `ContainerRef` cell を持ち、push/pop/shift/unshift/splice/index-assign/slice-assign/
+                  delete の変異が双方向に伝播（旧実装は inner Arc 共有のみで COW push が detach していた）。
+                  GetArrayVar/GetHashVar がトップレベル cell を decont（Phase 0.5 第2段の読み側）、bind 経路が
+                  cell を生成、変異 op（native array mut/splice・delete）が `env_root_descended_mut` で
+                  cell を descend。`t/whole-container-bind.t`(26)。**残**: スカラー `$ref := @a`（`$`-bind は
+                  bind_vardecl=false で WrapVarRef 非 emit → コンパイラ変更が前提・別 PR）。
       - [x] **Q2 の型メタ Arc-ptr flaky の構造的除去 = 完全吸収 DONE（2026-06-12〜13）**:
             Hash = HashData (#2952、original_keys = #2954)、Set/Bag/Mix = 既存 *Data 埋め込み (#2957)、
             **Array = ArrayData wrapper（2026-06-13）— 全 5 コンテナ型の型メタがコンテナ値に埋め込まれ、
