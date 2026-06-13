@@ -3843,6 +3843,7 @@ impl VM {
                 arity,
                 modifier_idx,
                 quoted,
+                target_name_idx,
             } => {
                 match self.exec_hyper_method_call_op(
                     code,
@@ -3850,6 +3851,7 @@ impl VM {
                     *arity,
                     *modifier_idx,
                     *quoted,
+                    *target_name_idx,
                 ) {
                     Ok(()) => {}
                     Err(e) => {

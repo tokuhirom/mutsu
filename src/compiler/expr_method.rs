@@ -370,11 +370,21 @@ impl Compiler {
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
+        // For a plain `@`/`%` variable target, record its name so a mutating
+        // hyper (`@a>>++`) writes back precisely to that binding rather than to
+        // every Arc-identity-sharing binding (which corrupts COW copies like
+        // `my @x = @a`).
+        let target_name_idx = match target {
+            Expr::ArrayVar(n) => Some(self.code.add_constant(Value::str(format!("@{}", n)))),
+            Expr::HashVar(n) => Some(self.code.add_constant(Value::str(format!("%{}", n)))),
+            _ => None,
+        };
         self.code.emit(OpCode::HyperMethodCall {
             name_idx,
             arity,
             modifier_idx,
             quoted,
+            target_name_idx,
         });
     }
 
