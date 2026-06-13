@@ -5,7 +5,7 @@ use super::super::{keyword, qualified_ident};
 use super::constant_subset::constant_decl;
 use super::helpers::{parse_sigilless_decl_name, register_term_symbol_from_decl_name};
 use super::my_decl_assign::parse_colon_args;
-use super::{parse_decl_type_constraint, parse_statement_modifier, typed_default_expr};
+use super::{parse_decl_type_constraint, parse_statement_modifier};
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -129,22 +129,18 @@ pub(super) fn parse_sigilless_decl(
         }
         return Ok((r, stmt));
     }
-    Ok((
-        r,
-        Stmt::VarDecl {
-            name,
-            expr: type_constraint
-                .as_deref()
-                .map_or(Expr::Literal(Value::Nil), typed_default_expr),
-            type_constraint,
-            is_state,
-            is_our,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        },
+    // A sigilless term declaration (`my \foo`) requires an initializer; there
+    // is no implicit default like a sigilled variable has. rakudo rejects this
+    // at compile time with X::Syntax::Term::MissingInitializer.
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        "message".to_string(),
+        Value::str("Term definition requires an initializer".to_string()),
+    );
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Term::MissingInitializer"), attrs);
+    Err(PError::fatal_with_exception(
+        "Term definition requires an initializer".to_string(),
+        Box::new(ex),
     ))
 }
 
