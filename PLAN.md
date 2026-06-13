@@ -259,8 +259,17 @@ STATUS で撤回済み。
       （scalar `$` は readonly 維持）。`is copy` はコピー継続。`t/param-array-alias.t`(15)。
       既知の残り: 同一変数を 2 つの param に渡す `f(@z,@z)`（writeback 上書き、main から非回帰）と `return-rw @x` 越し
       の live alias は writeback では非対応（cell 化が必要・極めて稀）。設計メモ=`docs/param-binding-cells-plan.md`。
+- [x] **named for-loop 変数の別名束縛 + topic writeback O(n²) 修正 (#3008)** — plain（非 `is copy`）named
+      for-loop 変数（`for @m -> @row`/`-> $row`/`-> %r`）が要素を alias 束縛（topic と同じ per-iteration source
+      writeback 経由、`is copy`/`<->` 除外）。付随して **pre-existing O(n²)** を修正: topic writeback が毎反復
+      配列全体を rebuild（`for @big {...}` 40k で ~46s）→ `loop_var_unchanged`（同一束縛なら O(1) skip）で O(n) 化
+      （50k で ~73s→~0.8s）。`t/for-loop-named-param-alias.t`(16)。**残 niche（deferred）**: `for %h<k>.values { $_ }`
+      の rw-writeback が element source 未対応、`.push(@var)` の参照格納（Raku `**@` slurpy alias）。
 - [~] **object-hash（`%h{KeyType}`）** — キー保存（original_keys）は HashData 埋め込みで **COW-stable 化済み**
       (#2954)。mixin キー・`.new`/`.clone` 維持 (#2956)、multidim Range slice `:exists` (#2959) も landed。
+      **キー表示の全経路修正 (#3007)**: `.sort`/`.gist`/`.Str`/`.raku`/`.list`/`.map`/`for`/`@`-flatten/`.min`/`.max`/
+      `:k`/`:kv`/`:p` slice が内部 WHICH 文字列（`Int|1`）を漏らしていたのを `HashData::typed_key`/`typed_pair`
+      で実キーへ統一。slice adverb の `value_which_key` lookup も修正（object hash で空を返していた）。
       残る `S09-hashes/objecthash.t`（非whitelist）の失敗は**型強制/構築の別系統課題**（互いに独立）:
       ① test 3 = `%h{Any}` の Mu キー拒否 — 根は object-hash でなく **`Mu.new` が `Any` 型インスタンスを生成**
       （`Mu.new ~~ Any` が誤 True、smartmatch 全体に波及・高リスク）。② test 21/23/24 = `Hash.push` 型チェック。
