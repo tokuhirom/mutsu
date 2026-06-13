@@ -4105,7 +4105,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::IndexAssignGeneric => {
-                self.exec_index_assign_generic_op()?;
+                self.exec_index_assign_generic_op(code)?;
                 *ip += 1;
             }
             OpCode::MakeBlockClosure(idx, cc_idx) => {
