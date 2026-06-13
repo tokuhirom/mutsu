@@ -407,7 +407,10 @@ impl VM {
         // iterable carries a registered grep-view binding, remember the source
         // array + matched indices so the loop can write modified topics back.
         self.for_grep_view = match &iterable {
-            Value::Array(items, _) => crate::runtime::utils::get_grep_view_binding(items),
+            Value::Array(items, _) => items
+                .grep_source
+                .as_deref()
+                .map(|gv| (gv.source.clone(), gv.indices.clone(), gv.source_kind)),
             _ => None,
         };
 

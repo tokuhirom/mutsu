@@ -363,19 +363,17 @@ impl VM {
                 items.clone(),
                 *kind,
             );
-            if let Some((source, indices, source_kind)) =
-                crate::runtime::utils::get_grep_view_binding(existing)
-            {
-                let mut source_items = source.to_vec();
-                for (filtered_idx, source_idx) in indices.iter().enumerate() {
+            if let Some(gv) = existing.grep_source.as_deref() {
+                let mut source_items = gv.source.to_vec();
+                for (filtered_idx, source_idx) in gv.indices.iter().enumerate() {
                     if filtered_idx < items.len() && *source_idx < source_items.len() {
                         source_items[*source_idx] = items[filtered_idx].clone();
                     }
                 }
                 self.interpreter.overwrite_array_items_by_identity_for_vm(
-                    &source,
+                    &gv.source,
                     source_items,
-                    source_kind,
+                    gv.source_kind,
                 );
             }
             self.env_dirty = true;
