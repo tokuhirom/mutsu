@@ -480,6 +480,20 @@ impl VM {
                 .get(target_name)
                 .cloned()
                 .unwrap_or(Value::Nil);
+            // Phase 2 Stage 2: a `:=`-cell-bound variable (`@x[0] := @b` /
+            // `%h<k> := @b`) holds a shared `ContainerRef` cell. Decont for
+            // the dispatch and write the mutated container back through the
+            // cell so every alias observes the push.
+            if let Value::ContainerRef(cell) = target {
+                let inner = cell.lock().unwrap().clone();
+                let result = self
+                    .interpreter
+                    .call_method_with_values(inner, "push", vec![val])?;
+                *cell.lock().unwrap() = result.clone();
+                self.stack.push(result);
+                self.env_dirty = true;
+                return Ok(());
+            }
             let result = self
                 .interpreter
                 .call_method_with_values(target, "push", vec![val])?;

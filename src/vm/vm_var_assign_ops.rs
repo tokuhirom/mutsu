@@ -4,6 +4,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
+/// A `:=` bind-source cell pre-read before the container borrow: the shared
+/// `ContainerRef` cell plus the source variable name to install it into
+/// afterwards (`None` when the source is already bound to that cell).
+type BindSourceCell = (Option<String>, Arc<std::sync::Mutex<Value>>);
+
 impl VM {
     /// Return the default fill value for a native type constraint.
     /// For `int`/`uint` variants returns `Value::Int(0)`,
@@ -689,10 +694,12 @@ impl VM {
             }
             _ => runtime::coerce_to_hash(value),
         };
-        // Resolve hash sentinel entries (bound variable refs) when assigning
-        // to a new hash variable. Assignment creates new containers.
+        // Resolve hash sentinel entries (self-refs) and decont `:=`-bound
+        // `ContainerRef` cells when assigning to a new hash variable:
+        // assignment creates new containers, so the copy snapshots values
+        // instead of sharing cells.
         if let Value::Hash(ref items) = hash_val
-            && Self::hash_has_sentinels(items)
+            && (Self::hash_has_sentinels(items) || items.values().any(Value::is_container_ref))
         {
             return Ok(self.resolve_hash_for_iteration(items));
         }
@@ -2850,7 +2857,35 @@ impl VM {
                     .interpreter
                     .var_hash_key_constraint(&var_name)
                     .is_some();
-                let mut pending_source_updates: Vec<(String, Value)> = Vec::new();
+                // Phase 2 Stage 2 (hash slice bind): pre-read each bind source
+                // before the mutable container borrow, reusing an existing
+                // `ContainerRef` cell binding or creating a fresh cell to
+                // install back into the source var (the #2914 array pattern).
+                let mut slice_bind_cells: Vec<Option<BindSourceCell>> = Vec::new();
+                if bind_mode {
+                    for (i, _) in keys.iter().enumerate() {
+                        let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                        let entry = if let Value::ContainerRef(cell) = &v {
+                            // Element source: already promoted to a shared cell.
+                            Some((None, cell.clone()))
+                        } else if let Some(Some(source_name)) = bind_sources.get(i)
+                            && !source_name.contains('\0')
+                        {
+                            match self.interpreter.env().get(source_name) {
+                                Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
+                                _ => Some((
+                                    Some(source_name.clone()),
+                                    Arc::new(std::sync::Mutex::new(v)),
+                                )),
+                            }
+                        } else {
+                            None
+                        };
+                        slice_bind_cells.push(entry);
+                    }
+                }
+                let mut pending_source_cells: Vec<(String, Arc<std::sync::Mutex<Value>>)> =
+                    Vec::new();
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
@@ -2864,15 +2899,13 @@ impl VM {
                         } else {
                             vals[i % vals.len()].clone()
                         };
-                        if bind_mode && let Some(Some(source_name)) = bind_sources.get(i) {
-                            pending_source_updates.push((source_name.clone(), v.clone()));
-                            h.insert(
-                                k,
-                                Value::Pair(
-                                    super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
-                                    Box::new(Value::str(source_name.clone())),
-                                ),
-                            );
+                        if bind_mode
+                            && let Some(Some((source_install, cell))) = slice_bind_cells.get(i)
+                        {
+                            h.insert(k, Value::ContainerRef(cell.clone()));
+                            if let Some(source_name) = source_install {
+                                pending_source_cells.push((source_name.clone(), cell.clone()));
+                            }
                         } else {
                             h.insert(k, v);
                         }
@@ -2889,8 +2922,12 @@ impl VM {
                         }
                     }
                 }
-                for (source_name, source_value) in pending_source_updates {
-                    self.interpreter.env_mut().insert(source_name, source_value);
+                for (source_name, cell) in pending_source_cells {
+                    // Bind the source variable to the same cell installed at
+                    // the slice entry, so both sides alias one container.
+                    let cell_val = Value::ContainerRef(cell);
+                    self.set_env_with_main_alias(&source_name, cell_val.clone());
+                    self.update_local_if_exists(code, &source_name, &cell_val);
                 }
             }
             _ => {
@@ -3037,7 +3074,6 @@ impl VM {
                     }
                 }
                 let mut range_initialized_marks: Vec<String> = Vec::new();
-                let mut pending_source_update: Option<(String, Value)> = None;
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
                 // Phase 2 Stage 2: a single-level LHS bind to a plain scalar
                 // source (`@a[i] := $v`) promotes the element to a shared
@@ -3045,6 +3081,35 @@ impl VM {
                 // back-reference. The cell is written back to the source var
                 // after the write completes (symmetric to the deep handler).
                 let mut pending_source_cell: Option<(String, Arc<std::sync::Mutex<Value>>)> = None;
+                // Phase 2 Stage 2 (hash): pre-read the bind source before the
+                // mutable container borrow. A source variable that is already
+                // cell-bound (e.g. `@arr[0] := $x; %h<k> := $x`) must REUSE its
+                // existing `ContainerRef` cell so all aliases stay shared; a
+                // plain scalar source gets a fresh cell installed back into the
+                // source var after the write (the #2914 array pattern).
+                // `None` source-install means the cell is already in place.
+                let hash_bind_cell: Option<BindSourceCell> = if bind_mode {
+                    if let Value::ContainerRef(cell) = &val {
+                        // Element source (`%h<k> := @a[0]`): the source
+                        // element was already promoted to a shared cell by
+                        // IndexAutovivifyLazyTerminal — store that cell.
+                        Some((None, cell.clone()))
+                    } else if let Some(Some(source_name)) = bind_sources.first()
+                        && !source_name.contains('\0')
+                    {
+                        match self.interpreter.env().get(source_name) {
+                            Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
+                            _ => Some((
+                                Some(source_name.clone()),
+                                Arc::new(std::sync::Mutex::new(val.clone())),
+                            )),
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 // Pre-compute whether this %-sigiled variable was bound via `:=`.
                 // Bound hash variables are marked readonly, so we use that as a signal
                 // to allow in-place mutation (preserving shared identity).
@@ -3194,20 +3259,17 @@ impl VM {
                             } else {
                                 Arc::make_mut(hash)
                             };
-                            if bind_mode && let Some(Some(source_name)) = bind_sources.first() {
-                                pending_source_update = Some((source_name.clone(), val.clone()));
-                                hd.map.insert(
-                                    key.clone(),
-                                    Value::Pair(
-                                        super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
-                                        Box::new(Value::str(source_name.clone())),
-                                    ),
-                                );
-                            } else if let Some(Value::Pair(marker, source_name)) = hd.map.get(&key)
-                                && marker == super::vm_var_ops::BOUND_HASH_REF_SENTINEL
-                            {
-                                let source_name = source_name.to_string_value();
-                                pending_source_update = Some((source_name, val.clone()));
+                            if bind_mode && let Some((source_install, cell)) = &hash_bind_cell {
+                                // Phase 2 Stage 2: a `:=`-bound entry holds a
+                                // shared `ContainerRef` cell (no more
+                                // BOUND_HASH_REF_SENTINEL back-references).
+                                // Reads decont at `resolve_hash_entry`; writes
+                                // go through `hash_insert_through`.
+                                hd.map
+                                    .insert(key.clone(), Value::ContainerRef(cell.clone()));
+                                if let Some(source_name) = source_install {
+                                    pending_source_cell = Some((source_name.clone(), cell.clone()));
+                                }
                             } else if is_self_hash_ref {
                                 hd.map.insert(key.clone(), Self::self_hash_ref_marker());
                             } else {
@@ -3474,9 +3536,6 @@ impl VM {
                             .env_mut()
                             .insert(var_name.clone(), hash_val);
                     }
-                }
-                if let Some((source_name, source_value)) = pending_source_update {
-                    self.interpreter.env_mut().insert(source_name, source_value);
                 }
                 if let Some((source_name, source_index, source_value)) = pending_varref_update {
                     self.assign_varref_target(&source_name, source_index, source_value)?;
