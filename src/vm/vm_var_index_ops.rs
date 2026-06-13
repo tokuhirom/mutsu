@@ -94,7 +94,7 @@ impl VM {
             let mut results = Vec::with_capacity(junction_values.len());
             for val in junction_values.iter() {
                 let key = Value::hash_key_encode(val);
-                if let Some(slot_ref) = resolved.hash_autovivify(&key) {
+                if let Some(slot_ref) = resolved.hash_autovivify_cell(&key) {
                     results.push(slot_ref);
                 } else {
                     results.push(Value::Nil);
@@ -110,7 +110,7 @@ impl VM {
         match &resolved {
             Value::Hash(_) => {
                 let key = Value::hash_key_encode(&index);
-                if let Some(slot_ref) = resolved.hash_autovivify(&key) {
+                if let Some(slot_ref) = resolved.hash_autovivify_cell(&key) {
                     self.stack.push(slot_ref);
                 } else {
                     self.stack.push(Value::Nil);
@@ -139,7 +139,7 @@ impl VM {
                 let key = Value::hash_key_encode(&index);
                 let new_hash = Value::hash(std::collections::HashMap::new());
                 target.hash_slot_write(new_hash.clone());
-                if let Some(slot_ref) = new_hash.hash_autovivify(&key) {
+                if let Some(slot_ref) = new_hash.hash_autovivify_cell(&key) {
                     self.stack.push(slot_ref);
                 } else {
                     self.stack.push(Value::Nil);

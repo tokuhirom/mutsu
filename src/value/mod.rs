@@ -2855,6 +2855,43 @@ impl Value {
         }
     }
 
+    /// Autovivifying hash element access for bind descent — the hash analogue of
+    /// [`array_slot_ref`] (Phase 2). Instead of the stale `HashSlotRef`
+    /// back-reference, it returns a first-class value that survives COW:
+    /// - an existing `ContainerRef` cell is returned as-is (already aliased);
+    /// - an existing container leaf (Array/Hash) is returned by value — it shares
+    ///   the inner Arc, so descent and the eventual leaf write land in the same
+    ///   physical container (no back-reference needed, like the lazy op);
+    /// - an existing scalar leaf is promoted in place to a shared `ContainerRef`
+    ///   cell and that cell is returned (the bind aliases it by cell identity);
+    /// - a missing key is autovivified to an empty Hash (the old descent
+    ///   behavior) and returned by value (shared Arc).
+    pub fn hash_autovivify_cell(&self, key: &str) -> Option<Value> {
+        if let Value::Hash(arc) = self {
+            // SAFETY: mutsu is single-threaded; no immutable borrow into the map
+            // is alive across this mutation.
+            let ptr = Arc::as_ptr(arc) as *mut HashData;
+            unsafe {
+                match (*ptr).map.get_mut(key) {
+                    Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
+                    Some(elem @ (Value::Array(..) | Value::Hash(..))) => Some(elem.clone()),
+                    Some(elem) => {
+                        let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                        *elem = Value::ContainerRef(cell.clone());
+                        Some(Value::ContainerRef(cell))
+                    }
+                    None => {
+                        let new_hash = Value::hash(HashMap::new());
+                        (*ptr).map.insert(key.to_string(), new_hash.clone());
+                        Some(new_hash)
+                    }
+                }
+            }
+        } else {
+            None
+        }
+    }
+
     /// Like `hash_autovivify` but does NOT create the entry if missing.
     /// Returns a HashSlotRef that can be used for deferred autovivification:
     /// reading from it returns Any/Nil for missing keys, writing to it
