@@ -3331,6 +3331,9 @@ impl Interpreter {
         // with the last emitted value.
         let poll_timeout = Duration::from_millis(10);
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        // The supply's result is the last value it emitted before completing.
+        // Seed it from any values emitted synchronously before the subscriptions.
+        let mut last_value = plain_values.last().cloned().unwrap_or(Value::Nil);
         loop {
             // Check if promise was resolved (by supplier_done via Supplier.done handler)
             if promise.is_resolved() {
@@ -3349,30 +3352,37 @@ impl Interpreter {
                 match sub.receiver.recv_timeout(poll_timeout) {
                     Ok(SupplyEvent::Emit(value)) => {
                         any_active = true;
+                        // Capture values the whenever block `emit`s so a later
+                        // `done` resolves the promise with the last one.
+                        self.supply_emit_buffer.push(Vec::new());
                         let cb_result =
                             self.call_sub_value(sub.callback.clone(), vec![value], true);
-                        // `done`/`last` etc. inside the whenever resolve the
-                        // promise via the Supplier.done handler.
+                        let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                        if let Some(last) = emitted.last() {
+                            last_value = last.clone();
+                        }
                         if promise.is_resolved() {
                             return Ok(());
                         }
-                        // A `die` inside the whenever block quits the supply: break
-                        // the awaited promise with the cause (otherwise the poll
-                        // loop would spin to its deadline — a hang). Control-flow
-                        // signals (done/last/next/redo) are not failures.
-                        if let Err(err) = cb_result
-                            && !err.is_react_done
-                            && !err.is_last
-                            && !err.is_next
-                            && !err.is_redo
-                        {
-                            let cause = err
-                                .exception
-                                .as_deref()
-                                .cloned()
-                                .unwrap_or_else(|| Value::str(err.message.clone()));
-                            promise.break_with(cause, String::new(), String::new());
-                            return Ok(());
+                        if let Err(err) = cb_result {
+                            // `done` (and `last`) inside the whenever complete the
+                            // supply: keep the promise with the last emitted value
+                            // immediately, instead of spinning to the poll deadline.
+                            if err.is_react_done || err.is_last {
+                                promise.keep(last_value.clone(), String::new(), String::new());
+                                return Ok(());
+                            }
+                            // `next`/`redo` are loop control, not completion.
+                            if !err.is_next && !err.is_redo {
+                                // A `die` quits the supply: break with the cause.
+                                let cause = err
+                                    .exception
+                                    .as_deref()
+                                    .cloned()
+                                    .unwrap_or_else(|| Value::str(err.message.clone()));
+                                promise.break_with(cause, String::new(), String::new());
+                                return Ok(());
+                            }
                         }
                     }
                     Ok(SupplyEvent::Done) => {

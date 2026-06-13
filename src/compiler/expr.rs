@@ -83,6 +83,14 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
+            Expr::BareWord(name) if name == "done" => {
+                // `done` as a bare term in expression position (e.g. the `!!`
+                // branch of `$cond ?? die !! done`) is the supply/react
+                // completion control flow, not an ordinary bareword. Emit
+                // ReactDone so it signals instead of evaluating to a no-op string
+                // (which left `whenever ... { ... !! done }` never completing).
+                self.code.emit(OpCode::ReactDone);
+            }
             Expr::BareWord(name) => {
                 // Only resolve to GetLocal for sigilless bindings (e.g. `my \Foo = ...`)
                 // or builtin-type-safe locals.  `$`-sigiled variables whose `$` was
