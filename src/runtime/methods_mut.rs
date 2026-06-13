@@ -1748,6 +1748,21 @@ impl Interpreter {
                     return Ok(target);
                 }
             }
+            // A scalar `:=`-bound to a container (`my $r := @a` / `:= %h` /
+            // `:= (1,2,3)`) has no Scalar container of its own — the binding
+            // aliases the container directly — so `.VAR` returns the bound value
+            // itself and `.VAR.^name` reflects the container type (List/Array/
+            // Hash/...), not Scalar. The `__mutsu_bound_decont` marker records
+            // such binds.
+            if !target_var.starts_with('@')
+                && !target_var.starts_with('%')
+                && !target_var.starts_with('&')
+            {
+                let decont_key = format!("__mutsu_bound_decont::{}", target_var);
+                if matches!(self.env.get(&decont_key), Some(Value::Bool(true))) {
+                    return Ok(target);
+                }
+            }
             let class_name = if target_var.starts_with('@') {
                 "Array"
             } else if target_var.starts_with('%') {

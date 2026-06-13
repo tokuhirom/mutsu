@@ -1124,6 +1124,14 @@ impl Compiler {
                 if matches!(op, AssignOp::Bind) {
                     if effective_name.starts_with('@') {
                         self.code.emit(OpCode::MarkBindContext);
+                    } else if !effective_name.starts_with('%') && !effective_name.starts_with('&') {
+                        // A scalar rebind (`$r := ...`) is still a bind: mark it
+                        // so SetLocal records the bound-decont marker (it has no
+                        // `__scalar_bind` trait like a `my $r := ...` VarDecl
+                        // does). Without this the rebind is seen as a plain
+                        // assignment and clears the marker, so `$r.VAR.^name`
+                        // would wrongly report Scalar and `@a = $r` would itemize.
+                        self.code.emit(OpCode::MarkScalarBindContext);
                     }
                     // Signal rebind context for cleanup of old bind pairs.
                     self.code.emit(OpCode::MarkRebindContext);

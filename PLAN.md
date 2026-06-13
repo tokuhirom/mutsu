@@ -242,8 +242,12 @@ STATUS で撤回済み。
 
 各項目は深い。**ROI が明確なとき**（特定 whitelist 候補ファイルが残り 1–2 subtest で、原因が該当バグ）にだけ着手する。
 
-- [ ] **`.VAR.^name` 束縛コンテナ反映** — `my $l := (1,2,3); $l.VAR.^name` が `Scalar`（raku `List`）。
-      格納時コンテナ status が要る。
+- [x] **`.VAR.^name` 束縛コンテナ反映 (DONE)** — `my $l := (1,2,3); $l.VAR.^name` を `List`（旧 `Scalar`）に。
+      scalar `:=`-bound to a container（`@a`/`%h`/`(1,2,3)`/Set/Bag/Mix）は Scalar コンテナを持たず
+      コンテナを直接 alias するため `.VAR` は束縛値自体を返す。`__mutsu_bound_decont` marker を Hash/Set/Bag/Mix/
+      ContainerRef へ拡張し、VAR ハンドラ（methods_mut.rs）が marker を見て target を返す。scalar rebind
+      （`$r := ...`、VarDecl でないので `__scalar_bind` 無し）も `MarkScalarBindContext` を emit して marker 維持。
+      `t/var-name-bind.t`(16)。
 - [ ] **配列/ハッシュ要素のセル化（COW）= Phase 2 残り** — 深い `>>++`・`deepmap(++*)`（hyper.t 330-333）。
       最ホット表現に触る大改修。下記「設計の鍵」を適用。（`is rw` 共有セル #2928・take-rw #2930・
       束縛要素セル #2902-#2925 は landed）
