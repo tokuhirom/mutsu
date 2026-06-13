@@ -130,6 +130,19 @@ fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// Monotonic count of `Supplier.done` invocations. Used to detect whether a
+/// QUIT phaser called `done` (which completes the supply via the emitter):
+/// snapshot before running the phaser, compare after.
+static SUPPLIER_DONE_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub(in crate::runtime) fn bump_supplier_done_count() {
+    SUPPLIER_DONE_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(in crate::runtime) fn supplier_done_count() -> u64 {
+    SUPPLIER_DONE_CALLS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn next_tap_id() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(1);
