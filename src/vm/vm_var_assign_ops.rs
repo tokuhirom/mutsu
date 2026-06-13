@@ -2653,39 +2653,16 @@ impl VM {
             false
         };
         if !bind_mode && self.is_bound_index(&var_name, &encoded_idx) {
-            // Check if the bound element still has a BOUND_ARRAY_REF_SENTINEL.
-            // If yes, allow writes (they propagate to the source variable).
-            // If no (sentinel gone due to array reset/delete), the metadata is
-            // stale — clean it up and allow the write.
-            let sentinel_status = if let Some(Value::Array(items, ..)) =
-                self.interpreter.env().get(&var_name)
+            // `:=`-bound elements are shared `ContainerRef` cells now (no
+            // sentinel back-references), so any remaining bound-index metadata
+            // for an existing non-cell element is stale (e.g. the binding was
+            // broken by splice or an array reset) — clean it up; the write
+            // proceeds either way (cell writes go through the cell arm).
+            if let Some(Value::Array(items, ..)) = self.interpreter.env().get(&var_name)
                 && let Some(i) = Self::index_to_usize(&idx)
+                && matches!(items.get(i), Some(v) if !v.is_container_ref())
             {
-                match items.get(i) {
-                    Some(Value::Pair(marker, _))
-                        if marker == super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL =>
-                    {
-                        Some(true) // sentinel present
-                    }
-                    Some(_) => Some(false), // index exists but no sentinel
-                    None => None,           // index out of bounds (array was reset/shrunk)
-                }
-            } else {
-                None // array doesn't exist or index not a usize
-            };
-            match sentinel_status {
-                Some(true) => {
-                    // Sentinel present — write will propagate, allow it
-                }
-                Some(false) => {
-                    // No sentinel but bound metadata exists — the binding was
-                    // broken (e.g. by splice removing the element).  Clean up
-                    // the stale metadata and allow the write.
-                    self.remove_bound_index(&var_name, &encoded_idx);
-                }
-                None => {
-                    // Array was reset or index is gone — stale metadata, allow write
-                }
+                self.remove_bound_index(&var_name, &encoded_idx);
             }
         }
         if !self.interpreter.env().contains_key(&var_name)
@@ -3075,24 +3052,23 @@ impl VM {
                 }
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
-                // Phase 2 Stage 2: a single-level LHS bind to a plain scalar
-                // source (`@a[i] := $v`) promotes the element to a shared
-                // `ContainerRef` cell instead of the `BOUND_ARRAY_REF_SENTINEL`
-                // back-reference. The cell is written back to the source var
-                // after the write completes (symmetric to the deep handler).
+                // Phase 2 Stage 2: a single-level element bind (`@a[i] := ...`,
+                // `%h<k> := ...`) stores a shared `ContainerRef` cell. The cell
+                // is written back to the source var after the write completes.
                 let mut pending_source_cell: Option<(String, Arc<std::sync::Mutex<Value>>)> = None;
-                // Phase 2 Stage 2 (hash): pre-read the bind source before the
-                // mutable container borrow. A source variable that is already
-                // cell-bound (e.g. `@arr[0] := $x; %h<k> := $x`) must REUSE its
-                // existing `ContainerRef` cell so all aliases stay shared; a
+                // Whether the bind stored a shared cell at the element (skips
+                // the bound-index side table — the cell IS the alias).
+                let mut stored_bind_cell = false;
+                // Pre-read the bind source before the mutable container borrow.
+                // An element source (`:= @b[j]`) arrives already promoted to a
+                // shared cell by IndexAutovivifyLazyTerminal; a source variable
+                // that is already cell-bound (e.g. `@arr[0] := $x; %h<k> := $x`)
+                // must REUSE its existing cell so all aliases stay shared; a
                 // plain scalar source gets a fresh cell installed back into the
-                // source var after the write (the #2914 array pattern).
-                // `None` source-install means the cell is already in place.
-                let hash_bind_cell: Option<BindSourceCell> = if bind_mode {
+                // source var after the write. `None` source-install means the
+                // cell is already in place.
+                let bind_cell: Option<BindSourceCell> = if bind_mode {
                     if let Value::ContainerRef(cell) = &val {
-                        // Element source (`%h<k> := @a[0]`): the source
-                        // element was already promoted to a shared cell by
-                        // IndexAutovivifyLazyTerminal — store that cell.
                         Some((None, cell.clone()))
                     } else if let Some(Some(source_name)) = bind_sources.first()
                         && !source_name.contains('\0')
@@ -3259,7 +3235,7 @@ impl VM {
                             } else {
                                 Arc::make_mut(hash)
                             };
-                            if bind_mode && let Some((source_install, cell)) = &hash_bind_cell {
+                            if bind_mode && let Some((source_install, cell)) = &bind_cell {
                                 // Phase 2 Stage 2: a `:=`-bound entry holds a
                                 // shared `ContainerRef` cell (no more
                                 // BOUND_HASH_REF_SENTINEL back-references).
@@ -3341,37 +3317,19 @@ impl VM {
                                         let fill = native_fill.clone();
                                         arr.resize(i + 1, fill);
                                     }
-                                    if bind_mode
-                                        && let Some(Some(source_name)) = bind_sources.first()
-                                    {
-                                        if source_name.contains('\0') {
-                                            // Element source (`:= $b[j]`, encoded
-                                            // with `\0idx\0`) — keep the sentinel
-                                            // back-reference for now (cell-izing
-                                            // element sources is a later slice).
-                                            arr[i] = Value::Pair(
-                                                super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL
-                                                    .to_string(),
-                                                Box::new(Value::str(source_name.clone())),
-                                            );
-                                        } else {
-                                            // Plain scalar source: promote the
-                                            // element to a shared `ContainerRef`
-                                            // cell (Phase 2 Stage 2). Reads decont
-                                            // at `resolve_array_entry`; writes go
-                                            // through the cell arm below.
-                                            let cell = Arc::new(std::sync::Mutex::new(val.clone()));
-                                            arr[i] = Value::ContainerRef(cell.clone());
-                                            pending_source_cell = Some((source_name.clone(), cell));
+                                    if bind_mode && let Some((source_install, cell)) = &bind_cell {
+                                        // Phase 2 Stage 2: a `:=`-bound element
+                                        // holds a shared `ContainerRef` cell (no
+                                        // more BOUND_ARRAY_REF_SENTINEL
+                                        // back-references). Reads decont at
+                                        // `resolve_array_entry`; writes go
+                                        // through the cell arm below.
+                                        arr[i] = Value::ContainerRef(cell.clone());
+                                        stored_bind_cell = true;
+                                        if let Some(source_name) = source_install {
+                                            pending_source_cell =
+                                                Some((source_name.clone(), cell.clone()));
                                         }
-                                    } else if let Some(Value::Pair(marker, source)) = arr.get(i)
-                                        && marker == super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL
-                                    {
-                                        // Writing to a bound element propagates
-                                        // to the source variable.
-                                        let source_name = source.to_string_value();
-                                        pending_varref_update =
-                                            Some((source_name, None, val.clone()));
                                     } else if let Some((source_name, source_index)) =
                                         Self::varref_target(&arr[i])
                                     {
@@ -3409,10 +3367,10 @@ impl VM {
                                 return Err(RuntimeError::new("Index out of bounds"));
                             }
                             self.mark_initialized_index(&var_name, encoded_idx.clone());
-                            // A cell-bound element (scalar source) does not need
-                            // the bound-index side table — the `ContainerRef` cell
-                            // is the alias and write-through happens via the cell.
-                            if bind_mode && pending_source_cell.is_none() {
+                            // A cell-bound element does not need the bound-index
+                            // side table — the `ContainerRef` cell is the alias
+                            // and write-through happens via the cell.
+                            if bind_mode && !stored_bind_cell {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
                         }
