@@ -1091,14 +1091,22 @@ impl VM {
                             .and_then(|s| s.get(1))
                             .and_then(|s| s.clone());
                         let mut new_map = (**map).clone();
+                        // Phase 2 Stage 2: BIND-KEY installs a shared
+                        // `ContainerRef` cell (reusing the source variable's
+                        // existing cell binding when present) instead of a
+                        // BOUND_HASH_REF_SENTINEL back-reference.
+                        let mut bind_source_install: Option<(String, Value)> = None;
                         if let Some(var_name) = source_var {
-                            new_map.insert(
-                                key,
-                                Value::Pair(
-                                    super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
-                                    Box::new(Value::str(var_name)),
-                                ),
-                            );
+                            let cell = match self.interpreter.env().get(&var_name) {
+                                Some(Value::ContainerRef(cell)) => cell.clone(),
+                                _ => {
+                                    let cell = Arc::new(std::sync::Mutex::new(value.clone()));
+                                    bind_source_install =
+                                        Some((var_name, Value::ContainerRef(cell.clone())));
+                                    cell
+                                }
+                            };
+                            new_map.insert(key, Value::ContainerRef(cell));
                         } else {
                             new_map.insert(key, value.clone());
                         }
@@ -1112,6 +1120,10 @@ impl VM {
                         self.interpreter
                             .env_mut()
                             .insert(target_name.to_string(), new_hash);
+                        if let Some((source_name, cell_val)) = bind_source_install {
+                            self.set_env_with_main_alias(&source_name, cell_val.clone());
+                            self.update_local_if_exists(code, &source_name, &cell_val);
+                        }
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());
@@ -1124,14 +1136,18 @@ impl VM {
                             .and_then(|s| s.get(1))
                             .and_then(|s| s.clone());
                         let mut new_map = std::collections::HashMap::new();
+                        let mut bind_source_install: Option<(String, Value)> = None;
                         if let Some(var_name) = source_var {
-                            new_map.insert(
-                                key,
-                                Value::Pair(
-                                    super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
-                                    Box::new(Value::str(var_name)),
-                                ),
-                            );
+                            let cell = match self.interpreter.env().get(&var_name) {
+                                Some(Value::ContainerRef(cell)) => cell.clone(),
+                                _ => {
+                                    let cell = Arc::new(std::sync::Mutex::new(value.clone()));
+                                    bind_source_install =
+                                        Some((var_name, Value::ContainerRef(cell.clone())));
+                                    cell
+                                }
+                            };
+                            new_map.insert(key, Value::ContainerRef(cell));
                         } else {
                             new_map.insert(key, value.clone());
                         }
@@ -1139,6 +1155,10 @@ impl VM {
                             target_name.to_string(),
                             Value::Hash(Value::hash_arc(new_map)),
                         );
+                        if let Some((source_name, cell_val)) = bind_source_install {
+                            self.set_env_with_main_alias(&source_name, cell_val.clone());
+                            self.update_local_if_exists(code, &source_name, &cell_val);
+                        }
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());

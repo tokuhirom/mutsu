@@ -4,7 +4,6 @@ use num_traits::Zero;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
-pub(super) const BOUND_HASH_REF_SENTINEL: &str = "__mutsu_bound_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 pub(super) const BOUND_ARRAY_REF_SENTINEL: &str = "__mutsu_bound_array_ref";
 
@@ -91,14 +90,6 @@ impl VM {
             Some(Value::Pair(name, _)) if name == SELF_HASH_REF_SENTINEL => {
                 Value::Hash(items.clone())
             }
-            Some(Value::Pair(name, source)) if name == BOUND_HASH_REF_SENTINEL => {
-                let source_name = source.to_string_value();
-                self.interpreter
-                    .env()
-                    .get(&source_name)
-                    .cloned()
-                    .unwrap_or(Value::Nil)
-            }
             // Phase 2 element container: a `:=`-bound entry holds a shared
             // `ContainerRef` cell; decontainerize on read (the chokepoint).
             Some(Value::ContainerRef(cell)) => cell.lock().unwrap().clone(),
@@ -110,9 +101,9 @@ impl VM {
     /// Check if a hash contains any sentinel entries (bound refs or self-refs)
     /// that need resolution before the hash can be iterated.
     pub(super) fn hash_has_sentinels(items: &HashMap<String, Value>) -> bool {
-        items.values().any(|v| {
-            matches!(v, Value::Pair(name, _) if name == SELF_HASH_REF_SENTINEL || name == BOUND_HASH_REF_SENTINEL)
-        })
+        items
+            .values()
+            .any(|v| matches!(v, Value::Pair(name, _) if name == SELF_HASH_REF_SENTINEL))
     }
 
     /// Resolve all sentinel entries in a hash, returning a new hash with
@@ -124,14 +115,9 @@ impl VM {
                 Value::Pair(name, _) if name == SELF_HASH_REF_SENTINEL => {
                     Value::Hash(items.clone())
                 }
-                Value::Pair(name, source) if name == BOUND_HASH_REF_SENTINEL => {
-                    let source_name = source.to_string_value();
-                    self.interpreter
-                        .env()
-                        .get(&source_name)
-                        .cloned()
-                        .unwrap_or(Value::Nil)
-                }
+                // Decont a `:=`-bound shared cell: the resolved copy
+                // snapshots the current value (assignment semantics).
+                Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
                 other => other.clone(),
             };
             resolved.insert(key.clone(), resolved_value);
