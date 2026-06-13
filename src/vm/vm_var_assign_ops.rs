@@ -3776,8 +3776,13 @@ impl VM {
                 let fill = native_fill.clone();
                 arr.resize(inner_i + 1, fill);
             }
-            // Autovivify the slot if it's not already a container.
-            let needs_viv = !matches!(&arr[inner_i], Value::Array(..) | Value::Hash(..));
+            // Autovivify the slot if it's not already a container. A
+            // `:=`-bound element is a shared `ContainerRef` cell holding a
+            // container — descend through it (below) instead of clobbering it.
+            let needs_viv = !matches!(
+                &arr[inner_i],
+                Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
+            );
             if needs_viv {
                 arr[inner_i] = if outer_positional {
                     Value::real_array(Vec::new())
@@ -3786,6 +3791,12 @@ impl VM {
                 };
             }
             match &mut arr[inner_i] {
+                // A bound element holds a shared cell: write through it so the
+                // mutation reaches the aliased container (`@h[i] := @inner;
+                // @h[i][j] = v` updates `@inner[j]`).
+                Value::ContainerRef(_) => {
+                    Self::assign_into_nested_container(&mut arr[inner_i], &outer_key, val.clone());
+                }
                 Value::Array(inner_arr, _) => {
                     if let Ok(j) = outer_key.parse::<usize>() {
                         // Use interior mutation when the inner array is shared
