@@ -464,7 +464,15 @@ impl Value {
                 SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr));
                 let mut pairs: Vec<_> = items
                     .iter()
-                    .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
+                    .map(|(k, v)| {
+                        // Object hashes store `.WHICH` string keys; show the
+                        // original typed key (e.g. `1`, not `Int|1`).
+                        format!(
+                            "{}\t{}",
+                            items.typed_key(k).to_string_value(),
+                            v.to_string_value()
+                        )
+                    })
                     .collect();
                 pairs.sort();
                 SEEN_HASH_PTRS.with(|seen| {

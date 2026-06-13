@@ -993,7 +993,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::Hash(items) => items
                 .iter()
                 .min_by(|(ak, _), (bk, _)| ak.cmp(bk))
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .map(|(k, v)| items.typed_pair(k, v.clone()))
                 .unwrap_or(Value::Nil),
             Value::Array(items, ..) => items
                 .iter()
@@ -1009,7 +1009,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::Hash(items) => items
                 .iter()
                 .max_by(|(ak, _), (bk, _)| ak.cmp(bk))
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .map(|(k, v)| items.typed_pair(k, v.clone()))
                 .unwrap_or(Value::Nil),
             Value::Array(items, ..) => items
                 .iter()

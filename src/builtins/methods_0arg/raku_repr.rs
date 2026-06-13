@@ -495,11 +495,23 @@ pub fn raku_value(v: &Value) -> String {
                 .iter()
                 .map(|k| {
                     let v = &map[*k];
-                    let is_ident = !k.is_empty()
-                        && k.starts_with(|c: char| c.is_alphabetic() || c == '_')
-                        && k.chars()
-                            .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                    // Object hashes store `.WHICH` string keys (e.g. `"Int|1"`);
+                    // serialize the original typed key. A `Str` typed key keeps
+                    // the colon-pair / ident logic; a non-`Str` key (object hash)
+                    // uses the general `key => value` form.
+                    let typed = map.typed_key(k);
+                    let key_str: Option<String> = match &typed {
+                        Value::Str(s) => Some((**s).clone()),
+                        _ => None,
+                    };
+                    let is_ident = key_str.as_deref().is_some_and(|k| {
+                        !k.is_empty()
+                            && k.starts_with(|c: char| c.is_alphabetic() || c == '_')
+                            && k.chars()
+                                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                    });
                     if is_ident {
+                        let k = key_str.as_deref().unwrap();
                         if let Value::Bool(true) = v {
                             format!(":{}", k)
                         } else if let Value::Bool(false) = v {
@@ -519,7 +531,7 @@ pub fn raku_value(v: &Value) -> String {
                         } else {
                             raku_value(v)
                         };
-                        format!("{} => {}", raku_value(&Value::str(k.to_string())), repr)
+                        format!("{} => {}", raku_value(&typed), repr)
                     }
                 })
                 .collect();

@@ -548,14 +548,16 @@ impl Interpreter {
         let mut best_key: Option<Value> = None;
 
         for (k, v) in map.as_ref().iter() {
-            let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+            // Object hashes store `.WHICH` string keys; expose the original
+            // typed key both in the resulting Pair and in the default ordering.
+            let pair = map.typed_pair(k, v.clone());
             let key = if let Some(by_callable) = &by {
                 match self.call_sub_value(by_callable.clone(), vec![pair.clone()], true) {
                     Ok(value) => value,
                     Err(_) => v.clone(),
                 }
             } else {
-                Value::str(k.clone())
+                map.typed_key(k)
             };
 
             let replace = if let Some(current_key) = &best_key {

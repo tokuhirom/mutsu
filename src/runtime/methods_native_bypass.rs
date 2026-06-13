@@ -209,7 +209,7 @@ impl Interpreter {
     /// Dispatch .raku/.perl on constrained Hash.
     pub(super) fn dispatch_constrained_hash_raku(
         &mut self,
-        map: &std::collections::HashMap<String, Value>,
+        map: &crate::value::HashData,
         info: &ContainerTypeInfo,
     ) -> Result<Value, RuntimeError> {
         let mut sorted_keys: Vec<&String> = map.keys().collect();
@@ -232,14 +232,21 @@ impl Interpreter {
                             .unwrap_or_else(|_| format!("{:?}", v))
                     }
                 };
+                // Object hashes store `.WHICH` string keys; serialize the
+                // original typed key (`1`, not `Int|1`; `a`, not `Str|a`).
+                let typed = map.typed_key(k);
+                let key_disp = match &typed {
+                    Value::Str(s) => (**s).clone(),
+                    _ => crate::builtins::methods_0arg::raku_value(&typed),
+                };
                 if use_arrow {
-                    format!("{} => {}", k, value_repr())
+                    format!("{} => {}", key_disp, value_repr())
                 } else if let Value::Bool(true) = v {
-                    format!(":{}", k)
+                    format!(":{}", key_disp)
                 } else if let Value::Bool(false) = v {
-                    format!(":!{}", k)
+                    format!(":!{}", key_disp)
                 } else {
-                    format!(":{}({})", k, value_repr())
+                    format!(":{}({})", key_disp, value_repr())
                 }
             })
             .collect();

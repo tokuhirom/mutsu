@@ -593,7 +593,7 @@ pub(crate) fn sort_value_generic(
         Value::Hash(map) => {
             let items: Vec<Value> = map
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .map(|(k, v)| map.typed_pair(k, v.clone()))
                 .collect();
             sort_value_generic(caller, Value::array(items), args)
         }

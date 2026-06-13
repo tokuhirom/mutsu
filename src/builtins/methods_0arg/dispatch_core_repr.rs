@@ -674,7 +674,12 @@ pub(super) fn dispatch(
                 sorted_keys.sort();
                 let parts: Vec<String> = sorted_keys
                     .iter()
-                    .map(|k| format!("{} => {}", k, runtime::gist_value(&map[*k])))
+                    .map(|k| {
+                        // Object hashes store `.WHICH` string keys; show the
+                        // original typed key (e.g. `a`, not `Str|a`).
+                        let key_disp = runtime::gist_value(&map.typed_key(k));
+                        format!("{} => {}", key_disp, runtime::gist_value(&map[*k]))
+                    })
                     .collect();
                 Some(Ok(Value::str(format!("{{{}}}", parts.join(", ")))))
             }
