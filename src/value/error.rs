@@ -252,8 +252,25 @@ impl RuntimeError {
     }
 
     pub(crate) fn react_done_signal() -> Self {
+        // When `done` propagates unhandled (no enclosing supply/react), it
+        // becomes X::ControlFlow with illegal=>"done", enclosing=>"supply or
+        // react". Pre-set the exception so throws-like / CATCH can match the
+        // correct type; the supply/react runtime consumes the `is_react_done`
+        // flag before this exception is ever observed.
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("illegal".to_string(), Value::str("done".to_string()));
+        attrs.insert(
+            "enclosing".to_string(),
+            Value::str("supply or react".to_string()),
+        );
+        attrs.insert(
+            "message".to_string(),
+            Value::str("done without supply or react".to_string()),
+        );
+        let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
             is_react_done: true,
+            exception: xcf.exception,
             ..Self::new("")
         }
     }
@@ -297,10 +314,27 @@ impl RuntimeError {
     }
 
     pub(crate) fn emit_signal(value: Value) -> Self {
+        // When CX::Emit propagates unhandled (no enclosing supply/react), it
+        // becomes X::ControlFlow with illegal=>"emit", enclosing=>"supply or
+        // react". Pre-set the exception so throws-like / CATCH can match the
+        // correct type; the supply/react runtime consumes the `is_emit` flag
+        // before this exception is ever observed.
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("illegal".to_string(), Value::str("emit".to_string()));
+        attrs.insert(
+            "enclosing".to_string(),
+            Value::str("supply or react".to_string()),
+        );
+        attrs.insert(
+            "message".to_string(),
+            Value::str("emit without supply or react".to_string()),
+        );
+        let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
             message: "CX::Emit".to_string(),
             is_emit: true,
             return_value: Some(value),
+            exception: xcf.exception,
             ..Self::new("")
         }
     }
