@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use super::state::*;
 use super::state_lock::*;
 use super::state_scheduler::{self, *};
-use super::state_supplier::close_supplier_tap;
+use super::state_supplier::{close_supplier_tap, take_supplier_close_callbacks};
 
 /// Parameters for a scheduled cue operation.
 struct CueParams {
@@ -119,7 +119,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn native_tap(
-        &self,
+        &mut self,
         attributes: &HashMap<String, Value>,
         method: &str,
     ) -> Result<Value, RuntimeError> {
@@ -134,6 +134,14 @@ impl Interpreter {
                     (attributes.get("supplier_id"), attributes.get("tap_id"))
                 {
                     close_supplier_tap(*supplier_id as u64, *tap_id as u64);
+                }
+                // Fire any CLOSE-phaser callbacks registered on this tap's
+                // supply emitter (run once — taking empties the list, so a
+                // later normal termination won't run them again).
+                if let Some(Value::Int(cid)) = attributes.get("close_supplier_id") {
+                    for cb in take_supplier_close_callbacks(*cid as u64) {
+                        self.call_sub_value(cb, vec![], true)?;
+                    }
                 }
                 Ok(Value::Bool(true))
             }

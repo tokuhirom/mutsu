@@ -220,6 +220,20 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             name,
             body: rewrite_supply_body(body, emitter_name),
         },
+        // A CLOSE phaser in a `supply { ... }` block registers its body as a
+        // close callback on the emitter, to run when the tap is closed or the
+        // supply terminates. Rewrite it to a registration call so it survives
+        // as a value (a bare phaser compiles to a no-op).
+        Stmt::Phaser {
+            kind: crate::ast::PhaserKind::Close,
+            body,
+        } => Stmt::Expr(Expr::MethodCall {
+            target: Box::new(Expr::Var(emitter_name.to_string())),
+            name: Symbol::intern("__mutsu_register_close_phaser"),
+            args: vec![make_anon_sub(rewrite_supply_body(body, emitter_name))],
+            modifier: None,
+            quoted: false,
+        }),
         // Phaser bodies (LAST/QUIT/FIRST/NEXT/...) inside a supply/whenever
         // can also `emit`/`done`; rewrite them to the emitter just like the
         // main body so e.g. `LAST { emit "done" }` forwards to the supply.
