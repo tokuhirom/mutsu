@@ -3618,22 +3618,37 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Build channel receivers for async subscriptions
+        // Build channel receivers for async subscriptions. Static (finite,
+        // channel-less) sources such as `Supply.from-list(...)` have no live
+        // channel; replay them synchronously here, running the body then the
+        // LAST phaser (or the QUIT phaser if forcing/iterating the source
+        // dies) and capturing emitted values. This makes
+        // `await (supply { whenever Supply.from-list(...) { ... } })` resolve
+        // with the last emitted value even when the whenever never iterates.
         struct SupplyPromiseSub {
             receiver: std::sync::mpsc::Receiver<SupplyEvent>,
             callback: Value,
         }
         let mut subs: Vec<SupplyPromiseSub> = Vec::new();
+        let mut static_last_value: Option<Value> = None;
         for sub_val in &subscriptions {
             if let Value::Array(items, ..) = sub_val
                 && items.len() >= 2
             {
-                let source = &items[0];
+                let source = items[0].clone();
                 let callback = items[1].clone();
+                let last_cbs = items
+                    .get(2)
+                    .and_then(Self::value_array_items)
+                    .unwrap_or_default();
+                let quit_cbs = items
+                    .get(3)
+                    .and_then(Self::value_array_items)
+                    .unwrap_or_default();
                 if let Value::Instance {
                     attributes: inner_attrs,
                     ..
-                } = source
+                } = &source
                 {
                     // Try to get channel via supply_id (or parent_supply_id for lines)
                     let inner_map = inner_attrs.as_map();
@@ -3654,14 +3669,27 @@ impl Interpreter {
                             receiver: rx,
                             callback,
                         });
+                        continue;
+                    }
+                    // No live channel: a static/finite source. Replay it now.
+                    let mut lv = static_last_value.take().unwrap_or(Value::Nil);
+                    self.replay_static_whenever_promise(
+                        &source, &callback, &last_cbs, &quit_cbs, &mut lv,
+                    )?;
+                    static_last_value = Some(lv);
+                    if promise.is_resolved() {
+                        return Ok(());
                     }
                 }
             }
         }
 
         if subs.is_empty() {
-            // No channels found, resolve with plain values
-            let result = plain_values.last().cloned().unwrap_or(Value::Nil);
+            // No live channels: resolve with the last value emitted by the
+            // static sources (or any plain synchronously-emitted value).
+            let result = static_last_value
+                .or_else(|| plain_values.last().cloned())
+                .unwrap_or(Value::Nil);
             promise.keep(result, String::new(), String::new());
             return Ok(());
         }
@@ -3674,7 +3702,9 @@ impl Interpreter {
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
         // The supply's result is the last value it emitted before completing.
         // Seed it from any values emitted synchronously before the subscriptions.
-        let mut last_value = plain_values.last().cloned().unwrap_or(Value::Nil);
+        let mut last_value = static_last_value
+            .or_else(|| plain_values.last().cloned())
+            .unwrap_or(Value::Nil);
         loop {
             // Check if promise was resolved (by supplier_done via Supplier.done handler)
             if promise.is_resolved() {
@@ -3747,6 +3777,93 @@ impl Interpreter {
                 return Ok(());
             }
         }
+    }
+
+    /// On the `await`/`.Promise` path, replay a finite/static `whenever` source
+    /// (e.g. `Supply.from-list(...)`) synchronously: run the body callback for
+    /// each value, then the LAST phaser callbacks. A lazy source element (e.g.
+    /// `gather { ... }`) is forced here; if forcing or the body dies, the QUIT
+    /// phaser callbacks run instead (with the exception bound to `$_`). Any
+    /// value emitted by the body or the phasers is captured into `last_value`,
+    /// which becomes the awaited supply's result.
+    fn replay_static_whenever_promise(
+        &mut self,
+        source: &Value,
+        callback: &Value,
+        last_cbs: &[Value],
+        quit_cbs: &[Value],
+        last_value: &mut Value,
+    ) -> Result<(), RuntimeError> {
+        let values = match source {
+            Value::Instance { attributes, .. } => match attributes.as_map().get("values") {
+                Some(Value::Array(items, ..)) => items.to_vec(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+
+        // Capture whatever the given callback `emit`s into `last_value`.
+        fn run_capture(
+            this: &mut Interpreter,
+            cb: Value,
+            args: Vec<Value>,
+            last_value: &mut Value,
+        ) -> Result<(), RuntimeError> {
+            this.supply_emit_buffer.push(Vec::new());
+            let res = this.call_sub_value(cb, args, true);
+            let emitted = this.supply_emit_buffer.pop().unwrap_or_default();
+            if let Some(last) = emitted.last() {
+                *last_value = last.clone();
+            }
+            res.map(|_| ())
+        }
+
+        let err_to_value = |err: &RuntimeError| -> Value {
+            err.exception
+                .as_deref()
+                .cloned()
+                .unwrap_or_else(|| Value::str(err.message.clone()))
+        };
+
+        // Run the body for each source value; force lazy elements so a dying
+        // gather surfaces as a quit.
+        let mut quit_reason: Option<Value> = None;
+        'replay: for v in values {
+            let items: Vec<Value> = match &v {
+                Value::LazyList(ll) => match self.force_lazy_list(ll) {
+                    Ok(items) => items,
+                    Err(err) => {
+                        quit_reason = Some(err_to_value(&err));
+                        break 'replay;
+                    }
+                },
+                _ => vec![v],
+            };
+            for item in items {
+                if let Err(err) = run_capture(self, callback.clone(), vec![item], last_value) {
+                    if err.is_react_done || err.is_last {
+                        break 'replay;
+                    }
+                    if err.is_next || err.is_redo {
+                        continue;
+                    }
+                    // A `die` quits the supply: route to the QUIT phaser.
+                    quit_reason = Some(err_to_value(&err));
+                    break 'replay;
+                }
+            }
+        }
+
+        if let Some(reason) = quit_reason {
+            for q in quit_cbs {
+                let _ = run_capture(self, q.clone(), vec![reason.clone()], last_value);
+            }
+        } else {
+            for l in last_cbs {
+                let _ = run_capture(self, l.clone(), Vec::new(), last_value);
+            }
+        }
+        Ok(())
     }
 
     /// Implement Supply.throttle($limit, $seconds-or-block, :$control, :$status)

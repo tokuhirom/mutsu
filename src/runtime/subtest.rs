@@ -611,7 +611,7 @@ impl Interpreter {
         }
     }
 
-    fn value_array_items(value: &Value) -> Option<Vec<Value>> {
+    pub(super) fn value_array_items(value: &Value) -> Option<Vec<Value>> {
         if let Value::Array(items, ..) = value {
             Some(items.to_vec())
         } else {
