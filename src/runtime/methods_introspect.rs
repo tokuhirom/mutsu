@@ -168,9 +168,6 @@ impl Interpreter {
             Value::HashSlotRef { .. } => {
                 return self.dispatch_what(&target.hash_slot_read(), args);
             }
-            Value::ArraySlotRef { .. } => {
-                return self.dispatch_what(&target.array_slot_read(), args);
-            }
             Value::DeferredHashAccess { .. } => "Any",
             Value::ContainerRef(_) => {
                 return target.with_deref(|inner| self.dispatch_what(inner, args));

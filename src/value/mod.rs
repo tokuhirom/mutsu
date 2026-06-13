@@ -1626,13 +1626,6 @@ pub enum Value {
         hash: Arc<HashData>,
         key: String,
     },
-    /// A reference to an array slot, used for binding to array elements.
-    /// Reading this value returns the current value at the index (or Nil).
-    /// Assigning to it writes back to the parent array via interior mutation.
-    ArraySlotRef {
-        array: Arc<ArrayData>,
-        index: usize,
-    },
     /// A deferred hash access path for binding. Acts as Any for reads.
     /// When written to, it creates all intermediate hashes and inserts the value.
     /// Used for `my $b := %h<a><b>` to defer autovivification until assignment.
@@ -3068,30 +3061,6 @@ impl Value {
             }
         } else {
             None
-        }
-    }
-
-    /// Read the current value from an ArraySlotRef.
-    pub fn array_slot_read(&self) -> Value {
-        if let Value::ArraySlotRef { array, index } = self {
-            let ptr = Arc::as_ptr(array);
-            unsafe { (&(*ptr)).get(*index).cloned().unwrap_or(Value::Nil) }
-        } else {
-            self.clone()
-        }
-    }
-
-    /// Write a value to an ArraySlotRef's parent array at the stored index.
-    pub fn array_slot_write(&self, val: Value) {
-        if let Value::ArraySlotRef { array, index } = self {
-            let ptr = Arc::as_ptr(array) as *mut ArrayData;
-            unsafe {
-                let data = &mut *ptr;
-                while data.items.len() <= *index {
-                    data.items.push(Value::Nil);
-                }
-                data.items[*index] = val;
-            }
         }
     }
 

@@ -70,8 +70,9 @@ impl VM {
     }
 
     /// Auto-vivifying index: creates intermediate Hash/Array entries and returns
-    /// a `HashSlotRef` or `ArraySlotRef` so that `:=` bind to nested elements works.
-    /// Stack: [target, key] -> [HashSlotRef | ArraySlotRef]
+    /// a `HashSlotRef` (hash) or a shared `ContainerRef` cell (array element) so
+    /// that `:=` bind to nested elements works.
+    /// Stack: [target, key] -> [HashSlotRef | ContainerRef]
     pub(super) fn exec_index_autovivify_op(&mut self) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
@@ -79,7 +80,6 @@ impl VM {
         // Resolve slot refs and Scalar containers to their underlying value for type dispatch.
         let resolved = match &target {
             Value::HashSlotRef { .. } => target.hash_slot_read(),
-            Value::ArraySlotRef { .. } => target.array_slot_read(),
             Value::Scalar(inner) => inner.as_ref().clone(),
             other => other.clone(),
         };
@@ -117,7 +117,9 @@ impl VM {
                 }
             }
             Value::Array(..) => {
-                // Positional autovivify: return an ArraySlotRef
+                // Positional autovivify: promote the element to a shared
+                // `ContainerRef` cell (scalar leaf) or descend through the
+                // shared inner Arc (container leaf).
                 if let Some(idx) = Self::index_to_usize(&index) {
                     if let Some(slot_ref) = resolved.array_slot_ref(idx, false) {
                         self.stack.push(slot_ref);
@@ -165,7 +167,6 @@ impl VM {
 
         let resolved = match &target {
             Value::HashSlotRef { .. } => target.hash_slot_read(),
-            Value::ArraySlotRef { .. } => target.array_slot_read(),
             Value::Scalar(inner) => inner.as_ref().clone(),
             other => other.clone(),
         };
@@ -199,8 +200,10 @@ impl VM {
                     return self.exec_index_autovivify_op();
                 }
             }
-            // When resolved is an Array (from a HashSlotRef or ArraySlotRef), create
-            // an ArraySlotRef so nested binding like `$struct[1]<key><subkey>[1]` works.
+            // When resolved is an Array (e.g. reached through a HashSlotRef),
+            // descend via the non-lazy autoviv op so nested binding like
+            // `$struct[1]<key><subkey>[1]` works (it promotes the element to a
+            // shared `ContainerRef` cell).
             Value::Array(..) => {
                 self.stack.push(resolved);
                 self.stack.push(index);
@@ -291,13 +294,6 @@ impl VM {
             let resolved = target.hash_slot_read();
             // If the resolved value is a Hash, push it as the target for indexing.
             // This supports chained autovivification (e.g. %h<a><b><c>).
-            self.stack.push(resolved);
-            self.stack.push(index);
-            return self.exec_index_op_with_positional(is_positional);
-        }
-        // If target is an ArraySlotRef, resolve it to the actual value and re-index.
-        if let Value::ArraySlotRef { .. } = &target {
-            let resolved = target.array_slot_read();
             self.stack.push(resolved);
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);

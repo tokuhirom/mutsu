@@ -2216,9 +2216,7 @@ impl VM {
                 let peek_key = self.stack[stack_len - 1].to_string_value();
                 if let Some(existing) = hash_arc.get(&peek_key) {
                     let is_bound = match existing {
-                        Value::HashSlotRef { .. }
-                        | Value::ArraySlotRef { .. }
-                        | Value::Scalar(..) => true,
+                        Value::HashSlotRef { .. } | Value::Scalar(..) => true,
                         Value::Pair(name, _) if name.starts_with("__mutsu_bound") => true,
                         _ => false,
                     };
@@ -3301,7 +3299,7 @@ impl VM {
                                     );
                                     // Use in-place mutation when the array is shared
                                     // (strong_count > 1) to preserve identity semantics
-                                    // and support ArraySlotRef binding.
+                                    // and support shared `ContainerRef` cell binding.
                                     // SAFETY: mutsu is single-threaded.
                                     let use_inplace =
                                         Arc::strong_count(items) > 1 && !var_name.starts_with('@');
@@ -3573,7 +3571,7 @@ impl VM {
             self.update_local_if_exists(code, &original_var_name, &updated_container);
         }
         // After element assignment, Arc::make_mut may have created a new Arc
-        // (COW). Sync ArraySlotRef/HashSlotRef locals that pointed to the OLD
+        // (COW). Sync HashSlotRef locals that pointed to the OLD
         // container Arc so they reference the new one. Only update refs that
         // pointed to the same container (identified by old_container_arc_ptr),
         // not refs to unrelated nested containers.
@@ -3592,14 +3590,6 @@ impl VM {
                     if new_ptr != old_ptr {
                         for local in self.locals.iter_mut() {
                             match local {
-                                Value::ArraySlotRef { array, .. } => {
-                                    // Only update refs that pointed to the OLD container
-                                    if Arc::as_ptr(array) as usize == old_ptr
-                                        && let Value::Array(new_arc, _) = container
-                                    {
-                                        *array = new_arc.clone();
-                                    }
-                                }
                                 Value::HashSlotRef { hash, .. } => {
                                     // Only update refs that pointed to the OLD container
                                     if Arc::as_ptr(hash) as usize == old_ptr
@@ -3800,7 +3790,7 @@ impl VM {
                 Value::Array(inner_arr, _) => {
                     if let Ok(j) = outer_key.parse::<usize>() {
                         // Use interior mutation when the inner array is shared
-                        // (e.g., by an ArraySlotRef from := binding).
+                        // (e.g., by a `ContainerRef` cell from := binding).
                         if Arc::strong_count(inner_arr) > 1 {
                             let ptr = Arc::as_ptr(inner_arr) as *mut crate::value::ArrayData;
                             unsafe {
@@ -4341,14 +4331,6 @@ impl VM {
                 self.stack.push(val);
                 return self.exec_index_assign_generic_op(code);
             }
-            Value::ArraySlotRef { .. } => {
-                // Resolve the ArraySlotRef and assign into the resolved container.
-                let resolved = target.array_slot_read();
-                self.stack.push(resolved);
-                self.stack.push(idx);
-                self.stack.push(val);
-                return self.exec_index_assign_generic_op(code);
-            }
             Value::Instance {
                 class_name,
                 attributes,
@@ -4508,7 +4490,6 @@ impl VM {
             Value::ContainerRef(_)
                 | Value::Proxy { .. }
                 | Value::HashSlotRef { .. }
-                | Value::ArraySlotRef { .. }
                 | Value::DeferredHashAccess { .. }
         )
     }
@@ -5028,13 +5009,6 @@ impl VM {
             // autovivify the path and write the value.
             if !is_rebind && let Value::DeferredHashAccess { .. } = &self.locals[idx] {
                 self.locals[idx].deferred_hash_write(val);
-                self.flush_local_to_env(code, idx);
-                return Ok(());
-            }
-            // If the current value is an ArraySlotRef, write back to the parent array
-            // (unless rebinding, which replaces the ref with a new value).
-            if !is_rebind && let Value::ArraySlotRef { .. } = &self.locals[idx] {
-                self.locals[idx].array_slot_write(val);
                 self.flush_local_to_env(code, idx);
                 return Ok(());
             }
@@ -5797,16 +5771,6 @@ impl VM {
             && let Value::DeferredHashAccess { .. } = &self.locals[idx]
         {
             self.locals[idx].deferred_hash_write(val);
-            self.flush_local_to_env(code, idx);
-            return Ok(());
-        }
-        // If the current value is an ArraySlotRef, write back to the parent array
-        // (unless rebinding, which replaces the ref with a new value).
-        if !is_bind
-            && !is_rebind
-            && let Value::ArraySlotRef { .. } = &self.locals[idx]
-        {
-            self.locals[idx].array_slot_write(val);
             self.flush_local_to_env(code, idx);
             return Ok(());
         }

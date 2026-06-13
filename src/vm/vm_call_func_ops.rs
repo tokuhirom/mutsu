@@ -561,7 +561,6 @@ impl VM {
         // Resolve slot refs to their underlying values before dispatch
         let target = match &target {
             Value::HashSlotRef { .. } => target.hash_slot_read(),
-            Value::ArraySlotRef { .. } => target.array_slot_read(),
             _ => target,
         };
 
