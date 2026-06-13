@@ -5,7 +5,7 @@ use Test;
 # propagates to the source array. The implicit topic `$_` already aliased;
 # named params (`-> @row` / `-> $row`) did not.
 
-plan 16;
+plan 18;
 
 # --- named @-param: element-assign, push, nested ---------------------------
 {
@@ -90,12 +90,26 @@ plan 16;
     is $sum, 6, 'read-only named loop reads correctly';
 }
 
+# --- `<->` rw writeback also propagates and stays O(n) --------------------
+{
+    my @a = 1, 2, 3;
+    for @a <-> $x { $x *= 10 }
+    is @a.gist, '[10 20 30]', '<-> rw mutation propagates';
+}
+
 # --- O(n) performance: a read-only loop over a large array must be fast.
-# (Pre-fix the topic writeback rebuilt the whole array every iteration, making
-# this O(n^2): ~46s for 40k. This should now complete in well under a second.)
+# (Pre-fix the topic AND `<->` rw writebacks rebuilt the whole array every
+# iteration, making these O(n^2): ~46s for 40k. They should now finish in well
+# under a second.)
 {
     my @big = (1 .. 20000).Array;
     my $s = 0;
     for @big { $s += $_ }
-    is $s, 200010000, 'large read-only loop computes correct sum (and is O(n))';
+    is $s, 200010000, 'large read-only topic loop computes correct sum (O(n))';
+}
+{
+    my @big = (1 .. 20000).Array;
+    my $s = 0;
+    for @big <-> $x { $s += $x }
+    is $s, 200010000, 'large read-only <-> rw loop computes correct sum (O(n))';
 }

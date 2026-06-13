@@ -2032,6 +2032,12 @@ impl VM {
                 if idx >= items.len() {
                     return;
                 }
+                // Skip the O(n) rebuild when the rw variable is unchanged — a
+                // read-only `<->` loop (`for @big <-> $x { $s += $x }`) would
+                // otherwise be O(n^2). See `loop_var_unchanged`.
+                if Self::loop_var_unchanged(&current_val, &items[idx]) {
+                    return;
+                }
                 let mut updated = items.to_vec();
                 updated[idx] = current_val;
                 let updated_value = Value::Array(
