@@ -6,7 +6,7 @@ use regex::Regex;
 
 use super::super::add_parse_warning;
 use super::super::expr::expression;
-use super::super::helpers::{is_loop_label_name, ws, ws1};
+use super::super::helpers::{is_loop_label_name, skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char, parse_char};
 
 use crate::ast::{Expr, PhaserKind, Stmt};
@@ -1983,6 +1983,17 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
     if name == "done" {
+        // `done()` is the explicit call form (it takes no payload). Consume the
+        // empty argument list so a trailing statement modifier applies to the
+        // whole `done`, not to a stray `()` term: `done() if $_ == 3` must parse
+        // as `(done()) if $_ == 3`, not `done; () if $_ == 3`.
+        let rest = if !had_ws && rest.starts_with('(') {
+            let after = skip_balanced_parens(rest);
+            let (after, _) = ws(after)?;
+            after
+        } else {
+            rest
+        };
         // Support statement modifiers like `done if $v >= 2`
         return parse_statement_modifier(rest, Stmt::ReactDone);
     }
