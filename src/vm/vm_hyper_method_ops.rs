@@ -358,6 +358,20 @@ impl VM {
             }
         }
         if let Value::Array(existing, kind) = &target {
+            // In-place write back through the target's `Arc<ArrayData>` so a
+            // hyper mutation on a *nested* element (`@b[0]>>++`, `%h<a>>>++`,
+            // `$r>>++` where `$r := @a`) reaches the element: the read shares the
+            // inner Arc with the slot that holds it, so mutating the Arc's items
+            // is observed there. The by-identity binding scan below only reaches
+            // top-level variable bindings (it misses array/hash elements).
+            // SAFETY: mutsu is single-threaded; no immutable borrow into this
+            // ArrayData is alive across the write.
+            {
+                let ptr = std::sync::Arc::as_ptr(existing) as *mut crate::value::ArrayData;
+                unsafe {
+                    (*ptr).items = items.clone();
+                }
+            }
             self.interpreter.overwrite_array_items_by_identity_for_vm(
                 existing,
                 items.clone(),
@@ -714,6 +728,15 @@ impl VM {
             }
         }
         if let Value::Array(existing, kind) = &target {
+            // In-place write back through the target's `Arc<ArrayData>` so a
+            // nested-element hyper mutation reaches the element (see the twin
+            // site in `exec_hyper_method_call_op`). SAFETY: single-threaded.
+            {
+                let ptr = std::sync::Arc::as_ptr(existing) as *mut crate::value::ArrayData;
+                unsafe {
+                    (*ptr).items = items.clone();
+                }
+            }
             self.interpreter.overwrite_array_items_by_identity_for_vm(
                 existing,
                 items.clone(),
