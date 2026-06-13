@@ -5324,6 +5324,35 @@ impl Interpreter {
         id
     }
 
+    /// Normalize a scoped `state`-variable storage key into a form stable across
+    /// mutsu's two compilations of the same routine (the registered body `&f` and
+    /// the on-the-fly multi-candidate body `&f/0` reach `state $n` under different
+    /// `current_package` suffixes and opcode positions). Used as the cross-thread
+    /// shared-cell key so `start f()` and a direct `f()` agree (Track C). Strips a
+    /// trailing `@<digits>` (opcode position) and any `/<digits>` candidate suffix.
+    pub(crate) fn normalize_state_key(key: &str) -> String {
+        let trimmed = match key.rfind('@') {
+            Some(pos)
+                if pos + 1 < key.len() && key[pos + 1..].bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                &key[..pos]
+            }
+            _ => key,
+        };
+        let mut out = String::with_capacity(trimmed.len());
+        let mut chars = trimmed.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '/' && chars.peek().is_some_and(|n| n.is_ascii_digit()) {
+                while chars.peek().is_some_and(|n| n.is_ascii_digit()) {
+                    chars.next();
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
@@ -5363,6 +5392,21 @@ impl Interpreter {
                 // Only insert if not already present — existing values may have
                 // been updated by earlier threads that are already running.
                 sv.entry(key.resolve()).or_insert_with(|| val.clone());
+            }
+            // Track C: migrate the parent's existing `state` variables into shared
+            // cells (keyed by their normalized cross-compilation key) so a routine
+            // whose `state` was already mutated before the first thread spawned
+            // (`f(); f(); start { f() }`) carries that value into the threads
+            // instead of re-initializing from the declaration. Only seeds cells
+            // that don't exist yet; the value becomes the cell's initial content.
+            for (skey, sval) in &self.state_vars {
+                if matches!(sval, Value::ContainerRef(_)) {
+                    continue;
+                }
+                let shared_key =
+                    format!("__mutsu_shared_state::{}", Self::normalize_state_key(skey));
+                sv.entry(shared_key)
+                    .or_insert_with(|| sval.clone().into_container_ref());
             }
         }
         self.shared_vars_active = true;

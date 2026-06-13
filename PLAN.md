@@ -152,8 +152,17 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             ④ box 時に stale な `shared_vars` スナップショットをセルに張り替え
             （mainline `start` 後の `sync_shared_vars_to_env` writeback がセルを clobber する回帰を防止）。
             `await (^N).map: { start { $c++ } }` が正しく N を返す。テスト `t/concurrent-shared-cell.t`。
-            **残**: `state $n` のスレッド間共有（`state_vars`/`closure_captured_state` は clone_for_thread で
-            リセットされる別機構 — 次スライス）。`@`/`%` 共有・複合代入（`+=`）のアトミック化。
+            **スライス 2 LANDED**: スカラ `state $n` のスレッド間共有。`StateVarInit` が
+            `shared_vars_active` の間、user `state` 変数を `shared_vars` 内の共有 `ContainerRef` セル
+            （正規化キー `__mutsu_shared_state::{normalize_state_key(scoped_key)}`）に格納。
+            キー正規化は mutsu の二重コンパイル（registered body `&f` と OTF `&f/0`）で分岐する
+            `@<ip>`／`/<n>` を剥がし、`start f()` と直接 `f()` が同一セルを引くようにする。
+            `clone_for_thread` がスレッド前の親 state を共有セルへ移行（`f();f();start{f()}` を解く）。
+            増減は ① のアトミック ContainerRef RMW を流用（決定的）。`StateVarInit` は genuine `state`
+            宣言のみに出るので `ff`/`fff`/smart-match の内部 state（`set_state_var` 直接・非セル）は不変。
+            テスト `t/concurrent-state-var.t`。
+            **残**: `state @`/`%`（配列/ハッシュ）のスレッド共有（要素セル＝Track B 依存）、
+            lexical `@`/`%` 共有・複合代入（`+=`）のアトミック化。
       - [ ] `run_react_event_loop[_drain]` を VM ネイティブ実行へ（react/supply の async 状態所有）。
       - [ ] **unsafe aliasing 撤廃**（ANALYSIS §2.3, `Arc::as_ptr as *mut` 11 箇所）— B の要素セル基盤の上で。
 
