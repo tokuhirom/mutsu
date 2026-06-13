@@ -3349,9 +3349,28 @@ impl Interpreter {
                 match sub.receiver.recv_timeout(poll_timeout) {
                     Ok(SupplyEvent::Emit(value)) => {
                         any_active = true;
-                        let _ = self.call_sub_value(sub.callback.clone(), vec![value], true);
-                        // Check if promise was resolved during callback
+                        let cb_result = self.call_sub_value(sub.callback.clone(), vec![value], true);
+                        // `done`/`last` etc. inside the whenever resolve the
+                        // promise via the Supplier.done handler.
                         if promise.is_resolved() {
+                            return Ok(());
+                        }
+                        // A `die` inside the whenever block quits the supply: break
+                        // the awaited promise with the cause (otherwise the poll
+                        // loop would spin to its deadline — a hang). Control-flow
+                        // signals (done/last/next/redo) are not failures.
+                        if let Err(err) = cb_result
+                            && !err.is_react_done
+                            && !err.is_last
+                            && !err.is_next
+                            && !err.is_redo
+                        {
+                            let cause = err
+                                .exception
+                                .as_deref()
+                                .cloned()
+                                .unwrap_or_else(|| Value::str(err.message.clone()));
+                            promise.break_with(cause, String::new(), String::new());
                             return Ok(());
                         }
                     }

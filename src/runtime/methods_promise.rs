@@ -29,7 +29,7 @@ impl Interpreter {
         err
     }
 
-    fn channel_receive_closed_error() -> RuntimeError {
+    pub(crate) fn channel_receive_closed_error() -> RuntimeError {
         let mut err = RuntimeError::new("Cannot receive on a closed channel");
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::Channel::ReceiveOnClosed"),
