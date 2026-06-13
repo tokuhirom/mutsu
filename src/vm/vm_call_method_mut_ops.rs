@@ -1472,9 +1472,16 @@ impl VM {
         if !matches!(method, "append" | "prepend" | "unshift" | "pop" | "shift") {
             return None;
         }
-        // Only a plain `@`-sigiled variable whose value is a real `[...]` array
-        // (ArrayKind::Array). This excludes List/Item/Shaped/Lazy kinds.
-        if !target_name.starts_with('@')
+        // A plain `@`-sigiled variable whose value is a real `[...]` array
+        // (ArrayKind::Array), excluding List/Item/Shaped/Lazy kinds — OR a scalar
+        // variable bound to a whole array container (`my $r := @a`), which holds
+        // a shared `ContainerRef` cell that `env_root_descended_mut` below
+        // unwraps so the mutation still writes through the shared array.
+        let is_bound_cell = matches!(
+            self.interpreter.env().get(target_name),
+            Some(Value::ContainerRef(_))
+        );
+        if (!target_name.starts_with('@') && !is_bound_cell)
             || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
         {
             return None;
@@ -1564,9 +1571,15 @@ impl VM {
         if method != "splice" {
             return None;
         }
-        // Only a plain `@`-sigiled variable whose value is a real `[...]` array
-        // (ArrayKind::Array). This excludes List/Item/Shaped/Lazy kinds.
-        if !target_name.starts_with('@')
+        // A plain `@`-sigiled variable whose value is a real `[...]` array
+        // (ArrayKind::Array), excluding List/Item/Shaped/Lazy — OR a scalar bound
+        // to a whole array container (`my $r := @a`), unwrapped via
+        // `env_root_descended_mut` below.
+        let is_bound_cell = matches!(
+            self.interpreter.env().get(target_name),
+            Some(Value::ContainerRef(_))
+        );
+        if (!target_name.starts_with('@') && !is_bound_cell)
             || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
         {
             return None;
