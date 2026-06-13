@@ -195,13 +195,20 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         let result = normalize_chained_zip_meta(first);
         // Wrap in Grouped so the compiler's chain-flattener can
         // distinguish `(1|2)|3` from `1|2|3` for junction operators.
+        //
+        // A lone parenthesized bareword (a listop term such as `(done)`) is also
+        // wrapped: the parens close off the listop so it cannot gobble a trailing
+        // operator, which lets `1 ?? (done) !! 2` parse (matching Rakudo). Without
+        // the wrapper the ternary then-branch check would reject the naked
+        // `BareWord`, conflating `(done)` with the gobbling `done`.
         let result = if matches!(
             &result,
             Expr::Binary {
                 op: TokenKind::Pipe | TokenKind::Ampersand | TokenKind::Caret,
                 ..
             }
-        ) {
+        ) || matches!(&result, Expr::BareWord(_))
+        {
             Expr::Grouped(Box::new(result))
         } else {
             result
