@@ -162,11 +162,21 @@ impl Compiler {
     }
 
     pub(super) fn compile_call_arg(&mut self, arg: &Expr) {
-        // A call argument's value is passed to the callee, not stored in the
-        // caller frame, so a closure argument is conservatively NON-escaping
-        // (the #2746 guard: `map {...}` / `lives-ok {...}` must not box even when
-        // the whole call sits in an escaping position like `my @r = map {...}`).
-        self.with_escape(false, |c| {
+        self.compile_call_arg_with_escape(arg, false);
+    }
+
+    /// Like `compile_call_arg` but lets the caller force the argument into an
+    /// escaping position. Used for thread-spawning constructs (`start`) whose
+    /// block argument genuinely outlives the call frame (it is stored in a
+    /// Promise and run later on another thread), so the locals it captures and
+    /// mutates must be promoted to shared `ContainerRef` cells (escape analysis).
+    pub(super) fn compile_call_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        // A call argument's value is normally passed to the callee, not stored
+        // in the caller frame, so a closure argument is conservatively
+        // NON-escaping (the #2746 guard: `map {...}` / `lives-ok {...}` must not
+        // box even when the whole call sits in an escaping position like
+        // `my @r = map {...}`). `start` overrides this with `escaping = true`.
+        self.with_escape(escaping, |c| {
             c.with_suppress_pair_capture(true, |c| c.compile_expr(arg))
         });
         if Self::needs_decont(arg) {

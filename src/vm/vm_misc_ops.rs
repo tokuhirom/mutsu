@@ -934,6 +934,9 @@ impl VM {
         {
             // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
             if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+                if self.atomic_container_incdec(arc, name, true, false) {
+                    return Ok(());
+                }
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.increment_value_smart(&val)?;
@@ -982,6 +985,9 @@ impl VM {
         // closures over this lexical observe the change and the smart string/Int
         // increment semantics are preserved (the slot holds the same Arc).
         if let Value::ContainerRef(ref arc) = val {
+            if self.atomic_container_incdec(arc, name, true, false) {
+                return Ok(());
+            }
             let inner = arc.lock().unwrap().clone();
             let v = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.increment_value_smart(&v)?;
@@ -1026,6 +1032,9 @@ impl VM {
         {
             // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
             if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+                if self.atomic_container_incdec(arc, name, false, false) {
+                    return Ok(());
+                }
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.decrement_value_smart(&val)?;
@@ -1074,6 +1083,9 @@ impl VM {
         // closures over this lexical observe the change and the smart string/Int
         // decrement semantics are preserved (the slot holds the same Arc).
         if let Value::ContainerRef(ref arc) = val {
+            if self.atomic_container_incdec(arc, name, false, false) {
+                return Ok(());
+            }
             let inner = arc.lock().unwrap().clone();
             let v = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.decrement_value_smart(&v)?;

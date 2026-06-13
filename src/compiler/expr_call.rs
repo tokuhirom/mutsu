@@ -883,8 +883,13 @@ impl Compiler {
             } else {
                 let arity = args.len() as u32;
                 let arg_sources_idx = self.add_arg_sources_constant(args);
+                // `start { ... }` spawns a thread: its block argument outlives
+                // the call frame, so captured-and-mutated locals must become
+                // shared `ContainerRef` cells (escape analysis). Compile its
+                // args in an escaping position.
+                let escaping_args = name.resolve() == "start";
                 for arg in args {
-                    self.compile_call_arg(arg);
+                    self.compile_call_arg_with_escape(arg, escaping_args);
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 self.code.emit(OpCode::CallFunc {

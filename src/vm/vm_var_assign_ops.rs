@@ -1517,6 +1517,39 @@ impl VM {
         Ok(())
     }
 
+    /// Atomically read-modify-write a shared `ContainerRef` scalar cell for an
+    /// in-place `++`/`--`, holding the cell lock across the whole RMW so that
+    /// concurrent `start { $shared++ }` blocks (Track C: shared lexical cells)
+    /// don't lose updates the way a separate lock-read / lock-write would.
+    /// `increment` selects `++` vs `--`; `post` selects which value to push
+    /// (post-inc/dec pushes the old value, pre-inc/dec the new one).
+    /// Returns `true` if it handled the op atomically. Instance cells run a
+    /// user-defined `.succ`/`.pred`, which can't be dispatched while the cell
+    /// lock is held (reentrancy), so for those it returns `false` and the
+    /// caller falls back to the (non-atomic) smart path.
+    pub(super) fn atomic_container_incdec(
+        &mut self,
+        arc: &std::sync::Arc<std::sync::Mutex<Value>>,
+        name: &str,
+        increment: bool,
+        post: bool,
+    ) -> bool {
+        let mut guard = arc.lock().unwrap();
+        if matches!(&*guard, Value::Instance { .. }) {
+            return false;
+        }
+        let old = self.normalize_incdec_source_with_type(name, guard.clone());
+        let new_val = if increment {
+            Self::increment_value(&old)
+        } else {
+            Self::decrement_value(&old)
+        };
+        *guard = new_val.clone();
+        drop(guard);
+        self.stack.push(if post { old } else { new_val });
+        true
+    }
+
     /// Decrement a value, calling .pred() on Instance values with custom methods.
     pub(super) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         // Route user-defined `.pred` through the VM's unified compiled-first
@@ -1605,6 +1638,9 @@ impl VM {
         {
             // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
             if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+                if self.atomic_container_incdec(arc, name, true, true) {
+                    return Ok(());
+                }
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.increment_value_smart(&val)?;
@@ -1627,8 +1663,13 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        // ContainerRef: deref for increment, write back through the shared container
+        // ContainerRef: deref for increment, write back through the shared container.
+        // Use an atomic read-modify-write under the cell lock so concurrent
+        // `start { $shared++ }` blocks don't lose updates (Track C).
         if let Value::ContainerRef(ref arc) = raw_val {
+            if self.atomic_container_incdec(arc, name, true, true) {
+                return Ok(());
+            }
             let inner = arc.lock().unwrap().clone();
             let val = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.increment_value_smart(&val)?;
@@ -1715,6 +1756,9 @@ impl VM {
         {
             // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
             if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+                if self.atomic_container_incdec(arc, name, false, true) {
+                    return Ok(());
+                }
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.decrement_value_smart(&val)?;
@@ -1737,8 +1781,12 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        // ContainerRef: deref for decrement, write back through the shared container
+        // ContainerRef: deref for decrement, write back through the shared container.
+        // Atomic RMW under the cell lock for concurrent `start` blocks (Track C).
         if let Value::ContainerRef(ref arc) = raw_val {
+            if self.atomic_container_incdec(arc, name, false, true) {
+                return Ok(());
+            }
             let inner = arc.lock().unwrap().clone();
             let val = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.decrement_value_smart(&val)?;
