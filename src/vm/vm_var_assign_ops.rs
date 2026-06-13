@@ -3589,16 +3589,12 @@ impl VM {
                     // Only sync if the Arc pointer actually changed (COW happened)
                     if new_ptr != old_ptr {
                         for local in self.locals.iter_mut() {
-                            match local {
-                                Value::HashSlotRef { hash, .. } => {
-                                    // Only update refs that pointed to the OLD container
-                                    if Arc::as_ptr(hash) as usize == old_ptr
-                                        && let Value::Hash(new_arc) = container
-                                    {
-                                        *hash = new_arc.clone();
-                                    }
-                                }
-                                _ => {}
+                            // Only update refs that pointed to the OLD container.
+                            if let Value::HashSlotRef { hash, .. } = local
+                                && Arc::as_ptr(hash) as usize == old_ptr
+                                && let Value::Hash(new_arc) = container
+                            {
+                                *hash = new_arc.clone();
                             }
                         }
                     }
