@@ -49,13 +49,13 @@ pub(in crate::runtime) use state_supplier::{
     register_supplier_flat_tap, register_supplier_lines_tap, register_supplier_produce_tap,
     register_supplier_quit_callback, register_supplier_start_tap, register_supplier_tap,
     register_supplier_tap_with_head_limit, register_supplier_unique_tap,
-    register_supplier_words_tap, register_supplier_zip_latest_tap, register_supplier_zip_tap,
-    register_zip_latest_state, register_zip_state, supplier_emit_callbacks,
-    supplier_produce_update_acc, supplier_tap_count, supplier_unique_get_seen,
-    supplier_unique_mark_seen, take_supplier_done_callbacks, take_supplier_quit_callbacks,
-    update_classify_state, whenever_done_group_decrement, zip_buffer_value,
-    zip_latest_buffer_value, zip_latest_source_done, zip_latest_state_info, zip_source_done,
-    zip_state_info,
+    register_supplier_whenever_quit_callback, register_supplier_words_tap,
+    register_supplier_zip_latest_tap, register_supplier_zip_tap, register_zip_latest_state,
+    register_zip_state, supplier_emit_callbacks, supplier_produce_update_acc, supplier_tap_count,
+    supplier_unique_get_seen, supplier_unique_mark_seen, take_supplier_done_callbacks,
+    take_supplier_quit_callbacks, take_supplier_whenever_quit_callbacks, update_classify_state,
+    whenever_done_group_decrement, zip_buffer_value, zip_latest_buffer_value,
+    zip_latest_source_done, zip_latest_state_info, zip_source_done, zip_state_info,
 };
 
 use super::*;
