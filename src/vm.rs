@@ -16,6 +16,49 @@ use num_traits::{Signed, Zero};
 
 type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
 
+thread_local! {
+    /// Set while execution is inside the `VM::run` catch_unwind boundary, so the
+    /// custom panic hook can stay quiet for panics that we are about to convert
+    /// into a catchable `X::` error (instead of dumping a Rust backtrace).
+    static IN_VM_PANIC_BOUNDARY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+static VM_PANIC_HOOK_INIT: std::sync::Once = std::sync::Once::new();
+
+/// Install (once) a panic hook that suppresses the default backtrace dump for
+/// panics caught at the `VM::run` boundary, unless the user opted into details
+/// via `RUST_BACKTRACE`/`MUTSU_TRACE`. Panics outside the boundary (genuine
+/// internal bugs) still print normally.
+fn install_vm_panic_hook() {
+    VM_PANIC_HOOK_INIT.call_once(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let suppress = IN_VM_PANIC_BOUNDARY.with(|f| f.get());
+            let want_details = std::env::var("RUST_BACKTRACE")
+                .map(|v| !v.is_empty() && v != "0")
+                .unwrap_or(false)
+                || std::env::var("MUTSU_TRACE")
+                    .map(|v| !v.is_empty())
+                    .unwrap_or(false);
+            if suppress && !want_details {
+                return;
+            }
+            default_hook(info);
+        }));
+    });
+}
+
+/// Extract a human-readable message from a caught panic payload.
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
 /// Pre-computed fast dispatch entry for compiled methods.
 /// Caches all the information needed to skip intermediate dispatch steps
 /// (wrap chain check, compiled_code extraction, fast-path eligibility checks).
@@ -623,14 +666,57 @@ impl VM {
 
     /// Run the compiled bytecode. Always returns the interpreter back
     /// (even on error) so the caller can restore it.
+    ///
+    /// The actual exec loop runs inside a `catch_unwind` boundary so that a Rust
+    /// `panic!`/`unwrap`/index-OOB/capacity-overflow triggered by user code is
+    /// converted into a catchable `X::AdHoc` `RuntimeError` (exit 1, flows through
+    /// `try`/`CATCH`) instead of crashing the whole process (exit 101). This also
+    /// covers EVAL and sub-VMs, which run through `VM::run`. Stack overflow
+    /// `abort`s rather than unwinding, so it is out of scope here.
     pub(crate) fn run(
         mut self,
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> (Interpreter, Result<Option<Value>, RuntimeError>) {
-        if let Err(e) = Self::validate_labels(code) {
-            return (self.interpreter, Err(e));
-        }
+        install_vm_panic_hook();
+        // Save/restore the flag so nested `VM::run` calls (EVAL, sub-VMs) don't
+        // clobber an outer boundary's state.
+        let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.run_inner(code, compiled_fns)
+        }));
+        IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
+        let result = match caught {
+            Ok(r) => r,
+            Err(payload) => Err(Self::vm_panic_error(panic_payload_message(
+                payload.as_ref(),
+            ))),
+        };
+        (self.interpreter, result)
+    }
+
+    /// Build a catchable `X::AdHoc` error from a caught panic message.
+    fn vm_panic_error(message: String) -> RuntimeError {
+        let message = format!("Internal error: {message}");
+        let mut err = RuntimeError::new(message.clone());
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::AdHoc"),
+            attrs,
+        )));
+        err
+    }
+
+    /// The exec loop, borrowing `&mut self` so the `catch_unwind` closure in
+    /// `run` does not move `self.interpreter` out (the caller must always get the
+    /// interpreter back, even on panic).
+    fn run_inner(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        Self::validate_labels(code)?;
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
@@ -674,14 +760,14 @@ impl VM {
                 if e.is_return && self.interpreter.routine_stack().is_empty() {
                     let inner_err = RuntimeError::controlflow_return(true);
                     if self.check_phaser_depth > 0 {
-                        return (self.interpreter, Err(Self::wrap_in_begin_time(inner_err)));
+                        return Err(Self::wrap_in_begin_time(inner_err));
                     }
-                    return (self.interpreter, Err(inner_err));
+                    return Err(inner_err);
                 }
                 if self.check_phaser_depth > 0 {
-                    return (self.interpreter, Err(Self::wrap_in_begin_time(e)));
+                    return Err(Self::wrap_in_begin_time(e));
                 }
-                return (self.interpreter, Err(e));
+                return Err(e);
             }
             if self.interpreter.is_halted() {
                 break;
@@ -693,8 +779,8 @@ impl VM {
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
         let last_stack_value = self.stack.last().cloned();
-        let fallback = self.last_topic_value;
-        (self.interpreter, Ok(last_stack_value.or(fallback)))
+        let fallback = self.last_topic_value.clone();
+        Ok(last_stack_value.or(fallback))
     }
 
     /// Invoke a callable value using the VM fast paths when available and
@@ -858,6 +944,36 @@ impl VM {
     }
 
     /// Execute opcodes in [start..end), used by loop compound opcodes.
+    /// Like `run_range`, but installs a `catch_unwind` boundary so a Rust panic
+    /// (unwrap/index-OOB/overflow/...) raised anywhere inside the executed range
+    /// — however deeply nested through other (unguarded) `run_range`/`run_reuse`
+    /// frames — is converted into a catchable `X::AdHoc` `RuntimeError` rather
+    /// than crashing the process. Used for the `try`/`CATCH` body so user error
+    /// handlers can catch otherwise-fatal internal panics. The intermediate
+    /// frames need no guard: Rust unwinding propagates through them up to this
+    /// boundary, where it becomes a normal `Err` and flows through the existing
+    /// exception machinery.
+    pub(crate) fn run_range_guarded(
+        &mut self,
+        code: &CompiledCode,
+        start: usize,
+        end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        install_vm_panic_hook();
+        let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.run_range(code, start, end, compiled_fns)
+        }));
+        IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
+        match caught {
+            Ok(r) => r,
+            Err(payload) => Err(Self::vm_panic_error(panic_payload_message(
+                payload.as_ref(),
+            ))),
+        }
+    }
+
     fn run_range(
         &mut self,
         code: &CompiledCode,

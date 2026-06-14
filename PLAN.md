@@ -205,7 +205,6 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 
 #### Phase I/II と並行で随時消化できる独立タスク（critical path 外）
 
-- [ ] **VM の panic→`X::` 変換境界を `run()` に設置**（ANALYSIS §2.1）— 安定性。依存なし・いつでも可（Q4 前倒し）。
 - [ ] **正規表現のコンパイル済みキャッシュ**（ANALYSIS §8.4）— perf（raku 比 8.6x 遅）。撤去とは独立。
 
 関連: 🟣第2優先「第一級コンテナ」＝トラック B の本体（レバー C ＝ Phase 1 の一部、Q2 の Arc-pointer flaky を吸収）。
@@ -511,8 +510,6 @@ NaN-boxing で payload 8byte 化。**各ステップで int.t 等の重量級 ro
       `start` ブロック間で `$counter`/`state $n` が共有されない (mutsu 1/0、raku 4/3)。
 - [ ] **`unsafe` の "single-threaded 前提" を是正** (ANALYSIS §2.3) — `Arc::as_ptr as *mut` での
       エイリアス書き換え 11 箇所がスレッド生成と矛盾し UB の余地。配列/ハッシュを共有セル化して撤廃。
-- [ ] **VM の panic→`X::` 変換境界を `run()` に設置** (ANALYSIS §2.1, §5) — ユーザコード起因の
-      Rust パニックを Raku 例外に変換し、プロセスクラッシュを防ぐ (Q4 「panic/crash を 0 に」の前倒し)。
 - [ ] **正規表現のコンパイル済みキャッシュ導入** (ANALYSIS §8.4) — `Value::Regex(Arc<String>)` が
       毎マッチ再パース。実測 raku 比 8.6x 遅 (変数束縛でも改善せず)。パターン→構造のキャッシュを追加。
 - [ ] **コンテナ型メタデータを生 Arc ポインタ keying から安定コンテナ ID へ移す**（間欠 flaky の根本原因。
