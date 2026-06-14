@@ -124,8 +124,13 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 
 - [ ] **トラック A — 残ディスパッチの native 化（③ の dispatch 部分）** ＝ 最長・ペース決定トラック
       - [x] PR-1 Routine dispatch / PR-2 builtin-shadow fork / PR-3 catch-all ユーザーメソッド / PR-4 非proto multi fork
-      - [ ] **§2 catch-all 末端**: lexical `&`-var の名前経由呼び（`-> &op {...}` 等）を VM 側で Routine/compiled
-            dispatch へ寄せる、`__mutsu_*` 内部（並行は C へ）、no-match エラー生成は carrier 確定。
+      - [~] **§2 catch-all 末端**:
+            - [x] **lexical `&`-var の名前経由呼び（`-> &op {...}` 等）= DONE**: pure lexical（#2949）+
+                  shadow 経路（#3021）+ slip 呼び `op(|@args)`（#3022）+ shadow×slip 優先順位バグ修正（#3024）。
+                  すべて `vm_call_on_value` へ寄せ、interpreter terminal 依存ゼロ。sigilless callable `f(...)` は
+                  raku 仕様上不正（`f.()` は既に native）なので対象外。残: shadow 下クロージャ内 sigilless 名前
+                  解決の語彙性（dispatch でなく name resolution の別軸課題）。
+            - [ ] `__mutsu_*` 内部（並行は C へ）、no-match エラー生成は carrier 確定。
       - [ ] **§1 native-method dispatch**: Buf/Failure/native 受け手のメソッドを native 実装に（または carrier 確定）。
       - [ ] **§1 native IO**: `IO::Handle`/`IO::Pipe` 等。ファイルハンドル状態を VM 所有 or native IO 層へ。
 - [ ] **トラック B — 第一級コンテナ Phase 2（要素セル）** ＝ データ表現（A と完全独立）
