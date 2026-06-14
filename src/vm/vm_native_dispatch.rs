@@ -114,10 +114,24 @@ impl VM {
                 if cn == "Supplier" && method_sym == "Supply" && args.is_empty() {
                     return None;
                 }
-                // Numeric bridge
-                if self.interpreter.type_matches_value("Real", target)
-                    || self.interpreter.type_matches_value("Numeric", target)
-                    || self.interpreter.has_user_method(&cn, "Bridge")
+                // Numeric bridge — Real/Numeric instances route through the
+                // interpreter's Numeric bridge for arithmetic and coercion.
+                // Exception: pure-render methods (gist/Str/raku/...) don't need
+                // the bridge, so let `native_method_0arg` render the known
+                // builtin numeric instances (Instant/Duration) directly. A
+                // user numeric class that overrides one of these keeps the
+                // bypass so its method runs; unknown numeric instances return
+                // `None` from native and still fall through to the interpreter.
+                let is_pure_render = matches!(
+                    method_name.as_str(),
+                    "gist" | "Str" | "Stringy" | "raku" | "perl"
+                );
+                let render_overridden =
+                    is_pure_render && self.interpreter.has_user_method(&cn, &method_name);
+                if (!is_pure_render || render_overridden)
+                    && (self.interpreter.type_matches_value("Real", target)
+                        || self.interpreter.type_matches_value("Numeric", target)
+                        || self.interpreter.has_user_method(&cn, "Bridge"))
                 {
                     return None;
                 }
