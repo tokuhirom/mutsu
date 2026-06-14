@@ -486,6 +486,26 @@ impl VM {
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
+        // A lexical `&name` parameter (or `my &name`) that shadows a same-named
+        // package sub wins over the package sub, even when the call slips its
+        // args (`op(|@args)`). This mirrors the `lexical_override` handling in
+        // `exec_call_func_op`; without it the `find_compiled_function` branch
+        // below would pick the package sub and ignore the shadow. Only grabbed
+        // when a same-named package sub actually exists (otherwise the
+        // pure-lexical path in the final `else` handles it).
+        if self.has_function(&name) && !self.has_proto(&name) && !self.has_multi_candidates(&name) {
+            let ampname = format!("&{}", name);
+            let from_local = self.locals_get_by_name(code, &ampname);
+            let candidate = from_local.or_else(|| self.interpreter.env().get(&ampname).cloned());
+            if let Some(callable) =
+                candidate.filter(|v| Self::env_callable_is_lexical_override(v, &name))
+            {
+                let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
+                self.stack.push(result);
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
         if !self.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
