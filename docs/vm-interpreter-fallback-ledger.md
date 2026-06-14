@@ -28,10 +28,11 @@
 | ~~`vm_call_method_mut_ops.rs` plain `@`-array mutators~~ | ~~append/prepend/unshift/pop/shift~~ | — | **✅消化 (③ PR-5)**: `try_native_array_mut` で VM ネイティブ。typed/shaped/lazy/shared/constrained は interpreter 維持 |
 | ~~`vm_call_method_mut_ops.rs` mutable Buf write methods~~ | ~~write-bits/write-ubits/write-num*/write-int*/write-uint*~~ | — | **✅消化 (③ PR-7)**: `try_native_buf_mut` で VM ネイティブ。pure 変換は `builtins/{buf_bits,buf_write_num,buf_write_int}` に一本化。type-object/Blob/malformed-arity は interpreter 維持 |
 | ~~`vm_call_method_mut_ops.rs` 単純 array-backed Iterator~~ | ~~pull-one/skip-one/skip-at-least/skip-at-least-pull-one/sink-all~~ | — | **✅消化 (③ PR-9)**: `try_native_iterator` で VM ネイティブ（`$it.pull-one` は CallMethodMut＝mut パス）。`items`+`index` 自己完結のみ。squish（コールバック）/ lazy（gather/coroutine, `is_lazy`）/ push-*（外部バッファ）/ count-only/bool-only は interpreter 維持 |
-| `vm_call_method_mut_ops.rs` array-backed instance | `is Array` storage の push/pop/shift | MEDIUM | 第一級コンテナ Phase 2 |
+| ~~`vm_call_method_mut_ops.rs` array-backed instance~~ | ~~`is Array` storage の push/pop/shift~~ | — | **✅消化 (#3058)**: `native_array_storage_mut` で `is Array`-backed instance の backing storage への push/pop/shift/unshift/append/prepend を VM ネイティブ化。`write_back_array_storage_instance` で instance 再構築。richer メソッド（join/sort/map/splice/AT-POS 等）は interpreter 維持 |
 | `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B（共有セル所有） |
 | `vm_data_ops.rs` shaped push | shaped 配列 push | MEDIUM | shaped 次元メタ検査の VM 化 |
-| `vm_data_ops.rs` non-simple push | closure-captured / 非Array push | MEDIUM | 第一級コンテナ Phase 2（ContainerRef） |
+| `vm_data_ops.rs` non-simple push | 非Array/非ContainerRef な ArrayPush ターゲット（cold） | LOW | **probe で cold 確認 (2026-06-14)**: ArrayPush opcode は単一引数 push かつ *local* array 限定で emit。closure-captured / multi-arg push は CallMethodMut へ流れ **#3060 で native 化済**（下記）。残る ArrayPush 非Array 分岐は whitelist で発火例ゼロ＝cold |
+| ~~`vm_call_method_mut_ops.rs` CallMethodMut push~~ | ~~closure-captured / multi-arg `@a.push`~~ | — | **✅消化 (#3060)**: `try_native_array_mut` に `push` arm を追加。`@a.push(x)` は単一引数 local のみ ArrayPush opcode、それ以外（captured / multi-arg）は CallMethodMut で来るのを VM ネイティブ化。typed/shaped/lazy/shared/constrained は interpreter 維持 |
 | ~~`vm_smart_match.rs` key-method~~ | ~~smartmatch のキーメソッド抽出~~ | — | **✅消化 (PR2)**: 統一 compiled-first へ |
 | ~~`vm_call_method_compiled.rs` QuantHash coercion~~ | ~~`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`（list-like 受け手）~~ | — | **✅消化 (③ PR-8)**: `try_native_quanthash_coerce` で VM ネイティブ。pure 折り畳みは `builtins/quanthash_coerce` に一本化。`.MixHash`（型メタ登録）/ Instance/Package 受け手は interpreter 維持 |
 | `vm_call_helpers.rs` hyper temp | temp-bind した item への hyper メソッド | MEDIUM | 第一級コンテナ Phase 2 |
