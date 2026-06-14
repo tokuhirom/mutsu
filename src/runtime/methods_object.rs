@@ -99,8 +99,13 @@ impl Interpreter {
                 // A non-class entry in the MRO (e.g. a role) — be conservative.
                 return false;
             };
+            // A `TWEAK` submethod is allowed: the native path assembles the
+            // instance as usual, then runs the TWEAK phase via the shared
+            // `run_tweak_phase` helper (same ordering/dispatch as the full
+            // constructor). `BUILD`/`BUILDALL`/custom `new` still fall through —
+            // BUILD runs *before* attribute defaults are finalized, which the
+            // native assembly order does not reproduce.
             let simple = !class_def.methods.contains_key("BUILD")
-                && !class_def.methods.contains_key("TWEAK")
                 && !class_def.methods.contains_key("BUILDALL")
                 && !class_def.methods.contains_key("new")
                 && class_def.native_methods.is_empty()
@@ -507,6 +512,25 @@ impl Interpreter {
         }
         // Add alias metadata for `has $x` (no twigil) attributes
         self.add_alias_attribute_metadata(cn_resolved, &mut attrs);
+        // Run the TWEAK phase if any class in the MRO declares one. The gate
+        // (`is_native_default_constructible`) allows TWEAK-only classes; the
+        // instance is fully assembled at this point, so running TWEAK here
+        // matches the full constructor (which runs it after attribute init).
+        // Cheap MRO check first so the common no-TWEAK case pays nothing extra.
+        let has_tweak = self.mro_readonly(cn_resolved).iter().any(|cls| {
+            self.registry()
+                .classes
+                .get(cls)
+                .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
+        });
+        if has_tweak {
+            // Pass the original constructor args so a `submethod TWEAK(:$y)`
+            // signature binds them, matching the full `.new` path.
+            match self.run_tweak_phase(class_name, attrs, args) {
+                Ok(updated) => attrs = updated,
+                Err(e) => return Some(Err(e)),
+            }
+        }
         Some(Ok(Value::make_instance(class_name, attrs)))
     }
 
