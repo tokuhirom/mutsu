@@ -2108,29 +2108,30 @@ impl Interpreter {
                     return Err(RuntimeError::new("Not enough elements for map block arity"));
                 }
                 {
-                    let interp = vm.interpreter_mut();
                     let assumed_count = data.assumed_positional.len();
                     // Bind assumed positional args first
                     for (idx, val) in data.assumed_positional.iter().enumerate() {
                         if let Some(p) = data.params.get(idx) {
-                            interp.env_insert(p.clone(), val.clone());
+                            vm.env_mut().insert(p.clone(), val.clone());
                         }
                     }
                     if arity == 1 {
                         let item = list_items[i].clone();
                         if let Some(p) = data.params.get(assumed_count) {
-                            interp.env_insert(p.clone(), item.clone());
+                            vm.env_mut().insert(p.clone(), item.clone());
                         }
-                        interp.env_insert(underscore.clone(), item.clone());
-                        interp.env_insert(dollar_topic.clone(), item);
+                        vm.env_mut().insert(underscore.clone(), item.clone());
+                        vm.env_mut().insert(dollar_topic.clone(), item);
                     } else {
                         for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                             if i + idx < list_items.len() {
-                                interp.env_insert(p.clone(), list_items[i + idx].clone());
+                                vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
                             }
                         }
-                        interp.env_insert(underscore.clone(), list_items[i].clone());
-                        interp.env_insert(dollar_topic.clone(), list_items[i].clone());
+                        vm.env_mut()
+                            .insert(underscore.clone(), list_items[i].clone());
+                        vm.env_mut()
+                            .insert(dollar_topic.clone(), list_items[i].clone());
                     }
                 }
                 match vm.run_reuse(&code, &compiled_fns) {
@@ -2138,7 +2139,7 @@ impl Interpreter {
                         let val = vm
                             .last_stack_value()
                             .cloned()
-                            .or_else(|| vm.interpreter().env().get("_").cloned())
+                            .or_else(|| vm.env().get("_").cloned())
                             .unwrap_or(Value::Nil);
                         match val {
                             Value::Slip(elems) => result.extend(elems.iter().cloned()),
@@ -2343,30 +2344,31 @@ impl Interpreter {
                     return Err(RuntimeError::new("Not enough elements for map block arity"));
                 }
                 {
-                    let interp = vm.interpreter_mut();
                     let assumed_count = data.assumed_positional.len();
                     for (idx, val) in data.assumed_positional.iter().enumerate() {
                         if let Some(p) = data.params.get(idx) {
-                            interp.env_insert(p.clone(), val.clone());
+                            vm.env_mut().insert(p.clone(), val.clone());
                         }
                     }
                     // Clear the topic tracker before each iteration
-                    interp.env_mut().remove(topic_key);
+                    vm.env_mut().remove(topic_key);
                     if arity == 1 {
                         let item = list_items[i].clone();
                         if let Some(p) = data.params.get(assumed_count) {
-                            interp.env_insert(p.clone(), item.clone());
+                            vm.env_mut().insert(p.clone(), item.clone());
                         }
-                        interp.env_insert(underscore.clone(), item.clone());
-                        interp.env_insert(dollar_topic.clone(), item);
+                        vm.env_mut().insert(underscore.clone(), item.clone());
+                        vm.env_mut().insert(dollar_topic.clone(), item);
                     } else {
                         for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                             if i + idx < list_items.len() {
-                                interp.env_insert(p.clone(), list_items[i + idx].clone());
+                                vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
                             }
                         }
-                        interp.env_insert(underscore.clone(), list_items[i].clone());
-                        interp.env_insert(dollar_topic.clone(), list_items[i].clone());
+                        vm.env_mut()
+                            .insert(underscore.clone(), list_items[i].clone());
+                        vm.env_mut()
+                            .insert(dollar_topic.clone(), list_items[i].clone());
                     }
                 }
                 match vm.run_reuse(&code, &compiled_fns) {
@@ -2374,11 +2376,11 @@ impl Interpreter {
                         let val = vm
                             .last_stack_value()
                             .cloned()
-                            .or_else(|| vm.interpreter().env().get("_").cloned())
+                            .or_else(|| vm.env().get("_").cloned())
                             .unwrap_or(Value::Nil);
                         // Write back topic mutation if it happened
                         if arity == 1
-                            && let Some(mutated) = vm.interpreter().env().get(topic_key).cloned()
+                            && let Some(mutated) = vm.env().get(topic_key).cloned()
                         {
                             list_items[i] = mutated;
                         }
@@ -2389,14 +2391,14 @@ impl Interpreter {
                     }
                     Err(e) if e.is_next => {
                         if arity == 1
-                            && let Some(mutated) = vm.interpreter().env().get(topic_key).cloned()
+                            && let Some(mutated) = vm.env().get(topic_key).cloned()
                         {
                             list_items[i] = mutated;
                         }
                     }
                     Err(e) if e.is_last => {
                         if arity == 1
-                            && let Some(mutated) = vm.interpreter().env().get(topic_key).cloned()
+                            && let Some(mutated) = vm.env().get(topic_key).cloned()
                         {
                             list_items[i] = mutated;
                         }
@@ -2533,28 +2535,28 @@ impl Interpreter {
                 };
                 'body_redo: loop {
                     {
-                        let interp = vm.interpreter_mut();
                         let assumed_count = data.assumed_positional.len();
                         for (idx, val) in data.assumed_positional.iter().enumerate() {
                             if let Some(p) = data.params.get(idx) {
-                                interp.env_insert(p.clone(), val.clone());
+                                vm.env_mut().insert(p.clone(), val.clone());
                             }
                         }
                         if arity == 1 {
                             if let Some(p) = data.params.get(assumed_count) {
-                                interp.env_insert(p.clone(), chunk[0].clone());
+                                vm.env_mut().insert(p.clone(), chunk[0].clone());
                             }
-                            interp.env_insert(underscore.clone(), chunk[0].clone());
-                            interp.env_insert(dollar_topic.clone(), chunk[0].clone());
-                            interp.env_insert(topic_source_key.clone(), chunk[0].clone());
+                            vm.env_mut().insert(underscore.clone(), chunk[0].clone());
+                            vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
+                            vm.env_mut()
+                                .insert(topic_source_key.clone(), chunk[0].clone());
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                                 if idx < chunk.len() {
-                                    interp.env_insert(p.clone(), chunk[idx].clone());
+                                    vm.env_mut().insert(p.clone(), chunk[idx].clone());
                                 }
                             }
-                            interp.env_insert(underscore.clone(), chunk[0].clone());
-                            interp.env_insert(dollar_topic.clone(), chunk[0].clone());
+                            vm.env_mut().insert(underscore.clone(), chunk[0].clone());
+                            vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
                         }
                     }
                     vm.set_topic_source_var((arity == 1).then_some(topic_source_key.clone()));
@@ -2563,7 +2565,7 @@ impl Interpreter {
                             let pred = vm
                                 .last_stack_value()
                                 .cloned()
-                                .or_else(|| vm.interpreter().env().get("_").cloned())
+                                .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::Nil);
                             let updated_item = if arity == 1 {
                                 vm.interpreter()

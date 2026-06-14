@@ -965,11 +965,6 @@ impl VM {
         self.interpreter.take_env()
     }
 
-    /// Get a mutable reference to the interpreter (for setting env values).
-    pub(crate) fn interpreter_mut(&mut self) -> &mut Interpreter {
-        &mut self.interpreter
-    }
-
     pub(crate) fn last_stack_value(&self) -> Option<&Value> {
         if self.stack.len() == 1 {
             self.stack.last()
