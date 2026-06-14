@@ -125,6 +125,19 @@ impl VM {
             self.method_dispatch_pure = true;
             return result;
         }
+        // Native built-in *class* method (a pure type-object method other than
+        // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
+        // through the interpreter's class-method dispatch.
+        if let Value::Package(class_name) = &target
+            && let Some(result) = crate::runtime::Interpreter::try_native_builtin_class_method(
+                *class_name,
+                method,
+                &args,
+            )
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             // VM-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
@@ -1496,6 +1509,17 @@ impl VM {
             && let Value::Package(class_name) = &target
             && let Some(result) =
                 crate::runtime::Interpreter::try_native_builtin_construct(*class_name, &args)
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
+        // Native built-in class method (mut path twin of the above).
+        if let Value::Package(class_name) = &target
+            && let Some(result) = crate::runtime::Interpreter::try_native_builtin_class_method(
+                *class_name,
+                method,
+                &args,
+            )
         {
             self.method_dispatch_pure = true;
             return result;

@@ -986,12 +986,12 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            if name == "Instant" && normalized_method == "from_posix" {
-                let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
-                let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(secs);
-                let mut attrs = HashMap::new();
-                attrs.insert("value".to_string(), Value::Num(tai));
-                return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+            if name == "Instant"
+                && normalized_method == "from_posix"
+                && let Some(result) = Self::try_native_builtin_class_method(*name, method, &args)
+            {
+                // Shared with the VM's native class-method fast path.
+                return result;
             }
             if name == "Supply" && method == "interval" {
                 let seconds = args.first().map_or(1.0, |value| match value {
