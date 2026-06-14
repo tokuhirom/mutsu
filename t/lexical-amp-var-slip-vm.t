@@ -9,12 +9,18 @@ use Test;
 # cases below pin the semantics that must survive: slip expansion position,
 # dynamic-var visibility, lexotic control flow, and instance mutation.
 
-plan 6;
+plan 7;
 
 # --- basic slurpy slip through a &-param ---
 sub apply(&op, *@args) { op(|@args) }
 is apply({ $^a + $^b }, 3, 4), 7,
     'placeholder block via &-param with slip args';
+
+# --- a slip call where &op shadows a same-named package sub ---
+sub op($a, $b, $c) { "package-op" }
+sub useit(&op, @args) { op(|@args) }
+is useit(-> $a, $b, $c { "$a$b$c" }, [1, 2, 3]), "123",
+    'slip &op shadows the same-named package sub';
 
 # --- slip in the middle, regular args around it ---
 sub mid(&op) { op(1, |(2, 3), 4) }
