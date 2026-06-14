@@ -444,6 +444,44 @@ impl Interpreter {
                 attributes = updated;
             }
         }
+        // `self.bless(...)` runs BUILD/TWEAK with no extra args (the named
+        // attributes were already folded into `attributes` above); preserve
+        // that by passing an empty TWEAK arg list.
+        let attributes = self.run_tweak_phase(class_name, attributes, &[])?;
+        Ok(Value::make_instance(class_name, attributes))
+    }
+
+    /// Run the TWEAK phase of construction: invoke every TWEAK submethod (own and
+    /// role-composed) across the MRO in base-first order, threading the
+    /// (possibly mutated) attribute map through each call. `tweak_args` are the
+    /// constructor's named arguments, passed through to each TWEAK so a
+    /// `submethod TWEAK(:$y)` signature binds them (the `.new` path passes the
+    /// original args; `self.bless` passes none). Extracted so the native default
+    /// constructor can reuse the exact same TWEAK ordering/dispatch instead of
+    /// duplicating it (Track A ③ ctor: a class whose only non-simple feature is
+    /// TWEAK is native-default constructible, then runs TWEAK here).
+    pub(crate) fn run_tweak_phase(
+        &mut self,
+        class_name: Symbol,
+        mut attributes: HashMap<String, Value>,
+        tweak_args: &[Value],
+    ) -> Result<HashMap<String, Value>, RuntimeError> {
+        let cn = class_name.resolve();
+        let mro = self.class_mro(&cn);
+        let class_lang_rev = self
+            .type_metadata
+            .get(&cn)
+            .and_then(|m| m.get("language-revision"))
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| {
+                let version = crate::parser::current_language_version();
+                if let Some(rest) = version.strip_prefix("6.") {
+                    rest.chars().next().unwrap_or('c').to_string()
+                } else {
+                    "c".to_string()
+                }
+            });
+        let class_is_6e = class_lang_rev != "c";
         for mro_class in mro.iter().rev() {
             if mro_class == "Any" || mro_class == "Mu" {
                 continue;
@@ -480,11 +518,11 @@ impl Interpreter {
                     continue;
                 }
                 let (_v, updated) = self.run_instance_method_resolved(
-                    &class_name.resolve(),
+                    &cn,
                     &role_name,
                     method_def,
                     attributes.clone(),
-                    Vec::new(),
+                    tweak_args.to_vec(),
                     Some(Value::make_instance(class_name, attributes.clone())),
                 )?;
                 attributes = updated;
@@ -507,13 +545,13 @@ impl Interpreter {
                     mro_class,
                     attributes.clone(),
                     "TWEAK",
-                    Vec::new(),
+                    tweak_args.to_vec(),
                     Some(Value::make_instance(class_name, attributes.clone())),
                 )?;
                 attributes = updated;
             }
         }
-        Ok(Value::make_instance(class_name, attributes))
+        Ok(attributes)
     }
 
     /// Dispatch Enum .new — should throw X::Constructor::BadType.
