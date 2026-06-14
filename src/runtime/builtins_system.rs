@@ -261,7 +261,7 @@ impl Interpreter {
     ) -> Result<Vec<crate::ast::Stmt>, RuntimeError> {
         let code = std::fs::read_to_string(path)
             .map_err(|e| RuntimeError::new(format!("Failed to read module {}: {}", file, e)))?;
-        let preprocessed = Self::preprocess_roast_directives(&code);
+        let preprocessed = Self::maybe_preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
         crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_source(&preprocessed);

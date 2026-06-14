@@ -12,7 +12,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Test (cargo + prove): `make test`
 - Run a single prove test: `cargo build && prove -e 'target/debug/mutsu' t/<file>.t`
 - Roast (official spec tests): `make roast`
-- Run a single roast test: `cargo build && prove -e 'target/debug/mutsu' roast/<path>.t`
+- Run a single roast test: `cargo build && MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (or `MUTSU_BIN=target/debug/mutsu prove -e 'scripts/run-roast-test.sh' roast/<path>.t`). **`MUTSU_FUDGE=1` is required for roast tests** — fudge directives (`#?rakudo skip/todo`, `#?DOES`, `#?v6`) are only preprocessed when it is set. Without it, fudge-dependent tests fail or produce wrong counts. `make roast` sets it automatically via `scripts/run-roast-test.sh`. Never set `MUTSU_FUDGE` when running ordinary (non-roast) scripts — it would let a stray `#?rakudo skip` comment drop the next statement.
 - Pre-commit hooks (lefthook): `cargo clippy -- -D warnings` and `cargo fmt` run automatically on commit.
 - Temporary test scripts: write to `tmp/` (gitignored) using the Write tool (not cat/heredoc). Build first, then run with `./target/debug/mutsu ./tmp/<file>`.
 - Module search paths: use `-I <path>` to add a module search path, or set the `MUTSULIB` environment variable (colon-separated paths). `-I` paths take priority over `MUTSULIB` paths.
@@ -292,7 +292,7 @@ Caveat: the `t/` TAP suite is **non-fatal** in CI (`prove ... t/ || echo "non-fa
 
 Running the entire roast suite locally is wasteful and slow — **let CI run the full `make roast`.** Locally, run only the specific tests relevant to your change:
 
-- Run individual roast tests with `prove -e 'target/debug/mutsu' roast/<path>.t`, or the exact files you touched / suspect regressed.
+- Run individual roast tests with `MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (the `MUTSU_FUDGE=1` is required — see the build/run section above), or the exact files you touched / suspect regressed.
 - CI runs `make test` and `make roast` on a clean machine with the **release build** (`cargo build --release`, `MUTSU_BIN=target/release/mutsu`). Local debug builds are much slower, so a local timeout on a heavy test does not necessarily indicate a real failure — confirm with a release build (`target/release/mutsu`) before assuming a regression, and otherwise trust CI's verdict.
 - Push the branch and rely on CI for the comprehensive roast result rather than running the whole suite locally.
 
