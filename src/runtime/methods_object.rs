@@ -343,9 +343,12 @@ impl Interpreter {
             }
         }
         // A required attribute that was not provided is `X::Attribute::Required`
-        // — let the interpreter raise it.
-        for (attr_name, _, _, is_required, _, _, _) in &class_attrs {
-            if *is_required && !attrs.contains_key(attr_name) {
+        // — let the interpreter raise it. The required flag is tuple field 4
+        // (`Option<Option<String>>`: `Some` when `is required`); field 3 is
+        // `is_rw`, which must NOT gate construction (an unprovided `is rw`
+        // attribute just gets its normal default, so it stays native).
+        for (attr_name, _, _, _is_rw, is_required, _, _) in &class_attrs {
+            if is_required.is_some() && !attrs.contains_key(attr_name) {
                 return None;
             }
         }
