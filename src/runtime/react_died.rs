@@ -101,20 +101,12 @@ impl Interpreter {
                     .unwrap_or_default();
                 return Some(ReactSubscription {
                     receiver: Some(rx),
-                    supplier_id: None,
-                    supplier_next_index: 0,
-                    callback,
                     close_callbacks: Self::extract_supply_on_close_cbs(&(attributes).as_map()),
                     last_callbacks: last_cbs,
                     quit_callbacks: quit_cbs,
-                    done: false,
                     is_lines,
-                    line_buffer: String::new(),
                     head_limit,
-                    emit_count: 0,
-                    channel: None,
-                    promise: None,
-                    on_demand_done: None,
+                    ..ReactSubscription::new(callback)
                 });
             }
             if let Some(Value::Int(sid)) = attributes.as_map().get("supplier_id") {
@@ -127,21 +119,13 @@ impl Interpreter {
                     .and_then(Self::react_value_array_items)
                     .unwrap_or_default();
                 return Some(ReactSubscription {
-                    receiver: None,
                     supplier_id: Some(*sid as u64),
-                    supplier_next_index: 0,
-                    callback,
                     close_callbacks: Self::extract_supply_on_close_cbs(&(attributes).as_map()),
                     last_callbacks: last_cbs,
                     quit_callbacks: quit_cbs,
-                    done: false,
                     is_lines,
-                    line_buffer: String::new(),
                     head_limit,
-                    emit_count: 0,
-                    channel: None,
-                    promise: None,
-                    on_demand_done: None,
+                    ..ReactSubscription::new(callback)
                 });
             }
         }

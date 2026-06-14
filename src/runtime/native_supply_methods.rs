@@ -3217,20 +3217,7 @@ impl Interpreter {
                     {
                         react_subs.push(crate::runtime::subtest::ReactSubscription {
                             receiver: Some(rx),
-                            supplier_id: None,
-                            supplier_next_index: 0,
-                            callback,
-                            close_callbacks: Vec::new(),
-                            last_callbacks: Vec::new(),
-                            quit_callbacks: Vec::new(),
-                            done: false,
-                            is_lines: false,
-                            line_buffer: String::new(),
-                            head_limit: None,
-                            emit_count: 0,
-                            channel: None,
-                            promise: None,
-                            on_demand_done: None,
+                            ..crate::runtime::subtest::ReactSubscription::new(callback)
                         });
                         continue;
                     }
