@@ -343,3 +343,110 @@ instance_meta で判定、subset は rare）を VM-native 化** でき、41 boun
   dispatch を解禁した前例と同型）が、**これは env fold を直接進めない＝critical path ではない**（bounce 数削減の
   perf/cleanliness 寄り）。最終 fold 面の縮小として CP-3 に同梱 or 任意で進める。
 - **concurrency tree-walk（await/Promise）は Track C** と並走（env fold とは独立の最大残トラフィック）。
+
+---
+
+## CP-1 env-loan 設計（確定 2026-06-15・[PLAN.md](../PLAN.md) CP-1 step 1a）
+
+> 本節は CP-1 step 1a（設計確定・doc のみ）の成果。env を VM 単一所有へ移し、tree-walk carrier が
+> 実行時だけ env を借用する機構（**env-loan**）を確定する。実コードの精読（ping-pong 機構・Env 構造・
+> 全 carrier の env read/write タイミング）に基づく。後続 1b〜1e の実装は本設計に従う。
+
+### 現状モデル（実測 2026-06-15）
+
+- **env の住所**: `Interpreter.env: Env`（`src/runtime/mod.rs:837`、private field）。アクセサ
+  `env()`（read, `mod.rs:4345`）/ `env_mut()`（write, `accessors.rs:616`）/ `clone_env()`（= `env.flattened()`）/
+  `set_env`/`take_env`。
+- **VM の env アクセス**: VM は `interpreter: Interpreter` を**値所有**（`vm.rs:132`）。VM ツリーは env を
+  `self.interpreter.env()`（**264 サイト** read）/ `env_mut()`（**249 サイト** write）= **計 513 サイト**で読む。
+  モジュール別の偏在: `vm_var_assign_ops`=98, `vm_control_ops`=86, `vm_misc_ops`/`vm_call_dispatch`=36 ずつ, …
+- **`Env` は小さな COW 構造**: `Arc<HashMap>` overlay + `Option<Arc<Env>> parent` + `Option<HashSet> tombstones`
+  + `u16 depth`（`env.rs:88`）。clone は O(1) Arc bump、scoped overlay は per-frame の transient（`flattened()` で
+  capture 時に flat 化）。**`mem::swap`/`mem::take` は数ワードの memcpy で alloc も refcount 変化も無い**（env-loan
+  が安価な理由）。
+- **再入（VM ⇄ tree-walk）は2形態**:
+  1. **ping-pong（fresh VM）**: `let interp = mem::take(self);`（= `&mut Interpreter`）→ `VM::new(interp)` →
+     `vm.run(code, fns)` → `(interp, result)` → `*self = interp`（`run.rs:960-963` run_block_raw,
+     `resolution.rs:1930-1942` run_compiled_block, …）。**Interpreter 全体（env 内包）が入れ子 VM 間を値で往復**する。
+  2. **run_reuse（persistent VM）**: `VM::new(interp)` を1回張り（`resolution.rs:2092` eval_map_over_items,
+     2331, 2521）、`vm.run_reuse(&mut self, …)`（`vm.rs:799`）でループ body を反復実行。caller は反復間に
+     `vm.interpreter_mut().env_insert(...)`（2116-2133）で env を書き、`vm.interpreter().env().get("_")`（2141）で
+     読み、最後に `vm.into_interpreter()`（2097）で Interpreter を回収。
+- **`VM::new(interp)`** は registry/io_handles/output_sink/current_package のハンドルを clone するのみ（`vm.rs:482`）。
+  env はまだ `interp.env` に残ったまま VM が値所有。**`VM::run` は `(self.interpreter, result)` を返す**（`vm.rs:695`）。
+
+### carrier の env 借用点（全列挙・read/write/再入タイミング）
+
+「carrier」= VM が委譲する tree-walk 実行パスで、実行中に `self.env` を読む/書くもの。**live**（生 env を
+読み書きし呼び出し元へ反映）と **snapshot**（env を clone して走らせ書き戻さない）の2種に分かれる。これが
+loan 機構の核心の分岐。
+
+| carrier | 定義 | env READ | env WRITE | 再入 | 種別 |
+|---|---|---|---|---|---|
+| **EVAL** | `builtin_eval`→`eval_eval_string`(`system.rs:1221`) | snapshot 取得・`$_`/`=pod`/`__mutsu_in_eval` 取得(1235-1244) | `__mutsu_in_eval` 等を insert/restore、**内側コードが囲みスコープの env を見て変異**(1254,1317-1336) | `parse_and_eval_with_operators`→`run_block_raw`(ping-pong) | **live** |
+| **subset `where`** | `type_matches_value`(`types/type_matching.rs:221`) | bound pkg(487)・`$_`(533) | `$_` を set/restore(534,540-542) | `eval_block_value`/`call_sub_value`(ping-pong) | **live** |
+| **regex 埋め込み式** | `eval_string_as_source`(`regex_parse.rs:6061`) | `self.env.clone()` を**fresh Interpreter** に渡す(6068) | 無し（snapshot） | 新 Interpreter→`eval_block_value` | **snapshot** |
+| **Promise/start/thread** | `clone_for_thread`(`mod.rs:5377`) | env を flatten・共有 var seed・子に `env: self.env.clone()`(120) | 無し（snapshot・書き戻し無し） | 子 fresh Interpreter→VM | **snapshot** |
+| **call_sub_value** | `resolution.rs:1096` | param 束縛で env 読み書き | param 束縛・scope save/restore | `run_compiled_block`(ping-pong) | **live** |
+| **call_function[_fallback]** | `builtins.rs:315`/`builtins_operators.rs:7` | 引数解決・束縛で env | param 束縛 | 内側 VM | **live** |
+| **call_method_with_values** | `methods.rs:310` | env | method body env | 内側 VM | **live** |
+| **run_instance_method** | `class.rs:725` | env | method body env | 内側 VM | **live** |
+| **eval_block_value** | `resolution.rs:1712` | `&`-var + callable id を capture(1721-1726)・trailing sub に `env.clone()`(1764) | block を `self.env` で実行 | `run_compiled_block`(ping-pong) | **live** |
+| **run_block_raw** | `run.rs:940` | — | block を `self.env` で実行 | `mem::take`+`VM::new`(ping-pong) | **live** |
+| **map/sort reuse** | `eval_map_over_items`(`resolution.rs:2092`) | `vm.interpreter().env()`(2141) | `vm.interpreter_mut().env_insert` per-iter(2116-2133) | `VM::new`1回 + `run_reuse` ループ | **live(外部駆動)** |
+
+VM→carrier 委譲のサイト数（vm/ 内の grep, 2026-06-15）: `call_function`×7, `call_function_fallback`×3,
+`call_sub_value`×5, `call_method_with_values`×1, `run_block_raw`×1, `run_instance_method`×1,
+`type_matches_value`×42。type_matches は大半が pure 型名判定（env 不要）で、subset `where` 経路のみ env を触る。
+
+### 機構の決定: **方式 A（move/swap による貸借）を採る。方式 B は却下**
+
+- **方式 A（採用）= env は普段 `VM.env` に住み、carrier 呼びの前後で interpreter へ swap 貸借**:
+  - `VM::new(interp)` が `interp.env` を `VM.env` へ**pull**（`interp.env` は `mem::take` で空に）。
+  - `VM::run`/`into_interpreter` が `VM.env` を `interp.env` へ**push back** してから Interpreter を返す
+    （回収した Interpreter が carrier/次 ping-pong で coherent な env を持つ）。
+  - carrier は今後も Interpreter メソッドとして `self.env` を読む。**VM が carrier を呼ぶ直前に
+    `mem::swap(&mut self.env, &mut self.interpreter.env)`、戻ったら swap back**。carrier 内の ping-pong
+    （`run_compiled_block`/`run_block_raw`）は `mem::take(interp)` で env を内包したまま Interpreter を取り、
+    内側 `VM::new` が env を内側 `VM.env` へ pull → 走らせ → push back → `*self = interp` → carrier が更新後 env を見る
+    → VM が swap back で回収。**首尾一貫**。
+  - **snapshot carrier**（thread/regex補間）は swap 不要 — `self.env`（= `VM.env`）の `&` を渡して `clone()` させるだけ
+    （書き戻し無し）。loan は live carrier のみ。
+  - **なぜ A か**: ping-pong が既に Interpreter を値で往復させているので、`VM::new`/`run` に env の pull/push を
+    足すのは**局所的な seam 改修**で済む。carrier 群（runtime/ 全域が `self.env` を読む前提で書かれている）は**無改修**。
+    swap は数ワード memcpy（上述）で hot path への影響は無い。
+- **方式 B（却下）= `&mut Env` をメソッド引数で carrier へ渡す**: env は runtime/ tree-walk の事実上全域で
+  `self.env` として読まれる（`type_matches_value` 26 ファイル, `current_package` 33 ファイル, env は全 runtime）。
+  `&mut Env` を全 carrier とそれが推移的に呼ぶ全関数へ通すのは非現実的（doc 冒頭「フィールド再配置を先に」が
+  不可なのと同根）。**却下**。
+
+### seam 戦略（1b〜1e・各 PR 挙動不変・CI=make test+全 roast が安全網）
+
+env を物理移動する前に **accessor seam** を挟むことで、513 サイトの移行を「機械的・挙動不変」と「危険な flip」に
+分離する:
+
+- **1b（seam 導入・3〜4 PR）**: `VM::env()`/`VM::env_mut()` を新設し、**当面は `self.interpreter.env()`/`env_mut()` へ
+  forward**（= 挙動完全不変）。513 サイトを accessor へ移行（borrow 衝突しないモジュール群から: var_assign → control →
+  call/dispatch → misc/helpers → 残り）。**外部駆動サイトも対象**: `resolution.rs` の `vm.interpreter().env()` /
+  `vm.interpreter_mut().env_insert()`（map/sort reuse）も `vm.env()`/`vm.env_mut()` を使うよう揃える（1e で
+  env が VM へ移ると `vm.interpreter()` から env が消えるため、ここを seam に乗せるのは必須）。
+- **1c（borrow 衝突解消・1〜2 PR）**: accessor は `&self`/`&mut self` の**全体借用**。env 読みと他 self フィールドが
+  交錯するサイト（現状は `self.interpreter.env` の部分借用で通っている）を、ローカル束縛切り出し / スコープ分割で
+  個別解消。完了時点で VM 側 env アクセスは 100% seam 経由。
+- **1d（carrier 借用点の整理・1〜2 PR）**: live carrier が `self.env` を触る箇所を、メソッド境界で env を
+  swap-in/out できる形へ整理（挙動不変）。snapshot carrier は `clone` 借りのみと確認。
+- **1e（物理移管 + loan plumbing・1〜2 PR・最大の山）**: `Interpreter.env` を削除し `VM.env` を新設。accessor 本体を
+  `self.interpreter.env` → `self.env` へ flip。`VM::new`=pull / `VM::run`+`into_interpreter`=push back を実装。
+  live carrier 呼び（前掲表の ping-pong 委譲サイト）を `mem::swap` 貸借で包む。`make test`+ローカル roast → push →
+  **全 roast を CI 委譲**。
+
+### 不変条件（実装時のチェックリスト）
+
+1. **どの瞬間も env は1箇所にしか「生」で存在しない**: VM 実行中は `VM.env`、carrier 実行中は
+   `interpreter.env`（loan 中）。両方に live コピーがある状態を作らない（swap は move であって copy でない）。
+2. **ping-pong の入れ子と整合**: 内側 `VM::new` の pull / `run` の push back が、外側の loan 状態を壊さない
+   （内側は interp を丸ごと move するので、loan 済み env を内包したまま正しく往復する）。
+3. **snapshot carrier は loan しない**: thread/regex補間は `self.env.clone()` の read 借用のみ。swap-back 経路を
+   作らない（書き戻したら thread 意味論＝独立コピーが壊れる）。
+4. **run_reuse 経路**: `VM::new` で pull 済みなので、反復間の env 書き込みは `vm.env_mut()`（= `self.env`）へ。
+   `into_interpreter` が push back してから Interpreter を返す。
