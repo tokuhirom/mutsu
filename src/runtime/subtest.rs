@@ -241,6 +241,45 @@ impl Interpreter {
         let _ = self.supply_emit_buffer.pop();
     }
 
+    /// Deliver one value to a `whenever` subscription's callback, mapping the
+    /// loop-control signals a `whenever` body may raise:
+    /// - `done` (`is_react_done`) ends the whole react — returns `Ok(true)` so
+    ///   the caller breaks the event loop.
+    /// - `next` (`is_next`) skips the rest of the body for this value — the
+    ///   callback already unwound, so just continue (`Ok(false)`).
+    /// - `last` (`is_last`) stops only this `whenever`: fire its LAST phasers
+    ///   (with the triggering value as topic) and mark the subscription done.
+    ///   The react keeps driving any other subscriptions.
+    ///
+    /// Any other error propagates.
+    fn run_react_consumer(
+        &mut self,
+        sub: &mut ReactSubscription,
+        value: Value,
+    ) -> Result<bool, RuntimeError> {
+        match self.call_sub_value(sub.callback.clone(), vec![value.clone()], true) {
+            Ok(_) => Ok(false),
+            Err(e) if e.is_react_done => Ok(true),
+            Err(e) if e.is_next => Ok(false),
+            Err(e) if e.is_last => {
+                for cb in sub.last_callbacks.clone() {
+                    match self.call_sub_value(cb, vec![value.clone()], true) {
+                        Err(le) if le.is_react_done => {
+                            sub.done = true;
+                            return Ok(true);
+                        }
+                        other => {
+                            other?;
+                        }
+                    }
+                }
+                sub.done = true;
+                Ok(false)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub(crate) fn run_react_event_loop(&mut self) -> Result<(), RuntimeError> {
         // Take the subscriptions collected during the react body
         let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default();
@@ -414,10 +453,24 @@ impl Interpreter {
                                 }
                             }
                         } else {
-                            // No channel, no on-demand - replay static values
-                            self.replay_static_supply(&(attributes).as_map(), &callback)?;
+                            // No channel, no on-demand - replay static values.
+                            // replay_static_supply handles `last`/`next`/`done`
+                            // in the whenever body and fires this whenever's LAST
+                            // phasers itself, so skip the shared post-LAST below.
+                            let last_cbs = items
+                                .get(2)
+                                .and_then(Self::value_array_items)
+                                .unwrap_or_default();
+                            if self.replay_static_supply(
+                                &(attributes).as_map(),
+                                &callback,
+                                &last_cbs,
+                            )? {
+                                return Ok(());
+                            }
+                            continue;
                         }
-                        // Fire LAST callbacks after static/on-demand supply completes
+                        // Fire LAST callbacks after the on-demand supply completes
                         let last_cbs = items
                             .get(2)
                             .and_then(Self::value_array_items)
@@ -524,11 +577,8 @@ impl Interpreter {
                 if let Some(ref ch) = sub.channel {
                     match ch.poll_result() {
                         Ok(Some(value)) => {
-                            match self.call_sub_value(sub.callback.clone(), vec![value], true) {
-                                Err(e) if e.is_react_done => break 'react_loop,
-                                other => {
-                                    other?;
-                                }
+                            if self.run_react_consumer(sub, value)? {
+                                break 'react_loop;
                             }
                             sub.emit_count += 1;
                         }
@@ -569,15 +619,11 @@ impl Interpreter {
                             while let Some(pos) = sub.line_buffer.find('\n') {
                                 let line = sub.line_buffer[..pos].to_string();
                                 sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
-                                match self.call_sub_value(
-                                    sub.callback.clone(),
-                                    vec![Value::str(line)],
-                                    true,
-                                ) {
-                                    Err(e) if e.is_react_done => break 'react_loop,
-                                    other => {
-                                        other?;
-                                    }
+                                if self.run_react_consumer(sub, Value::str(line))? {
+                                    break 'react_loop;
+                                }
+                                if sub.done {
+                                    break;
                                 }
                                 sub.emit_count += 1;
                                 if let Some(limit) = sub.head_limit
@@ -591,11 +637,13 @@ impl Interpreter {
                                 }
                             }
                         } else {
-                            match self.call_sub_value(sub.callback.clone(), vec![value], true) {
-                                Err(e) if e.is_react_done => break 'react_loop,
-                                other => {
-                                    other?;
-                                }
+                            if self.run_react_consumer(sub, value)? {
+                                break 'react_loop;
+                            }
+                            // `last` in the body marked this whenever done; stop
+                            // pulling further values from the source.
+                            if sub.done {
+                                break;
                             }
                             sub.emit_count += 1;
                             if let Some(limit) = sub.head_limit
@@ -665,24 +713,15 @@ impl Interpreter {
                             while let Some(pos) = sub.line_buffer.find('\n') {
                                 let line = sub.line_buffer[..pos].to_string();
                                 sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
-                                match self.call_sub_value(
-                                    sub.callback.clone(),
-                                    vec![Value::str(line)],
-                                    true,
-                                ) {
-                                    Err(e) if e.is_react_done => break 'react_loop,
-                                    other => {
-                                        other?;
-                                    }
+                                if self.run_react_consumer(sub, Value::str(line))? {
+                                    break 'react_loop;
+                                }
+                                if sub.done {
+                                    break;
                                 }
                             }
-                        } else {
-                            match self.call_sub_value(sub.callback.clone(), vec![value], true) {
-                                Err(e) if e.is_react_done => break 'react_loop,
-                                other => {
-                                    other?;
-                                }
-                            }
+                        } else if self.run_react_consumer(sub, value)? {
+                            break 'react_loop;
                         }
                     }
                     Ok(SupplyEvent::Done) => {
@@ -778,17 +817,46 @@ impl Interpreter {
     }
 
     /// Replay static supply values (non-streaming supplies)
+    /// Replay a static supply's values through a `whenever` callback, honouring
+    /// the loop-control signals the body may raise: `done` ends the react
+    /// (returns `Ok(true)`), `next` skips to the next value, `last` stops the
+    /// whenever early. This whenever's LAST phasers are fired here — with the
+    /// triggering value as topic when stopped via `last`, otherwise with no
+    /// topic on natural completion. Returns `Ok(true)` iff `done` was signalled.
     fn replay_static_supply(
         &mut self,
         attributes: &HashMap<String, Value>,
         callback: &Value,
-    ) -> Result<(), RuntimeError> {
+        last_callbacks: &[Value],
+    ) -> Result<bool, RuntimeError> {
+        let mut last_topic: Option<Value> = None;
         if let Some(Value::Array(values, ..)) = attributes.get("values") {
             for v in values.iter() {
-                self.call_sub_value(callback.clone(), vec![v.clone()], true)?;
+                match self.call_sub_value(callback.clone(), vec![v.clone()], true) {
+                    Ok(_) => {}
+                    Err(e) if e.is_react_done => return Ok(true),
+                    Err(e) if e.is_next => continue,
+                    Err(e) if e.is_last => {
+                        last_topic = Some(v.clone());
+                        break;
+                    }
+                    Err(e) => return Err(e),
+                }
             }
         }
-        Ok(())
+        for cb in last_callbacks {
+            let args = match &last_topic {
+                Some(v) => vec![v.clone()],
+                None => Vec::new(),
+            };
+            match self.call_sub_value(cb.clone(), args, true) {
+                Err(e) if e.is_react_done => return Ok(true),
+                other => {
+                    other?;
+                }
+            }
+        }
+        Ok(false)
     }
 
     pub(crate) fn run_whenever_with_value(
