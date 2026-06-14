@@ -114,15 +114,16 @@ impl VM {
             return result;
         }
         // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/
-        // `utf16` (code units), `Uni` (codepoints) — pure data builds the VM
+        // `utf16` (code units), `Uni` (codepoints), `Version`/`Duration`/
+        // `StrDistance`/`Stash`/empty-instance handles — pure data builds the VM
         // performs directly instead of routing through `dispatch_new`.
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(v) =
+            && let Some(result) =
                 crate::runtime::Interpreter::try_native_builtin_construct(*class_name, &args)
         {
             self.method_dispatch_pure = true;
-            return Ok(v);
+            return result;
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
@@ -1493,11 +1494,11 @@ impl VM {
         // Native built-in construction (mut path twin of the above).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(v) =
+            && let Some(result) =
                 crate::runtime::Interpreter::try_native_builtin_construct(*class_name, &args)
         {
             self.method_dispatch_pure = true;
-            return Ok(v);
+            return result;
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
