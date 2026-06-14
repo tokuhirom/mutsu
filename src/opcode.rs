@@ -27,6 +27,62 @@ pub(crate) fn reflective_name_access_possible() -> bool {
     REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
 }
 
+/// Base binary operation for a fused compound-assignment opcode
+/// (`$x OP= rhs`). Each variant maps to the same `exec_*_op` the plain
+/// `Binary` path uses, so the fused op shares exact operator semantics.
+/// See `OpCode::AtomicCompoundVar`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompoundBaseOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Pow,
+    Concat,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitShiftLeft,
+    BitShiftRight,
+    IntDiv,
+    IntMod,
+    Gcd,
+    Lcm,
+    InfixMin,
+    InfixMax,
+    StringRepeat,
+}
+
+impl CompoundBaseOp {
+    /// Map a base binary `OpCode` to its fusable `CompoundBaseOp`, or `None`
+    /// if compound-assignment fusion is not supported for that operator.
+    pub(crate) fn from_opcode(op: &OpCode) -> Option<CompoundBaseOp> {
+        Some(match op {
+            OpCode::Add => CompoundBaseOp::Add,
+            OpCode::Sub => CompoundBaseOp::Sub,
+            OpCode::Mul => CompoundBaseOp::Mul,
+            OpCode::Div => CompoundBaseOp::Div,
+            OpCode::Mod => CompoundBaseOp::Mod,
+            OpCode::Pow => CompoundBaseOp::Pow,
+            OpCode::Concat => CompoundBaseOp::Concat,
+            OpCode::BitAnd => CompoundBaseOp::BitAnd,
+            OpCode::BitOr => CompoundBaseOp::BitOr,
+            OpCode::BitXor => CompoundBaseOp::BitXor,
+            OpCode::BitShiftLeft => CompoundBaseOp::BitShiftLeft,
+            OpCode::BitShiftRight => CompoundBaseOp::BitShiftRight,
+            OpCode::IntDiv => CompoundBaseOp::IntDiv,
+            OpCode::IntMod => CompoundBaseOp::IntMod,
+            OpCode::Gcd => CompoundBaseOp::Gcd,
+            OpCode::Lcm => CompoundBaseOp::Lcm,
+            OpCode::InfixMin => CompoundBaseOp::InfixMin,
+            OpCode::InfixMax => CompoundBaseOp::InfixMax,
+            OpCode::StringRepeat => CompoundBaseOp::StringRepeat,
+            _ => return None,
+        })
+    }
+}
+
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
@@ -604,6 +660,17 @@ pub(crate) enum OpCode {
     AssignExpr(u32),
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
+    /// Fused compound assignment to a NAMED (env) scalar: `$x OP= rhs`.
+    /// The rhs has already been compiled and sits on top of the stack.
+    /// Performs a read-modify-write of the named variable (`old OP rhs`),
+    /// using an atomic locked RMW when the variable holds a shared
+    /// `ContainerRef` cell (Track C cross-thread atomicity), and leaves the
+    /// new value on the stack. Emitted only for plain env-named scalars
+    /// (local slots and literal `$x = $x + y` are excluded for perf).
+    AtomicCompoundVar {
+        name_idx: u32,
+        op: CompoundBaseOp,
+    },
     /// Nested index assignment: `var[outer][inner] = value` (sigil included in name).
     /// `outer_positional` is true if the outer subscript was `[...]` (positional),
     /// false if `{...}` / `<...>` (associative). `inner_positional` is the same
@@ -1407,7 +1474,8 @@ impl CompiledCode {
             | OpCode::PreDecrement(idx)
             | OpCode::GetArrayVar(idx)
             | OpCode::GetHashVar(idx)
-            | OpCode::AssignExpr(idx) => Some(*idx),
+            | OpCode::AssignExpr(idx)
+            | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
             _ => None,
         }
     }
@@ -1426,7 +1494,8 @@ impl CompiledCode {
             | OpCode::PostDecrement(idx)
             | OpCode::PreIncrement(idx)
             | OpCode::PreDecrement(idx)
-            | OpCode::AssignExpr(idx) => Some(*idx),
+            | OpCode::AssignExpr(idx)
+            | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
             _ => None,
         }
     }
@@ -1594,6 +1663,7 @@ impl CompiledCode {
                     | OpCode::SetGlobalRaw(_)
                     | OpCode::AssignExpr(_)
                     | OpCode::AssignExprLocal(_)
+                    | OpCode::AtomicCompoundVar { .. }
                     | OpCode::IndexAssignExprNamed { .. }
                     | OpCode::IndexAssignExprNested { .. }
                     | OpCode::IndexAssignDeepNested { .. }

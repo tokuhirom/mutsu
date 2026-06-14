@@ -54,6 +54,58 @@ impl Compiler {
         }
     }
 
+    /// True if `name` is a plain env-named scalar suitable for fused
+    /// compound-assignment (`$x OP= rhs`). Excludes twigil/attribute/special
+    /// forms and package-qualified names; bare `$_` (name `_`) is allowed.
+    fn is_plain_compound_target(name: &str) -> bool {
+        match name.chars().next() {
+            None => false,
+            Some(first) => {
+                !matches!(first, '.' | '!' | '~' | '?' | '&' | '*' | '^' | ':')
+                    && !name.contains("::")
+            }
+        }
+    }
+
+    /// If `expr` is `Var(name) OP rhs` with a fusable base operator and `name`
+    /// is a plain env-named scalar (not a local slot), compile the rhs and emit
+    /// a fused `OpCode::AtomicCompoundVar`, leaving the new value on the stack;
+    /// returns `true`. This gives `$x OP= rhs` (parsed as `$x = $x OP rhs`)
+    /// cross-thread-atomic read-modify-write semantics on a shared `ContainerRef`
+    /// cell (Track C), mirroring the slice-1 `++`/`--` path. Local slots and a
+    /// literal `$x = $x + y` are deliberately NOT fused: own locals are ~never
+    /// shared cells, and fusing them regressed a hot 3M-iter loop.
+    pub(super) fn try_compile_fused_compound_assign(&mut self, name: &str, expr: &Expr) -> bool {
+        if self.local_map.contains_key(name) || !Self::is_plain_compound_target(name) {
+            return false;
+        }
+        let Expr::Binary { left, op, right } = expr else {
+            return false;
+        };
+        let Expr::Var(left_name) = left.as_ref() else {
+            return false;
+        };
+        if left_name != name {
+            return false;
+        }
+        let Some(base_op) = Self::binary_opcode(op) else {
+            return false;
+        };
+        let Some(compound_op) = crate::opcode::CompoundBaseOp::from_opcode(&base_op) else {
+            return false;
+        };
+        // Compile the rhs as a plain expression (matching the `Binary` path the
+        // unfused `$x = $x OP rhs` would take); a call-arg compile can itemize /
+        // escape-box the operand, which is wrong for a scalar binary operand.
+        self.compile_expr(right);
+        let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        self.code.emit(OpCode::AtomicCompoundVar {
+            name_idx,
+            op: compound_op,
+        });
+        true
+    }
+
     pub(super) fn binary_opcode(op: &TokenKind) -> Option<OpCode> {
         match op {
             TokenKind::Plus => Some(OpCode::Add),
