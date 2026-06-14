@@ -114,6 +114,7 @@ impl Interpreter {
                     emit_count: 0,
                     channel: None,
                     promise: None,
+                    on_demand_done: None,
                 });
             }
             if let Some(Value::Int(sid)) = attributes.as_map().get("supplier_id") {
@@ -140,6 +141,7 @@ impl Interpreter {
                     emit_count: 0,
                     channel: None,
                     promise: None,
+                    on_demand_done: None,
                 });
             }
         }

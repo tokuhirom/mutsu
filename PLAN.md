@@ -187,6 +187,28 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
               Interpreter 非所有 ＝ VM から直接触れる。ループが Interpreter に縛られている真因は
               `call_sub_value`（compiled body 実行）と `supply_emit_buffer`（emit 捕捉/subscription staging の Vec）
               **だけ**。body callback は既に compiled sub。
+            - **既知のハング/バグ（2026-06-14、perf で診断）**:
+              - **[FIXED] on-demand supply + 内側 `done` の無限スピン**: `my $s = supply { whenever
+                Supply.interval(0.001) { done } }; react { whenever $s { } }` が単一 tap でも 100% CPU で
+                無限ループ（raku はミリ秒で完了）。これが `S17-supply/syntax.t` のテスト 71
+                （"No races/crashes around interval that emits done"、line 540-550 の 2000-react stress）の
+                ハング元で、debug でも release でも再現する**真の無限ループ**だった（メモリの「debug 限定の遅さ」
+                は誤り）。**真因**: parser の `rewrite_supply_body` が `supply{}` 内の `done` を
+                `$emitter.done()` に書き換える（正しい Raku セマンティクス＝その supply を完了）。
+                `run_react_event_loop` の on-demand 分岐は内側 whenever subscription をフラット化して直接
+                ポーリングするが、`run_on_demand_body(..., None)` と emitter_supplier_id を渡しておらず、
+                `$emitter.done()` が捨てられる Supplier の no-op になりループが止まらなかった。
+                **修正**（subtest.rs）: on-demand 分岐で emitter_supplier_id を採番し
+                `supplier_register_promise` で done-signal promise を事前登録（`supplier_done` が reset 前に
+                解決する＝Promise パスと同じ仕組み）、フラット化した各 `ReactSubscription` に
+                `on_demand_done` promise を紐付け、poll ループで `is_resolved()` を見て LAST 発火＋done。
+                検証: `t/supply-ondemand-interval-done.t`（mutsu/raku 両方 4/4）、whitelist S17-supply 53本(720)、
+                make test 461。syntax.t は 70→79 まで到達するように。
+              - **[残・別機能] 同期無限 supply body の backpressure**: syntax.t テスト 77-80+
+                （line 644-701、`supply { loop { emit(++$) } }` を `done if $n>=5` で消費）はまだ
+                ハング/失敗。on-demand body を**同期的に最後まで実行してバッファに集める**現方式では無限
+                ループになる。消費側が done したら次の `emit` で body を止める streaming/backpressure が必要で、
+                上記の async interval 修正とは構造的に別。Stage 2（VM 所有境界・streaming emit）で対応。
             - **段階プラン**:
               - **Stage 1（最初の PR・着手点）**: 4 駆動ループを**単一エンジン**へ統合。完了ポリシーを enum 化
                 （`React`=全 done まで / `Promise`=last value で resolve / `Tap`=永続 tap 登録）。
