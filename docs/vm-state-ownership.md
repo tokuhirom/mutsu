@@ -290,3 +290,56 @@ closure 内の任意の「caller 変数が保持する instance/配列/ハッシ
   必ず除外（さもないと `&r=&return` 再束縛で無限再帰。`is_builtin_function` に無い名が複数あるので明示リスト要）。
 
 **よってトラック A の lexical `&`-var dispatch は (A)/(B)/(C) のいずれかが入るまで保留**（[[project_lexical_amp_var_blocked]]）。
+
+## Phase II 着手: env fold feasibility 実測（2026-06-14, Phase I クローズ後）
+
+ユーザー方針「Phase II 着手（env fold 可否調査 + 第1スライス）」(2026-06-14) を受けて、env fold が今どの構造に
+ブロックされているかを **コード実測 + `MUTSU_VM_STATS` per-name histogram** で確定した。結論は本書冒頭の設計
+（③＝フォールバック撲滅駆動・env は plain field 終状態）を**より精密化**する。
+
+### 実測した3つの事実
+
+1. **VM の env 直接アクセス = 481 サイト**（`self.interpreter.env`/`env_mut`）。env が VM field 化すれば機械的
+   rename だが、`VM::env()` accessor 化は **borrow-checker 衝突**（accessor は `&self` 全体借用、現状の
+   `self.interpreter.env()` は `self.interpreter` 部分借用）を誘発し、env 読みと他 self フィールドが交錯する
+   サイトでは純 sed にならない。＝seam 化も非自明。
+2. **env fold を物理ブロックするのは残る tree-walk 委譲 ~15 サイト**（`call_sub_value`/`call_function[_fallback]`/
+   `call_method_with_values`/`run_block_raw`）。interpreter のこれら tree-walk メソッドが param-binding で
+   `self.env` を直接操作してから内側 VM を ping-pong で回すため、env を VM へ抜くと壊れる。
+3. **残 tree-walk の支配トラフィックは carrier/concurrency**（whitelist sample 実測）: method-fallback top =
+   `Promise.at`=2000 / `await`=1200（＝**concurrency = Track C**）、`WHAT`（MOP carrier）、`EVAL`（carrier）、
+   残りは niche（`map`/`CALL-ME`/`tree`/`parse` 各 ~10-20）。**汎用ユーザーコード tree-walk は枯渇**。
+
+### 核心の再認識: env fold に「孤立した第1スライス」は存在しない
+
+- **hot な per-call-frame state（env / readonly_vars / let_saves）は一括 fold しかできない**: いずれも関数呼び毎に
+  save/restore される最ホット state。`Arc<RwLock>` handle playbook（registry/io_handles/output_sink/current_package
+  の4実績）は **per-access lock で perf 破綻**（env と同じ理由）＝早期移管不可。plain field 化は tree-walk reader
+  撲滅後にしか不可。→ **readonly_vars/let_saves を「先に寄せる」案は perf 上も不可**（doc 旧記述の「比較的局所＝早期
+  候補」を**訂正**: これらは env と同じく hot で、最終 fold まで動かせない）。
+- **env を読む carrier は撲滅不可能な Raku セマンティクス**: `type_matches_value`（221-910行・~690行）は subset の
+  `where` 句を **`eval_block_value`/`call_sub_value` + `self.env` 読み書き**で評価する（line 514/523/533）＝
+  user code を走らせる carrier。同様に EVAL・正規表現埋め込み `{}`・`await`/Promise `.then` クロージャも env を読む。
+  これらは「消す」のではなく、**最終的に env が VM 所有になった時、carrier 実行に env を貸す（env-loan: VM が env を
+  一時 move-in→interpreter 実行→move-back、または `&mut env` を渡す）**機構が要る。＝Phase II の最終 fold は
+  「全 tree-walk 撲滅 → env を抜く」ではなく「**env を VM 所有にし、carrier には env-loan で渡す**」設計。
+
+### 唯一クリーンに早期移管できる cool state = `instance_type_metadata`（次スライス候補）
+
+型メタ副テーブルは Q2 で全コンテナ値へ埋め込み済（#2952〜2985）だが、**Instance 値の型メタだけは
+`Interpreter.instance_type_metadata: HashMap<u64, ContainerTypeInfo>` の副テーブルに残る**（mod.rs:1037）。
+アクセスは **insert(4716) / get(4787 = `container_type_metadata` 内) / clone(5589 = clone_for_thread) の 5 サイトのみ**
+＝borrow-held-across-reentry なし・cool（instance 構築時 write / 型検査時 read）＝**handle playbook が最もクリーンに効く**。
+これを VM-readable handle 化すれば、`type_matches_value` の **非 subset パス（簡単型名 = registry + value_type +
+instance_meta で判定、subset は rare）を VM-native 化** でき、41 bounce の大半を除去（subset のみ carrier fallback）。
+
+### Phase II の現実的な進め方（実測で確定。PLAN.md「Critical path」が正準）
+
+- **critical path（本体）= carrier の env-loan 機構**: env を VM 所有にし、EVAL/subset-where/regex-`{}`/Promise-`.then`
+  が VM 所有 env を借りて実行できるようにする。これが入って初めて env を Interpreter から抜ける（→ dual-store 削除 →
+  Interpreter 撤去）。env/readonly/let の hot state はこの最終 fold で**一括**（早期分割は perf 不可）。
+- **off-critical-path（任意・並行）= cool side-table の handle 移管**: `instance_type_metadata` 等を handle 化すれば
+  VM-native dispatch（type_matches 非subset fast-path 等）を解禁できる（current_package が registry pure-predicate
+  dispatch を解禁した前例と同型）が、**これは env fold を直接進めない＝critical path ではない**（bounce 数削減の
+  perf/cleanliness 寄り）。最終 fold 面の縮小として CP-3 に同梱 or 任意で進める。
+- **concurrency tree-walk（await/Promise）は Track C** と並走（env fold とは独立の最大残トラフィック）。

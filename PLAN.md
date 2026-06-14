@@ -90,159 +90,68 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 完了すると **env を任意名で書く唯一の存在＝interpreter ブリッジが消え**、`env_dirty`/`ensure_locals_synced`/
 `sync_locals_from_env`/`saved_env_dirty` の **dual-store 機構を削除**できる（レバー B 完遂）。
 
-進捗台帳: [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md)。
+進捗台帳: [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md)
+（完了履歴 ①真フォールバック可視化 / ②registry VM 所有化 / ③pure-data 消化 → [news/2026-06.md](news/2026-06.md)）。
 
-#### 完了済み（詳細は [news/2026-06.md](news/2026-06.md)）
+#### 現在地（2026-06-14）: Phase I 完了 → Phase II（env 所有移管・Interpreter 撤去）
 
-- [x] **① 真フォールバックの可視化 + 安いルーティング消化**（#2755〜）: 全サイトを `// TODO: compile to bytecode`
-      （真フォールバック）/ `// CARRIER:`（反射・MOP・EVAL・メタプロ hook）で注釈し台帳を新設。「生ディスパッチを
-      統一エントリへ降ろすだけ」の安いサイトは**枯渇**。
-- [x] **② 宣言レジストリの VM 所有化（PR-A/B/C, #2760-2772）**（設計: [docs/vm-registry-ownership.md](docs/vm-registry-ownership.md)）。
-      全宣言レジストリを `Arc<RwLock<Registry>>` 足場へ抽出 + read/MRO/型マッチを `impl Registry` メソッド化 +
-      write-through 整理 + 再入跨ぎ guard を debug 実行時 guard で強制。plain field への最終畳み込みは Interpreter 撤去後。
-- [x] **③ の pure-data カテゴリ消化（PR-1〜10 + ctor #2826-2844）**: Routine/builtin-shadow/multi dispatch 統一、
-      array mutators / Buf write / QuantHash coerce / Iterator protocol / splice の native 化、`Package.new`
-      コンストラクタを属性 shape 別に native 化（typed/untyped `$`・`@`/`%`・native 型・coercion 型・required）。
-      **§1/§2 の「pure-data で降ろせる」カテゴリは枯渇**。
+Phase I（§1/§2 tree-walk フォールバック撲滅）完了（履歴 → [news/2026-06.md](news/2026-06.md)）。残る
+VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env fold 可否調査の結論**
+（[docs/vm-state-ownership.md](docs/vm-state-ownership.md), 2026-06-14 実測）:
 
-#### 現状認識（2026-06-10）: 残るフォールバックは 3 つの独立な構造ブロッカー前提
+- env/readonly/let は **hot な per-call-frame state ＝ 一括 fold のみ**（`Arc<RwLock>` 化は perf 破綻、局所 state の
+  先行移管は不可）。VM の env 直接アクセスは **481 サイト**。
+- env を読む carrier（subset `where`〔`type_matches_value` ~690行〕/ EVAL / 正規表現 `{}` / `Promise.then`）は
+  **Raku 仕様で撲滅不可**。
+- → 最終形 = **env を VM 所有にし、carrier には env を貸す（env-loan）**。これが Interpreter 撤去の本体。
 
-台帳に残る §1/§2 の真フォールバックは、すべて以下のいずれかが前提であり、個別ルーティングでは消えない。
-そして **この 3 つは別サブシステム（ディスパッチ/状態・データ表現・並行）なので互いに独立 ＝ 並列実行できる**:
+#### ▶ いま着手: CP-1 = env 所有のキーストーン（env-loan 機構）
 
-| ブロッカー | これが塞いでいる台帳フォールバック |
-|---|---|
-| **A. ③ state 所有 + 残ディスパッチ** | §1 native-method（IO::Handle/Pipe）・catch-all（native/Buf/Failure 受け手）、§2 catch-all（lexical `&`-var 名呼び / `__mutsu_*` / no-match エラー生成） |
-| **B. 第一級コンテナ Phase 2（要素セル）** | §1 array-backed instance mut・shaped push・non-simple push・hyper temp（＋ take-rw / `@a[0]:=` / 深い `>>++`、Q2 の Arc-ptr flaky） |
-| **C. 並行 / lever B（共有セル）** | §1 shared push（threaded `@a.push`）・react loop（`run_react_event_loop`）（＋ ANALYSIS §2.3 unsafe aliasing） |
+> Interpreter 撤去の最大の山。env を VM 単一所有へ移し、carrier が借用して実行する形にする。
+> 細かいステップに分割し、各 PR は挙動不変（CI = make test + 全 roast が安全網）で積む。
 
-#### Phase I（並列）: 3 トラックで全 §1/§2 tree-walk フォールバックを撲滅
+- [ ] **1a. env-loan 設計を確定**（doc のみ・**1 PR**）
+      - 機構を決める: env = VM 所有、interpreter は実行時だけ借用。**方式 A: carrier 呼び前後で `mem::swap` 貸し借り**
+        vs **方式 B: `&mut Env` をメソッド引数で渡す**。ping-pong（`mem::take`→`VM::new`→`*self=`）との整合を確認。
+      - carrier の env 借用点を全列挙: EVAL / subset-`where` / 正規表現埋め込み `{}` / `Promise.then` / 残 ~15
+        tree-walk 委譲サイト。各々が env をいつ読む/書くかを表に。
+      - → [docs/vm-state-ownership.md](docs/vm-state-ownership.md) に「env-loan 設計」節を追加。
+- [ ] **1b. VM env seam を導入**（**3〜4 PR**・モジュール群ごとに分割）
+      - `VM::env()` / `VM::env_mut()` アクセサを新設（当面は `self.interpreter.env()` へ forward＝**挙動不変**）。
+      - 481 の `self.interpreter.env`/`env_mut` を、**borrow 衝突しないサイトから**順に accessor へ移行
+        （順序例: vm_var_get/assign → vm_call_* → vm_data/misc/helpers → 残り）。`grep -rc self.interpreter.env src/vm`
+        で残数を追い、1 PR = 1 モジュール群。
+- [ ] **1c. borrow 衝突サイトを解消**（**1〜2 PR**）
+      - env 読みと他 self フィールドが交錯し、accessor の `&self` 全体借用が衝突するサイトを、ローカル束縛への
+        切り出し / スコープ分割で個別に解消（1b で後回しにした分）。完了時点で VM 側 env アクセスは 100% seam 経由。
+- [ ] **1d. interpreter 側 carrier の env 借用点を整理**（**1〜2 PR**）
+      - 1a で列挙した carrier が `self.env` を読む箇所を、メソッド境界で env を出し入れできる形に整理
+        （env を引数 or 一時 swap で受け取れるよう carrier 経路をリファクタ）。挙動不変。
+- [ ] **1e. env フィールドを物理移管 + loan plumbing**（**1〜2 PR**・最大の山）
+      - `Interpreter.env` を削除し `VM.env` を新設。accessor 本体を `self.interpreter.env` → `self.env` へ flip。
+      - VM が carrier を呼ぶ ~15 サイトで env を貸し借り（方式 A なら `mem::swap` で interpreter の一時 slot へ）。
+      - `make test` + ローカル関連 roast → push → **全 roast を CI 委譲**で検証。
 
-> **依存の核心**: env/型検査などの state フィールドは runtime/ tree-walk に浸透し §1/§2 フォールバック経由で
-> 読まれるため、**フィールド再配置（Phase II）は tree-walk 実行パス撲滅後にしかできない**。よって「env を VM 所有へ
-> 移す」より先に、まず全フォールバックを native 化する。A/B/C は独立に並列で進め、3 つ揃ったところで Phase II へ。
+#### 後続（CP-1 後・逐次）
 
-- [ ] **トラック A — 残ディスパッチの native 化（③ の dispatch 部分）** ＝ 最長・ペース決定トラック
-      - [x] PR-1 Routine dispatch / PR-2 builtin-shadow fork / PR-3 catch-all ユーザーメソッド / PR-4 非proto multi fork
-      - [~] **§2 catch-all 末端**:
-            - [x] **lexical `&`-var の名前経由呼び（`-> &op {...}` 等）= DONE**: pure lexical（#2949）+
-                  shadow 経路（#3021）+ slip 呼び `op(|@args)`（#3022）+ shadow×slip 優先順位バグ修正（#3024）。
-                  すべて `vm_call_on_value` へ寄せ、interpreter terminal 依存ゼロ。sigilless callable `f(...)` は
-                  raku 仕様上不正（`f.()` は既に native）なので対象外。残: shadow 下クロージャ内 sigilless 名前
-                  解決の語彙性（dispatch でなく name resolution の別軸課題）。
-            - [ ] `__mutsu_*` 内部（並行は C へ）、no-match エラー生成は carrier 確定。
-      - [ ] **§1 native-method dispatch**: Buf/Failure/native 受け手のメソッドを native 実装に（または carrier 確定）。
-      - [ ] **§1 native IO**: `IO::Handle`/`IO::Pipe` 等。ファイルハンドル状態を VM 所有 or native IO 層へ。
-- [ ] **トラック B — 第一級コンテナ Phase 2（要素セル）** ＝ データ表現（A と完全独立）
-      設計・段階導入は 🟣第2優先「第一級コンテナ」セクション参照（Phase 1 = landed）。
-      - [ ] Phase 0.5 第2段（スタック不変条件 + lvalue opcode）を Phase 2 と同一 PR で。
-      - [~] 配列/ハッシュ要素の COW セル化 → array-backed mut・shaped/non-simple push・hyper temp・
-            深い `>>++` を解く（take-rw は #2930、`@a[0]:=`/束縛要素セルは #2902-#2925 で landed）。
-            - [x] **whole-container `:=` bind 共有（`my @b := @a` / `my %g := %h`）**: 両変数が単一の
-                  共有 `ContainerRef` cell を持ち、push/pop/shift/unshift/splice/index-assign/slice-assign/
-                  delete の変異が双方向に伝播（旧実装は inner Arc 共有のみで COW push が detach していた）。
-                  GetArrayVar/GetHashVar がトップレベル cell を decont（Phase 0.5 第2段の読み側）、bind 経路が
-                  cell を生成、変異 op（native array mut/splice・delete）が `env_root_descended_mut` で
-                  cell を descend。`t/whole-container-bind.t`(26)。**残**: スカラー `$ref := @a`（`$`-bind は
-                  bind_vardecl=false で WrapVarRef 非 emit → コンパイラ変更が前提・別 PR）。
-      - [x] **Q2 の型メタ Arc-ptr flaky の構造的除去 = 完全吸収 DONE（2026-06-12〜13）**:
-            Hash = HashData (#2952、original_keys = #2954)、Set/Bag/Mix = 既存 *Data 埋め込み (#2957)、
-            **Array = ArrayData wrapper（2026-06-13）— 全 5 コンテナ型の型メタがコンテナ値に埋め込まれ、
-            型メタ副テーブルは全廃**。経緯・監査済み hazard（unsafe cast / Arc identity / iterator 共有）=
-            docs/hashdata-migration-plan.md Stage 3-4 節。
-      - [x] **全 ptr-keyed 副テーブル撲滅 = DONE（2026-06-13）**: 残っていた `Arc::as_ptr`-keyed 副テーブルを
-            すべてコンテナ値に埋め込み完了。shaped dims = `ArrayData.shape`、array default = `ArrayData.default`
-            （既存）、**grep-view = `ArrayData.grep_source`（#2985）**、**hash default = `HashData.default`**。
-            最後のユーザーを失った `PtrKeyedMap` / `ptr_keyed.rs`（#2953 の Weak-guard interim 防御機構ごと）を
-            **削除**。これで `Arc::as_ptr` ポインタ identity に依存する副テーブルはゼロ＝Q2 の間欠 flaky の構造的
-            根を全廃。レバー C 残（単一脱出/汎用捕捉）は要素セル本体（Phase 2）へ合流。
-- [ ] **トラック C — 並行 / lever B（共有セル）** ＝ 並行（A と独立。要素セルは B と共有基盤なので B に弱依存）
-      - [~] `clone_for_thread` のスナップショットコピー → 共有すべき lexical/global を `ContainerRef`
-            （`Arc<Mutex<Value>>`）ライブセルへ（ANALYSIS §8.3/§2.2）。**スライス 1 LANDED**:
-            `start` で捕捉・変異される lexical scalar をエスケープ解析でセル化し、スレッド間で同一 Arc を共有。
-            ① `start` 引数を escaping position 化（`compile_call_arg_with_escape`）、
-            ② エスケープ信号をネストした非エスケープクロージャ越しに親へ伝播（`needs_cell_free_vars` —
-            `map { start { $outer++ } }` のような中間 map ブロック越しの捕捉を解く）、
-            ③ `++`/`--` を ContainerRef のロック保持下でアトミック RMW 化（`atomic_container_incdec` —
-            並列加算が lost-update しない。raku より決定的）、
-            ④ box 時に stale な `shared_vars` スナップショットをセルに張り替え
-            （mainline `start` 後の `sync_shared_vars_to_env` writeback がセルを clobber する回帰を防止）。
-            `await (^N).map: { start { $c++ } }` が正しく N を返す。テスト `t/concurrent-shared-cell.t`。
-            **スライス 2 LANDED**: スカラ `state $n` のスレッド間共有。`StateVarInit` が
-            `shared_vars_active` の間、user `state` 変数を `shared_vars` 内の共有 `ContainerRef` セル
-            （正規化キー `__mutsu_shared_state::{normalize_state_key(scoped_key)}`）に格納。
-            キー正規化は mutsu の二重コンパイル（registered body `&f` と OTF `&f/0`）で分岐する
-            `@<ip>`／`/<n>` を剥がし、`start f()` と直接 `f()` が同一セルを引くようにする。
-            `clone_for_thread` がスレッド前の親 state を共有セルへ移行（`f();f();start{f()}` を解く）。
-            増減は ① のアトミック ContainerRef RMW を流用（決定的）。`StateVarInit` は genuine `state`
-            宣言のみに出るので `ff`/`fff`/smart-match の内部 state（`set_state_var` 直接・非セル）は不変。
-            テスト `t/concurrent-state-var.t`。
-            **スライス 3 LANDED（PR #3059）**: スカラ複合代入（`$x OP= rhs`）のアトミック化。
-            融合オペコード `OpCode::AtomicCompoundVar { name_idx, op: CompoundBaseOp }` を
-            コンパイラのチョークポイント（`compile_expr_assign`／`Stmt::Assign` 末尾）で
-            **平の env 名前付きスカラのみ**に発行（local スロット／twigil は除外＝ホットな
-            リテラル `$x = $x + y` own-local ループは融合しない）。非セル書き込みは `++` の
-            env 書き戻し末尾を抽出した `store_named_scalar_rmw_result` を `++`/`--` と共用するので
-            METHOD captured-outer 伝播が `++` と構造的に同一。ContainerRef セル分岐はロック保持下の
-            アトミック RMW。`await (^100).map: { start { for ^100 { $c += 1 } } }` が決定的に 10000。
-            **要点**: 融合 rhs は `compile_expr` でコンパイル（`compile_call_arg` はスカラ被演算子を
-            itemize/escape-box して captured-outer 伝播を壊す）。テスト `t/concurrent-compound-assign.t`。
-            **スライス 4 LANDED（PR #3061）**: スレッド間の**ハッシュ要素代入**（`%h{$k} = $v`）。
-            `my %h; await (^50).map: -> $i { start { %h{$i} = $i*$i } }` が 0（スナップショットの
-            last-writer-wins で書き込み消失）→ 決定的 50（raku 一致）。`assign_hash_elem_to_shared_var`
-            （`shared_vars` ロック保持下で get→`Arc::make_mut`→insert＝`.push` と同じ要素単位アトミック）を
-            `exec_index_assign_expr_named_op` 先頭の `shared_vars_active` 早期 return ガード
-            （`try_shared_hash_element_assign`）から呼ぶ。単一スレッドは早期 return で挙動不変。
-            `@a.push` は元から動作（`push_to_shared_var`）、壊れていたのは `@a[i]=`／`%h{k}=`。
-            テスト `t/concurrent-hash-assign.t`。
-            **スライス 5 LANDED（PR #3063）**: スレッド間の**配列要素 index 代入**（`@a[$i] = $v`）。
-            スライス 4 の配列版。`my @a; await (^50).map: -> $i { start { @a[$i] = $i*$i } }` が 0 →
-            決定的 50（raku 一致）。`assign_array_elem_to_shared_var`（ロック保持下で
-            get→`Arc::make_mut`→Nil で grow→set）を `try_shared_array_element_assign` ガード
-            （非負 Int index・型制約/default/shaped/bound なしの単純ケースのみ）から呼ぶ。
-            単一スレッドは早期 return で挙動不変。テスト `t/concurrent-array-index-assign.t`。
-            **残**: `state @`/`%`（配列/ハッシュ state）のスレッド共有（要素セル＝Track B 依存）、
-            unsafe aliasing 撤廃（ANALYSIS §2.3）。
-      - [x] **react/supply ランタイムの VM ネイティブ化 — 完了（Stage 1+2+3, #3010〜#3039, 2026-06、
-            詳細は [news/2026-06.md](news/2026-06.md)）**。駆動ループの 4 箇所二重化を単一エンジンへ統合し
-            （Stage 1）、ループ所有権を `impl Interpreter`→`impl VM`（`vm/vm_react_loop.rs`）へ逆転して
-            whenever body を **コンパイル済みバイトコード**でディスパッチ（Stage 2 #3038/#3039）、`// TODO:
-            compile to bytecode` を除去（Stage 3）。**Stage 3 follow-up = supply `QUIT` handler も VM
-            ネイティブ化**（`VM::call_supply_quit_handler` を `call_react_callback` 経由で実行）。これで VM
-            駆動ループのどのコールバックも tree-walk へ戻らない。台帳の react-loop 行参照。
-      - [ ] **unsafe aliasing 撤廃**（ANALYSIS §2.3, `Arc::as_ptr as *mut` 11 箇所）— B の要素セル基盤の上で。
+- [ ] **CP-2: dual-store 機構の削除**（**2〜4 PR**）— env が VM 単一所有になったら `env_dirty`/`saved_env_dirty`/
+      `ensure_locals_synced`/`sync_locals_from_env`（現状 **241 参照**）+ `VmCallFrame` の dirty/bind 群を撤去。
+- [ ] **CP-3: Interpreter を carrier-only へ縮退 → 撤去**（**4〜8 PR**）— 残る **86 フィールド**を VM へ畳むか撤去、
+      ping-pong 撤去、carrier（subset-where/regex-`{}`）を VM-native 化して carrier 面を縮小 → **Interpreter 削除**。
 
-#### Phase II（収束・逐次）: state 移管 → carrier 確定 → dual-store 削除 → Interpreter 撤去
+#### 並行可能トラック（critical path 外・互いに独立・CP のブロッカーにならない）
 
-> Phase I で 3 トラックが全フォールバックを撲滅したら、ここは比較的機械的に進む。
+- [ ] **Track C — 並行（共有セル）**（**2〜4 PR**）— スライス 1〜5 landed（共有スカラ/state/compound-assign/
+      hash-elem/**array-elem index 代入 #3063**）。残: `state @`/`%` 共有（Track B 基盤依存）、unsafe aliasing 撤廃
+      （ANALYSIS §2.3 `Arc::as_ptr as *mut` 11 箇所）。
+- [ ] **cool side-table の handle 移管（任意）**（**1〜3 PR**）— `instance_type_metadata` 等を VM handle 化。
+      CP-3 の畳み込み面を減らす（CP-3 に同梱可）。
+- [ ] **perf（独立）** — 正規表現コンパイルキャッシュは #3064（`Arc<RegexPattern>` で per-match deep clone 除去、
+      ~1.6x）/ #3065（単一マッチ早期終了、catastrophic backtracking 抑制）で大半 landed。残＝量指定子反復ごとの
+      `RegexCaptures.clone()` 削減。他に NaN-boxing（下記 Q4）。
+- [ ] **Q3 module 互換 / roast backlog** — 下記 Q3・Backlog。完全独立。
 
-- [ ] **③ の本丸: 借用 state を VM 所有へ再配置**（設計: [docs/vm-state-ownership.md](docs/vm-state-ownership.md)）:
-      env HashMap・型検査（`type_matches_value`/`var_type_constraint`）・readonly 追跡・`let`/`temp` 復元・multi 解決・
-      state 変数・`current_package`。終状態は **plain VM field**（env は単一所有者で同時共有が無く `Arc<RwLock>` は
-      最ホットで perf 破綻するため不可）。Phase I 完了後＝tree-walk が state を読まなくなって初めて再配置可能。
-- [ ] **④ キャリアの扱いを確定**（消すのではなく分離 or 明示）: `EVAL`/`EVALFILE`（compile→サブ VM 実行）・正規表現の
-      埋め込み `{}` ブロック・pseudo-package（`CALLER::`/`OUTER::`）・MOP 反射（`.^*`/`.WHAT`/`.VAR`）・call-chain
-      （callsame/nextsame）・Test ディスパッチ。③で所有が VM に移れば、これらは「Interpreter 実行パス」ではなく
-      単なる**共有レジストリ参照**になる（`// CARRIER:` のまま据え置き or 明示分離）。
-- [ ] **⑤ dual-store 機構の削除（レバー B 完遂）**: `env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/
-      `saved_env_dirty`/`VmCallFrame` の dirty/bind フィールド群を撤去。registry `Arc<RwLock>`→plain VM field 畳み込み。
-      **Interpreter オブジェクト自体を削除**。
-
-#### Phase I/II と並行で随時消化できる独立タスク（critical path 外）
-
-- [~] **正規表現のコンパイル済みキャッシュ**（ANALYSIS §8.4）— perf。撤去とは独立。
-      static パターンの parse 結果は `REGEX_PARSE_CACHE` で memo 済み。#3064 で**キャッシュヒットを
-      owned `RegexPattern` の deep clone → `Arc<RegexPattern>` の refcount bump 化**（毎マッチの
-      ツリー clone を除去）。ベンチ `~~ /(\w+) \s+ (\w+) \s+ (\d+)/` ×20000 は release ~0.56s
-      （raku 0.36s ＝ ~1.6x、ANALYSIS 当時の 8.6x から大幅改善）。
-      #3065 で**単一マッチ経路（`~~`/anchored）の早期終了**: バックトラック DFS は greedy/最高優先を
-      先に訪れ end を未ソート DFS 順で返すので、`matches[0]` を取る単一マッチ caller は最初の完全マッチで
-      `break`（`first_only` フラグ、`matches[0]` バイト同一＝意味保存）。**catastrophic backtracking を
-      抑制**: `"aaaa…(20)…b" ~~ /(\w+) (\w+) (\w+) b/` ×3000 が 22.8s→0.52s（~44x）。
-      **残るギャップ**: 非曖昧パターンのトークン候補リスト構築＋量指定子反復ごとの `RegexCaptures.clone()`
-      （バックトラックスナップショット）。clone 削減が次の（より深い）最適化。
-
-関連: 🟣第2優先「第一級コンテナ」＝トラック B の本体（レバー C ＝ Phase 1 の一部、Q2 の Arc-pointer flaky を吸収）。
+関連: 🟣第2優先「第一級コンテナ」＝トラック B の本体（基盤 landed、残りは機会的バックログ）。
 
 ---
 
