@@ -2334,21 +2334,8 @@ impl Interpreter {
                     // are found, to avoid double-delivery for plain `emit` calls.
                     let emitter_supplier_id = next_supplier_id();
                     close_supplier_id = Some(emitter_supplier_id);
-                    let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                        let mut a = HashMap::new();
-                        a.insert("emitted".to_string(), Value::array(Vec::new()));
-                        a.insert("done".to_string(), Value::Bool(false));
-                        a.insert(
-                            "supplier_id".to_string(),
-                            Value::Int(emitter_supplier_id as i64),
-                        );
-                        a
-                    });
-                    self.supply_emit_buffer.push(Vec::new());
-                    let done_before = supplier_done_count();
-                    let callback_result = self.call_sub_value(on_demand_cb, vec![emitter], false);
-                    let body_ran_done = supplier_done_count() > done_before;
-                    let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                    let (callback_result, emitted, body_ran_done) =
+                        self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
                     if let Err(err) = callback_result {
                         on_demand_quit = Some(
                             err.exception
@@ -3056,21 +3043,42 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Phase A of the on-demand supply runtime, shared by `tap`/`act`, the react
+    /// event loop, `await`/`.Promise`, and `supply_get_values`. Builds an emitter
+    /// `Supplier` (with a `supplier_id` when `emitter_supplier_id` is `Some`), runs
+    /// the on-demand body inside a fresh `supply_emit_buffer` frame, and returns
+    /// the callback result, the emitted items, and whether the body itself ran
+    /// `done` (tracked via the global supplier-done counter).
+    pub(crate) fn run_on_demand_body(
+        &mut self,
+        on_demand_cb: Value,
+        emitter_supplier_id: Option<u64>,
+    ) -> (Result<Value, RuntimeError>, Vec<Value>, bool) {
+        let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+            let mut a = HashMap::new();
+            a.insert("emitted".to_string(), Value::array(Vec::new()));
+            a.insert("done".to_string(), Value::Bool(false));
+            if let Some(sid) = emitter_supplier_id {
+                a.insert("supplier_id".to_string(), Value::Int(sid as i64));
+            }
+            a
+        });
+        self.supply_emit_buffer.push(Vec::new());
+        let done_before = supplier_done_count();
+        let result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+        let body_ran_done = supplier_done_count() > done_before;
+        let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+        (result, emitted, body_ran_done)
+    }
+
     /// Extract source values from a Supply's attributes.
     fn supply_get_values(
         &mut self,
         attributes: &HashMap<String, Value>,
     ) -> Result<Vec<Value>, RuntimeError> {
         if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                let mut a = HashMap::new();
-                a.insert("emitted".to_string(), Value::array(Vec::new()));
-                a.insert("done".to_string(), Value::Bool(false));
-                a
-            });
-            self.supply_emit_buffer.push(Vec::new());
-            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-            Ok(self.supply_emit_buffer.pop().unwrap_or_default())
+            let (_, emitted, _) = self.run_on_demand_body(on_demand_cb.clone(), None);
+            Ok(emitted)
         } else {
             Ok(match attributes.get("values") {
                 Some(Value::Array(items, ..)) => items.to_vec(),
@@ -3101,26 +3109,14 @@ impl Interpreter {
 
         // Create an emitter supplier with a supplier_id so emits are tracked
         let emitter_supplier_id = next_supplier_id();
-        let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-            let mut a = HashMap::new();
-            a.insert("emitted".to_string(), Value::array(Vec::new()));
-            a.insert("done".to_string(), Value::Bool(false));
-            a.insert(
-                "supplier_id".to_string(),
-                Value::Int(emitter_supplier_id as i64),
-            );
-            a
-        });
-
         // Register the promise on the emitter supplier. When supplier_done()
         // fires, it will keep all pending promises before supplier_reset()
         // clears the state.
         supplier_register_promise(emitter_supplier_id, promise.clone());
 
         // Enter react-like context to collect whenever registrations
-        self.supply_emit_buffer.push(Vec::new());
-        let cb_result = self.call_sub_value(on_demand_cb, vec![emitter], false);
-        let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+        let (cb_result, emitted, _) =
+            self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
 
         if let Err(err) = cb_result
             && !err.is_react_done

@@ -272,17 +272,10 @@ impl Interpreter {
                         }
                         // Handle on-demand supplies: execute the callback to produce values
                         if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
-                            let mut emitter_attrs = HashMap::new();
-                            emitter_attrs.insert("emitted".to_string(), Value::array(Vec::new()));
-                            emitter_attrs.insert("done".to_string(), Value::Bool(false));
-                            let emitter =
-                                Value::make_instance(Symbol::intern("Supplier"), emitter_attrs);
                             // Execute the on-demand callback, which calls emit on the emitter.
                             // If the callback dies, propagate as X::React::Died.
-                            self.supply_emit_buffer.push(Vec::new());
-                            let od_res =
-                                self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                            let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                            let (od_res, emitted, _) =
+                                self.run_on_demand_body(on_demand_cb.clone(), None);
                             if let Err(od_err) = od_res
                                 && !od_err.is_react_done
                             {
