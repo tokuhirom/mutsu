@@ -2742,7 +2742,10 @@ impl VM {
         if has_control {
             self.interpreter.control_handler_depth += 1;
         }
-        let body_result = self.run_range(code, body_start, catch_begin, compiled_fns);
+        // Guard the protected body with a panic->X:: boundary so an internal
+        // Rust panic (overflow/OOB/unwrap) raised anywhere inside it becomes a
+        // catchable exception routed to the CATCH handler, instead of crashing.
+        let body_result = self.run_range_guarded(code, body_start, catch_begin, compiled_fns);
         if has_control {
             self.interpreter.control_handler_depth -= 1;
         }
