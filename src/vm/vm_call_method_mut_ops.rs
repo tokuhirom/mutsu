@@ -1479,7 +1479,10 @@ impl VM {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "append" | "prepend" | "unshift" | "pop" | "shift") {
+        if !matches!(
+            method,
+            "push" | "append" | "prepend" | "unshift" | "pop" | "shift"
+        ) {
             return None;
         }
         // A plain `@`-sigiled variable whose value is a real `[...]` array
@@ -1519,6 +1522,15 @@ impl VM {
             return None;
         };
         let result = match method {
+            "push" => {
+                // `@a.push` compiles to `ArrayPush` only for single-arg pushes on
+                // a *local* array; the captured-closure and multi-arg forms reach
+                // here as `CallMethodMut`. Mirror the `ArrayPush` opcode's env-bound
+                // branch (`normalize_push_unshift_args` then extend).
+                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                Arc::make_mut(arc_items).extend(norm);
+                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+            }
             "append" | "prepend" => {
                 let flat = crate::runtime::flatten_append_args(args.to_vec());
                 let items = Arc::make_mut(arc_items);
