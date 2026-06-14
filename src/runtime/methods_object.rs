@@ -862,6 +862,102 @@ impl Interpreter {
         Value::make_instance(canonical_name, attrs)
     }
 
+    /// Build a `utf8`/`utf16` instance from `.new` arguments as pure data:
+    /// flatten each argument into a code-unit sequence (no masking) and store it
+    /// as the `bytes` attribute. Unlike `build_native_buf_value` this keeps the
+    /// literal class name and drops arguments it cannot turn into code units
+    /// (the interpreter's `utf8`/`utf16` arm did the same), so the two stay
+    /// byte-identical.
+    pub(crate) fn build_native_utf_value(class_name: Symbol, args: &[Value]) -> Value {
+        let elems: Vec<Value> = args
+            .iter()
+            .flat_map(|a| match a {
+                Value::Int(i) => vec![Value::Int(*i)],
+                Value::Array(items, ..) => items.to_vec(),
+                Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+                Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
+                Value::RangeExcl(start, end) => (*start..*end).map(Value::Int).collect(),
+                Value::Instance {
+                    class_name: cn,
+                    attributes: ia,
+                    ..
+                } if crate::runtime::utils::is_buf_or_blob_class(&cn.resolve()) => {
+                    if let Some(Value::Array(items, ..)) = ia.as_map().get("bytes") {
+                        items.to_vec()
+                    } else {
+                        vec![]
+                    }
+                }
+                _ => vec![],
+            })
+            .collect();
+        let mut attrs = HashMap::new();
+        attrs.insert("bytes".to_string(), Value::array(elems));
+        Value::make_instance(class_name, attrs)
+    }
+
+    /// Build a `Uni` value from `.new` arguments as pure data: flatten each
+    /// argument into a sequence of codepoints and collect them as a string.
+    /// (Flattening now also covers `Range`s — `Uni.new(65..67)` -> "ABC" — which
+    /// the old interpreter arm missed, leaving it to stringify the whole Range;
+    /// the shared helper fixes that to match raku and the sibling `utf8` arm.)
+    pub(crate) fn build_native_uni_value(args: &[Value]) -> Value {
+        let mut flat_args: Vec<Value> = Vec::new();
+        for a in args {
+            match a {
+                Value::Array(items, ..) => flat_args.extend(items.iter().cloned()),
+                Value::Seq(items) | Value::Slip(items) => {
+                    flat_args.extend(items.iter().cloned());
+                }
+                Value::Range(start, end) => {
+                    flat_args.extend((*start..=*end).map(Value::Int));
+                }
+                Value::RangeExcl(start, end) => {
+                    flat_args.extend((*start..*end).map(Value::Int));
+                }
+                other => flat_args.push(other.clone()),
+            }
+        }
+        let text: String = flat_args
+            .iter()
+            .filter_map(|a| {
+                let cp = match a {
+                    Value::Int(i) => *i as u32,
+                    Value::Num(f) => *f as u32,
+                    other => other.to_string_value().parse::<u32>().unwrap_or(0),
+                };
+                char::from_u32(cp)
+            })
+            .collect();
+        Value::Uni {
+            form: String::new(),
+            text,
+        }
+    }
+
+    /// VM-native construction for a built-in type whose `.new(...)` is pure data
+    /// assembly (no env / registry / user code): `Buf`/`Blob` (byte overlay),
+    /// `utf8`/`utf16` (code units) and `Uni` (codepoints). Returns `Some` with
+    /// the constructed value when `class_name` is one of these, else `None` so
+    /// the caller falls through to the generic constructor. The interpreter's
+    /// `dispatch_new` arms call the same per-type helpers, so the native path is
+    /// byte-identical.
+    pub(crate) fn try_native_builtin_construct(
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Option<Value> {
+        let cn = class_name.resolve();
+        if Self::is_native_buf_constructible(&cn) {
+            Some(Self::build_native_buf_value(class_name, args))
+        } else if cn == "utf8" || cn == "utf16" {
+            Some(Self::build_native_utf_value(class_name, args))
+        } else if cn == "Uni" {
+            Some(Self::build_native_uni_value(args))
+        } else {
+            None
+        }
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,
@@ -1714,38 +1810,8 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "Uni" => {
-                    // Flatten array arguments so Uni.new(@codes) works
-                    let mut flat_args: Vec<&Value> = Vec::new();
-                    for a in &args {
-                        match a {
-                            Value::Array(items, ..) => {
-                                for item in items.iter() {
-                                    flat_args.push(item);
-                                }
-                            }
-                            Value::Seq(items) | Value::Slip(items) => {
-                                for item in items.iter() {
-                                    flat_args.push(item);
-                                }
-                            }
-                            other => flat_args.push(other),
-                        }
-                    }
-                    let text: String = flat_args
-                        .iter()
-                        .filter_map(|a| {
-                            let cp = match a {
-                                Value::Int(i) => *i as u32,
-                                Value::Num(f) => *f as u32,
-                                other => other.to_string_value().parse::<u32>().unwrap_or(0),
-                            };
-                            char::from_u32(cp)
-                        })
-                        .collect();
-                    return Ok(Value::Uni {
-                        form: String::new(),
-                        text,
-                    });
+                    // Shared with the VM's native fast path (pure codepoint build).
+                    return Ok(Self::build_native_uni_value(&args));
                 }
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator
@@ -2547,33 +2613,8 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "utf8" | "utf16" => {
-                    let elems: Vec<Value> = args
-                        .iter()
-                        .flat_map(|a| match a {
-                            Value::Int(i) => vec![Value::Int(*i)],
-                            Value::Array(items, ..) => items.to_vec(),
-                            Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                            Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
-                            Value::RangeExcl(start, end) => {
-                                (*start..*end).map(Value::Int).collect()
-                            }
-                            Value::Instance {
-                                class_name: cn,
-                                attributes: ia,
-                                ..
-                            } if crate::runtime::utils::is_buf_or_blob_class(&cn.resolve()) => {
-                                if let Some(Value::Array(items, ..)) = ia.as_map().get("bytes") {
-                                    items.to_vec()
-                                } else {
-                                    vec![]
-                                }
-                            }
-                            _ => vec![],
-                        })
-                        .collect();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(elems));
-                    return Ok(Value::make_instance(*class_name, attrs));
+                    // Shared with the VM's native fast path (pure code-unit build).
+                    return Ok(Self::build_native_utf_value(*class_name, &args));
                 }
                 "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
                 | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
