@@ -39,6 +39,32 @@ pub(crate) struct ReactSubscription {
     pub on_demand_done: Option<crate::value::SharedPromise>,
 }
 
+impl ReactSubscription {
+    /// A subscription with no source wired up and no phasers: every field at
+    /// its inert default except `callback`. Callers fill in the source field
+    /// (`receiver` / `supplier_id` / `channel` / `promise`) and any collected
+    /// phaser callbacks via struct-update syntax (`..ReactSubscription::new(cb)`).
+    pub(crate) fn new(callback: Value) -> Self {
+        ReactSubscription {
+            receiver: None,
+            supplier_id: None,
+            supplier_next_index: 0,
+            callback,
+            close_callbacks: Vec::new(),
+            last_callbacks: Vec::new(),
+            quit_callbacks: Vec::new(),
+            done: false,
+            is_lines: false,
+            line_buffer: String::new(),
+            head_limit: None,
+            emit_count: 0,
+            channel: None,
+            promise: None,
+            on_demand_done: None,
+        }
+    }
+}
+
 /// A streaming consumer for an on-demand `supply { ... }` body driven by `react`.
 /// While registered (keyed by the emitter's `supplier_id`), each `emit` in the
 /// supply body delivers its value to `consumer_cb` synchronously rather than
@@ -344,22 +370,14 @@ impl Interpreter {
                                 .unwrap_or_default();
                             react_subs.push(ReactSubscription {
                                 receiver: Some(rx),
-                                supplier_id: None,
-                                supplier_next_index: 0,
-                                callback,
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
                                     &(attributes).as_map(),
                                 ),
                                 last_callbacks,
                                 quit_callbacks,
-                                done: false,
                                 is_lines,
-                                line_buffer: String::new(),
                                 head_limit,
-                                emit_count: 0,
-                                channel: None,
-                                promise: None,
-                                on_demand_done: None,
+                                ..ReactSubscription::new(callback)
                             });
                             continue;
                         }
@@ -375,23 +393,15 @@ impl Interpreter {
                                 .and_then(Self::value_array_items)
                                 .unwrap_or_default();
                             react_subs.push(ReactSubscription {
-                                receiver: None,
                                 supplier_id: Some(*supplier_id as u64),
-                                supplier_next_index: 0,
-                                callback,
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
                                     &(attributes).as_map(),
                                 ),
                                 last_callbacks,
                                 quit_callbacks,
-                                done: false,
                                 is_lines,
-                                line_buffer: String::new(),
                                 head_limit,
-                                emit_count: 0,
-                                channel: None,
-                                promise: None,
-                                on_demand_done: None,
+                                ..ReactSubscription::new(callback)
                             });
                             continue;
                         }
@@ -489,21 +499,8 @@ impl Interpreter {
                                     // run_react_close_callbacks fires them when the
                                     // react ends.
                                     react_subs.push(ReactSubscription {
-                                        receiver: None,
-                                        supplier_id: None,
-                                        supplier_next_index: 0,
-                                        callback: callback.clone(),
                                         close_callbacks: close_cbs,
-                                        last_callbacks: Vec::new(),
-                                        quit_callbacks: Vec::new(),
-                                        done: false,
-                                        is_lines: false,
-                                        line_buffer: String::new(),
-                                        head_limit: None,
-                                        emit_count: 0,
-                                        channel: None,
-                                        promise: None,
-                                        on_demand_done: None,
+                                        ..ReactSubscription::new(callback.clone())
                                     });
                                 }
                             }
@@ -549,20 +546,8 @@ impl Interpreter {
                         });
                         react_subs.push(ReactSubscription {
                             receiver: Some(rx),
-                            supplier_id: None,
-                            supplier_next_index: 0,
-                            callback,
-                            close_callbacks: Vec::new(),
-                            last_callbacks: Vec::new(),
-                            quit_callbacks: Vec::new(),
-                            done: false,
-                            is_lines: false,
-                            line_buffer: String::new(),
-                            head_limit: None,
-                            emit_count: 0,
-                            channel: None,
                             promise: Some(shared.clone()),
-                            on_demand_done: None,
+                            ..ReactSubscription::new(callback)
                         });
                     }
                     // Channel source: poll values directly from the channel
@@ -572,21 +557,9 @@ impl Interpreter {
                             .and_then(Self::value_array_items)
                             .unwrap_or_default();
                         react_subs.push(ReactSubscription {
-                            receiver: None,
-                            supplier_id: None,
-                            supplier_next_index: 0,
-                            callback,
-                            close_callbacks: Vec::new(),
                             last_callbacks,
-                            quit_callbacks: Vec::new(),
-                            done: false,
-                            is_lines: false,
-                            line_buffer: String::new(),
-                            head_limit: None,
-                            emit_count: 0,
                             channel: Some(ch.clone()),
-                            promise: None,
-                            on_demand_done: None,
+                            ..ReactSubscription::new(callback)
                         });
                     }
                     _ => {}
