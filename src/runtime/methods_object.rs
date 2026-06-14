@@ -960,6 +960,83 @@ impl Interpreter {
         )
     }
 
+    /// Build a `Rat` from `.new(numerator, denominator)` as pure data
+    /// (defaults `0/1`). A `BigInt` argument routes through `make_big_rat` to
+    /// avoid truncation; otherwise the components are `to_int`-coerced.
+    pub(crate) fn build_native_rat_value(args: &[Value]) -> Value {
+        use num_bigint::BigInt;
+        let has_big = args.iter().take(2).any(|v| matches!(v, Value::BigInt(_)));
+        if has_big {
+            let a = match args.first() {
+                Some(Value::BigInt(bi)) => (**bi).clone(),
+                Some(v) => BigInt::from(to_int(v)),
+                None => BigInt::from(0),
+            };
+            let b = match args.get(1) {
+                Some(Value::BigInt(bi)) => (**bi).clone(),
+                Some(v) => BigInt::from(to_int(v)),
+                None => BigInt::from(1),
+            };
+            return crate::value::make_big_rat(a, b);
+        }
+        let a = args.first().map(to_int).unwrap_or(0);
+        let b = args.get(1).map(to_int).unwrap_or(1);
+        make_rat(a, b)
+    }
+
+    /// Build a `FatRat` from `.new(numerator, denominator)` as pure data
+    /// (defaults `0/1`), always via the BigInt path (`make_big_fat_rat`).
+    pub(crate) fn build_native_fatrat_value(args: &[Value]) -> Value {
+        use crate::value::make_big_fat_rat;
+        use num_bigint::BigInt;
+        let a = match args.first() {
+            Some(Value::BigInt(bi)) => (**bi).clone(),
+            Some(v) => BigInt::from(to_int(v)),
+            None => BigInt::from(0),
+        };
+        let b = match args.get(1) {
+            Some(Value::BigInt(bi)) => (**bi).clone(),
+            Some(v) => BigInt::from(to_int(v)),
+            None => BigInt::from(1),
+        };
+        match make_big_fat_rat(a, b) {
+            Value::Rat(n, d) => Value::FatRat(n, d),
+            Value::BigRat(n, d) => Value::BigRat(n, d),
+            other => other,
+        }
+    }
+
+    /// Build a `Pair` from `.new(:key, :value)` or `.new(key, value)` as pure
+    /// data. A `Str` key uses `Pair` (string-keyed); any other key type uses
+    /// `ValuePair`, mirroring the `=>` operator and positional `Pair.new`.
+    pub(crate) fn build_native_pair_value(args: &[Value]) -> Value {
+        let mut named_key: Option<Value> = None;
+        let mut named_value: Option<Value> = None;
+        let mut positional = Vec::new();
+        for a in args {
+            match a {
+                Value::Pair(k, v) if k == "key" => named_key = Some((**v).clone()),
+                Value::Pair(k, v) if k == "value" => named_value = Some((**v).clone()),
+                _ => positional.push(a.clone()),
+            }
+        }
+        let (key, value) = if named_key.is_some() || named_value.is_some() {
+            (
+                named_key.unwrap_or(Value::Nil),
+                named_value.unwrap_or(Value::Nil),
+            )
+        } else {
+            (
+                positional.first().cloned().unwrap_or(Value::Nil),
+                positional.get(1).cloned().unwrap_or(Value::Nil),
+            )
+        };
+        match &key {
+            Value::Str(_) => Value::Pair(key.to_string_value(), Box::new(value)),
+            _ => Value::ValuePair(Box::new(key), Box::new(value)),
+        }
+    }
+
     /// Build a `Date` from `.new` arguments as pure data: parse named
     /// (`year`/`month`/`day`/`formatter`) and positional args (a date string, a
     /// `DateTime`/`Instant` to take the date of, or `y, m, d`), validate, and
@@ -1406,6 +1483,12 @@ impl Interpreter {
             )))
         } else if cn == "Complex" {
             Some(Ok(Self::build_native_complex_value(args)))
+        } else if cn == "Rat" {
+            Some(Ok(Self::build_native_rat_value(args)))
+        } else if cn == "FatRat" {
+            Some(Ok(Self::build_native_fatrat_value(args)))
+        } else if cn == "Pair" {
+            Some(Ok(Self::build_native_pair_value(args)))
         } else if cn == "Date" {
             // A `:formatter` renders a user Callable (`render_date_formatter`,
             // self-dependent) — fall through to the interpreter for that case;
@@ -2730,85 +2813,16 @@ impl Interpreter {
                     return Ok(Self::build_native_buf_value(*class_name, &args));
                 }
                 "Rat" => {
-                    use num_bigint::BigInt;
-                    // Handle BigInt args to avoid truncation
-                    let has_big = args.iter().take(2).any(|v| matches!(v, Value::BigInt(_)));
-                    if has_big {
-                        let a = match args.first() {
-                            Some(Value::BigInt(bi)) => (**bi).clone(),
-                            Some(v) => BigInt::from(to_int(v)),
-                            None => BigInt::from(0),
-                        };
-                        let b = match args.get(1) {
-                            Some(Value::BigInt(bi)) => (**bi).clone(),
-                            Some(v) => BigInt::from(to_int(v)),
-                            None => BigInt::from(1),
-                        };
-                        return Ok(crate::value::make_big_rat(a, b));
-                    }
-                    let a = match args.first() {
-                        Some(v) => to_int(v),
-                        None => 0,
-                    };
-                    let b = match args.get(1) {
-                        Some(v) => to_int(v),
-                        None => 1,
-                    };
-                    return Ok(make_rat(a, b));
+                    // Shared with the VM's native fast path (pure component build).
+                    return Ok(Self::build_native_rat_value(&args));
                 }
                 "FatRat" => {
-                    use crate::value::make_big_fat_rat;
-                    use num_bigint::BigInt;
-                    let a = match args.first() {
-                        Some(Value::BigInt(bi)) => (**bi).clone(),
-                        Some(v) => BigInt::from(to_int(v)),
-                        None => BigInt::from(0),
-                    };
-                    let b = match args.get(1) {
-                        Some(Value::BigInt(bi)) => (**bi).clone(),
-                        Some(v) => BigInt::from(to_int(v)),
-                        None => BigInt::from(1),
-                    };
-                    return Ok(match make_big_fat_rat(a, b) {
-                        Value::Rat(n, d) => Value::FatRat(n, d),
-                        Value::BigRat(n, d) => Value::BigRat(n, d),
-                        other => other,
-                    });
+                    // Shared with the VM's native fast path.
+                    return Ok(Self::build_native_fatrat_value(&args));
                 }
                 "Pair" => {
-                    // Pair.new(:key<foo>, :value<bar>) or Pair.new(key, value)
-                    let mut named_key: Option<Value> = None;
-                    let mut named_value: Option<Value> = None;
-                    let mut positional = Vec::new();
-                    for a in args.iter() {
-                        match a {
-                            Value::Pair(k, v) if k == "key" => {
-                                named_key = Some((**v).clone());
-                            }
-                            Value::Pair(k, v) if k == "value" => {
-                                named_value = Some((**v).clone());
-                            }
-                            _ => positional.push(a.clone()),
-                        }
-                    }
-                    if named_key.is_some() || named_value.is_some() {
-                        let key = named_key.unwrap_or(Value::Nil);
-                        let value = named_value.unwrap_or(Value::Nil);
-                        // Preserve the original key type: a string key uses Pair,
-                        // any other key type uses ValuePair (mirrors the `=>` and
-                        // positional Pair.new behavior).
-                        return Ok(match &key {
-                            Value::Str(_) => Value::Pair(key.to_string_value(), Box::new(value)),
-                            _ => Value::ValuePair(Box::new(key), Box::new(value)),
-                        });
-                    }
-                    let key = positional.first().cloned().unwrap_or(Value::Nil);
-                    let value = positional.get(1).cloned().unwrap_or(Value::Nil);
-                    // A string positional key also uses Pair for consistent display.
-                    return Ok(match &key {
-                        Value::Str(_) => Value::Pair(key.to_string_value(), Box::new(value)),
-                        _ => Value::ValuePair(Box::new(key), Box::new(value)),
-                    });
+                    // Shared with the VM's native fast path.
+                    return Ok(Self::build_native_pair_value(&args));
                 }
                 "Set" | "SetHash" => {
                     // Check for lazy inputs
