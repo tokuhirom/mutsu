@@ -99,14 +99,17 @@ impl Interpreter {
                 // A non-class entry in the MRO (e.g. a role) — be conservative.
                 return false;
             };
-            // A `TWEAK` submethod is allowed: the native path assembles the
-            // instance as usual, then runs the TWEAK phase via the shared
-            // `run_tweak_phase` helper (same ordering/dispatch as the full
-            // constructor). `BUILD`/`BUILDALL`/custom `new` still fall through —
-            // BUILD runs *before* attribute defaults are finalized, which the
-            // native assembly order does not reproduce.
-            let simple = !class_def.methods.contains_key("BUILD")
-                && !class_def.methods.contains_key("BUILDALL")
+            // `TWEAK` and `BUILD` submethods are allowed: the native path
+            // assembles the instance as usual (defaults first, matching the
+            // interpreter's `.new` which also applies defaults before BUILD),
+            // then runs the BUILD and TWEAK phases via the shared
+            // `run_build_phase` / `run_tweak_phase` helpers (same ordering /
+            // dispatch / `fail` semantics as the full constructor). A custom
+            // `BUILDALL` (replaces the whole build plan) or custom `new` still
+            // fall through. A class with an unprovided `is required` or unset
+            // class-typed attribute also falls through at build time (it may be
+            // set by BUILD, which the conservative native path does not assume).
+            let simple = !class_def.methods.contains_key("BUILDALL")
                 && !class_def.methods.contains_key("new")
                 && class_def.native_methods.is_empty()
                 // No custom per-attribute build closure (`is built` trait or a
@@ -261,6 +264,16 @@ impl Interpreter {
         cn_resolved: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // The default `.new` accepts only named arguments (`method new(*%_)`); a
+        // positional argument is an error (`X::Constructor::Positional`). The
+        // native path only consumes `Pair` (named) args, so a positional would be
+        // silently ignored — fall through to the interpreter, whose `.new`
+        // signature binding raises the proper error. (This also covers a BUILD
+        // with a positional parameter: `.new` strips positionals before BUILD, so
+        // `Foo.new('x', :y)` must die rather than feed 'x' to BUILD.)
+        if args.iter().any(|a| !matches!(a, Value::Pair(..))) {
+            return None;
+        }
         let class_attrs = self.collect_class_attributes(cn_resolved);
         // Attribute type constraints (MRO-wide) live in `attribute_types`, not in
         // the `ClassAttributeDef` tuple's constraint slot — and the gate already
@@ -276,8 +289,25 @@ impl Interpreter {
                 .unwrap_or('$')
         };
 
+        // A custom BUILD replaces the default named-argument → attribute binding:
+        // with a BUILD present, a provided `:attr(value)` is NOT auto-assigned to
+        // `$!attr` — only BUILD decides what gets set (via its signature's
+        // `:$!attr` params or explicit assignment in its body). So
+        // `class P { has $.x = 42; submethod BUILD() {} }; P.new(:666x).x` is 42.
+        // Skip the auto-assignment loop when the class has a BUILD; defaults are
+        // still filled below and BUILD runs afterward.
+        let has_build = self.mro_readonly(cn_resolved).iter().any(|cls| {
+            self.registry()
+                .classes
+                .get(cls)
+                .is_some_and(|cd| cd.methods.contains_key("BUILD"))
+        });
+
         let mut attrs = HashMap::new();
         for arg in args {
+            if has_build {
+                break;
+            }
             if let Value::Pair(key, val) = arg
                 && self.is_attribute_buildable(cn_resolved, key)
             {
@@ -514,11 +544,12 @@ impl Interpreter {
         }
         // Add alias metadata for `has $x` (no twigil) attributes
         self.add_alias_attribute_metadata(cn_resolved, &mut attrs);
-        // Run the TWEAK phase if any class in the MRO declares one. The gate
-        // (`is_native_default_constructible`) allows TWEAK-only classes; the
-        // instance is fully assembled at this point, so running TWEAK here
-        // matches the full constructor (which runs it after attribute init).
-        // Cheap MRO check first so the common no-TWEAK case pays nothing extra.
+        // The gate (`is_native_default_constructible`) allows BUILD/TWEAK-only
+        // classes; the instance is assembled (defaults first) at this point, so
+        // running BUILD then TWEAK here matches the full `.new` path (which also
+        // applies defaults before BUILD). `has_build` was computed above (it
+        // gates the named-arg auto-assignment); the TWEAK check is cheap so the
+        // common no-submethod case pays nothing extra.
         let has_tweak = self.mro_readonly(cn_resolved).iter().any(|cls| {
             self.registry()
                 .classes
@@ -526,11 +557,10 @@ impl Interpreter {
                 .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
         });
         // Enforce `where` constraints at attribute-assignment time, i.e. *before*
-        // TWEAK runs — both raku and the interpreter reject a provided/defaulted
-        // value that fails its `where` at this point (a later TWEAK that would
-        // "fix" it never gets to run). `class_attrs` is the same
-        // `ClassAttributeDef` slice the interpreter uses, so the predicate
-        // dispatch is identical.
+        // BUILD/TWEAK run (matches the interpreter's pre-BUILD enforcement): a
+        // provided/defaulted value that fails its `where` is rejected here, and a
+        // later BUILD/TWEAK that would "fix" it never runs. `class_attrs` is the
+        // same `ClassAttributeDef` slice the interpreter uses.
         let has_where = class_attrs.iter().any(|(.., where_c)| where_c.is_some());
         if has_where
             && let Err(e) =
@@ -538,22 +568,32 @@ impl Interpreter {
         {
             return Some(Err(e));
         }
+        if has_build {
+            // Pass the original constructor args so `submethod BUILD(:$x)` binds
+            // them. A `fail` inside BUILD yields a `Failure` instance to return.
+            match self.run_build_phase(class_name, attrs, args) {
+                Ok(Ok(updated)) => attrs = updated,
+                Ok(Err(failure)) => return Some(Ok(failure)),
+                Err(e) => return Some(Err(e)),
+            }
+        }
         if has_tweak {
-            // Pass the original constructor args so a `submethod TWEAK(:$y)`
-            // signature binds them, matching the full `.new` path.
+            // Pass the original constructor args so `submethod TWEAK(:$y)` binds
+            // them, matching the full `.new` path.
             match self.run_tweak_phase(class_name, attrs, args) {
                 Ok(updated) => attrs = updated,
                 Err(e) => return Some(Err(e)),
             }
-            // Re-check `where` after TWEAK: the full constructor enforces
-            // constraints again post-TWEAK, so a TWEAK that mutates an attribute
-            // into a `where` violation is rejected identically.
-            if has_where
-                && let Err(e) =
-                    self.enforce_attribute_where_constraints(cn_resolved, &class_attrs, &attrs)
-            {
-                return Some(Err(e));
-            }
+        }
+        // Re-check `where` after BUILD/TWEAK: the full constructor enforces
+        // constraints again post-construction, so a BUILD/TWEAK that mutates an
+        // attribute into a `where` violation is rejected identically.
+        if has_where
+            && (has_build || has_tweak)
+            && let Err(e) =
+                self.enforce_attribute_where_constraints(cn_resolved, &class_attrs, &attrs)
+        {
+            return Some(Err(e));
         }
         Some(Ok(Value::make_instance(class_name, attrs)))
     }

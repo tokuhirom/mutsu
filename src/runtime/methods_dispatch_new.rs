@@ -554,6 +554,124 @@ impl Interpreter {
         Ok(attributes)
     }
 
+    /// Run the BUILD phase of construction: invoke every BUILD submethod (own and
+    /// role-composed) across the MRO in base-first order, threading the
+    /// (possibly mutated) attribute map and passing the constructor's named args.
+    /// Mirrors the BUILD loop in the full `.new` path, including its `fail`
+    /// semantics: a `fail` inside BUILD does not propagate as an error but yields
+    /// a `Failure` instance to return from `.new`. The result is therefore
+    /// `Ok(Ok(attrs))` on success, `Ok(Err(failure))` when a BUILD failed (the
+    /// caller returns that `Failure` value), or `Err(e)` for a real error.
+    /// Extracted so the native default constructor can reuse it (Track A ③ ctor).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn run_build_phase(
+        &mut self,
+        class_name: Symbol,
+        mut attributes: HashMap<String, Value>,
+        build_args: &[Value],
+    ) -> Result<Result<HashMap<String, Value>, Value>, RuntimeError> {
+        let cn = class_name.resolve();
+        let mro = self.class_mro(&cn);
+        let class_lang_rev = self
+            .type_metadata
+            .get(&cn)
+            .and_then(|m| m.get("language-revision"))
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| {
+                let version = crate::parser::current_language_version();
+                if let Some(rest) = version.strip_prefix("6.") {
+                    rest.chars().next().unwrap_or('c').to_string()
+                } else {
+                    "c".to_string()
+                }
+            });
+        let class_is_6e = class_lang_rev != "c";
+        for mro_class in mro.iter().rev() {
+            if mro_class == "Any" || mro_class == "Mu" {
+                continue;
+            }
+            if self.registry().roles.contains_key(mro_class)
+                && !self.registry().classes.contains_key(mro_class)
+            {
+                continue;
+            }
+            let class_has_own_build = self
+                .registry()
+                .classes
+                .get(mro_class)
+                .and_then(|def| def.methods.get("BUILD"))
+                .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
+                .unwrap_or(false);
+            let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
+            for (role_name, method_def) in role_order {
+                let role_base = role_name
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(&role_name);
+                let role_lang_rev = self
+                    .type_metadata
+                    .get(role_base)
+                    .and_then(|m| m.get("language-revision"))
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "c".to_string());
+                if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
+                    continue;
+                }
+                let (_v, updated) = self.run_instance_method_resolved(
+                    &cn,
+                    &role_name,
+                    method_def,
+                    attributes.clone(),
+                    build_args.to_vec(),
+                    Some(Value::make_instance(class_name, attributes.clone())),
+                )?;
+                attributes = updated;
+            }
+            let has_non_submethod_build = self
+                .registry()
+                .classes
+                .get(mro_class)
+                .and_then(|def| def.methods.get("BUILD"))
+                .map(|overloads| {
+                    overloads
+                        .iter()
+                        .any(|md| md.role_origin.is_none() || !md.is_my)
+                })
+                .unwrap_or(false);
+            if has_non_submethod_build {
+                match self.run_instance_method(
+                    mro_class,
+                    attributes.clone(),
+                    "BUILD",
+                    build_args.to_vec(),
+                    Some(Value::make_instance(class_name, attributes.clone())),
+                ) {
+                    Ok((_v, updated)) => {
+                        attributes = updated;
+                    }
+                    Err(err) if err.is_fail => {
+                        // `fail` inside BUILD yields a Failure, not an error.
+                        let ex = if let Some(exception) = err.exception {
+                            *exception
+                        } else {
+                            let mut ex_attrs = HashMap::new();
+                            ex_attrs.insert("message".to_string(), Value::str(err.message));
+                            Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs)
+                        };
+                        let mut failure_attrs = HashMap::new();
+                        failure_attrs.insert("exception".to_string(), ex);
+                        return Ok(Err(Value::make_instance(
+                            Symbol::intern("Failure"),
+                            failure_attrs,
+                        )));
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
+        }
+        Ok(Ok(attributes))
+    }
+
     /// Dispatch Enum .new — should throw X::Constructor::BadType.
     /// Returns Some(err) if target is an enum, None otherwise.
     pub(super) fn dispatch_enum_new_check(
