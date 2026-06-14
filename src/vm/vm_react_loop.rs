@@ -1,16 +1,20 @@
-//! VM-side react/supply drive loop (Stage 2, PR1 relocation).
+//! VM-side react/supply drive loop (Stage 2).
 //!
-//! These methods were moved verbatim from `impl Interpreter` (`runtime/subtest.rs`)
-//! onto `impl VM` so that the `whenever`-body dispatch can later run compiled
-//! bytecode (`vm_call_on_value`) instead of the tree-walking `call_sub_value`.
+//! These methods were moved from `impl Interpreter` (`runtime/subtest.rs`) onto
+//! `impl VM` (Stage 2 PR1) so the `whenever`-body callbacks can run **compiled
+//! bytecode** instead of the tree-walking `call_sub_value`. The VM owns the
+//! `Interpreter` by value, so a `&mut Interpreter` method cannot construct a VM
+//! — the loop itself must live here.
 //!
-//! PR1 is a *pure relocation*: dispatch still goes through
-//! `self.interpreter.call_sub_value`, which is valid because the VM owns the
-//! `Interpreter` by value. No behavior change. The follow-up PR swaps the
-//! `whenever`-body dispatch sites to `self.vm_call_on_value` (compiled bytecode).
+//! All `whenever`-body / `LAST` / `QUIT` / `CLOSE` callback dispatch goes through
+//! [`VM::call_react_callback`], which runs the (on-the-fly compiled) closure via
+//! `vm_call_map_block` with the triggering value bound as the block topic `$_`.
+//! Loop-control signals (`done` / `next` / `last`) surface as `Err` just as the
+//! old tree-walk path produced them, so the signal mapping is unchanged. (Supply
+//! `QUIT` handlers still route through `Interpreter::call_supply_quit_handler`.)
 //!
 //! The `await $supply` / `$supply.Promise` path reaches this loop through a thin
-//! `Interpreter::drive_react_subscriptions` bridge (see `runtime/subtest.rs`)
+//! `Interpreter::drive_react_subscriptions` bridge (see `runtime/supply_promise.rs`)
 //! that uses the established `mem::take` / `VM::new` / `into_interpreter` dance.
 //!
 //! See PLAN.md Track C and the react-loop row of the VM/interpreter ledger.
@@ -25,6 +29,20 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 impl VM {
+    /// Dispatch a `whenever` body or one of its `LAST` / `QUIT` / `CLOSE` phaser
+    /// callbacks as **compiled bytecode** (Stage 2). The first argument, when
+    /// present, is the triggering value: it is bound as the block topic `$_`
+    /// (and a lone pointy param) via `vm_call_map_block`'s explicit-topic path.
+    /// This reproduces the tree-walk `call_sub_value` topic semantics — the
+    /// on-the-fly routine-body compile would otherwise reset `$_` to `Any` and
+    /// drop the topic. Loop-control signals (`done` / `next` / `last`) still
+    /// surface as `Err` exactly as the tree-walk path produced them, so the
+    /// drive loop's signal mapping (`run_react_consumer` etc.) is unchanged.
+    fn call_react_callback(&mut self, cb: &Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let topic = args.first().cloned();
+        self.vm_call_map_block(cb, args, topic, false)
+    }
+
     /// Run the react event loop: poll all registered subscriptions
     /// until all are done.
     /// Drain any queued react subscriptions without running the event loop.
@@ -50,19 +68,13 @@ impl VM {
         sub: &mut ReactSubscription,
         value: Value,
     ) -> Result<bool, RuntimeError> {
-        match self
-            .interpreter
-            .call_sub_value(sub.callback.clone(), vec![value.clone()], true)
-        {
+        match self.call_react_callback(&sub.callback.clone(), vec![value.clone()]) {
             Ok(_) => Ok(false),
             Err(e) if e.is_react_done => Ok(true),
             Err(e) if e.is_next => Ok(false),
             Err(e) if e.is_last => {
                 for cb in sub.last_callbacks.clone() {
-                    match self
-                        .interpreter
-                        .call_sub_value(cb, vec![value.clone()], true)
-                    {
+                    match self.call_react_callback(&cb, vec![value.clone()]) {
                         Err(le) if le.is_react_done => {
                             sub.done = true;
                             return Ok(true);
@@ -221,11 +233,7 @@ impl VM {
                                     .and_then(crate::runtime::Interpreter::value_array_items)
                                     .unwrap_or_default();
                                 for last_cb in &last_cbs {
-                                    match self.interpreter.call_sub_value(
-                                        last_cb.clone(),
-                                        Vec::new(),
-                                        true,
-                                    ) {
+                                    match self.call_react_callback(&last_cb.clone(), Vec::new()) {
                                         Err(e) if e.is_react_done => return Ok(()),
                                         _ => {}
                                     }
@@ -248,11 +256,7 @@ impl VM {
                                         react_subs.push(rsub);
                                     }
                                 } else {
-                                    let _ = self.interpreter.call_sub_value(
-                                        callback.clone(),
-                                        vec![v],
-                                        true,
-                                    );
+                                    let _ = self.call_react_callback(&callback.clone(), vec![v]);
                                 }
                             }
                             // Supply.on-demand(..., closing => { ... }): the
@@ -263,11 +267,7 @@ impl VM {
                                 if body_ran_done {
                                     // Synchronous body that ran `done` — closed now.
                                     for close_cb in close_cbs {
-                                        let _ = self.interpreter.call_sub_value(
-                                            close_cb,
-                                            Vec::new(),
-                                            true,
-                                        );
+                                        let _ = self.call_react_callback(&close_cb, Vec::new());
                                     }
                                 } else {
                                     // Async body (e.g. `start { emit; done }`): the
@@ -305,10 +305,7 @@ impl VM {
                             .and_then(crate::runtime::Interpreter::value_array_items)
                             .unwrap_or_default();
                         for last_cb in &last_cbs {
-                            match self
-                                .interpreter
-                                .call_sub_value(last_cb.clone(), Vec::new(), true)
-                            {
+                            match self.call_react_callback(&last_cb.clone(), Vec::new()) {
                                 Err(e) if e.is_react_done => return Ok(()),
                                 _ => {}
                             }
@@ -408,10 +405,7 @@ impl VM {
                     && done_promise.is_resolved()
                 {
                     for callback in &sub.last_callbacks {
-                        match self
-                            .interpreter
-                            .call_sub_value(callback.clone(), Vec::new(), true)
-                        {
+                        match self.call_react_callback(&callback.clone(), Vec::new()) {
                             Err(e) if e.is_react_done => break 'react_loop,
                             other => {
                                 other?;
@@ -434,11 +428,7 @@ impl VM {
                             // No value available yet; if channel is closed, mark done
                             if !ch.can_send() {
                                 for callback in &sub.last_callbacks {
-                                    self.interpreter.call_sub_value(
-                                        callback.clone(),
-                                        Vec::new(),
-                                        true,
-                                    )?;
+                                    self.call_react_callback(&callback.clone(), Vec::new())?;
                                 }
                                 sub.done = true;
                             }
@@ -458,11 +448,7 @@ impl VM {
                         {
                             // Reached the head limit — mark as done
                             for callback in &sub.last_callbacks {
-                                self.interpreter.call_sub_value(
-                                    callback.clone(),
-                                    Vec::new(),
-                                    true,
-                                )?;
+                                self.call_react_callback(&callback.clone(), Vec::new())?;
                             }
                             sub.done = true;
                             break;
@@ -486,11 +472,7 @@ impl VM {
                                     && sub.emit_count >= limit
                                 {
                                     for callback in &sub.last_callbacks {
-                                        self.interpreter.call_sub_value(
-                                            callback.clone(),
-                                            Vec::new(),
-                                            true,
-                                        )?;
+                                        self.call_react_callback(&callback.clone(), Vec::new())?;
                                     }
                                     sub.done = true;
                                     break;
@@ -510,11 +492,7 @@ impl VM {
                                 && sub.emit_count >= limit
                             {
                                 for callback in &sub.last_callbacks {
-                                    self.interpreter.call_sub_value(
-                                        callback.clone(),
-                                        Vec::new(),
-                                        true,
-                                    )?;
+                                    self.call_react_callback(&callback.clone(), Vec::new())?;
                                 }
                                 sub.done = true;
                                 break;
@@ -540,10 +518,9 @@ impl VM {
                     if done {
                         if sub.is_lines && !sub.line_buffer.is_empty() {
                             let remaining = std::mem::take(&mut sub.line_buffer);
-                            match self.interpreter.call_sub_value(
-                                sub.callback.clone(),
+                            match self.call_react_callback(
+                                &sub.callback.clone(),
                                 vec![Value::str(remaining)],
-                                true,
                             ) {
                                 Err(e) if e.is_react_done => break 'react_loop,
                                 other => {
@@ -552,8 +529,7 @@ impl VM {
                             }
                         }
                         for callback in &sub.last_callbacks {
-                            self.interpreter
-                                .call_sub_value(callback.clone(), Vec::new(), true)?;
+                            self.call_react_callback(&callback.clone(), Vec::new())?;
                         }
                         sub.done = true;
                     }
@@ -582,11 +558,8 @@ impl VM {
                             // Capture values the whenever block `emit`s so a
                             // later `done` resolves the promise with the last one.
                             self.interpreter.supply_emit_buffer.push(Vec::new());
-                            let cb_result = self.interpreter.call_sub_value(
-                                sub.callback.clone(),
-                                vec![value],
-                                true,
-                            );
+                            let cb_result =
+                                self.call_react_callback(&sub.callback.clone(), vec![value]);
                             let emitted = self
                                 .interpreter
                                 .supply_emit_buffer
@@ -648,10 +621,9 @@ impl VM {
                         } else {
                             if sub.is_lines && !sub.line_buffer.is_empty() {
                                 let remaining = std::mem::take(&mut sub.line_buffer);
-                                match self.interpreter.call_sub_value(
-                                    sub.callback.clone(),
+                                match self.call_react_callback(
+                                    &sub.callback.clone(),
                                     vec![Value::str(remaining)],
-                                    true,
                                 ) {
                                     Err(e) if e.is_react_done => break 'react_loop,
                                     other => {
@@ -660,11 +632,7 @@ impl VM {
                                 }
                             }
                             for callback in &sub.last_callbacks {
-                                self.interpreter.call_sub_value(
-                                    callback.clone(),
-                                    Vec::new(),
-                                    true,
-                                )?;
+                                self.call_react_callback(&callback.clone(), Vec::new())?;
                             }
                             sub.done = true;
                         }
@@ -743,9 +711,7 @@ impl VM {
     fn run_react_close_callbacks(&mut self, react_subs: &[ReactSubscription]) {
         for sub in react_subs {
             for callback in &sub.close_callbacks {
-                let _ = self
-                    .interpreter
-                    .call_sub_value(callback.clone(), Vec::new(), true);
+                let _ = self.call_react_callback(&callback.clone(), Vec::new());
             }
         }
     }
@@ -780,10 +746,7 @@ impl VM {
         let mut last_topic: Option<Value> = None;
         if let Some(Value::Array(values, ..)) = attributes.get("values") {
             for v in values.iter() {
-                match self
-                    .interpreter
-                    .call_sub_value(callback.clone(), vec![v.clone()], true)
-                {
+                match self.call_react_callback(&callback.clone(), vec![v.clone()]) {
                     Ok(_) => {}
                     Err(e) if e.is_react_done => return Ok(true),
                     Err(e) if e.is_next => continue,
@@ -800,7 +763,7 @@ impl VM {
                 Some(v) => vec![v.clone()],
                 None => Vec::new(),
             };
-            match self.interpreter.call_sub_value(cb.clone(), args, true) {
+            match self.call_react_callback(&cb.clone(), args) {
                 Err(e) if e.is_react_done => return Ok(true),
                 other => {
                     other?;
