@@ -113,7 +113,7 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("__WheneverDoneGroup"), attrs)
     }
 
-    pub(super) fn runtime_error_from_supply_reason(reason: Value) -> RuntimeError {
+    pub(crate) fn runtime_error_from_supply_reason(reason: Value) -> RuntimeError {
         let message = reason.to_string_value();
         let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(reason));
@@ -132,7 +132,7 @@ impl Interpreter {
             })
     }
 
-    pub(super) fn call_supply_quit_handler(
+    pub(crate) fn call_supply_quit_handler(
         &mut self,
         quit_cb: Value,
         reason: Value,

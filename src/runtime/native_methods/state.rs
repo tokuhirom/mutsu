@@ -159,7 +159,7 @@ pub(in crate::runtime) fn supplier_id_from_attrs(
     }
 }
 
-pub(in crate::runtime) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<Value>) {
+pub(crate) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<Value>) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         (state.emitted.clone(), state.done, state.quit_reason.clone())
@@ -248,7 +248,7 @@ pub(super) fn take_complete_lines_from_buffer(
     out
 }
 
-pub(in crate::runtime) fn supplier_register_promise(supplier_id: u64, promise: SharedPromise) {
+pub(crate) fn supplier_register_promise(supplier_id: u64, promise: SharedPromise) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if let Some(reason) = state.quit_reason.clone() {
@@ -483,7 +483,7 @@ where
     }
 }
 
-pub(in crate::runtime) fn next_supplier_id() -> u64 {
+pub(crate) fn next_supplier_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
@@ -524,7 +524,7 @@ pub(in crate::runtime) fn register_promise_combinator_sources(
     }
 }
 
-pub(in crate::runtime) fn take_promise_combinator_sources(
+pub(crate) fn take_promise_combinator_sources(
     promise: &SharedPromise,
 ) -> Option<Vec<SharedPromise>> {
     if let Ok(mut map) = promise_combinator_map().lock() {
