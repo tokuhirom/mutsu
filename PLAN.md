@@ -195,9 +195,14 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             （`try_shared_hash_element_assign`）から呼ぶ。単一スレッドは早期 return で挙動不変。
             `@a.push` は元から動作（`push_to_shared_var`）、壊れていたのは `@a[i]=`／`%h{k}=`。
             テスト `t/concurrent-hash-assign.t`。
-            **残**: スレッド間の**配列要素 index 代入**（`@a[$i] = $v`、スライス 4 の直接の続き＝
-            `assign_array_elem_to_shared_var`、index 強制・resize・ArrayKind を要す）、
-            `state @`/`%`（配列/ハッシュ）のスレッド共有（要素セル＝Track B 依存）。
+            **スライス 5 LANDED（PR #3062）**: スレッド間の**配列要素 index 代入**（`@a[$i] = $v`）。
+            スライス 4 の配列版。`my @a; await (^50).map: -> $i { start { @a[$i] = $i*$i } }` が 0 →
+            決定的 50（raku 一致）。`assign_array_elem_to_shared_var`（ロック保持下で
+            get→`Arc::make_mut`→Nil で grow→set）を `try_shared_array_element_assign` ガード
+            （非負 Int index・型制約/default/shaped/bound なしの単純ケースのみ）から呼ぶ。
+            単一スレッドは早期 return で挙動不変。テスト `t/concurrent-array-index-assign.t`。
+            **残**: `state @`/`%`（配列/ハッシュ state）のスレッド共有（要素セル＝Track B 依存）、
+            unsafe aliasing 撤廃（ANALYSIS §2.3）。
       - [x] **react/supply ランタイムの VM ネイティブ化 — 完了（Stage 1+2+3, #3010〜#3039, 2026-06、
             詳細は [news/2026-06.md](news/2026-06.md)）**。駆動ループの 4 箇所二重化を単一エンジンへ統合し
             （Stage 1）、ループ所有権を `impl Interpreter`→`impl VM`（`vm/vm_react_loop.rs`）へ逆転して
