@@ -93,7 +93,7 @@ impl VM {
         } else {
             &var_name
         };
-        self.interpreter
+        self
             .env_mut()
             .insert(lookup_key.to_string(), Value::Array(Arc::new(items), kind));
         self.env_dirty = true;
@@ -1265,7 +1265,7 @@ impl VM {
         // Sync back: BUILD submethods may have modified closure variables.
         self.sync_locals_from_env(code);
         let name = Self::const_str(code, name_idx).to_string();
-        self.interpreter
+        self
             .env_mut()
             .insert(name.clone(), updated.clone());
         self.update_local_if_exists(code, &name, &updated);

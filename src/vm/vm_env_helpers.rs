@@ -268,7 +268,7 @@ impl VM {
             .or_else(|| name.strip_prefix("&postfix:<"))
             && let Some(op_name) = inner.strip_suffix('>')
         {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(format!("&{}", op_name), value.clone());
         }

@@ -210,7 +210,7 @@ impl VM {
             arr[i] = value;
             return Ok(());
         }
-        self.interpreter
+        self
             .env_mut()
             .insert(source_name.to_string(), value);
         Ok(())
@@ -1161,13 +1161,13 @@ impl VM {
                     } else {
                         let target_type =
                             coercion_target(constraint).unwrap_or_else(|| constraint.clone());
-                        let coerced = if self.interpreter.type_matches_value(&target_type, val) {
+                        let coerced = if self.type_matches_value(&target_type, val) {
                             val.clone()
                         } else {
                             self.interpreter
                                 .try_coerce_value_for_constraint(constraint, val.clone())?
                         };
-                        if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                        if !self.type_matches_value(&target_type, &coerced) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 var_name, constraint, val,
                             ));
@@ -1270,7 +1270,7 @@ impl VM {
             // A plain type constraint (e.g. `Array`) must type-check elements
             // strictly without coercing scalars into containers.
             let is_coercion = coercion_target(constraint).is_some();
-            let coerced = if self.interpreter.type_matches_value(&target_type, item) {
+            let coerced = if self.type_matches_value(&target_type, item) {
                 item.clone()
             } else if target_type == "Array" {
                 match item {
@@ -1299,7 +1299,7 @@ impl VM {
                 self.interpreter
                     .try_coerce_value_for_constraint(constraint, item.clone())?
             };
-            if !self.interpreter.type_matches_value(&target_type, &coerced) {
+            if !self.type_matches_value(&target_type, &coerced) {
                 return Err(runtime::utils::type_check_element_typed_error(
                     var_name, constraint, item,
                 ));
@@ -1518,7 +1518,7 @@ impl VM {
                 return Ok(());
             }
             if !matches!(new_val, Value::Nil)
-                && !self.interpreter.type_matches_value(&constraint, new_val)
+                && !self.type_matches_value(&constraint, new_val)
             {
                 let display = if name.starts_with('$') {
                     name.to_string()
@@ -2093,7 +2093,7 @@ impl VM {
             )
             && !self.interpreter.is_container_subclass(constraint)
             && !matches!(&new_val, Value::Nil)
-            && !self.interpreter.type_matches_value(constraint, &new_val)
+            && !self.type_matches_value(constraint, &new_val)
         {
             return Err(runtime::utils::type_check_element_typed_error(
                 &name, constraint, &new_val,
@@ -2258,7 +2258,7 @@ impl VM {
                     }
                     _ => unreachable!(),
                 };
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), new_container);
                 if let Some(val) = self.env().get(&name).cloned() {
@@ -2597,10 +2597,10 @@ impl VM {
                     if key == "HOME" {
                         let home_str = val.to_string_value();
                         let home_val = self.interpreter.make_io_path_instance(&home_str);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert("$*HOME".to_string(), home_val.clone());
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert("*HOME".to_string(), home_val);
                     }
@@ -2615,7 +2615,7 @@ impl VM {
                 let key = idx.to_string_value();
                 let mut map = std::collections::HashMap::new();
                 map.insert(key.clone(), val.clone());
-                self.interpreter
+                self
                     .env_mut()
                     .insert(var_name.to_string(), Value::hash(map));
                 // Sync OS environment when %*ENV is modified
@@ -2628,10 +2628,10 @@ impl VM {
                     if key == "HOME" {
                         let home_str = val.to_string_value();
                         let home_val = self.interpreter.make_io_path_instance(&home_str);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert("$*HOME".to_string(), home_val.clone());
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert("*HOME".to_string(), home_val);
                     }
@@ -2683,7 +2683,7 @@ impl VM {
         // allocations): only trust the saved default when a name-based
         // var_default is also registered.
         let saved_default_outer = if self.interpreter.var_default(&save_var_name).is_some() {
-            self.interpreter
+            self
                 .env()
                 .get(&save_var_name)
                 .and_then(|v| self.interpreter.container_default(v).cloned())
@@ -2714,7 +2714,7 @@ impl VM {
             // (`tag_container_metadata` returns the same Arc for non-hash
             // containers, whose Arc-pointer side table is updated in place).
             let tagged = self.interpreter.tag_container_metadata(container, info);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(save_var_name.clone(), tagged.clone());
             self.locals_set_by_name(code, &save_var_name, tagged);
@@ -2724,7 +2724,7 @@ impl VM {
             && self.interpreter.container_default(&container).is_none()
         {
             let tagged = self.interpreter.tag_container_default(container, def);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(save_var_name.clone(), tagged.clone());
             self.locals_set_by_name(code, &save_var_name, tagged);
@@ -3068,7 +3068,7 @@ impl VM {
                 {
                     for v in &vals {
                         if !matches!(v, Value::Nil)
-                            && !self.interpreter.type_matches_value(&constraint, v)
+                            && !self.type_matches_value(&constraint, v)
                         {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
@@ -3151,7 +3151,7 @@ impl VM {
                 {
                     for v in &vals {
                         if !matches!(v, Value::Nil)
-                            && !self.interpreter.type_matches_value(&constraint, v)
+                            && !self.type_matches_value(&constraint, v)
                         {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
@@ -3164,7 +3164,7 @@ impl VM {
                 // Check key type constraint for hash slice assignment
                 if let Some(key_constraint) = self.interpreter.var_hash_key_constraint(&var_name) {
                     for key in keys.iter() {
-                        if !self.interpreter.type_matches_value(&key_constraint, key) {
+                        if !self.type_matches_value(&key_constraint, key) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &key_constraint,
@@ -3282,7 +3282,7 @@ impl VM {
                 if let Some(constraint) = array_elem_constraint
                     && !target_is_quanthash
                     && !matches!(val, Value::Nil)
-                    && !self.interpreter.type_matches_value(&constraint, &val)
+                    && !self.type_matches_value(&constraint, &val)
                     // For `$`-sigil variables holding a container (e.g. a `Hash $h`
                     // parameter), a container type constraint describes the whole
                     // container, not its elements, so element assignment like
@@ -3307,7 +3307,7 @@ impl VM {
                 if var_name.starts_with('%')
                     && let Some(key_constraint) =
                         self.interpreter.var_hash_key_constraint(&var_name)
-                    && !self.interpreter.type_matches_value(&key_constraint, &idx)
+                    && !self.type_matches_value(&key_constraint, &idx)
                 {
                     return Err(runtime::utils::type_check_element_typed_error(
                         &var_name,
@@ -3347,7 +3347,7 @@ impl VM {
                 {
                     for v in rhs_values {
                         if !matches!(v, Value::Nil)
-                            && !self.interpreter.type_matches_value(&constraint, v)
+                            && !self.type_matches_value(&constraint, v)
                         {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
@@ -3451,7 +3451,7 @@ impl VM {
                     && !info.value_type.is_empty()
                     && info.value_type != "Any"
                     && info.value_type != "Mu"
-                    && !self.interpreter.type_matches_value(&info.value_type, &idx)
+                    && !self.type_matches_value(&info.value_type, &idx)
                 {
                     let got_type = crate::value::what_type_name(&idx);
                     let got_repr = idx.to_string_value();
@@ -3496,7 +3496,7 @@ impl VM {
                     }
                     let hash_map: HashMap<String, Value> = HashMap::clone(&attributes.as_map());
                     let hash_val = Value::hash(hash_map);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(var_name.clone(), hash_val);
                 }
@@ -3539,7 +3539,7 @@ impl VM {
                             }
                             _ => unreachable!(),
                         };
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(var_name.clone(), new_container);
                         self.stack.push(val);
@@ -3826,7 +3826,7 @@ impl VM {
                     {
                         let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
                         arr[i] = val.clone();
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(var_name.clone(), Value::real_array(arr));
                     } else {
@@ -3838,7 +3838,7 @@ impl VM {
                             orig.insert(key.clone(), idx.clone());
                             hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
                         }
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(var_name.clone(), hash_val);
                     }
@@ -3868,10 +3868,10 @@ impl VM {
                 if var_name == "%*ENV" && key == "HOME" {
                     let home_str = val.to_string_value();
                     let home_val = self.interpreter.make_io_path_instance(&home_str);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("$*HOME".to_string(), home_val.clone());
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("*HOME".to_string(), home_val);
                 }
@@ -3915,7 +3915,7 @@ impl VM {
         if let Some(ref alias_target) = sigilless_alias_target
             && let Some(updated_container) = self.env().get(alias_target).cloned()
         {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(original_var_name.clone(), updated_container.clone());
             self.update_local_if_exists(code, &original_var_name, &updated_container);
@@ -4008,7 +4008,7 @@ impl VM {
                             .nominal_type_object_name_for_constraint(&constraint);
                         val = Value::Package(Symbol::intern(&nominal));
                     }
-                } else if !self.interpreter.type_matches_value(&constraint, &val) {
+                } else if !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         &resolved_name,
                         &constraint,
@@ -5157,7 +5157,7 @@ impl VM {
                 .as_ref()
                 .is_some_and(|v| Self::same_container_arc(v, &cell_val))
             {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), cell_val.clone());
                 if let Some(slot) = self.find_local_slot(code, &name) {
@@ -5500,7 +5500,7 @@ impl VM {
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it.
             if matches!(self.env().get(name), Some(Value::ContainerRef(_))) {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.to_string(), Value::Nil);
             }
@@ -5589,7 +5589,7 @@ impl VM {
                     )));
                 }
                 if !matches!(val, Value::Nil)
-                    && !self.interpreter.type_matches_value(&constraint, &val)
+                    && !self.type_matches_value(&constraint, &val)
                 {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
@@ -5664,9 +5664,10 @@ impl VM {
                 if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
                     let is_co_local = code.locals.iter().any(|n| n == target.as_str());
                     if !is_co_local {
-                        self.interpreter
-                            .env_mut()
-                            .insert(target.to_string(), self.locals[idx].clone());
+                        {
+                let __v = self.locals[idx].clone();
+                self.env_mut().insert(target.to_string(), __v);
+            }
                     }
                 }
             }
@@ -6114,7 +6115,7 @@ impl VM {
                     constraint
                 )));
             }
-            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
+            if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val)
             {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
@@ -6167,10 +6168,10 @@ impl VM {
         }
         if let Some(source_name) = bind_source {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source.clone()));
-            self.interpreter
+            self
                 .env_mut()
                 .insert(readonly_key, Value::Bool(false));
             // Create a shared ContainerRef for cross-scope binding (source in
@@ -6228,13 +6229,13 @@ impl VM {
                         } else {
                             info.value_type.clone()
                         };
-                        self.interpreter
-                            .set_var_type_constraint(name, Some(constraint_str));
+                        self
+                            .vm_set_var_type_constraint(name, Some(constraint_str));
                     } else {
                         // Untyped source: clear any declared constraint inherited
                         // from this variable's own declaration so it does not
                         // over-constrain the shared container.
-                        self.interpreter.set_var_type_constraint(name, None);
+                        self.vm_set_var_type_constraint(name, None);
                     }
                 }
                 let container = Value::ContainerRef(cell);
@@ -6300,7 +6301,7 @@ impl VM {
                     self.flush_local_to_env(code, source_idx);
                 }
                 // Update source in env
-                self.interpreter
+                self
                     .env_mut()
                     .insert(resolved_source.clone(), container.clone());
                 // Propagate ContainerRef to all saved call frame envs AND locals
@@ -6448,8 +6449,8 @@ impl VM {
             } else {
                 info.value_type.clone()
             };
-            self.interpreter
-                .set_var_type_constraint(name, Some(constraint_str));
+            self
+                .vm_set_var_type_constraint(name, Some(constraint_str));
         }
         // Circular hash reference fixup: when assigning to a hash variable,
         // if any values in the new hash reference the old hash (captured on the
@@ -6500,19 +6501,19 @@ impl VM {
         if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.
-            self.interpreter
+            self
                 .env_mut()
                 .insert(name.to_string(), val.clone());
         } else {
             self.set_env_with_main_alias(name, val.clone());
         }
         if let Some(symbol) = Self::term_symbol_from_name(name) {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(symbol.to_string(), val.clone());
             let pkg = self.current_package().to_string();
             if pkg != "GLOBAL" {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
             }
@@ -6530,7 +6531,7 @@ impl VM {
                 break;
             }
             self.update_local_if_exists(code, &current_alias, &val);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(current_alias.clone(), val.clone());
             // Sigilless attribute write: mirror an attr-twigil alias (`!x`) into
@@ -6557,11 +6558,11 @@ impl VM {
             }
         }
         if let Some(attr) = name.strip_prefix('.') {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(format!("!{}", attr), val.clone());
         } else if let Some(attr) = name.strip_prefix('!') {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
@@ -6587,7 +6588,7 @@ impl VM {
         self.interpreter.set_var_dynamic(name, dynamic);
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name.
-        self.interpreter.set_var_type_constraint(name, None);
+        self.vm_set_var_type_constraint(name, None);
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key_decl(name);
         }
@@ -6762,7 +6763,7 @@ impl VM {
                             .nominal_type_object_name_for_constraint(&constraint);
                         Value::Package(Symbol::intern(&nominal))
                     }
-                } else if !self.interpreter.type_matches_value(&constraint, &val) {
+                } else if !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
                         &constraint,
@@ -6864,7 +6865,7 @@ impl VM {
                         .nominal_type_object_name_for_constraint(&constraint);
                     val = Value::Package(Symbol::intern(&nominal));
                 }
-            } else if !self.interpreter.type_matches_value(&constraint, &val) {
+            } else if !self.type_matches_value(&constraint, &val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
@@ -6929,11 +6930,11 @@ impl VM {
             self.env_mut().insert(alias_name, val.clone());
         }
         if let Some(attr) = name.strip_prefix('.') {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(format!("!{}", attr), val.clone());
         } else if let Some(attr) = name.strip_prefix('!') {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }

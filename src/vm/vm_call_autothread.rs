@@ -264,7 +264,7 @@ impl VM {
 
     /// Get CALL-ME override for a function name (extracted from exec_call_func_op).
     pub(super) fn get_call_me_override(&self, name: &str) -> Option<Value> {
-        self.interpreter
+        self
             .env()
             .get(&format!("&{}", name))
             .cloned()

@@ -649,7 +649,7 @@ impl VM {
             Arc::make_mut(map)
         } else {
             let m = std::collections::HashMap::new();
-            self.interpreter
+            self
                 .env_mut()
                 .insert(key.clone(), Value::hash(m));
             match self.env_mut().get_mut(&key) {

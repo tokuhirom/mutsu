@@ -480,9 +480,10 @@ impl VM {
         // to the interpreter env. We must flush them so the merge logic below
         // can see the changes made by the gather body.
         for (i, name) in cc.locals.iter().enumerate() {
-            self.interpreter
-                .env_mut()
-                .insert(name.clone(), self.locals[i].clone());
+            {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert(name.clone(), __v);
+            }
         }
 
         // Restore the outer environment, selectively merging changes from
@@ -719,9 +720,10 @@ impl VM {
 
         // Sync locals back to env
         for (i, name) in cc.locals.iter().enumerate() {
-            self.interpreter
-                .env_mut()
-                .insert(name.clone(), self.locals[i].clone());
+            {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert(name.clone(), __v);
+            }
         }
 
         // Save coroutine state before restoring outer env

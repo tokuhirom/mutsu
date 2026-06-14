@@ -470,7 +470,7 @@ impl VM {
             {
                 if let Value::Array(ref keys, ..) = index {
                     for k in keys.iter() {
-                        if !self.interpreter.type_matches_value(&key_type, k) {
+                        if !self.type_matches_value(&key_type, k) {
                             return Err(RuntimeError::new(format!(
                                 "Type check failed for object hash key; expected {} but got {} ({})",
                                 key_type,
@@ -502,7 +502,7 @@ impl VM {
                     self.stack.push(result);
                     return Ok(());
                 }
-                if !self.interpreter.type_matches_value(&key_type, &index) {
+                if !self.type_matches_value(&key_type, &index) {
                     return Err(RuntimeError::new(format!(
                         "Type check failed for object hash key; expected {} but got {} ({})",
                         key_type,

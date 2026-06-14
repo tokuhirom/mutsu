@@ -391,7 +391,7 @@ impl VM {
                 // is a `Value::Sub` and never reaches this Routine branch). Otherwise
                 // route user subs/multi/proto through compiled-first.
                 if crate::runtime::Interpreter::is_builtin_function(&name_str) {
-                    return self.interpreter.call_function(&name_str, args);
+                    return self.vm_call_function(&name_str, args);
                 }
                 return self.call_function_compiled_first(&name_str, args, fns);
             }
@@ -448,7 +448,7 @@ impl VM {
         // call_sub_value, avoiding the eval_call_on_value indirection since we
         // already know the target is a Sub.
         if matches!(target, Value::Sub(_)) {
-            return self.interpreter.call_sub_value(target, args, true);
+            return self.vm_call_sub_value(target, args, true);
         }
 
         // Any remaining value (Int, Str, Num, ...) is not Callable. Invoking it

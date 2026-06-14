@@ -400,7 +400,7 @@ impl VM {
                     // Each element is checked as a whole against the constraint
                     items
                         .iter()
-                        .all(|item| self.interpreter.type_matches_value(constraint, item))
+                        .all(|item| self.type_matches_value(constraint, item))
                 } else {
                     // Recurse into sub-arrays for simple element types
                     items
@@ -413,7 +413,7 @@ impl VM {
                     // Each element is checked as a whole against the constraint
                     items
                         .iter()
-                        .all(|item| self.interpreter.type_matches_value(constraint, item))
+                        .all(|item| self.type_matches_value(constraint, item))
                 } else {
                     // Recurse into sub-arrays for simple element types
                     items
@@ -429,7 +429,7 @@ impl VM {
             {
                 true
             }
-            _ => self.interpreter.type_matches_value(constraint, value),
+            _ => self.type_matches_value(constraint, value),
         }
     }
 
@@ -473,7 +473,7 @@ impl VM {
             Value::Array(items, ..) => {
                 for item in items.iter() {
                     if is_container_constraint {
-                        if !self.interpreter.type_matches_value(constraint, item) {
+                        if !self.type_matches_value(constraint, item) {
                             return Some(item.clone());
                         }
                     } else if let Some(bad) = self.first_array_element_mismatch(constraint, item) {
@@ -485,7 +485,7 @@ impl VM {
             Value::Seq(items) => {
                 for item in items.iter() {
                     if is_container_constraint {
-                        if !self.interpreter.type_matches_value(constraint, item) {
+                        if !self.type_matches_value(constraint, item) {
                             return Some(item.clone());
                         }
                     } else if let Some(bad) = self.first_array_element_mismatch(constraint, item) {
@@ -496,7 +496,7 @@ impl VM {
             }
             Value::Nil => None,
             _ => {
-                if self.interpreter.type_matches_value(constraint, value) {
+                if self.type_matches_value(constraint, value) {
                     None
                 } else {
                     Some(value.clone())
@@ -1258,7 +1258,7 @@ impl VM {
         } else {
             raw_value
         };
-        self.interpreter
+        self
             .env_mut()
             .insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
@@ -1277,7 +1277,7 @@ impl VM {
         } else {
             name.to_string()
         };
-        self.interpreter
+        self
             .env_mut()
             .insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
@@ -1543,10 +1543,10 @@ impl VM {
                 };
                 resolved_source = next.to_string();
             }
-            self.interpreter
+            self
                 .env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source));
-            self.interpreter
+            self
                 .env_mut()
                 .insert(readonly_key, Value::Bool(false));
         }
@@ -1635,7 +1635,7 @@ impl VM {
         // explicitly assigned, record the value so `eval_map_over_items_rw` can
         // read it back even after the block return value overwrites `_`.
         if name == "_" {
-            self.interpreter
+            self
                 .env_mut()
                 .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
         }
@@ -1652,7 +1652,7 @@ impl VM {
                 break;
             }
             self.update_local_if_exists(code, &current_alias, &val);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(current_alias.clone(), val.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
@@ -1665,11 +1665,11 @@ impl VM {
             });
         }
         if let Some(attr) = name.strip_prefix('.') {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(format!("!{}", attr), val.clone());
         } else if let Some(attr) = name.strip_prefix('!') {
-            self.interpreter
+            self
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
@@ -2614,8 +2614,8 @@ impl VM {
             } else if is_finite_generic_range {
                 match &value {
                     Value::GenericRange { start, end, .. } => {
-                        self.interpreter.type_matches_value(constraint, start)
-                            && self.interpreter.type_matches_value(constraint, end)
+                        self.type_matches_value(constraint, start)
+                            && self.type_matches_value(constraint, end)
                     }
                     _ => false,
                 }
@@ -2657,7 +2657,7 @@ impl VM {
         }
         if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil)
-                && !self.interpreter.type_matches_value(constraint, &value)
+                && !self.type_matches_value(constraint, &value)
             {
                 if base_constraint == "Int"
                     && matches!(value, Value::Num(f) if f.is_nan() || f.is_infinite())
@@ -2755,7 +2755,7 @@ impl VM {
             }
         }
         if !matches!(value, Value::Nil)
-            && !self.interpreter.type_matches_value(constraint, &value)
+            && !self.type_matches_value(constraint, &value)
             && !self.interpreter.is_container_subclass(constraint)
         {
             if bind_mode {
@@ -2941,7 +2941,7 @@ impl VM {
                 // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
                 Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
             };
-            self.interpreter
+            self
                 .env_mut()
                 .insert("!".to_string(), err_val.clone());
             for (i, name) in code.locals.iter().enumerate() {
@@ -2977,7 +2977,7 @@ impl VM {
                 Ok(()) => self.last_topic_value.clone().unwrap_or(Value::Nil),
                 Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
             };
-            self.interpreter
+            self
                 .env_mut()
                 .insert("_".to_string(), post_topic.clone());
             // Also update the local slot for $_ if present
@@ -2999,7 +2999,7 @@ impl VM {
                     // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
                     Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
                 };
-                self.interpreter
+                self
                     .env_mut()
                     .insert("!".to_string(), err_val.clone());
                 // Also update the local slot for $! if present
@@ -3116,13 +3116,13 @@ impl VM {
         for (idx, name) in code.locals.iter().enumerate() {
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
-                let local_val = &self.locals[idx];
-                if let Some(env_val) = self.env().get(target.as_str())
-                    && local_val != env_val
-                {
-                    self.interpreter
-                        .env_mut()
-                        .insert(target.to_string(), local_val.clone());
+                let local_val = self.locals[idx].clone();
+                let differs = self
+                    .env()
+                    .get(target.as_str())
+                    .is_some_and(|env_val| &local_val != env_val);
+                if differs {
+                    self.env_mut().insert(target.to_string(), local_val);
                 }
             }
         }

@@ -1221,7 +1221,7 @@ impl VM {
         // (the engine records them there but nothing consumes the log otherwise).
         self.interpreter.pending_local_updates.clear();
         let saved_topic = self.env().get("_").cloned();
-        self.interpreter
+        self
             .env_mut()
             .insert("_".to_string(), left.clone());
         // Sync env->locals first so that any values modified by interpreter
@@ -1264,7 +1264,7 @@ impl VM {
                 .get("_")
                 .cloned()
                 .unwrap_or(Value::Nil);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(var_name.clone(), modified_topic.clone());
             // Reverse write-through: if the lhs alias names a compiled local slot,

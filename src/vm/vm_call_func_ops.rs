@@ -404,7 +404,7 @@ impl VM {
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
         {
-            let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+            let result = self.vm_call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -536,7 +536,7 @@ impl VM {
                 self.stack.push(result);
             } else {
                 crate::vm::vm_stats::record_function_fallback(&name);
-                let result = self.interpreter.call_function_fallback(&name, &args)?;
+                let result = self.vm_call_function_fallback(&name, &args)?;
                 let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
                 self.stack.push(result);
             }
@@ -855,7 +855,7 @@ impl VM {
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
                         self.interpreter.set_pending_call_arg_sources(arg_sources);
-                        let result = self.interpreter.call_function_fallback(name, &args);
+                        let result = self.vm_call_function_fallback(name, &args);
                         self.interpreter.set_pending_call_arg_sources(None);
                         self.interpreter.maybe_fetch_rw_proxy(result?, true)
                     }
@@ -887,7 +887,7 @@ impl VM {
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
                         self.interpreter.set_pending_call_arg_sources(arg_sources);
-                        let result = self.interpreter.call_function_fallback(name, &args);
+                        let result = self.vm_call_function_fallback(name, &args);
                         self.interpreter.set_pending_call_arg_sources(None);
                         self.interpreter.maybe_fetch_rw_proxy(result?, true)
                     }
@@ -934,7 +934,7 @@ impl VM {
                         crate::vm::vm_stats::record_function_fallback(name);
                     }
                     self.interpreter.set_pending_call_arg_sources(arg_sources);
-                    let result = self.interpreter.call_function(name, args);
+                    let result = self.vm_call_function(name, args);
                     self.interpreter.set_pending_call_arg_sources(None);
                     // Interpreter function calls (e.g. `require`) may register
                     // new subs — invalidate function resolution caches.

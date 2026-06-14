@@ -129,8 +129,8 @@ impl VM {
                 let render_overridden =
                     is_pure_render && self.interpreter.has_user_method(&cn, &method_name);
                 if (!is_pure_render || render_overridden)
-                    && (self.interpreter.type_matches_value("Real", target)
-                        || self.interpreter.type_matches_value("Numeric", target)
+                    && (self.type_matches_value("Real", target)
+                        || self.type_matches_value("Numeric", target)
                         || self.interpreter.has_user_method(&cn, "Bridge"))
                 {
                     return None;

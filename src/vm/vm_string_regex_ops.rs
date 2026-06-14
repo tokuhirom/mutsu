@@ -491,24 +491,24 @@ impl VM {
                         samespace,
                     );
                     let result = Value::str(out);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("_".to_string(), result.clone());
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("$_".to_string(), result.clone());
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), result);
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), match_obj.clone());
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
                 } else {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), Value::Nil);
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
@@ -544,24 +544,24 @@ impl VM {
                         )
                     };
                     let result = Value::str(out);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("_".to_string(), result.clone());
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("$_".to_string(), result.clone());
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), result);
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), match_obj.clone());
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
                 } else {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), Value::Nil);
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
@@ -622,14 +622,14 @@ impl VM {
             if result_is_list {
                 // :g / :x with no match: result is an empty List (falsy).
                 let empty = Value::array(Vec::new());
-                self.interpreter
+                self
                     .env_mut()
                     .insert("/".to_string(), empty.clone());
                 self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                 self.stack.push(empty);
                 return Ok(());
             }
-            self.interpreter
+            self
                 .env_mut()
                 .insert("/".to_string(), Value::Nil);
             self.substitution_in_smartmatch = self.in_smartmatch_rhs;
@@ -673,14 +673,14 @@ impl VM {
             )
         };
         let result = Value::str(out);
-        self.interpreter
+        self
             .env_mut()
             .insert("_".to_string(), result.clone());
-        self.interpreter
+        self
             .env_mut()
             .insert("$_".to_string(), result.clone());
         // Track topic mutation for map rw writeback
-        self.interpreter
+        self
             .env_mut()
             .insert("__mutsu_rw_map_topic__".to_string(), result);
         // For :g / :x, $/ and the substitution result are a List of Match
@@ -691,7 +691,7 @@ impl VM {
                 .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
                 .collect();
             let list = Value::array(matches);
-            self.interpreter
+            self
                 .env_mut()
                 .insert("/".to_string(), list.clone());
             self.substitution_in_smartmatch = self.in_smartmatch_rhs;
@@ -701,7 +701,7 @@ impl VM {
         // Create Match object from first match range and set $/
         let (first_start, first_end) = ranges[0];
         let match_obj = Self::make_subst_match(&text, first_start, first_end);
-        self.interpreter
+        self
             .env_mut()
             .insert("/".to_string(), match_obj.clone());
         self.substitution_in_smartmatch = self.in_smartmatch_rhs;
@@ -761,12 +761,12 @@ impl VM {
                     );
                     // S/// sets $/ to the match (without mutating $_).
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), Value::Nil);
                     self.stack.push(Value::str(text));
@@ -800,12 +800,12 @@ impl VM {
                         )
                     };
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert("/".to_string(), Value::Nil);
                     self.stack.push(Value::str(text));
@@ -904,13 +904,13 @@ impl VM {
                 .iter()
                 .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
                 .collect();
-            self.interpreter
+            self
                 .env_mut()
                 .insert("/".to_string(), Value::array(matches));
         } else {
             let (s, e) = ranges[0];
             let match_obj = Self::make_subst_match(&text, s, e);
-            self.interpreter
+            self
                 .env_mut()
                 .insert("/".to_string(), match_obj);
         }
@@ -1136,12 +1136,12 @@ impl VM {
                 &[],
                 Some(text),
             );
-            self.interpreter
+            self
                 .env_mut()
                 .insert("/".to_string(), match_obj);
             for n in 0..10 {
                 if let Some(cap) = caps.get(n) {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(n.to_string(), Value::str(cap.clone()));
                 } else {
@@ -1251,7 +1251,7 @@ impl VM {
         // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
         // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
         if !non_destructive || self.in_smartmatch_rhs {
-            self.interpreter
+            self
                 .env_mut()
                 .insert("_".to_string(), translated_value);
         }

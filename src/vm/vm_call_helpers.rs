@@ -216,13 +216,13 @@ impl VM {
         slot: usize,
     ) -> Result<(Value, Value), RuntimeError> {
         let temp_name = format!("__mutsu_hyper_target_{slot}");
-        self.interpreter
+        self
             .env_mut()
             .insert(temp_name.clone(), item.clone());
         // TODO: compile to bytecode — hyper method call over a temp-bound item (ledger §1).
         let result =
-            self.interpreter
-                .call_method_mut_with_values(&temp_name, item.clone(), method, args)?;
+            self
+                .vm_call_method_mut_with_values(&temp_name, item.clone(), method, args)?;
         let updated = self
             .interpreter
             .env()
@@ -241,7 +241,7 @@ impl VM {
         slot: usize,
     ) -> Result<(Vec<Value>, Value), RuntimeError> {
         let temp_name = format!("__mutsu_hyper_target_{slot}");
-        self.interpreter
+        self
             .env_mut()
             .insert(temp_name.clone(), item.clone());
         let result = self
