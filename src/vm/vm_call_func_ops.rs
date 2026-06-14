@@ -412,9 +412,17 @@ impl VM {
         }
 
         // Lexical `&name` binding (e.g. from `sub callit(&foo) { foo(1) }`)
-        // takes precedence over package-level compiled subs.
+        // takes precedence over package-level compiled subs. Dispatch
+        // VM-natively via `vm_call_on_value` (same as the pure-lexical case in
+        // `dispatch_func_call_inner`, Track A): `call_compiled_closure` roots
+        // the closure frame at the live caller env (scoped_child) so dynamic
+        // vars (`my $*ERR` in the caller) stay visible, and first-class
+        // instance cells make mutating methods on caller-held instances visible
+        // across frames. The override value is always a `Value::Sub`
+        // (`env_callable_is_lexical_override`), so this never reaches the
+        // interpreter terminal.
         if let Some(callable) = lexical_override {
-            let result = self.interpreter.call_sub_value(callable, args, false)?;
+            let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
