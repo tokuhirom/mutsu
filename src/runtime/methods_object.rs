@@ -76,16 +76,10 @@ impl Interpreter {
                 }
             }
         }
-        // An attribute with a `does Role` trait mixes the role into its value at
-        // construction (full path only) — fall through.
-        if self.mro_readonly(cn_resolved).iter().any(|cls| {
-            self.registry()
-                .class_attribute_does_roles
-                .keys()
-                .any(|(c, _)| c == cls)
-        }) {
-            return false;
-        }
+        // A `has $.x does Role` attribute is allowed: the native builder mixes
+        // the declared role(s) into the attribute value via the shared
+        // `apply_attribute_does_role_mixins` helper (same approximation as the
+        // full constructor), as a post-assembly phase.
         let mut has_attribute = false;
         for cls in self.mro_readonly(cn_resolved) {
             if cls == "Any" || cls == "Mu" || cls == "Cool" {
@@ -595,7 +589,43 @@ impl Interpreter {
         {
             return Some(Err(e));
         }
+        // Mix `has $.x does Role` roles into the final attribute values — the
+        // full constructor does this last (after BUILD/TWEAK), so do the same.
+        self.apply_attribute_does_role_mixins(cn_resolved, &mut attrs);
         Some(Ok(Value::make_instance(class_name, attrs)))
+    }
+
+    /// Apply `has $.x does Role` attribute traits: mix each declared role into
+    /// the attribute's value so `$o.x` does the role and `$o.x.method` dispatches
+    /// into it. (raku mixes into the Scalar *container*; mutsu has no
+    /// per-attribute container, so the value carries the mixin — enough for
+    /// method dispatch. This is a documented, pre-existing approximation; the
+    /// native and interpreter constructors share this helper so they stay
+    /// byte-identical.) Mixins are keyed `__mutsu_role__<Name>` with a marker
+    /// value; method dispatch resolves the role from the registry by that name.
+    pub(crate) fn apply_attribute_does_role_mixins(
+        &mut self,
+        class_key: &str,
+        attrs: &mut HashMap<String, Value>,
+    ) {
+        let mro = self.class_mro(class_key);
+        let does_attrs: Vec<(String, Vec<String>)> = self
+            .registry()
+            .class_attribute_does_roles
+            .iter()
+            .filter(|((c, _), _)| mro.contains(c))
+            .map(|((_, a), roles)| (a.clone(), roles.clone()))
+            .collect();
+        for (attr_name, roles) in does_attrs {
+            let Some(base) = attrs.get(&attr_name).cloned() else {
+                continue;
+            };
+            let mut mixins = HashMap::new();
+            for role in &roles {
+                mixins.insert(format!("__mutsu_role__{}", role), Value::Bool(true));
+            }
+            attrs.insert(attr_name, Value::mixin(base, mixins));
+        }
     }
 
     /// The `is Type` trait declared on an `@`/`%` attribute (`has @.a is Buf`),
@@ -4160,34 +4190,9 @@ impl Interpreter {
                         attrs.insert(attr_name.clone(), tagged);
                     }
                 }
-                // Apply `has $.x does Role` attribute traits: mix each declared
-                // role into the attribute's value so `$o.x` does the role and
-                // `$o.x.method` dispatches into it. (raku mixes into the Scalar
-                // *container*; mutsu has no per-attribute container, so the value
-                // carries the mixin — enough for method dispatch.)
-                {
-                    let mro = self.class_mro(class_key);
-                    let does_attrs: Vec<(String, Vec<String>)> = self
-                        .registry()
-                        .class_attribute_does_roles
-                        .iter()
-                        .filter(|((c, _), _)| mro.contains(c))
-                        .map(|((_, a), roles)| (a.clone(), roles.clone()))
-                        .collect();
-                    for (attr_name, roles) in does_attrs {
-                        let Some(base) = attrs.get(&attr_name).cloned() else {
-                            continue;
-                        };
-                        // Role mixins are keyed `__mutsu_role__<Name>` with a marker
-                        // value; method dispatch resolves the role from the registry
-                        // by that name (mirrors the `does`/role-pun construction).
-                        let mut mixins = HashMap::new();
-                        for role in &roles {
-                            mixins.insert(format!("__mutsu_role__{}", role), Value::Bool(true));
-                        }
-                        attrs.insert(attr_name, Value::mixin(base, mixins));
-                    }
-                }
+                // Apply `has $.x does Role` attribute traits (shared with the
+                // native default constructor).
+                self.apply_attribute_does_role_mixins(class_key, &mut attrs);
                 let mut instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
                     if self.class_mro(class_key).iter().any(|n| n == "Array") {
