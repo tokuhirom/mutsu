@@ -362,6 +362,35 @@ pub(crate) fn native_method_0arg(
         return Some(Ok(Value::Nil));
     }
 
+    // Failure safe accessors: `.exception` (the stored exception object) and
+    // `.handled` (read of the global handled flag). Both are in the
+    // interpreter's no-explode safe list, so dispatching them natively is
+    // correct — a *non*-safe method (e.g. `.message`) is not handled here, so it
+    // returns `None` and reaches the interpreter, which explodes an unhandled
+    // Failure. (The `.handled = ...` setter is the 1-arg form, handled
+    // elsewhere; this only covers the 0-arg read.)
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+        && class_name == "Failure"
+    {
+        match method {
+            "exception" => {
+                return Some(Ok(attributes
+                    .as_map()
+                    .get("exception")
+                    .cloned()
+                    .unwrap_or(Value::Nil)));
+            }
+            "handled" => {
+                return Some(Ok(Value::Bool(target.is_failure_handled())));
+            }
+            _ => {}
+        }
+    }
+
     // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
