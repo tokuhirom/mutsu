@@ -2228,11 +2228,23 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // container topic through `given`, so `with @a { .push }` propagates the
     // mutation back to `@a` (the `given` opcode treats `@`/`%` topics as
     // read-only-for-reassign but writes container mutations back to the source).
+    // A container *element* subscript on a simple variable (`with %h<k>` /
+    // `with @a[i]`) is an lvalue: routing it through `given` makes the `given`
+    // element-source writeback propagate both `$_ = ...` and `.push` back to the
+    // element (the element topic is rw, unlike a whole-container topic).
+    let topic_is_element_lvalue = matches!(
+        &cond_expr,
+        Expr::Index { target, .. }
+            if matches!(
+                target.as_ref(),
+                Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+            )
+    );
     let use_given_alias = param_name.is_none()
-        && matches!(
+        && (matches!(
             &cond_expr,
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
-        );
+        ) || topic_is_element_lvalue);
     // Topicalize `$_` for the body. For a literal, wrap it in a Mixin marked
     // read-only so in-place mutation of `$_` throws X::Assignment::RO. Otherwise
     // reuse the `$tmp` holding the (once-evaluated) condition value.
