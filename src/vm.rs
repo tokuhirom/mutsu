@@ -3503,8 +3503,11 @@ impl VM {
             }
 
             // -- Given/When/Default --
-            OpCode::Given { body_end } => {
-                self.exec_given_op(code, *body_end, ip, compiled_fns)?;
+            OpCode::Given {
+                body_end,
+                topic_readonly,
+            } => {
+                self.exec_given_op(code, *body_end, *topic_readonly, ip, compiled_fns)?;
             }
             OpCode::When { body_end } => {
                 self.exec_when_op(code, *body_end, ip, compiled_fns)?;

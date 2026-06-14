@@ -695,6 +695,12 @@ pub(crate) enum OpCode {
     // -- Given/When/Default (compound opcodes) --
     Given {
         body_end: u32,
+        /// When true, the topic (`$_`) is read-only: assigning to it (`$_ = ...`)
+        /// must fail. True for every topic except a bare scalar variable
+        /// (`given $x { $_ = 9 }` aliases `$x` rw); `given @a`/`given 42`/
+        /// `given expr()` are all read-only in Raku (container *mutation* like
+        /// `.push` is still allowed and propagates).
+        topic_readonly: bool,
     },
     When {
         body_end: u32,
