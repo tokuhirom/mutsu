@@ -1668,9 +1668,10 @@ impl VM {
         // If `done;` was called in the react body, skip the event loop —
         // the body already signaled that no further events should be processed.
         let body_done = matches!(&run_result, Err(e) if e.is_react_done);
-        // The react/supply drive loop now runs VM-side and dispatches whenever
-        // bodies as compiled bytecode (Stage 2, #3038/#3039). The remaining
-        // tree-walk is supply `QUIT` handlers (`call_supply_quit_handler`).
+        // The react/supply drive loop runs VM-side and dispatches every
+        // whenever / LAST / QUIT / CLOSE callback as compiled bytecode
+        // (Stage 2 #3038/#3039; QUIT handlers VM-native in the Stage 3 follow-up).
+        // No drive-loop callback routes back through the tree-walk interpreter.
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak
             self.run_react_event_loop_drain();
