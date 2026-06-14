@@ -133,6 +133,11 @@ pub(crate) struct VM {
     container_ref_reversed: bool,
     /// Source variable name for topic binding in for loops
     topic_source_var: Option<String>,
+    /// Element source for an lvalue container-element topic (`given %h<k>` /
+    /// `given @a[i]`): (container var name, resolved index, positional). After
+    /// the `given`/`with` body runs, the final `$_` is written back to this
+    /// element so `$_ = ...` and container mutations (`.push`) propagate.
+    element_source: Option<(String, Value, bool)>,
     /// rw aggregate view writeback for `for @a.grep(...) { $_++ }`: when the
     /// for-loop iterable is a grep result with a registered grep-view binding,
     /// this holds (source array Arc, per-filtered-index source indices, kind)
@@ -451,6 +456,7 @@ impl VM {
             container_ref_var: None,
             container_ref_reversed: false,
             topic_source_var: None,
+            element_source: None,
             for_grep_view: None,
             quanthash_bind_params: Vec::new(),
             for_param_restore_stack: Vec::new(),
@@ -3264,6 +3270,25 @@ impl VM {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.container_ref_var = Some(name);
                 self.container_ref_reversed = true;
+                *ip += 1;
+            }
+            OpCode::TagElementSource {
+                container_idx,
+                positional,
+            } => {
+                let container = Self::const_str(code, *container_idx).to_string();
+                let positional = *positional;
+                let index = self.stack.pop().unwrap_or(Value::Nil);
+                // Read the element value `container[index]` and push it as the
+                // topic, reusing the standard index op so all container shapes
+                // (Array/Hash/ContainerRef/typed) are handled uniformly.
+                let cval = self
+                    .get_env_with_main_alias(&container)
+                    .unwrap_or(Value::Nil);
+                self.stack.push(cval);
+                self.stack.push(index.clone());
+                self.exec_index_op_with_positional(positional)?;
+                self.element_source = Some((container, index, positional));
                 *ip += 1;
             }
 

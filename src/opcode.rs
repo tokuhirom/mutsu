@@ -553,6 +553,16 @@ pub(crate) enum OpCode {
     TagContainerRef(u32),
     /// Tag the current value as coming from a reversed named container (for `@a.reverse` writeback)
     TagContainerRefReversed(u32),
+    /// Topicalize a container *element* (`given %h<k>` / `given @a[i]`) as an
+    /// lvalue: pop the index from the stack, read element `container[index]`,
+    /// push it as the topic value, and record the (container, index) source so
+    /// the `given`/`with` body's final `$_` (after `$_ = ...` or `.push`) is
+    /// written back to that element. `positional` is true for `@a[i]`, false for
+    /// `%h<k>`. The operand is the constant index of the container variable name.
+    TagElementSource {
+        container_idx: u32,
+        positional: bool,
+    },
 
     /// Clear an aggregate variable (@/%) in-place so references see the change.
     UndefineAggregate(u32),

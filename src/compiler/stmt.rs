@@ -1670,20 +1670,44 @@ impl Compiler {
             }
             // Given/When/Default
             Stmt::Given { topic, body } => {
-                self.compile_expr(topic);
-                if let Some(source_name) = match topic {
-                    Expr::Var(name) => Some(name.clone()),
-                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                    Expr::HashVar(name) => Some(format!("%{}", name)),
+                // An lvalue container *element* topic (`given %h<k>` /
+                // `given @a[i]`) aliases that element rw: both `$_ = ...` and
+                // container mutations (`.push`) propagate to the element. Push
+                // the element value and tag the (container, index) source so the
+                // body's final `$_` is written back. `topic_readonly` is false.
+                let element_source = match topic {
+                    Expr::Index {
+                        target,
+                        index,
+                        is_positional,
+                    } => Self::container_var_name(target).map(|c| (c, index, *is_positional)),
                     _ => None,
-                } {
-                    let name_idx = self.code.add_constant(Value::str(source_name));
-                    self.code.emit(OpCode::TagContainerRef(name_idx));
+                };
+                let topic_readonly;
+                if let Some((container, index, is_positional)) = element_source {
+                    self.compile_expr(index);
+                    let container_idx = self.code.add_constant(Value::str(container));
+                    self.code.emit(OpCode::TagElementSource {
+                        container_idx,
+                        positional: is_positional,
+                    });
+                    topic_readonly = false;
+                } else {
+                    self.compile_expr(topic);
+                    if let Some(source_name) = match topic {
+                        Expr::Var(name) => Some(name.clone()),
+                        Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                        Expr::HashVar(name) => Some(format!("%{}", name)),
+                        _ => None,
+                    } {
+                        let name_idx = self.code.add_constant(Value::str(source_name));
+                        self.code.emit(OpCode::TagContainerRef(name_idx));
+                    }
+                    // The topic is read-only unless it is a bare scalar variable
+                    // (`given $x` aliases `$x` rw). `given @a` / `given 42` /
+                    // `given expr()` are read-only (Raku errors on `$_ = ...`).
+                    topic_readonly = !matches!(topic, Expr::Var(_));
                 }
-                // The topic is read-only unless it is a bare scalar variable
-                // (`given $x` aliases `$x` rw). `given @a` / `given 42` /
-                // `given expr()` are read-only (Raku errors on `$_ = ...`).
-                let topic_readonly = !matches!(topic, Expr::Var(_));
                 let given_idx = self.code.emit(OpCode::Given {
                     body_end: 0,
                     topic_readonly,
