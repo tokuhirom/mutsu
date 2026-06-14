@@ -106,10 +106,14 @@ impl Interpreter {
             let simple = !class_def.methods.contains_key("BUILDALL")
                 && !class_def.methods.contains_key("new")
                 && class_def.native_methods.is_empty()
-                // No custom per-attribute build closure (`is built` trait or a
-                // MOP `Attribute.set_build`): those replace plain data assignment
-                // and must run through the full constructor.
-                && class_def.attribute_built.is_empty()
+                // An `is built(Bool)` trait only flips whether an attribute is
+                // assigned from a named arg — the native builder already honours
+                // it through `is_attribute_buildable` in the named-arg loop (an
+                // `is built(False)` attribute is simply skipped and then gets its
+                // default in the fill loop), so it stays native. A MOP
+                // `Attribute.set_build` closure, however, *replaces* plain data
+                // assignment with user code and must run through the full
+                // constructor.
                 && !registry
                     .attribute_build_overrides
                     .keys()
