@@ -292,15 +292,20 @@ STATUS で撤回済み。
       `given %h { $_<k>=v }` が伝播（`@`/`%` topic を `write_back_given_topic` で source 書き戻し、#3008 の
       `loop_var_unchanged` guard 流用）。`Given` opcode に `topic_readonly` フラグ追加し `given @a { $_=... }`・
       `given 42 { $_=9 }` を raku 同様 die（`given $x` は rw 維持）。`t/given-topic-alias.t`(12)。
-- [ ] **Track B 残 niche（次セッション候補・優先度＝ROI 順、すべて深い別 feature 前提。詳細 = メモリ
-      `project_track_b_phase2_element_cells` NEXT SESSION resume map）**:
-      ① **element-source topic/iter writeback**（最汎用・複数バグ一括）: `given %h<k>{.push}`・`given @a[i]{.push}`・
-      `for %h<k>.values{$_*=2}`・`for @a[i].values{$_}` が伝播しない共通根 = source が Index 式のとき
-      `for_iterable_source_name`/given compiler が None → TagContainerRef 非発行。writeback ターゲットを
-      「var名」でなく「container var + index path」で表現＋nested index-assign 化。
-      ② **`with` topic aliasing**: `with @a {.push}`（`with` は defined-check `__with_tmp_N` へ compile され Given opcode
-      非経由）→ with を Given 経路へ寄せる。③ **`.push(@var)` 参照格納**（Raku `**@` slurpy alias、COW detach するので
-      cell 昇格＝#2990 機構が必要・hot push path）。
+- [x] **whole-container `with` topic + element-source topic（given/with）の別名束縛 (#3014/#3015/#3016)** —
+      ① **#3014**: `with @a {.push}`・`with %h {$_<k>=v}` が伝播（`use_given_alias` を `@`/`%` に拡張し #3012 の
+      given 機構へルート）。② **#3015**: `given %h<k>{.push}`・`given @a[i]{$_=v}` が伝播（新 `OpCode::TagElementSource`
+      で element を lvalue topic 化＋`write_back_element_source` で `assign_into_nested_container` 経由 書き戻し。
+      **element は lvalue ＝完全 rw**＝whole-container topic の read-only-for-reassign と非対称）。③ **#3016**: `with %h<k>`
+      も `use_given_alias` を simple-var target の `Expr::Index` に拡張して #3015 機構へルート。
+      `t/with-topic-alias.t`(13)/`t/given-element-topic.t`(16)/`t/with-element-topic.t`(12)。
+- [ ] **Track B 残 niche（深い別 feature・ROI 低。詳細 = メモリ `project_track_b_phase2_element_cells`）**:
+      ① **`for %h<k>.values{$_*=2}` の element-source rw writeback**（element-source topic 最後の穴）: for-loop は
+      `container_binding`（String var名）駆動の per-iteration writeback で、element source は `%h<k>[idx]=$_` の 2 段
+      nested writeback ＋ `for %h<k>` の itemization 修正が必要・**最ホット path で多機構が絡み高リスク**（#3008 教訓:
+      for-loop writeback は full roast 必須）。② **`.push(@var)` 参照格納**（Raku `**@` slurpy alias、COW detach するので
+      cell 昇格＝#2990 機構が必要・hot push path）。③ **with/given の `-> $p` pointy-param aliasing**（param aliasing
+      #3003 系、for-loop named param は #3008 済だが with/given は未対応）。
 - [~] **object-hash（`%h{KeyType}`）** — キー保存（original_keys）は HashData 埋め込みで **COW-stable 化済み**
       (#2954)。mixin キー・`.new`/`.clone` 維持 (#2956)、multidim Range slice `:exists` (#2959) も landed。
       **キー表示の全経路修正 (#3007)**: `.sort`/`.gist`/`.Str`/`.raku`/`.list`/`.map`/`for`/`@`-flatten/`.min`/`.max`/
