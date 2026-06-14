@@ -287,8 +287,20 @@ STATUS で撤回済み。
       for-loop 変数（`for @m -> @row`/`-> $row`/`-> %r`）が要素を alias 束縛（topic と同じ per-iteration source
       writeback 経由、`is copy`/`<->` 除外）。付随して **pre-existing O(n²)** を修正: topic writeback が毎反復
       配列全体を rebuild（`for @big {...}` 40k で ~46s）→ `loop_var_unchanged`（同一束縛なら O(1) skip）で O(n) 化
-      （50k で ~73s→~0.8s）。`t/for-loop-named-param-alias.t`(16)。**残 niche（deferred）**: `for %h<k>.values { $_ }`
-      の rw-writeback が element source 未対応、`.push(@var)` の参照格納（Raku `**@` slurpy alias）。
+      （50k で ~73s→~0.8s）。`t/for-loop-named-param-alias.t`(16)。
+- [x] **given/with container topic の別名束縛 + read-only topic 意味論 (#3012)** — `given @a { .push }`・
+      `given %h { $_<k>=v }` が伝播（`@`/`%` topic を `write_back_given_topic` で source 書き戻し、#3008 の
+      `loop_var_unchanged` guard 流用）。`Given` opcode に `topic_readonly` フラグ追加し `given @a { $_=... }`・
+      `given 42 { $_=9 }` を raku 同様 die（`given $x` は rw 維持）。`t/given-topic-alias.t`(12)。
+- [ ] **Track B 残 niche（次セッション候補・優先度＝ROI 順、すべて深い別 feature 前提。詳細 = メモリ
+      `project_track_b_phase2_element_cells` NEXT SESSION resume map）**:
+      ① **element-source topic/iter writeback**（最汎用・複数バグ一括）: `given %h<k>{.push}`・`given @a[i]{.push}`・
+      `for %h<k>.values{$_*=2}`・`for @a[i].values{$_}` が伝播しない共通根 = source が Index 式のとき
+      `for_iterable_source_name`/given compiler が None → TagContainerRef 非発行。writeback ターゲットを
+      「var名」でなく「container var + index path」で表現＋nested index-assign 化。
+      ② **`with` topic aliasing**: `with @a {.push}`（`with` は defined-check `__with_tmp_N` へ compile され Given opcode
+      非経由）→ with を Given 経路へ寄せる。③ **`.push(@var)` 参照格納**（Raku `**@` slurpy alias、COW detach するので
+      cell 昇格＝#2990 機構が必要・hot push path）。
 - [~] **object-hash（`%h{KeyType}`）** — キー保存（original_keys）は HashData 埋め込みで **COW-stable 化済み**
       (#2954)。mixin キー・`.new`/`.clone` 維持 (#2956)、multidim Range slice `:exists` (#2959) も landed。
       **キー表示の全経路修正 (#3007)**: `.sort`/`.gist`/`.Str`/`.raku`/`.list`/`.map`/`for`/`@`-flatten/`.min`/`.max`/
