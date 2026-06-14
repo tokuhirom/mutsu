@@ -579,7 +579,7 @@ impl VM {
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {
             let key = format!("__mutsu_sigilless_alias::{}", current);
-            if let Some(Value::Str(next)) = self.interpreter.env().get(&key) {
+            if let Some(Value::Str(next)) = self.env().get(&key) {
                 current = next.to_string();
             } else {
                 break;
@@ -701,7 +701,7 @@ impl VM {
         let sep_pos = encoded.find("\x00idx\x00")?;
         let var_name = &encoded[..sep_pos];
         let idx_str = &encoded[sep_pos + 5..];
-        match self.interpreter.env().get(var_name) {
+        match self.env().get(var_name) {
             Some(Value::Array(items, _)) => {
                 let i = idx_str.parse::<usize>().ok()?;
                 items.get(i).cloned()
@@ -1220,7 +1220,7 @@ impl VM {
         // *this* match's embedded `{ }` code blocks wrote a caller variable by name
         // (the engine records them there but nothing consumes the log otherwise).
         self.interpreter.pending_local_updates.clear();
-        let saved_topic = self.interpreter.env().get("_").cloned();
+        let saved_topic = self.env().get("_").cloned();
         self.interpreter
             .env_mut()
             .insert("_".to_string(), left.clone());
@@ -1251,9 +1251,9 @@ impl VM {
         if lhs_is_literal && (was_substitution || was_transliterate) && right.truthy() {
             // Restore the topic before propagating the error.
             if let Some(v) = saved_topic {
-                self.interpreter.env_mut().insert("_".to_string(), v);
+                self.env_mut().insert("_".to_string(), v);
             } else {
-                self.interpreter.env_mut().remove("_");
+                self.env_mut().remove("_");
             }
             return Err(RuntimeError::assignment_ro(Some("Str")));
         }
@@ -1273,9 +1273,9 @@ impl VM {
             self.update_local_if_exists(code, var_name, &modified_topic);
         }
         if let Some(v) = saved_topic {
-            self.interpreter.env_mut().insert("_".to_string(), v);
+            self.env_mut().insert("_".to_string(), v);
         } else {
-            self.interpreter.env_mut().remove("_");
+            self.env_mut().remove("_");
         }
         // When RHS was a transliterate (tr///), return the result directly.
         // In Raku, $x ~~ tr/a/b/ returns a StrDistance that stringifies to the after-string.

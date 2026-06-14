@@ -595,7 +595,7 @@ impl VM {
 
     pub(super) fn is_bound_index(&self, var_name: &str, encoded: &str) -> bool {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.interpreter.env().get(&key) {
+        if let Some(Value::Hash(map)) = self.env().get(&key) {
             map.contains_key(encoded)
         } else {
             false
@@ -604,19 +604,19 @@ impl VM {
 
     pub(super) fn mark_bound_index(&mut self, var_name: &str, encoded: String) {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
+        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
             Arc::make_mut(map).insert(encoded, Value::Bool(true));
             return;
         }
         let mut map = std::collections::HashMap::new();
         map.insert(encoded, Value::Bool(true));
-        self.interpreter.env_mut().insert(key, Value::hash(map));
+        self.env_mut().insert(key, Value::hash(map));
     }
 
     /// Remove a bound-index marker (e.g. after splice breaks the binding).
     pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
+        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
             Arc::make_mut(map).remove(encoded);
         }
     }
@@ -626,18 +626,18 @@ impl VM {
         // `:exists` checks report the slot as present again.
         {
             let deleted_key = format!("__mutsu_deleted_index::{}", var_name);
-            if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&deleted_key) {
+            if let Some(Value::Hash(map)) = self.env_mut().get_mut(&deleted_key) {
                 Arc::make_mut(map).remove(&encoded);
             }
         }
         let key = format!("__mutsu_initialized_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
+        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
             Arc::make_mut(map).insert(encoded, Value::Bool(true));
             return;
         }
         let mut map = std::collections::HashMap::new();
         map.insert(encoded, Value::Bool(true));
-        self.interpreter.env_mut().insert(key, Value::hash(map));
+        self.env_mut().insert(key, Value::hash(map));
     }
 
     /// Mark the given indices as deleted. `:exists` on an array consults
@@ -645,14 +645,14 @@ impl VM {
     /// as missing even though the slot value is not `Nil`.
     pub(super) fn mark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_deleted_index::{}", var_name);
-        let map = if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
+        let map = if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
             Arc::make_mut(map)
         } else {
             let m = std::collections::HashMap::new();
             self.interpreter
                 .env_mut()
                 .insert(key.clone(), Value::hash(m));
-            match self.interpreter.env_mut().get_mut(&key) {
+            match self.env_mut().get_mut(&key) {
                 Some(Value::Hash(map)) => Arc::make_mut(map),
                 _ => return,
             }
@@ -663,7 +663,7 @@ impl VM {
     #[allow(dead_code)]
     pub(super) fn unmark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_deleted_index::{}", var_name);
-        let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) else {
+        let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
             return;
         };
         let m = Arc::make_mut(map);
@@ -673,7 +673,7 @@ impl VM {
     pub(super) fn is_deleted_index(&self, var_name: &str, idx: i64) -> bool {
         let key = format!("__mutsu_deleted_index::{}", var_name);
         matches!(
-            self.interpreter.env().get(&key),
+            self.env().get(&key),
             Some(Value::Hash(map)) if map.contains_key(&idx.to_string())
         )
     }
@@ -711,7 +711,7 @@ impl VM {
     /// This must be called after array element deletion to sever bindings.
     pub(super) fn unmark_bound_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) else {
+        let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
             return;
         };
         let m = Arc::make_mut(map);
@@ -724,7 +724,7 @@ impl VM {
     /// as holes and can be trimmed.
     pub(super) fn unmark_initialized_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_initialized_index::{}", var_name);
-        let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) else {
+        let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
             return;
         };
         let m = Arc::make_mut(map);

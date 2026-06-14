@@ -439,7 +439,7 @@ impl VM {
     /// Find an instance in the environment by class name and id.
     /// Used to refresh a target after mutation during auto-threading.
     fn find_instance_in_env(&self, class_name: &str, id: u64) -> Option<Value> {
-        for v in self.interpreter.env().values() {
+        for v in self.env().values() {
             if let Value::Instance {
                 class_name: cn,
                 id: vid,

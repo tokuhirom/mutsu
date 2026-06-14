@@ -20,7 +20,7 @@ impl VM {
     ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
-            let cl = self.interpreter.env().get("?LINE").and_then(|v| match v {
+            let cl = self.env().get("?LINE").and_then(|v| match v {
                 Value::Int(i) => Some(*i),
                 _ => None,
             });
@@ -156,7 +156,7 @@ impl VM {
         // it overlay-only (the method's own writes). No closure/thread body runs
         // under the overlay.
         if cc.closure_compiled_codes.is_empty() {
-            let parent = self.interpreter.env().clone();
+            let parent = self.env().clone();
             self.interpreter
                 .set_env(crate::env::Env::scoped_child(parent));
         }
@@ -182,17 +182,17 @@ impl VM {
         };
 
         // Set ::?CLASS / ::?ROLE
-        self.interpreter.env_mut().insert(
+        self.env_mut().insert(
             "?CLASS".to_string(),
             Value::Package(crate::symbol::Symbol::intern(owner_class)),
         );
         if let Some(role_name) = role_context {
-            self.interpreter.env_mut().insert(
+            self.env_mut().insert(
                 "?ROLE".to_string(),
                 Value::Package(crate::symbol::Symbol::intern(&role_name)),
             );
         } else {
-            self.interpreter.env_mut().remove("?ROLE");
+            self.env_mut().remove("?ROLE");
         }
 
         // Set current_package so class-scoped subs are found during method execution.
@@ -214,7 +214,7 @@ impl VM {
         // $_ in a method body is Any unless the invocant is explicitly named $_
         // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
         // will set $_ back to self if the invocant param is named "_".
-        self.interpreter.env_mut().insert(
+        self.env_mut().insert(
             "_".to_string(),
             Value::Package(crate::symbol::Symbol::intern("Any")),
         );
@@ -227,7 +227,7 @@ impl VM {
         // Assign a unique callable ID for this method invocation so that
         // non-local returns from blocks defined inside this method can target it.
         let method_callable_id = crate::value::next_instance_id();
-        self.interpreter.env_mut().insert(
+        self.env_mut().insert(
             "__mutsu_callable_id".to_string(),
             Value::Int(method_callable_id as i64),
         );
@@ -312,7 +312,7 @@ impl VM {
                             self.set_current_package(saved_package.clone());
                             self.stack.truncate(saved_stack_depth);
                             let frame = self.pop_call_frame();
-                            *self.interpreter.env_mut() = frame.saved_env;
+                            *self.env_mut() = frame.saved_env;
                             // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
                             if constraint.ends_with(":D") || constraint.ends_with(":U") {
                                 let (base_type, _) =
@@ -360,20 +360,20 @@ impl VM {
                     // routing's alias-table lookup (Phase 3 Stage 2c (ii)).
                     self.interpreter.sigilless_attrs_active = true;
                     // Set up bidirectional alias: !x ↔ alias_name
-                    self.interpreter.env_mut().insert(
+                    self.env_mut().insert(
                         format!("__mutsu_sigilless_alias::!{}", actual_attr),
                         Value::str(source_name.to_string()),
                     );
-                    self.interpreter.env_mut().insert(
+                    self.env_mut().insert(
                         format!("__mutsu_sigilless_readonly::!{}", actual_attr),
                         Value::Bool(false),
                     );
                     // Reverse alias: alias_name → !attr so writing to $x updates $!x
-                    self.interpreter.env_mut().insert(
+                    self.env_mut().insert(
                         format!("__mutsu_sigilless_alias::{}", source_name),
                         Value::str(format!("!{}", actual_attr)),
                     );
-                    self.interpreter.env_mut().insert(
+                    self.env_mut().insert(
                         format!("__mutsu_sigilless_readonly::{}", source_name),
                         Value::Bool(false),
                     );
@@ -440,7 +440,7 @@ impl VM {
                     self.set_current_package(saved_package.clone());
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
-                    *self.interpreter.env_mut() = frame.saved_env;
+                    *self.env_mut() = frame.saved_env;
                     return Err(e);
                 }
             };
@@ -448,7 +448,7 @@ impl VM {
         // Initialize locals from env
         self.locals = vec![Value::Nil; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(local_name) {
+            if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
             }
         }
@@ -645,7 +645,7 @@ impl VM {
                         .cloned()
                         .or_else(|| {
                             let qualified = format!("{}::{}", owner_class, param_name);
-                            self.interpreter.env().get(&qualified).cloned()
+                            self.env().get(&qualified).cloned()
                         })
                         .map(|val| (source_name.clone(), val))
                 })
@@ -655,7 +655,7 @@ impl VM {
             // saved caller env, take the live callee env) so merge_method_env can
             // mutate the caller env in place without a deep copy.
             let frame = self.pop_call_frame();
-            let current_env = self.interpreter.take_env();
+            let current_env = self.take_env();
             let (mut merged_env, wrote_caller) =
                 merge_method_env(frame.saved_env, current_env, &method_local_keys);
             // Precise dirty signal (Slice 6.3): the caller only needs an
@@ -680,7 +680,7 @@ impl VM {
             self.interpreter.pop_routine();
             self.interpreter.pop_method_class();
             self.set_current_package(saved_package.clone());
-            *self.interpreter.env_mut() = merged_env;
+            *self.env_mut() = merged_env;
         }
 
         if can_skip_merge {
@@ -688,7 +688,7 @@ impl VM {
             self.method_dispatch_pure = true;
             self.set_current_package(saved_package);
             let frame = self.pop_call_frame();
-            *self.interpreter.env_mut() = frame.saved_env;
+            *self.env_mut() = frame.saved_env;
         }
 
         let final_result = match result {
@@ -851,7 +851,7 @@ impl VM {
         if let Some(slot) = code.locals.iter().position(|n| n == name) {
             return Some(self.locals[slot].clone());
         }
-        self.interpreter.env().get(name).cloned()
+        self.env().get(name).cloned()
     }
 
     /// Phase 3 Stage 2c (i): mirror attributive parameters (`$!x`/`@!a`/`%!h`)
@@ -915,9 +915,9 @@ impl VM {
         // iterates the scoped env for a full lexical view.
         let use_scoped = cc.closure_compiled_codes.is_empty();
         if use_scoped {
-            let parent = self.interpreter.env().clone();
+            let parent = self.env().clone();
             let scoped = crate::env::Env::scoped_child(parent);
-            self.interpreter.set_env(scoped);
+            self.set_env(scoped);
         }
         let saved_var_bindings = self.interpreter.take_var_bindings();
         self.interpreter.push_method_class(owner_class.to_string());
@@ -961,7 +961,7 @@ impl VM {
                     self.set_current_package(saved_package);
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
-                    self.interpreter.set_env(frame.saved_env);
+                    self.set_env(frame.saved_env);
                     return Err(RuntimeError::typecheck_binding_parameter(
                         param_name,
                         constraint,
@@ -987,7 +987,7 @@ impl VM {
         // method-local vars since all reads go through GetLocal.
         let skip_env_setup = can_skip_merge && cc.closure_compiled_codes.is_empty();
         if skip_env_setup {
-            let env = self.interpreter.env_mut();
+            let env = self.env_mut();
             env.insert("self".to_string(), base.clone());
             env.insert("__ANON_STATE__".to_string(), base.clone());
             env.insert("?CLASS".to_string(), class_val.clone());
@@ -1004,7 +1004,7 @@ impl VM {
                 env.insert(param_name.to_string(), param_val.clone());
             }
         } else {
-            let env = self.interpreter.env_mut();
+            let env = self.env_mut();
             env.insert("self".to_string(), base.clone());
             env.insert("__ANON_STATE__".to_string(), base.clone());
             env.insert("?CLASS".to_string(), class_val.clone());
@@ -1076,7 +1076,7 @@ impl VM {
                         attributes.get(&name[2..]).cloned().unwrap_or(Value::Nil)
                     }
                     // Outer env (read-only, no deep clone)
-                    else if let Some(val) = self.interpreter.env().get(name) {
+                    else if let Some(val) = self.env().get(name) {
                         val.clone()
                     } else {
                         Value::Nil
@@ -1249,16 +1249,16 @@ impl VM {
             // slots stay coherent, opcode skips the env_dirty mark).
             self.method_dispatch_pure = true;
             let frame = self.pop_call_frame();
-            self.interpreter.set_env(frame.saved_env);
+            self.set_env(frame.saved_env);
         } else {
             // Inner calls may have modified env (globals, dynamics).
             // Check if env was actually changed; if so, merge the changes
             // into the saved env before restoring.
             let frame = self.pop_call_frame();
-            if self.interpreter.env().ptr_eq(&frame.saved_env) {
+            if self.env().ptr_eq(&frame.saved_env) {
                 // Env object unchanged -> nothing merged back (pure).
                 self.method_dispatch_pure = true;
-                self.interpreter.set_env(frame.saved_env);
+                self.set_env(frame.saved_env);
             } else {
                 // Build method_local_keys set (keys that should NOT leak to caller)
                 let mut method_local_keys: HashSet<String> = HashSet::from_iter([
@@ -1289,13 +1289,13 @@ impl VM {
                 }
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
-                let current_env = self.interpreter.take_env();
+                let current_env = self.take_env();
                 let (merged, wrote_caller) =
                     merge_method_env(frame.saved_env, current_env, &method_local_keys);
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
                 self.method_dispatch_pure = !wrote_caller;
-                self.interpreter.set_env(merged);
+                self.set_env(merged);
             }
         }
 

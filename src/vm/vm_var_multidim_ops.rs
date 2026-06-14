@@ -220,13 +220,13 @@ impl VM {
             for p in &data.params {
                 sub_env.insert(p.to_string(), Value::Int(len));
             }
-            let saved_env = std::mem::take(self.interpreter.env_mut());
-            *self.interpreter.env_mut() = sub_env;
+            let saved_env = std::mem::take(self.env_mut());
+            *self.env_mut() = sub_env;
             let result = self
                 .interpreter
                 .eval_block_value(&data.body)
                 .unwrap_or(Value::Nil);
-            *self.interpreter.env_mut() = saved_env;
+            *self.env_mut() = saved_env;
             return Some(result);
         }
         if let Value::Rat(n, d) = dim {
@@ -282,7 +282,7 @@ impl VM {
 
         // Check if target is a shaped array - use bounds-checked assignment
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
-        let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
+        let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let is_shaped = has_declared_shape
             || self
                 .interpreter
@@ -298,7 +298,7 @@ impl VM {
             .and_then(|v| self.interpreter.container_type_metadata(v));
 
         // Get mutable reference to the target variable
-        if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+        if let Some(container) = self.env_mut().get_mut(&var_name) {
             if is_shaped {
                 // For shaped arrays, use bounds-checked assignment
                 Self::assign_array_multidim(container, &dims, value.clone())?;
@@ -311,7 +311,7 @@ impl VM {
         // pre-assignment copy from locals into env. Without this, shaped
         // array element writes like `@a[i;j] = v` can be silently lost
         // before a closure captures the env (e.g. `start { ... }`).
-        if let Some(updated) = self.interpreter.env().get(&var_name).cloned() {
+        if let Some(updated) = self.env().get(&var_name).cloned() {
             self.update_local_if_exists(code, &var_name, &updated);
         }
 
@@ -319,7 +319,7 @@ impl VM {
         // embed metadata in `HashData`, so the re-tagged value must be written
         // back (no-op Arc for array/instance side-table containers).
         if let Some(info) = old_type_info
-            && let Some(updated) = self.interpreter.env().get(&var_name).cloned()
+            && let Some(updated) = self.env().get(&var_name).cloned()
         {
             let tagged = self.interpreter.tag_container_metadata(updated, info);
             self.interpreter

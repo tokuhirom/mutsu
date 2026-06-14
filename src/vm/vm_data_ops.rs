@@ -430,7 +430,7 @@ impl VM {
         // dimension metadata check in VM. See ledger §1.
         // Check for shaped arrays — must fall back to interpreter
         // (push is illegal on fixed-dimension arrays)
-        if let Some(Value::Array(_, kind)) = self.interpreter.env().get(target_name)
+        if let Some(Value::Array(_, kind)) = self.env().get(target_name)
             && *kind == crate::value::ArrayKind::Shaped
         {
             let val = self.stack.pop().unwrap_or(Value::Nil);
@@ -530,9 +530,7 @@ impl VM {
             self.locals[slot] = Value::Nil;
         }
 
-        let result = if let Some(Value::Array(arr, kind)) =
-            self.interpreter.env_mut().get_mut(target_name)
-        {
+        let result = if let Some(Value::Array(arr, kind)) = self.env_mut().get_mut(target_name) {
             let items = Arc::make_mut(arr);
             match &val {
                 Value::Slip(slip_items) => items.extend(slip_items.iter().cloned()),

@@ -19,9 +19,9 @@ impl VM {
     /// that captures or iterates it overlay-only. See docs/vm-dual-store.md (Slice 6).
     #[inline]
     pub(super) fn flatten_scoped_env(&mut self) {
-        if self.interpreter.env().is_scoped() {
-            let flat = self.interpreter.env().flattened();
-            *self.interpreter.env_mut() = flat;
+        if self.env().is_scoped() {
+            let flat = self.env().flattened();
+            *self.env_mut() = flat;
         }
     }
 
@@ -35,7 +35,7 @@ impl VM {
         // pay the per-call O(env) flatten. Long-lived captures (Sub closures, END
         // phasers, threads) still flatten via `clone_env` at the capture site.
         let frame = VmCallFrame {
-            saved_env: self.interpreter.env().clone(),
+            saved_env: self.env().clone(),
             saved_readonly: Some(self.interpreter.save_readonly_vars()),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
@@ -51,7 +51,7 @@ impl VM {
     pub(super) fn push_light_call_frame(&mut self) {
         crate::vm::vm_stats::record_clone_env();
         let frame = VmCallFrame {
-            saved_env: self.interpreter.env().clone(),
+            saved_env: self.env().clone(),
             saved_readonly: None,
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
@@ -188,7 +188,7 @@ impl VM {
         // lexical variables take precedence over shared_vars. Without this,
         // recursive `start` blocks can read stale parameter values from
         // shared_vars instead of the locally-bound ones.
-        if let Some(val) = self.interpreter.env().get(name) {
+        if let Some(val) = self.env().get(name) {
             return Some(val.clone());
         }
         // Anonymous scalar placeholders (from bare `$`) are invocation-local.
@@ -202,29 +202,29 @@ impl VM {
         }
         // Follow binding aliases ($CALLER::target := $source)
         if let Some(resolved) = self.interpreter.resolve_binding(name)
-            && let Some(val) = self.interpreter.env().get(resolved)
+            && let Some(val) = self.env().get(resolved)
         {
             return Some(val.clone());
         }
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
-            return self.interpreter.env().get(&alias).cloned();
+            return self.env().get(&alias).cloned();
         }
         if let Some(alias) = Self::main_unqualified_name(name) {
-            return self.interpreter.env().get(&alias).cloned();
+            return self.env().get(&alias).cloned();
         }
         if let Some(qualified) = Self::main_qualified_name(name) {
-            return self.interpreter.env().get(&qualified).cloned();
+            return self.env().get(&qualified).cloned();
         }
         // Strip GLOBAL::, OUR::, MY:: pseudo-package qualifiers to find
         // the variable under its bare name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
-            return self.interpreter.env().get(&bare).cloned();
+            return self.env().get(&bare).cloned();
         }
         // Placeholder block parameters are stored as "^name". Allow lexical
         // access by the de-careted name inside the same block.
         if !name.starts_with('^') {
             let placeholder = format!("^{name}");
-            if let Some(val) = self.interpreter.env().get(&placeholder) {
+            if let Some(val) = self.env().get(&placeholder) {
                 return Some(val.clone());
             }
             if let Some(val) = self.interpreter.get_shared_var(&placeholder) {
@@ -247,20 +247,20 @@ impl VM {
         value: Value,
     ) {
         if name.starts_with("__ANON_STATE_") {
-            self.interpreter.env_mut().insert(name.to_string(), value);
+            self.env_mut().insert(name.to_string(), value);
             return;
         }
         if !name.starts_with('^') {
             let placeholder = format!("^{name}");
-            if self.interpreter.env().contains_key(&placeholder) {
+            if self.env().contains_key(&placeholder) {
                 self.interpreter.set_shared_var(&placeholder, value.clone());
-                self.interpreter.env_mut().insert(placeholder, value);
+                self.env_mut().insert(placeholder, value);
                 return;
             }
         }
         self.interpreter.set_shared_var(name, value.clone());
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
-            self.interpreter.env_mut().insert(alias, value.clone());
+            self.env_mut().insert(alias, value.clone());
         }
         if let Some(inner) = name
             .strip_prefix("&infix:<")
@@ -273,23 +273,23 @@ impl VM {
                 .insert(format!("&{}", op_name), value.clone());
         }
         if let Some(alias) = Self::main_unqualified_name(name) {
-            self.interpreter.env_mut().insert(alias, value);
+            self.env_mut().insert(alias, value);
             return;
         }
         if let Some(qualified) = Self::main_qualified_name(name)
-            && self.interpreter.env().contains_key(&qualified)
+            && self.env().contains_key(&qualified)
         {
-            self.interpreter.env_mut().insert(qualified, value);
+            self.env_mut().insert(qualified, value);
             return;
         }
         // Write through GLOBAL::, OUR::, MY:: pseudo-package qualifiers to the
         // bare variable name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
-            self.interpreter.env_mut().insert(bare, value);
+            self.env_mut().insert(bare, value);
         } else if let Some(bare) = name.strip_prefix("GLOBAL::")
-            && self.interpreter.env().contains_key(bare)
+            && self.env().contains_key(bare)
         {
-            self.interpreter.env_mut().insert(bare.to_string(), value);
+            self.env_mut().insert(bare.to_string(), value);
         }
     }
 
@@ -307,7 +307,7 @@ impl VM {
             if name.starts_with('!') {
                 continue;
             }
-            if let Some(val) = self.interpreter.env().get(name) {
+            if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
                 continue;
             }
@@ -316,7 +316,7 @@ impl VM {
                 .or_else(|| name.strip_prefix('@'))
                 .or_else(|| name.strip_prefix('%'))
                 .or_else(|| name.strip_prefix('&'))
-                && let Some(val) = self.interpreter.env().get(bare)
+                && let Some(val) = self.env().get(bare)
             {
                 self.locals[i] = val.clone();
             }
@@ -344,7 +344,7 @@ impl VM {
             // block scopes) from being prematurely introduced into the env,
             // which would cause bare-word class name resolution to fail when
             // a later block declares `my $x` and the class is named `x`.
-            if !self.interpreter.env().contains_key(name) {
+            if !self.env().contains_key(name) {
                 continue;
             }
             self.set_env_with_main_alias(name, self.locals[i].clone());

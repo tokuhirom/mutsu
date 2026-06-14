@@ -720,7 +720,7 @@ impl VM {
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(name) {
+            if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
             }
         }
@@ -806,7 +806,7 @@ impl VM {
         // Initialize local variable slots
         self.locals.resize(code.locals.len(), Value::Nil);
         for (i, name) in code.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(name) {
+            if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
             } else {
                 self.locals[i] = Value::Nil;
@@ -918,6 +918,51 @@ impl VM {
     /// Get a reference to the interpreter (for reading env values).
     pub(crate) fn interpreter(&self) -> &Interpreter {
         &self.interpreter
+    }
+
+    /// Read access to the variable store (env) through the VM's own seam.
+    ///
+    /// CP-1 (env-loan, step 1b): the env physically still lives in
+    /// `self.interpreter` and this accessor forwards there, so the change is
+    /// behavior-invariant. The point of routing every VM env read through this
+    /// single method now is that step 1e can flip the body to `&self.env` (env
+    /// moved into the VM) in one place. See docs/vm-state-ownership.md
+    /// "CP-1 env-loan 設計".
+    #[inline]
+    pub(crate) fn env(&self) -> &Env {
+        self.interpreter.env()
+    }
+
+    /// Write access to the variable store (env) through the VM's own seam.
+    /// Forwards to `self.interpreter` for now (CP-1 step 1b, behavior-invariant);
+    /// step 1e flips it to `&mut self.env`. See [`VM::env`].
+    #[inline]
+    pub(crate) fn env_mut(&mut self) -> &mut Env {
+        self.interpreter.env_mut()
+    }
+
+    /// Clone the env for capture across a call/block/thread boundary, through the
+    /// VM seam. Forwards to `self.interpreter.clone_env()` (CP-1 step 1b);
+    /// step 1e flips it to `self.env.flattened()`. See [`VM::env`].
+    #[inline]
+    pub(crate) fn clone_env(&self) -> Env {
+        self.interpreter.clone_env()
+    }
+
+    /// Replace the entire env, through the VM seam. Forwards to
+    /// `self.interpreter.set_env()` (CP-1 step 1b); step 1e flips it to
+    /// `self.env = env`. See [`VM::env`].
+    #[inline]
+    pub(crate) fn set_env(&mut self, env: Env) {
+        self.interpreter.set_env(env);
+    }
+
+    /// Take the env out, replacing it with an empty `Env`, through the VM seam.
+    /// Forwards to `self.interpreter.take_env()` (CP-1 step 1b); step 1e flips it
+    /// to `std::mem::take(&mut self.env)`. See [`VM::env`].
+    #[inline]
+    pub(crate) fn take_env(&mut self) -> Env {
+        self.interpreter.take_env()
     }
 
     /// Get a mutable reference to the interpreter (for setting env values).
@@ -1424,7 +1469,7 @@ impl VM {
                     .or_else(|| {
                         // Fallback: check bare name in env (for closures capturing params)
                         name.strip_prefix('@')
-                            .and_then(|bare| self.interpreter.env().get(bare).cloned())
+                            .and_then(|bare| self.env().get(bare).cloned())
                     })
                     .or_else(|| {
                         // Fallback for fast-path method dispatch (skip_env_setup=true):
@@ -1503,7 +1548,7 @@ impl VM {
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         name.strip_prefix('%')
-                            .and_then(|bare| self.interpreter.env().get(bare).cloned())
+                            .and_then(|bare| self.env().get(bare).cloned())
                     })
                     .or_else(|| {
                         // Fallback for fast-path method dispatch (skip_env_setup=true):
@@ -1594,19 +1639,16 @@ impl VM {
                         .is_none()
                     && !self.interpreter.is_readonly(name_str)
                     && !matches!(self.stack.last(), Some(Value::Capture { .. }))
-                    && !matches!(
-                        self.interpreter.env().get(name_str),
-                        Some(Value::ContainerRef(_))
-                    )
+                    && !matches!(self.env().get(name_str), Some(Value::ContainerRef(_)))
                 {
                     let val = self.stack.pop().unwrap_or(Value::Nil);
                     // Preserve `$` state persistence across closure calls.
                     self.sync_anon_state_value("__ANON_STATE__", &val);
                     let sym = Symbol::intern("__ANON_STATE__");
-                    if let Some(slot) = self.interpreter.env_mut().get_mut_sym(sym) {
+                    if let Some(slot) = self.env_mut().get_mut_sym(sym) {
                         *slot = val;
                     } else {
-                        self.interpreter.env_mut().insert_sym(sym, val);
+                        self.env_mut().insert_sym(sym, val);
                     }
                     *ip += 1;
                     return Ok(());
@@ -1634,7 +1676,7 @@ impl VM {
                 }
                 if self.interpreter.strict_mode
                     && !name.contains("::")
-                    && !self.interpreter.env().contains_key(&name)
+                    && !self.env().contains_key(&name)
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }
@@ -1661,7 +1703,7 @@ impl VM {
                 if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
                     let base = constraint.split('[').next().unwrap_or(&constraint);
                     if matches!(base, "Mix" | "Set" | "Bag")
-                        && let Some(existing) = self.interpreter.env().get(&name)
+                        && let Some(existing) = self.env().get(&name)
                         && matches!(
                             existing,
                             Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false)
@@ -1686,7 +1728,7 @@ impl VM {
                     && !name.starts_with('%')
                     && !name.starts_with('&')
                     && !name.contains("::")
-                    && matches!(self.interpreter.env().get(&name), Some(Value::Package(_)))
+                    && matches!(self.env().get(&name), Some(Value::Package(_)))
                     && self.interpreter.has_class(&name)
                 {
                     return Err(RuntimeError::new(format!(
@@ -1820,10 +1862,8 @@ impl VM {
                 }
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-                if matches!(
-                    self.interpreter.env().get(&readonly_key),
-                    Some(Value::Bool(true))
-                ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+                if matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
+                    && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
                 {
                     return Err(RuntimeError::assignment_ro(None));
                 }
@@ -1832,7 +1872,7 @@ impl VM {
                     let mut seen = std::collections::HashSet::new();
                     while seen.insert(resolved_source.clone()) {
                         let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
-                        let Some(Value::Str(next)) = self.interpreter.env().get(&key) else {
+                        let Some(Value::Str(next)) = self.env().get(&key) else {
                             break;
                         };
                         resolved_source = next.to_string();
@@ -1874,7 +1914,7 @@ impl VM {
                         {
                             let reverse_key = format!("__mutsu_sigilless_alias::!{}", name);
                             if let Some(Value::Str(ref target)) =
-                                self.interpreter.env().get(&reverse_key).cloned()
+                                self.env().get(&reverse_key).cloned()
                                 && target.as_str() == name
                             {
                                 let priv_key = format!("!{}", name);
@@ -1944,9 +1984,7 @@ impl VM {
                 // Return early to avoid overwriting the ContainerRef in env with a plain value.
                 if !is_rebind && !raw_mode {
                     // Check env directly (not through alias resolution to avoid circular lookups)
-                    if let Some(Value::ContainerRef(arc)) =
-                        self.interpreter.env().get(&name).cloned()
-                    {
+                    if let Some(Value::ContainerRef(arc)) = self.env().get(&name).cloned() {
                         arc.lock().unwrap().clone_from(&val);
                         *ip += 1;
                         return Ok(());
@@ -1954,9 +1992,9 @@ impl VM {
                     // Also check alias target for sigilless attributes
                     let alias_key_check = format!("__mutsu_sigilless_alias::{}", name);
                     if let Some(Value::Str(alias_target)) =
-                        self.interpreter.env().get(&alias_key_check).cloned()
+                        self.env().get(&alias_key_check).cloned()
                         && let Some(Value::ContainerRef(arc)) =
-                            self.interpreter.env().get(alias_target.as_str()).cloned()
+                            self.env().get(alias_target.as_str()).cloned()
                     {
                         arc.lock().unwrap().clone_from(&val);
                         *ip += 1;
@@ -1966,7 +2004,7 @@ impl VM {
                 if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array
                     // normalization so the container type (List) is preserved.
-                    self.interpreter.env_mut().insert(name.clone(), val.clone());
+                    self.env_mut().insert(name.clone(), val.clone());
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
                 }
@@ -1988,7 +2026,7 @@ impl VM {
                 if !(raw_mode && name.starts_with('@')) {
                     self.interpreter.set_shared_var(&name, val.clone());
                 }
-                let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+                let mut alias_name = self.env().get(&alias_key).and_then(|v| {
                     if let Value::Str(name) = v {
                         Some(name.to_string())
                     } else {
@@ -2007,7 +2045,7 @@ impl VM {
                     // the sigilless attr sees the new value (Phase 3 Stage 2c (ii)).
                     self.write_self_attr_cell(&current_alias, val.clone());
                     let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                    alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                    alias_name = self.env().get(&next_key).and_then(|v| {
                         if let Value::Str(name) = v {
                             Some(name.to_string())
                         } else {
@@ -2068,8 +2106,7 @@ impl VM {
                 // Exception: if the constraint is "Nil", keep the value as Value::Nil
                 // (the Nil type object is Value::Nil, not Value::Package("Nil")).
                 if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
-                    let is_nil =
-                        matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
+                    let is_nil = matches!(self.env().get(&name), Some(Value::Nil) | None);
                     if is_nil {
                         // Native types get zero/empty defaults instead of type objects.
                         let init_val =
@@ -2114,7 +2151,7 @@ impl VM {
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 self.last_topic_value = Some(val.clone());
-                self.interpreter.env_mut().insert("_".to_string(), val);
+                self.env_mut().insert("_".to_string(), val);
                 *ip += 1;
             }
             OpCode::SaveTopic => {
@@ -2129,7 +2166,7 @@ impl VM {
             }
             OpCode::RestoreTopic => {
                 if let Some(saved) = self.topic_save_stack.pop() {
-                    self.interpreter.env_mut().insert("_".to_string(), saved);
+                    self.env_mut().insert("_".to_string(), saved);
                 }
                 *ip += 1;
             }
@@ -2211,7 +2248,7 @@ impl VM {
                         _ => "",
                     };
                     let key = format!("__mutsu_bound_decont::{}", var_name);
-                    matches!(self.interpreter.env().get(&key), Some(Value::Bool(true)))
+                    matches!(self.env().get(&key), Some(Value::Bool(true)))
                 } else {
                     false
                 };
@@ -3622,10 +3659,10 @@ impl VM {
                 if let Some((name, saved_val)) = self.for_param_restore_stack.pop() {
                     match saved_val {
                         Some(v) => {
-                            self.interpreter.env_mut().insert(name, v);
+                            self.env_mut().insert(name, v);
                         }
                         None => {
-                            self.interpreter.env_mut().remove(&name);
+                            self.env_mut().remove(&name);
                         }
                     }
                 }
@@ -3705,7 +3742,7 @@ impl VM {
                 // die() with empty array (from parsing die() with parens) should
                 // check $! first, falling back to "Died" default
                 let val = if matches!(&val, Value::Array(items, _) if items.is_empty()) {
-                    let current = self.interpreter.env().get("!").cloned();
+                    let current = self.env().get("!").cloned();
                     if let Some(ref c) = current
                         && !matches!(c, Value::Nil)
                     {
@@ -3781,7 +3818,7 @@ impl VM {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 // Check if &return has been lexically rebound; if so, call
                 // the rebound function instead of performing a built-in return.
-                if let Some(rebound) = self.interpreter.env().get("&return").cloned()
+                if let Some(rebound) = self.env().get("&return").cloned()
                     && matches!(
                         &rebound,
                         Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -4241,7 +4278,7 @@ impl VM {
                         // This ensures side effects from gather bodies propagate
                         // to outer-scope variables (e.g., `$was-lazy = 0`).
                         for (i, name) in code.locals.iter().enumerate() {
-                            if let Some(v) = self.interpreter.env().get(name)
+                            if let Some(v) = self.env().get(name)
                                 && i < self.locals.len()
                             {
                                 self.locals[i] = v.clone();
@@ -4441,10 +4478,7 @@ impl VM {
                 // in a closure).  The readonly_vars set is scope-local
                 // and gets restored on frame pop, but the env key persists.
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-                if matches!(
-                    self.interpreter.env().get(&readonly_key),
-                    Some(Value::Bool(true))
-                ) {
+                if matches!(self.env().get(&readonly_key), Some(Value::Bool(true))) {
                     return Err(RuntimeError::assignment_ro(Some(name)));
                 }
                 *ip += 1;

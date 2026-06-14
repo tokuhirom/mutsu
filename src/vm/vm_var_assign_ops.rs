@@ -177,7 +177,7 @@ impl VM {
             let var_name = &source_name[..sep_pos];
             let idx_str = &source_name[sep_pos + 5..];
             if let Ok(i) = idx_str.parse::<usize>() {
-                let Some(container) = self.interpreter.env_mut().get_mut(var_name) else {
+                let Some(container) = self.env_mut().get_mut(var_name) else {
                     return Err(RuntimeError::assignment_ro(None));
                 };
                 if let Value::Array(items, ..) = container {
@@ -189,7 +189,7 @@ impl VM {
                     return Ok(());
                 }
             }
-            if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(source_name) {
+            if let Some(Value::Hash(hash)) = self.env_mut().get_mut(source_name) {
                 let h = Arc::make_mut(hash);
                 h.insert(idx_str.to_string(), value);
                 return Ok(());
@@ -197,7 +197,7 @@ impl VM {
             return Err(RuntimeError::assignment_ro(None));
         }
         if let Some(i) = source_index {
-            let Some(container) = self.interpreter.env_mut().get_mut(source_name) else {
+            let Some(container) = self.env_mut().get_mut(source_name) else {
                 return Err(RuntimeError::assignment_ro(None));
             };
             let Value::Array(items, ..) = container else {
@@ -235,13 +235,13 @@ impl VM {
             for p in &data.params {
                 sub_env.insert(p.to_string(), Value::Int(len));
             }
-            let saved_env = std::mem::take(self.interpreter.env_mut());
-            *self.interpreter.env_mut() = sub_env;
+            let saved_env = std::mem::take(self.env_mut());
+            *self.env_mut() = sub_env;
             let result = self
                 .interpreter
                 .eval_block_value(&data.body)
                 .unwrap_or(Value::Nil);
-            *self.interpreter.env_mut() = saved_env;
+            *self.env_mut() = saved_env;
             return result;
         }
         // Resolve Array of WhateverCode indices: @a[*-3, *-2, *-1]
@@ -261,13 +261,13 @@ impl VM {
                         for p in &data.params {
                             sub_env.insert(p.to_string(), Value::Int(len));
                         }
-                        let saved_env = std::mem::take(self.interpreter.env_mut());
-                        *self.interpreter.env_mut() = sub_env;
+                        let saved_env = std::mem::take(self.env_mut());
+                        *self.env_mut() = sub_env;
                         let result = self
                             .interpreter
                             .eval_block_value(&data.body)
                             .unwrap_or(Value::Nil);
-                        *self.interpreter.env_mut() = saved_env;
+                        *self.env_mut() = saved_env;
                         resolved.push(result);
                     } else {
                         resolved.push(item.clone());
@@ -592,7 +592,7 @@ impl VM {
             // Only coerce if the variable IS a QuantHash container (declared via `is`),
             // not when the constraint is a value type (declared via `of`).
             // Check: if the current value is already a QuantHash, it's an `is` trait.
-            let current = self.interpreter.env().get(name).cloned();
+            let current = self.env().get(name).cloned();
             let is_quanthash_container = matches!(
                 current,
                 Some(Value::Bag(_, _) | Value::Mix(_, _) | Value::Set(_, _))
@@ -621,7 +621,7 @@ impl VM {
             ) {
                 return Ok(value);
             }
-            let trait_name = match self.interpreter.env().get(name) {
+            let trait_name = match self.env().get(name) {
                 Some(Value::Set(_, _)) => Some("SetHash"),
                 Some(Value::Bag(_, _)) => Some("BagHash"),
                 Some(Value::Mix(_, _)) => Some("MixHash"),
@@ -969,14 +969,14 @@ impl VM {
             };
             if is_container {
                 let key = format!("__mutsu_bound_decont::{}", name);
-                self.interpreter.env_mut().insert(key, Value::Bool(true));
+                self.env_mut().insert(key, Value::Bool(true));
                 self.bound_decont_active = true;
                 return;
             }
         }
         if self.bound_decont_active {
             let key = format!("__mutsu_bound_decont::{}", name);
-            self.interpreter.env_mut().remove(&key);
+            self.env_mut().remove(&key);
         }
     }
 
@@ -1020,7 +1020,7 @@ impl VM {
         let mut seen = std::collections::HashSet::new();
         while seen.insert(resolved.clone()) {
             let key = format!("__mutsu_sigilless_alias::{}", resolved);
-            let Some(Value::Str(next)) = self.interpreter.env().get(&key) else {
+            let Some(Value::Str(next)) = self.env().get(&key) else {
                 break;
             };
             resolved = next.to_string();
@@ -1590,7 +1590,7 @@ impl VM {
     /// with the bidirectional `x ↔ !x` alias table.
     fn propagate_sigilless_alias_chain(&mut self, code: &CompiledCode, name: &str, val: &Value) {
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
             if let Value::Str(n) = v {
                 Some(n.to_string())
             } else {
@@ -1606,7 +1606,7 @@ impl VM {
             self.update_local_if_exists(code, &current_alias, val);
             self.write_self_attr_cell(&current_alias, val.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+            alias_name = self.env().get(&next_key).and_then(|v| {
                 if let Value::Str(n) = v {
                     Some(n.to_string())
                 } else {
@@ -2102,9 +2102,7 @@ impl VM {
         // Modify the container in-place in the env to preserve Arc sharing
         // (e.g. when two variables reference the same array via Arc).
         // First try to modify via env_mut().get_mut() to avoid clone.
-        let modified_in_place = if let Some(container_value) =
-            self.interpreter.env_mut().get_mut(&name)
-        {
+        let modified_in_place = if let Some(container_value) = self.env_mut().get_mut(&name) {
             match container_value {
                 Value::Hash(h) => {
                     Value::hash_insert_through(
@@ -2223,7 +2221,7 @@ impl VM {
         };
         if modified_in_place {
             // Update local slot to match the modified env value
-            if let Some(val) = self.interpreter.env().get(&name).cloned() {
+            if let Some(val) = self.env().get(&name).cloned() {
                 self.update_local_if_exists(code, &name, &val);
             }
         } else {
@@ -2263,7 +2261,7 @@ impl VM {
                 self.interpreter
                     .env_mut()
                     .insert(name.clone(), new_container);
-                if let Some(val) = self.interpreter.env().get(&name).cloned() {
+                if let Some(val) = self.env().get(&name).cloned() {
                     self.update_local_if_exists(code, &name, &val);
                 }
             }
@@ -2340,7 +2338,7 @@ impl VM {
         }
         {
             let bound_key = format!("__mutsu_bound_index::{}", var_name);
-            if self.interpreter.env().contains_key(&bound_key) {
+            if self.env().contains_key(&bound_key) {
                 return None;
             }
         }
@@ -2418,9 +2416,7 @@ impl VM {
         {
             let shaped_key = format!("__mutsu_shaped_array_dims::{}", var_name);
             let bound_key = format!("__mutsu_bound_index::{}", var_name);
-            if self.interpreter.env().contains_key(&shaped_key)
-                || self.interpreter.env().contains_key(&bound_key)
-            {
+            if self.env().contains_key(&shaped_key) || self.env().contains_key(&bound_key) {
                 return None;
             }
         }
@@ -2525,13 +2521,13 @@ impl VM {
         // (e.g. `%h<a> := $foo` makes element writes propagate to $foo)
         {
             let bound_key = format!("__mutsu_bound_index::{}", var_name);
-            if self.interpreter.env().contains_key(&bound_key) {
+            if self.env().contains_key(&bound_key) {
                 return None;
             }
         }
         // Check that the variable exists in env as a plain Hash
         // and that it has no container type metadata
-        let env = self.interpreter.env();
+        let env = self.env();
         match env.get(var_name) {
             Some(Value::Hash(hash_arc)) => {
                 let strong_count = Arc::strong_count(hash_arc);
@@ -2577,7 +2573,7 @@ impl VM {
                 if let Some(slot) = local_slot {
                     self.locals[slot] = Value::Nil;
                 }
-                if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
+                if let Some(Value::Hash(hash)) = self.env_mut().get_mut(var_name) {
                     Value::hash_insert_through(
                         &mut Arc::make_mut(hash).map,
                         key.clone(),
@@ -2586,7 +2582,7 @@ impl VM {
                 }
                 // Restore the local slot to point to the (now mutated) env Arc
                 if let Some(slot) = local_slot
-                    && let Some(env_val) = self.interpreter.env().get(var_name).cloned()
+                    && let Some(env_val) = self.env().get(var_name).cloned()
                 {
                     self.locals[slot] = env_val;
                 }
@@ -2706,7 +2702,7 @@ impl VM {
         // (the read op has no variable name to fall back on), so a stale/lost
         // entry silently degrades them to string-keyed lookups returning Nil.
         if let Some(info) = saved_type_meta_outer
-            && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
+            && let Some(container) = self.env().get(&save_var_name).cloned()
             && self
                 .interpreter
                 .container_type_metadata(&container)
@@ -2724,7 +2720,7 @@ impl VM {
             self.locals_set_by_name(code, &save_var_name, tagged);
         }
         if let Some(def) = saved_default_outer
-            && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
+            && let Some(container) = self.env().get(&save_var_name).cloned()
             && self.interpreter.container_default(&container).is_none()
         {
             let tagged = self.interpreter.tag_container_default(container, def);
@@ -2749,7 +2745,7 @@ impl VM {
         // operate on `%a` directly so in-place mutations are visible.
         let sigilless_alias_target = {
             let alias_key = format!("__mutsu_sigilless_alias::{}", original_var_name);
-            self.interpreter.env().get(&alias_key).and_then(|v| {
+            self.env().get(&alias_key).and_then(|v| {
                 if let Value::Str(target) = v {
                     Some(target.to_string())
                 } else {
@@ -2770,7 +2766,7 @@ impl VM {
         // Capture the old Arc pointer before any mutation so the post-mutation
         // sync code can distinguish stale COW copies from unrelated containers.
         let old_container_arc_ptr: Option<usize> =
-            if let Some(container) = self.interpreter.env().get(&var_name) {
+            if let Some(container) = self.env().get(&var_name) {
                 match container {
                     Value::Array(arc, _) => Some(Arc::as_ptr(arc) as usize),
                     Value::Hash(arc) => Some(Arc::as_ptr(arc) as usize),
@@ -2789,9 +2785,9 @@ impl VM {
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
-        let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
+        let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
-        let index_target = self.interpreter.env().get(&var_name).cloned();
+        let index_target = self.env().get(&var_name).cloned();
         let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
         // Normalize Seq/Slip/Range index to Array for uniform handling in assignment.
         // For hash variables, expand Range indices into individual keys so that
@@ -2908,7 +2904,7 @@ impl VM {
         // When `my Mix $m; $m<key> = val`, the variable is undefined (Nil or
         // type object) but has an immutable type constraint.
         {
-            let current_val = self.interpreter.env().get(&var_name).cloned();
+            let current_val = self.env().get(&var_name).cloned();
             let is_undefined = current_val.is_none()
                 || matches!(&current_val, Some(Value::Nil))
                 || matches!(&current_val, Some(Value::Package(_)));
@@ -2925,7 +2921,7 @@ impl VM {
             }
         }
         // Immutable List/Range containers - prevent assignment and binding
-        if let Some(target_val) = self.interpreter.env().get(&var_name) {
+        if let Some(target_val) = self.env().get(&var_name) {
             let is_immutable = matches!(
                 target_val,
                 Value::Array(_, crate::value::ArrayKind::List)
@@ -3009,14 +3005,14 @@ impl VM {
             // for an existing non-cell element is stale (e.g. the binding was
             // broken by splice or an array reset) — clean it up; the write
             // proceeds either way (cell writes go through the cell arm).
-            if let Some(Value::Array(items, ..)) = self.interpreter.env().get(&var_name)
+            if let Some(Value::Array(items, ..)) = self.env().get(&var_name)
                 && let Some(i) = Self::index_to_usize(&idx)
                 && matches!(items.get(i), Some(v) if !v.is_container_ref())
             {
                 self.remove_bound_index(&var_name, &encoded_idx);
             }
         }
-        if !self.interpreter.env().contains_key(&var_name)
+        if !self.env().contains_key(&var_name)
             && let Some(slot) = self.find_local_slot(code, &var_name)
         {
             self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
@@ -3037,21 +3033,19 @@ impl VM {
                 let v = junc_vals.get(i).cloned().unwrap_or(Value::Nil);
                 let k = key.to_string_value();
                 if var_name.starts_with('%') {
-                    if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
-                        self.interpreter.env_mut().insert(
+                    if !matches!(self.env().get(&var_name), Some(Value::Hash(_))) {
+                        self.env_mut().insert(
                             var_name.clone(),
                             Value::hash(std::collections::HashMap::new()),
                         );
                     }
-                    if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+                    if let Some(Value::Hash(hash)) = self.env_mut().get_mut(&var_name) {
                         let h = Arc::make_mut(hash);
                         h.insert(k, v);
                     }
                 } else if let Some(idx_usize) = Self::index_to_usize(key) {
                     // For array variables with junction index, use numeric indices
-                    if let Some(Value::Array(items, ..)) =
-                        self.interpreter.env_mut().get_mut(&var_name)
-                    {
+                    if let Some(Value::Array(items, ..)) = self.env_mut().get_mut(&var_name) {
                         let arr = Arc::make_mut(items);
                         if idx_usize >= arr.len() {
                             let fill = native_fill.clone();
@@ -3179,8 +3173,8 @@ impl VM {
                         }
                     }
                 }
-                if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
-                    self.interpreter.env_mut().insert(
+                if !matches!(self.env().get(&var_name), Some(Value::Hash(_))) {
+                    self.env_mut().insert(
                         var_name.clone(),
                         Value::hash(std::collections::HashMap::new()),
                     );
@@ -3203,7 +3197,7 @@ impl VM {
                         } else if let Some(Some(source_name)) = bind_sources.get(i)
                             && !source_name.contains('\0')
                         {
-                            match self.interpreter.env().get(source_name) {
+                            match self.env().get(source_name) {
                                 Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
                                 _ => Some((
                                     Some(source_name.clone()),
@@ -3218,7 +3212,7 @@ impl VM {
                 }
                 let mut pending_source_cells: Vec<(String, Arc<std::sync::Mutex<Value>>)> =
                     Vec::new();
-                if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+                if let Some(Value::Hash(hash)) = self.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = if slice_is_object_hash {
@@ -3328,8 +3322,7 @@ impl VM {
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
                 let idx_for_slice = if let Value::GenericRange { .. } = &idx {
-                    let array_len = if let Some(Value::Array(items, ..)) =
-                        self.interpreter.env().get(&var_name)
+                    let array_len = if let Some(Value::Array(items, ..)) = self.env().get(&var_name)
                     {
                         items.len()
                     } else {
@@ -3364,7 +3357,7 @@ impl VM {
                         }
                     }
                 }
-                if let Some(current) = self.interpreter.env().get(&var_name).cloned()
+                if let Some(current) = self.env().get(&var_name).cloned()
                     && let Value::Mixin(inner, mixins) = current
                 {
                     let mut updated_mixins = (*mixins).clone();
@@ -3397,7 +3390,7 @@ impl VM {
                         }
                     }
                     if assigned_object_slot {
-                        self.interpreter.env_mut().insert(
+                        self.env_mut().insert(
                             var_name.clone(),
                             Value::Mixin(inner, Arc::new(updated_mixins)),
                         );
@@ -3428,7 +3421,7 @@ impl VM {
                     } else if let Some(Some(source_name)) = bind_sources.first()
                         && !source_name.contains('\0')
                     {
-                        match self.interpreter.env().get(source_name) {
+                        match self.env().get(source_name) {
                             Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
                             _ => Some((
                                 Some(source_name.clone()),
@@ -3449,7 +3442,7 @@ impl VM {
                 // Type check for parameterized SetHash[T] element binding.
                 // Only applies when the declared type is explicitly parameterized
                 // (e.g. SetHash[Str]), not when the constraint is just `is SetHash`.
-                if let Some(set_val @ Value::Set(..)) = self.interpreter.env().get(&var_name)
+                if let Some(set_val @ Value::Set(..)) = self.env().get(&var_name)
                     && let Some(info) = self.interpreter.container_type_metadata(set_val)
                     && info
                         .declared_type
@@ -3491,7 +3484,7 @@ impl VM {
                     class_name,
                     attributes,
                     ..
-                }) = self.interpreter.env().get(&var_name)
+                }) = self.env().get(&var_name)
                     && self
                         .interpreter
                         .is_container_subclass(&class_name.resolve())
@@ -3515,7 +3508,7 @@ impl VM {
                     if let Some(type_name) = effective_type
                         && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
                         && matches!(
-                            self.interpreter.env().get(&var_name),
+                            self.env().get(&var_name),
                             Some(Value::Nil) | Some(Value::Package(_)) | None
                         )
                     {
@@ -3551,7 +3544,7 @@ impl VM {
                             .insert(var_name.clone(), new_container);
                         self.stack.push(val);
                         // Update local slot
-                        if let Some(new_val) = self.interpreter.env().get(&var_name).cloned() {
+                        if let Some(new_val) = self.env().get(&var_name).cloned() {
                             self.update_local_if_exists(code, &var_name, &new_val);
                         }
                         return Ok(());
@@ -3920,7 +3913,7 @@ impl VM {
         // sync the modified container back to the alias variable so reads
         // of the sigilless variable see the updated value.
         if let Some(ref alias_target) = sigilless_alias_target
-            && let Some(updated_container) = self.interpreter.env().get(alias_target).cloned()
+            && let Some(updated_container) = self.env().get(alias_target).cloned()
         {
             self.interpreter
                 .env_mut()
@@ -3935,7 +3928,7 @@ impl VM {
         if let Some(old_ptr) = old_container_arc_ptr {
             let current = self
                 .get_env_with_main_alias(&var_name)
-                .or_else(|| self.interpreter.env().get(&original_var_name).cloned());
+                .or_else(|| self.env().get(&original_var_name).cloned());
             if let Some(ref container) = current {
                 let new_arc_ptr = match container {
                     Value::Array(arc, _) => Some(Arc::as_ptr(arc) as usize),
@@ -4120,7 +4113,7 @@ impl VM {
             }
         }
 
-        if !self.interpreter.env().contains_key(&var_name) {
+        if !self.env().contains_key(&var_name) {
             // Autovivify the variable as Array if the inner subscript was
             // positional (`[...]`), otherwise as Hash. For sigiled vars
             // (`@x`, `%h`) the sigil already constrains the kind, so this
@@ -4134,7 +4127,7 @@ impl VM {
             } else {
                 Value::hash(std::collections::HashMap::new())
             };
-            self.interpreter.env_mut().insert(var_name.clone(), init);
+            self.env_mut().insert(var_name.clone(), init);
         }
 
         // Handle Array-as-outer-container (e.g. `@array[42][23] = 17`,
@@ -4338,7 +4331,7 @@ impl VM {
     /// mutex data, kept alive by the `Arc` stored in env (see
     /// `descend_container_ref`).
     pub(crate) fn env_root_descended_mut(&mut self, var_name: &str) -> Option<&mut Value> {
-        let root = self.interpreter.env_mut().get_mut(var_name)? as *mut Value;
+        let root = self.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref(root) };
         Some(unsafe { &mut *descended })
     }
@@ -4444,7 +4437,7 @@ impl VM {
         }
 
         // Ensure the root variable exists
-        if !self.interpreter.env().contains_key(&var_name) {
+        if !self.env().contains_key(&var_name) {
             let init = if var_name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if var_name.starts_with('%') {
@@ -4454,13 +4447,13 @@ impl VM {
             } else {
                 Value::hash(std::collections::HashMap::new())
             };
-            self.interpreter.env_mut().insert(var_name.clone(), init);
+            self.env_mut().insert(var_name.clone(), init);
         }
 
         // Walk down the chain of indices, autovivifying containers as needed.
         // We need a mutable reference to the current container at each level.
         // Use raw pointer traversal to avoid borrow checker issues with nested mutation.
-        let root: *mut Value = self.interpreter.env_mut().get_mut(&var_name).unwrap() as *mut Value;
+        let root: *mut Value = self.env_mut().get_mut(&var_name).unwrap() as *mut Value;
 
         let mut current: *mut Value = root;
 
@@ -4669,7 +4662,7 @@ impl VM {
         } else if let Some(source_name) = &bind_source
             && !source_name.contains('\0')
         {
-            match self.interpreter.env().get(source_name) {
+            match self.env().get(source_name) {
                 Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
                 _ => Some((
                     Some(source_name.clone()),
@@ -4828,7 +4821,7 @@ impl VM {
                     } else {
                         format!("{pkg}::{key_name}")
                     };
-                    self.interpreter.env_mut().insert(fq, val.clone());
+                    self.env_mut().insert(fq, val.clone());
                 }
                 self.stack.push(val);
             }
@@ -5035,7 +5028,7 @@ impl VM {
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {
             let key = format!("__mutsu_sigilless_alias::{}", current);
-            match self.interpreter.env().get(&key) {
+            match self.env().get(&key) {
                 Some(Value::Str(next)) => {
                     let next = next.to_string();
                     if Self::attr_twigil_base(&next).is_some() {
@@ -5279,7 +5272,7 @@ impl VM {
         let name = code.locals.get(idx).cloned().unwrap_or_default();
         if let Some(bound_to) = self.interpreter.resolve_binding(&name) {
             let bound_to = bound_to.to_string();
-            if let Some(val) = self.interpreter.env().get(&bound_to).cloned() {
+            if let Some(val) = self.env().get(&bound_to).cloned() {
                 self.stack.push(val);
                 return Ok(());
             }
@@ -5288,7 +5281,7 @@ impl VM {
         // value since sync_locals_from_env skips !-prefixed names for performance.
         if name.starts_with('!')
             && self.interpreter.is_shared_var_dirty(&name)
-            && let Some(val) = self.interpreter.env().get(&name).cloned()
+            && let Some(val) = self.env().get(&name).cloned()
         {
             self.locals[idx] = val.clone();
             self.stack.push(val);
@@ -5349,7 +5342,7 @@ impl VM {
                     | Value::Sub(..)
                     | Value::Instance { .. }
             )
-            && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(&name).cloned()
+            && let Some(Value::ContainerRef(arc)) = self.env().get(&name).cloned()
         {
             self.locals[idx] = Value::ContainerRef(arc);
         }
@@ -5398,11 +5391,7 @@ impl VM {
             // in the env (when skip_env_setup is active) but are still valid.
             let is_private_attr =
                 name.starts_with('!') && name.len() > 1 && !name.starts_with("__");
-            if !is_internal
-                && !is_special
-                && !is_private_attr
-                && !self.interpreter.env().contains_key(&name)
-            {
+            if !is_internal && !is_special && !is_private_attr && !self.env().contains_key(&name) {
                 return Err(RuntimeError::new(format!(
                     "X::Undeclared::Symbols: Variable '{name}' is not declared"
                 )));
@@ -5501,19 +5490,16 @@ impl VM {
             // Clear the deleted-index tracker left over from a previous
             // same-named variable in an outer scope.
             let deleted_key = format!("__mutsu_deleted_index::{}", name);
-            self.interpreter.env_mut().remove(&deleted_key);
+            self.env_mut().remove(&deleted_key);
             // Clear any sigilless-readonly flag inherited from an outer
             // scope (e.g. a for-loop `\result` shouldn't block `my $result`
             // in a called sub).
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-            self.interpreter.env_mut().remove(&readonly_key);
+            self.env_mut().remove(&readonly_key);
             // Replace stale ContainerRef in env with Nil so a new `my $var`
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it.
-            if matches!(
-                self.interpreter.env().get(name),
-                Some(Value::ContainerRef(_))
-            ) {
+            if matches!(self.env().get(name), Some(Value::ContainerRef(_))) {
                 self.interpreter
                     .env_mut()
                     .insert(name.to_string(), Value::Nil);
@@ -5543,7 +5529,7 @@ impl VM {
             if !is_rebind
                 && !self.locals[idx].is_container_ref()
                 && !is_vardecl
-                && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
+                && let Some(Value::ContainerRef(arc)) = self.env().get(name).cloned()
             {
                 self.locals[idx] = Value::ContainerRef(arc);
             }
@@ -5648,7 +5634,7 @@ impl VM {
                 self.local_bind_pairs.retain(|&(source, _)| source != idx);
                 let mut aliases_to_remove = Vec::new();
                 let prefix = "__mutsu_sigilless_alias::";
-                for (k, v) in self.interpreter.env().iter() {
+                for (k, v) in self.env().iter() {
                     if let Some(_var_name) = k.strip_prefix_str(prefix)
                         && let Value::Str(target) = v
                         && target.as_str() == name
@@ -5657,7 +5643,7 @@ impl VM {
                     }
                 }
                 for k in aliases_to_remove {
-                    self.interpreter.env_mut().remove_sym(k);
+                    self.env_mut().remove_sym(k);
                 }
             }
             // Propagate value to variables bound to this one via `:=` binding.
@@ -5675,7 +5661,7 @@ impl VM {
             // the source is an env variable like `$_`).
             {
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-                if let Some(Value::Str(target)) = self.interpreter.env().get(&alias_key).cloned() {
+                if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
                     let is_co_local = code.locals.iter().any(|n| n == target.as_str());
                     if !is_co_local {
                         self.interpreter
@@ -5686,10 +5672,9 @@ impl VM {
             }
             // Track topic mutations for map rw writeback
             if name == "_" {
-                self.interpreter.env_mut().insert(
-                    "__mutsu_rw_map_topic__".to_string(),
-                    self.locals[idx].clone(),
-                );
+                let topic = self.locals[idx].clone();
+                self.env_mut()
+                    .insert("__mutsu_rw_map_topic__".to_string(), topic);
             }
             self.flush_local_to_env(code, idx);
             return Ok(());
@@ -6151,11 +6136,8 @@ impl VM {
         // declaration (my $x = ...).  A `my` decl creates a fresh variable
         // that shadows the sigilless one, so it must not be blocked.
         if !is_vardecl
-            && matches!(
-                self.interpreter.env().get(&readonly_key),
-                Some(Value::Bool(true))
-            )
-            && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+            && matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
+            && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
         {
             return Err(RuntimeError::assignment_ro(None));
         }
@@ -6171,7 +6153,7 @@ impl VM {
             // so GetLocal alias-following doesn't read the new value.
             let mut aliases_to_remove = Vec::new();
             let prefix = "__mutsu_sigilless_alias::";
-            for (k, v) in self.interpreter.env().iter() {
+            for (k, v) in self.env().iter() {
                 if let Some(_var_name) = k.strip_prefix_str(prefix)
                     && let Value::Str(target) = v
                     && target.as_str() == name
@@ -6180,7 +6162,7 @@ impl VM {
                 }
             }
             for k in aliases_to_remove {
-                self.interpreter.env_mut().remove_sym(k);
+                self.env_mut().remove_sym(k);
             }
         }
         if let Some(source_name) = bind_source {
@@ -6221,7 +6203,7 @@ impl VM {
                 // the bound value in a fresh cell.
                 let cell = match &val {
                     Value::ContainerRef(arc) => arc.clone(),
-                    _ => match self.interpreter.env().get(&resolved_source) {
+                    _ => match self.env().get(&resolved_source) {
                         Some(Value::ContainerRef(arc)) => arc.clone(),
                         _ => std::sync::Arc::new(std::sync::Mutex::new(val.clone())),
                     },
@@ -6340,7 +6322,7 @@ impl VM {
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
                 let alias_key_for_target = format!("__mutsu_sigilless_alias::{}", name);
                 if let Some(Value::Str(alias_target)) =
-                    self.interpreter.env().get(&alias_key_for_target).cloned()
+                    self.env().get(&alias_key_for_target).cloned()
                     && let Some(alias_idx) =
                         code.locals.iter().rposition(|n| n == alias_target.as_str())
                 {
@@ -6377,7 +6359,7 @@ impl VM {
                     | Value::Sub(..)
                     | Value::Instance { .. }
             )
-            && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
+            && let Some(Value::ContainerRef(arc)) = self.env().get(name).cloned()
         {
             self.locals[idx] = Value::ContainerRef(arc);
         }
@@ -6535,7 +6517,7 @@ impl VM {
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
             }
         }
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.to_string())
             } else {
@@ -6555,7 +6537,7 @@ impl VM {
             // self's shared cell (no-op for non-attribute aliases). Stage 2c (ii).
             self.write_self_attr_cell(&current_alias, val.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+            alias_name = self.env().get(&next_key).and_then(|v| {
                 if let Value::Str(name) = v {
                     Some(name.to_string())
                 } else {
@@ -6633,7 +6615,7 @@ impl VM {
         // first-iteration value. Genuine body-local shadows (`for {...{ my @a }}`)
         // always get a slot, so this distinguishes the two reliably.
         if !self.loop_cond_active
-            && let Some(prev) = self.interpreter.env().get(name).cloned()
+            && let Some(prev) = self.env().get(name).cloned()
         {
             // Only record a *genuine, live* enclosing binding for restoration.
             // The restore writes back both env and the local slot, so the value
@@ -6678,7 +6660,7 @@ impl VM {
         // `&name = Any` before the RHS runs makes `EVAL(q[sub name() { ... }])`
         // look like a routine redeclaration instead of producing a callable to
         // bind into `my &name = ...`.
-        if !name.starts_with('&') && !self.interpreter.env().contains_key(name) {
+        if !name.starts_with('&') && !self.env().contains_key(name) {
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {
@@ -6686,7 +6668,7 @@ impl VM {
             } else {
                 Value::Package(crate::symbol::Symbol::intern("Any"))
             };
-            self.interpreter.env_mut().insert(name.to_string(), default);
+            self.env_mut().insert(name.to_string(), default);
         }
         // Track this variable as declared within the current block scope.
         // BlockScope restoration uses this to avoid propagating block-local
@@ -6747,7 +6729,7 @@ impl VM {
                         | Value::Sub(..)
                         | Value::Instance { .. }
                 )
-                && let Some(Value::ContainerRef(arc)) = self.interpreter.env().get(name).cloned()
+                && let Some(Value::ContainerRef(arc)) = self.env().get(name).cloned()
             {
                 self.locals[idx] = Value::ContainerRef(arc);
             }
@@ -6815,10 +6797,9 @@ impl VM {
             }
             // Track topic mutations for map rw writeback
             if name == "_" {
-                self.interpreter.env_mut().insert(
-                    "__mutsu_rw_map_topic__".to_string(),
-                    self.locals[idx].clone(),
-                );
+                let topic = self.locals[idx].clone();
+                self.env_mut()
+                    .insert("__mutsu_rw_map_topic__".to_string(), topic);
             }
             self.flush_local_to_env(code, idx);
             return Ok(());
@@ -6898,10 +6879,8 @@ impl VM {
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        if matches!(
-            self.interpreter.env().get(&readonly_key),
-            Some(Value::Bool(true))
-        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        if matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
+            && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
         {
             return Err(RuntimeError::assignment_ro(None));
         }
@@ -6939,7 +6918,7 @@ impl VM {
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
-        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+        if let Some(alias_name) = self.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.to_string())
             } else {
@@ -6947,7 +6926,7 @@ impl VM {
             }
         }) {
             self.update_local_if_exists(code, &alias_name, &val);
-            self.interpreter.env_mut().insert(alias_name, val.clone());
+            self.env_mut().insert(alias_name, val.clone());
         }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
@@ -6968,7 +6947,7 @@ impl VM {
             // OUTER:: is lexical, not package-based. Expose captured lexical vars
             // from the current interpreter environment as stash entries.
             let mut entries: HashMap<String, Value> = HashMap::new();
-            for (key, val) in self.interpreter.env().iter() {
+            for (key, val) in self.env().iter() {
                 let key_str = key.resolve();
                 if self.interpreter.should_hide_from_my_global_stash(&key_str) {
                     continue;
@@ -7005,7 +6984,7 @@ impl VM {
             let key = Self::add_sigil_prefix(var_name);
             entries.insert(key, val);
         }
-        for (key, val) in self.interpreter.env().iter() {
+        for (key, val) in self.env().iter() {
             let key_str = key.resolve();
             if self.interpreter.should_hide_from_my_global_stash(&key_str) {
                 continue;
@@ -7021,7 +7000,7 @@ impl VM {
     pub(super) fn build_pseudo_stash(&mut self, code: &CompiledCode, name: &str) -> Value {
         if name == "OUTER" {
             let mut entries: HashMap<String, Value> = HashMap::new();
-            for (key, val) in self.interpreter.env().iter() {
+            for (key, val) in self.env().iter() {
                 let key_str = key.resolve();
                 if self.interpreter.should_hide_from_my_global_stash(&key_str) {
                     continue;
@@ -7050,7 +7029,7 @@ impl VM {
             let key = Self::add_sigil_prefix(var_name);
             entries.insert(key, val);
         }
-        for (key, val) in self.interpreter.env().iter() {
+        for (key, val) in self.env().iter() {
             let key_str = key.resolve();
             if self.interpreter.should_hide_from_my_global_stash(&key_str) {
                 continue;
@@ -7314,7 +7293,7 @@ impl VM {
                 // initial value is correct (the closure may have set the
                 // target via SetGlobal but locals are stale from the frame
                 // restore).
-                let source_val = if let Some(v) = self.interpreter.env().get(&source_name) {
+                let source_val = if let Some(v) = self.env().get(&source_name) {
                     v.clone()
                 } else {
                     self.locals[source_idx].clone()

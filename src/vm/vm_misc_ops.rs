@@ -306,7 +306,7 @@ impl VM {
         {
             return Some(callable);
         }
-        if let Some(callable) = self.interpreter.env().get(&format!("&{}", op)).cloned()
+        if let Some(callable) = self.env().get(&format!("&{}", op)).cloned()
             && matches!(
                 callable,
                 Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
@@ -951,7 +951,7 @@ impl VM {
             self.flush_local_to_env(code, slot);
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+            let mut alias_name = self.env().get(&alias_key).and_then(|v| {
                 if let Value::Str(n) = v {
                     Some(n.to_string())
                 } else {
@@ -966,7 +966,7 @@ impl VM {
                 self.set_env_with_main_alias(&current_alias, new_val.clone());
                 self.update_local_if_exists(code, &current_alias, &new_val);
                 let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                alias_name = self.env().get(&next_key).and_then(|v| {
                     if let Value::Str(n) = v {
                         Some(n.to_string())
                     } else {
@@ -1049,7 +1049,7 @@ impl VM {
             self.flush_local_to_env(code, slot);
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+            let mut alias_name = self.env().get(&alias_key).and_then(|v| {
                 if let Value::Str(n) = v {
                     Some(n.to_string())
                 } else {
@@ -1064,7 +1064,7 @@ impl VM {
                 self.set_env_with_main_alias(&current_alias, new_val.clone());
                 self.update_local_if_exists(code, &current_alias, &new_val);
                 let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                alias_name = self.env().get(&next_key).and_then(|v| {
                     if let Value::Str(n) = v {
                         Some(n.to_string())
                     } else {
@@ -1105,10 +1105,10 @@ impl VM {
 
     pub(super) fn exec_get_capture_var_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
-        let val = if let Some(v) = self.interpreter.env().get(name).cloned() {
+        let val = if let Some(v) = self.env().get(name).cloned() {
             v
         } else if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
-            && let Some(match_val) = self.interpreter.env().get("/").cloned()
+            && let Some(match_val) = self.env().get("/").cloned()
         {
             match &match_val {
                 Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),
@@ -1152,13 +1152,10 @@ impl VM {
             && !name.contains("::")
             && !name.starts_with('?')
             && !name.starts_with('*')
-            && matches!(
-                self.interpreter.env().get("__mutsu_in_eval"),
-                Some(Value::Bool(true))
-            )
+            && matches!(self.env().get("__mutsu_in_eval"), Some(Value::Bool(true)))
         {
             let env_key = format!("&{}", name);
-            let is_declared = self.interpreter.env().contains_key(&env_key);
+            let is_declared = self.env().contains_key(&env_key);
             if !is_declared {
                 let suggestions = self.interpreter.suggest_routine_names(name);
                 return Err(RuntimeError::undeclared_routine_symbols(
@@ -1334,7 +1331,7 @@ impl VM {
         }
         if name.starts_with('&') && !name.contains("::") {
             let bare = name.trim_start_matches('&');
-            let has_variable_slot = self.interpreter.env().contains_key(&name);
+            let has_variable_slot = self.env().contains_key(&name);
             let is_routine_symbol = self.has_function(bare)
                 || self.has_multi_function(bare)
                 || self.has_proto(bare)
@@ -1428,7 +1425,7 @@ impl VM {
                 .or_else(|| {
                     // Also check declared shape metadata for multi-dim
                     let key = format!("__mutsu_shaped_array_dims::{}", name);
-                    self.interpreter.env().get(&key).and_then(|v| {
+                    self.env().get(&key).and_then(|v| {
                         if let Value::Array(dims, ..) = v {
                             Some(
                                 dims.iter()
@@ -1531,10 +1528,8 @@ impl VM {
             };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        if matches!(
-            self.interpreter.env().get(&readonly_key),
-            Some(Value::Bool(true))
-        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        if matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
+            && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
         {
             return Err(RuntimeError::assignment_ro(None));
         }
@@ -1543,7 +1538,7 @@ impl VM {
             let mut seen = std::collections::HashSet::new();
             while seen.insert(resolved_source.clone()) {
                 let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
-                let Some(Value::Str(next)) = self.interpreter.env().get(&key) else {
+                let Some(Value::Str(next)) = self.env().get(&key) else {
                     break;
                 };
                 resolved_source = next.to_string();
@@ -1644,7 +1639,7 @@ impl VM {
                 .env_mut()
                 .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
         }
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.to_string())
             } else {
@@ -1661,7 +1656,7 @@ impl VM {
                 .env_mut()
                 .insert(current_alias.clone(), val.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+            alias_name = self.env().get(&next_key).and_then(|v| {
                 if let Value::Str(name) = v {
                     Some(name.to_string())
                 } else {
@@ -1705,7 +1700,7 @@ impl VM {
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        let val = if let Some(Value::Hash(env_hash)) = self.interpreter.env().get("%*ENV") {
+        let val = if let Some(Value::Hash(env_hash)) = self.env().get("%*ENV") {
             env_hash.get(key).cloned().unwrap_or_else(|| {
                 std::env::var_os(key)
                     .map(|v| {
@@ -1727,7 +1722,7 @@ impl VM {
 
     pub(super) fn exec_exists_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        let exists = if let Some(Value::Hash(env_hash)) = self.interpreter.env().get("%*ENV") {
+        let exists = if let Some(Value::Hash(env_hash)) = self.env().get("%*ENV") {
             env_hash.contains_key(key) || std::env::var_os(key).is_some()
         } else {
             std::env::var_os(key).is_some()
@@ -2450,12 +2445,12 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let body_end = body_end as usize;
         let saved = self.current_package().to_string();
-        let saved_env = self.interpreter.env().clone();
+        let saved_env = self.env().clone();
         let saved_locals = self.locals.clone();
         self.set_current_package(name);
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.set_current_package(saved);
-        let current_env = self.interpreter.env().clone();
+        let current_env = self.env().clone();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env.iter() {
             if saved_env.contains_key_sym(*k) || k.contains_str("::") {
@@ -2468,7 +2463,7 @@ impl VM {
                 self.locals[idx] = val;
             }
         }
-        *self.interpreter.env_mut() = restored_env;
+        *self.env_mut() = restored_env;
         *ip = body_end;
         Ok(())
     }
@@ -2859,18 +2854,18 @@ impl VM {
         // This avoids triggering Arc::make_mut deep clone on the CoW env when
         // the state variable is already initialized with the same value (common
         // case in tight loops).
-        let needs_env_insert = self.interpreter.env().get(&name) != Some(&val);
+        let needs_env_insert = self.env().get(&name) != Some(&val);
         if needs_env_insert {
-            self.interpreter.env_mut().insert(name.clone(), val);
+            self.env_mut().insert(name.clone(), val);
         }
         // Store metadata mapping variable name to its state storage key.
         // Closures that capture this variable can use this to update state
         // storage when they modify the variable.
         let meta_key = format!("__mutsu_state_key::{}", name);
         let scoped_key_val = Value::str(scoped_key.clone());
-        let needs_meta_insert = self.interpreter.env().get(&meta_key) != Some(&scoped_key_val);
+        let needs_meta_insert = self.env().get(&meta_key) != Some(&scoped_key_val);
         if needs_meta_insert {
-            self.interpreter.env_mut().insert(meta_key, scoped_key_val);
+            self.env_mut().insert(meta_key, scoped_key_val);
         }
     }
 
@@ -2899,7 +2894,7 @@ impl VM {
         let post_start = post_start as usize;
         let end = end as usize;
         let routine_snapshot = self.interpreter.snapshot_routine_registry();
-        let saved_env = self.interpreter.env().clone();
+        let saved_env = self.env().clone();
         let saved_locals = self.locals.clone();
         let once_scope = self.interpreter.next_once_scope_id();
         // Track variables declared within this block scope.
@@ -3029,11 +3024,11 @@ impl VM {
         // so they see the final values of block-scoped variables (which will
         // be removed from env when the block scope is restored below).
         if self.interpreter.end_phaser_count() > end_phaser_count_before {
-            let current = self.interpreter.env().clone();
+            let current = self.env().clone();
             self.interpreter
                 .update_end_phaser_envs(end_phaser_count_before, &current);
         }
-        let current_env = self.interpreter.env().clone();
+        let current_env = self.env().clone();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
             // Package-qualified names (e.g. Test1::ns, Foo::Bar) are package-global
@@ -3113,16 +3108,16 @@ impl VM {
                 restored_env.insert(local_name.clone(), val);
             }
         }
-        *self.interpreter.env_mut() = restored_env;
+        *self.env_mut() = restored_env;
         // After block scope restoration, sync `:=` alias bindings.
         // If a local variable was modified inside the block and has a
         // sigilless alias (e.g. `my $a := $_`), propagate the local's
         // current value to the alias target in env so they stay in sync.
         for (idx, name) in code.locals.iter().enumerate() {
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            if let Some(Value::Str(target)) = self.interpreter.env().get(&alias_key).cloned() {
+            if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
                 let local_val = &self.locals[idx];
-                if let Some(env_val) = self.interpreter.env().get(target.as_str())
+                if let Some(env_val) = self.env().get(target.as_str())
                     && local_val != env_val
                 {
                     self.interpreter
@@ -3250,7 +3245,7 @@ impl VM {
         self.interpreter.push_once_scope(once_scope);
         self.interpreter.push_enum_scope();
         let saved_env = if scope_isolate {
-            Some((self.interpreter.env().clone(), self.locals.clone()))
+            Some((self.env().clone(), self.locals.clone()))
         } else {
             None
         };
@@ -3304,7 +3299,7 @@ impl VM {
             // `:into(my %h := :{})`) remain visible in the outer scope.
             // Only hash variables are preserved to avoid side effects
             // on other container types.
-            let current_env = self.interpreter.env().clone();
+            let current_env = self.env().clone();
             let mut new_vars: Vec<(Symbol, Value)> = Vec::new();
             for (name, value) in current_env.iter() {
                 if !name.starts_with("%") || name.starts_with("%*") {
@@ -3322,10 +3317,10 @@ impl VM {
                 }
             }
             let restored_env = saved_env.clone();
-            *self.interpreter.env_mut() = restored_env;
+            *self.env_mut() = restored_env;
             // Re-insert newly declared user variables
             for (name, value) in new_vars {
-                self.interpreter.env_mut().insert_sym(name, value);
+                self.env_mut().insert_sym(name, value);
             }
             self.locals = saved_locals;
             // Re-read locals from env for variables that use env as the primary
@@ -3339,7 +3334,7 @@ impl VM {
                     // Simple locals: env may be stale; saved_locals is correct.
                     continue;
                 }
-                if let Some(val) = self.interpreter.env().get(name).cloned() {
+                if let Some(val) = self.env().get(name).cloned() {
                     self.locals[idx] = val;
                 }
             }

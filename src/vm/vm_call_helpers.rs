@@ -229,7 +229,7 @@ impl VM {
             .get(&temp_name)
             .cloned()
             .unwrap_or_else(|| item.clone());
-        self.interpreter.env_mut().remove(&temp_name);
+        self.env_mut().remove(&temp_name);
         Ok((result, updated))
     }
 
@@ -253,7 +253,7 @@ impl VM {
             .get(&temp_name)
             .cloned()
             .unwrap_or_else(|| item.clone());
-        self.interpreter.env_mut().remove(&temp_name);
+        self.env_mut().remove(&temp_name);
         Ok((result, updated))
     }
 }

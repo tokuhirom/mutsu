@@ -861,7 +861,7 @@ impl VM {
             } else {
                 Value::Nil
             };
-            self.interpreter.env_mut().insert("/".to_string(), slash);
+            self.env_mut().insert("/".to_string(), slash);
             self.stack.push(Value::str(text));
             return Ok(());
         }
@@ -1106,9 +1106,9 @@ impl VM {
         samespace: bool,
     ) -> String {
         // Snapshot the env entries we overwrite so we can restore them after.
-        let saved_slash = self.interpreter.env().get("/").cloned();
+        let saved_slash = self.env().get("/").cloned();
         let saved_caps: Vec<Option<Value>> = (0..10)
-            .map(|n| self.interpreter.env().get(&n.to_string()).cloned())
+            .map(|n| self.env().get(&n.to_string()).cloned())
             .collect();
 
         let mut out = String::new();
@@ -1145,7 +1145,7 @@ impl VM {
                         .env_mut()
                         .insert(n.to_string(), Value::str(cap.clone()));
                 } else {
-                    self.interpreter.env_mut().remove(&n.to_string());
+                    self.env_mut().remove(&n.to_string());
                 }
             }
 
@@ -1184,19 +1184,19 @@ impl VM {
         // by the caller after this returns).
         match saved_slash {
             Some(v) => {
-                self.interpreter.env_mut().insert("/".to_string(), v);
+                self.env_mut().insert("/".to_string(), v);
             }
             None => {
-                self.interpreter.env_mut().remove("/");
+                self.env_mut().remove("/");
             }
         }
         for (n, saved) in saved_caps.into_iter().enumerate() {
             match saved {
                 Some(v) => {
-                    self.interpreter.env_mut().insert(n.to_string(), v);
+                    self.env_mut().insert(n.to_string(), v);
                 }
                 None => {
-                    self.interpreter.env_mut().remove(&n.to_string());
+                    self.env_mut().remove(&n.to_string());
                 }
             }
         }
@@ -1658,7 +1658,7 @@ impl VM {
             let mut found = None;
             for key in [format!("&{}", bare), bare.to_string()] {
                 if let Some(v @ (Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })) =
-                    self.interpreter.env().get(&key)
+                    self.env().get(&key)
                 {
                     found = Some(v.clone());
                     break;
@@ -1769,7 +1769,7 @@ impl VM {
             };
             if do_writeback {
                 let synth = format!("__mutsu_hyperfn_lv_{}", i);
-                self.interpreter.env_mut().insert(synth.clone(), l.clone());
+                self.env_mut().insert(synth.clone(), l.clone());
                 let varref =
                     crate::runtime::types::make_varref_value(synth.clone(), l.clone(), None);
                 let call_args = vec![varref, r.clone()];
@@ -1780,8 +1780,8 @@ impl VM {
                     compiled_fns,
                 )?;
                 results.push(result);
-                let updated = self.interpreter.env().get(&synth).cloned().unwrap_or(l);
-                self.interpreter.env_mut().remove(&synth);
+                let updated = self.env().get(&synth).cloned().unwrap_or(l);
+                self.env_mut().remove(&synth);
                 mutated_left.push(updated);
             } else {
                 let call_args = vec![l, r.clone()];
@@ -1931,13 +1931,13 @@ impl VM {
             };
             if do_writeback {
                 let synth = format!("__mutsu_hyperfn_lvh_{}", key);
-                self.interpreter.env_mut().insert(synth.clone(), l.clone());
+                self.env_mut().insert(synth.clone(), l.clone());
                 let varref =
                     crate::runtime::types::make_varref_value(synth.clone(), l.clone(), None);
                 let call_args = vec![varref, r];
                 let v = self.dispatch_hyper_func_call(name, func_value, call_args, compiled_fns)?;
-                let updated = self.interpreter.env().get(&synth).cloned().unwrap_or(l);
-                self.interpreter.env_mut().remove(&synth);
+                let updated = self.env().get(&synth).cloned().unwrap_or(l);
+                self.env_mut().remove(&synth);
                 result.insert(key.clone(), v);
                 mutated.insert(key, updated);
             } else {
@@ -2326,7 +2326,7 @@ impl VM {
     }
 
     fn flip_flop_scope_key(&self) -> String {
-        if let Some(Value::Int(id)) = self.interpreter.env().get("__mutsu_callable_id") {
+        if let Some(Value::Int(id)) = self.env().get("__mutsu_callable_id") {
             return format!("callable:{id}");
         }
         if let Some(frame) = self.interpreter.routine_stack_top() {
@@ -2570,12 +2570,12 @@ impl VM {
                     }
                     if let Some(op_name) = infix_name {
                         let op_env_name = format!("&{}", op_name);
-                        if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
+                        if let Some(code_val) = self.env().get(&op_env_name).cloned() {
                             return self.vm_call_on_value(code_val, Vec::new(), None);
                         }
                     }
                     let bare_env_name = format!("&{}", name);
-                    if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
+                    if let Some(code_val) = self.env().get(&bare_env_name).cloned() {
                         return self.vm_call_on_value(code_val, Vec::new(), None);
                     }
                     let method_name = name
@@ -2605,12 +2605,12 @@ impl VM {
                 } else {
                     if let Some(op_name) = infix_name {
                         let op_env_name = format!("&{}", op_name);
-                        if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
+                        if let Some(code_val) = self.env().get(&op_env_name).cloned() {
                             return self.vm_call_on_value(code_val, call_args, None);
                         }
                     }
                     let bare_env_name = format!("&{}", name);
-                    if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
+                    if let Some(code_val) = self.env().get(&bare_env_name).cloned() {
                         self.vm_call_on_value(code_val, call_args, None)
                     } else {
                         let method_name = name
@@ -2709,14 +2709,14 @@ impl VM {
                     if let Ok((stmts, _)) = parsed {
                         // Save $_ before evaluating the code block, as
                         // eval_block_value may clobber the topic variable.
-                        let saved_topic = self.interpreter.env().get("_").cloned();
+                        let saved_topic = self.env().get("_").cloned();
                         let val = self
                             .interpreter
                             .eval_block_value(&stmts)
                             .unwrap_or(Value::Nil);
                         // Restore $_ so the substitution can find the target
                         if let Some(topic) = saved_topic {
-                            self.interpreter.env_mut().insert("_".to_string(), topic);
+                            self.env_mut().insert("_".to_string(), topic);
                         }
                         out.push_str(&val.to_string_value());
                     } else {

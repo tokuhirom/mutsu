@@ -589,13 +589,13 @@ impl VM {
                             for p in &data.params {
                                 sub_env.insert(p.to_string(), Value::Int(len));
                             }
-                            let saved_env = std::mem::take(self.interpreter.env_mut());
-                            *self.interpreter.env_mut() = sub_env;
+                            let saved_env = std::mem::take(self.env_mut());
+                            *self.env_mut() = sub_env;
                             let result = self
                                 .interpreter
                                 .eval_block_value(&data.body)
                                 .unwrap_or(Value::Nil);
-                            *self.interpreter.env_mut() = saved_env;
+                            *self.env_mut() = saved_env;
                             Some(result)
                         } else {
                             None
@@ -743,13 +743,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(len));
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let idx = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
                     Value::Num(n) => Some(*n as i64),
@@ -836,13 +836,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(len));
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let idx = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 match &idx {
                     Value::Int(i) if *i < 0 => Self::make_out_of_range_failure(*i),
                     Value::Int(i) => {
@@ -1174,13 +1174,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(len));
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let idx = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
                     Value::Num(n) => Some(*n as i64),
@@ -1344,13 +1344,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(len));
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let idx = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 // If the WhateverCode returned a Range, use it to slice the array
                 if idx.is_range() {
                     let indices = crate::runtime::utils::value_to_list(&idx);
@@ -1409,13 +1409,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(len));
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let idx = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
                     Value::Num(n) => Some(*n as i64),
@@ -1459,13 +1459,13 @@ impl VM {
                             for p in &data.params {
                                 sub_env.insert(p.to_string(), Value::Int(len));
                             }
-                            let saved_env = std::mem::take(self.interpreter.env_mut());
-                            *self.interpreter.env_mut() = sub_env;
+                            let saved_env = std::mem::take(self.env_mut());
+                            *self.env_mut() = sub_env;
                             let result = self
                                 .interpreter
                                 .eval_block_value(&data.body)
                                 .unwrap_or(Value::Nil);
-                            *self.interpreter.env_mut() = saved_env;
+                            *self.env_mut() = saved_env;
                             match result {
                                 Value::Int(i) => i,
                                 _ => 0,
@@ -1505,13 +1505,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(len));
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let idx = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
                     Value::Num(n) => Some(*n as i64),
@@ -1711,13 +1711,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(1)); // elems = 1
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let idx = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
                     Value::Num(n) => Some(*n as i64),

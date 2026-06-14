@@ -536,7 +536,7 @@ impl VM {
             && !(ll.lazy_pipe.is_some()
                 && (matches!(method, "map" | "grep") || Self::lazy_pipe_preserving_coercion(method)))
         {
-            let saved_env = self.interpreter.env().clone();
+            let saved_env = self.env().clone();
             // `.head(n)` only needs the first `n` elements: pull them lazily so
             // an infinite gather does not hang.
             let items = match Self::gather_head_bound(method, &args) {
@@ -553,7 +553,7 @@ impl VM {
             // callback via `vm_call_on_value` in this VM, so its side effects on
             // enclosing variables are legitimate and must persist.
             if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
             }
             Value::Seq(std::sync::Arc::new(items))
         } else {

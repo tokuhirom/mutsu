@@ -10,7 +10,7 @@ impl VM {
     /// the lvalue-precise alternative to the Arc-identity binding scan, which
     /// cannot tell a bound alias from a COW copy.
     fn write_back_hyper_target_var(&mut self, code: &CompiledCode, var: &str, new_val: Value) {
-        if let Some(Value::ContainerRef(cell)) = self.interpreter.env().get(var) {
+        if let Some(Value::ContainerRef(cell)) = self.env().get(var) {
             *cell.lock().unwrap() = new_val;
             return;
         }

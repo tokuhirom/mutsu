@@ -115,14 +115,17 @@ VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env
       **方式 A（env は VM.env に住み、carrier 呼び前後で `mem::swap` 貸借／snapshot carrier は clone 借りのみ）を採用**、
       方式 B（`&mut Env` 引数渡し）は runtime/ 全域結合のため却下。全 carrier の env read/write/再入タイミングを表に
       （live: EVAL/subset-where/call_*/eval_block/run_block / snapshot: thread/regex補間）。VM env アクセス実測 = 513 サイト。
-- [ ] **1b. VM env seam を導入**（**3〜4 PR**・モジュール群ごとに分割）
+- [~] **1b. VM env seam を導入**（**3〜4 PR**・モジュール群ごとに分割）
       - `VM::env()` / `VM::env_mut()` アクセサを新設（当面は `self.interpreter.env()` へ forward＝**挙動不変**）。
       - 481 の `self.interpreter.env`/`env_mut` を、**borrow 衝突しないサイトから**順に accessor へ移行
         （順序例: vm_var_get/assign → vm_call_* → vm_data/misc/helpers → 残り）。`grep -rc self.interpreter.env src/vm`
         で残数を追い、1 PR = 1 モジュール群。
-- [ ] **1c. borrow 衝突サイトを解消**（**1〜2 PR**）
-      - env 読みと他 self フィールドが交錯し、accessor の `&self` 全体借用が衝突するサイトを、ローカル束縛への
-        切り出し / スコープ分割で個別に解消（1b で後回しにした分）。完了時点で VM 側 env アクセスは 100% seam 経由。
+      - **PR #1 = DONE 2026-06-15**: `src/vm/` 内部の全 env アクセス（513 サイト `env()`/`env_mut()` + `clone_env`/
+        `set_env`/`take_env`）を VM seam アクセサ経由に一括移行。borrow 衝突は **わずか2件**（`env_mut().insert(_, self.locals[idx].clone())`）で
+        ローカル束縛切り出しで即解消＝**1c は実質ここに畳んだ**。`make test` PASS / clippy 緑 / env 系 roast（let/subset/eval/
+        pointy-rw/given/sort）緑。残: 外部 driver サイト（`runtime/resolution.rs` の `vm.interpreter().env()` / `vm.interpreter_mut().env_insert()`
+        ＝ map/sort reuse carrier）を `vm.env()`/`vm.env_mut()` へ揃える PR #2。
+- [x] **1c. borrow 衝突サイトを解消**（1b PR #1 に畳み込み済 — 衝突は2件のみだった）。
 - [ ] **1d. interpreter 側 carrier の env 借用点を整理**（**1〜2 PR**）
       - 1a で列挙した carrier が `self.env` を読む箇所を、メソッド境界で env を出し入れできる形に整理
         （env を引数 or 一時 swap で受け取れるよう carrier 経路をリファクタ）。挙動不変。
