@@ -177,8 +177,18 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             増減は ① のアトミック ContainerRef RMW を流用（決定的）。`StateVarInit` は genuine `state`
             宣言のみに出るので `ff`/`fff`/smart-match の内部 state（`set_state_var` 直接・非セル）は不変。
             テスト `t/concurrent-state-var.t`。
+            **スライス 3 LANDED（PR #3059）**: スカラ複合代入（`$x OP= rhs`）のアトミック化。
+            融合オペコード `OpCode::AtomicCompoundVar { name_idx, op: CompoundBaseOp }` を
+            コンパイラのチョークポイント（`compile_expr_assign`／`Stmt::Assign` 末尾）で
+            **平の env 名前付きスカラのみ**に発行（local スロット／twigil は除外＝ホットな
+            リテラル `$x = $x + y` own-local ループは融合しない）。非セル書き込みは `++` の
+            env 書き戻し末尾を抽出した `store_named_scalar_rmw_result` を `++`/`--` と共用するので
+            METHOD captured-outer 伝播が `++` と構造的に同一。ContainerRef セル分岐はロック保持下の
+            アトミック RMW。`await (^100).map: { start { for ^100 { $c += 1 } } }` が決定的に 10000。
+            **要点**: 融合 rhs は `compile_expr` でコンパイル（`compile_call_arg` はスカラ被演算子を
+            itemize/escape-box して captured-outer 伝播を壊す）。テスト `t/concurrent-compound-assign.t`。
             **残**: `state @`/`%`（配列/ハッシュ）のスレッド共有（要素セル＝Track B 依存）、
-            lexical `@`/`%` 共有・複合代入（`+=`）のアトミック化。
+            lexical `@`/`%` 共有・複合代入のアトミック化（同 Track B 依存）。
       - [x] **react/supply ランタイムの VM ネイティブ化 — 完了（Stage 1+2+3, #3010〜#3039, 2026-06、
             詳細は [news/2026-06.md](news/2026-06.md)）**。駆動ループの 4 箇所二重化を単一エンジンへ統合し
             （Stage 1）、ループ所有権を `impl Interpreter`→`impl VM`（`vm/vm_react_loop.rs`）へ逆転して
