@@ -1441,6 +1441,30 @@ impl Interpreter {
         }
     }
 
+    /// VM-native dispatch for a built-in *class* method (a method on a type
+    /// object other than `.new`) whose result is pure data assembly — no env /
+    /// registry / user code. Currently `Instant.from-posix(secs)`, which maps a
+    /// POSIX timestamp to TAI seconds and wraps it in an `Instant`. Returns
+    /// `Some` when handled, else `None` so the caller falls through to the
+    /// interpreter's class-method dispatch. The interpreter calls the same arm,
+    /// so the two stay byte-identical. The method name is matched dash-
+    /// insensitively (`from-posix` == `from_posix`), as the interpreter does.
+    pub(crate) fn try_native_builtin_class_method(
+        class_name: Symbol,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let cn = class_name.resolve();
+        if cn == "Instant" && method.replace('-', "_") == "from_posix" {
+            let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
+            let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(secs);
+            let mut attrs = HashMap::new();
+            attrs.insert("value".to_string(), Value::Num(tai));
+            return Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)));
+        }
+        None
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,
