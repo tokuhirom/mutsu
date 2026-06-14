@@ -110,12 +110,11 @@ VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env
 > Interpreter 撤去の最大の山。env を VM 単一所有へ移し、carrier が借用して実行する形にする。
 > 細かいステップに分割し、各 PR は挙動不変（CI = make test + 全 roast が安全網）で積む。
 
-- [ ] **1a. env-loan 設計を確定**（doc のみ・**1 PR**）
-      - 機構を決める: env = VM 所有、interpreter は実行時だけ借用。**方式 A: carrier 呼び前後で `mem::swap` 貸し借り**
-        vs **方式 B: `&mut Env` をメソッド引数で渡す**。ping-pong（`mem::take`→`VM::new`→`*self=`）との整合を確認。
-      - carrier の env 借用点を全列挙: EVAL / subset-`where` / 正規表現埋め込み `{}` / `Promise.then` / 残 ~15
-        tree-walk 委譲サイト。各々が env をいつ読む/書くかを表に。
-      - → [docs/vm-state-ownership.md](docs/vm-state-ownership.md) に「env-loan 設計」節を追加。
+- [x] **1a. env-loan 設計を確定**（doc のみ・**1 PR**）— **DONE 2026-06-15**。
+      [docs/vm-state-ownership.md](docs/vm-state-ownership.md)「CP-1 env-loan 設計（確定）」節を追加。
+      **方式 A（env は VM.env に住み、carrier 呼び前後で `mem::swap` 貸借／snapshot carrier は clone 借りのみ）を採用**、
+      方式 B（`&mut Env` 引数渡し）は runtime/ 全域結合のため却下。全 carrier の env read/write/再入タイミングを表に
+      （live: EVAL/subset-where/call_*/eval_block/run_block / snapshot: thread/regex補間）。VM env アクセス実測 = 513 サイト。
 - [ ] **1b. VM env seam を導入**（**3〜4 PR**・モジュール群ごとに分割）
       - `VM::env()` / `VM::env_mut()` アクセサを新設（当面は `self.interpreter.env()` へ forward＝**挙動不変**）。
       - 481 の `self.interpreter.env`/`env_mut` を、**borrow 衝突しないサイトから**順に accessor へ移行
