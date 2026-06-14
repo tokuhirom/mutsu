@@ -46,6 +46,14 @@ impl Compiler {
             });
             self.code.emit(OpCode::Pop); // discard the accessor result
         }
+        // Fuse `$x OP= rhs` (parsed as `$x = $x OP rhs`) into an atomic RMW for
+        // plain env-named scalars; the fused op leaves the new value on the
+        // stack, exactly what expression context wants.
+        if self.try_compile_fused_compound_assign(name, expr) {
+            let name_idx = self.code.add_constant(Value::str(name.to_string()));
+            self.code.emit(OpCode::TagContainerRef(name_idx));
+            return;
+        }
         self.compile_expr(expr);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::AssignExprLocal(slot));

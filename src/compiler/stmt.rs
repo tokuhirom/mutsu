@@ -1137,6 +1137,14 @@ impl Compiler {
                     self.code.emit(OpCode::MarkRebindContext);
                     self.compile_call_arg(expr);
                 } else {
+                    // Fuse `$x OP= rhs` (parsed as `$x = $x OP rhs`) into an
+                    // atomic RMW for plain env-named scalars (Track C). The fused
+                    // op leaves the result on the stack; statement context wants
+                    // nothing, so discard it.
+                    if self.try_compile_fused_compound_assign(effective_name, expr) {
+                        self.code.emit(OpCode::Pop);
+                        return;
+                    }
                     self.compile_assignment_rhs_for_target(effective_name, expr);
                 }
                 self.emit_set_named_var(effective_name);

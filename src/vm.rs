@@ -3552,6 +3552,10 @@ impl VM {
                 self.exec_assign_expr_op(code, *name_idx)?;
                 *ip += 1;
             }
+            OpCode::AtomicCompoundVar { name_idx, op } => {
+                self.exec_atomic_compound_var_op(code, *name_idx, *op)?;
+                *ip += 1;
+            }
 
             // -- Loops --
             OpCode::WhileLoop {
