@@ -57,7 +57,7 @@ impl VM {
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
         {
-            let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+            let result = self.vm_call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());

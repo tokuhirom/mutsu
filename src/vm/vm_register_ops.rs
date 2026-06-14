@@ -310,7 +310,7 @@ impl VM {
             let container = cur.clone().into_container_ref();
             self.locals[idx] = container.clone();
             sym.with_str(|s| {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(s.to_string(), container.clone());
                 // Track C: if a thread is already running (shared_vars active) and a
@@ -464,26 +464,28 @@ impl VM {
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
-                self.interpreter
-                    .eval_block_value(&[Stmt::Expr(expr.clone())])?
+                self
+                    .vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
                     .to_string_value()
             } else {
                 name.resolve()
             };
-            self.interpreter.register_sub_decl(
-                &resolved_name,
-                params,
-                param_defs,
-                return_type.as_ref(),
-                associativity.as_ref(),
-                body,
-                *multi,
-                *is_rw,
-                *is_raw,
-                *is_test_assertion,
-                *supersede,
-                custom_traits,
-            )?;
+            self.loan_env_for(|i| {
+                i.register_sub_decl(
+                    &resolved_name,
+                    params,
+                    param_defs,
+                    return_type.as_ref(),
+                    associativity.as_ref(),
+                    body,
+                    *multi,
+                    *is_rw,
+                    *is_raw,
+                    *is_test_assertion,
+                    *supersede,
+                    custom_traits,
+                )
+            })?;
             self.fn_resolve_gen += 1;
             self.method_resolve_cache.clear();
             self.last_method_resolve = None;
@@ -509,20 +511,22 @@ impl VM {
                 }
             }
             for (alt_params, alt_param_defs) in signature_alternates {
-                self.interpreter.register_sub_decl(
-                    &resolved_name,
-                    alt_params,
-                    alt_param_defs,
-                    return_type.as_ref(),
-                    associativity.as_ref(),
-                    body,
-                    *multi,
-                    *is_rw,
-                    *is_raw,
-                    *is_test_assertion,
-                    *supersede,
-                    custom_traits,
-                )?;
+                self.loan_env_for(|i| {
+                    i.register_sub_decl(
+                        &resolved_name,
+                        alt_params,
+                        alt_param_defs,
+                        return_type.as_ref(),
+                        associativity.as_ref(),
+                        body,
+                        *multi,
+                        *is_rw,
+                        *is_raw,
+                        *is_test_assertion,
+                        *supersede,
+                        custom_traits,
+                    )
+                })?;
             }
             // Note: we intentionally do NOT push the Sub onto the stack or
             // store it in env here. The interpreter's trailing_sub_value
@@ -624,7 +628,7 @@ impl VM {
                     // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
                     // store it in the env so function dispatch can find it.
                     if matches!(result, Value::Mixin(..)) {
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(format!("&{}", name), result);
                     }
@@ -669,7 +673,7 @@ impl VM {
                 _ => None,
             })
             .unwrap_or_default();
-        self.interpreter.use_module_with_tags(module, &tags)?;
+        self.vm_use_module_with_tags(module, &tags)?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
@@ -1058,7 +1062,7 @@ impl VM {
                         for key in &keys {
                             let coerced = self.interpreter.try_coerce_str_to_type(key, constraint);
                             if let Some(ref typed_val) = coerced {
-                                if !self.interpreter.type_matches_value(constraint, typed_val) {
+                                if !self.type_matches_value(constraint, typed_val) {
                                     let got_type = crate::value::what_type_name(typed_val);
                                     return Err(RuntimeError::typecheck_binding_parameter(
                                         key, constraint, &got_type, None,
@@ -1068,7 +1072,7 @@ impl VM {
                             } else {
                                 // Can't coerce to type - check original string
                                 let key_val = Value::str(key.clone());
-                                if !self.interpreter.type_matches_value(constraint, &key_val) {
+                                if !self.type_matches_value(constraint, &key_val) {
                                     let got_type = crate::value::what_type_name(&key_val);
                                     return Err(RuntimeError::typecheck_binding_parameter(
                                         key, constraint, &got_type, None,
@@ -1116,8 +1120,8 @@ impl VM {
                 self.locals_set_by_name(code, &name_str, instance.clone());
                 self.set_env_with_main_alias(&name_str, instance.clone());
                 // Set type constraint so future assignments are coerced correctly
-                self.interpreter
-                    .set_var_type_constraint(&name_str, Some(trait_name.clone()));
+                self
+                    .vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));
                 self.env_dirty = true;
                 return Ok(());
             }
@@ -1132,8 +1136,8 @@ impl VM {
                     self.stack.pop(); // discard unused trait argument
                 }
                 let name_str = name.to_string();
-                self.interpreter
-                    .set_var_type_constraint(&name_str, Some(et));
+                self
+                    .vm_set_var_type_constraint(&name_str, Some(et));
                 self.env_dirty = true;
                 return Ok(());
             }
@@ -1175,8 +1179,8 @@ impl VM {
             .interpreter
             .call_method_mut_with_values(name, target, "VAR", vec![])?;
         let named_arg = Value::Pair(trait_name, Box::new(trait_value));
-        self.interpreter
-            .call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
+        self
+            .vm_call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
         self.env_dirty = true;
         Ok(())
     }
@@ -1240,8 +1244,8 @@ impl VM {
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
-                self.interpreter
-                    .eval_block_value(&[Stmt::Expr(expr.clone())])?
+                self
+                    .vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
                     .to_string_value()
             } else {
                 name.resolve()
@@ -1371,20 +1375,20 @@ impl VM {
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
                     let trait_value = if let Some(arg_expr) = trait_arg {
-                        self.interpreter
-                            .eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
+                        self
+                            .vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
                     } else {
                         Value::Bool(true)
                     };
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
-                    self.interpreter
-                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self
+                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
                 // Dispatch deferred unknown parents as custom traits (no args)
                 for trait_name in &deferred_traits {
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
-                    self.interpreter
-                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self
+                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
             }
 
@@ -1532,7 +1536,7 @@ impl VM {
                     .map(|r| r.deferred_body_stmts.clone())
                     .unwrap_or_default();
                 for stmt in &deferred {
-                    self.interpreter.run_block_raw(std::slice::from_ref(stmt))?;
+                    self.vm_run_block_raw(std::slice::from_ref(stmt))?;
                 }
             }
 
@@ -1550,20 +1554,20 @@ impl VM {
                 let type_obj = Value::Package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
                     let trait_value = if let Some(arg_expr) = trait_arg {
-                        self.interpreter
-                            .eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
+                        self
+                            .vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
                     } else {
                         Value::Bool(true)
                     };
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
-                    self.interpreter
-                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self
+                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
                 // Dispatch deferred unknown parents as custom traits (no args)
                 for trait_name in &role_deferred {
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
-                    self.interpreter
-                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self
+                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
             }
 

@@ -307,8 +307,8 @@ impl VM {
             self.vm_call_on_value(name_val, call_args, None)?
         } else {
             // TODO: compile to bytecode — generic mut method fork (ledger §1).
-            self.interpreter
-                .call_method_mut_with_values(&target_name, target, &method, args)?
+            self
+                .vm_call_method_mut_with_values(&target_name, target, &method, args)?
         };
         self.stack.push(call_result);
         self.env_dirty = true;
@@ -711,10 +711,10 @@ impl VM {
                     )),
                     id,
                 };
-                self.interpreter
+                self
                     .env_mut()
                     .insert(target_name.to_string(), updated);
-                self.interpreter
+                self
                     .env_mut()
                     .insert("made".to_string(), value.clone());
                 self.interpreter.action_made = Some(value.clone());
@@ -905,7 +905,7 @@ impl VM {
                             declared_type: None,
                         });
                         let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_hash);
                         self.stack.push(value);
@@ -924,7 +924,7 @@ impl VM {
                             new_set.remove(&key);
                         }
                         let new_val = Value::set_hash(new_set);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_val);
                         self.stack.push(value);
@@ -943,7 +943,7 @@ impl VM {
                             new_counts.remove(&key);
                         }
                         let new_val = Value::bag_hash(new_counts);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_val);
                         self.stack.push(value);
@@ -962,7 +962,7 @@ impl VM {
                             new_weights.remove(&key);
                         }
                         let new_val = Value::mix_hash(new_weights);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_val);
                         self.stack.push(value);
@@ -972,7 +972,7 @@ impl VM {
                     Value::Nil | Value::Package(_) => {
                         let mut hash = std::collections::HashMap::new();
                         hash.insert(key, value.clone());
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), Value::Hash(Value::hash_arc(hash)));
                         self.stack.push(value);
@@ -1012,7 +1012,7 @@ impl VM {
                             declared_type: None,
                         });
                         let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_hash);
                         self.stack.push(old_value);
@@ -1027,7 +1027,7 @@ impl VM {
                         let mut new_set = data.elements.clone();
                         new_set.remove(&key);
                         let new_val = Value::set_hash(new_set);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_val);
                         self.stack.push(Value::Bool(existed));
@@ -1042,7 +1042,7 @@ impl VM {
                         let mut new_counts = data.counts.clone();
                         new_counts.remove(&key);
                         let new_val = Value::bag_hash(new_counts);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_val);
                         self.stack.push(Value::Int(old_count));
@@ -1057,7 +1057,7 @@ impl VM {
                         let mut new_weights = data.weights.clone();
                         new_weights.remove(&key);
                         let new_val = Value::mix_hash(new_weights);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_val);
                         let result = crate::value::mix_weight_to_value(old_weight);
@@ -1117,7 +1117,7 @@ impl VM {
                             declared_type: None,
                         });
                         let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(target_name.to_string(), new_hash);
                         if let Some((source_name, cell_val)) = bind_source_install {
@@ -1191,7 +1191,7 @@ impl VM {
                     Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
                 )) {
             let empty_array = Value::real_array(vec![]);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(target_name.to_string(), empty_array.clone());
             self.env_dirty = true;
@@ -1356,7 +1356,7 @@ impl VM {
                             )
                             .or_else(|_| {
                                 // Try non-mut dispatch for read-only methods
-                                self.interpreter.call_method_with_values(
+                                self.vm_call_method_with_values(
                                     storage.clone(),
                                     &method,
                                     vec![],
@@ -1661,7 +1661,7 @@ impl VM {
             )),
             id: inst_id,
         };
-        self.interpreter
+        self
             .env_mut()
             .insert(target_name.to_string(), updated_instance);
         self.env_dirty = true;
@@ -1883,7 +1883,7 @@ impl VM {
             ),
         );
         let updated = Value::write_back_sharing(attributes, *class_name, updated_attrs, *id);
-        self.interpreter
+        self
             .env_mut()
             .insert(target_name.to_string(), updated.clone());
         Some(Ok(updated))

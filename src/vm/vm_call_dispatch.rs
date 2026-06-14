@@ -76,7 +76,7 @@ impl VM {
         } else {
             crate::vm::vm_stats::record_function_fallback(name);
         }
-        self.interpreter.call_function(name, args)
+        self.vm_call_function(name, args)
     }
 
     /// Compile a FunctionDef on-the-fly to bytecode and execute via the VM.
@@ -1219,7 +1219,7 @@ impl VM {
                             if let Some(slot) = cf.code.locals.iter().position(|n| n == sub_name) {
                                 self.locals[slot] = v.clone();
                             }
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert(sub_name.clone(), v.clone());
                         }
@@ -1276,7 +1276,7 @@ impl VM {
             if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
                 self.locals[slot] = bound_val.clone();
             }
-            self.interpreter
+            self
                 .env_mut()
                 .insert(param_name.clone(), bound_val);
         }
@@ -1307,7 +1307,7 @@ impl VM {
                 .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
                 .map(|a| unwrap_varref_value(a.clone()))
                 .collect();
-            self.interpreter
+            self
                 .env_mut()
                 .insert("@_".to_string(), Value::array(plain_args));
         }
@@ -1329,7 +1329,7 @@ impl VM {
                         self.locals[slot] = val.clone();
                     }
                     // Also set in (overlay) env for the placeholder and its alias
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(param.clone(), val.clone());
                     // Create de-careted alias: ^foo -> foo, ^k -> k
@@ -1507,7 +1507,7 @@ impl VM {
         // caller env. frame.saved_env holds the flat caller for restoration.
         {
             let parent = self.env().clone();
-            self.interpreter
+            self
                 .set_env(crate::env::Env::scoped_child(parent));
         }
 
@@ -1638,7 +1638,7 @@ impl VM {
                 .get("!")
                 .is_some_and(|v| !matches!(v, Value::Nil));
             if needs_reset {
-                self.interpreter
+                self
                     .env_mut()
                     .insert("!".to_string(), Value::Nil);
             }

@@ -124,7 +124,7 @@ impl VM {
                 }
                 if key_type != "Any"
                     && key_type != "Mu"
-                    && !self.interpreter.type_matches_value(&key_type, needle)
+                    && !self.type_matches_value(&key_type, needle)
                 {
                     return false;
                 }

@@ -322,7 +322,7 @@ impl VM {
             && let Some(updated) = self.env().get(&var_name).cloned()
         {
             let tagged = self.interpreter.tag_container_metadata(updated, info);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(var_name.clone(), tagged.clone());
             self.update_local_if_exists(code, &var_name, &tagged);
@@ -514,7 +514,7 @@ impl VM {
                 let mut resolved_items = Vec::with_capacity(items.len());
                 for item in items.iter() {
                     if let Value::Sub(..) = item {
-                        let result = self.interpreter.call_sub_value(
+                        let result = self.vm_call_sub_value(
                             item.clone(),
                             vec![len.clone()],
                             false,

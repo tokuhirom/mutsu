@@ -514,7 +514,7 @@ impl VM {
                 other => vec![other],
             };
             for item in items_to_check {
-                if !self.interpreter.type_matches_value(&type_name, item) {
+                if !self.type_matches_value(&type_name, item) {
                     return Err(RuntimeError::typecheck_assignment(
                         &type_name,
                         item,
@@ -543,7 +543,7 @@ impl VM {
                 Value::Slip(slip_items) => Value::real_array(slip_items.to_vec()),
                 _ => Value::real_array(vec![val]),
             };
-            self.interpreter
+            self
                 .env_mut()
                 .insert(target_name.to_string(), arr.clone());
             arr

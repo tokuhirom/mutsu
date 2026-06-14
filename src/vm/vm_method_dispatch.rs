@@ -157,7 +157,7 @@ impl VM {
         // under the overlay.
         if cc.closure_compiled_codes.is_empty() {
             let parent = self.env().clone();
-            self.interpreter
+            self
                 .set_env(crate::env::Env::scoped_child(parent));
         }
 
@@ -203,10 +203,10 @@ impl VM {
         }
 
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
-        self.interpreter
+        self
             .env_mut()
             .insert("self".to_string(), base.clone());
-        self.interpreter
+        self
             .env_mut()
             .insert("__ANON_STATE__".to_string(), base.clone());
 
@@ -220,7 +220,7 @@ impl VM {
         );
 
         // Raku: $! is scoped per routine — fresh Nil on entry
-        self.interpreter
+        self
             .env_mut()
             .insert("!".to_string(), Value::Nil);
 
@@ -235,7 +235,7 @@ impl VM {
         // Role param bindings
         if let Some(role_bindings) = self.interpreter.class_role_param_bindings(owner_class) {
             for (name, value) in &role_bindings {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), value.clone());
             }
@@ -244,7 +244,7 @@ impl VM {
             .class_role_param_bindings(receiver_class_name)
         {
             for (name, value) in &role_bindings {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), value.clone());
             }
@@ -281,7 +281,7 @@ impl VM {
                                 .interpreter
                                 .try_coerce_value_for_constraint(constraint, base.clone())
                                 .unwrap_or_else(|_| base.clone());
-                            if !self.interpreter.type_matches_value(expected, &candidate)
+                            if !self.type_matches_value(expected, &candidate)
                                 && let Ok(coerced) = self.try_compiled_method_or_interpret(
                                     base.clone(),
                                     expected,
@@ -290,23 +290,23 @@ impl VM {
                             {
                                 candidate = coerced;
                             }
-                            if self.interpreter.type_matches_value(expected, &candidate) {
+                            if self.type_matches_value(expected, &candidate) {
                                 base = candidate;
-                                self.interpreter
+                                self
                                     .env_mut()
                                     .insert("self".to_string(), base.clone());
                             }
-                        } else if !self.interpreter.type_matches_value(constraint, &base)
+                        } else if !self.type_matches_value(constraint, &base)
                             && let Ok(coerced) = self
                                 .interpreter
                                 .try_coerce_value_for_constraint(constraint, base.clone())
                         {
                             base = coerced;
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert("self".to_string(), base.clone());
                         }
-                        if !self.interpreter.type_matches_value(expected, &base) {
+                        if !self.type_matches_value(expected, &base) {
                             self.interpreter.restore_var_bindings(saved_var_bindings);
                             self.interpreter.pop_method_class();
                             self.set_current_package(saved_package.clone());
@@ -336,7 +336,7 @@ impl VM {
                         }
                     }
                 }
-                self.interpreter
+                self
                     .env_mut()
                     .insert(param_name.clone(), base.clone());
                 continue;
@@ -379,7 +379,7 @@ impl VM {
                     );
                     // Also set up the alias name with the current attribute value
                     if let Some(attr_value) = attributes.get(actual_attr) {
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert(source_name.to_string(), attr_value.clone());
                     }
@@ -549,7 +549,7 @@ impl VM {
                 self.stack.pop().unwrap_or(Value::Nil)
             } else {
                 // Implicit return from env "_"
-                self.interpreter
+                self
                     .env()
                     .get("_")
                     .cloned()
@@ -594,9 +594,10 @@ impl VM {
             // Sync locals back to env
             for (i, local_name) in cc.locals.iter().enumerate() {
                 if !local_name.is_empty() {
-                    self.interpreter
-                        .env_mut()
-                        .insert(local_name.clone(), self.locals[i].clone());
+                    {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert(local_name.clone(), __v);
+            }
                 }
             }
 
@@ -639,7 +640,7 @@ impl VM {
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
-                    self.interpreter
+                    self
                         .env()
                         .get(param_name)
                         .cloned()
@@ -953,7 +954,7 @@ impl VM {
             if arg_idx < args.len() {
                 let val = args[arg_idx].clone();
                 if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref())
-                    && !self.interpreter.type_matches_value(constraint, &val)
+                    && !self.type_matches_value(constraint, &val)
                 {
                     // Type mismatch — fall back to slow path for proper error
                     self.interpreter.restore_var_bindings(saved_var_bindings);
@@ -1223,9 +1224,10 @@ impl VM {
                     || local_name.starts_with("%!")
                     || local_name.starts_with("%.")
                 {
-                    self.interpreter
-                        .env_mut()
-                        .insert(local_name.clone(), self.locals[i].clone());
+                    {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert(local_name.clone(), __v);
+            }
                 }
             }
         }

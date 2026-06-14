@@ -184,7 +184,7 @@ impl VM {
                 *cell.lock().unwrap() = mutated;
             }
             let cell_val = Value::ContainerRef(cell);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(var_name.clone(), cell_val.clone());
             self.locals_set_by_name(code, &var_name, cell_val);
@@ -264,10 +264,10 @@ impl VM {
                 _ => idx.to_string_value() == "HOME",
             };
             if deletes_home {
-                self.interpreter
+                self
                     .env_mut()
                     .insert("$*HOME".to_string(), Value::Nil);
-                self.interpreter
+                self
                     .env_mut()
                     .insert("*HOME".to_string(), Value::Nil);
             }
@@ -285,7 +285,7 @@ impl VM {
         // allocations, so a stale pointer-keyed entry from a freed
         // same-named container must not leak into the new container.
         let saved_default = if self.interpreter.var_default(&var_name).is_some() {
-            self.interpreter
+            self
                 .env()
                 .get(&var_name)
                 .and_then(|v| self.interpreter.container_default(v).cloned())
@@ -398,7 +398,7 @@ impl VM {
         {
             let container = container.clone();
             let tagged = self.interpreter.tag_container_metadata(container, info);
-            self.interpreter
+            self
                 .env_mut()
                 .insert(var_name.to_string(), tagged.clone());
             self.update_local_if_exists(code, &var_name, &tagged);

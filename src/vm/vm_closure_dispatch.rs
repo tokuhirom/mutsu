@@ -216,7 +216,7 @@ impl VM {
         // own mutations, which is what it must propagate back to the caller.
         {
             let parent = self.env().clone();
-            self.interpreter
+            self
                 .set_env(crate::env::Env::scoped_child(parent));
         }
 
@@ -231,7 +231,7 @@ impl VM {
             if matches!(v, Value::ContainerRef(_)) {
                 self.env_mut().insert_sym(*k, v.clone());
             } else {
-                self.interpreter
+                self
                     .env_mut()
                     .entry_or_insert_sym(*k, v.clone());
             }
@@ -379,7 +379,7 @@ impl VM {
             // Named params with placeholders: handled by bind_function_args_values
         } else if !uses_positional && !args.is_empty() {
             if let Some(first) = args.iter().find(|v| !matches!(v, Value::Pair(_, _))) {
-                self.interpreter
+                self
                     .env_mut()
                     .insert("_".to_string(), first.clone());
             }
@@ -400,7 +400,7 @@ impl VM {
 
         // Raku: $! is scoped per routine — fresh Nil on entry
         if !data.name.resolve().is_empty() {
-            self.interpreter
+            self
                 .env_mut()
                 .insert("!".to_string(), Value::Nil);
         }
@@ -604,7 +604,7 @@ impl VM {
             self.rw_map_topic_capture = local_topic
                 .or_else(|| self.env().get("_").cloned())
                 .or_else(|| {
-                    self.interpreter
+                    self
                         .env()
                         .get("__mutsu_rw_map_topic__")
                         .cloned()
@@ -644,9 +644,10 @@ impl VM {
         // locals to flush at all).
         for (i, local_name) in cc.locals.iter().enumerate() {
             if !local_name.is_empty() && data.env.contains_key(local_name) {
-                self.interpreter
-                    .env_mut()
-                    .insert(local_name.clone(), self.locals[i].clone());
+                {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert(local_name.clone(), __v);
+            }
             }
         }
 

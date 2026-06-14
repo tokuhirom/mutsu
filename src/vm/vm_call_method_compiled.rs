@@ -511,8 +511,8 @@ impl VM {
         // the `dispatch_method_by_name_*` machinery) that depends on interpreter-
         // owned state (③ state ownership / first-class container Phase 2).
         crate::vm::vm_stats::record_method_fallback(method);
-        self.interpreter
-            .call_method_with_values(target, method, args)
+        self
+            .vm_call_method_with_values(target, method, args)
     }
 
     /// VM-native dispatch for the pure-handle methods of an `IO::Handle`
@@ -1555,7 +1555,7 @@ impl VM {
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self.interpreter.call_method_mut_with_values(
+                return self.vm_call_method_mut_with_values(
                     target_name,
                     target,
                     method,
@@ -1826,8 +1826,8 @@ impl VM {
         // demand above); what remains is native receiver dispatch blocked on
         // ③ state ownership / first-class container Phase 2.
         crate::vm::vm_stats::record_method_fallback(method);
-        self.interpreter
-            .call_method_mut_with_values(target_name, target, method, args)
+        self
+            .vm_call_method_mut_with_values(target_name, target, method, args)
     }
 
     /// Execute a protect block inline in the current VM, avoiding the overhead
@@ -1932,9 +1932,10 @@ impl VM {
                         Some(Value::Array(..) | Value::Hash(..))
                     )
                 {
-                    self.interpreter
-                        .env_mut()
-                        .insert(name.clone(), self.locals[*slot].clone());
+                    {
+                let __v = self.locals[*slot].clone();
+                self.env_mut().insert(name.clone(), __v);
+            }
                 }
             }
         }
@@ -2011,7 +2012,7 @@ impl VM {
             None
         };
         self.interpreter.push_wrap_dispatch_frame(frame);
-        let result = self.interpreter.call_sub_value(outermost, call_args, false);
+        let result = self.vm_call_sub_value(outermost, call_args, false);
         self.interpreter.pop_wrap_dispatch_frame();
         // Propagate closure variable mutations from the wrapper back to the
         // current env so captured variables are visible to the caller.

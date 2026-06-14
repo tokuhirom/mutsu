@@ -709,21 +709,21 @@ impl VM {
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
             if param_name.is_none() {
-                self.interpreter
+                self
                     .env_mut()
                     .insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), item.clone());
                 // Create non-twigil alias for placeholder params: $^a → $a
                 if let Some(bare) = name.strip_prefix("&^") {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(format!("&{}", bare), item.clone());
                 } else if let Some(bare) = name.strip_prefix('^') {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(bare.to_string(), item.clone());
                 }
@@ -736,7 +736,7 @@ impl VM {
             // assignments like .value = ... are blocked too.
             if topic_readonly {
                 self.interpreter.mark_readonly("_");
-                self.interpreter
+                self
                     .env_mut()
                     .insert("__mutsu_deep_readonly::_".to_string(), Value::Bool(true));
             }
@@ -883,12 +883,12 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert(name.clone(), item.clone());
                         }
@@ -935,7 +935,7 @@ impl VM {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
                             } else {
-                                self.interpreter
+                                self
                                     .env_mut()
                                     .insert("_".to_string(), v.clone());
                                 // Push return value on stack so enclosing compiled
@@ -1019,7 +1019,7 @@ impl VM {
                             });
                         if topic_readonly {
                             self.interpreter.unmark_readonly("_");
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .remove("__mutsu_deep_readonly::_");
                         }
@@ -1047,7 +1047,7 @@ impl VM {
                         // Unmark readonly before propagating error
                         if topic_readonly {
                             self.interpreter.unmark_readonly("_");
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .remove("__mutsu_deep_readonly::_");
                         }
@@ -1097,7 +1097,7 @@ impl VM {
         // Unmark readonly topic after loop completion
         if topic_readonly {
             self.interpreter.unmark_readonly("_");
-            self.interpreter
+            self
                 .env_mut()
                 .remove("__mutsu_deep_readonly::_");
         }
@@ -1246,20 +1246,20 @@ impl VM {
             self.topic_source_var = None;
 
             if !use_local_only && param_name.is_none() {
-                self.interpreter
+                self
                     .env_mut()
                     .insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), item.clone());
                 if let Some(bare) = name.strip_prefix("&^") {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(format!("&{}", bare), item.clone());
                 } else if let Some(bare) = name.strip_prefix('^') {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(bare.to_string(), item.clone());
                 }
@@ -1286,12 +1286,12 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert(name.clone(), item.clone());
                         }
@@ -1307,7 +1307,7 @@ impl VM {
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
                         if let Some(v) = e.return_value {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert("_".to_string(), v.clone());
                             self.stack.push(v);
@@ -1501,12 +1501,12 @@ impl VM {
 
             self.topic_source_var = None;
             if param_name.is_none() {
-                self.interpreter
+                self
                     .env_mut()
                     .insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), item.clone());
             }
@@ -1526,12 +1526,12 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert(name.clone(), item.clone());
                         }
@@ -1713,20 +1713,20 @@ impl VM {
 
             // Set up parameters
             if param_name.is_none() {
-                self.interpreter
+                self
                     .env_mut()
                     .insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self.interpreter
+                self
                     .env_mut()
                     .insert(name.clone(), item.clone());
                 if let Some(bare) = name.strip_prefix("&^") {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(format!("&{}", bare), item.clone());
                 } else if let Some(bare) = name.strip_prefix('^') {
-                    self.interpreter
+                    self
                         .env_mut()
                         .insert(bare.to_string(), item.clone());
                 }
@@ -1761,12 +1761,12 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self.interpreter
+                            self
                                 .env_mut()
                                 .insert(name.clone(), item.clone());
                         }
@@ -2004,7 +2004,7 @@ impl VM {
             return;
         };
         let target = &source_var_names[idx];
-        self.interpreter
+        self
             .env_mut()
             .insert(target.clone(), current_val.clone());
         self.update_local_if_exists(code, target, &current_val);
@@ -2541,8 +2541,8 @@ impl VM {
                         } else {
                             vec![topic.clone()]
                         };
-                        self.interpreter
-                            .call_sub_value(cond_val.clone(), call_args, false)
+                        self
+                            .vm_call_sub_value(cond_val.clone(), call_args, false)
                             .map(|v| v.truthy())?
                     } else {
                         // Builtin/proto callables without explicit signature metadata:
@@ -2752,7 +2752,7 @@ impl VM {
         match body_result {
             Ok(()) => {
                 // Successful try resets $! to Nil
-                self.interpreter
+                self
                     .env_mut()
                     .insert("!".to_string(), Value::Nil);
                 self.interpreter.discard_let_saves(let_mark);
@@ -2774,7 +2774,7 @@ impl VM {
                     self.stack.truncate(saved_depth);
                     let saved_topic = self.env().get("_").cloned();
                     if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert("_".to_string(), signal_topic);
                     }
@@ -2851,7 +2851,7 @@ impl VM {
                 let mut pending_err = e;
                 loop {
                     if let Some(signal_topic) = Self::control_signal_topic_value(&pending_err) {
-                        self.interpreter
+                        self
                             .env_mut()
                             .insert("_".to_string(), signal_topic);
                     }
@@ -2976,7 +2976,7 @@ impl VM {
                     Value::make_instance(Symbol::intern("X::AdHoc"), exc_attrs)
                 };
                 let saved_topic = self.env().get("_").cloned();
-                self.interpreter
+                self
                     .env_mut()
                     .insert("!".to_string(), err_val.clone());
                 self.env_mut().insert("_".to_string(), err_val);
