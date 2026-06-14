@@ -319,6 +319,23 @@
   cargo test 461/0、make test PASS。**残: coercion 型・native 型・typed `@`/`%`・`is Type`・shaped・同名再宣言・
   does-Role 属性・CUnion・custom BUILDALL/new は依然 interpreter。**
 
+- **2026-06-14 (③ ctor 第2波 = post-assembly フェーズ方式, #3028〜3036)**: 「pure-data only」原則を破り、pure-data
+  組み立て後に **submethod 実行 / 制約検証 / role mixin を post-assembly フェーズ**として走らせて user-code-running shape も
+  native 化。`.new` 本経路の各フェーズを共有ヘルパに抽出（`run_tweak_phase`/`run_build_phase`/`enforce_attribute_where_constraints`/
+  `apply_attribute_does_role_mixins`）し interpreter/native 両方から呼んで byte-identical 保証。**TWEAK(#3028)**（`TWEAK(:$y)`
+  引数渡し＝コンストラクタ2系統で扱い違い）→ **where(#3030)**（TWEAK 前後両方で enforce＝assignment-time セマンティクス）→
+  **BUILD(#3032)**（`fail`→Failure / カスタム BUILD で named-arg 自動代入抑制 / positional 拒否＝`S.new("pos")` pre-existing バグ
+  も修正）→ **is-rw(#3034)**（`ClassAttributeDef` pos3=is_rw を is_required と誤読していたバグ修正、未提供 is-rw が native 化＋
+  `@`/`%` required 強制も正しく）→ **does-Role(#3036)**（role を属性値に mixin、raku 非準拠の文書化済み近似なので native==interpreter
+  で検証）。各 pin テスト（`t/native-{tweak,where,build,isrw,doesrole}-construct.t`）。S12/S14 whitelist 全緑、make test PASS。
+  **★再計測（重要）**: ctor 5スライス後も whitelist sample の `new` method fallback はほぼ不変（5230→5225）。**大半（4686）は
+  単一テスト `S03-buf/read-write-bits.t` の `Buf.new`＝組み込み型コンストラクタ**（`is_native_default_constructible` は user 定義
+  `registry().classes` のみ対象なので正しく対象外）。**＝ユーザークラス ctor native 化は完遂。これ以上 ctor を削っても `new`
+  fallback 数は動かない。** 次の実質ターゲットは別カテゴリ: **組み込み型 `.new`**（Buf.new 等）/ **`name`=3257（MOP）** /
+  **`op`=1418（Routine 値 lexical &-var `&infix:<(|)>` 束縛、今回の Sub/WeakSub 限定 fix の除外分）** / iterator push-* protocol
+  （Track B）/ coercion（builtins 降ろし）。残る ctor 難ケース: required-after-BUILD / 未設定 class-typed + BUILD / `is built`/
+  MOP set_build / BUILDALL / custom new / CUnion。
+
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
 すべて構造的ブロッカー（②宣言レジストリ / ③state 所有移管 / 第一級コンテナ Phase 2 / lever B）が前提であり、
