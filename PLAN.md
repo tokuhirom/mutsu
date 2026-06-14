@@ -143,8 +143,13 @@ VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env
 - [ ] **Track C — 並行（共有セル）**（**2〜4 PR**）— スライス 1〜5 landed（共有スカラ/state/compound-assign/
       hash-elem/**array-elem index 代入 #3063**）。残: `state @`/`%` 共有（Track B 基盤依存）、unsafe aliasing 撤廃
       （ANALYSIS §2.3 `Arc::as_ptr as *mut` 11 箇所）。
-- [ ] **cool side-table の handle 移管（任意）**（**1〜3 PR**）— `instance_type_metadata` 等を VM handle 化。
+- [~] **cool side-table の handle 移管（任意）**（**1〜3 PR**）— `instance_type_metadata` 等を VM handle 化。
       CP-3 の畳み込み面を減らす（CP-3 に同梱可）。
+      - [x] **PR-1: `instance_type_metadata` を `Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>` へ shaping**
+            （`current_package`/`io_handles` の共有ハンドル playbook）。`clone_for_thread` を明示スナップショット
+            （Arc 共有ではなく map deep-copy）化して per-thread 意味論を保存。挙動不変。
+      - [ ] **PR-2（任意・要 VM-native consumer）**: VM peer field + `instance_type_metadata_handle()` で
+            `container_type_metadata`（instance read）を VM ネイティブ化し interpreter バウンス除去。
 - [ ] **perf（独立）** — 正規表現コンパイルキャッシュは #3064（`Arc<RegexPattern>` で per-match deep clone 除去、
       ~1.6x）/ #3065（単一マッチ早期終了、catastrophic backtracking 抑制）で大半 landed。残＝量指定子反復ごとの
       `RegexCaptures.clone()` 削減。他に NaN-boxing（下記 Q4）。

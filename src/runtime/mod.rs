@@ -1033,8 +1033,15 @@ pub struct Interpreter {
     // Array/Hash/Set/Bag/Mix type metadata and object-hash original keys are
     // embedded in their backing data structs (ArrayData/HashData/SetData/
     // BagData/MixData) — no side tables.
-    /// Type metadata for instance values keyed by stable instance id.
-    instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
+    /// Type metadata for instance values keyed by stable instance id. Lifted
+    /// behind `Arc<RwLock>` (the same shared-handle playbook used for
+    /// `current_package` / `io_handles`) so the VM and Interpreter can reach it
+    /// as peers and CP-3 can fold it by handle transfer rather than ownership
+    /// reasoning. Like those handles it is a *per-thread snapshot*, not
+    /// live-shared: `clone_for_thread` deep-copies the map into a fresh `Arc`,
+    /// so the lock never contends across threads. Collapses to a plain VM field
+    /// once the Interpreter execution path is removed (PLAN.md ④/⑤).
+    instance_type_metadata: Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>,
     let_saves: Vec<(String, Value, bool)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, std::time::Instant)>>,
@@ -3134,7 +3141,7 @@ impl Interpreter {
             atomic_var_seen: false,
             var_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
-            instance_type_metadata: HashMap::new(),
+            instance_type_metadata: Arc::new(RwLock::new(HashMap::new())),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
@@ -4713,7 +4720,10 @@ impl Interpreter {
                 );
             }
             Value::Instance { id, .. } => {
-                self.instance_type_metadata.insert(*id, info);
+                self.instance_type_metadata
+                    .write()
+                    .unwrap()
+                    .insert(*id, info);
             }
             Value::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
             _ => {}
@@ -4784,7 +4794,9 @@ impl Interpreter {
             Value::Set(items, _) => embedded_type_info!(items),
             Value::Bag(items, _) => embedded_type_info!(items),
             Value::Hash(items) => Self::hashdata_type_info(items),
-            Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
+            Value::Instance { id, .. } => {
+                self.instance_type_metadata.read().unwrap().get(id).cloned()
+            }
             Value::Mixin(inner, _) => self.container_type_metadata(inner),
             _ => None,
         }
@@ -5586,7 +5598,12 @@ impl Interpreter {
             atomic_var_seen: self.atomic_var_seen,
             var_defaults: self.var_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
-            instance_type_metadata: self.instance_type_metadata.clone(),
+            // Per-thread snapshot (not a shared-handle clone): deep-copy the map
+            // into a fresh `Arc` so the child thread's instance type metadata is
+            // independent of the parent's, mirroring `io_handles`/`current_package`.
+            instance_type_metadata: Arc::new(RwLock::new(
+                self.instance_type_metadata.read().unwrap().clone(),
+            )),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
