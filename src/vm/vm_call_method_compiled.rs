@@ -113,18 +113,16 @@ impl VM {
             self.method_dispatch_pure = true;
             return result;
         }
-        // Native `Buf`/`Blob` construction: a byte-overlay build of pure data
-        // (flatten args -> bytes, mask to element width). The VM builds it
-        // directly instead of routing through the interpreter's `dispatch_new`.
+        // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/
+        // `utf16` (code units), `Uni` (codepoints) — pure data builds the VM
+        // performs directly instead of routing through `dispatch_new`.
         if method == "new"
             && let Value::Package(class_name) = &target
-            && crate::runtime::Interpreter::is_native_buf_constructible(&class_name.resolve())
+            && let Some(v) =
+                crate::runtime::Interpreter::try_native_builtin_construct(*class_name, &args)
         {
             self.method_dispatch_pure = true;
-            return Ok(crate::runtime::Interpreter::build_native_buf_value(
-                *class_name,
-                &args,
-            ));
+            return Ok(v);
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
@@ -1492,16 +1490,14 @@ impl VM {
             self.method_dispatch_pure = true;
             return result;
         }
-        // Native `Buf`/`Blob` construction (mut path twin of the above).
+        // Native built-in construction (mut path twin of the above).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && crate::runtime::Interpreter::is_native_buf_constructible(&class_name.resolve())
+            && let Some(v) =
+                crate::runtime::Interpreter::try_native_builtin_construct(*class_name, &args)
         {
             self.method_dispatch_pure = true;
-            return Ok(crate::runtime::Interpreter::build_native_buf_value(
-                *class_name,
-                &args,
-            ));
+            return Ok(v);
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
