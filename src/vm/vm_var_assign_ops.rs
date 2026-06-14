@@ -2367,6 +2367,85 @@ impl VM {
         }
     }
 
+    /// Track C: route a simple `@a[$i] = $v` through the shared cell when a
+    /// thread is active, so concurrent `start` blocks accumulate into one array
+    /// instead of each mutating a private snapshot (last-writer-wins). Handles
+    /// only the simple case: a plain non-negative integer index, a plain value,
+    /// and no type constraints / defaults / shaped dims / bound indices. Returns
+    /// `Some(Ok)` when it wrote through the shared array, else `None`.
+    fn try_shared_array_element_assign(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Option<Result<(), RuntimeError>> {
+        if !self.interpreter.shared_vars_active {
+            return None;
+        }
+        if !self.local_bind_pairs.is_empty() {
+            return None;
+        }
+        let var_name = Self::const_str(code, name_idx);
+        if !var_name.starts_with('@') {
+            return None;
+        }
+        let stack_len = self.stack.len();
+        if stack_len < 2 {
+            return None;
+        }
+        // Only a plain non-negative Int index; anything else (slice, Whatever,
+        // negative, lazy) needs the full index-assign path.
+        let idx = match &self.stack[stack_len - 1] {
+            Value::Int(n) if *n >= 0 => *n as usize,
+            _ => return None,
+        };
+        let val_ref = &self.stack[stack_len - 2];
+        if matches!(val_ref, Value::Pair(name, _) if name == "__mutsu_bind_index_value")
+            || matches!(val_ref, Value::Nil)
+        {
+            return None;
+        }
+        // Reject typed / defaulted / shaped / readonly / bound arrays — those need
+        // the full path's native-fill, hole, and shape handling.
+        if self
+            .interpreter
+            .var_type_constraint_fast(var_name)
+            .is_some()
+            || self.interpreter.var_default(var_name).is_some()
+            || self.interpreter.readonly_vars().contains(var_name)
+        {
+            return None;
+        }
+        {
+            let shaped_key = format!("__mutsu_shaped_array_dims::{}", var_name);
+            let bound_key = format!("__mutsu_bound_index::{}", var_name);
+            if self.interpreter.env().contains_key(&shaped_key)
+                || self.interpreter.env().contains_key(&bound_key)
+            {
+                return None;
+            }
+        }
+        let var_name = var_name.to_string();
+        // Commit: pop idx then val and write through the shared cell.
+        let idx_val = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap();
+        match self
+            .interpreter
+            .assign_array_elem_to_shared_var(&var_name, idx, val.clone())
+        {
+            Some(_) => {
+                self.stack.push(val);
+                Some(Ok(()))
+            }
+            None => {
+                // Not a shared array (e.g. not yet seeded): restore [val, idx]
+                // stack order and fall through to the normal path.
+                self.stack.push(val);
+                self.stack.push(idx_val);
+                None
+            }
+        }
+    }
+
     /// Fast path for simple hash element assignment: `%h{$key} = $val`.
     ///
     /// Returns `Some(Ok(()))` if the fast path handled the assignment,
@@ -2574,10 +2653,14 @@ impl VM {
         name_idx: u32,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
-        // --- Track C: shared hash element assignment across threads ---
-        // `%h{$k} = $v` inside a `start` block must write through the shared
-        // cell so concurrent threads all land (snapshot semantics lose updates).
+        // --- Track C: shared hash/array element assignment across threads ---
+        // `%h{$k} = $v` / `@a[$i] = $v` inside a `start` block must write through
+        // the shared cell so concurrent threads all land (snapshot semantics
+        // otherwise lose updates).
         if let Some(result) = self.try_shared_hash_element_assign(code, name_idx) {
+            return result;
+        }
+        if let Some(result) = self.try_shared_array_element_assign(code, name_idx) {
             return result;
         }
         // --- Fast path for simple hash element assignment ---

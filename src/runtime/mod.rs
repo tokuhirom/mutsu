@@ -5790,6 +5790,58 @@ impl Interpreter {
         Some(value)
     }
 
+    /// Track C: assign a single array element (`@a[$i] = $v`) through the shared
+    /// cell so concurrent `start { @a[...] = ... }` blocks all land instead of
+    /// each mutating a private snapshot (last-writer-wins). Mirrors
+    /// `assign_hash_elem_to_shared_var`: holds the `shared_vars` lock across the
+    /// whole get -> Arc::make_mut -> (grow with Nil) -> set so two threads
+    /// writing different indices can't lose each other's update. `idx` must be a
+    /// non-negative element index (the caller rejects negatives).
+    ///
+    /// Returns `Some(value)` if it wrote through the shared array, `None` if the
+    /// variable is not a shared array (caller falls back to the normal path).
+    pub(crate) fn assign_array_elem_to_shared_var(
+        &mut self,
+        key: &str,
+        idx: usize,
+        value: Value,
+    ) -> Option<Value> {
+        if !key.starts_with('@') || !self.shared_vars_active {
+            return None;
+        }
+        let is_thread_clone = self.is_thread_clone();
+        if is_thread_clone {
+            // Drop env's private copy so the shared cell holds the only Arc and
+            // make_mut mutates in place (the thread's env is discarded anyway).
+            self.env.remove(key);
+        }
+        let mut sv = self.shared_vars.write().unwrap();
+        let Some(Value::Array(arc, kind)) = sv.get_mut(key) else {
+            return None;
+        };
+        let data = Arc::make_mut(arc);
+        if idx >= data.items.len() {
+            data.items.resize(idx + 1, Value::Nil);
+        }
+        data.items[idx] = value.clone();
+        if *kind == ArrayKind::List {
+            *kind = ArrayKind::Array;
+        }
+        let result = Value::Array(Arc::clone(arc), *kind);
+        drop(sv);
+        if is_thread_clone {
+            let dirty_marker = format!("__mutsu_shared_dirty::{key}");
+            if !self.env.contains_key(&dirty_marker) {
+                self.mark_shared_var_dirty(key);
+                self.env.insert(dirty_marker, Value::Bool(true));
+            }
+        } else {
+            self.mark_shared_var_dirty(key);
+            self.env.insert(key.to_string(), result);
+        }
+        Some(value)
+    }
+
     /// Read a shared variable. If the variable is in shared_vars, return
     /// the shared version (which may have been mutated by another thread).
     #[allow(dead_code)]
