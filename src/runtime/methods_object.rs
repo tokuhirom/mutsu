@@ -960,6 +960,103 @@ impl Interpreter {
         )
     }
 
+    /// Build a `Date` from `.new` arguments as pure data: parse named
+    /// (`year`/`month`/`day`/`formatter`) and positional args (a date string, a
+    /// `DateTime`/`Instant` to take the date of, or `y, m, d`), validate, and
+    /// construct the `Date` value (with any `:formatter` embedded). Returns the
+    /// date plus the formatter that still needs *rendering* — rendering runs a
+    /// user `Callable` (`render_date_formatter`, the only `self`-dependent step),
+    /// so a `Some` formatter makes the VM fall through to the interpreter while
+    /// the common no-formatter case stays native. All the parsing/validation
+    /// (`temporal::*`) is free of env/registry/self. Shared by both paths.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn build_native_date(
+        args: &[Value],
+    ) -> Result<(Value, Option<Value>), RuntimeError> {
+        use crate::builtins::methods_0arg::temporal;
+        let mut year: i64 = 1970;
+        let mut month: i64 = 1;
+        let mut day: i64 = 1;
+        let mut positional = Vec::new();
+        let mut has_named = false;
+        let mut formatter: Option<Value> = None;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) => match key.as_str() {
+                    "year" => {
+                        year = to_int(value);
+                        has_named = true;
+                    }
+                    "month" => {
+                        month = to_int(value);
+                        has_named = true;
+                    }
+                    "day" => {
+                        day = to_int(value);
+                        has_named = true;
+                    }
+                    "formatter" => {
+                        formatter = Some(*value.clone());
+                    }
+                    _ => {}
+                },
+                other => positional.push(other),
+            }
+        }
+        // Positional args: a date string, a DateTime/Instant, or y/m/d.
+        if let Some(v) = positional.first() {
+            match v {
+                Value::Str(s) if positional.len() == 1 => {
+                    let (y, m, d) = temporal::parse_date_string(s)?;
+                    year = y;
+                    month = m;
+                    day = d;
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "DateTime" => {
+                    let (y, m, d, _, _, _, _) = temporal::datetime_attrs(&attributes.as_map());
+                    year = y;
+                    month = m;
+                    day = d;
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" => {
+                    let tai = attributes
+                        .as_map()
+                        .get("value")
+                        .and_then(crate::runtime::to_float_value)
+                        .unwrap_or(0.0);
+                    let posix = temporal::instant_to_posix(tai);
+                    let epoch_days = (posix / 86400.0).floor() as i64;
+                    let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                    year = y;
+                    month = m;
+                    day = d;
+                }
+                _ => {
+                    year = to_int(v);
+                    if let Some(v2) = positional.get(1) {
+                        month = to_int(v2);
+                    }
+                    if let Some(v3) = positional.get(2) {
+                        day = to_int(v3);
+                    }
+                }
+            }
+        } else if !has_named {
+            return Err(RuntimeError::new("Date.new requires arguments"));
+        }
+        temporal::validate_date(year, month, day)?;
+        let date = temporal::make_date_with_formatter(year, month, day, formatter.clone());
+        Ok((date, formatter))
+    }
+
     /// Build a `Duration` instance from `.new` arguments as pure data: the
     /// seconds argument is stored as a `Rational` (matching Rakudo, where
     /// `Duration.new(...).tai` is always a `Rat`); `Inf`/`-Inf`/`NaN` map to the
@@ -1062,6 +1159,15 @@ impl Interpreter {
             )))
         } else if cn == "Complex" {
             Some(Ok(Self::build_native_complex_value(args)))
+        } else if cn == "Date" {
+            // A `:formatter` renders a user Callable (`render_date_formatter`,
+            // self-dependent) — fall through to the interpreter for that case;
+            // the common no-formatter date is built natively.
+            match Self::build_native_date(args) {
+                Ok((date, None)) => Some(Ok(date)),
+                Ok((_, Some(_))) => None,
+                Err(e) => Some(Err(e)),
+            }
         } else if cn == "Duration" {
             Some(Self::build_native_duration_value(args))
         } else if cn == "StrDistance" {
@@ -1995,90 +2101,9 @@ impl Interpreter {
                     return Ok(Self::build_native_strdistance_value(&args));
                 }
                 "Date" => {
-                    use crate::builtins::methods_0arg::temporal;
-                    let mut year: i64 = 1970;
-                    let mut month: i64 = 1;
-                    let mut day: i64 = 1;
-                    let mut positional = Vec::new();
-                    let mut has_named = false;
-                    let mut formatter: Option<Value> = None;
-                    for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) => match key.as_str() {
-                                "year" => {
-                                    year = to_int(value);
-                                    has_named = true;
-                                }
-                                "month" => {
-                                    month = to_int(value);
-                                    has_named = true;
-                                }
-                                "day" => {
-                                    day = to_int(value);
-                                    has_named = true;
-                                }
-                                "formatter" => {
-                                    formatter = Some(*value.clone());
-                                }
-                                _ => {}
-                            },
-                            other => positional.push(other),
-                        }
-                    }
-                    // Handle positional args: can be string, DateTime, or y/m/d
-                    if let Some(v) = positional.first() {
-                        match v {
-                            // Single string arg: parse as date string
-                            Value::Str(s) if positional.len() == 1 => {
-                                let (y, m, d) = temporal::parse_date_string(s)?;
-                                year = y;
-                                month = m;
-                                day = d;
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "DateTime" => {
-                                let (y, m, d, _, _, _, _) =
-                                    temporal::datetime_attrs(&(attributes).as_map());
-                                year = y;
-                                month = m;
-                                day = d;
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "Instant" => {
-                                let tai = attributes
-                                    .as_map()
-                                    .get("value")
-                                    .and_then(crate::runtime::to_float_value)
-                                    .unwrap_or(0.0);
-                                let posix = temporal::instant_to_posix(tai);
-                                let epoch_days = (posix / 86400.0).floor() as i64;
-                                let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
-                                year = y;
-                                month = m;
-                                day = d;
-                            }
-                            _ => {
-                                year = to_int(v);
-                                if let Some(v2) = positional.get(1) {
-                                    month = to_int(v2);
-                                }
-                                if let Some(v3) = positional.get(2) {
-                                    day = to_int(v3);
-                                }
-                            }
-                        }
-                    } else if !has_named {
-                        return Err(RuntimeError::new("Date.new requires arguments"));
-                    }
-                    temporal::validate_date(year, month, day)?;
-                    let date =
-                        temporal::make_date_with_formatter(year, month, day, formatter.clone());
+                    // Shared with the VM's native fast path. Only the formatter
+                    // case needs `self` (it renders a user Callable).
+                    let (date, formatter) = Self::build_native_date(&args)?;
                     if let Some(formatter_value) = formatter {
                         return self.render_date_formatter(date, formatter_value);
                     }
