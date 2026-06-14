@@ -195,7 +195,7 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             （`try_shared_hash_element_assign`）から呼ぶ。単一スレッドは早期 return で挙動不変。
             `@a.push` は元から動作（`push_to_shared_var`）、壊れていたのは `@a[i]=`／`%h{k}=`。
             テスト `t/concurrent-hash-assign.t`。
-            **スライス 5 LANDED（PR #3062）**: スレッド間の**配列要素 index 代入**（`@a[$i] = $v`）。
+            **スライス 5 LANDED（PR #3063）**: スレッド間の**配列要素 index 代入**（`@a[$i] = $v`）。
             スライス 4 の配列版。`my @a; await (^50).map: -> $i { start { @a[$i] = $i*$i } }` が 0 →
             決定的 50（raku 一致）。`assign_array_elem_to_shared_var`（ロック保持下で
             get→`Arc::make_mut`→Nil で grow→set）を `try_shared_array_element_assign` ガード
