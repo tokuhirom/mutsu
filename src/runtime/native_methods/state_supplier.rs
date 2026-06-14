@@ -17,6 +17,9 @@ struct ClassifyState {
     classify_supplier_id: u64,
     seen_keys: Vec<Value>,
     key_supplier_ids: Vec<(Value, u64)>,
+    /// `true` for `.categorize` (mapper returns a list of keys; a value may go
+    /// to several buckets), `false` for `.classify` (single key per value).
+    categorize: bool,
 }
 
 #[derive(Clone)]
@@ -887,6 +890,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
     supplier_id: u64,
     mapper: Value,
     classify_supplier_id: u64,
+    categorize: bool,
 ) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
@@ -904,6 +908,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                     classify_supplier_id,
                     seen_keys: Vec::new(),
                     key_supplier_ids: Vec::new(),
+                    categorize,
                 }),
                 elems_trace: None,
                 head_limit: None,
@@ -923,12 +928,13 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
     }
 }
 
-/// Get the classify state for a tap. Returns (mapper, classify_supplier_id, seen_keys, key_supplier_ids).
+/// Get the classify state for a tap. Returns
+/// (mapper, classify_supplier_id, seen_keys, key_supplier_ids, categorize).
 #[allow(clippy::type_complexity)]
 pub(in crate::runtime) fn get_classify_state(
     supplier_id: u64,
     tap_index: usize,
-) -> Option<(Value, u64, Vec<Value>, Vec<(Value, u64)>)> {
+) -> Option<(Value, u64, Vec<Value>, Vec<(Value, u64)>, bool)> {
     if let Ok(map) = supplier_subscriptions_map().lock()
         && let Some(subs) = map.get(&supplier_id)
         && let Some(tap) = subs.taps.get(tap_index)
@@ -939,6 +945,7 @@ pub(in crate::runtime) fn get_classify_state(
             cs.classify_supplier_id,
             cs.seen_keys.clone(),
             cs.key_supplier_ids.clone(),
+            cs.categorize,
         ))
     } else {
         None

@@ -475,7 +475,8 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "unique" => self.supply_unique(attributes, &args),
-            "classify" => self.supply_classify(attributes, &args),
+            "classify" => self.supply_classify(attributes, &args, false),
+            "categorize" => self.supply_classify(attributes, &args, true),
             "sort" => {
                 let source_values = self.supply_get_values(attributes)?;
                 let mut sorted = source_values.clone();
