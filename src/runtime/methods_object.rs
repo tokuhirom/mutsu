@@ -935,6 +935,31 @@ impl Interpreter {
         }
     }
 
+    /// Coerce one `Complex.new` positional argument to its `f64` component
+    /// (Int/Num/Rat directly, anything else via `to_float_value`). Mirrors the
+    /// interpreter's `Complex` constructor arm exactly.
+    fn complex_component(v: Option<&Value>) -> f64 {
+        match v {
+            Some(Value::Int(i)) => *i as f64,
+            Some(Value::Num(f)) => *f,
+            Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
+            Some(v) => to_float_value(v).unwrap_or(0.0),
+            _ => 0.0,
+        }
+    }
+
+    /// Build a `Complex` from `.new` arguments as pure data: `Complex.new(re,
+    /// im)` -> `re + im*i`, each component coerced via `complex_component`
+    /// (missing components default to `0`). Behaviour matches the interpreter
+    /// (which is more lenient than raku — raku requires exactly two `Real`
+    /// arguments, mutsu accepts 0/1/2 — a pre-existing divergence preserved here).
+    pub(crate) fn build_native_complex_value(args: &[Value]) -> Value {
+        Value::Complex(
+            Self::complex_component(args.first()),
+            Self::complex_component(args.get(1)),
+        )
+    }
+
     /// Build a `Duration` instance from `.new` arguments as pure data: the
     /// seconds argument is stored as a `Rational` (matching Rakudo, where
     /// `Duration.new(...).tai` is always a `Rat`); `Inf`/`-Inf`/`NaN` map to the
@@ -1035,6 +1060,8 @@ impl Interpreter {
             Some(Ok(Self::version_from_value(
                 args.first().cloned().unwrap_or(Value::Nil),
             )))
+        } else if cn == "Complex" {
+            Some(Ok(Self::build_native_complex_value(args)))
         } else if cn == "Duration" {
             Some(Self::build_native_duration_value(args))
         } else if cn == "StrDistance" {
@@ -3119,21 +3146,8 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "Complex" => {
-                    let re = match args.first() {
-                        Some(Value::Int(i)) => *i as f64,
-                        Some(Value::Num(f)) => *f,
-                        Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
-                        Some(v) => to_float_value(v).unwrap_or(0.0),
-                        _ => 0.0,
-                    };
-                    let im = match args.get(1) {
-                        Some(Value::Int(i)) => *i as f64,
-                        Some(Value::Num(f)) => *f,
-                        Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
-                        Some(v) => to_float_value(v).unwrap_or(0.0),
-                        _ => 0.0,
-                    };
-                    return Ok(Value::Complex(re, im));
+                    // Shared with the VM's native fast path (pure component build).
+                    return Ok(Self::build_native_complex_value(&args));
                 }
                 "Backtrace" => {
                     let file = self
