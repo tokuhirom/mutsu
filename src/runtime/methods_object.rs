@@ -960,6 +960,37 @@ impl Interpreter {
         )
     }
 
+    /// Build an `Int` from `.new(value)` as pure data: `to_int`-coerce the
+    /// argument (default `0`). A type-object argument is an error, matching the
+    /// interpreter's basic-type `.new` arm.
+    pub(crate) fn build_native_int_value(args: &[Value]) -> Result<Value, RuntimeError> {
+        if matches!(args.first(), Some(Value::Package(_))) {
+            return Err(RuntimeError::new("Cannot convert type object to Int"));
+        }
+        Ok(Value::Int(args.first().map_or(0, crate::runtime::to_int)))
+    }
+
+    /// Build a `Num` from `.new(value)` as pure data: coerce the argument to
+    /// f64 (default `0e0`). A type-object or non-coercible argument is an error,
+    /// matching the interpreter's basic-type `.new` arm.
+    pub(crate) fn build_native_num_value(args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(arg) = args.first() {
+            if matches!(arg, Value::Package(_)) {
+                return Err(RuntimeError::new(
+                    "Cannot coerce to Num: no .Num method found",
+                ));
+            }
+            match crate::runtime::to_float_value(arg) {
+                Some(f) => Ok(Value::Num(f)),
+                None => Err(RuntimeError::new(
+                    "Cannot coerce to Num: no .Num method found",
+                )),
+            }
+        } else {
+            Ok(Value::Num(0.0))
+        }
+    }
+
     /// Build a `Rat` from `.new(numerator, denominator)` as pure data
     /// (defaults `0/1`). A `BigInt` argument routes through `make_big_rat` to
     /// avoid truncation; otherwise the components are `to_int`-coerced.
@@ -1483,6 +1514,19 @@ impl Interpreter {
             )))
         } else if cn == "Complex" {
             Some(Ok(Self::build_native_complex_value(args)))
+        } else if cn == "Int" {
+            Some(Self::build_native_int_value(args))
+        } else if cn == "Num" {
+            Some(Self::build_native_num_value(args))
+        } else if cn == "Str" {
+            // The default Str constructor ignores positional args and yields the
+            // empty string (mutsu is lenient where raku rejects a positional).
+            // (`Bool` is intentionally NOT native-ized: it is an enum, so
+            // `Bool.new` errors in `dispatch_new` before the basic-type arm —
+            // the native path must preserve that, so it falls through.)
+            Some(Ok(Value::str(String::new())))
+        } else if cn == "Slip" {
+            Some(Ok(Value::slip(args.to_vec())))
         } else if cn == "Rat" {
             Some(Ok(Self::build_native_rat_value(args)))
         } else if cn == "FatRat" {
@@ -3232,7 +3276,8 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Slip" => {
-                    return Ok(Value::slip(args.clone()));
+                    // Shared with the VM's native fast path.
+                    return Ok(Value::slip(args.to_vec()));
                 }
                 "Match" => {
                     // Match.new(:orig("..."), :from(N), :pos(N), :list(...), :hash(...))
@@ -4484,32 +4529,10 @@ impl Interpreter {
             Value::Package(name) => {
                 // Built-in type objects: .new creates a default defined instance
                 match name.resolve().as_str() {
-                    "Int" => {
-                        if matches!(args.first(), Some(Value::Package(_))) {
-                            return Err(RuntimeError::new("Cannot convert type object to Int"));
-                        }
-                        let int_val = args.first().map_or(0, crate::runtime::to_int);
-                        Ok(Value::Int(int_val))
-                    }
+                    // Shared with the VM's native fast path.
+                    "Int" => Self::build_native_int_value(&args),
                     "Str" => Ok(Value::str(String::new())),
-                    "Num" => {
-                        if let Some(arg) = args.first() {
-                            // Type objects (e.g. anonymous class {}) cannot coerce to Num
-                            if matches!(arg, Value::Package(_)) {
-                                return Err(RuntimeError::new(
-                                    "Cannot coerce to Num: no .Num method found",
-                                ));
-                            }
-                            match crate::runtime::to_float_value(arg) {
-                                Some(f) => Ok(Value::Num(f)),
-                                None => Err(RuntimeError::new(
-                                    "Cannot coerce to Num: no .Num method found",
-                                )),
-                            }
-                        } else {
-                            Ok(Value::Num(0.0))
-                        }
-                    }
+                    "Num" => Self::build_native_num_value(&args),
                     "Bool" => Ok(Value::Bool(false)),
                     "Attribute" => {
                         // Attribute.new(:name<...>, :type(Int), :package<Foo>)
