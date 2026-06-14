@@ -3982,7 +3982,7 @@ impl VM {
     /// assign so that a write to a container-valued bound element
     /// (`%h<key><inner> = ...` where `%h<key>` is a cell) mutates the shared,
     /// held container in place instead of being silently dropped.
-    fn assign_into_nested_container(target: &mut Value, outer_key: &str, val: Value) {
+    pub(super) fn assign_into_nested_container(target: &mut Value, outer_key: &str, val: Value) {
         match target {
             Value::ContainerRef(cell) => {
                 let mut guard = cell.lock().unwrap();

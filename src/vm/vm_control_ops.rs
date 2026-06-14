@@ -1871,6 +1871,29 @@ impl VM {
         self.update_local_if_exists(code, source, &current);
     }
 
+    /// Write the final `$_` back to an lvalue container element (`given %h<k>`
+    /// / `given @a[i]`). The element source is `(container var, index,
+    /// positional)`. This makes both `$_ = ...` (whole reassign) and container
+    /// mutations (`.push`) propagate to the original element, matching Raku's
+    /// aliasing of an element topic.
+    fn write_back_element_source(&mut self, code: &CompiledCode, src: &(String, Value, bool)) {
+        let (container, index, _positional) = src;
+        let Some(current) = self.interpreter.env().get("_").cloned() else {
+            return;
+        };
+        let key = match index {
+            Value::Int(i) => i.to_string(),
+            Value::Str(s) => s.as_ref().clone(),
+            other => other.to_string_value(),
+        };
+        let Some(mut cval) = self.get_env_with_main_alias(container) else {
+            return;
+        };
+        Self::assign_into_nested_container(&mut cval, &key, current);
+        self.set_env_with_main_alias(container, cval.clone());
+        self.update_local_if_exists(code, container, &cval);
+    }
+
     /// Whether the loop variable still holds the same binding as the source
     /// element, so writing it back would be a no-op. Conservative: returns
     /// `true` only when provably unchanged (same container `Arc`, so in-place
@@ -2273,13 +2296,22 @@ impl VM {
         let saved_topic = self.interpreter.env().get("_").cloned();
         let saved_when = self.interpreter.when_matched();
         let saved_topic_source = self.topic_source_var.take();
+        let saved_element_source = self.element_source.take();
         let container_binding = self.container_ref_var.take();
-        self.topic_source_var = container_binding.clone();
+        // An element-source topic (`given %h<k>` / `given @a[i]`) aliases an
+        // lvalue element: the final `$_` is written back to that element below,
+        // so `$_ = ...` (whole reassign) AND `.push` both propagate. Don't set
+        // `topic_source_var` (that is for whole-variable writeback).
+        let element_source = saved_element_source.clone();
+        if element_source.is_none() {
+            self.topic_source_var = container_binding.clone();
+        }
         self.interpreter.env_mut().insert("_".to_string(), topic);
         self.interpreter.set_when_matched(false);
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
         // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
-        // written back to the source below. A bare scalar var (`given $x`) is rw.
+        // written back to the source below. A bare scalar var (`given $x`) is rw,
+        // and an element source (handled above) is rw too.
         let mark_ro = topic_readonly && !self.interpreter.readonly_vars().contains("_");
         if mark_ro {
             self.interpreter.mark_readonly("_");
@@ -2290,7 +2322,11 @@ impl VM {
                 this.interpreter.unmark_readonly("_");
             }
             if write_back {
-                this.write_back_given_topic(code, &container_binding);
+                if let Some(src) = &element_source {
+                    this.write_back_element_source(code, src);
+                } else {
+                    this.write_back_given_topic(code, &container_binding);
+                }
             }
             this.interpreter.set_when_matched(saved_when);
             if let Some(v) = saved_topic.clone() {
@@ -2299,6 +2335,7 @@ impl VM {
                 this.interpreter.env_mut().remove("_");
             }
             this.topic_source_var = saved_topic_source.clone();
+            this.element_source = saved_element_source.clone();
         };
 
         let mut inner_ip = body_start;

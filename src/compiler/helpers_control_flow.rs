@@ -144,6 +144,20 @@ impl Compiler {
             .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)))
     }
 
+    /// The env key for the container variable an element subscript targets, used
+    /// when topicalizing an element (`given %h<k>` / `given @a[i]`) so the
+    /// mutated `$_` can be written back. Returns `%name` for a hash variable,
+    /// `@name` for an array variable, and the bare name for a scalar variable
+    /// (holding a container). `None` for any other (non-simple-var) target.
+    pub(super) fn container_var_name(target: &Expr) -> Option<String> {
+        match target {
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::Var(name) => Some(name.clone()),
+            _ => None,
+        }
+    }
+
     pub(super) fn body_mutates_topic(stmts: &[Stmt]) -> bool {
         // Only check if the *first* non-SetLine statement assigns `$_` directly.
         // This detects `with`-style topic switches (where the parser inserts a
