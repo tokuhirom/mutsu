@@ -1068,6 +1068,40 @@ impl Interpreter {
         }
     }
 
+    /// Build an `IterationBuffer` from `.new(...)` as pure data: flatten each
+    /// argument (an Array/Seq/Slip is spread, another IterationBuffer's items
+    /// are taken, anything else is a single element) into the buffer's
+    /// `__mutsu_iterationbuffer_items` array.
+    pub(crate) fn build_native_iterationbuffer_value(class_name: Symbol, args: &[Value]) -> Value {
+        let mut items = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Array(vals, ..) => items.extend(vals.iter().cloned()),
+                Value::Seq(vals) | Value::Slip(vals) => items.extend(vals.iter().cloned()),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "IterationBuffer" => {
+                    match attributes.as_map().get("__mutsu_iterationbuffer_items") {
+                        Some(Value::Array(vals, ..)) => items.extend(vals.iter().cloned()),
+                        Some(Value::Seq(vals)) | Some(Value::Slip(vals)) => {
+                            items.extend(vals.iter().cloned())
+                        }
+                        _ => {}
+                    }
+                }
+                other => items.push(other.clone()),
+            }
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "__mutsu_iterationbuffer_items".to_string(),
+            Value::real_array(items),
+        );
+        Value::make_instance(class_name, attrs)
+    }
+
     /// Build a `Date` from `.new` arguments as pure data: parse named
     /// (`year`/`month`/`day`/`formatter`) and positional args (a date string, a
     /// `DateTime`/`Instant` to take the date of, or `y, m, d`), validate, and
@@ -1527,6 +1561,10 @@ impl Interpreter {
             Some(Ok(Value::str(String::new())))
         } else if cn == "Slip" {
             Some(Ok(Value::slip(args.to_vec())))
+        } else if cn == "IterationBuffer" {
+            Some(Ok(Self::build_native_iterationbuffer_value(
+                class_name, args,
+            )))
         } else if cn == "Rat" {
             Some(Ok(Self::build_native_rat_value(args)))
         } else if cn == "FatRat" {
@@ -2108,37 +2146,8 @@ impl Interpreter {
             }
             match base_class_name {
                 "IterationBuffer" => {
-                    let mut items = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Array(vals, ..) => items.extend(vals.iter().cloned()),
-                            Value::Seq(vals) | Value::Slip(vals) => {
-                                items.extend(vals.iter().cloned())
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "IterationBuffer" => {
-                                match attributes.as_map().get("__mutsu_iterationbuffer_items") {
-                                    Some(Value::Array(vals, ..)) => {
-                                        items.extend(vals.iter().cloned())
-                                    }
-                                    Some(Value::Seq(vals)) | Some(Value::Slip(vals)) => {
-                                        items.extend(vals.iter().cloned())
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            other => items.push(other.clone()),
-                        }
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "__mutsu_iterationbuffer_items".to_string(),
-                        Value::real_array(items),
-                    );
-                    return Ok(Value::make_instance(*class_name, attrs));
+                    // Shared with the VM's native fast path.
+                    return Ok(Self::build_native_iterationbuffer_value(*class_name, &args));
                 }
                 "Array" | "List" | "Positional" | "array" => {
                     // native `array` requires a type parameter (e.g. array[int].new)
