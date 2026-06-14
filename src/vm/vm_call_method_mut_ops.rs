@@ -1323,9 +1323,28 @@ impl VM {
                             .get("__mutsu_array_storage")
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
+                        // VM-native fast path: simple mutators on the plain
+                        // untyped backing array are performed in Rust and the
+                        // updated storage written back, with no interpreter
+                        // dispatch. Richer methods fall through below.
+                        if let Some(result) =
+                            Self::native_array_storage_mut(&mut storage, &method, &args)
+                        {
+                            let result = result?;
+                            self.write_back_array_storage_instance(
+                                &target_name,
+                                inst_class,
+                                attributes,
+                                inst_id,
+                                storage,
+                            );
+                            self.stack.push(result);
+                            self.env_dirty = true;
+                            return Ok(());
+                        }
                         // Perform the operation on the backing array
                         // TODO: compile to bytecode — Array-backed instance method
-                        // (push/pop/shift on `is Array` storage). See ledger §1.
+                        // (non-simple methods on `is Array` storage). See ledger §1.
                         crate::vm::vm_stats::record_method_fallback(&method);
                         let result = self
                             .interpreter
@@ -1351,22 +1370,13 @@ impl VM {
                         }
                         self.interpreter.env_mut().remove("__mutsu_array_tmp");
                         // Update the instance with the new storage
-                        let new_attrs = crate::value::InstanceAttrs::clone(attributes);
-                        new_attrs.insert("__mutsu_array_storage".to_string(), storage);
-                        let updated_instance = Value::Instance {
-                            class_name: *inst_class,
-                            attributes: Arc::new(crate::value::InstanceAttrs::new(
-                                *inst_class,
-                                (new_attrs).to_map(),
-                                inst_id,
-                                true,
-                            )),
-                            id: inst_id,
-                        };
-                        self.interpreter
-                            .env_mut()
-                            .insert(target_name.to_string(), updated_instance);
-                        self.env_dirty = true;
+                        self.write_back_array_storage_instance(
+                            &target_name,
+                            inst_class,
+                            attributes,
+                            inst_id,
+                            storage,
+                        );
                         self.stack.push(result);
                         self.env_dirty = true;
                         return Ok(());
@@ -1546,6 +1556,107 @@ impl VM {
             _ => unreachable!(),
         };
         Some(Ok(result))
+    }
+
+    /// VM-native simple array mutators (push/pop/shift/unshift/append/prepend)
+    /// applied directly to an `is Array`-backed instance's backing storage
+    /// `Value` (ledger §1: array-backed instance dispatch -> VM-native).
+    ///
+    /// Mirrors the interpreter's plain, non-shared env-keyed mutator branch
+    /// (`methods_mut.rs`): the `__mutsu_array_storage` value is a plain untyped
+    /// `real_array`, so `push`/`append`/`unshift`/`prepend` extend/insert the
+    /// normalized arguments and `pop`/`shift` remove an element (returning a
+    /// typed empty Failure when empty). `storage` is mutated in place and the
+    /// method's result value is returned. Returns `None` (fall through to the
+    /// interpreter) for any other method, a non-plain `ArrayKind`, or an
+    /// arity-erroring `pop`/`shift` so the interpreter owns the richer cases.
+    fn native_array_storage_mut(
+        storage: &mut Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let Value::Array(arc_items, crate::value::ArrayKind::Array) = storage else {
+            return None;
+        };
+        let result = match method {
+            "push" => {
+                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                Arc::make_mut(arc_items).extend(norm);
+                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+            }
+            "append" => {
+                let flat = crate::runtime::flatten_append_args(args.to_vec());
+                Arc::make_mut(arc_items).extend(flat);
+                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+            }
+            "unshift" => {
+                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                let items = Arc::make_mut(arc_items);
+                for (i, v) in norm.into_iter().enumerate() {
+                    items.insert(i, v);
+                }
+                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+            }
+            "prepend" => {
+                let flat = crate::runtime::flatten_append_args(args.to_vec());
+                let items = Arc::make_mut(arc_items);
+                for (i, v) in flat.into_iter().enumerate() {
+                    items.insert(i, v);
+                }
+                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+            }
+            "pop" => {
+                if !args.is_empty() {
+                    return None;
+                }
+                if arc_items.is_empty() {
+                    crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
+                } else {
+                    Arc::make_mut(arc_items).pop().unwrap_or(Value::Nil)
+                }
+            }
+            "shift" => {
+                if !args.is_empty() {
+                    return None;
+                }
+                if arc_items.is_empty() {
+                    crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
+                } else {
+                    Arc::make_mut(arc_items).remove(0)
+                }
+            }
+            _ => return None,
+        };
+        Some(Ok(result))
+    }
+
+    /// Rebuild an `is Array`-backed instance with its `__mutsu_array_storage`
+    /// attribute replaced by `storage` and write it back into `target_name`.
+    /// Shared by the VM-native mutator fast path and the interpreter fallback.
+    fn write_back_array_storage_instance(
+        &mut self,
+        target_name: &str,
+        inst_class: &Symbol,
+        attributes: &Arc<crate::value::InstanceAttrs>,
+        inst_id: u64,
+        storage: Value,
+    ) {
+        let new_attrs = crate::value::InstanceAttrs::clone(attributes);
+        new_attrs.insert("__mutsu_array_storage".to_string(), storage);
+        let updated_instance = Value::Instance {
+            class_name: *inst_class,
+            attributes: Arc::new(crate::value::InstanceAttrs::new(
+                *inst_class,
+                new_attrs.to_map(),
+                inst_id,
+                true,
+            )),
+            id: inst_id,
+        };
+        self.interpreter
+            .env_mut()
+            .insert(target_name.to_string(), updated_instance);
+        self.env_dirty = true;
     }
 
     /// VM-native `splice` on a plain, untyped `@`-array bound to `target_name`
