@@ -406,7 +406,7 @@ impl Interpreter {
                                 consumer_cb: callback.clone(),
                                 done: false,
                             });
-                            let (od_res, emitted, _) = self.run_on_demand_body(
+                            let (od_res, emitted, body_ran_done) = self.run_on_demand_body(
                                 on_demand_cb.clone(),
                                 Some(emitter_supplier_id),
                             );
@@ -450,6 +450,41 @@ impl Interpreter {
                                     }
                                 } else {
                                     let _ = self.call_sub_value(callback.clone(), vec![v], true);
+                                }
+                            }
+                            // Supply.on-demand(..., closing => { ... }): the
+                            // `closing` callback runs when the supply is closed.
+                            let close_cbs =
+                                Self::extract_supply_on_close_callbacks(&attributes.as_map());
+                            if !close_cbs.is_empty() {
+                                if body_ran_done {
+                                    // Synchronous body that ran `done` — closed now.
+                                    for close_cb in close_cbs {
+                                        let _ = self.call_sub_value(close_cb, Vec::new(), true);
+                                    }
+                                } else {
+                                    // Async body (e.g. `start { emit; done }`): the
+                                    // supply closes later. Register a source-less
+                                    // subscription carrying the close callbacks so
+                                    // run_react_close_callbacks fires them when the
+                                    // react ends.
+                                    react_subs.push(ReactSubscription {
+                                        receiver: None,
+                                        supplier_id: None,
+                                        supplier_next_index: 0,
+                                        callback: callback.clone(),
+                                        close_callbacks: close_cbs,
+                                        last_callbacks: Vec::new(),
+                                        quit_callbacks: Vec::new(),
+                                        done: false,
+                                        is_lines: false,
+                                        line_buffer: String::new(),
+                                        head_limit: None,
+                                        emit_count: 0,
+                                        channel: None,
+                                        promise: None,
+                                        on_demand_done: None,
+                                    });
                                 }
                             }
                         } else {

@@ -312,6 +312,20 @@ impl Interpreter {
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
         attrs.insert("live".to_string(), Value::Bool(false));
         attrs.insert("on_demand_callback".to_string(), callback);
+        // `Supply.on-demand(..., closing => { ... })`: the `closing` callback runs
+        // when the supply is closed (its tap is closed, or it sends `done`).
+        // Store it on the on-close list so the react runtime fires it on
+        // completion (see run_react_event_loop's on-demand branch).
+        for arg in args.iter().skip(1) {
+            if let Value::Pair(key, value) = arg
+                && key == "closing"
+            {
+                attrs.insert(
+                    "on_close_callbacks".to_string(),
+                    Value::array(vec![(**value).clone()]),
+                );
+            }
+        }
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
