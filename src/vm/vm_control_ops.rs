@@ -1852,14 +1852,25 @@ impl VM {
     /// mutation through `$_` must propagate. Only for `@`/`%`-sigil sources
     /// (whole-container topicalization); skipped when the topic is unchanged
     /// (same `Arc`) so a read-only `given` stays a no-op.
-    fn write_back_given_topic(&mut self, code: &CompiledCode, source: &Option<String>) {
+    fn write_back_given_topic(
+        &mut self,
+        code: &CompiledCode,
+        source: &Option<String>,
+        pointy_param: &Option<String>,
+    ) {
         let Some(source) = source else {
             return;
         };
         if !source.starts_with('@') && !source.starts_with('%') {
             return;
         }
-        let Some(current) = self.interpreter.env().get("_").cloned() else {
+        // For a pointy block, write back the bound parameter's final value
+        // (`@p` after `@p.push`); otherwise the topic `$_`.
+        let current = match pointy_param {
+            Some(p) => self.get_env_with_main_alias(p),
+            None => self.interpreter.env().get("_").cloned(),
+        };
+        let Some(current) = current else {
             return;
         };
         if let Some(orig) = self.get_env_with_main_alias(source)
@@ -1876,9 +1887,20 @@ impl VM {
     /// positional)`. This makes both `$_ = ...` (whole reassign) and container
     /// mutations (`.push`) propagate to the original element, matching Raku's
     /// aliasing of an element topic.
-    fn write_back_element_source(&mut self, code: &CompiledCode, src: &(String, Value, bool)) {
+    fn write_back_element_source(
+        &mut self,
+        code: &CompiledCode,
+        src: &(String, Value, bool),
+        pointy_param: &Option<String>,
+    ) {
         let (container, index, _positional) = src;
-        let Some(current) = self.interpreter.env().get("_").cloned() else {
+        // For a pointy block, write back the bound parameter's final value;
+        // otherwise the topic `$_`.
+        let current = match pointy_param {
+            Some(p) => self.get_env_with_main_alias(p),
+            None => self.interpreter.env().get("_").cloned(),
+        };
+        let Some(current) = current else {
             return;
         };
         let key = match index {
@@ -2285,10 +2307,20 @@ impl VM {
         code: &CompiledCode,
         body_end: u32,
         topic_readonly: bool,
+        pointy_param_idx: Option<u32>,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let topic = self.stack.pop().unwrap();
+        // For a pointy block (`given @a -> @p { ... }`), the writeback reads the
+        // bound parameter's final value rather than `$_` (Raku binds `@p` to the
+        // topic but leaves `$_` undefined). `is copy` is not recorded here, so it
+        // copies and does not write back.
+        let pointy_param: Option<String> =
+            pointy_param_idx.map(|idx| match &code.constants[idx as usize] {
+                Value::Str(s) => s.to_string(),
+                other => other.to_string_value(),
+            });
         let body_start = *ip + 1;
         let end = body_end as usize;
         let stack_base = self.stack.len();
@@ -2312,7 +2344,15 @@ impl VM {
         // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
         // written back to the source below. A bare scalar var (`given $x`) is rw,
         // and an element source (handled above) is rw too.
-        let mark_ro = topic_readonly && !self.interpreter.readonly_vars().contains("_");
+        //
+        // A pointy block (`given @a -> @p`) leaves `$_` undefined in Raku and
+        // makes `@p` a fully-writable alias of the source (`@p = (...)`,
+        // `@p[0]=v`, and `@p.push` all propagate). So when a pointy param is
+        // present, don't mark `$_` read-only: that would propagate read-only to
+        // `@p` through its `@p := $_` bind and block element assignment.
+        let mark_ro = topic_readonly
+            && pointy_param.is_none()
+            && !self.interpreter.readonly_vars().contains("_");
         if mark_ro {
             self.interpreter.mark_readonly("_");
         }
@@ -2323,9 +2363,9 @@ impl VM {
             }
             if write_back {
                 if let Some(src) = &element_source {
-                    this.write_back_element_source(code, src);
+                    this.write_back_element_source(code, src, &pointy_param);
                 } else {
-                    this.write_back_given_topic(code, &container_binding);
+                    this.write_back_given_topic(code, &container_binding, &pointy_param);
                 }
             }
             this.interpreter.set_when_matched(saved_when);
@@ -2334,8 +2374,34 @@ impl VM {
             } else {
                 this.interpreter.env_mut().remove("_");
             }
+            // A pointy parameter (`-> @p`) is block-scoped in Raku, but mutsu
+            // desugars it to a global `@p := $_` whose alias/bound markers would
+            // otherwise leak past this block. Clear them so a later block reusing
+            // the name (e.g. `given @c -> @p is copy { ... }`, a plain assign that
+            // would otherwise follow the stale `__mutsu_sigilless_alias::@p` and
+            // corrupt `$_`) starts clean. Done after the writeback above, which
+            // still reads the parameter's final value.
+            if let Some(p) = &pointy_param {
+                this.interpreter
+                    .env_mut()
+                    .remove(&format!("__mutsu_sigilless_alias::{}", p));
+                this.interpreter
+                    .env_mut()
+                    .remove(&format!("__mutsu_sigilless_readonly::{}", p));
+                this.interpreter
+                    .env_mut()
+                    .remove(&format!("__mutsu_bound_decont::{}", p));
+                this.interpreter.unmark_readonly(p);
+            }
             this.topic_source_var = saved_topic_source.clone();
-            this.element_source = saved_element_source.clone();
+            // `element_source` is a one-shot signal set by `TagElementSource`
+            // immediately before this `Given`, so consuming it must clear it (not
+            // restore the just-set value). Re-setting `saved_element_source` here
+            // leaked the element source to the next `given`, which then routed its
+            // whole-container writeback through `write_back_element_source` and
+            // dropped the mutation (a non-element `given @a -> @p` after a
+            // `given %h<k>` would not propagate `@p.push`).
+            this.element_source = None;
         };
 
         let mut inner_ip = body_start;

@@ -3531,8 +3531,16 @@ impl VM {
             OpCode::Given {
                 body_end,
                 topic_readonly,
+                pointy_param_idx,
             } => {
-                self.exec_given_op(code, *body_end, *topic_readonly, ip, compiled_fns)?;
+                self.exec_given_op(
+                    code,
+                    *body_end,
+                    *topic_readonly,
+                    *pointy_param_idx,
+                    ip,
+                    compiled_fns,
+                )?;
             }
             OpCode::When { body_end } => {
                 self.exec_when_op(code, *body_end, ip, compiled_fns)?;
