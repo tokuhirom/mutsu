@@ -8,14 +8,29 @@ impl VM {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         fn collection_contains_instance(value: &Value) -> bool {
+            // Recursive: does any element (transitively) carry an Instance whose
+            // `.gist` may need interpreter dispatch?
+            fn contains_instance(value: &Value) -> bool {
+                match value {
+                    Value::Instance { .. } => true,
+                    v if v.as_list_items().is_some() => {
+                        v.as_list_items().unwrap().iter().any(contains_instance)
+                    }
+                    Value::Hash(map) => map.values().any(contains_instance),
+                    _ => false,
+                }
+            }
+            // Only a *collection* receiver triggers the gist bypass. A bare
+            // instance (e.g. a `Buf`, whose gist `native_method_0arg` renders
+            // purely via `dispatch_core_repr`) is dispatched normally — the
+            // builtins layer itself defers a collection whose elements may have a
+            // user `method gist`, so bypassing a bare instance here only forced a
+            // pure native gist (Buf/Blob/Uni) onto the interpreter for nothing.
             match value {
-                Value::Instance { .. } => true,
-                v if v.as_list_items().is_some() => v
-                    .as_list_items()
-                    .unwrap()
-                    .iter()
-                    .any(collection_contains_instance),
-                Value::Hash(map) => map.values().any(collection_contains_instance),
+                v if v.as_list_items().is_some() => {
+                    v.as_list_items().unwrap().iter().any(contains_instance)
+                }
+                Value::Hash(map) => map.values().any(contains_instance),
                 _ => false,
             }
         }
