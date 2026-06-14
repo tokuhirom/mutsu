@@ -1032,6 +1032,13 @@ pub struct Interpreter {
     let_saves: Vec<(String, Value, bool)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, std::time::Instant)>>,
+    /// Active streaming consumers for on-demand `supply { ... }` bodies driven by
+    /// `react`. When a stream consumer is registered for an emitter's
+    /// `supplier_id`, `emit` delivers the value to the consumer callback
+    /// synchronously (instead of buffering into `supply_emit_buffer`), so an
+    /// infinite synchronous body (`supply { loop { emit(...) } }`) can be
+    /// terminated by the consumer's `done` on emit-to-dead-consumer.
+    pub(super) supply_stream_consumers: Vec<crate::runtime::subtest::StreamConsumer>,
     /// Shared variables between threads. When `start` spawns a thread,
     /// variables are stored here so both parent and child can see mutations.
     shared_vars: Arc<RwLock<HashMap<String, Value>>>,
@@ -3125,6 +3132,7 @@ impl Interpreter {
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
+            supply_stream_consumers: Vec::new(),
             shared_vars: Arc::new(RwLock::new(HashMap::new())),
             shared_vars_active: false,
             sigilless_attrs_active: false,
@@ -5576,6 +5584,7 @@ impl Interpreter {
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
+            supply_stream_consumers: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             shared_vars_active: true,
             sigilless_attrs_active: self.sigilless_attrs_active,

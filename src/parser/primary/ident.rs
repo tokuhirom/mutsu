@@ -71,10 +71,33 @@ fn supply_method_call(body: Vec<Stmt>) -> Expr {
 }
 
 fn rewrite_supply_body(stmts: Vec<Stmt>, emitter_name: &str) -> Vec<Stmt> {
-    stmts
-        .into_iter()
-        .map(|stmt| rewrite_supply_stmt(stmt, emitter_name))
-        .collect()
+    // Phasers are set up at block entry, not when control textually reaches them.
+    // Hoist top-level CLOSE phaser registrations to the front of the body so a
+    // CLOSE that appears after a (potentially non-terminating) loop is still
+    // registered before the loop runs — e.g.
+    //   supply { until my $done { emit(...) } CLOSE { $done = True } }
+    // relies on the CLOSE phaser being able to break the loop.
+    let mut closes = Vec::new();
+    let mut rest = Vec::new();
+    for stmt in stmts {
+        let lowered = rewrite_supply_stmt(stmt, emitter_name);
+        if is_close_registration(&lowered) {
+            closes.push(lowered);
+        } else {
+            rest.push(lowered);
+        }
+    }
+    closes.extend(rest);
+    closes
+}
+
+/// True if `stmt` is the registration call a CLOSE phaser is lowered to.
+fn is_close_registration(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Expr(Expr::MethodCall { name, .. })
+            if name.resolve().as_str() == "__mutsu_register_close_phaser"
+    )
 }
 
 fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
