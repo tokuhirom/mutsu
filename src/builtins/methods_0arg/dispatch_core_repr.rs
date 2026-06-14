@@ -299,32 +299,42 @@ pub(super) fn dispatch(
             class_name,
             attributes,
             ..
-        } if class_name == "Instant" && (method == "raku" || method == "perl") => {
-            let tai = attributes
-                .as_map()
-                .get("value")
-                .map(|v| v.to_f64())
-                .unwrap_or(0.0);
-            let posix = crate::builtins::methods_0arg::temporal::instant_to_posix(tai);
-            Some(Ok(Value::str(format!(
-                "Instant.from-posix({})",
-                format_temporal_num(posix)
-            ))))
+        } if class_name == "Instant" => {
+            if method == "gist" {
+                // `Instant:<tai>` — identical to the Str/gist rendering in
+                // `value/display.rs::to_string_value`.
+                Some(Ok(Value::str(target.to_string_value())))
+            } else {
+                let tai = attributes
+                    .as_map()
+                    .get("value")
+                    .map(|v| v.to_f64())
+                    .unwrap_or(0.0);
+                let posix = crate::builtins::methods_0arg::temporal::instant_to_posix(tai);
+                Some(Ok(Value::str(format!(
+                    "Instant.from-posix({})",
+                    format_temporal_num(posix)
+                ))))
+            }
         }
         Value::Instance {
             class_name,
             attributes,
             ..
-        } if class_name == "Duration" && (method == "raku" || method == "perl") => {
-            let val = attributes
-                .as_map()
-                .get("value")
-                .cloned()
-                .unwrap_or(Value::Num(0.0));
-            Some(Ok(Value::str(format!(
-                "Duration.new({})",
-                format_temporal_num(val.to_f64())
-            ))))
+        } if class_name == "Duration" => {
+            if method == "gist" {
+                Some(Ok(Value::str(target.to_string_value())))
+            } else {
+                let val = attributes
+                    .as_map()
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(Value::Num(0.0));
+                Some(Ok(Value::str(format!(
+                    "Duration.new({})",
+                    format_temporal_num(val.to_f64())
+                ))))
+            }
         }
         Value::Bag(b, mutable) => {
             let type_name = if *mutable { "BagHash" } else { "Bag" };

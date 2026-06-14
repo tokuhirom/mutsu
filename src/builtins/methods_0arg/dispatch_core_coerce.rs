@@ -295,6 +295,14 @@ pub(super) fn dispatch(
                     Some(Err(RuntimeError::new("Failed")))
                 }
             }
+            // Instant/Duration `.Str` is the same pure rendering as their gist
+            // (`value/display.rs::to_string_value`), so handle it natively
+            // instead of falling through to the interpreter.
+            Value::Instance { class_name, .. }
+                if class_name == "Instant" || class_name == "Duration" =>
+            {
+                Some(Ok(Value::str(target.to_string_value())))
+            }
             Value::Package(_) | Value::Instance { .. } => None,
             Value::LazyList(_) => None, // fall through to runtime to force the list
             Value::Enum { .. } => None, // fall through to enum dispatch for string enum support
