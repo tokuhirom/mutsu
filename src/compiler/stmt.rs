@@ -1708,9 +1708,31 @@ impl Compiler {
                     // `given expr()` are read-only (Raku errors on `$_ = ...`).
                     topic_readonly = !matches!(topic, Expr::Var(_));
                 }
+                // A pointy block (`given @a -> @p { ... }`) is desugared by the
+                // parser into `@p := $_` at the body head. Record that bound
+                // parameter so the topic-source writeback reads its final value
+                // (e.g. after `@p.push`) instead of `$_`, propagating the
+                // mutation back to the source. `is copy` desugars to `@p = $_`
+                // (an Assign, not a Bind), so it is not detected here and does
+                // not write back.
+                let pointy_param_idx = match body.first() {
+                    Some(Stmt::Assign {
+                        name,
+                        op: AssignOp::Bind,
+                        expr: Expr::Var(topic),
+                    }) if topic == "_"
+                        && !name.starts_with('!')
+                        && !name.starts_with('.')
+                        && !name.starts_with('&') =>
+                    {
+                        Some(self.code.add_constant(Value::str(name.clone())))
+                    }
+                    _ => None,
+                };
                 let given_idx = self.code.emit(OpCode::Given {
                     body_end: 0,
                     topic_readonly,
+                    pointy_param_idx,
                 });
                 if Self::has_catch_or_control(body) {
                     self.compile_try(body, &None);

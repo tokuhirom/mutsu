@@ -2186,22 +2186,63 @@ pub(super) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws(r)?;
         let (r, pd) = parse_pointy_param(r)?;
         let (r, _) = ws(r)?;
-        (r, Some(pd.name.clone()))
+        (r, Some(pd))
     } else {
         (rest, None)
     };
     let (rest, mut body) = block(rest)?;
-    if let Some(param_name) = pointy_param {
-        body.insert(
-            0,
-            Stmt::Assign {
-                name: param_name,
-                op: AssignOp::Bind,
-                expr: Expr::Var("_".to_string()),
-            },
-        );
+    if let Some(pd) = pointy_param {
+        body.insert(0, pointy_topic_bind(&pd));
     }
     Ok((rest, Stmt::Given { topic, body }))
+}
+
+/// Build the head statement that binds a pointy-block parameter to the topic.
+///
+/// A plain (aliasing) parameter uses `:=` so the compiler/VM writes the
+/// parameter's final value back to the topic source — `given @a -> @p { @p.push }`
+/// aliases `@a`, matching Raku. `is copy` uses `=` (a fresh copy) so nothing is
+/// written back. The compiler only treats a `:=`-to-`$_` head as a pointy alias.
+fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
+    let topic = Expr::Var("_".to_string());
+    if pd.traits.iter().any(|t| t == "copy") {
+        // `is copy` is a fresh, writable copy with no link to the source. Use a
+        // plain assignment (not `:=`, so the compiler does not treat it as a
+        // writeback alias). For `@`/`%` params flatten the topic first
+        // (`@p = $_.list` / `%p = $_.hash`) so a copy of an array/hash topic
+        // does not nest inside a single element (`$_` is an itemized container).
+        let expr = if pd.name.starts_with('@') {
+            method_call(topic, "list")
+        } else if pd.name.starts_with('%') {
+            method_call(topic, "hash")
+        } else {
+            topic
+        };
+        Stmt::Assign {
+            name: pd.name.clone(),
+            op: AssignOp::Assign,
+            expr,
+        }
+    } else {
+        // Aliasing parameter: `:=` so the compiler/VM writes the parameter's
+        // final value back to the topic source.
+        Stmt::Assign {
+            name: pd.name.clone(),
+            op: AssignOp::Bind,
+            expr: topic,
+        }
+    }
+}
+
+/// Build a zero-argument method call expression (`$expr.NAME`).
+fn method_call(target: Expr, name: &str) -> Expr {
+    Expr::MethodCall {
+        target: Box::new(target),
+        name: Symbol::intern(name),
+        args: Vec::new(),
+        modifier: None,
+        quoted: false,
+    }
 }
 
 pub(super) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -2287,11 +2328,28 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
             )
     );
-    let use_given_alias = param_name.is_none()
-        && (matches!(
-            &cond_expr,
-            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
-        ) || topic_is_element_lvalue);
+    let cond_is_lvalue = matches!(
+        &cond_expr,
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+    ) || topic_is_element_lvalue;
+    // A container/scalar pointy parameter on an lvalue condition is routed
+    // through `given` so it shares `given`'s topic semantics: a plain `-> @p`
+    // aliases the source (writeback of `@p.push` / `@p[0]=v`), while `-> @p is
+    // copy` becomes a flattened fresh copy (see `pointy_topic_bind`). Exclude
+    // sub-signatures, sigilless `\x`, callables, and attributive (`$!x`/`$.x`)
+    // params — those keep the copy-style VarDecl binding below.
+    let pointy_routes_through_given = param_def
+        .as_ref()
+        .map(|pd| {
+            pd.sub_signature.is_none()
+                && !pd.sigilless
+                && !pd.name.is_empty()
+                && !pd.name.starts_with('&')
+                && !pd.name.starts_with('!')
+                && !pd.name.starts_with('.')
+        })
+        .unwrap_or(false);
+    let use_given_alias = cond_is_lvalue && (param_name.is_none() || pointy_routes_through_given);
     // Topicalize `$_` for the body. For a literal, wrap it in a Mixin marked
     // read-only so in-place mutation of `$_` throws X::Assignment::RO. Otherwise
     // reuse the `$tmp` holding the (once-evaluated) condition value.
@@ -2312,8 +2370,13 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         vec![topic_assign]
     };
-    // If a named parameter was given (-> $param), also assign it
-    if let Some(ref pname) = param_name {
+    // If a named parameter was given (-> $param), also assign it. A
+    // container/scalar pointy param is handled by the `given` routing below
+    // (it prepends the alias/copy bind to the given body), so skip the VarDecl
+    // here for those.
+    if let Some(ref pname) = param_name
+        && !(use_given_alias && pointy_routes_through_given)
+    {
         // Attributive parameter (`-> $!foo` / `-> $.foo`): bind the value to
         // self's attribute via an attribute assignment. This must be checked
         // first (an attributive param never has a sub-signature), and it must be
@@ -2425,9 +2488,17 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
     if use_given_alias {
+        let mut given_body = body;
+        // For a container/scalar pointy param, prepend the alias/copy bind
+        // (`@p := $_` for aliasing, `@p = $_.list` for `is copy`) so the `given`
+        // mechanism handles topic-source writeback (alias) or a flattened fresh
+        // copy (matching `given @a -> @p`).
+        if pointy_routes_through_given && let Some(ref pd) = param_def {
+            given_body.insert(0, pointy_topic_bind(pd));
+        }
         with_body = vec![Stmt::Given {
             topic: cond_expr.clone(),
-            body,
+            body: given_body,
         }];
     } else {
         with_body.extend(body);

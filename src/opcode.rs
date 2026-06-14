@@ -711,6 +711,13 @@ pub(crate) enum OpCode {
         /// `given expr()` are all read-only in Raku (container *mutation* like
         /// `.push` is still allowed and propagates).
         topic_readonly: bool,
+        /// For a pointy block (`given @a -> @p { ... }`), the env name of the
+        /// parameter aliased to the topic. When set, the topic-source writeback
+        /// reads this parameter's final value (instead of `$_`) and writes it
+        /// back to the source, so `@p.push` / `@p[0]=v` propagate to `@a`. The
+        /// parser desugars `-> @p` into `@p := $_` at the body head and the
+        /// compiler records the bound name here. `None` for non-pointy `given`.
+        pointy_param_idx: Option<u32>,
     },
     When {
         body_end: u32,
