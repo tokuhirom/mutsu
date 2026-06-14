@@ -246,6 +246,17 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let cn_resolved = class_name.resolve();
+        // A `repr('CUnion')` class constructs via a byte overlay
+        // (`construct_cunion_instance`): its native-int fields share the same
+        // underlying bytes. The interpreter's `dispatch_new` does *nothing else*
+        // for a CUnion class (no BUILD/TWEAK/required), so run that exact shared
+        // helper here and skip the interpreter round-trip. `is_native_default_
+        // constructible` still rejects CUnion classes, keeping
+        // `build_native_default_instance` (plain per-attribute assignment) from
+        // ever touching the byte overlay.
+        if self.registry().cunion_classes.contains(&cn_resolved) {
+            return Some(self.construct_cunion_instance(&cn_resolved, args));
+        }
         if !self.is_native_default_constructible(&cn_resolved) {
             return None;
         }
