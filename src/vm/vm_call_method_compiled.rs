@@ -113,6 +113,19 @@ impl VM {
             self.method_dispatch_pure = true;
             return result;
         }
+        // Native `Buf`/`Blob` construction: a byte-overlay build of pure data
+        // (flatten args -> bytes, mask to element width). The VM builds it
+        // directly instead of routing through the interpreter's `dispatch_new`.
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && crate::runtime::Interpreter::is_native_buf_constructible(&class_name.resolve())
+        {
+            self.method_dispatch_pure = true;
+            return Ok(crate::runtime::Interpreter::build_native_buf_value(
+                *class_name,
+                &args,
+            ));
+        }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
             // VM-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
@@ -1478,6 +1491,17 @@ impl VM {
             // Pure construction: fresh instance, no caller-env write (Slice 6.3).
             self.method_dispatch_pure = true;
             return result;
+        }
+        // Native `Buf`/`Blob` construction (mut path twin of the above).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && crate::runtime::Interpreter::is_native_buf_constructible(&class_name.resolve())
+        {
+            self.method_dispatch_pure = true;
+            return Ok(crate::runtime::Interpreter::build_native_buf_value(
+                *class_name,
+                &args,
+            ));
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();

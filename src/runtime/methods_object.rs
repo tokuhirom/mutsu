@@ -770,6 +770,98 @@ impl Interpreter {
         }
     }
 
+    /// True for the buf/blob type names `build_native_buf_value` constructs as a
+    /// pure byte overlay — every `Buf`/`Blob` flavour (`Buf`, `buf8`..`buf64`,
+    /// `Blob`, `blob8`..`blob64`, and the parametric `Buf[uintN]`/`Blob[uintN]`
+    /// forms) EXCEPT `utf8`/`utf16`, which `dispatch_new` builds via a different
+    /// (unmasked) arm and must keep on the interpreter. Used by the VM to route
+    /// `Buf.new(...)` to the native builder instead of the generic dispatch.
+    pub(crate) fn is_native_buf_constructible(cn: &str) -> bool {
+        cn != "utf8" && cn != "utf16" && crate::runtime::utils::is_buf_or_blob_class(cn)
+    }
+
+    /// Build a `Buf`/`Blob` instance from `.new` arguments as pure data: flatten
+    /// each argument into a byte sequence, mask every value to the element width
+    /// inferred from the type name (`uint8`/`16`/`32`/`64`), and tag the
+    /// canonical parametric class name (`buf8` -> `Buf[uint8]`, …). Touches no
+    /// env / registry, so the VM constructs these directly (see
+    /// `is_native_buf_constructible`) without entering generic dispatch, while
+    /// `dispatch_new`'s Buf/Blob arm calls the same helper — keeping the two
+    /// byte-identical. `utf8`/`utf16` are intentionally NOT handled here.
+    pub(crate) fn build_native_buf_value(class_name: Symbol, args: &[Value]) -> Value {
+        let cn = class_name.resolve();
+        let raw_vals: Vec<Value> = args
+            .iter()
+            .flat_map(|a| match a {
+                Value::Int(i) => vec![Value::Int(*i)],
+                Value::Array(items, ..) => items.to_vec(),
+                Value::Seq(items) => items.to_vec(),
+                Value::Slip(items) => items.to_vec(),
+                Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
+                Value::RangeExcl(start, end) => (*start..*end).map(Value::Int).collect(),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Buf"
+                    || class_name == "Blob"
+                    || class_name == "utf8"
+                    || class_name == "utf16"
+                    || class_name.resolve().starts_with("Buf[")
+                    || class_name.resolve().starts_with("Blob[")
+                    || class_name.resolve().starts_with("buf")
+                    || class_name.resolve().starts_with("blob") =>
+                {
+                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                        items.to_vec()
+                    } else {
+                        Vec::new()
+                    }
+                }
+                Value::BigInt(_) => vec![a.clone()],
+                other => vec![Value::Int(to_int(other))],
+            })
+            .collect();
+        // Mask values to unsigned range based on element size. For uint64, use
+        // BigInt-aware conversion to preserve values > i64::MAX.
+        let byte_vals: Vec<Value> = raw_vals
+            .into_iter()
+            .map(|v| {
+                if cn.contains("64") {
+                    let u = match &v {
+                        Value::BigInt(n) => {
+                            use num_traits::ToPrimitive;
+                            n.as_ref().to_u64().unwrap_or(to_int(&v) as u64)
+                        }
+                        _ => to_int(&v) as u64,
+                    };
+                    Value::Int(u as i64)
+                } else if cn.contains("32") {
+                    Value::Int(to_int(&v) as u32 as i64)
+                } else if cn.contains("16") {
+                    Value::Int(to_int(&v) as u16 as i64)
+                } else {
+                    Value::Int(to_int(&v) as u8 as i64)
+                }
+            })
+            .collect();
+        let mut attrs = HashMap::new();
+        attrs.insert("bytes".to_string(), Value::array(byte_vals));
+        // Normalize short buf/blob names to canonical forms.
+        let canonical_name = match cn.as_str() {
+            "buf8" => Symbol::intern("Buf[uint8]"),
+            "buf16" => Symbol::intern("Buf[uint16]"),
+            "buf32" => Symbol::intern("Buf[uint32]"),
+            "buf64" => Symbol::intern("Buf[uint64]"),
+            "blob8" => Symbol::intern("Blob[uint8]"),
+            "blob16" => Symbol::intern("Blob[uint16]"),
+            "blob32" => Symbol::intern("Blob[uint32]"),
+            "blob64" => Symbol::intern("Blob[uint64]"),
+            _ => class_name,
+        };
+        Value::make_instance(canonical_name, attrs)
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,
@@ -2485,82 +2577,9 @@ impl Interpreter {
                 }
                 "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
                 | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
-                    let cn = class_name.resolve();
-                    let raw_vals: Vec<Value> = args
-                        .iter()
-                        .flat_map(|a| match a {
-                            Value::Int(i) => vec![Value::Int(*i)],
-                            Value::Array(items, ..) => items.to_vec(),
-                            Value::Seq(items) => items.to_vec(),
-                            Value::Slip(items) => items.to_vec(),
-                            Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
-                            Value::RangeExcl(start, end) => {
-                                (*start..*end).map(Value::Int).collect()
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "Buf"
-                                || class_name == "Blob"
-                                || class_name == "utf8"
-                                || class_name == "utf16"
-                                || class_name.resolve().starts_with("Buf[")
-                                || class_name.resolve().starts_with("Blob[")
-                                || class_name.resolve().starts_with("buf")
-                                || class_name.resolve().starts_with("blob") =>
-                            {
-                                if let Some(Value::Array(items, ..)) =
-                                    attributes.as_map().get("bytes")
-                                {
-                                    items.to_vec()
-                                } else {
-                                    Vec::new()
-                                }
-                            }
-                            Value::BigInt(_) => vec![a.clone()],
-                            other => vec![Value::Int(to_int(other))],
-                        })
-                        .collect();
-                    // Mask values to unsigned range based on element size.
-                    // For uint64, use BigInt-aware conversion to preserve
-                    // values > i64::MAX (e.g. 18446744073709551615).
-                    let byte_vals: Vec<Value> = raw_vals
-                        .into_iter()
-                        .map(|v| {
-                            if cn.contains("64") {
-                                let u = match &v {
-                                    Value::BigInt(n) => {
-                                        use num_traits::ToPrimitive;
-                                        n.as_ref().to_u64().unwrap_or(to_int(&v) as u64)
-                                    }
-                                    _ => to_int(&v) as u64,
-                                };
-                                Value::Int(u as i64)
-                            } else if cn.contains("32") {
-                                Value::Int(to_int(&v) as u32 as i64)
-                            } else if cn.contains("16") {
-                                Value::Int(to_int(&v) as u16 as i64)
-                            } else {
-                                Value::Int(to_int(&v) as u8 as i64)
-                            }
-                        })
-                        .collect();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    // Normalize short buf/blob names to canonical forms
-                    let canonical_name = match cn.as_str() {
-                        "buf8" => Symbol::intern("Buf[uint8]"),
-                        "buf16" => Symbol::intern("Buf[uint16]"),
-                        "buf32" => Symbol::intern("Buf[uint32]"),
-                        "buf64" => Symbol::intern("Buf[uint64]"),
-                        "blob8" => Symbol::intern("Blob[uint8]"),
-                        "blob16" => Symbol::intern("Blob[uint16]"),
-                        "blob32" => Symbol::intern("Blob[uint32]"),
-                        "blob64" => Symbol::intern("Blob[uint64]"),
-                        _ => *class_name,
-                    };
-                    return Ok(Value::make_instance(canonical_name, attrs));
+                    // Shared with the VM's native fast path (the byte-overlay
+                    // build is pure data; see `build_native_buf_value`).
+                    return Ok(Self::build_native_buf_value(*class_name, &args));
                 }
                 "Rat" => {
                     use num_bigint::BigInt;
