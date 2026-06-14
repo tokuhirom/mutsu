@@ -1847,6 +1847,30 @@ impl VM {
         }
     }
 
+    /// Write a mutated whole-container topic back to its source variable after a
+    /// `given`/`with` block: `given @a { .push(4) }` aliases `@a`, so a container
+    /// mutation through `$_` must propagate. Only for `@`/`%`-sigil sources
+    /// (whole-container topicalization); skipped when the topic is unchanged
+    /// (same `Arc`) so a read-only `given` stays a no-op.
+    fn write_back_given_topic(&mut self, code: &CompiledCode, source: &Option<String>) {
+        let Some(source) = source else {
+            return;
+        };
+        if !source.starts_with('@') && !source.starts_with('%') {
+            return;
+        }
+        let Some(current) = self.interpreter.env().get("_").cloned() else {
+            return;
+        };
+        if let Some(orig) = self.get_env_with_main_alias(source)
+            && Self::loop_var_unchanged(&current, &orig)
+        {
+            return;
+        }
+        self.set_env_with_main_alias(source, current.clone());
+        self.update_local_if_exists(code, source, &current);
+    }
+
     /// Whether the loop variable still holds the same binding as the source
     /// element, so writing it back would be a no-op. Conservative: returns
     /// `true` only when provably unchanged (same container `Arc`, so in-place
@@ -2237,6 +2261,7 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         body_end: u32,
+        topic_readonly: bool,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
@@ -2252,6 +2277,29 @@ impl VM {
         self.topic_source_var = container_binding.clone();
         self.interpreter.env_mut().insert("_".to_string(), topic);
         self.interpreter.set_when_matched(false);
+        // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
+        // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
+        // written back to the source below. A bare scalar var (`given $x`) is rw.
+        let mark_ro = topic_readonly && !self.interpreter.readonly_vars().contains("_");
+        if mark_ro {
+            self.interpreter.mark_readonly("_");
+        }
+
+        let restore = |this: &mut Self, write_back: bool| {
+            if mark_ro {
+                this.interpreter.unmark_readonly("_");
+            }
+            if write_back {
+                this.write_back_given_topic(code, &container_binding);
+            }
+            this.interpreter.set_when_matched(saved_when);
+            if let Some(v) = saved_topic.clone() {
+                this.interpreter.env_mut().insert("_".to_string(), v);
+            } else {
+                this.interpreter.env_mut().remove("_");
+            }
+            this.topic_source_var = saved_topic_source.clone();
+        };
 
         let mut inner_ip = body_start;
         while inner_ip < end {
@@ -2261,23 +2309,11 @@ impl VM {
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
                     }
-                    self.interpreter.set_when_matched(saved_when);
-                    if let Some(v) = saved_topic.clone() {
-                        self.interpreter.env_mut().insert("_".to_string(), v);
-                    } else {
-                        self.interpreter.env_mut().remove("_");
-                    }
-                    self.topic_source_var = saved_topic_source;
+                    restore(self, true);
                     *ip = end;
                     return Ok(());
                 }
-                self.interpreter.set_when_matched(saved_when);
-                if let Some(v) = saved_topic {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
-                } else {
-                    self.interpreter.env_mut().remove("_");
-                }
-                self.topic_source_var = saved_topic_source;
+                restore(self, false);
                 return Err(e);
             }
             if self.interpreter.when_matched() || self.interpreter.is_halted() {
@@ -2290,13 +2326,7 @@ impl VM {
             self.stack.push(last);
         }
 
-        self.interpreter.set_when_matched(saved_when);
-        if let Some(v) = saved_topic {
-            self.interpreter.env_mut().insert("_".to_string(), v);
-        } else {
-            self.interpreter.env_mut().remove("_");
-        }
-        self.topic_source_var = saved_topic_source;
+        restore(self, true);
         *ip = end;
         Ok(())
     }

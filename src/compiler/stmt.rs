@@ -1680,7 +1680,14 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(source_name));
                     self.code.emit(OpCode::TagContainerRef(name_idx));
                 }
-                let given_idx = self.code.emit(OpCode::Given { body_end: 0 });
+                // The topic is read-only unless it is a bare scalar variable
+                // (`given $x` aliases `$x` rw). `given @a` / `given 42` /
+                // `given expr()` are read-only (Raku errors on `$_ = ...`).
+                let topic_readonly = !matches!(topic, Expr::Var(_));
+                let given_idx = self.code.emit(OpCode::Given {
+                    body_end: 0,
+                    topic_readonly,
+                });
                 if Self::has_catch_or_control(body) {
                     self.compile_try(body, &None);
                     self.code.emit(OpCode::Pop);
