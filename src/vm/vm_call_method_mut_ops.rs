@@ -388,7 +388,7 @@ impl VM {
                 && (matches!(method.as_str(), "map" | "grep")
                     || Self::lazy_pipe_preserving_coercion(&method)))
         {
-            let saved_env = self.interpreter.env().clone();
+            let saved_env = self.env().clone();
             // `.head(n)` only needs the first `n` elements: pull them lazily so
             // an infinite gather does not hang.
             let items = match Self::gather_head_bound(&method, &args) {
@@ -405,7 +405,7 @@ impl VM {
             // legitimate and must persist (unlike gather coroutine corruption,
             // which the env restore undoes).
             if !matches!(method.as_str(), "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
             }
             Value::Seq(std::sync::Arc::new(items))
         } else {
@@ -1097,7 +1097,7 @@ impl VM {
                         // BOUND_HASH_REF_SENTINEL back-reference.
                         let mut bind_source_install: Option<(String, Value)> = None;
                         if let Some(var_name) = source_var {
-                            let cell = match self.interpreter.env().get(&var_name) {
+                            let cell = match self.env().get(&var_name) {
                                 Some(Value::ContainerRef(cell)) => cell.clone(),
                                 _ => {
                                     let cell = Arc::new(std::sync::Mutex::new(value.clone()));
@@ -1138,7 +1138,7 @@ impl VM {
                         let mut new_map = std::collections::HashMap::new();
                         let mut bind_source_install: Option<(String, Value)> = None;
                         if let Some(var_name) = source_var {
-                            let cell = match self.interpreter.env().get(&var_name) {
+                            let cell = match self.env().get(&var_name) {
                                 Some(Value::ContainerRef(cell)) => cell.clone(),
                                 _ => {
                                     let cell = Arc::new(std::sync::Mutex::new(value.clone()));
@@ -1151,7 +1151,7 @@ impl VM {
                         } else {
                             new_map.insert(key, value.clone());
                         }
-                        self.interpreter.env_mut().insert(
+                        self.env_mut().insert(
                             target_name.to_string(),
                             Value::Hash(Value::hash_arc(new_map)),
                         );
@@ -1363,12 +1363,11 @@ impl VM {
                                 )
                             })?;
                         // Read back the (potentially mutated) storage
-                        if let Some(updated_storage) =
-                            self.interpreter.env().get("__mutsu_array_tmp").cloned()
+                        if let Some(updated_storage) = self.env().get("__mutsu_array_tmp").cloned()
                         {
                             storage = updated_storage;
                         }
-                        self.interpreter.env_mut().remove("__mutsu_array_tmp");
+                        self.env_mut().remove("__mutsu_array_tmp");
                         // Update the instance with the new storage
                         self.write_back_array_storage_instance(
                             &target_name,
@@ -1490,10 +1489,7 @@ impl VM {
         // variable bound to a whole array container (`my $r := @a`), which holds
         // a shared `ContainerRef` cell that `env_root_descended_mut` below
         // unwraps so the mutation still writes through the shared array.
-        let is_bound_cell = matches!(
-            self.interpreter.env().get(target_name),
-            Some(Value::ContainerRef(_))
-        );
+        let is_bound_cell = matches!(self.env().get(target_name), Some(Value::ContainerRef(_)));
         if (!target_name.starts_with('@') && !is_bound_cell)
             || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
         {
@@ -1698,10 +1694,7 @@ impl VM {
         // (ArrayKind::Array), excluding List/Item/Shaped/Lazy — OR a scalar bound
         // to a whole array container (`my $r := @a`), unwrapped via
         // `env_root_descended_mut` below.
-        let is_bound_cell = matches!(
-            self.interpreter.env().get(target_name),
-            Some(Value::ContainerRef(_))
-        );
+        let is_bound_cell = matches!(self.env().get(target_name), Some(Value::ContainerRef(_)));
         if (!target_name.starts_with('@') && !is_bound_cell)
             || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
         {

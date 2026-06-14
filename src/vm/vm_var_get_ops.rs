@@ -88,7 +88,7 @@ impl VM {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
             Value::Package(Symbol::intern(name))
-        } else if let Some(v) = self.interpreter.env().get(name) {
+        } else if let Some(v) = self.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil)
                 || matches!(v, Value::Package(pkg) if pkg.resolve() != name)
             {
@@ -161,7 +161,7 @@ impl VM {
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
-        } else if let Some(callable) = self.interpreter.env().get(&format!("&{name}")).cloned()
+        } else if let Some(callable) = self.env().get(&format!("&{name}")).cloned()
             && matches!(
                 callable,
                 Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }

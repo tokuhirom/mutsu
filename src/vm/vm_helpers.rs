@@ -409,7 +409,7 @@ impl VM {
         // write-through (`flush_local_to_env`), so no explicit flush is needed
         // here; we restore locals directly on return.
         crate::vm::vm_stats::record_clone_env();
-        let saved_env = self.interpreter.clone_env();
+        let saved_env = self.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_env_dirty = self.env_dirty;
@@ -419,7 +419,7 @@ impl VM {
         // own writes land in a fresh born-owned overlay (no fork of `list.env`).
         // The merge below iterates the overlay (overlay-only) = the body's writes.
         // See docs/vm-dual-store.md (Slice 6).
-        *self.interpreter.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+        *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
 
         // Push gather items collector
         let saved_gather_len = self.interpreter.gather_items_len();
@@ -429,7 +429,7 @@ impl VM {
         // Initialize locals for the compiled code
         self.locals = vec![Value::Nil; cc.locals.len()];
         for (i, name) in cc.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(name) {
+            if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
             }
         }
@@ -493,7 +493,7 @@ impl VM {
         // This prevents nested gather closures from corrupting each other's
         // captured variables (e.g., `$n` in nested grep-div calls), while
         // still propagating genuine side effects (e.g., `$x += 1`).
-        let gather_result_env = self.interpreter.env().clone();
+        let gather_result_env = self.env().clone();
         let mut merged_env = saved_env.clone();
         for (k, v) in gather_result_env.iter() {
             if !saved_env.contains_key_sym(*k) {
@@ -512,11 +512,11 @@ impl VM {
                 merged_env.insert_sym(*k, v.clone());
             }
         }
-        *self.interpreter.env_mut() = merged_env;
+        *self.env_mut() = merged_env;
 
         // Check whether the merged env actually changed any outer-scope variables.
         let env_actually_changed = {
-            let merged = self.interpreter.env();
+            let merged = self.env();
             saved_env.iter().any(|(k, old_val)| {
                 merged
                     .get_sym(*k)
@@ -594,7 +594,7 @@ impl VM {
 
         // Save current VM state
         crate::vm::vm_stats::record_clone_env();
-        let saved_env = self.interpreter.clone_env();
+        let saved_env = self.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_env_dirty = self.env_dirty;
@@ -610,7 +610,7 @@ impl VM {
                 ip = coro.ip;
                 self.locals = coro.locals.clone();
                 self.stack = coro.stack.clone();
-                *self.interpreter.env_mut() = coro.env.clone();
+                *self.env_mut() = coro.env.clone();
                 self.gather_for_loop_resume = coro.for_loop_resume.clone();
                 has_prior_state = true;
             } else {
@@ -620,10 +620,10 @@ impl VM {
                 // preserves overlay+parent+tombstones), so the body's writes
                 // accumulate across takes without forking `list.env`.
                 ip = 0;
-                *self.interpreter.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+                *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
                 self.locals = vec![Value::Nil; cc.locals.len()];
                 for (i, name) in cc.locals.iter().enumerate() {
-                    if let Some(val) = self.interpreter.env().get(name) {
+                    if let Some(val) = self.env().get(name) {
                         self.locals[i] = val.clone();
                     }
                 }
@@ -633,10 +633,10 @@ impl VM {
         } else {
             // Fresh start (no coroutine slot yet)
             ip = 0;
-            *self.interpreter.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+            *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
             self.locals = vec![Value::Nil; cc.locals.len()];
             for (i, name) in cc.locals.iter().enumerate() {
-                if let Some(val) = self.interpreter.env().get(name) {
+                if let Some(val) = self.env().get(name) {
                     self.locals[i] = val.clone();
                 }
             }
@@ -731,7 +731,7 @@ impl VM {
                 ip,
                 locals: self.locals.clone(),
                 stack: self.stack.clone(),
-                env: self.interpreter.env().clone(),
+                env: self.env().clone(),
                 finished: false,
                 for_loop_resume,
             };
@@ -746,7 +746,7 @@ impl VM {
         }
 
         // Merge env changes back to outer scope
-        let gather_result_env = self.interpreter.env().clone();
+        let gather_result_env = self.env().clone();
         let initial_env = &list.env;
         let mut merged_env = saved_env.clone();
         for (k, v) in gather_result_env.iter() {
@@ -761,10 +761,10 @@ impl VM {
                 merged_env.insert_sym(*k, v.clone());
             }
         }
-        *self.interpreter.env_mut() = merged_env;
+        *self.env_mut() = merged_env;
 
         let env_actually_changed = {
-            let merged = self.interpreter.env();
+            let merged = self.env();
             saved_env.iter().any(|(k, old_val)| {
                 merged
                     .get_sym(*k)

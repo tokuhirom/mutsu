@@ -132,7 +132,7 @@ impl VM {
                 // `saved` only holds names that shadowed an existing outer binding
                 // (recorded in exec_set_local_op), so restoring the captured value
                 // re-exposes the outer `$x` clobbered by the loop body's `my $x`.
-                self.interpreter.env_mut().insert(name.clone(), val.clone());
+                self.env_mut().insert(name.clone(), val.clone());
                 // Restore the local slot too: loop bodies mark every local
                 // `needs_env_sync`, so the shadowing `my` wrote the outer var's
                 // shared slot. `GetLocal`'s fast path returns a non-Nil slot value
@@ -221,7 +221,7 @@ impl VM {
                 break;
             }
             let topic_before_body = if spec.isolate_topic {
-                Some(self.interpreter.env().get("_").cloned())
+                Some(self.env().get("_").cloned())
             } else {
                 None
             };
@@ -235,9 +235,9 @@ impl VM {
                         }
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             } else {
-                                self.interpreter.env_mut().remove("_");
+                                self.env_mut().remove("_");
                             }
                         }
                         if let Some(ref mut coll) = collected {
@@ -258,9 +258,9 @@ impl VM {
                     Err(e) if e.is_succeed => {
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             } else {
-                                self.interpreter.env_mut().remove("_");
+                                self.env_mut().remove("_");
                             }
                         }
                         break 'body_redo;
@@ -268,9 +268,9 @@ impl VM {
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             } else {
-                                self.interpreter.env_mut().remove("_");
+                                self.env_mut().remove("_");
                             }
                         }
                         continue 'body_redo;
@@ -285,7 +285,7 @@ impl VM {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
                             } else {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             }
                         }
                         break 'while_loop;
@@ -296,9 +296,9 @@ impl VM {
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             } else {
-                                self.interpreter.env_mut().remove("_");
+                                self.env_mut().remove("_");
                             }
                         }
                         break 'body_redo;
@@ -617,7 +617,7 @@ impl VM {
         let mut deferred_container_refs: Vec<(usize, String)> = Vec::new();
         let saved_topic = spec
             .restore_topic
-            .then(|| self.interpreter.env().get("_").cloned())
+            .then(|| self.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
         let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
@@ -662,10 +662,10 @@ impl VM {
             .multi_param_names
             .iter()
             .map(|name| {
-                let val = self.interpreter.env().get(name).cloned();
+                let val = self.env().get(name).cloned();
                 let was_readonly = self.interpreter.readonly_vars().contains(name);
                 let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
-                let sigilless_ro = self.interpreter.env().get(&sigilless_key).cloned();
+                let sigilless_ro = self.env().get(&sigilless_key).cloned();
                 (name.clone(), val, was_readonly, sigilless_ro)
             })
             .collect();
@@ -677,7 +677,7 @@ impl VM {
         let saved_param: Option<(String, Option<Value>)> = param_name
             .as_ref()
             .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
-            .map(|name| (name.clone(), self.interpreter.env().get(name).cloned()));
+            .map(|name| (name.clone(), self.env().get(name).cloned()));
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit.
         self.push_loop_local_scope();
@@ -769,7 +769,7 @@ impl VM {
                 self.interpreter.unmark_readonly(mp_name);
                 // Clear sigilless readonly flag
                 let key = format!("__mutsu_sigilless_readonly::{}", mp_name);
-                self.interpreter.env_mut().insert(key, Value::Bool(false));
+                self.env_mut().insert(key, Value::Bool(false));
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
@@ -1033,10 +1033,10 @@ impl VM {
                         if spec.restore_topic {
                             match saved_topic {
                                 Some(v) => {
-                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                    self.env_mut().insert("_".to_string(), v);
                                 }
                                 None => {
-                                    self.interpreter.env_mut().remove("_");
+                                    self.env_mut().remove("_");
                                 }
                             }
                         }
@@ -1059,10 +1059,10 @@ impl VM {
                         if spec.restore_topic {
                             match saved_topic.clone() {
                                 Some(v) => {
-                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                    self.env_mut().insert("_".to_string(), v);
                                 }
                                 None => {
-                                    self.interpreter.env_mut().remove("_");
+                                    self.env_mut().remove("_");
                                 }
                             }
                         }
@@ -1110,9 +1110,9 @@ impl VM {
         // Restore saved multi-param values and readonly state
         for (name, saved_val, was_readonly, sigilless_ro) in saved_multi_params {
             if let Some(v) = saved_val {
-                self.interpreter.env_mut().insert(name.clone(), v);
+                self.env_mut().insert(name.clone(), v);
             } else {
-                self.interpreter.env_mut().remove(&name);
+                self.env_mut().remove(&name);
             }
             if was_readonly {
                 self.interpreter.mark_readonly(&name);
@@ -1121,9 +1121,9 @@ impl VM {
             }
             let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
             if let Some(ro_val) = sigilless_ro {
-                self.interpreter.env_mut().insert(sigilless_key, ro_val);
+                self.env_mut().insert(sigilless_key, ro_val);
             } else {
-                self.interpreter.env_mut().remove(&sigilless_key);
+                self.env_mut().remove(&sigilless_key);
             }
         }
         // Defer restoring the single named loop param's prior binding until
@@ -1144,10 +1144,10 @@ impl VM {
         if spec.restore_topic {
             match saved_topic {
                 Some(v) => {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 }
                 None => {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
             }
         }
@@ -1187,7 +1187,7 @@ impl VM {
             });
         let saved_topic = spec
             .restore_topic
-            .then(|| self.interpreter.env().get("_").cloned())
+            .then(|| self.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.interpreter.readonly_vars().contains("_");
@@ -1204,7 +1204,7 @@ impl VM {
         let saved_param: Option<(String, Option<Value>)> = param_name
             .as_ref()
             .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
-            .map(|name| (name.clone(), self.interpreter.env().get(name).cloned()));
+            .map(|name| (name.clone(), self.env().get(name).cloned()));
 
         // Track loop-body declarations so closures created in the body capture
         // them per-iteration (owned_captures). Balanced by pop on every exit.
@@ -1343,10 +1343,10 @@ impl VM {
                         if spec.restore_topic {
                             match saved_topic {
                                 Some(v) => {
-                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                    self.env_mut().insert("_".to_string(), v);
                                 }
                                 None => {
-                                    self.interpreter.env_mut().remove("_");
+                                    self.env_mut().remove("_");
                                 }
                             }
                         }
@@ -1366,10 +1366,10 @@ impl VM {
                         if spec.restore_topic {
                             match saved_topic.clone() {
                                 Some(v) => {
-                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                    self.env_mut().insert("_".to_string(), v);
                                 }
                                 None => {
-                                    self.interpreter.env_mut().remove("_");
+                                    self.env_mut().remove("_");
                                 }
                             }
                         }
@@ -1400,10 +1400,10 @@ impl VM {
         if spec.restore_topic {
             match saved_topic {
                 Some(v) => {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 }
                 None => {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
             }
         }
@@ -1472,7 +1472,7 @@ impl VM {
             });
         let saved_topic = spec
             .restore_topic
-            .then(|| self.interpreter.env().get("_").cloned())
+            .then(|| self.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.interpreter.readonly_vars().contains("_");
@@ -1576,10 +1576,10 @@ impl VM {
                         if spec.restore_topic {
                             match saved_topic {
                                 Some(v) => {
-                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                    self.env_mut().insert("_".to_string(), v);
                                 }
                                 None => {
-                                    self.interpreter.env_mut().remove("_");
+                                    self.env_mut().remove("_");
                                 }
                             }
                         }
@@ -1597,10 +1597,10 @@ impl VM {
                         if spec.restore_topic {
                             match saved_topic.clone() {
                                 Some(v) => {
-                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                    self.env_mut().insert("_".to_string(), v);
                                 }
                                 None => {
-                                    self.interpreter.env_mut().remove("_");
+                                    self.env_mut().remove("_");
                                 }
                             }
                         }
@@ -1625,10 +1625,10 @@ impl VM {
         if spec.restore_topic {
             match saved_topic {
                 Some(v) => {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 }
                 None => {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
             }
         }
@@ -1661,7 +1661,7 @@ impl VM {
             spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
         let saved_topic = spec
             .restore_topic
-            .then(|| self.interpreter.env().get("_").cloned())
+            .then(|| self.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
@@ -1790,10 +1790,10 @@ impl VM {
                         if spec.restore_topic {
                             match saved_topic.clone() {
                                 Some(v) => {
-                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                    self.env_mut().insert("_".to_string(), v);
                                 }
                                 None => {
-                                    self.interpreter.env_mut().remove("_");
+                                    self.env_mut().remove("_");
                                 }
                             }
                         }
@@ -1816,10 +1816,10 @@ impl VM {
         if spec.restore_topic {
             match saved_topic {
                 Some(v) => {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 }
                 None => {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
             }
         }
@@ -1838,10 +1838,10 @@ impl VM {
         param_name: &Option<String>,
     ) -> Option<Value> {
         if writes_back_topic {
-            self.interpreter.env().get("_").cloned()
+            self.env().get("_").cloned()
         } else if rw_writeback {
             let var = param_name.as_deref().unwrap_or("_");
-            self.interpreter.env().get(var).cloned()
+            self.env().get(var).cloned()
         } else {
             None
         }
@@ -1868,7 +1868,7 @@ impl VM {
         // (`@p` after `@p.push`); otherwise the topic `$_`.
         let current = match pointy_param {
             Some(p) => self.get_env_with_main_alias(p),
-            None => self.interpreter.env().get("_").cloned(),
+            None => self.env().get("_").cloned(),
         };
         let Some(current) = current else {
             return;
@@ -1898,7 +1898,7 @@ impl VM {
         // otherwise the topic `$_`.
         let current = match pointy_param {
             Some(p) => self.get_env_with_main_alias(p),
-            None => self.interpreter.env().get("_").cloned(),
+            None => self.env().get("_").cloned(),
         };
         let Some(current) = current else {
             return;
@@ -1954,7 +1954,7 @@ impl VM {
         // element, so `.push`/`@row[0]=v` propagate), or otherwise the implicit
         // topic `$_` (`for @m {...}`).
         let loop_var = param_name.as_deref().unwrap_or("_");
-        let Some(current_topic) = self.interpreter.env().get(loop_var).cloned() else {
+        let Some(current_topic) = self.env().get(loop_var).cloned() else {
             return;
         };
         let Some(Value::Array(items, kind)) = self.get_env_with_main_alias(source) else {
@@ -2000,7 +2000,7 @@ impl VM {
             return;
         }
         let var_name = param_name.as_deref().unwrap_or("_");
-        let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
+        let Some(current_val) = self.env().get(var_name).cloned() else {
             return;
         };
         let target = &source_var_names[idx];
@@ -2041,8 +2041,8 @@ impl VM {
                     // For %hash.kv -> $key, $val is rw: read $key and $val, update hash
                     let key_name = &rw_param_names[0];
                     let val_name = &rw_param_names[1];
-                    if let Some(key) = self.interpreter.env().get(key_name).cloned()
-                        && let Some(val) = self.interpreter.env().get(val_name).cloned()
+                    if let Some(key) = self.env().get(key_name).cloned()
+                        && let Some(val) = self.env().get(val_name).cloned()
                         && let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source)
                     {
                         let mut updated = hash_items.as_ref().clone();
@@ -2056,7 +2056,7 @@ impl VM {
                     // %hash.values -> $val is rw: positional writeback using pre-captured key order
                     let var_name = param_name.as_deref().unwrap_or("_");
                     if let Some(keys) = hash_keys
-                        && let Some(val) = self.interpreter.env().get(var_name).cloned()
+                        && let Some(val) = self.env().get(var_name).cloned()
                         && let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source)
                         && idx < keys.len()
                     {
@@ -2072,7 +2072,7 @@ impl VM {
             if kv_mode && arity > 1 && rw_param_names.len() >= 2 {
                 // .kv mode: chunk is [key, val]. Write back val at key position.
                 let val_name = &rw_param_names[1];
-                if let Some(val) = self.interpreter.env().get(val_name).cloned()
+                if let Some(val) = self.env().get(val_name).cloned()
                     && idx < items.len()
                 {
                     let mut updated = items.to_vec();
@@ -2090,7 +2090,7 @@ impl VM {
                 let mut updated = items.to_vec();
                 for (j, pname) in rw_param_names.iter().enumerate() {
                     if base + j < updated.len()
-                        && let Some(val) = self.interpreter.env().get(pname).cloned()
+                        && let Some(val) = self.env().get(pname).cloned()
                     {
                         updated[base + j] = val;
                     }
@@ -2104,7 +2104,7 @@ impl VM {
             } else {
                 // Single-param rw: read the named param (or $_) and write back
                 let var_name = param_name.as_deref().unwrap_or("_");
-                let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
+                let Some(current_val) = self.env().get(var_name).cloned() else {
                     return;
                 };
                 if idx >= items.len() {
@@ -2134,7 +2134,7 @@ impl VM {
             if kv_mode && arity > 1 && rw_param_names.len() >= 2 {
                 if let Some(existing) = self.get_env_with_main_alias(source) {
                     let val_name = &rw_param_names[1];
-                    if let Some(val) = self.interpreter.env().get(val_name).cloned() {
+                    if let Some(val) = self.env().get(val_name).cloned() {
                         let writeback_val = match existing {
                             Value::Pair(key, _) => Value::Pair(key, Box::new(val)),
                             Value::ValuePair(key, _) => Value::ValuePair(key, Box::new(val)),
@@ -2147,7 +2147,7 @@ impl VM {
                 return;
             }
             let var_name = param_name.as_deref().unwrap_or("_");
-            let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
+            let Some(current_val) = self.env().get(var_name).cloned() else {
                 return;
             };
             // If the source variable holds a Pair, update only the pair's value
@@ -2247,7 +2247,7 @@ impl VM {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
                             } else {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             }
                         }
                         break 'c_loop;
@@ -2325,7 +2325,7 @@ impl VM {
         let end = body_end as usize;
         let stack_base = self.stack.len();
 
-        let saved_topic = self.interpreter.env().get("_").cloned();
+        let saved_topic = self.env().get("_").cloned();
         let saved_when = self.interpreter.when_matched();
         let saved_topic_source = self.topic_source_var.take();
         let saved_element_source = self.element_source.take();
@@ -2338,7 +2338,7 @@ impl VM {
         if element_source.is_none() {
             self.topic_source_var = container_binding.clone();
         }
-        self.interpreter.env_mut().insert("_".to_string(), topic);
+        self.env_mut().insert("_".to_string(), topic);
         self.interpreter.set_when_matched(false);
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
         // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
@@ -2445,9 +2445,9 @@ impl VM {
         let body_start = *ip + 1;
         let end = body_end as usize;
 
-        let saved_topic = self.interpreter.env().get("_").cloned();
+        let saved_topic = self.env().get("_").cloned();
         let saved_when = self.interpreter.when_matched();
-        self.interpreter.env_mut().insert("_".to_string(), topic);
+        self.env_mut().insert("_".to_string(), topic);
         self.interpreter.set_when_matched(false);
 
         let mut last = Value::Nil;
@@ -2470,9 +2470,9 @@ impl VM {
             Err(e) => {
                 self.interpreter.set_when_matched(saved_when);
                 if let Some(v) = saved_topic {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 } else {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
                 return Err(e);
             }
@@ -2480,9 +2480,9 @@ impl VM {
 
         self.interpreter.set_when_matched(saved_when);
         if let Some(v) = saved_topic {
-            self.interpreter.env_mut().insert("_".to_string(), v);
+            self.env_mut().insert("_".to_string(), v);
         } else {
-            self.interpreter.env_mut().remove("_");
+            self.env_mut().remove("_");
         }
         self.stack.push(last);
         self.env_dirty = true;
@@ -2663,7 +2663,7 @@ impl VM {
                             && Self::label_matches(&e.label, label) =>
                     {
                         if let Some(v) = e.return_value {
-                            self.interpreter.env_mut().insert("_".to_string(), v);
+                            self.env_mut().insert("_".to_string(), v);
                         }
                         break 'repeat_loop;
                     }
@@ -2772,7 +2772,7 @@ impl VM {
                 self.interpreter.discard_let_saves(let_mark);
                 if control_begin < end {
                     self.stack.truncate(saved_depth);
-                    let saved_topic = self.interpreter.env().get("_").cloned();
+                    let saved_topic = self.env().get("_").cloned();
                     if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
                         self.interpreter
                             .env_mut()
@@ -2793,9 +2793,9 @@ impl VM {
                     }
                     self.interpreter.set_when_matched(saved_when);
                     if let Some(v) = saved_topic {
-                        self.interpreter.env_mut().insert("_".to_string(), v);
+                        self.env_mut().insert("_".to_string(), v);
                     } else {
-                        self.interpreter.env_mut().remove("_");
+                        self.env_mut().remove("_");
                     }
                     *ip = end;
                     Ok(())
@@ -2846,7 +2846,7 @@ impl VM {
             {
                 self.interpreter.discard_let_saves(let_mark);
                 self.stack.truncate(saved_depth);
-                let saved_topic = self.interpreter.env().get("_").cloned();
+                let saved_topic = self.env().get("_").cloned();
                 let saved_when = self.interpreter.when_matched();
                 let mut pending_err = e;
                 loop {
@@ -2875,9 +2875,9 @@ impl VM {
                         Err(ce) => {
                             self.interpreter.set_when_matched(saved_when);
                             if let Some(v) = saved_topic {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             } else {
-                                self.interpreter.env_mut().remove("_");
+                                self.env_mut().remove("_");
                             }
                             return Err(ce);
                         }
@@ -2887,9 +2887,9 @@ impl VM {
                         Some(resume_point) => {
                             self.interpreter.set_when_matched(saved_when);
                             if let Some(v) = saved_topic.clone() {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             } else {
-                                self.interpreter.env_mut().remove("_");
+                                self.env_mut().remove("_");
                             }
                             // A resumable *warn* raised mid-expression (e.g. a Nil
                             // coercion: `Nil.ords`, `Nil.Int`) carries the value
@@ -2940,9 +2940,9 @@ impl VM {
                 }
                 self.interpreter.set_when_matched(saved_when);
                 if let Some(v) = saved_topic {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 } else {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
                 *ip = end;
                 Ok(())
@@ -2975,11 +2975,11 @@ impl VM {
                     // ..., Exception` / `isa-ok $!, Exception` still match.
                     Value::make_instance(Symbol::intern("X::AdHoc"), exc_attrs)
                 };
-                let saved_topic = self.interpreter.env().get("_").cloned();
+                let saved_topic = self.env().get("_").cloned();
                 self.interpreter
                     .env_mut()
                     .insert("!".to_string(), err_val.clone());
-                self.interpreter.env_mut().insert("_".to_string(), err_val);
+                self.env_mut().insert("_".to_string(), err_val);
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
                 let catch_stack_base = self.stack.len();
@@ -2999,9 +2999,9 @@ impl VM {
                             self.stack.truncate(catch_stack_base);
                             self.interpreter.set_when_matched(saved_when);
                             if let Some(v) = saved_topic {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.env_mut().insert("_".to_string(), v);
                             } else {
-                                self.interpreter.env_mut().remove("_");
+                                self.env_mut().remove("_");
                             }
                             // Resume from the instruction after die
                             if let Some(resume_point) = self.resume_ip.take() {
@@ -3023,9 +3023,9 @@ impl VM {
                 self.interpreter
                     .set_when_matched(saved_when || when_handled);
                 if let Some(v) = saved_topic {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 } else {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
                 // If there's an explicit CATCH block but no `when`/`default`
                 // matched, re-throw the exception (Raku semantics).

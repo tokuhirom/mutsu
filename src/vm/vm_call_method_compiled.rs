@@ -1896,7 +1896,7 @@ impl VM {
                     self.locals[*slot] = val.clone();
                     continue;
                 }
-                if let Some(val) = self.interpreter.env().get(name) {
+                if let Some(val) = self.env().get(name) {
                     self.locals[*slot] = val.clone();
                 }
             }
@@ -2019,8 +2019,8 @@ impl VM {
             && let Some(persisted) = self.interpreter.get_closure_env_override(wid)
         {
             for (k, v) in persisted.iter() {
-                if self.interpreter.env().contains_key_sym(*k) {
-                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                if self.env().contains_key_sym(*k) {
+                    self.env_mut().insert_sym(*k, v.clone());
                 }
             }
             self.env_dirty = true;

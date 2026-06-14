@@ -215,7 +215,7 @@ impl VM {
         // writeback iterates this overlay (overlay-only) = exactly the closure's
         // own mutations, which is what it must propagate back to the caller.
         {
-            let parent = self.interpreter.env().clone();
+            let parent = self.env().clone();
             self.interpreter
                 .set_env(crate::env::Env::scoped_child(parent));
         }
@@ -229,7 +229,7 @@ impl VM {
         // don't-overwrite default would otherwise hide this closure's own cell.
         for (k, v) in data.env.iter() {
             if matches!(v, Value::ContainerRef(_)) {
-                self.interpreter.env_mut().insert_sym(*k, v.clone());
+                self.env_mut().insert_sym(*k, v.clone());
             } else {
                 self.interpreter
                     .env_mut()
@@ -248,7 +248,7 @@ impl VM {
         // accumulated state still wins on later calls. See PLAN.md lever C.
         for sym in &data.owned_captures {
             if let Some(val) = data.env.get_sym(*sym).cloned() {
-                self.interpreter.env_mut().insert_sym(*sym, val);
+                self.env_mut().insert_sym(*sym, val);
             }
         }
         // Override with persisted per-closure-instance captured variable state.
@@ -276,7 +276,7 @@ impl VM {
             })
             .collect();
         for (k, val) in cap_overrides {
-            self.interpreter.env_mut().insert_sym(k, val);
+            self.env_mut().insert_sym(k, val);
         }
 
         self.interpreter.push_caller_env();
@@ -303,7 +303,7 @@ impl VM {
             source_file: data.source_file.clone(),
             owned_captures: data.owned_captures.clone(),
         });
-        self.interpreter.env_mut().insert(
+        self.env_mut().insert(
             "&?BLOCK".to_string(),
             Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
         );
@@ -332,7 +332,7 @@ impl VM {
                 call_file,
             );
         }
-        self.interpreter.env_mut().insert(
+        self.env_mut().insert(
             "__mutsu_callable_id".to_string(),
             Value::Int(data.id as i64),
         );
@@ -343,7 +343,7 @@ impl VM {
             self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
             let frame = self.pop_call_frame();
-            *self.interpreter.env_mut() = frame.saved_env;
+            *self.env_mut() = frame.saved_env;
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
@@ -360,7 +360,7 @@ impl VM {
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
-                    *self.interpreter.env_mut() = frame.saved_env;
+                    *self.env_mut() = frame.saved_env;
                     return Err(Interpreter::enhance_binding_error(
                         e,
                         &data.name.resolve(),
@@ -386,13 +386,13 @@ impl VM {
         } else if data.params.is_empty() && args.is_empty() && data.name.is_empty() {
             let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
             if let Some(topic) = caller_topic {
-                self.interpreter.env_mut().insert("_".to_string(), topic);
+                self.env_mut().insert("_".to_string(), topic);
             }
         }
 
         // Raku: routines get their own $_ initialized to (Any).
         if cc.is_routine && !data.param_defs.iter().any(|pd| pd.name == "_") {
-            self.interpreter.env_mut().insert(
+            self.env_mut().insert(
                 "_".to_string(),
                 Value::Package(crate::symbol::Symbol::intern("Any")),
             );
@@ -411,7 +411,7 @@ impl VM {
         // param — to the element value. Applied after the routine-`$_` reset so
         // it wins, and before the locals load so the slot picks it up.
         if let Some(topic) = explicit_topic {
-            let env = self.interpreter.env_mut();
+            let env = self.env_mut();
             env.insert("_".to_string(), topic.clone());
             env.insert("$_".to_string(), topic.clone());
             // A single simple positional param consumes the topic too (e.g.
@@ -441,7 +441,7 @@ impl VM {
 
         self.locals = vec![Value::Nil; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(local_name) {
+            if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
             }
         }
@@ -466,7 +466,7 @@ impl VM {
         let free_at_entry: Vec<Option<Value>> = cc
             .free_var_syms
             .iter()
-            .map(|k| self.interpreter.env().get_sym(*k).cloned())
+            .map(|k| self.env().get_sym(*k).cloned())
             .collect();
         // A captured variable that lives in a local slot is flushed to env on
         // exit (above) rather than written through env during the body, so its
@@ -602,7 +602,7 @@ impl VM {
                 .position(|n| n == "_")
                 .map(|i| self.locals[i].clone());
             self.rw_map_topic_capture = local_topic
-                .or_else(|| self.interpreter.env().get("_").cloned())
+                .or_else(|| self.env().get("_").cloned())
                 .or_else(|| {
                     self.interpreter
                         .env()
@@ -655,7 +655,7 @@ impl VM {
         // Mirror of `cap_overrides` above: only free variables can be mutated by
         // the body, so only those need persisting.
         for k in &cc.free_var_syms {
-            if let Some(val) = self.interpreter.env().get_sym(*k).cloned() {
+            if let Some(val) = self.env().get_sym(*k).cloned() {
                 self.interpreter
                     .set_closure_captured_state(data.id, *k, val);
             }
@@ -720,7 +720,7 @@ impl VM {
             .free_var_syms
             .iter()
             .zip(free_at_entry.iter())
-            .any(|(k, old)| self.interpreter.env().get_sym(*k) != old.as_ref());
+            .any(|(k, old)| self.env().get_sym(*k) != old.as_ref());
         // A writable parameter (sigilless `\a`, `is rw`, or `is raw`) bound to a
         // caller-provided container writes the mutation into this frame's env
         // under the *source container's* name (e.g. the synthetic `__mutsu_*`
@@ -762,7 +762,7 @@ impl VM {
                 cc.locals_sym.iter().copied().collect();
             let underscore_sym = Symbol::intern("_");
             let at_underscore_sym = Symbol::intern("@_");
-            for (k, v) in self.interpreter.env().iter() {
+            for (k, v) in self.env().iter() {
                 if *k != underscore_sym
                     && *k != at_underscore_sym
                     && !rw_sources.contains(k)
@@ -796,16 +796,16 @@ impl VM {
             for captured_sym in &cc.free_var_syms {
                 let captured_name = captured_sym.resolve();
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", captured_name);
-                if let Some(v) = self.interpreter.env().get(&readonly_key).cloned() {
+                if let Some(v) = self.env().get(&readonly_key).cloned() {
                     restored_env.insert(readonly_key, v);
                 }
                 let alias_key = format!("__mutsu_sigilless_alias::{}", captured_name);
-                if let Some(v) = self.interpreter.env().get(&alias_key).cloned() {
+                if let Some(v) = self.env().get(&alias_key).cloned() {
                     restored_env.insert(alias_key, v);
                 }
             }
             self.interpreter
-                .merge_sigilless_alias_writes(&mut restored_env, self.interpreter.env());
+                .merge_sigilless_alias_writes(&mut restored_env, self.env());
         }
 
         // Only run the state-variable sync and cleanup when the closure
@@ -820,8 +820,8 @@ impl VM {
             // StateVarInit in the declaring scope).
             for k in &cc.free_var_syms {
                 let meta_key = format!("__mutsu_state_key::{}", k);
-                if let Some(Value::Str(state_key)) = self.interpreter.env().get(&meta_key).cloned()
-                    && let Some(val) = self.interpreter.env().get_sym(*k).cloned()
+                if let Some(Value::Str(state_key)) = self.env().get(&meta_key).cloned()
+                    && let Some(val) = self.env().get_sym(*k).cloned()
                 {
                     self.interpreter.set_state_var(state_key.to_string(), val);
                 }
@@ -840,7 +840,7 @@ impl VM {
             }
         }
 
-        *self.interpreter.env_mut() = restored_env;
+        *self.env_mut() = restored_env;
 
         // After a closure returns, update captured envs of END phasers for
         // variables that the closure captures (and may have modified).  This
@@ -853,7 +853,7 @@ impl VM {
                 captured_strs.iter().map(|s| s.as_str()).collect();
             // Flatten: END phasers run at program exit with this captured env;
             // it must hold the full lexical view, not a transient scoped overlay.
-            let current = self.interpreter.clone_env();
+            let current = self.clone_env();
             self.interpreter
                 .update_end_phaser_envs_for_keys(&captured_names, &current);
         }

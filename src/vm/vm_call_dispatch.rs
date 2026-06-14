@@ -15,7 +15,7 @@ impl VM {
                 .unwrap_or_default();
             let line = cl
                 .or_else(|| {
-                    self.interpreter.env().get("?LINE").and_then(|v| match v {
+                    self.env().get("?LINE").and_then(|v| match v {
                         Value::Int(i) => Some(*i),
                         _ => None,
                     })
@@ -325,7 +325,7 @@ impl VM {
             // when the prefix package is visible in the current scope.
             if found_key.is_none() && pkg != "GLOBAL" {
                 let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
-                    self.interpreter.env().get(pkg_prefix).is_some()
+                    self.env().get(pkg_prefix).is_some()
                         || self
                             .interpreter
                             .env()
@@ -498,15 +498,15 @@ impl VM {
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
             // no flatten, so nested fast calls don't pay the O(env) merge.
-            let parent = self.interpreter.env().clone();
+            let parent = self.env().clone();
             let scoped = crate::env::Env::scoped_child(parent);
-            Some(std::mem::replace(self.interpreter.env_mut(), scoped))
+            Some(std::mem::replace(self.env_mut(), scoped))
         } else {
             None
         };
         let saved_env = if !use_scoped && has_locals {
             crate::vm::vm_stats::record_clone_env();
-            Some(self.interpreter.clone_env())
+            Some(self.clone_env())
         } else {
             None
         };
@@ -517,8 +517,8 @@ impl VM {
 
         // Raku: routines get their own $_ initialized to (Any).
         let saved_topic = if cf.code.is_routine {
-            let old = self.interpreter.env().get("_").cloned();
-            self.interpreter.env_mut().insert(
+            let old = self.env().get("_").cloned();
+            self.env_mut().insert(
                 "_".to_string(),
                 Value::Package(crate::symbol::Symbol::intern("Any")),
             );
@@ -532,7 +532,7 @@ impl VM {
         self.locals.clear();
         self.locals.resize(num_locals, Value::Nil);
         for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(local_name) {
+            if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
             }
         }
@@ -628,7 +628,7 @@ impl VM {
                 } else {
                     cf.code.locals.iter().map(|s| s.as_str()).collect()
                 };
-            let scoped = std::mem::replace(self.interpreter.env_mut(), caller_env);
+            let scoped = std::mem::replace(self.env_mut(), caller_env);
             let mut changed = false;
             for (k, v) in scoped.overlay_iter() {
                 // The callee's private topic / arg array / routine-id must not
@@ -637,7 +637,7 @@ impl VM {
                     continue;
                 }
                 if !k.with_str(|s| local_names.contains(s)) {
-                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                    self.env_mut().insert_sym(*k, v.clone());
                     changed = true;
                 }
             }
@@ -647,7 +647,7 @@ impl VM {
                 self.env_dirty = true;
             }
         } else if let Some(saved_env) = saved_env {
-            if saved_env.ptr_eq(self.interpreter.env()) {
+            if saved_env.ptr_eq(self.env()) {
                 // No env changes, nothing to merge
             } else {
                 // Use declared_locals to only filter out function-local vars.
@@ -659,12 +659,12 @@ impl VM {
                         cf.code.locals.iter().map(|s| s.as_str()).collect()
                     };
                 let mut restored_env = saved_env;
-                for (k, v) in self.interpreter.env().iter() {
+                for (k, v) in self.env().iter() {
                     if !k.with_str(|s| local_names.contains(s)) {
                         restored_env.insert_sym(*k, v.clone());
                     }
                 }
-                *self.interpreter.env_mut() = restored_env;
+                *self.env_mut() = restored_env;
                 // Mark env as dirty so caller re-syncs its locals from env.
                 // This is needed when captured outer variables were modified
                 // by the function (e.g. $a++ where $a is from the caller's scope).
@@ -691,10 +691,10 @@ impl VM {
         if cf.code.is_routine && !use_scoped {
             match saved_topic {
                 Some(v) => {
-                    self.interpreter.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert("_".to_string(), v);
                 }
                 None => {
-                    self.interpreter.env_mut().remove("_");
+                    self.env_mut().remove("_");
                 }
             }
         }
@@ -883,11 +883,8 @@ impl VM {
         // This replaces the previous name-keyed save/restore juggling
         // (saved_env_locals / saved_param_env) with a single O(callee-writes)
         // merge -- the function's own params/locals never pollute the caller env.
-        let parent = self.interpreter.env().clone();
-        let caller_env = std::mem::replace(
-            self.interpreter.env_mut(),
-            crate::env::Env::scoped_child(parent),
-        );
+        let parent = self.env().clone();
+        let caller_env = std::mem::replace(self.env_mut(), crate::env::Env::scoped_child(parent));
 
         let num_locals = cf.code.locals.len();
         self.locals.clear();
@@ -897,7 +894,7 @@ impl VM {
         // local that shadows a same-named caller variable, matching the prior
         // env().get() semantics.
         for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(local_name) {
+            if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
             }
         }
@@ -917,7 +914,7 @@ impl VM {
                     && !Self::fast_type_check(&val, tc)
                 {
                     self.interpreter.restore_readonly_vars(saved_readonly);
-                    self.interpreter.set_env(caller_env);
+                    self.set_env(caller_env);
                     self.locals = saved_locals;
                     self.env_dirty = saved_env_dirty;
                     {
@@ -940,7 +937,7 @@ impl VM {
                     || matches!(val, Value::Nil)
                     || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
                 if needs_env {
-                    self.interpreter.env_mut().insert(param_name.clone(), val);
+                    self.env_mut().insert(param_name.clone(), val);
                 }
                 self.interpreter
                     .mark_readonly(&cf.param_defs[param_idx].name);
@@ -1020,7 +1017,7 @@ impl VM {
                 } else {
                     cf.code.locals.iter().map(|s| s.as_str()).collect()
                 };
-            let scoped = std::mem::replace(self.interpreter.env_mut(), caller_env);
+            let scoped = std::mem::replace(self.env_mut(), caller_env);
             for (k, v) in scoped.overlay_iter() {
                 // The callee's private topic / arg array / routine id, and the
                 // per-frame contextual vars (`?LINE`/`?FILE`/...), must not
@@ -1036,7 +1033,7 @@ impl VM {
                     continue;
                 }
                 if !k.with_str(|s| local_names.contains(s)) {
-                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                    self.env_mut().insert_sym(*k, v.clone());
                     self.env_dirty = true;
                 }
             }
@@ -1132,11 +1129,8 @@ impl VM {
         // land in a fresh map and are discarded by dropping the overlay on return
         // (callee-local names) or merged overlay-only (captured-outer writes),
         // replacing the per-key save/restore the `modified_env_keys` list did.
-        let parent = self.interpreter.env().clone();
-        let caller_env = std::mem::replace(
-            self.interpreter.env_mut(),
-            crate::env::Env::scoped_child(parent),
-        );
+        let parent = self.env().clone();
+        let caller_env = std::mem::replace(self.env_mut(), crate::env::Env::scoped_child(parent));
 
         let num_locals = cf.code.locals.len();
         self.locals = vec![Value::Nil; num_locals];
@@ -1232,7 +1226,7 @@ impl VM {
                     }
                     Some(v)
                 } else if pd.required {
-                    self.interpreter.set_env(caller_env);
+                    self.set_env(caller_env);
                     self.locals = saved_locals;
                     self.env_dirty = saved_env_dirty;
                     // Missing required named parameter is a runtime X::AdHoc in
@@ -1259,7 +1253,7 @@ impl VM {
                     positional_idx += 1;
                     Some(val)
                 } else if pd.required {
-                    self.interpreter.set_env(caller_env);
+                    self.set_env(caller_env);
                     self.locals = saved_locals;
                     self.env_dirty = saved_env_dirty;
                     return Err(RuntimeError::new(format!(
@@ -1344,7 +1338,7 @@ impl VM {
                         if let Some(slot) = cf.code.locals.iter().position(|n| *n == bare) {
                             self.locals[slot] = val.clone();
                         }
-                        self.interpreter.env_mut().insert(bare, val);
+                        self.env_mut().insert(bare, val);
                     }
                 }
             }
@@ -1353,7 +1347,7 @@ impl VM {
         // For any locals not yet set from params, try to initialize from env
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if matches!(self.locals[i], Value::Nil)
-                && let Some(val) = self.interpreter.env().get(local_name)
+                && let Some(val) = self.env().get(local_name)
             {
                 self.locals[i] = val.clone();
             }
@@ -1431,7 +1425,7 @@ impl VM {
                 } else {
                     cf.code.locals.iter().map(|s| s.as_str()).collect()
                 };
-            let scoped = std::mem::replace(self.interpreter.env_mut(), caller_env);
+            let scoped = std::mem::replace(self.env_mut(), caller_env);
             for (k, v) in scoped.overlay_iter() {
                 if *k == "_"
                     || *k == "@_"
@@ -1442,7 +1436,7 @@ impl VM {
                     continue;
                 }
                 if !k.with_str(|s| local_names.contains(s)) {
-                    self.interpreter.env_mut().insert_sym(*k, v.clone());
+                    self.env_mut().insert_sym(*k, v.clone());
                     self.env_dirty = true;
                 }
             }
@@ -1502,7 +1496,7 @@ impl VM {
             false,
             // Flatten: this Sub is pushed for callframe().code introspection and
             // must expose the full lexical view, not a scoped overlay.
-            self.interpreter.clone_env(),
+            self.clone_env(),
         );
         self.interpreter.push_block(sub_val);
 
@@ -1512,7 +1506,7 @@ impl VM {
         // overlay; on return the merge iterates it overlay-only into the restored
         // caller env. frame.saved_env holds the flat caller for restoration.
         {
-            let parent = self.interpreter.env().clone();
+            let parent = self.env().clone();
             self.interpreter
                 .set_env(crate::env::Env::scoped_child(parent));
         }
@@ -1547,7 +1541,7 @@ impl VM {
             // the missing/None case correctly. This avoids triggering
             // Arc::make_mut deep clone on the CoW env for simple functions.
             if resolved_callable_id != 0 {
-                self.interpreter.env_mut().insert(
+                self.env_mut().insert(
                     "__mutsu_callable_id".to_string(),
                     Value::Int(resolved_callable_id),
                 );
@@ -1571,7 +1565,7 @@ impl VM {
             self.stack.truncate(saved_stack_depth);
             let frame = self.pop_call_frame();
             // Drop the scoped overlay, restoring the caller env.
-            self.interpreter.set_env(frame.saved_env);
+            self.set_env(frame.saved_env);
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
@@ -1586,7 +1580,7 @@ impl VM {
         // into the current env so where-constraint expressions can access them.
         if !fn_name.is_empty() && cf.param_defs.iter().any(|pd| pd.where_constraint.is_some()) {
             let ampname = format!("&{}", fn_name);
-            if let Some(Value::Sub(ref sub_data)) = self.interpreter.env().get(&ampname).cloned() {
+            if let Some(Value::Sub(ref sub_data)) = self.env().get(&ampname).cloned() {
                 for (k, v) in &sub_data.env {
                     // Skip internal variables, parameters, and sigiled variables
                     // that belong to the calling scope. Only merge simple lexical
@@ -1598,7 +1592,7 @@ impl VM {
                         && k != "@_"
                         && k != "%_"
                     {
-                        self.interpreter.env_mut().insert_sym(*k, v.clone());
+                        self.env_mut().insert_sym(*k, v.clone());
                     }
                 }
             }
@@ -1621,7 +1615,7 @@ impl VM {
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
-                    *self.interpreter.env_mut() = frame.saved_env;
+                    *self.env_mut() = frame.saved_env;
                     return Err(Interpreter::enhance_binding_error(
                         e,
                         fn_name,
@@ -1652,7 +1646,7 @@ impl VM {
 
         // Raku: routines get their own $_ initialized to (Any).
         if cf.code.is_routine && !cf.param_defs.iter().any(|pd| pd.name == "_") {
-            self.interpreter.env_mut().insert(
+            self.env_mut().insert(
                 "_".to_string(),
                 Value::Package(crate::symbol::Symbol::intern("Any")),
             );
@@ -1660,7 +1654,7 @@ impl VM {
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(local_name) {
+            if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
             }
         }
@@ -1781,7 +1775,7 @@ impl VM {
                 body.clone(),
                 *is_rw,
                 // Flatten: a Sub returned as a value is dispatched cross-scope.
-                self.interpreter.clone_env(),
+                self.clone_env(),
             );
         }
 
@@ -1821,7 +1815,7 @@ impl VM {
         let mut changed = false;
         // Fast path: if the env wasn't mutated during the call (Arc still shared),
         // we can skip the expensive env merge and just restore directly.
-        if restored_env.ptr_eq(self.interpreter.env()) {
+        if restored_env.ptr_eq(self.env()) {
             self.interpreter.pop_caller_env();
         } else {
             let mut restored_env = restored_env;
@@ -1847,7 +1841,7 @@ impl VM {
                 } else {
                     cf.code.locals.iter().map(|s| s.as_str()).collect()
                 };
-            for (k, v) in self.interpreter.env().iter() {
+            for (k, v) in self.env().iter() {
                 if *k == "_" || *k == "@_" || *k == "%_" {
                     continue;
                 }
@@ -1869,7 +1863,7 @@ impl VM {
                     restored_env.insert_sym(*k, v.clone());
                 }
             }
-            *self.interpreter.env_mut() = restored_env;
+            *self.env_mut() = restored_env;
         }
         // A raw/Proxy return aliases a caller container in a way the value merge
         // above does not see; keep the conservative mark for those.

@@ -88,7 +88,7 @@ impl VM {
         let ampname = format!("&{}", name);
         let candidate = code
             .and_then(|c| self.locals_get_by_name(c, &ampname))
-            .or_else(|| self.interpreter.env().get(&ampname).cloned());
+            .or_else(|| self.env().get(&ampname).cloned());
         candidate.filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_)))
     }
 
@@ -273,8 +273,7 @@ impl VM {
                 let ampname = format!("&{}", name_str);
                 // First check local slots (parameter bindings live here).
                 let from_local = self.locals_get_by_name(code, &ampname);
-                let candidate =
-                    from_local.or_else(|| self.interpreter.env().get(&ampname).cloned());
+                let candidate = from_local.or_else(|| self.env().get(&ampname).cloned());
                 candidate.filter(|v| Self::env_callable_is_lexical_override(v, name_str))
             }
         };
@@ -496,7 +495,7 @@ impl VM {
         if self.has_function(&name) && !self.has_proto(&name) && !self.has_multi_candidates(&name) {
             let ampname = format!("&{}", name);
             let from_local = self.locals_get_by_name(code, &ampname);
-            let candidate = from_local.or_else(|| self.interpreter.env().get(&ampname).cloned());
+            let candidate = from_local.or_else(|| self.env().get(&ampname).cloned());
             if let Some(callable) =
                 candidate.filter(|v| Self::env_callable_is_lexical_override(v, &name))
             {

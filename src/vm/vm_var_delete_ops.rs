@@ -16,13 +16,13 @@ impl VM {
                 for p in &data.params {
                     sub_env.insert(p.to_string(), Value::Int(len));
                 }
-                let saved_env = std::mem::take(self.interpreter.env_mut());
-                *self.interpreter.env_mut() = sub_env;
+                let saved_env = std::mem::take(self.env_mut());
+                *self.env_mut() = sub_env;
                 let resolved = self
                     .interpreter
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
-                *self.interpreter.env_mut() = saved_env;
+                *self.env_mut() = saved_env;
                 resolved
             }
             Value::Array(items, ..) => {
@@ -62,7 +62,7 @@ impl VM {
             .interpreter
             .var_type_constraint(var_name)
             .unwrap_or_default();
-        let env = self.interpreter.env_mut();
+        let env = self.env_mut();
         let Some(container) = env.get_mut(var_name) else {
             return;
         };
@@ -120,7 +120,7 @@ impl VM {
         {
             return None;
         }
-        let env = self.interpreter.env();
+        let env = self.env();
         match env.get(var_name) {
             Some(Value::Hash(hash_arc)) => {
                 let strong_count = Arc::strong_count(hash_arc);
@@ -142,14 +142,13 @@ impl VM {
                 if let Some(slot) = local_slot {
                     self.locals[slot] = Value::Nil;
                 }
-                let removed =
-                    if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(var_name) {
-                        Arc::make_mut(hash).remove(&key).unwrap_or(Value::Nil)
-                    } else {
-                        Value::Nil
-                    };
+                let removed = if let Some(Value::Hash(hash)) = self.env_mut().get_mut(var_name) {
+                    Arc::make_mut(hash).remove(&key).unwrap_or(Value::Nil)
+                } else {
+                    Value::Nil
+                };
                 if let Some(slot) = local_slot
-                    && let Some(env_val) = self.interpreter.env().get(var_name).cloned()
+                    && let Some(env_val) = self.env().get(var_name).cloned()
                 {
                     self.locals[slot] = env_val;
                 }
@@ -171,17 +170,17 @@ impl VM {
         // back through the cell (so every alias observes the delete) and restore
         // the cell in env and the local slot.
         let var_name = Self::const_str(code, name_idx).to_string();
-        let bound_cell = match self.interpreter.env().get(&var_name) {
+        let bound_cell = match self.env().get(&var_name) {
             Some(Value::ContainerRef(cell)) => Some(cell.clone()),
             _ => None,
         };
         if let Some(ref cell) = bound_cell {
             let inner = cell.lock().unwrap().clone();
-            self.interpreter.env_mut().insert(var_name.clone(), inner);
+            self.env_mut().insert(var_name.clone(), inner);
         }
         let result = self.exec_delete_index_named_op_inner(code, name_idx);
         if let Some(cell) = bound_cell {
-            if let Some(mutated) = self.interpreter.env().get(&var_name).cloned() {
+            if let Some(mutated) = self.env().get(&var_name).cloned() {
                 *cell.lock().unwrap() = mutated;
             }
             let cell_val = Value::ContainerRef(cell);
@@ -294,7 +293,7 @@ impl VM {
             None
         };
         // Resolve WhateverCode indices (e.g. *-1) for array targets
-        let idx = if let Some(container) = self.interpreter.env().get(&var_name).cloned() {
+        let idx = if let Some(container) = self.env().get(&var_name).cloned() {
             self.resolve_delete_index_for_array(idx, &container)
         } else {
             idx
@@ -315,7 +314,7 @@ impl VM {
                 // Convert index value to a Str containing the WHICH key
                 let which = crate::runtime::utils::value_which_key(&idx);
                 // Check if the hash uses WHICH keys or encoded keys
-                if let Some(Value::Hash(map)) = self.interpreter.env().get(&var_name) {
+                if let Some(Value::Hash(map)) = self.env().get(&var_name) {
                     if map.contains_key(&which) {
                         Value::str(which)
                     } else {
@@ -331,7 +330,7 @@ impl VM {
                     .iter()
                     .map(|k| {
                         let which = crate::runtime::utils::value_which_key(k);
-                        if let Some(Value::Hash(map)) = self.interpreter.env().get(&var_name)
+                        if let Some(Value::Hash(map)) = self.env().get(&var_name)
                             && map.contains_key(&which)
                         {
                             Value::str(which)
@@ -347,7 +346,7 @@ impl VM {
             };
         // Save idx for unmark step (idx is consumed by delete_from_container)
         let idx_for_unmark = idx.clone();
-        let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+        let result = if let Some(container) = self.env_mut().get_mut(&var_name) {
             // Check immutability for Set/Bag/Mix (immutable variants)
             match container {
                 Value::Mix(_, is_mutable) if !*is_mutable => {
@@ -391,7 +390,7 @@ impl VM {
         // embed metadata in `HashData`, so the re-tagged value is written back
         // (no-op Arc for array/instance side-table containers).
         if let Some(info) = saved_meta
-            && let Some(container) = self.interpreter.env().get(&var_name)
+            && let Some(container) = self.env().get(&var_name)
             && self
                 .interpreter
                 .container_type_metadata(container)
@@ -409,16 +408,16 @@ impl VM {
         // don't inherit a leaked default from a same-named variable in an
         // outer scope.
         if let Some(def) = saved_default
-            && let Some(container) = self.interpreter.env().get(&var_name).cloned()
+            && let Some(container) = self.env().get(&var_name).cloned()
             && self.interpreter.container_default(&container).is_none()
         {
             let tagged = self.interpreter.tag_container_default(container, def);
-            self.interpreter.env_mut().insert(var_name.clone(), tagged);
+            self.env_mut().insert(var_name.clone(), tagged);
         }
         // Sync env value to locals so reads through locals see the
         // updated container after delete (Arc::make_mut may have changed
         // the container pointer).
-        if let Some(container) = self.interpreter.env().get(&var_name).cloned() {
+        if let Some(container) = self.env().get(&var_name).cloned() {
             self.locals_set_by_name(code, &var_name, container);
         }
         self.stack.push(result);

@@ -66,7 +66,7 @@ impl VM {
             .interpreter
             .env()
             .get(&arr_key)
-            .or_else(|| self.interpreter.env().get(&var_name))
+            .or_else(|| self.env().get(&var_name))
             .cloned();
         let Value::Array(arc_items, kind) = target_val.unwrap_or(Value::Nil) else {
             return Ok(None);
@@ -88,7 +88,7 @@ impl VM {
             crate::value::ArrayData::new(popped)
         };
         // Write the mutated array back
-        let lookup_key = if self.interpreter.env().contains_key(&arr_key) {
+        let lookup_key = if self.env().contains_key(&arr_key) {
             &arr_key
         } else {
             &var_name
@@ -112,17 +112,17 @@ impl VM {
         let touched_keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
         let saved: Vec<(String, Option<Value>)> = touched_keys
             .iter()
-            .map(|k| (k.clone(), self.interpreter.env().get(k).cloned()))
+            .map(|k| (k.clone(), self.env().get(k).cloned()))
             .collect();
 
         // Install captured env
         for (k, v) in data.env.iter() {
-            if matches!(self.interpreter.env().get_sym(*k), Some(Value::Array(..)))
+            if matches!(self.env().get_sym(*k), Some(Value::Array(..)))
                 && matches!(v, Value::Array(..))
             {
                 continue;
             }
-            self.interpreter.env_mut().insert_sym(*k, v.clone());
+            self.env_mut().insert_sym(*k, v.clone());
         }
 
         // Compile the thunk body
@@ -153,10 +153,10 @@ impl VM {
                     for (k, orig) in saved {
                         match orig {
                             Some(v) => {
-                                self.interpreter.env_mut().insert(k, v);
+                                self.env_mut().insert(k, v);
                             }
                             None => {
-                                self.interpreter.env_mut().remove(&k);
+                                self.env_mut().remove(&k);
                             }
                         }
                     }
@@ -172,7 +172,7 @@ impl VM {
         for (k, orig) in saved {
             // If the thunk mutated an array variable (e.g. via .shift),
             // keep the mutated version instead of restoring the original.
-            let current = self.interpreter.env().get(&k).cloned();
+            let current = self.env().get(&k).cloned();
             let should_keep_current = matches!(
                 (&orig, &current),
                 (Some(Value::Array(..)), Some(Value::Array(..)))
@@ -182,10 +182,10 @@ impl VM {
             }
             match orig {
                 Some(v) => {
-                    self.interpreter.env_mut().insert(k, v);
+                    self.env_mut().insert(k, v);
                 }
                 None => {
-                    self.interpreter.env_mut().remove(&k);
+                    self.env_mut().remove(&k);
                 }
             }
         }

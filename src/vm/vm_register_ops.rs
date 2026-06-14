@@ -5,7 +5,7 @@ use crate::symbol::Symbol;
 impl VM {
     /// Get the current source line number from the interpreter env.
     pub(super) fn current_source_line(&self) -> Option<u32> {
-        self.interpreter.env().get("?LINE").and_then(|v| match v {
+        self.env().get("?LINE").and_then(|v| match v {
             Value::Int(n) => Some(*n as u32),
             _ => None,
         })
@@ -13,7 +13,7 @@ impl VM {
 
     /// Get the current source file from the interpreter env.
     pub(super) fn current_source_file(&self) -> Option<String> {
-        self.interpreter.env().get("?FILE").and_then(|v| match v {
+        self.env().get("?FILE").and_then(|v| match v {
             Value::Str(s) => Some(s.to_string()),
             _ => None,
         })
@@ -26,7 +26,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
-            let mut env = self.interpreter.env().clone();
+            let mut env = self.env().clone();
             env.insert(
                 "__mutsu_lazylist_from_gather".to_string(),
                 Value::Bool(true),
@@ -98,7 +98,7 @@ impl VM {
                 // possibly from a different scope, and its captured env is seeded
                 // overlay-only at dispatch -- so it must hold the full lexical view
                 // now, not a scoped overlay whose parent tier would be lost.
-                env: self.interpreter.clone_env(),
+                env: self.clone_env(),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
@@ -140,7 +140,7 @@ impl VM {
             let owned_captures = self.compute_owned_captures(&compiled_code);
             // Flatten: closure env captured into a Value::Sub for later (possibly
             // cross-scope) dispatch must hold the full lexical view (see above).
-            let mut env = self.interpreter.clone_env();
+            let mut env = self.clone_env();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -351,7 +351,7 @@ impl VM {
             let owned_captures = self.compute_owned_captures(&compiled_code);
             // Flatten: closure env captured into a Value::Sub for later (possibly
             // cross-scope) dispatch must hold the full lexical view (see above).
-            let mut env = self.interpreter.clone_env();
+            let mut env = self.clone_env();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -418,7 +418,7 @@ impl VM {
                 is_rw: false,
                 is_raw: false,
                 // Flatten: long-lived closure capture (see above).
-                env: self.interpreter.clone_env(),
+                env: self.clone_env(),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
@@ -500,7 +500,7 @@ impl VM {
                 // be dropped when the module scope exits. Capture it so `import`
                 // can restore the trait-modified value.
                 let code_var_key = format!("&{}", resolved_name);
-                if let Some(val @ Value::Mixin(..)) = self.interpreter.env().get(&code_var_key) {
+                if let Some(val @ Value::Mixin(..)) = self.env().get(&code_var_key) {
                     self.interpreter.record_exported_sub_value(
                         pkg,
                         resolved_name.clone(),
@@ -615,7 +615,7 @@ impl VM {
                         param_defs.clone(),
                         body.clone(),
                         false,
-                        self.interpreter.clone_env(),
+                        self.clone_env(),
                     );
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
                     let result = self
@@ -761,7 +761,7 @@ impl VM {
             attrs.insert("next-repo".to_string(), prev);
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::Installation"), attrs);
-            self.interpreter.env_mut().insert("*REPO".to_string(), repo);
+            self.env_mut().insert("*REPO".to_string(), repo);
         }
         self.interpreter.add_lib_path(path);
         Ok(())
@@ -1298,7 +1298,7 @@ impl VM {
             }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
-            let env = self.interpreter.env_mut();
+            let env = self.env_mut();
             env.insert(
                 "_".to_string(),
                 Value::Package(Symbol::intern(&qualified_name)),
@@ -1323,7 +1323,7 @@ impl VM {
                 self.interpreter.suppress_name(&resolved_name);
                 // Register the short name in the lexical env so it resolves
                 // within the enclosing class scope (e.g. `Frog` inside `Forest`).
-                let env = self.interpreter.env_mut();
+                let env = self.env_mut();
                 env.insert(
                     resolved_name.clone(),
                     Value::Package(Symbol::intern(&qualified_name)),
@@ -1343,7 +1343,7 @@ impl VM {
                 // Do not shadow built-in types (e.g. `my class X::Roast::Channel`
                 // must not make the bare name `Channel` resolve to the user class).
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    self.interpreter.env_mut().entry_or_insert_with(short, || {
+                    self.env_mut().entry_or_insert_with(short, || {
                         Value::Package(Symbol::intern(&qualified_name))
                     });
                 }
@@ -1491,16 +1491,16 @@ impl VM {
                 .store_language_revision_from_version(&qualified_name, language_version);
             // Compile role method bodies to bytecode
             self.interpreter.compile_role_methods(&qualified_name);
-            self.interpreter.env_mut().insert(
+            self.env_mut().insert(
                 "_".to_string(),
                 Value::Package(Symbol::intern(&qualified_name)),
             );
-            self.interpreter.env_mut().insert(
+            self.env_mut().insert(
                 qualified_name.clone(),
                 Value::Package(Symbol::intern(&qualified_name)),
             );
             if qualified_name != name_str && !name_str.contains("::") {
-                self.interpreter.env_mut().insert(
+                self.env_mut().insert(
                     name_str.clone(),
                     Value::Package(Symbol::intern(&qualified_name)),
                 );
@@ -1516,7 +1516,7 @@ impl VM {
                     .map(|(_, s)| s.to_string())
                     .unwrap_or_else(|| qualified_name.clone());
                 if !short.is_empty() && short != qualified_name {
-                    self.interpreter.env_mut().entry_or_insert_with(short, || {
+                    self.env_mut().entry_or_insert_with(short, || {
                         Value::Package(Symbol::intern(&qualified_name))
                     });
                 }
