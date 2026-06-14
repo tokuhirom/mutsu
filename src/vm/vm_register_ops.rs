@@ -1650,10 +1650,11 @@ impl VM {
         let end = body_end as usize;
         let body_start = *ip + 1;
 
-        // React callbacks run through the interpreter path and capture from env.
-        // First, pull any pending env updates into locals (e.g., instance attribute
-        // mutations written into the shared cell after bind-stdin).
-        // Then flush all locals to env so captured vars are visible/mutable from
+        // `whenever` callbacks run as compiled bytecode (the drive loop lives on
+        // `impl VM`, see `vm_react_loop.rs`) but still capture their lexicals from
+        // env. First pull any pending env updates into locals (e.g. instance
+        // attribute mutations written into the shared cell after bind-stdin), then
+        // flush all locals to env so captured vars are visible/mutable from the
         // whenever callbacks.
         self.ensure_locals_synced(code);
         self.sync_env_from_locals(code);
@@ -1667,8 +1668,9 @@ impl VM {
         // If `done;` was called in the react body, skip the event loop —
         // the body already signaled that no further events should be processed.
         let body_done = matches!(&run_result, Err(e) if e.is_react_done);
-        // TODO: compile to bytecode — react/supply event loop, blocked-by: async
-        // state ownership (lever B). See ledger §1.
+        // The react/supply drive loop now runs VM-side and dispatches whenever
+        // bodies as compiled bytecode (Stage 2, #3038/#3039). The remaining
+        // tree-walk is supply `QUIT` handlers (`call_supply_quit_handler`).
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak
             self.run_react_event_loop_drain();
