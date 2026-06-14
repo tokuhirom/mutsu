@@ -184,8 +184,14 @@ impl Interpreter {
                     Self::is_simple_native_ctor_constraint(tc)
                         || Self::native_scalar_default(tc).is_some()
                         || Self::is_native_coercion_ctor_constraint(tc)
-                })
-                && class_def.attribute_smileys.is_empty();
+                });
+            // A definedness smiley (`:D`/`:U`/`:_`) on an attribute is allowed:
+            // the native builder runs `enforce_attribute_smiley_constraints`
+            // (the same predicate the full constructor uses) post-assembly and
+            // again after BUILD, matching the full path's enforcement points. A
+            // bare `:D` with no default and no `is required` is already a
+            // parse-time error (`X::Syntax::Variable::MissingInitializer`), so it
+            // never reaches here.
             if !simple {
                 return false;
             }
@@ -568,6 +574,21 @@ impl Interpreter {
         {
             return Some(Err(e));
         }
+        // Enforce definedness smileys (`:D`/`:U`) at the same point as `where`
+        // (post-assembly, pre-BUILD/TWEAK): a provided/defaulted value whose
+        // definedness does not match its `:D`/`:U` smiley is rejected here, exactly
+        // as the full constructor does (`enforce_attribute_smiley_constraints`,
+        // which itself skips `is required` attributes). `:_` imposes no constraint.
+        let has_smiley = self.mro_readonly(cn_resolved).iter().any(|cls| {
+            self.registry()
+                .classes
+                .get(cls)
+                .is_some_and(|cd| !cd.attribute_smileys.is_empty())
+        });
+        if has_smiley && let Err(e) = self.enforce_attribute_smiley_constraints(cn_resolved, &attrs)
+        {
+            return Some(Err(e));
+        }
         if has_build {
             // Pass the original constructor args so `submethod BUILD(:$x)` binds
             // them. A `fail` inside BUILD yields a `Failure` instance to return.
@@ -575,6 +596,18 @@ impl Interpreter {
                 Ok(Ok(updated)) => attrs = updated,
                 Ok(Err(failure)) => return Some(Ok(failure)),
                 Err(e) => return Some(Err(e)),
+            }
+            // Re-check smileys after BUILD but BEFORE TWEAK, exactly where the full
+            // constructor does (its post-BUILD pass) — a BUILD that mutates a
+            // `:D`/`:U` attribute into a definedness violation is rejected
+            // identically. The interpreter does NOT re-check smileys after TWEAK
+            // (it relies on the assignment-time check there, which mutsu's
+            // interpreter does not currently perform), so neither do we — a TWEAK
+            // that violates a smiley is left untouched to match the baseline.
+            if has_smiley
+                && let Err(e) = self.enforce_attribute_smiley_constraints(cn_resolved, &attrs)
+            {
+                return Some(Err(e));
             }
         }
         if has_tweak {

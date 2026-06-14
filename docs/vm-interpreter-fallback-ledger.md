@@ -304,6 +304,20 @@
   （pin 作成中に **連続 bare block `} { ` のパース不可**と **クラス名 `Q` のクォート演算子衝突**という 2 つの
   pre-existing パーサ制約に遭遇＝テストをトップレベル構造＋非衝突名に変更して回避。本 slice とは無関係。）
   **残: where・coercion 型・native 型・typed `@`/`%`・`is Type`・shaped は依然 interpreter。**
+- **2026-06-14 (③ ctor, §1 = native construction を定義性 smiley `:D`/`:U`/`:_` 属性へ拡張)**: TWEAK(#3028)/
+  where(#3030)/BUILD(#3032) に続く ctor slice。従来ゲートが `attribute_smileys.is_empty()` で reject していた
+  `has Int:D $.x` 等を native 構築。ゲートから smiley 検査を外し、build path で `enforce_attribute_smiley_constraints`
+  （full path と同一ヘルパ）を **where と同じ位置＝post-assembly/pre-BUILD で 1 回 + post-BUILD で再チェック**。
+  **interpreter baseline に厳密一致（raku ではなく）**: ① `:U` 提供 defined / `:D` 提供 undefined は die
+  （"default value of attribute" メッセージ＝interpreter の既存挙動。raku は "assignment to" だが本 slice の対象外の
+  pre-existing 差）、② **BUILD が smiley 違反 → die（post-BUILD 再チェック、full path 3929 に一致）**、
+  ③ **TWEAK が smiley 違反 → die しない**（interpreter は post-TWEAK で smiley を再チェックせず代入時チェックも
+  しないため、native も再チェックしない＝baseline 一致。raku は die）。bare `:D`（default 無し・required 無し）は
+  parse time に `X::Syntax::Variable::MissingInitializer` で弾かれ構築に到達しない。pin
+  `t/native-ctor-smiley-attrs.t`(21, `:D`/`:U`/`:_` × default/required/provided/継承/mixed/BUILD-dies/TWEAK-lives/
+  Str:D)。S12-attributes/smiley.t(54) + S12-class/attributes-required.t(11) 含む構築系 whitelist 118 件全緑、
+  cargo test 461/0、make test PASS。**残: coercion 型・native 型・typed `@`/`%`・`is Type`・shaped・同名再宣言・
+  does-Role 属性・CUnion・custom BUILDALL/new は依然 interpreter。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
