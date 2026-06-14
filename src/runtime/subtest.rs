@@ -609,7 +609,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if react_subs.is_empty() {
             if let SupplyDrivePolicy::Promise {
-                promise, last_value, ..
+                promise,
+                last_value,
+                ..
             } = &policy
                 && !promise.is_resolved()
             {
@@ -798,7 +800,9 @@ impl Interpreter {
                 match receiver.recv_timeout(timeout) {
                     Ok(SupplyEvent::Emit(value)) => match &mut policy {
                         SupplyDrivePolicy::Promise {
-                            promise, last_value, ..
+                            promise,
+                            last_value,
+                            ..
                         } => {
                             // Capture values the whenever block `emit`s so a
                             // later `done` resolves the promise with the last one.
@@ -818,11 +822,7 @@ impl Interpreter {
                                 // value immediately rather than spinning to the
                                 // deadline.
                                 if err.is_react_done || err.is_last {
-                                    promise.keep(
-                                        last_value.clone(),
-                                        String::new(),
-                                        String::new(),
-                                    );
+                                    promise.keep(last_value.clone(), String::new(), String::new());
                                     return Ok(());
                                 }
                                 // `next`/`redo` are loop control, not completion.
