@@ -264,7 +264,13 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Option<(usize, RegexCaptures)> {
-        self.regex_match_ends_from_caps_in_pkg(pattern, chars, start, pkg)
+        // Only the first (highest-priority / greedy) complete match is needed
+        // here, and the backtracking DFS already discovers it first (matches are
+        // returned in DFS-completion order, unsorted), so stop as soon as one is
+        // found instead of exploring the whole backtracking tree. `matches[0]` is
+        // byte-identical to the all-ends result's first element, so this is
+        // semantics-preserving — it just skips work the `.next()` would discard.
+        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, true)
             .into_iter()
             .next()
     }
@@ -276,6 +282,22 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Vec<(usize, RegexCaptures)> {
+        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false)
+    }
+
+    /// Backtracking match returning the complete-match end positions (with
+    /// captures) at `start`, in DFS-completion order (highest priority first).
+    /// When `first_only` is true the DFS stops after the first complete match —
+    /// `matches[0]` is unchanged, so callers that only take `.next()` get the
+    /// same answer for far less work.
+    fn regex_match_ends_from_caps_in_pkg_impl(
+        &self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: &str,
+        first_only: bool,
+    ) -> Vec<(usize, RegexCaptures)> {
         // When :m (ignoremark) is set on the pattern, strip combining marks
         // from both text and pattern, match on the stripped versions, then
         // map positions back to the original text.
@@ -284,8 +306,13 @@ impl Interpreter {
             let text_slice = &chars[start..];
             let (stripped_chars, pos_map) = strip_marks_text(text_slice);
             let stripped_pattern = strip_marks_pattern(pattern);
-            let mut results =
-                self.regex_match_ends_from_caps_in_pkg(&stripped_pattern, &stripped_chars, 0, pkg);
+            let mut results = self.regex_match_ends_from_caps_in_pkg_impl(
+                &stripped_pattern,
+                &stripped_chars,
+                0,
+                pkg,
+                first_only,
+            );
             let orig_len = text_slice.len();
             for (end, caps) in &mut results {
                 *end = map_pos(*end, &pos_map, orig_len) + start;
@@ -477,6 +504,13 @@ impl Interpreter {
             if idx == pattern.tokens.len() {
                 if !pattern.anchor_end || pos == chars.len() {
                     matches.push((pos, caps));
+                    // Single-match callers (`regex_match_end_from_caps_in_pkg`)
+                    // only use `matches[0]`; the DFS visits highest priority
+                    // first, so the first complete match IS that element — stop
+                    // exploring the rest of the backtracking tree.
+                    if first_only {
+                        break;
+                    }
                 }
                 continue;
             }

@@ -393,8 +393,11 @@ say f();         # mutsu => 0     raku => 3
 **改善 (実施済み)**: static パターン → コンパイル済み `RegexPattern` ツリーの memo キャッシュ
 (`REGEX_PARSE_CACHE`) を導入済み。さらに #3064 でキャッシュヒットを `Arc<RegexPattern>` の
 refcount bump 化し、毎マッチの deep tree clone を除去。現状 release ~0.56s (raku 0.36s ＝
-~1.6x)。**残るギャップはマッチャ本体**: `regex_match_ends_from_caps_in_pkg` が全 end 位置の
-`RegexCaptures` を構築→sort するアロケーションコスト (別の深い最適化対象)。
+~1.6x)。さらに #3065 で**単一マッチ経路 (`~~`/anchored) の早期終了**を追加: バックトラック DFS は
+最初に見つかる完全マッチが最高優先 (greedy/leftmost) なので、`matches[0]` しか使わない caller は
+そこで `break`。**catastrophic backtracking を抑制** — `"aaaa…(20)…b" ~~ /(\w+) (\w+) (\w+) b/`
+×3000 が 22.8s→0.52s (~44x)。**残るギャップ**: 非曖昧パターンのトークン候補リスト構築＋量指定子
+反復ごとの `RegexCaptures.clone()` (バックトラックスナップショット) アロケーション (別の深い最適化対象)。
 
 ### 8.5 根本原因 → roast ブロッカーの対応 (`TODO_roast/BLOCKERS.md`)
 
