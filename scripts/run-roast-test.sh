@@ -7,6 +7,11 @@
 MUTSU_BIN="${MUTSU_BIN:-target/release/mutsu}"
 DEFAULT_TIMEOUT=30
 
+# Roast tests rely on fudge directives (#?rakudo skip/todo, #?DOES, #?v6, ...).
+# mutsu only preprocesses them when MUTSU_FUDGE is set, so that a stray
+# `#?rakudo skip` in ordinary user code does not silently drop statements.
+export MUTSU_FUDGE=1
+
 per_file_timeout() {
   local test_file="$1"
   case "$test_file" in

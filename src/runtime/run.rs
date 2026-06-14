@@ -295,6 +295,28 @@ impl Interpreter {
         }
     }
 
+    /// Whether roast fudge directives (`#?rakudo skip/todo`, `#?DOES`, `#?v6`,
+    /// `#?rakudo.moar emit`, ...) should be preprocessed. These are a roast
+    /// harness convention, NOT Raku language syntax — applying them to ordinary
+    /// user code makes a stray `#?rakudo skip 'x'` comment silently drop the
+    /// next statement. So fudge is OFF by default and enabled only when running
+    /// the roast suite (`MUTSU_FUDGE=1`, set by `scripts/run-roast-test.sh`).
+    pub(crate) fn fudge_enabled() -> bool {
+        std::env::var("MUTSU_FUDGE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    }
+
+    /// Apply roast fudge preprocessing when enabled, otherwise return the source
+    /// unchanged. See [`fudge_enabled`](Self::fudge_enabled).
+    pub(crate) fn maybe_preprocess_roast_directives(input: &str) -> std::borrow::Cow<'_, str> {
+        if Self::fudge_enabled() {
+            std::borrow::Cow::Owned(Self::preprocess_roast_directives(input))
+        } else {
+            std::borrow::Cow::Borrowed(input)
+        }
+    }
+
     pub(super) fn preprocess_roast_directives(input: &str) -> String {
         // Pre-scan: collect #?DOES N annotations mapping sub names to test counts.
         // Pattern: #?DOES N line followed (possibly after blank/comment lines) by
@@ -750,7 +772,7 @@ impl Interpreter {
     }
 
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
-        let preprocessed = Self::preprocess_roast_directives(input);
+        let preprocessed = Self::maybe_preprocess_roast_directives(input);
         if !self.env.contains_key("*PROGRAM") {
             self.env
                 .insert("*PROGRAM".to_string(), Value::str(String::new()));
@@ -1315,7 +1337,7 @@ impl Interpreter {
             return Ok((stmts, true));
         }
 
-        let preprocessed = Self::preprocess_roast_directives(&code);
+        let preprocessed = Self::maybe_preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
         crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_source(&preprocessed);
@@ -1834,7 +1856,12 @@ mod tests {
     fn rakudo_todo_passes_without_todo_annotation() {
         let mut interp = Interpreter::new();
         interp.set_immediate_stdout(false);
-        let result = interp.run("use Test; plan 1;\n#?rakudo todo 'NYI'\nok True, 'pass';");
+        // run() only applies fudge when MUTSU_FUDGE is set; preprocess explicitly
+        // so the test exercises the fudge pipeline regardless of the env gate.
+        let src = Interpreter::preprocess_roast_directives(
+            "use Test; plan 1;\n#?rakudo todo 'NYI'\nok True, 'pass';",
+        );
+        let result = interp.run(&src);
         assert!(result.is_ok(), "run failed: {:?}", result.err());
         assert_eq!(interp.output_sink().output, "1..1\nok 1 - pass\n");
     }
@@ -1843,7 +1870,12 @@ mod tests {
     fn rakudo_todo_failures_keep_todo_annotation() {
         let mut interp = Interpreter::new();
         interp.set_immediate_stdout(false);
-        let result = interp.run("use Test; plan 1;\n#?rakudo todo 'NYI'\nok False, 'fail';");
+        // run() only applies fudge when MUTSU_FUDGE is set; preprocess explicitly
+        // so the test exercises the fudge pipeline regardless of the env gate.
+        let src = Interpreter::preprocess_roast_directives(
+            "use Test; plan 1;\n#?rakudo todo 'NYI'\nok False, 'fail';",
+        );
+        let result = interp.run(&src);
         assert!(result.is_ok(), "run failed: {:?}", result.err());
         assert!(
             interp

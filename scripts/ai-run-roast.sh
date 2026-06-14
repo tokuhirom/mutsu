@@ -119,7 +119,9 @@ Required investigation steps:
      "raku cannot pass this test" — do not attempt to implement it.
 2. Check raku AST for a minimal relevant snippet: raku --target=ast -e '...'
 3. Check mutsu AST: timeout 30 target/release/mutsu --dump-ast $FILE
-4. Run with mutsu: timeout 30 target/release/mutsu $FILE
+4. Run with mutsu: MUTSU_FUDGE=1 timeout 30 target/release/mutsu $FILE
+   (MUTSU_FUDGE=1 is REQUIRED for roast tests so fudge directives like
+   #?rakudo skip / #?DOES are processed; without it those tests misbehave.)
 5. Identify the behavioral gap and implement the missing feature as a general solution
 
 Constraints:
@@ -128,7 +130,7 @@ Constraints:
 - If raku cannot pass the test, do not waste time trying to make mutsu pass it
 
 After implementing:
-- Verify with cargo build --release && timeout 30 target/release/mutsu $FILE
+- Verify with cargo build --release && MUTSU_FUDGE=1 timeout 30 target/release/mutsu $FILE
 - Add regression tests under t/ if needed
 - Run cargo clippy -- -D warnings and fix any warnings
 - Run cargo fmt to format the code

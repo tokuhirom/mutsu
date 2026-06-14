@@ -15,6 +15,9 @@ for arg in "$@"; do
 done
 
 MUTSU=./target/release/mutsu
+# Roast tests rely on fudge directives, which mutsu only processes when
+# MUTSU_FUDGE is set (so ordinary scripts are not affected by stray #? comments).
+export MUTSU_FUDGE=1
 HISTORY=HISTORY.tsv
 HISTORY_GRAPH=HISTORY-pass.svg
 TIMEOUT=10  # seconds per test file

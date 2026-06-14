@@ -5,6 +5,16 @@
 方法: 4 つの調査エージェントによるサブシステム精読 + 主張の実機再現確認。
 すべての指摘は `file:line` の根拠付き。再現可能な不具合は実際に走らせて確認した。
 
+> ## ✅ 進捗トラッキング (2026-06-15 更新)
+> 本分析が挙げた「確認済みバグ」の大半はその後修正された。各節の見出しに `【✅修正済み】`
+> / `【⚠️残存】` を付記した。サマリ:
+> - **✅ 修正済み**: §2.1 / §8.1 遅延リスト崩壊・`grep` eager collect、§8.2 無限 Range 即時展開クラッシュ、
+>   §2.2 / §8.3 並行 scalar / state 共有（Track C: #2980/#2982 ほか）、§8.4 regex 毎マッチ再パース（#3064/#3065）、
+>   §5 panic→`X::` 変換境界（#3045）、§4-1 roast fudge のユーザコード誤作動（`MUTSU_FUDGE` ゲート化）。
+> - **⚠️ 残存**: §2.3 unsafe aliasing の UB 余地（本格修正は Track B 依存）、§2.4 `RuntimeError` god-struct、
+>   §4-2 `.^methods`/`.can` 直書きリストのドリフト、§5 `Value` enum 肥大 variant の Box 化（性能）、
+>   §1.x VM/Interpreter 結合・locals↔env 二重ストア（CP-1 env-loan で進行中）。
+
 ---
 
 ## 0. サマリ
@@ -140,7 +150,10 @@ CLAUDE.md の「slang 未対応・将来課題」は正確。ユーザ定義 gra
 
 ## 2. 確認済みバグ・重大な正しさの問題
 
-### 2.1 遅延リストが eager + 上限キャップで、メソッドが遅延を無視して collect 【重大】
+### 2.1 遅延リストが eager + 上限キャップで、メソッドが遅延を無視して collect 【重大】【✅修正済み】
+
+> **✅ 修正済み (2026-06)**: `grep`/`head`/`[]` 等の落ちる経路を遅延 pull に統一。
+> `(1..Inf).grep(* %% 3)[^4]` は `(3 6 9 12)` を返す（panic しない）。§8.1/§8.2 も参照。
 
 - `coerce_to_array` (`runtime/utils.rs:719-755`) は無限 Range を `MAX_ARRAY_EXPAND = 100_000`
   要素に実体化して `ArrayKind::Lazy` の **タグだけ**付ける。
@@ -151,7 +164,11 @@ CLAUDE.md の「slang 未対応・将来課題」は正確。ユーザ定義 gra
 - これが S17 (並行/Supply) や遅延系テストの hang/panic 多発の根本原因。
   **改善**: Seq/Range を本物の `Iterator` ベース pull モデルにし、`grep/map/elems/.list` を遅延対応に。
 
-### 2.2 並行 state 共有の意味論バグ 【重大】
+### 2.2 並行 state 共有の意味論バグ 【重大】【✅修正済み】
+
+> **✅ 修正済み (Track C)**: `start`/Promise 間で捕捉スカラ・`state` がライブ共有セル化された
+> (#2980 scalar, #2982 `state $n`, #3059 compound-assign, #3061/#3063 hash/array 要素)。
+> `my $counter=0; await (^4).map: { start { $counter++ } }; say $counter` → `4`。§8.3 も参照。
 
 `clone_for_thread` (`runtime/mod.rs:4869`) はインタプリタ状態をスレッドへ deep-copy スナップショット。
 共有は `shared_vars: Arc<RwLock<HashMap>>` (`value/mod.rs:1006`) 経由だが
@@ -160,7 +177,11 @@ CLAUDE.md の「slang 未対応・将来課題」は正確。ユーザ定義 gra
 `Promise.start/.then/.in/.at`、`.hyper/.race` は本物の `thread::spawn` を使う (偽装ではない) が、
 共有モデルが壊れているため結果が非決定 or 欠落する。
 
-### 2.3 `unsafe` の "single-threaded 前提" が実スレッドと矛盾 (UB の余地) 【重大】
+### 2.3 `unsafe` の "single-threaded 前提" が実スレッドと矛盾 (UB の余地) 【重大】【⚠️残存】
+
+> **⚠️ 残存**: in-place mutation は単なる perf ではなく binding identity を保つ意図的実装で、
+> 本格修正は配列/ハッシュの `ContainerRef` 共有セル化（= Track B コンテナ恒等性）に依存する。
+> 当面の安全策（誤った SAFETY コメント是正 / `strong_count` ガード）は未着手。
 
 `Value::Array = Arc<Vec<Value>>` (`value/mod.rs:943`、`Value: Send + Sync` をアサート) を、
 `strong_count > 1` でも `unsafe { &mut *(Arc::as_ptr(arr) as *mut _) }` で
@@ -172,7 +193,7 @@ CLAUDE.md の「slang 未対応・将来課題」は正確。ユーザ定義 gra
 定義上はデータ競合 = UB。**改善**: 配列/ハッシュも `ContainerRef` 相当の共有セルに統一し、
 ポインタ改竄による in-place mutation を撤廃。少なくとも誤った SAFETY コメントを是正。
 
-### 2.4 `RuntimeError` god-struct が制御フローをエラーチャネルで運ぶ
+### 2.4 `RuntimeError` god-struct が制御フローをエラーチャネルで運ぶ 【⚠️残存】
 
 `RuntimeError` (`value/error.rs:35`) は本来のエラー情報に加え、
 `is_return/is_last/is_next/is_redo/is_goto/is_proceed/is_succeed/is_fail/is_take/is_emit/...`
@@ -228,12 +249,15 @@ CLAUDE.md の「slang 未対応・将来課題」は正確。ユーザ定義 gra
 露骨な「テスト専用ハードコード出力」は **見つからなかった** (規約は概ね遵守)。
 ただし以下は roast 都合の混入・導出を怠った直書きで、ドリフト/誤作動のリスクがある。
 
-1. **roast fudge ロジックの核心混入 + 全入力適用**:
-   `preprocess_roast_directives` (`runtime/run.rs:218`) が `run()` (`:673`) で **roast 判定なしに
-   全ソース**へ行単位で適用。`#?rakudo skip/todo` 等の fudge 相当処理を、ハードコードした
-   テスト関数名リスト (`["is(", "is ", "ok ", "is-approx", ...]` `:271-307`) で実装。
-   本来 fudge は外部前処理ツール。ユーザコードに同形のコメントがあれば誤作動しうる。
-   **改善**: fudge を roast ハーネス側 / 明示フラグ配下に分離。
+1. **roast fudge ロジックの核心混入 + 全入力適用** 【✅修正済み (2026-06-15)】:
+   `preprocess_roast_directives` が `run()`/parse/`require` で **roast 判定なしに全ソース**へ適用され、
+   ユーザコードの `#?rakudo skip 'x'` が次の文を黙って落とす誤作動を実機確認した（`#?rakudo todo`/
+   `#?DOES`/`#?v6` も同様）。
+   **✅ 改善実施**: `MUTSU_FUDGE` 環境変数でゲート化（`Interpreter::maybe_preprocess_roast_directives`、
+   `run.rs`）。デフォルト OFF（ユーザコードは素通し）、roast 実行時のみ ON
+   （`scripts/run-roast-test.sh` と `roast-history.sh` が `export MUTSU_FUDGE=1`）。CLAUDE.md /
+   `ai-run-roast.sh` の個別 roast 実行手順も `MUTSU_FUDGE=1` 付きに更新。core の fudge ロジック自体は
+   roast 向けに調整済みで load-bearing のため温存。テスト `t/fudge-not-applied-to-user-code.t`。
 
 2. **`.^methods`/`.can` の型別メソッド一覧が直書き**:
    `collect_builtin_type_methods` (`runtime/methods_classhow.rs:1367`) が
@@ -275,6 +299,9 @@ CLAUDE.md の「slang 未対応・将来課題」は正確。ユーザ定義 gra
   `vm/vm_control_ops.rs:440`) でユーザ入力では到達不能。ただし **2.1 のように
   ユーザコードからメインスレッド panic に到達できる経路がある**のは要対処。
   **改善**: `run()` (`vm.rs:386`) に panic→`X::` 変換境界を 1 つ設ける。
+  **✅ 修正済み (#3045)**: VM の `run`/`run_inner` + try-body `run_range_guarded` の 2 境界で
+  user-code Rust panic（overflow/capacity-overflow/OOB）を catchable な `X::AdHoc`(exit 1) に変換。
+  残: `start{}` ワーカースレッドは未保護、stack-overflow/巨大 alloc abort は範囲外。
 - **`#[allow(lint)]` 126 箇所**: `dead_code` 64 (未配線コード放置の示唆)、
   `result_large_err` 17 (= `RuntimeError` 肥大の表れ、4 章 2.4 と同根)、`too_many_arguments` 35。
 
@@ -325,7 +352,10 @@ VM は env・クラスレジストリ・型検査・signature binder を Interpr
 初版の指摘を、追加の実機調査でさらに具体化した。すべて mutsu 実バイナリ vs `raku` の
 実出力で確認済み。
 
-### 8.1 「遅延崩壊」は一様ではなく、特定メソッドに隔離されている (重要な精緻化)
+### 8.1 「遅延崩壊」は一様ではなく、特定メソッドに隔離されている (重要な精緻化) 【✅修正済み】
+
+> **✅ 修正済み**: 下記「崩壊するもの」3 例はいずれも現在は raku と一致する
+> （`(1..Inf).grep(* %% 2)[^3]` → `(2 4 6)`、`.grep(*.is-prime)[^5]` → `(2 3 5 7 11)`）。
 
 2.1 を切り分けた結果、無限 Range の遅延は**メソッドごとに当たり外れがある**。
 正しく遅延処理されるもの:
@@ -352,7 +382,10 @@ VM は env・クラスレジストリ・型検査・signature binder を Interpr
 であること。これは初版 2.1 より正確で、修正は「全面書き換え」ではなく「`grep` 等の落ちる経路を
 遅延イテレータ経由に揃える」ことだと示唆する。
 
-### 8.2 系統的欠陥: 無ガードの Range 即時展開が 43 箇所、ガードは 9 箇所のみ
+### 8.2 系統的欠陥: 無ガードの Range 即時展開が 43 箇所、ガードは 9 箇所のみ 【✅修正済み】
+
+> **✅ 修正済み (PLAN.md §アーキ修正で消化)**: 無限 Range は遅延 pull モデルへ統一され、
+> 即時 collect 由来の `capacity overflow` panic は解消。
 
 `(a..=b).map(Value::Int).collect()` という **無限 Range を `Vec<Value>` に即時展開するパターンが
 src 全体で 43 箇所**存在する (`builtins/methods_0arg/coercion.rs:249,256,308,...`,
@@ -365,7 +398,9 @@ src 全体で 43 箇所**存在する (`builtins/methods_0arg/coercion.rs:249,25
 **改善**: Range は `Value::Int` の Vec へ展開せず遅延イテレータ (pull) として扱う型を導入し、
 43 箇所の即時 collect を排除する。少なくとも全展開サイトを単一ヘルパ経由にしてガードを一元化する。
 
-### 8.3 並行: state 変数もスレッドへ反映されない (2.2 の追加確認)
+### 8.3 並行: state 変数もスレッドへ反映されない (2.2 の追加確認) 【✅修正済み】
+
+> **✅ 修正済み (Track C #2982)**: 下記の例は現在 `3`（raku 一致）。§2.2 参照。
 
 ```raku
 sub f { state $n = 0; $n++ }
