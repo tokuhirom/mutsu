@@ -39,6 +39,60 @@ pub(crate) struct ReactSubscription {
     pub on_demand_done: Option<crate::value::SharedPromise>,
 }
 
+/// A streaming consumer for an on-demand `supply { ... }` body driven by `react`.
+/// While registered (keyed by the emitter's `supplier_id`), each `emit` in the
+/// supply body delivers its value to `consumer_cb` synchronously rather than
+/// buffering. This lets a synchronously infinite body be terminated when the
+/// consumer signals `done`: the consumer's `done` marks the stream `done`, and
+/// the next `emit` to a `done` consumer unwinds the body.
+pub(crate) struct StreamConsumer {
+    pub supplier_id: u64,
+    pub consumer_cb: Value,
+    pub done: bool,
+}
+
+impl Interpreter {
+    /// If a streaming consumer is registered for `supplier_id`, deliver `value`
+    /// to it synchronously and return `Some(result)`; otherwise return `None`
+    /// so the caller falls back to the normal buffering path.
+    ///
+    /// - If the consumer is already `done`, this is an emit-to-dead-consumer:
+    ///   return a benign react-done signal that unwinds the supply body.
+    /// - Otherwise run the consumer callback. If it signals `done`, mark the
+    ///   stream done and fire the body's CLOSE phasers synchronously (so e.g.
+    ///   `until my $done { ... } CLOSE { $done = True }` terminates cleanly),
+    ///   then return `Ok` so the current `emit` completes normally.
+    pub(super) fn try_stream_emit(
+        &mut self,
+        supplier_id: u64,
+        value: &Value,
+    ) -> Option<Result<(), RuntimeError>> {
+        let idx = self
+            .supply_stream_consumers
+            .iter()
+            .position(|c| c.supplier_id == supplier_id)?;
+        if self.supply_stream_consumers[idx].done {
+            return Some(Err(RuntimeError::supply_terminate_signal()));
+        }
+        let cb = self.supply_stream_consumers[idx].consumer_cb.clone();
+        match self.call_sub_value(cb, vec![value.clone()], true) {
+            Err(e) if e.is_react_done => {
+                self.supply_stream_consumers[idx].done = true;
+                for close_cb in
+                    crate::runtime::native_methods::take_supplier_close_callbacks(supplier_id)
+                {
+                    if let Err(ce) = self.call_sub_value(close_cb, Vec::new(), true) {
+                        return Some(Err(ce));
+                    }
+                }
+                Some(Ok(()))
+            }
+            Err(e) => Some(Err(e)),
+            Ok(_) => Some(Ok(())),
+        }
+    }
+}
+
 impl Interpreter {
     fn split_whenever_body_phasers(body: &[Stmt]) -> (Vec<Stmt>, Vec<Vec<Stmt>>, Vec<Vec<Stmt>>) {
         let mut main = Vec::new();
@@ -299,14 +353,50 @@ impl Interpreter {
                             // that survives to tell the loop the supply completed.
                             let done_promise = crate::value::SharedPromise::new();
                             supplier_register_promise(emitter_supplier_id, done_promise.clone());
+                            // Register a streaming consumer so that `emit` inside
+                            // the supply body delivers values to this whenever's
+                            // callback synchronously. This lets a synchronously
+                            // infinite body (`supply { loop { emit(...) } }`) be
+                            // terminated when the consumer signals `done`, instead
+                            // of buffering every emitted value (which would never
+                            // return). Direct emits stream live; inner `whenever`
+                            // registrations still flow through `supply_emit_buffer`
+                            // and are set up as ReactSubscriptions below.
+                            self.supply_stream_consumers.push(StreamConsumer {
+                                supplier_id: emitter_supplier_id,
+                                consumer_cb: callback.clone(),
+                                done: false,
+                            });
                             let (od_res, emitted, _) = self.run_on_demand_body(
                                 on_demand_cb.clone(),
                                 Some(emitter_supplier_id),
                             );
+                            let streamed_done = self
+                                .supply_stream_consumers
+                                .pop()
+                                .map(|c| c.done)
+                                .unwrap_or(false);
                             if let Err(od_err) = od_res
                                 && !od_err.is_react_done
                             {
                                 return Err(Self::wrap_react_died(od_err));
+                            }
+                            // If the streaming consumer signalled `done`, the
+                            // whole react has been satisfied by this supply — fire
+                            // its LAST callbacks and stop (don't set up the inner
+                            // subscriptions or keep polling).
+                            if streamed_done {
+                                let last_cbs = items
+                                    .get(2)
+                                    .and_then(Self::value_array_items)
+                                    .unwrap_or_default();
+                                for last_cb in &last_cbs {
+                                    match self.call_sub_value(last_cb.clone(), Vec::new(), true) {
+                                        Err(e) if e.is_react_done => return Ok(()),
+                                        _ => {}
+                                    }
+                                }
+                                return Ok(());
                             }
                             // The emitted items may include subscription registrations
                             // from `whenever` inside the supply body. Convert them to

@@ -37,6 +37,37 @@ fn condition_has_assignment_tail(rest: &str) -> bool {
         || super::assign::parse_custom_compound_assign_op(rest).is_some()
 }
 
+/// Split an inline no-initializer declaration out of a `while`/`until`
+/// condition so it is declared once at loop entry instead of re-declared (and
+/// reset to its default) on every iteration. `until my $done { ... CLOSE {
+/// $done = True } }` relies on `$done` persisting across iterations.
+///
+/// Only the no-initializer form is hoisted: `while my $x = expr { }` must keep
+/// re-running `= expr` each iteration (that is the whole point of the idiom), so
+/// it is left as-is. Returns the hoisted declaration (if any) and the condition
+/// to test each iteration (a plain read of the declared variable).
+fn split_loop_cond_decl(cond: Expr) -> (Option<Stmt>, Expr) {
+    if let Expr::DoStmt(boxed) = &cond
+        && let Stmt::VarDecl {
+            name,
+            custom_traits,
+            ..
+        } = boxed.as_ref()
+        && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+    {
+        let read = if let Some(rest) = name.strip_prefix('@') {
+            Expr::ArrayVar(rest.to_string())
+        } else if let Some(rest) = name.strip_prefix('%') {
+            Expr::HashVar(rest.to_string())
+        } else {
+            Expr::Var(name.clone())
+        };
+        let decl = (**boxed).clone();
+        return (Some(decl), read);
+    }
+    (None, cond)
+}
+
 fn condition_expr(input: &str) -> PResult<'_, Expr> {
     match expression(input) {
         Ok((rest, cond)) => {
@@ -1702,6 +1733,11 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    let (hoisted_decl, cond) = if param_binding.is_none() {
+        split_loop_cond_decl(cond)
+    } else {
+        (None, cond)
+    };
     let while_stmt = Stmt::While {
         cond: if let Some(ref param) = param_binding {
             Expr::AssignExpr {
@@ -1715,6 +1751,9 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
         body,
         label: None,
     };
+    if let Some(decl) = hoisted_decl {
+        return Ok((rest, Stmt::Block(vec![decl, while_stmt])));
+    }
     if let Some(param) = param_binding {
         Ok((
             rest,
@@ -1757,6 +1796,11 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    let (hoisted_decl, cond) = if param_binding.is_none() {
+        split_loop_cond_decl(cond)
+    } else {
+        (None, cond)
+    };
     let cond_expr = if let Some(ref param) = param_binding {
         Expr::AssignExpr {
             name: param.clone(),
@@ -1774,6 +1818,9 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
         body,
         label: None,
     };
+    if let Some(decl) = hoisted_decl {
+        return Ok((rest, Stmt::Block(vec![decl, while_stmt])));
+    }
     if let Some(param) = param_binding {
         Ok((
             rest,

@@ -1455,6 +1455,12 @@ impl Interpreter {
                 if Self::supply_is_terminated(attributes) {
                     return Ok(Value::Nil);
                 }
+                // Streaming on-demand react path (see native_supplier_mut emit).
+                if let Some(sid) = supplier_id_from_attrs(attributes)
+                    && let Some(res) = self.try_stream_emit(sid, &value)
+                {
+                    return res.map(|_| Value::Nil);
+                }
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
                     buf.push(value.clone());
                 }
@@ -1807,6 +1813,14 @@ impl Interpreter {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 if Self::supply_is_terminated(&attrs) {
                     return Ok((Value::Nil, attrs));
+                }
+                // Streaming on-demand react path: deliver synchronously to the
+                // consumer instead of buffering, so an infinite synchronous body
+                // can be terminated on emit-to-dead-consumer.
+                if let Some(sid) = supplier_id_from_attrs(&attrs)
+                    && let Some(res) = self.try_stream_emit(sid, &value)
+                {
+                    return res.map(|_| (Value::Nil, attrs));
                 }
                 // Push to supply_emit_buffer if active
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {

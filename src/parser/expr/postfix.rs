@@ -2529,6 +2529,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::DoStmt(_)
                     | Expr::Grouped(_)
             )
+            // An inline `my`/`our`/`state` declaration must not be hash-
+            // subscripted: the declaration parser consumes the whitespace after
+            // the variable name, so `while my $done { ... }` would otherwise eat
+            // the loop body `{ ... }` as a `$done{ ... }` subscript. A bare
+            // declaration is never subscripted in expression context — wrap it in
+            // parens (`(my %h){key}`) for that, which parses as Grouped.
+            && !matches!(&expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;

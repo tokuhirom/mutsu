@@ -244,6 +244,18 @@ impl RuntimeError {
         }
     }
 
+    /// A benign control signal that unwinds a synchronously-running on-demand
+    /// `supply { ... }` body when it emits to a consumer that has already
+    /// signalled `done`. Carries `is_react_done` (so the react runtime treats it
+    /// as normal completion) but no `X::ControlFlow` exception, so it never
+    /// surfaces to user code.
+    pub(crate) fn supply_terminate_signal() -> Self {
+        Self {
+            is_react_done: true,
+            ..Self::new("")
+        }
+    }
+
     pub(crate) fn resume_signal() -> Self {
         Self {
             is_resume: true,
