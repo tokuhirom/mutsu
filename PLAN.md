@@ -230,7 +230,13 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 
 #### Phase I/II と並行で随時消化できる独立タスク（critical path 外）
 
-- [ ] **正規表現のコンパイル済みキャッシュ**（ANALYSIS §8.4）— perf（raku 比 8.6x 遅）。撤去とは独立。
+- [~] **正規表現のコンパイル済みキャッシュ**（ANALYSIS §8.4）— perf。撤去とは独立。
+      static パターンの parse 結果は `REGEX_PARSE_CACHE` で memo 済み。#3064 で**キャッシュヒットを
+      owned `RegexPattern` の deep clone → `Arc<RegexPattern>` の refcount bump 化**（毎マッチの
+      ツリー clone を除去）。ベンチ `~~ /(\w+) \s+ (\w+) \s+ (\d+)/` ×20000 は release ~0.56s
+      （raku 0.36s ＝ ~1.6x、ANALYSIS 当時の 8.6x から大幅改善）。**残るギャップはマッチャ本体**
+      （`regex_match_ends_from_caps_in_pkg` が全 end 位置の `RegexCaptures` を構築→sort する
+      アロケーション）で、これは別の深い最適化。
 
 関連: 🟣第2優先「第一級コンテナ」＝トラック B の本体（レバー C ＝ Phase 1 の一部、Q2 の Arc-pointer flaky を吸収）。
 

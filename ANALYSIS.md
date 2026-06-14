@@ -387,10 +387,14 @@ say f();         # mutsu => 0     raku => 3
 | mutsu (`my $rx = rx/.../;` で事前コンパイル) | **3.51 s** (改善せず) |
 | raku | **0.40 s** |
 
-→ mutsu は raku の約 **8.6 倍遅く**、しかも regex を変数に束ねても速くならない。
+→ (当時) mutsu は raku の約 **8.6 倍遅く**、しかも regex を変数に束ねても速くならなかった。
 これは `Value::Regex(Arc<String>)` (生文字列) が**マッチのたびに `parse_regex` で
-構造を再構築している**ことを定量的に裏付ける (5 章)。
-**改善**: パターン文字列 → コンパイル済み構造 (`RegexAtom` ツリー) のキャッシュを導入。
+構造を再構築している**ことを定量的に裏付けていた (5 章)。
+**改善 (実施済み)**: static パターン → コンパイル済み `RegexPattern` ツリーの memo キャッシュ
+(`REGEX_PARSE_CACHE`) を導入済み。さらに #3064 でキャッシュヒットを `Arc<RegexPattern>` の
+refcount bump 化し、毎マッチの deep tree clone を除去。現状 release ~0.56s (raku 0.36s ＝
+~1.6x)。**残るギャップはマッチャ本体**: `regex_match_ends_from_caps_in_pkg` が全 end 位置の
+`RegexCaptures` を構築→sort するアロケーションコスト (別の深い最適化対象)。
 
 ### 8.5 根本原因 → roast ブロッカーの対応 (`TODO_roast/BLOCKERS.md`)
 
