@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime::native_methods::{
-    SupplyEvent, supplier_snapshot, take_promise_combinator_sources, take_supply_channel,
+    SupplyEvent, next_supplier_id, supplier_register_promise, supplier_snapshot,
+    take_promise_combinator_sources, take_supply_channel,
 };
 use crate::symbol::Symbol;
 use std::sync::mpsc;
@@ -27,6 +28,15 @@ pub(crate) struct ReactSubscription {
     /// Direct Channel source (for `whenever $channel { ... }`)
     pub channel: Option<crate::value::SharedChannel>,
     pub promise: Option<crate::value::SharedPromise>,
+    /// When this subscription was flattened out of an on-demand `supply { ... }`
+    /// body, a promise that resolves when the body's emitter is done. The inner
+    /// `whenever`'s `done` is rewritten to `$emitter.done()`, which marks the
+    /// emitter done (and resolves this promise) rather than raising the
+    /// react-done signal — and the emitter's done state is reset immediately
+    /// afterwards, so the loop cannot observe it by polling the supplier. The
+    /// promise survives that reset, so the event loop watches it to complete
+    /// the subscription once the emitter is done.
+    pub on_demand_done: Option<crate::value::SharedPromise>,
 }
 
 impl Interpreter {
@@ -236,6 +246,7 @@ impl Interpreter {
                                 emit_count: 0,
                                 channel: None,
                                 promise: None,
+                                on_demand_done: None,
                             });
                             continue;
                         }
@@ -267,15 +278,31 @@ impl Interpreter {
                                 emit_count: 0,
                                 channel: None,
                                 promise: None,
+                                on_demand_done: None,
                             });
                             continue;
                         }
                         // Handle on-demand supplies: execute the callback to produce values
                         if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
-                            // Execute the on-demand callback, which calls emit on the emitter.
-                            // If the callback dies, propagate as X::React::Died.
-                            let (od_res, emitted, _) =
-                                self.run_on_demand_body(on_demand_cb.clone(), None);
+                            // Execute the on-demand callback, which calls emit on the
+                            // emitter. Use a tracked emitter supplier id so that `done`
+                            // inside the supply block (rewritten to `$emitter.done()`)
+                            // marks this emitter done instead of raising the react-done
+                            // signal; the event loop below watches it to complete the
+                            // flattened subscriptions. If the callback dies, propagate
+                            // as X::React::Died.
+                            let emitter_supplier_id = next_supplier_id();
+                            // Register a done-signal promise on the emitter BEFORE
+                            // running the body. `$emitter.done()` resolves all pending
+                            // promises (line in supplier_done) and only then resets the
+                            // supplier's done flag, so this promise is the only thing
+                            // that survives to tell the loop the supply completed.
+                            let done_promise = crate::value::SharedPromise::new();
+                            supplier_register_promise(emitter_supplier_id, done_promise.clone());
+                            let (od_res, emitted, _) = self.run_on_demand_body(
+                                on_demand_cb.clone(),
+                                Some(emitter_supplier_id),
+                            );
                             if let Err(od_err) = od_res
                                 && !od_err.is_react_done
                             {
@@ -283,10 +310,13 @@ impl Interpreter {
                             }
                             // The emitted items may include subscription registrations
                             // from `whenever` inside the supply body. Convert them to
-                            // ReactSubscriptions for the event loop.
+                            // ReactSubscriptions for the event loop, tagging each with
+                            // the done-signal promise so the loop can complete them
+                            // when the supply body calls `done`.
                             for v in emitted {
                                 if Self::is_supply_subscription_registration(&v) {
-                                    if let Some(rsub) = self.value_to_react_subscription(&v) {
+                                    if let Some(mut rsub) = self.value_to_react_subscription(&v) {
+                                        rsub.on_demand_done = Some(done_promise.clone());
                                         react_subs.push(rsub);
                                     }
                                 } else {
@@ -334,6 +364,7 @@ impl Interpreter {
                             emit_count: 0,
                             channel: None,
                             promise: Some(shared.clone()),
+                            on_demand_done: None,
                         });
                     }
                     // Channel source: poll values directly from the channel
@@ -357,6 +388,7 @@ impl Interpreter {
                             emit_count: 0,
                             channel: Some(ch.clone()),
                             promise: None,
+                            on_demand_done: None,
                         });
                     }
                     _ => {}
@@ -377,6 +409,27 @@ impl Interpreter {
                     continue;
                 }
                 all_done = false;
+                // On-demand supply completion: a `done` inside the `supply { ... }`
+                // body was rewritten to `$emitter.done()`, which resolves this
+                // subscription's done-signal promise rather than raising the
+                // react-done signal. Once that resolves the flattened subscription
+                // is complete, so fire its LAST callbacks and stop polling it
+                // (otherwise an infinite source like `Supply.interval` would spin
+                // forever — see S17-supply/syntax.t).
+                if let Some(done_promise) = sub.on_demand_done.clone()
+                    && done_promise.is_resolved()
+                {
+                    for callback in &sub.last_callbacks {
+                        match self.call_sub_value(callback.clone(), Vec::new(), true) {
+                            Err(e) if e.is_react_done => break 'react_loop,
+                            other => {
+                                other?;
+                            }
+                        }
+                    }
+                    sub.done = true;
+                    continue;
+                }
                 // Handle Channel sources: poll values directly
                 if let Some(ref ch) = sub.channel {
                     match ch.poll_result() {
