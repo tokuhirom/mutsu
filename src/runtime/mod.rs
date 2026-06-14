@@ -4720,7 +4720,10 @@ impl Interpreter {
                 );
             }
             Value::Instance { id, .. } => {
-                self.instance_type_metadata.write().unwrap().insert(*id, info);
+                self.instance_type_metadata
+                    .write()
+                    .unwrap()
+                    .insert(*id, info);
             }
             Value::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
             _ => {}
