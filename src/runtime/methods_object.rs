@@ -935,24 +935,119 @@ impl Interpreter {
         }
     }
 
+    /// Build a `Duration` instance from `.new` arguments as pure data: the
+    /// seconds argument is stored as a `Rational` (matching Rakudo, where
+    /// `Duration.new(...).tai` is always a `Rat`); `Inf`/`-Inf`/`NaN` map to the
+    /// degenerate Rats `1/0`/`-1/0`/`0/0`. A non-numeric string argument is an
+    /// `X::Str::Numeric` error (the one fallible built-in builder).
+    pub(crate) fn build_native_duration_value(args: &[Value]) -> Result<Value, RuntimeError> {
+        let secs = if let Some(arg) = args.first() {
+            if let Value::Str(s) = arg {
+                match s.parse::<f64>() {
+                    Ok(f) => f,
+                    Err(_) => {
+                        let mut err = RuntimeError::new(format!(
+                            "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+                            s
+                        ));
+                        let mut eattrs = HashMap::new();
+                        eattrs.insert("source".to_string(), Value::str(s.to_string()));
+                        eattrs.insert("pos".to_string(), Value::Int(0));
+                        eattrs.insert(
+                            "reason".to_string(),
+                            Value::str(
+                                "base-10 number must begin with valid digits or '.'".to_string(),
+                            ),
+                        );
+                        err.exception = Some(Box::new(Value::make_instance(
+                            Symbol::intern("X::Str::Numeric"),
+                            eattrs,
+                        )));
+                        return Err(err);
+                    }
+                }
+            } else {
+                to_float_value(arg).unwrap_or(0.0)
+            }
+        } else {
+            0.0
+        };
+        let val = if secs.is_infinite() {
+            if secs > 0.0 {
+                Value::Rat(1, 0)
+            } else {
+                Value::Rat(-1, 0)
+            }
+        } else if secs.is_nan() {
+            Value::Rat(0, 0)
+        } else {
+            match args.first() {
+                Some(v) => crate::builtins::arith::real_to_rat(v),
+                None => crate::value::make_rat(0, 1),
+            }
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("value".to_string(), val);
+        Ok(Value::make_instance(Symbol::intern("Duration"), attrs))
+    }
+
+    /// Build a `StrDistance` instance from its `before`/`after` named args as
+    /// pure data.
+    pub(crate) fn build_native_strdistance_value(args: &[Value]) -> Value {
+        let mut before = String::new();
+        let mut after = String::new();
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "before" => before = value.to_string_value(),
+                    "after" => after = value.to_string_value(),
+                    _ => {}
+                }
+            }
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert("before".to_string(), Value::str(before));
+        attrs.insert("after".to_string(), Value::str(after));
+        Value::make_instance(Symbol::intern("StrDistance"), attrs)
+    }
+
     /// VM-native construction for a built-in type whose `.new(...)` is pure data
     /// assembly (no env / registry / user code): `Buf`/`Blob` (byte overlay),
-    /// `utf8`/`utf16` (code units) and `Uni` (codepoints). Returns `Some` with
-    /// the constructed value when `class_name` is one of these, else `None` so
-    /// the caller falls through to the generic constructor. The interpreter's
-    /// `dispatch_new` arms call the same per-type helpers, so the native path is
-    /// byte-identical.
+    /// `utf8`/`utf16` (code units), `Uni` (codepoints), `Version`, `Duration`
+    /// (the one fallible builder — a bad string is `X::Str::Numeric`),
+    /// `StrDistance`, `Stash` and the empty-instance schedulers/handles. Returns
+    /// `Some` with the constructed value (or its error) when `class_name` is one
+    /// of these, else `None` so the caller falls through to the generic
+    /// constructor. The interpreter's `dispatch_new` arms call the same per-type
+    /// helpers, so the native path is byte-identical.
     pub(crate) fn try_native_builtin_construct(
         class_name: Symbol,
         args: &[Value],
-    ) -> Option<Value> {
+    ) -> Option<Result<Value, RuntimeError>> {
         let cn = class_name.resolve();
         if Self::is_native_buf_constructible(&cn) {
-            Some(Self::build_native_buf_value(class_name, args))
+            Some(Ok(Self::build_native_buf_value(class_name, args)))
         } else if cn == "utf8" || cn == "utf16" {
-            Some(Self::build_native_utf_value(class_name, args))
+            Some(Ok(Self::build_native_utf_value(class_name, args)))
         } else if cn == "Uni" {
-            Some(Self::build_native_uni_value(args))
+            Some(Ok(Self::build_native_uni_value(args)))
+        } else if cn == "Version" {
+            Some(Ok(Self::version_from_value(
+                args.first().cloned().unwrap_or(Value::Nil),
+            )))
+        } else if cn == "Duration" {
+            Some(Self::build_native_duration_value(args))
+        } else if cn == "StrDistance" {
+            Some(Ok(Self::build_native_strdistance_value(args)))
+        } else if cn == "Stash" {
+            // A `Stash` is an empty Hash-typed instance.
+            Some(Ok(Value::make_instance(class_name, HashMap::new())))
+        } else if matches!(
+            cn.as_str(),
+            "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation"
+        ) {
+            // These take no construction args — just an empty instance.
+            Some(Ok(Value::make_instance(class_name, HashMap::new())))
         } else {
             None
         }
@@ -1864,75 +1959,13 @@ impl Interpreter {
                     return Ok(Self::version_from_value(arg));
                 }
                 "Duration" => {
-                    let secs = if let Some(arg) = args.first() {
-                        if let Value::Str(s) = arg {
-                            match s.parse::<f64>() {
-                                Ok(f) => f,
-                                Err(_) => {
-                                    let mut err = RuntimeError::new(format!(
-                                        "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
-                                        s
-                                    ));
-                                    let mut eattrs = HashMap::new();
-                                    eattrs.insert("source".to_string(), Value::str(s.to_string()));
-                                    eattrs.insert("pos".to_string(), Value::Int(0));
-                                    eattrs.insert(
-                                        "reason".to_string(),
-                                        Value::str(
-                                            "base-10 number must begin with valid digits or '.'"
-                                                .to_string(),
-                                        ),
-                                    );
-                                    err.exception = Some(Box::new(Value::make_instance(
-                                        Symbol::intern("X::Str::Numeric"),
-                                        eattrs,
-                                    )));
-                                    return Err(err);
-                                }
-                            }
-                        } else {
-                            to_float_value(arg).unwrap_or(0.0)
-                        }
-                    } else {
-                        0.0
-                    };
-                    // Duration stores its seconds as a Rational (matching Rakudo,
-                    // where Duration.new(...).tai is always a Rat). Infinite/NaN
-                    // arguments map to the degenerate Rats 1/0 / -1/0 / 0/0.
-                    let val = if secs.is_infinite() {
-                        if secs > 0.0 {
-                            Value::Rat(1, 0)
-                        } else {
-                            Value::Rat(-1, 0)
-                        }
-                    } else if secs.is_nan() {
-                        Value::Rat(0, 0)
-                    } else {
-                        match args.first() {
-                            Some(v) => crate::builtins::arith::real_to_rat(v),
-                            None => crate::value::make_rat(0, 1),
-                        }
-                    };
-                    let mut attrs = HashMap::new();
-                    attrs.insert("value".to_string(), val);
-                    return Ok(Value::make_instance(Symbol::intern("Duration"), attrs));
+                    // Shared with the VM's native fast path (pure Rational build;
+                    // a bad string arg is the one fallible built-in builder).
+                    return Self::build_native_duration_value(&args);
                 }
                 "StrDistance" => {
-                    let mut before = String::new();
-                    let mut after = String::new();
-                    for arg in &args {
-                        if let Value::Pair(key, value) = arg {
-                            match key.as_str() {
-                                "before" => before = value.to_string_value(),
-                                "after" => after = value.to_string_value(),
-                                _ => {}
-                            }
-                        }
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert("before".to_string(), Value::str(before));
-                    attrs.insert("after".to_string(), Value::str(after));
-                    return Ok(Value::make_instance(Symbol::intern("StrDistance"), attrs));
+                    // Shared with the VM's native fast path.
+                    return Ok(Self::build_native_strdistance_value(&args));
                 }
                 "Date" => {
                     use crate::builtins::methods_0arg::temporal;
