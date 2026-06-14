@@ -480,8 +480,8 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 ## Agent workflow
 
-- **Do not launch sub-agents unless explicitly asked.** The default is single-threaded work: implement, verify, commit, and open a PR yourself. Roast coverage is now in its final stretch (remaining tests are mostly hard, multi-prerequisite, or niche single files), and Rust builds are expensive — every parallel agent multiplies `cargo build`/`clippy`/`make test` cost and accumulates large `target/` worktrees. The coordination overhead (PR conflicts, rebases, merge ordering) no longer pays for itself. Only fan out to sub-agents when the user explicitly requests parallel work.
-- When parallel work *is* requested, maintain at most 4 concurrent agents (not more, to avoid quota exhaustion).
+- **Sub-agents are allowed (policy updated 2026-06-15).** Use them where they help — read-only fan-out searches (Explore), independent non-conflicting implementation slices, or sweeping across many files where you only need the conclusion. Be deliberate, not reflexive: Rust builds are expensive and each parallel worktree agent multiplies `cargo build`/`clippy`/`make test` cost and accumulates large `target/` worktrees, so reach for a sub-agent when the task genuinely fans out, not for trivial single-file work you can do inline. Read-only Explore/research agents are cheap; worktree-isolated build agents are not.
+- Keep at most 4 concurrent agents (not more, to avoid quota exhaustion). Clean up worktrees per the "Worktree cleanup" section.
 - **Task selection order:**
   1. PLAN.md current quarter priorities
   2. BLOCKERS.md highest-impact missing features
