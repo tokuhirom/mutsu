@@ -122,13 +122,19 @@ VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env
         `vm.env()`/`vm.env_mut()` へ揃え、未使用化した `VM::interpreter_mut` を削除。**これで VM env アクセスは 100% seam 経由**。
       - 検証: `make test` PASS（797 files / 7425 tests）/ clippy 緑 / env 系 roast（let/subset 6c/6e/eval_lex/in-eval/pointy-rw/given/sort/proto/class）緑。
 - [x] **1c. borrow 衝突サイトを解消**（1b に畳み込み済 — 衝突は2件のみだった）。
-- [ ] **1d. interpreter 側 carrier の env 借用点を整理**（**1〜2 PR**）
-      - 1a で列挙した carrier が `self.env` を読む箇所を、メソッド境界で env を出し入れできる形に整理
-        （env を引数 or 一時 swap で受け取れるよう carrier 経路をリファクタ）。挙動不変。
-- [ ] **1e. env フィールドを物理移管 + loan plumbing**（**1〜2 PR**・最大の山）
-      - `Interpreter.env` を削除し `VM.env` を新設。accessor 本体を `self.interpreter.env` → `self.env` へ flip。
-      - VM が carrier を呼ぶ ~15 サイトで env を貸し借り（方式 A なら `mem::swap` で interpreter の一時 slot へ）。
-      - `make test` + ローカル関連 roast → push → **全 roast を CI 委譲**で検証。
+- [!] **1d/1e は flip 試行で BLOCKER 判明（2026-06-15・PLAN を要改訂）**。1b の上で 1e flip を実装したところ
+      **smoke で広範崩壊**（`map`→Any・typed `Even $e`→Any・`$*dyn`→空）。実測: **VM が呼ぶ interpreter メソッド 227 個中
+      62 個が `self.env` を読む**（transitive 含めさらに多い）＝旧 1e 前提「env を読む carrier は ~15 サイト」は誤り。
+      env を物理移動すると 62+ メソッドが「貸出されて空の interpreter.env」を読む。詳細・機構・次スライス候補は
+      [docs/vm-state-ownership.md](docs/vm-state-ownership.md)「1e 実装試行で判明した致命的事実」。試行ブランチ
+      `cp1-1e-env-loan-flip`（broken・参照用、`loan_env_for`+pull/push+carrier ラッパ）に機構を保存。
+      - **正しい順序 = 1b（seam・完了）→ ① env-読み interpreter ヘルパ surface の削減（CP-3 前倒し）→ ② 1e flip + carrier loan**。
+      - **① surface 削減の入口（各スライス挙動不変・CI 安全網）**: `var_type_constraint`/`var_default`/`var_hash_key_constraint`
+        を `registry`+value-type+`instance_type_metadata` handle（#3068）で env 非依存判定に / `get|set_state_var`・
+        `get|set_shared_var`・`sync_shared_vars_to_env` の env sync 経路を切る / `get|set_our_var`・`our_vars_iter` を
+        package stash 経由に。env を読むヘルパが carrier（EVAL/subset-where/regex`{}`/Promise.then）だけに減ったら ②。
+      - **② 1e flip**: surface 削減後、`cp1-1e-env-loan-flip` の機構（`VM.env` field・accessor flip・`VM::new` pull /
+        `run`/`into_interpreter` push back・carrier swap ラッパ）を再利用して flip。`make test`+ローカル roast → CI で全 roast。
 
 #### 後続（CP-1 後・逐次）
 
