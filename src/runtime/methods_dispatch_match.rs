@@ -12,6 +12,15 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
             "are" => Some(self.dispatch_are(target, &args)),
+            "classify" | "categorize" if matches!(&target, Value::Package(name) if name == "Supply") =>
+            {
+                // Supply.classify / Supply.categorize are instance methods
+                // (declared `Supply:D:`); calling them on the Supply type
+                // object is an error in Rakudo.
+                Some(Err(RuntimeError::new(format!(
+                    "Cannot call '{method}' as a class method on Supply (requires a defined invocant)"
+                ))))
+            }
             "classify" | "categorize" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") =>
             {
                 let mut call_args = Vec::with_capacity(args.len() + 1);

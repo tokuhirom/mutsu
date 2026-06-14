@@ -99,6 +99,7 @@ impl Interpreter {
         &mut self,
         attributes: &HashMap<String, Value>,
         args: &[Value],
+        categorize: bool,
     ) -> Result<Value, RuntimeError> {
         let mapper = args.first().cloned().unwrap_or(Value::Nil);
 
@@ -107,7 +108,7 @@ impl Interpreter {
             // Create a new supplier for the classify output
             let classify_supplier_id = next_supplier_id();
             // Register a classify tap on the source supplier
-            register_supplier_classify_tap(source_sid, mapper, classify_supplier_id);
+            register_supplier_classify_tap(source_sid, mapper, classify_supplier_id, categorize);
             // Return a Supply backed by the classify supplier
             let mut supply_attrs = HashMap::new();
             supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
@@ -128,12 +129,19 @@ impl Interpreter {
         let mut keys_order: Vec<Value> = Vec::new();
         let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
         for val in values {
-            let key = self.apply_classify_mapper(&mapper, &val)?;
-            let key_str = key.to_string_value();
-            if !buckets.contains_key(&key_str) {
-                keys_order.push(key);
+            let mapped = self.apply_classify_mapper(&mapper, &val)?;
+            let keys = if categorize {
+                Self::flatten_categorize_keys(mapped)
+            } else {
+                vec![mapped]
+            };
+            for key in keys {
+                let key_str = key.to_string_value();
+                if !buckets.contains_key(&key_str) {
+                    keys_order.push(key);
+                }
+                buckets.entry(key_str).or_default().push(val.clone());
             }
-            buckets.entry(key_str).or_default().push(val);
         }
         // Build result as array of pairs (key => Supply)
         let mut result_values = Vec::new();
@@ -165,8 +173,11 @@ impl Interpreter {
                 let key = value.to_string_value();
                 if let Some(v) = map.get(&key) {
                     Ok(v.clone())
+                } else if let Some(def) = &map.default {
+                    // Honor the hash's `is default(...)` value for missing keys
+                    // (e.g. `is default(())` makes a categorize value uncategorized).
+                    Ok((**def).clone())
                 } else {
-                    // Hash with `is default(0)` — default value
                     Ok(Value::Int(0))
                 }
             }
@@ -192,67 +203,72 @@ impl Interpreter {
         tap_index: usize,
         value: Value,
     ) -> Result<(), RuntimeError> {
-        let (mapper, classify_supplier_id, mut seen_keys, mut key_supplier_ids) =
+        let (mapper, classify_supplier_id, mut seen_keys, mut key_supplier_ids, categorize) =
             match get_classify_state(source_supplier_id, tap_index) {
                 Some(state) => state,
                 None => return Ok(()),
             };
 
-        let key = self.apply_classify_mapper(&mapper, &value)?;
-        let key_str = key.to_string_value();
-
-        // Find or create sub-supplier for this key
-        let sub_supplier_id = if let Some((_, sid)) = key_supplier_ids
-            .iter()
-            .find(|(k, _)| k.to_string_value() == key_str)
-        {
-            *sid
+        let mapped = self.apply_classify_mapper(&mapper, &value)?;
+        // `.classify` produces a single key; `.categorize` produces a list of
+        // keys (a value may go to several buckets, or to none for `()`).
+        let keys: Vec<Value> = if categorize {
+            Self::flatten_categorize_keys(mapped)
         } else {
-            // New key — create sub-supplier and its Supply
-            let sub_sid = next_supplier_id();
-            seen_keys.push(key.clone());
-            key_supplier_ids.push((key.clone(), sub_sid));
-
-            // Update state before emitting (so it's visible to callbacks)
-            update_classify_state(source_supplier_id, tap_index, seen_keys, key_supplier_ids);
-
-            // Create a Supply for this sub-supplier
-            let mut sub_supply_attrs = HashMap::new();
-            sub_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
-            sub_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            sub_supply_attrs.insert("live".to_string(), Value::Bool(true));
-            sub_supply_attrs.insert("supplier_id".to_string(), Value::Int(sub_sid as i64));
-            let sub_supply = Value::make_instance(Symbol::intern("Supply"), sub_supply_attrs);
-
-            // Emit Pair(key, supply) to the classify supplier's taps
-            let pair = Value::ValuePair(Box::new(key), Box::new(sub_supply));
-            supplier_emit(classify_supplier_id, pair.clone());
-            let actions = supplier_emit_callbacks(classify_supplier_id, &pair);
-            for action in actions {
-                match action {
-                    SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
-                        Self::sleep_for_supply_delay(delay_seconds);
-                        let _ = self.call_sub_value(tap, vec![emitted], true);
-                    }
-                    SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
-                        let deferred_promises = supplier_done_deferred(sid2);
-                        for done_cb in take_supplier_done_callbacks(sid2) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
-                        for (promise, result) in deferred_promises {
-                            promise.keep(result, String::new(), String::new());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            sub_sid
+            vec![mapped]
         };
 
-        // Emit the value to the sub-supplier
-        supplier_emit(sub_supplier_id, value.clone());
-        let actions = supplier_emit_callbacks(sub_supplier_id, &value);
+        for key in keys {
+            let key_str = key.to_string_value();
+
+            // Find or create sub-supplier for this key
+            let sub_supplier_id = if let Some((_, sid)) = key_supplier_ids
+                .iter()
+                .find(|(k, _)| k.to_string_value() == key_str)
+            {
+                *sid
+            } else {
+                // New key — create sub-supplier and its Supply
+                let sub_sid = next_supplier_id();
+                seen_keys.push(key.clone());
+                key_supplier_ids.push((key.clone(), sub_sid));
+
+                // Update state before emitting (so it's visible to callbacks)
+                update_classify_state(
+                    source_supplier_id,
+                    tap_index,
+                    seen_keys.clone(),
+                    key_supplier_ids.clone(),
+                );
+
+                // Create a Supply for this sub-supplier
+                let mut sub_supply_attrs = HashMap::new();
+                sub_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                sub_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                sub_supply_attrs.insert("live".to_string(), Value::Bool(true));
+                sub_supply_attrs.insert("supplier_id".to_string(), Value::Int(sub_sid as i64));
+                let sub_supply = Value::make_instance(Symbol::intern("Supply"), sub_supply_attrs);
+
+                // Emit Pair(key, supply) to the classify supplier's taps
+                let pair = Value::ValuePair(Box::new(key), Box::new(sub_supply));
+                supplier_emit(classify_supplier_id, pair.clone());
+                let actions = supplier_emit_callbacks(classify_supplier_id, &pair);
+                self.run_supplier_emit_actions(actions);
+
+                sub_sid
+            };
+
+            // Emit the value to the sub-supplier
+            supplier_emit(sub_supplier_id, value.clone());
+            let actions = supplier_emit_callbacks(sub_supplier_id, &value);
+            self.run_supplier_emit_actions(actions);
+        }
+
+        Ok(())
+    }
+
+    /// Run the callback/head-limit actions produced by a supplier emit.
+    fn run_supplier_emit_actions(&mut self, actions: Vec<SupplierEmitAction>) {
         for action in actions {
             match action {
                 SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
@@ -271,7 +287,18 @@ impl Interpreter {
                 _ => {}
             }
         }
+    }
 
-        Ok(())
+    /// Flatten a `.categorize` mapper result into a list of keys.
+    /// Lists/Arrays/Seqs/Slips contribute their elements; an empty list
+    /// contributes no keys (the value is dropped); anything else is a single key.
+    fn flatten_categorize_keys(mapped: Value) -> Vec<Value> {
+        match mapped {
+            Value::Array(items, ..) => items.iter().cloned().collect(),
+            Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+            // An empty/undefined mapper result contributes no keys.
+            Value::Nil => Vec::new(),
+            other => vec![other],
+        }
     }
 }

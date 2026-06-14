@@ -244,7 +244,6 @@ is the genuinely concurrent surface, which is hard to make deterministic.
 - roast/S17-promise/then.t (dynamic variables not propagated to `.then`)
 - roast/S17-scheduler/basic.t
 - roast/S17-supply/batch.t (known flaky — see CLAUDE.md; hangs intermittently)
-- roast/S17-supply/categorize.t (class-method guard missing)
 - roast/S17-supply/migrate.t
 - roast/S17-supply/stable.t
 

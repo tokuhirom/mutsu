@@ -1438,6 +1438,7 @@ impl Interpreter {
                     "unique",
                     "on-close",
                     "classify",
+                    "categorize",
                     "Channel",
                     "Supply",
                     "Promise",
