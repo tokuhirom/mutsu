@@ -183,8 +183,9 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             詳細は [news/2026-06.md](news/2026-06.md)）**。駆動ループの 4 箇所二重化を単一エンジンへ統合し
             （Stage 1）、ループ所有権を `impl Interpreter`→`impl VM`（`vm/vm_react_loop.rs`）へ逆転して
             whenever body を **コンパイル済みバイトコード**でディスパッチ（Stage 2 #3038/#3039）、`// TODO:
-            compile to bytecode` を除去（Stage 3）。**残（minor follow-up）**: supply `QUIT` handler
-            （`call_supply_quit_handler`）のみ tree-walk。台帳の react-loop 行参照。
+            compile to bytecode` を除去（Stage 3）。**Stage 3 follow-up = supply `QUIT` handler も VM
+            ネイティブ化**（`VM::call_supply_quit_handler` を `call_react_callback` 経由で実行）。これで VM
+            駆動ループのどのコールバックも tree-walk へ戻らない。台帳の react-loop 行参照。
       - [ ] **unsafe aliasing 撤廃**（ANALYSIS §2.3, `Arc::as_ptr as *mut` 11 箇所）— B の要素セル基盤の上で。
 
 #### Phase II（収束・逐次）: state 移管 → carrier 確定 → dual-store 削除 → Interpreter 撤去

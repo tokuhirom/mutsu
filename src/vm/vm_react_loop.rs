@@ -10,8 +10,10 @@
 //! [`VM::call_react_callback`], which runs the (on-the-fly compiled) closure via
 //! `vm_call_map_block` with the triggering value bound as the block topic `$_`.
 //! Loop-control signals (`done` / `next` / `last`) surface as `Err` just as the
-//! old tree-walk path produced them, so the signal mapping is unchanged. (Supply
-//! `QUIT` handlers still route through `Interpreter::call_supply_quit_handler`.)
+//! old tree-walk path produced them, so the signal mapping is unchanged. Supply
+//! `QUIT` handlers now dispatch natively too, via [`VM::call_supply_quit_handler`]
+//! (Stage 3 follow-up) — no drive-loop callback routes back through the
+//! Interpreter's tree-walk `call_sub_value` anymore.
 //!
 //! The `await $supply` / `$supply.Promise` path reaches this loop through a thin
 //! `Interpreter::drive_react_subscriptions` bridge (see `runtime/supply_promise.rs`)
@@ -41,6 +43,37 @@ impl VM {
     fn call_react_callback(&mut self, cb: &Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
         let topic = args.first().cloned();
         self.vm_call_map_block(cb, args, topic, false)
+    }
+
+    /// VM-native supply `QUIT` handler dispatch. Mirrors
+    /// `Interpreter::call_supply_quit_handler` but runs the `QUIT` phaser body as
+    /// **compiled bytecode** via [`Self::call_react_callback`] (with `reason`
+    /// bound as `$_`) instead of the tree-walking `call_sub_value`. This is the
+    /// last drive-loop callback that routed back through the Interpreter; with it
+    /// gone the VM react loop dispatches every `whenever`/`LAST`/`QUIT`/`CLOSE`
+    /// callback natively. A `when`/`default`/`succeed` inside the body counts as
+    /// handled; any other error propagates.
+    fn call_supply_quit_handler(
+        &mut self,
+        quit_cb: Value,
+        reason: Value,
+    ) -> Result<(), RuntimeError> {
+        let saved_when = self.interpreter.when_matched();
+        self.interpreter.set_when_matched(false);
+        match self.call_react_callback(&quit_cb, vec![reason]) {
+            Ok(_) => {
+                self.interpreter.set_when_matched(saved_when);
+                Ok(())
+            }
+            Err(err) if err.is_succeed => {
+                self.interpreter.set_when_matched(saved_when);
+                Ok(())
+            }
+            Err(err) => {
+                self.interpreter.set_when_matched(saved_when);
+                Err(err)
+            }
+        }
     }
 
     /// Run the react event loop: poll all registered subscriptions
@@ -502,8 +535,7 @@ impl VM {
                     if let Some(error) = quit {
                         let mut handled = false;
                         for quit_cb in &sub.quit_callbacks {
-                            self.interpreter
-                                .call_supply_quit_handler(quit_cb.clone(), error.clone())?;
+                            self.call_supply_quit_handler(quit_cb.clone(), error.clone())?;
                             handled = true;
                         }
                         if handled {
@@ -645,8 +677,7 @@ impl VM {
                         } else {
                             let mut handled = false;
                             for quit_cb in &sub.quit_callbacks {
-                                self.interpreter
-                                    .call_supply_quit_handler(quit_cb.clone(), error.clone())?;
+                                self.call_supply_quit_handler(quit_cb.clone(), error.clone())?;
                                 handled = true;
                             }
                             sub.done = true;
