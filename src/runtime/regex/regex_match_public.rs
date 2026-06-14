@@ -110,7 +110,7 @@ impl Interpreter {
         &self,
         atom: &RegexAtom,
         pkg: &str,
-    ) -> Option<(RegexPattern, String)> {
+    ) -> Option<(std::sync::Arc<RegexPattern>, String)> {
         let RegexAtom::Named(name) = atom else {
             return None;
         };

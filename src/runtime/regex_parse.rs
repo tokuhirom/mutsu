@@ -17,7 +17,11 @@ thread_local! {
     /// so it is safe to cache and reuse across calls. This avoids re-parsing the
     /// same (potentially large) pattern on every step of a match — e.g. a token
     /// with dozens of alternations called once per input character.
-    static REGEX_PARSE_CACHE: RefCell<HashMap<String, RegexPattern>> = RefCell::new(HashMap::new());
+    /// Cached as `Arc<RegexPattern>` so a cache hit is a cheap refcount bump
+    /// rather than a deep clone of the whole token tree — the hot match loop
+    /// re-fetches the same compiled pattern on every step / every iteration.
+    static REGEX_PARSE_CACHE: RefCell<HashMap<String, std::sync::Arc<RegexPattern>>> =
+        RefCell::new(HashMap::new());
 }
 
 /// A pattern is cacheable iff parsing it does not depend on runtime variable
@@ -1813,27 +1817,37 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
-        self.parse_regex_with_mode(pattern, RegexParseMode::Match)
-    }
-
-    fn parse_regex_with_mode(&self, pattern: &str, mode: RegexParseMode) -> Option<RegexPattern> {
-        // Fast path: reuse a previously-parsed result for static patterns.
-        // Only the runtime `Match` mode caches: `Validate` produces opaque
-        // (un-interpolated, un-resolved) structures that must never leak into
-        // the runtime cache.
-        if mode == RegexParseMode::Match && regex_pattern_is_static(pattern) {
+    /// Parse a runtime (`Match`-mode) regex pattern, returning a shared
+    /// `Arc<RegexPattern>`. For a static pattern the compiled tree is memoized
+    /// in `REGEX_PARSE_CACHE`, so a repeat call (the hot match loop re-fetches
+    /// the same pattern on every step / iteration) is a refcount bump rather
+    /// than a deep clone of the whole token tree (the previous owned-`RegexPattern`
+    /// cache cloned the tree on every hit — ANALYSIS §8.4).
+    pub(super) fn parse_regex(&self, pattern: &str) -> Option<std::sync::Arc<RegexPattern>> {
+        if regex_pattern_is_static(pattern) {
             if let Some(cached) = REGEX_PARSE_CACHE.with(|c| c.borrow().get(pattern).cloned()) {
                 return Some(cached);
             }
-            let parsed = self.parse_regex_uncached(pattern, mode);
+            let parsed = self
+                .parse_regex_uncached(pattern, RegexParseMode::Match)
+                .map(std::sync::Arc::new);
             if let Some(ref p) = parsed {
                 REGEX_PARSE_CACHE.with(|c| {
-                    c.borrow_mut().insert(pattern.to_string(), p.clone());
+                    c.borrow_mut()
+                        .insert(pattern.to_string(), std::sync::Arc::clone(p));
                 });
             }
             return parsed;
         }
+        self.parse_regex_uncached(pattern, RegexParseMode::Match)
+            .map(std::sync::Arc::new)
+    }
+
+    /// Owned-`RegexPattern` parse used by the parser's own recursion (sub-pattern
+    /// parsing while building the token tree) and by non-`Match` (`Validate`)
+    /// callers. Sub-patterns live inside their parent's tree, so they are not
+    /// top-level cached here; the parent as a whole is cached by `parse_regex`.
+    fn parse_regex_with_mode(&self, pattern: &str, mode: RegexParseMode) -> Option<RegexPattern> {
         self.parse_regex_uncached(pattern, mode)
     }
 
@@ -4549,12 +4563,13 @@ impl Interpreter {
                         for _ in 0..sep_atom_str.chars().count() {
                             chars.next();
                         }
-                        Self::parse_regex(self, sep_atom_str.trim()).map(|pattern| {
-                            Box::new(RegexSeparatorSpec {
-                                pattern,
-                                allow_trailing,
+                        self.parse_regex_with_mode(sep_atom_str.trim(), mode)
+                            .map(|pattern| {
+                                Box::new(RegexSeparatorSpec {
+                                    pattern,
+                                    allow_trailing,
+                                })
                             })
-                        })
                     } else {
                         None
                     }
