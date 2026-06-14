@@ -187,8 +187,17 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             アトミック RMW。`await (^100).map: { start { for ^100 { $c += 1 } } }` が決定的に 10000。
             **要点**: 融合 rhs は `compile_expr` でコンパイル（`compile_call_arg` はスカラ被演算子を
             itemize/escape-box して captured-outer 伝播を壊す）。テスト `t/concurrent-compound-assign.t`。
-            **残**: `state @`/`%`（配列/ハッシュ）のスレッド共有（要素セル＝Track B 依存）、
-            lexical `@`/`%` 共有・複合代入のアトミック化（同 Track B 依存）。
+            **スライス 4 LANDED（PR #3061）**: スレッド間の**ハッシュ要素代入**（`%h{$k} = $v`）。
+            `my %h; await (^50).map: -> $i { start { %h{$i} = $i*$i } }` が 0（スナップショットの
+            last-writer-wins で書き込み消失）→ 決定的 50（raku 一致）。`assign_hash_elem_to_shared_var`
+            （`shared_vars` ロック保持下で get→`Arc::make_mut`→insert＝`.push` と同じ要素単位アトミック）を
+            `exec_index_assign_expr_named_op` 先頭の `shared_vars_active` 早期 return ガード
+            （`try_shared_hash_element_assign`）から呼ぶ。単一スレッドは早期 return で挙動不変。
+            `@a.push` は元から動作（`push_to_shared_var`）、壊れていたのは `@a[i]=`／`%h{k}=`。
+            テスト `t/concurrent-hash-assign.t`。
+            **残**: スレッド間の**配列要素 index 代入**（`@a[$i] = $v`、スライス 4 の直接の続き＝
+            `assign_array_elem_to_shared_var`、index 強制・resize・ArrayKind を要す）、
+            `state @`/`%`（配列/ハッシュ）のスレッド共有（要素セル＝Track B 依存）。
       - [x] **react/supply ランタイムの VM ネイティブ化 — 完了（Stage 1+2+3, #3010〜#3039, 2026-06、
             詳細は [news/2026-06.md](news/2026-06.md)）**。駆動ループの 4 箇所二重化を単一エンジンへ統合し
             （Stage 1）、ループ所有権を `impl Interpreter`→`impl VM`（`vm/vm_react_loop.rs`）へ逆転して
