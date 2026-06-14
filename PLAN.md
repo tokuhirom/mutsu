@@ -179,23 +179,12 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
             テスト `t/concurrent-state-var.t`。
             **残**: `state @`/`%`（配列/ハッシュ）のスレッド共有（要素セル＝Track B 依存）、
             lexical `@`/`%` 共有・複合代入（`+=`）のアトミック化。
-      - [ ] **react/supply ランタイムの VM ネイティブ化**（`run_react_event_loop[_drain]` /
-            `run_whenever_with_value`）。**Stage 1 完了（#3027/#3029/#3031, 2026-06、詳細は
-            [news/2026-06.md](news/2026-06.md)）**: 4 箇所に二重化していた駆動ループを単一エンジンへ統合
-            （tap×2→1 #3010、react↔await-promise を `SupplyDrivePolicy { React, Promise }` enum +
-            `drive_react_subscriptions` へ #3027）、`SupplyPromiseSub` + 重複ポーリングループ削除、
-            `native_supply_methods.rs`(3671行)を6サブモジュールへ分割 #3031。残りは:
-            - **Stage 2（VM 所有境界・残）**: 精査済み(2026-06-14) — **ループ所有権の逆転**が必要。whenever body は
-              現状 `Stmt::Block` の AST のまま subscription に登録され `call_sub_value`→`eval_block_value` で
-              tree-walk される（これが消すべき真フォールバック）。native `.map` の前例
-              （VM 側ループが `VM::call_compiled_closure` で closure のバイトコードを実行）に倣う:
-              ① `exec_whenever_scope_op` で body を `CompiledCode` へコンパイルし `compiled_code` 付き SubData を作る、
-              ② `ReactSubscription` がその compiled SubData を保持、③ `drive_react_subscriptions` を VM 側へ移動し
-              `call_compiled_closure` で各 body を実行、④ `supply_emit_buffer`（Interpreter field, ~43 箇所）を
-              VM/グローバル側へ（supplier レジストリは既に OnceLock global ＝整合）、⑤ supplier-registry tap
-              callback も同様。複数PR規模・高リスク（並行コア）。詳細は台帳
-              [vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) の react-loop 行。
-            - **Stage 3**: `vm_register_ops.rs` の `// TODO: compile to bytecode` 除去・台帳/PLAN 更新。
+      - [x] **react/supply ランタイムの VM ネイティブ化 — 完了（Stage 1+2+3, #3010〜#3039, 2026-06、
+            詳細は [news/2026-06.md](news/2026-06.md)）**。駆動ループの 4 箇所二重化を単一エンジンへ統合し
+            （Stage 1）、ループ所有権を `impl Interpreter`→`impl VM`（`vm/vm_react_loop.rs`）へ逆転して
+            whenever body を **コンパイル済みバイトコード**でディスパッチ（Stage 2 #3038/#3039）、`// TODO:
+            compile to bytecode` を除去（Stage 3）。**残（minor follow-up）**: supply `QUIT` handler
+            （`call_supply_quit_handler`）のみ tree-walk。台帳の react-loop 行参照。
       - [ ] **unsafe aliasing 撤廃**（ANALYSIS §2.3, `Arc::as_ptr as *mut` 11 箇所）— B の要素セル基盤の上で。
 
 #### Phase II（収束・逐次）: state 移管 → carrier 確定 → dual-store 削除 → Interpreter 撤去
