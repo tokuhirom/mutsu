@@ -2224,8 +2224,15 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // semantics). This lets in-place mutations through `$_` (e.g. `.=uc`,
     // `$_ = ...`) write back to the original container, while `$_` stays writable
     // exactly as in `given`. The `.defined` condition is still evaluated
-    // separately via `$tmp`.
-    let use_given_alias = param_name.is_none() && matches!(&cond_expr, Expr::Var(_));
+    // separately via `$tmp`. Container variables (`@a` / `%h`) also alias their
+    // container topic through `given`, so `with @a { .push }` propagates the
+    // mutation back to `@a` (the `given` opcode treats `@`/`%` topics as
+    // read-only-for-reassign but writes container mutations back to the source).
+    let use_given_alias = param_name.is_none()
+        && matches!(
+            &cond_expr,
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+        );
     // Topicalize `$_` for the body. For a literal, wrap it in a Mixin marked
     // read-only so in-place mutation of `$_` throws X::Assignment::RO. Otherwise
     // reuse the `$tmp` holding the (once-evaluated) condition value.
