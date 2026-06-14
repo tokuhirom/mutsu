@@ -121,8 +121,8 @@ impl Interpreter {
                     p == "Any" || p == "Mu" || p == "Cool" || registry.classes.contains_key(p)
                 })
                 && class_def.attributes.iter().all(
-                    |(name, _, _, _is_required, type_constraint, sigil, where_constraint)| {
-                        // No `where` clause, and a constructible sigil/type shape:
+                    |(name, _, _, _is_required, type_constraint, sigil, _where_constraint)| {
+                        // A constructible sigil/type shape:
                         // - `$`: a type constraint is allowed only when it is a
                         //   plain `type_matches_value`-checkable class/role/subset
                         //   type (see `is_simple_native_ctor_constraint`); native /
@@ -133,8 +133,10 @@ impl Interpreter {
                         // `is required` is allowed through: an unprovided required
                         // attribute falls through at build time (the interpreter
                         // raises X::Attribute::Required).
-                        where_constraint.is_none()
-                            && match sigil {
+                        // A `where` clause is allowed: the native builder runs
+                        // `enforce_attribute_where_constraints` as a post-assembly
+                        // phase (same predicate dispatch as the full constructor).
+                        match sigil {
                                 '$' => match type_constraint {
                                     None => true,
                                     Some(inner) => inner.as_deref().is_some_and(|tc| {
@@ -523,12 +525,34 @@ impl Interpreter {
                 .get(cls)
                 .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
         });
+        // Enforce `where` constraints at attribute-assignment time, i.e. *before*
+        // TWEAK runs — both raku and the interpreter reject a provided/defaulted
+        // value that fails its `where` at this point (a later TWEAK that would
+        // "fix" it never gets to run). `class_attrs` is the same
+        // `ClassAttributeDef` slice the interpreter uses, so the predicate
+        // dispatch is identical.
+        let has_where = class_attrs.iter().any(|(.., where_c)| where_c.is_some());
+        if has_where
+            && let Err(e) =
+                self.enforce_attribute_where_constraints(cn_resolved, &class_attrs, &attrs)
+        {
+            return Some(Err(e));
+        }
         if has_tweak {
             // Pass the original constructor args so a `submethod TWEAK(:$y)`
             // signature binds them, matching the full `.new` path.
             match self.run_tweak_phase(class_name, attrs, args) {
                 Ok(updated) => attrs = updated,
                 Err(e) => return Some(Err(e)),
+            }
+            // Re-check `where` after TWEAK: the full constructor enforces
+            // constraints again post-TWEAK, so a TWEAK that mutates an attribute
+            // into a `where` violation is rejected identically.
+            if has_where
+                && let Err(e) =
+                    self.enforce_attribute_where_constraints(cn_resolved, &class_attrs, &attrs)
+            {
+                return Some(Err(e));
             }
         }
         Some(Ok(Value::make_instance(class_name, attrs)))
