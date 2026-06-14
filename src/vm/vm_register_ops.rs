@@ -1671,10 +1671,10 @@ impl VM {
         // state ownership (lever B). See ledger §1.
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak
-            self.interpreter.run_react_event_loop_drain();
+            self.run_react_event_loop_drain();
             Ok(())
         } else {
-            self.interpreter.run_react_event_loop()
+            self.run_react_event_loop()
         };
         self.sync_locals_from_env(code);
         self.env_dirty = true;

@@ -216,7 +216,7 @@ pub(super) mod sprintf;
 mod sprintf_helpers;
 mod sprintf_validate;
 pub(crate) mod str_numeric;
-mod subtest;
+pub(crate) mod subtest;
 mod supply_classify;
 mod supply_promise;
 mod supply_transform;

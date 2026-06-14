@@ -211,6 +211,26 @@ impl Interpreter {
         )
     }
 
+    /// Bridge to the relocated VM-side drive loop for callers that only hold
+    /// `&mut Interpreter` (the `await $supply` / `$supply.Promise` path). The
+    /// drive loop now lives on `impl VM` (see `vm/vm_react_loop.rs`) so that
+    /// `whenever`-body dispatch can run compiled bytecode; the VM owns the
+    /// `Interpreter` by value, so we hand it over via the established
+    /// `mem::take` / `VM::new` / `into_interpreter` dance, run the loop, and take
+    /// the interpreter back. State (`supply_emit_buffer`, the supplier
+    /// registries are process-global) is preserved across the round trip.
+    pub(crate) fn drive_react_subscriptions(
+        &mut self,
+        react_subs: Vec<crate::runtime::subtest::ReactSubscription>,
+        policy: crate::runtime::subtest::SupplyDrivePolicy,
+    ) -> Result<(), RuntimeError> {
+        let interp = std::mem::take(self);
+        let mut vm = crate::vm::VM::new(interp);
+        let result = vm.drive_react_subscriptions(react_subs, policy);
+        *self = vm.into_interpreter();
+        result
+    }
+
     /// On the `await`/`.Promise` path, replay a finite/static `whenever` source
     /// (e.g. `Supply.from-list(...)`) synchronously: run the body callback for
     /// each value, then the LAST phaser callbacks. A lazy source element (e.g.
