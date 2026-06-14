@@ -3110,7 +3110,7 @@ impl Interpreter {
         attributes: &HashMap<String, Value>,
         promise: &crate::value::SharedPromise,
     ) -> Result<(), RuntimeError> {
-        use crate::runtime::native_methods::{SupplyEvent, take_supply_channel};
+        use crate::runtime::native_methods::take_supply_channel;
         use std::time::Duration;
 
         let on_demand_cb = match attributes.get("on_demand_callback") {
@@ -3179,11 +3179,7 @@ impl Interpreter {
         // dies) and capturing emitted values. This makes
         // `await (supply { whenever Supply.from-list(...) { ... } })` resolve
         // with the last emitted value even when the whenever never iterates.
-        struct SupplyPromiseSub {
-            receiver: std::sync::mpsc::Receiver<SupplyEvent>,
-            callback: Value,
-        }
-        let mut subs: Vec<SupplyPromiseSub> = Vec::new();
+        let mut react_subs: Vec<crate::runtime::subtest::ReactSubscription> = Vec::new();
         let mut static_last_value: Option<Value> = None;
         for sub_val in &subscriptions {
             if let Value::Array(items, ..) = sub_val
@@ -3219,9 +3215,22 @@ impl Interpreter {
                     if let Some(sid) = supply_id
                         && let Some(rx) = take_supply_channel(sid)
                     {
-                        subs.push(SupplyPromiseSub {
-                            receiver: rx,
+                        react_subs.push(crate::runtime::subtest::ReactSubscription {
+                            receiver: Some(rx),
+                            supplier_id: None,
+                            supplier_next_index: 0,
                             callback,
+                            close_callbacks: Vec::new(),
+                            last_callbacks: Vec::new(),
+                            quit_callbacks: Vec::new(),
+                            done: false,
+                            is_lines: false,
+                            line_buffer: String::new(),
+                            head_limit: None,
+                            emit_count: 0,
+                            channel: None,
+                            promise: None,
+                            on_demand_done: None,
                         });
                         continue;
                     }
@@ -3238,7 +3247,7 @@ impl Interpreter {
             }
         }
 
-        if subs.is_empty() {
+        if react_subs.is_empty() {
             // No live channels: resolve with the last value emitted by the
             // static sources (or any plain synchronously-emitted value).
             let result = static_last_value
@@ -3248,89 +3257,23 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Custom event loop: poll channels until the promise is resolved.
-        // When the supply block calls `done`, the Supplier.done handler
-        // calls supplier_done() which keeps pending promises (including ours)
-        // with the last emitted value.
-        let poll_timeout = Duration::from_millis(10);
-        let deadline = std::time::Instant::now() + Duration::from_secs(30);
-        // The supply's result is the last value it emitted before completing.
-        // Seed it from any values emitted synchronously before the subscriptions.
-        let mut last_value = static_last_value
+        // Drive the channel-backed subscriptions through the shared react loop
+        // under the Promise policy: it polls until the supply block's `done`
+        // keeps this promise (via the Supplier.done handler / supplier registry)
+        // or the deadline elapses, keeping the promise with the last emitted
+        // value. Seed that value from anything emitted synchronously before the
+        // subscriptions.
+        let seed = static_last_value
             .or_else(|| plain_values.last().cloned())
             .unwrap_or(Value::Nil);
-        loop {
-            // Check if promise was resolved (by supplier_done via Supplier.done handler)
-            if promise.is_resolved() {
-                return Ok(());
-            }
-
-            // Check timeout to prevent infinite hangs
-            if std::time::Instant::now() >= deadline {
-                promise.keep(Value::Nil, String::new(), String::new());
-                return Ok(());
-            }
-
-            // Poll all channel subscriptions
-            let mut any_active = false;
-            for sub in &subs {
-                match sub.receiver.recv_timeout(poll_timeout) {
-                    Ok(SupplyEvent::Emit(value)) => {
-                        any_active = true;
-                        // Capture values the whenever block `emit`s so a later
-                        // `done` resolves the promise with the last one.
-                        self.supply_emit_buffer.push(Vec::new());
-                        let cb_result =
-                            self.call_sub_value(sub.callback.clone(), vec![value], true);
-                        let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
-                        if let Some(last) = emitted.last() {
-                            last_value = last.clone();
-                        }
-                        if promise.is_resolved() {
-                            return Ok(());
-                        }
-                        if let Err(err) = cb_result {
-                            // `done` (and `last`) inside the whenever complete the
-                            // supply: keep the promise with the last emitted value
-                            // immediately, instead of spinning to the poll deadline.
-                            if err.is_react_done || err.is_last {
-                                promise.keep(last_value.clone(), String::new(), String::new());
-                                return Ok(());
-                            }
-                            // `next`/`redo` are loop control, not completion.
-                            if !err.is_next && !err.is_redo {
-                                // A `die` quits the supply: break with the cause.
-                                let cause = err
-                                    .exception
-                                    .as_deref()
-                                    .cloned()
-                                    .unwrap_or_else(|| Value::str(err.message.clone()));
-                                promise.break_with(cause, String::new(), String::new());
-                                return Ok(());
-                            }
-                        }
-                    }
-                    Ok(SupplyEvent::Done) => {
-                        // Inner supply done
-                    }
-                    Ok(SupplyEvent::Quit(_)) => {
-                        // Inner supply quit
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        // Channel closed
-                    }
-                    Err(_) => {
-                        // Timeout, continue polling
-                        any_active = true;
-                    }
-                }
-            }
-            if !any_active {
-                // All channels disconnected
-                promise.keep(Value::Nil, String::new(), String::new());
-                return Ok(());
-            }
-        }
+        self.drive_react_subscriptions(
+            react_subs,
+            crate::runtime::subtest::SupplyDrivePolicy::Promise {
+                promise: promise.clone(),
+                deadline: std::time::Instant::now() + Duration::from_secs(30),
+                last_value: seed,
+            },
+        )
     }
 
     /// On the `await`/`.Promise` path, replay a finite/static `whenever` source
