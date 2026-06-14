@@ -668,6 +668,13 @@ pub(crate) enum OpCode {
         /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
         /// Used to temporarily clear sigilless readonly flags before binding.
         multi_param_names: Vec<String>,
+        /// When true, the iterable is a `.pairs`/`.antipairs` transform: the
+        /// loop variable is a `Pair` that *wraps* the source element, not the
+        /// element itself. The plain (topic/named) per-element source writeback
+        /// is suppressed (it would overwrite the element with the Pair); the
+        /// source tag is still kept so the Pair's rw `.value` alias can detect
+        /// immutability and propagate.
+        loop_var_wraps_element: bool,
     },
     /// Restore the single named for-loop param's prior binding, deferred until
     /// after the loop's LAST/post phasers have run (which must still see the

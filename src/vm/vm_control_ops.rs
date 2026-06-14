@@ -21,6 +21,9 @@ pub(super) struct ForLoopSpec {
     /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
     /// Used to temporarily clear sigilless readonly flags before binding.
     pub(super) multi_param_names: Vec<String>,
+    /// When true (`.pairs`/`.antipairs`), the loop variable is a `Pair` wrapping
+    /// the element, so the plain per-element source writeback is suppressed.
+    pub(super) loop_var_wraps_element: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -581,6 +584,22 @@ impl VM {
         let writes_back_topic =
             spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
         let rw_writeback = spec.do_writeback;
+        // A plain (non-rw, non-copy) named loop variable aliases the source
+        // element in Raku: `for @m -> @row { @row.push(9) }` and
+        // `for @m -> $row { $row.push(9) }` both mutate `@m` (a scalar binding a
+        // container can still mutate the container, though not rebind it).
+        // Mirror the topic writeback for it. `is copy` sets `is_rw` (suppressing
+        // this), and `<->` rw uses `rw_writeback` instead. The unchanged-value
+        // guard in `write_back_for_topic_item` keeps read-only loops O(n).
+        let writes_back_named_param =
+            !spec.is_rw && !rw_writeback && spec.arity <= 1 && param_name.is_some();
+        // `.pairs`/`.antipairs` loop variables are `Pair`s wrapping the element,
+        // not the element itself — writing one back would overwrite the source
+        // element with the Pair (S32-array/pairs.t 14). The Pair's rw `.value`
+        // alias handles propagation (and immutability for Mix), so suppress the
+        // plain writeback here while keeping the source tag.
+        let writes_back_loop_var =
+            (writes_back_topic || writes_back_named_param) && !spec.loop_var_wraps_element;
         let chunked_items: Vec<Value> = if arity > 1 {
             items
                 .chunks(arity)
@@ -761,10 +780,11 @@ impl VM {
                         if !code.state_locals.is_empty() {
                             self.sync_state_locals_in_range(code, body_start, loop_end);
                         }
-                        if writes_back_topic {
+                        if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                &param_name,
                                 idx,
                                 container_reversed,
                                 total_items,
@@ -819,10 +839,11 @@ impl VM {
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed => {
-                        if writes_back_topic {
+                        if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                &param_name,
                                 idx,
                                 container_reversed,
                                 total_items,
@@ -882,10 +903,11 @@ impl VM {
                             && e.leave_routine.is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
-                        if writes_back_topic {
+                        if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                &param_name,
                                 idx,
                                 container_reversed,
                                 total_items,
@@ -924,10 +946,11 @@ impl VM {
                         break 'for_loop;
                     }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
-                        if writes_back_topic {
+                        if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                &param_name,
                                 idx,
                                 container_reversed,
                                 total_items,
@@ -954,10 +977,11 @@ impl VM {
                         break 'for_loop;
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
-                        if writes_back_topic {
+                        if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                &param_name,
                                 idx,
                                 container_reversed,
                                 total_items,
@@ -1823,10 +1847,29 @@ impl VM {
         }
     }
 
+    /// Whether the loop variable still holds the same binding as the source
+    /// element, so writing it back would be a no-op. Conservative: returns
+    /// `true` only when provably unchanged (same container `Arc`, so in-place
+    /// mutation already reached the source; or an equal immutable scalar).
+    /// Anything else returns `false` and falls through to the full writeback.
+    fn loop_var_unchanged(current: &Value, source_elem: &Value) -> bool {
+        use std::sync::Arc;
+        match (current, source_elem) {
+            (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
+            (Value::Hash(a), Value::Hash(b)) => Arc::ptr_eq(a, b),
+            (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b) || a == b,
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Num(a), Value::Num(b)) => a == b,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            _ => false,
+        }
+    }
+
     fn write_back_for_topic_item(
         &mut self,
         code: &CompiledCode,
         source_var: &Option<String>,
+        param_name: &Option<String>,
         idx: usize,
         reversed: bool,
         total_items: usize,
@@ -1837,7 +1880,12 @@ impl VM {
         if !source.starts_with('@') {
             return;
         }
-        let Some(current_topic) = self.interpreter.env().get("_").cloned() else {
+        // The loop variable written back to the source element is the named
+        // param (`for @m -> @row {...}` / `-> $row {...}` — Raku aliases the
+        // element, so `.push`/`@row[0]=v` propagate), or otherwise the implicit
+        // topic `$_` (`for @m {...}`).
+        let loop_var = param_name.as_deref().unwrap_or("_");
+        let Some(current_topic) = self.interpreter.env().get(loop_var).cloned() else {
             return;
         };
         let Some(Value::Array(items, kind)) = self.get_env_with_main_alias(source) else {
@@ -1849,6 +1897,15 @@ impl VM {
             idx
         };
         if actual_idx >= items.len() {
+            return;
+        }
+        // Skip the O(n) source rebuild when the loop variable is provably
+        // unchanged — otherwise even a read-only loop (`for @a { say $_ }`) or
+        // an empty body would rebuild the whole backing array every iteration,
+        // making the loop O(n^2). When the value is the same (same container
+        // Arc, so any in-place mutation is already visible in the source, or an
+        // equal immutable scalar), the writeback is a no-op.
+        if Self::loop_var_unchanged(&current_topic, &items[actual_idx]) {
             return;
         }
         let mut updated = items.to_vec();
@@ -1982,6 +2039,12 @@ impl VM {
                     return;
                 };
                 if idx >= items.len() {
+                    return;
+                }
+                // Skip the O(n) rebuild when the rw variable is unchanged — a
+                // read-only `<->` loop (`for @big <-> $x { $s += $x }`) would
+                // otherwise be O(n^2). See `loop_var_unchanged`.
+                if Self::loop_var_unchanged(&current_val, &items[idx]) {
                     return;
                 }
                 let mut updated = items.to_vec();
