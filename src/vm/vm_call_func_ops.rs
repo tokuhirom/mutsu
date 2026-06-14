@@ -516,6 +516,15 @@ impl VM {
             self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
+        } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), &name) {
+            // Pure lexical `&name` callable invoked with a slip (`op(|@args)`):
+            // dispatch VM-natively via vm_call_on_value, same as the non-slip
+            // case in `dispatch_func_call_inner` (Track A). Builtin priority is
+            // preserved because try_native_function already ran above, and
+            // lexical_amp_var_callable excludes builtin / package-sub names.
+            let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
+            self.stack.push(result);
+            self.env_dirty = true;
         } else {
             // Sync VM locals to env before spawning threads so closures capture them
             if name == "start" {
