@@ -5744,6 +5744,52 @@ impl Interpreter {
         Some(result)
     }
 
+    /// Track C: assign a single hash element (`%h{$k} = $v`) through the shared
+    /// cell so concurrent `start { %h{...} = ... }` blocks all land instead of
+    /// each mutating a private snapshot (last-writer-wins). Holds the
+    /// `shared_vars` lock for the whole get-make_mut-insert so two threads
+    /// writing different keys can't lose each other's update — the same
+    /// per-element atomicity `push_to_existing_shared_var` gives `.push`.
+    ///
+    /// Returns `Some(value)` if it wrote through the shared hash, `None` if the
+    /// variable is not a shared hash (caller falls back to the normal path).
+    pub(crate) fn assign_hash_elem_to_shared_var(
+        &mut self,
+        key: &str,
+        elem_key: String,
+        value: Value,
+    ) -> Option<Value> {
+        if !key.starts_with('%') || !self.shared_vars_active {
+            return None;
+        }
+        let is_thread_clone = self.is_thread_clone();
+        if is_thread_clone {
+            // Drop env's private copy so the shared cell holds the only Arc and
+            // make_mut mutates in place (the thread's env is discarded anyway).
+            self.env.remove(key);
+        }
+        let mut sv = self.shared_vars.write().unwrap();
+        let Some(Value::Hash(arc)) = sv.get_mut(key) else {
+            return None;
+        };
+        Value::hash_insert_through(&mut Arc::make_mut(arc).map, elem_key, value.clone());
+        let result = Value::Hash(Arc::clone(arc));
+        drop(sv);
+        if is_thread_clone {
+            // Mark dirty once per key (a per-key env marker avoids re-locking the
+            // dirty set on every element write).
+            let dirty_marker = format!("__mutsu_shared_dirty::{key}");
+            if !self.env.contains_key(&dirty_marker) {
+                self.mark_shared_var_dirty(key);
+                self.env.insert(dirty_marker, Value::Bool(true));
+            }
+        } else {
+            self.mark_shared_var_dirty(key);
+            self.env.insert(key.to_string(), result);
+        }
+        Some(value)
+    }
+
     /// Read a shared variable. If the variable is in shared_vars, return
     /// the shared version (which may have been mutated by another thread).
     #[allow(dead_code)]

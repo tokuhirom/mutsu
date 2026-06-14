@@ -2276,6 +2276,97 @@ impl VM {
         Ok(())
     }
 
+    /// Track C: route a simple `%h{$k} = $v` through the shared cell when a
+    /// thread is active, so concurrent `start` blocks accumulate into one hash
+    /// instead of each mutating a private snapshot (last-writer-wins).
+    /// Applies the same simplicity guards as `try_fast_hash_element_assign`
+    /// (rejecting type constraints, defaults, bound indices, complex indices).
+    /// Returns `Some(Ok)` when it wrote through the shared hash, else `None`.
+    fn try_shared_hash_element_assign(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Option<Result<(), RuntimeError>> {
+        // Cheap early-out: only meaningful while a thread shares this env.
+        if !self.interpreter.shared_vars_active {
+            return None;
+        }
+        if !self.local_bind_pairs.is_empty() {
+            return None;
+        }
+        let var_name = Self::const_str(code, name_idx);
+        if !var_name.starts_with('%') {
+            return None;
+        }
+        let stack_len = self.stack.len();
+        if stack_len < 2 {
+            return None;
+        }
+        let idx_ref = &self.stack[stack_len - 1];
+        let val_ref = &self.stack[stack_len - 2];
+        // Reject complex index types (slices/ranges/junctions need the full path).
+        if matches!(
+            idx_ref,
+            Value::Array(..)
+                | Value::Junction { .. }
+                | Value::GenericRange { .. }
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::Nil
+                | Value::Seq(..)
+                | Value::Slip(..)
+        ) {
+            return None;
+        }
+        // Reject bind-mode markers and Nil values (need default/type handling).
+        if matches!(val_ref, Value::Pair(name, _) if name == "__mutsu_bind_index_value")
+            || matches!(val_ref, Value::Nil)
+        {
+            return None;
+        }
+        // Reject when type/key constraints, defaults, readonly, or bound indices
+        // exist — those need the full assignment path's healing.
+        if self
+            .interpreter
+            .var_type_constraint_fast(var_name)
+            .is_some()
+            || self.interpreter.var_default(var_name).is_some()
+            || self.interpreter.var_hash_key_constraint_fast(var_name)
+            || self.interpreter.readonly_vars().contains(var_name)
+        {
+            return None;
+        }
+        {
+            let bound_key = format!("__mutsu_bound_index::{}", var_name);
+            if self.interpreter.env().contains_key(&bound_key) {
+                return None;
+            }
+        }
+        let var_name = var_name.to_string();
+        let key = idx_ref.to_string_value();
+        // Commit: pop idx then val and write through the shared cell.
+        let idx = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap();
+        match self
+            .interpreter
+            .assign_hash_elem_to_shared_var(&var_name, key, val.clone())
+        {
+            Some(_) => {
+                self.stack.push(val);
+                Some(Ok(()))
+            }
+            None => {
+                // Not a shared hash after all (e.g. not yet seeded): restore the
+                // [val, idx] stack order and fall through to the normal path.
+                self.stack.push(val);
+                self.stack.push(idx);
+                None
+            }
+        }
+    }
+
     /// Fast path for simple hash element assignment: `%h{$key} = $val`.
     ///
     /// Returns `Some(Ok(()))` if the fast path handled the assignment,
@@ -2291,7 +2382,6 @@ impl VM {
     /// - No type constraints, no key constraints, no var defaults
     /// - Variable is not readonly (not bound via `:=`)
     /// - No container type metadata on the hash
-    #[inline]
     fn try_fast_hash_element_assign(
         &mut self,
         code: &CompiledCode,
@@ -2484,6 +2574,12 @@ impl VM {
         name_idx: u32,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // --- Track C: shared hash element assignment across threads ---
+        // `%h{$k} = $v` inside a `start` block must write through the shared
+        // cell so concurrent threads all land (snapshot semantics lose updates).
+        if let Some(result) = self.try_shared_hash_element_assign(code, name_idx) {
+            return result;
+        }
         // --- Fast path for simple hash element assignment ---
         // Handles the common case: %h{$key} = $val with no type constraints,
         // no binding, no special containers. Skips ~16 HashMap lookups.
