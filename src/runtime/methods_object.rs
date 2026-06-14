@@ -127,9 +127,10 @@ impl Interpreter {
                         // - `@`/`%`: only untyped with no `is Type` trait — typed
                         //   elements need container type metadata and `is Type`
                         //   builds a typed container, both interpreter-owned.
-                        // `is required` is allowed through: an unprovided required
-                        // attribute falls through at build time (the interpreter
-                        // raises X::Attribute::Required).
+                        // `is required` is allowed through: the native builder
+                        // raises `X::Attribute::Required` itself for an unprovided
+                        // required attribute (before defaults when there is no
+                        // BUILD, or after BUILD when there is one).
                         // A `where` clause is allowed: the native builder runs
                         // `enforce_attribute_where_constraints` as a post-assembly
                         // phase (same predicate dispatch as the full constructor).
@@ -342,31 +343,35 @@ impl Interpreter {
                 }
             }
         }
-        // A required attribute that was not provided is `X::Attribute::Required`
-        // — let the interpreter raise it. The required flag is tuple field 4
-        // (`Option<Option<String>>`: `Some` when `is required`); field 3 is
+        // A required attribute not supplied as a named arg. Without a BUILD it
+        // can never be set, so raise `X::Attribute::Required` now — exactly the
+        // interpreter's pre-defaults required check. With a BUILD, defer: BUILD
+        // may set it, and the post-BUILD required check below enforces it. The
+        // required flag is tuple field 4 (`Option<Option<String>>`: `Some` when
+        // `is required`, the inner value being the optional reason); field 3 is
         // `is_rw`, which must NOT gate construction (an unprovided `is rw`
         // attribute just gets its normal default, so it stays native).
-        for (attr_name, _, _, _is_rw, is_required, _, _) in &class_attrs {
-            if is_required.is_some() && !attrs.contains_key(attr_name) {
-                return None;
+        if !has_build {
+            for (attr_name, _, _, _is_rw, is_required, _, _) in &class_attrs {
+                if let Some(reason) = is_required
+                    && !attrs.contains_key(attr_name)
+                {
+                    let attr_full_name = format!("$!{}", attr_name);
+                    return Some(Err(RuntimeError::attribute_required(
+                        &attr_full_name,
+                        reason.as_deref(),
+                    )));
+                }
             }
         }
         // A class-typed `$` attribute that is neither provided nor defaulted is
-        // initialized to its *type object* (e.g. `Int`), not `Nil`. Let the
-        // interpreter synthesize it. Native-typed attributes (`int`/`num`/`str`)
-        // are the exception: they default to a native zero (handled in the fill
-        // loop below), not a type object, so they stay native.
-        for (attr_name, _, default_expr, _, _, _, _) in &class_attrs {
-            if default_expr.is_none()
-                && !attrs.contains_key(attr_name)
-                && type_constraints
-                    .get(attr_name)
-                    .is_some_and(|c| Self::native_scalar_default(c).is_none())
-            {
-                return None;
-            }
-        }
+        // stored as `Nil` (exactly as the interpreter does); the attribute
+        // accessor synthesizes the declared *type object* (e.g. `Int`) from the
+        // stored `Nil` at read time, so the native instance behaves identically.
+        // The empty-fill loop below stores that `Nil` (native-typed `int`/`num`/
+        // `str` attributes get their native zero there instead). A `where` /
+        // `:D`/`:U` / element type check all skip a `Nil` value, matching the
+        // interpreter, so nothing further is needed here.
         // An `@`/`%` attribute with a default expression may be shaped (the
         // shape is encoded in the default, e.g. `has @.a[2]`) or otherwise need
         // the interpreter's construction — fall through whether or not it was
@@ -593,6 +598,22 @@ impl Interpreter {
                 Ok(Ok(updated)) => attrs = updated,
                 Ok(Err(failure)) => return Some(Ok(failure)),
                 Err(e) => return Some(Err(e)),
+            }
+            // Enforce required attributes after BUILD ran (BUILD may set them),
+            // exactly where the full constructor does its post-BUILD required
+            // check. A still-unset attribute (`None` or `Nil`) raises
+            // `X::Attribute::Required` with the same message and reason.
+            for (attr_name, _, _, _, is_required, _, _) in &class_attrs {
+                if let Some(reason) = is_required {
+                    let is_set = !matches!(attrs.get(attr_name), Some(Value::Nil) | None);
+                    if !is_set {
+                        let attr_full_name = format!("$!{}", attr_name);
+                        return Some(Err(RuntimeError::attribute_required(
+                            &attr_full_name,
+                            reason.as_deref(),
+                        )));
+                    }
+                }
             }
             // Re-check smileys after BUILD but BEFORE TWEAK, exactly where the full
             // constructor does (its post-BUILD pass) — a BUILD that mutates a
