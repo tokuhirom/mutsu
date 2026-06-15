@@ -1709,21 +1709,18 @@ impl Interpreter {
         result
     }
 
-    pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
-        if body.is_empty() {
-            return Ok(Value::Nil);
-        }
-        let let_mark = self.let_saves_len();
-        let saved_functions = self.registry().functions.clone();
-        let saved_proto_subs = self.registry().proto_subs.clone();
-        let saved_proto_functions = self.registry().proto_functions.clone();
-        let saved_operator_assoc = self.operator_assoc.clone();
-        let saved_code_env: std::collections::HashMap<Symbol, Value> = self
-            .env
-            .iter()
-            .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
+    /// Compile a block with `eval_block_value`'s compiler context (routine
+    /// scope, `$?PACKAGE`/`$?DISTRIBUTION`) without executing it. Pure
+    /// compilation — touches no `env`, runs no user code — so the VM can call it
+    /// (no env loan) and run the result in-place via `VM::run_nested` instead of
+    /// the `mem::take`/`VM::new` ping-pong (CP-3 collapse).
+    pub(crate) fn compile_block_value(
+        &self,
+        body: &[Stmt],
+    ) -> (
+        crate::opcode::CompiledCode,
+        std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+    ) {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
@@ -1743,7 +1740,25 @@ impl Interpreter {
                 .get(&self.current_package())
                 .cloned()
         });
-        let (code, compiled_fns) = compiler.compile(body);
+        compiler.compile(body)
+    }
+
+    pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        if body.is_empty() {
+            return Ok(Value::Nil);
+        }
+        let let_mark = self.let_saves_len();
+        let saved_functions = self.registry().functions.clone();
+        let saved_proto_subs = self.registry().proto_subs.clone();
+        let saved_proto_functions = self.registry().proto_functions.clone();
+        let saved_operator_assoc = self.operator_assoc.clone();
+        let saved_code_env: std::collections::HashMap<Symbol, Value> = self
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        let (code, compiled_fns) = self.compile_block_value(body);
         self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
         let trailing_sub_value = match body.last() {

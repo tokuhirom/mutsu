@@ -1246,8 +1246,28 @@ impl VM {
         result.map(|_| ())
     }
 
-    #[inline]
     pub(crate) fn vm_eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        if body.is_empty() {
+            return Ok(Value::Nil);
+        }
+        // CP-3 collapse: when the block is pure expression statements (no sub/
+        // proto/operator declarations and no trailing-sub value), the registry +
+        // code-env save/restore that `Interpreter::eval_block_value` performs is a
+        // no-op, so run the block in-place via `run_nested` (no `mem::take`/
+        // `VM::new` ping-pong) and only replicate the cheap scope bookkeeping
+        // (block-scope depth + let/temp restore + DESTROY pass). All current
+        // callers pass a single `Stmt::Expr` (registration-time default / enum /
+        // role-arg evaluation). Any other shape falls back to the interpreter.
+        if body.iter().all(|s| matches!(s, Stmt::Expr(_))) {
+            let (code, compiled_fns) = self.interpreter.compile_block_value(body);
+            let let_mark = self.interpreter.let_saves_len();
+            self.interpreter.push_block_scope_depth();
+            let result = self.run_nested(&code, &compiled_fns);
+            self.interpreter.pop_block_scope_depth();
+            self.interpreter.restore_let_saves(let_mark);
+            self.loan_env_for(|i| i.run_pending_instance_destroys())?;
+            return result.map(|v| v.unwrap_or(Value::Nil));
+        }
         self.loan_env_for(|i| i.eval_block_value(body))
     }
 
