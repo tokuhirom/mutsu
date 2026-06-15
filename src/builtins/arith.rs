@@ -165,7 +165,7 @@ fn to_big_rat_parts(value: &Value) -> Option<(NumBigInt, NumBigInt)> {
         Value::Int(i) => Some((NumBigInt::from(*i), NumBigInt::from(1))),
         Value::BigInt(i) => Some(((**i).clone(), NumBigInt::from(1))),
         Value::Rat(n, d) | Value::FatRat(n, d) => Some((NumBigInt::from(*n), NumBigInt::from(*d))),
-        Value::BigRat(n, d) => Some((n.clone(), d.clone())),
+        Value::BigRat(n, d) => Some(((**n).clone(), (**d).clone())),
         _ => None,
     }
 }
@@ -1267,9 +1267,9 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                         Value::BigRat(bn, bd) => {
                             // Check if denom fits in i64 (numerator can be big)
                             if let Some(d64) = bd.to_i64() {
-                                Value::BigRat(bn, NumBigInt::from(d64))
+                                Value::bigrat(*bn, NumBigInt::from(d64))
                             } else {
-                                Value::Num(bigint_ratio_to_f64(&bn, &bd))
+                                Value::Num(bigint_ratio_to_f64(bn.as_ref(), bd.as_ref()))
                             }
                         }
                         other => other,
@@ -1287,9 +1287,9 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                         Value::Rat(rn, rd) => Value::Rat(rn, rd),
                         Value::BigRat(bn, bd) => {
                             if let Some(d64) = bd.to_i64() {
-                                Value::BigRat(bn, NumBigInt::from(d64))
+                                Value::bigrat(*bn, NumBigInt::from(d64))
                             } else {
-                                Value::Num(bigint_ratio_to_f64(&bn, &bd))
+                                Value::Num(bigint_ratio_to_f64(bn.as_ref(), bd.as_ref()))
                             }
                         }
                         other => other,
@@ -1447,9 +1447,9 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
         }
         Value::BigRat(ref n, ref d) => {
             if is_fat_rat_like(&val) {
-                Ok(make_big_fat_rat(-n.clone(), d.clone()))
+                Ok(make_big_fat_rat(-(**n).clone(), (**d).clone()))
             } else {
-                Ok(make_big_rat_arith(-n.clone(), d.clone()))
+                Ok(make_big_rat_arith(-(**n).clone(), (**d).clone()))
             }
         }
         Value::Complex(r, i) => {

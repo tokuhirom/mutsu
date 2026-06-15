@@ -520,6 +520,7 @@ impl Value {
                 }
             }
             Value::BigRat(n, d) => {
+                let (n, d) = (n.as_ref(), d.as_ref());
                 if d.is_zero() {
                     if n.is_zero() {
                         "NaN".to_string()
@@ -915,7 +916,7 @@ impl Value {
             Value::HyperWhatever => "**".to_string(),
             Value::Capture { positional, named } => {
                 let mut parts = Vec::new();
-                for v in positional {
+                for v in positional.iter() {
                     match v {
                         Value::Str(s) => parts.push(format!("\"{}\"", s)),
                         _ => parts.push(v.to_string_value()),

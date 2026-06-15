@@ -314,6 +314,7 @@ pub(super) fn dispatch(
                 Some(Ok(raku_round_to_value(f)))
             }
             Value::BigRat(n, d) if !d.is_zero() => {
+                let (n, d) = (n.as_ref(), d.as_ref());
                 use num_bigint::BigInt;
                 use num_integer::Integer;
                 // round = floor(x + 0.5) for Raku semantics
@@ -350,7 +351,7 @@ pub(super) fn dispatch(
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             Value::BigInt(_) => Some(Ok(target.clone())),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Int(*n / *d))),
-            Value::BigRat(n, d) if !d.is_zero() => Some(Ok(Value::bigint(n / d))),
+            Value::BigRat(n, d) if !d.is_zero() => Some(Ok(Value::bigint(n.as_ref() / d.as_ref()))),
             Value::FatRat(n, d) if *d != 0 => Some(Ok(Value::Int(*n / *d))),
             Value::Complex(re, im) => Some(Ok(Value::Complex(re.trunc(), im.trunc()))),
             Value::Rat(_, d) if *d == 0 => Some(Ok(

@@ -1648,8 +1648,8 @@ impl Interpreter {
             Value::Seq(items) => items.to_vec(),
             Value::Slip(items) => items.to_vec(),
             Value::Capture { positional, named } => {
-                let mut args = positional;
-                for (k, v) in named {
+                let mut args = *positional;
+                for (k, v) in *named {
                     args.push(Value::Pair(k, Box::new(v)));
                 }
                 args

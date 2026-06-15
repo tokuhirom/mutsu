@@ -207,7 +207,7 @@ impl Interpreter {
             list_items.to_vec()
         } else {
             match target {
-                Value::Capture { positional, .. } => positional,
+                Value::Capture { positional, .. } => *positional,
                 Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
                 _ => return Ok(Value::Nil),
             }
@@ -220,9 +220,9 @@ impl Interpreter {
             Some(Value::Int(i)) => *i,
             Some(Value::Num(n)) => *n as i64,
             Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
-            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
                 use num_traits::ToPrimitive;
-                (n / d).to_i64().unwrap_or(1)
+                (n.as_ref() / d.as_ref()).to_i64().unwrap_or(1)
             }
             Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
             None => 1,

@@ -2,7 +2,7 @@ use super::*;
 
 pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) -> Vec<Value> {
     match value {
-        Value::Capture { positional, .. } => positional.clone(),
+        Value::Capture { positional, .. } => (**positional).clone(),
         other => crate::runtime::value_to_list(other),
     }
 }
@@ -159,10 +159,7 @@ pub(crate) fn make_varref_value(name: String, value: Value, source_index: Option
     if let Some(i) = source_index {
         named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
     }
-    Value::Capture {
-        positional: Vec::new(),
-        named,
-    }
+    Value::capture(Vec::new(), named)
 }
 
 pub(in crate::runtime) fn sigilless_alias_key(name: &str) -> String {
@@ -177,7 +174,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
     value: &Value,
 ) -> std::collections::HashMap<String, Value> {
     match value {
-        Value::Capture { named, .. } => named.clone(),
+        Value::Capture { named, .. } => (**named).clone(),
         Value::Hash(map) => map.map.clone(),
         Value::Pair(key, val) => {
             let mut out = std::collections::HashMap::new();
@@ -544,7 +541,7 @@ pub(in crate::runtime) fn sub_signature_target_from_remaining_args(args: &[Value
             other => positional.push(other.clone()),
         }
     }
-    Value::Capture { positional, named }
+    Value::capture(positional, named)
 }
 
 pub(in crate::runtime) fn callable_signature_info(

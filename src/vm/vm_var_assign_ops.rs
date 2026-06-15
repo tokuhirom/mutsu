@@ -160,10 +160,7 @@ impl VM {
         if let Some(i) = source_index {
             named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
         }
-        Value::Capture {
-            positional: Vec::new(),
-            named,
-        }
+        Value::capture(Vec::new(), named)
     }
 
     fn assign_varref_target(

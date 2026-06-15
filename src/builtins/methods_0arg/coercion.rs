@@ -10,14 +10,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "numerator" => match target {
             Value::Rat(n, _) => Some(Ok(Value::Int(*n))),
             Value::FatRat(n, _) => Some(Ok(Value::Int(*n))),
-            Value::BigRat(n, _) => Some(Ok(Value::BigInt(std::sync::Arc::new(n.clone())))),
+            Value::BigRat(n, _) => Some(Ok(Value::BigInt(std::sync::Arc::new((**n).clone())))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             _ => Some(Ok(Value::Int(0))),
         },
         "denominator" => match target {
             Value::Rat(_, d) => Some(Ok(Value::Int(*d))),
             Value::FatRat(_, d) => Some(Ok(Value::Int(*d))),
-            Value::BigRat(_, d) => Some(Ok(Value::BigInt(std::sync::Arc::new(d.clone())))),
+            Value::BigRat(_, d) => Some(Ok(Value::BigInt(std::sync::Arc::new((**d).clone())))),
             Value::Int(_) => Some(Ok(Value::Int(1))),
             _ => Some(Ok(Value::Int(1))),
         },
@@ -31,8 +31,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Rat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
             Value::FatRat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
             Value::BigRat(n, d) => Some(Ok(Value::array(vec![
-                Value::BigInt(std::sync::Arc::new(n.clone())),
-                Value::BigInt(std::sync::Arc::new(d.clone())),
+                Value::BigInt(std::sync::Arc::new((**n).clone())),
+                Value::BigInt(std::sync::Arc::new((**d).clone())),
             ]))),
             Value::Int(i) => Some(Ok(Value::array(vec![Value::Int(*i), Value::Int(1)]))),
             _ => Some(Ok(Value::array(vec![Value::Int(0), Value::Int(1)]))),
@@ -43,9 +43,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Rat(nn, dd) => Value::FatRat(nn, dd),
                 other => other,
             })),
-            Value::BigRat(n, d) => Some(Ok(match make_big_fat_rat(n.clone(), d.clone()) {
+            Value::BigRat(n, d) => Some(Ok(match make_big_fat_rat((**n).clone(), (**d).clone()) {
                 Value::Rat(nn, dd) => Value::FatRat(nn, dd),
-                Value::BigRat(nn, dd) => Value::BigRat(nn, dd),
+                Value::BigRat(nn, dd) => Value::bigrat(*nn, *dd),
                 other => other,
             })),
             Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
@@ -126,11 +126,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(f64::INFINITY),
                 0.0,
             ))),
-            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Complex(
-                num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0)
-                    / num_traits::ToPrimitive::to_f64(d).unwrap_or(1.0),
-                0.0,
-            ))),
+            Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => {
+                Some(Ok(Value::Complex(
+                    num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(0.0)
+                        / num_traits::ToPrimitive::to_f64(d.as_ref()).unwrap_or(1.0),
+                    0.0,
+                )))
+            }
             _ => Some(Ok(Value::Complex(0.0, 0.0))),
         },
         "Pair" => match target {
@@ -588,6 +590,7 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
             Ok(Value::Bool(is_prime_i64(int_val)))
         }
         Value::BigRat(n, d) => {
+            let (n, d) = (n.as_ref(), d.as_ref());
             use num_traits::Zero;
             if d.is_zero() {
                 return Ok(Value::Bool(false));
@@ -670,19 +673,13 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             let mut named = HashMap::new();
             named.insert("key".to_string(), Value::str(k.clone()));
             named.insert("value".to_string(), *v.clone());
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         Value::ValuePair(k, v) => {
             let mut named = HashMap::new();
             named.insert("key".to_string(), *k.clone());
             named.insert("value".to_string(), *v.clone());
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         // Set.Capture → named args where each key maps to True
         Value::Set(s, _) => {
@@ -690,10 +687,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             for k in s.iter() {
                 named.insert(k.clone(), Value::Bool(true));
             }
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         // Bag.Capture → named args where each key maps to its count
         Value::Bag(b, _) => {
@@ -701,10 +695,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             for (k, v) in b.iter() {
                 named.insert(k.clone(), Value::Int(*v));
             }
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         // Mix.Capture → named args where each key maps to its weight
         Value::Mix(m, _) => {
@@ -718,10 +709,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                 };
                 named.insert(k.clone(), val);
             }
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         // Hash.Capture → named args from hash entries
         Value::Hash(map) => {
@@ -729,10 +717,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             for (k, v) in map.iter() {
                 named.insert(k.clone(), v.clone());
             }
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         // Lazy arrays must throw X::Cannot::Lazy
         Value::Array(_, kind) if kind.is_lazy() => Err(RuntimeError::cannot_lazy_with_action(
@@ -754,7 +739,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                     _ => positional.push(item.clone()),
                 }
             }
-            Ok(Value::Capture { positional, named })
+            Ok(Value::capture(positional, named))
         }
         Value::Seq(items) | Value::Slip(items) => {
             let mut positional = vec![];
@@ -770,7 +755,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                     _ => positional.push(item.clone()),
                 }
             }
-            Ok(Value::Capture { positional, named })
+            Ok(Value::capture(positional, named))
         }
         Value::LazyList(ll) => {
             // A LazyList is considered lazy if it has a body or compiled code
@@ -796,7 +781,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                         _ => positional.push(item.clone()),
                     }
                 }
-                Ok(Value::Capture { positional, named })
+                Ok(Value::capture(positional, named))
             }
         }
         // Range.Capture → Mu.Capture semantics (named args from attributes)
@@ -822,10 +807,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                 )),
             );
             named.insert("is-int".to_string(), Value::Bool(true));
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         Value::GenericRange {
             start,
@@ -841,16 +823,10 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             let is_int = matches!(&**start, Value::Int(_) | Value::BigInt(_))
                 && matches!(&**end, Value::Int(_) | Value::BigInt(_));
             named.insert("is-int".to_string(), Value::Bool(is_int));
-            Ok(Value::Capture {
-                positional: vec![],
-                named,
-            })
+            Ok(Value::capture(vec![], named))
         }
         // Nil.Capture → empty capture
-        Value::Nil => Ok(Value::Capture {
-            positional: vec![],
-            named: HashMap::new(),
-        }),
+        Value::Nil => Ok(Value::capture(vec![], HashMap::new())),
         // Types whose .Capture throws X::Cannot::Capture
         Value::Bool(_)
         | Value::Str(_)
@@ -870,17 +846,11 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             match type_name.as_str() {
                 "IntStr" | "NumStr" | "RatStr" | "ComplexStr" | "WhateverCode" | "Signature"
                 | "Version" => Err(cannot_capture(&type_name)),
-                _ => Ok(Value::Capture {
-                    positional: vec![target.clone()],
-                    named: HashMap::new(),
-                }),
+                _ => Ok(Value::capture(vec![target.clone()], HashMap::new())),
             }
         }
         // Default: wrap in a single-positional capture
-        _ => Ok(Value::Capture {
-            positional: vec![target.clone()],
-            named: HashMap::new(),
-        }),
+        _ => Ok(Value::capture(vec![target.clone()], HashMap::new())),
     }
 }
 

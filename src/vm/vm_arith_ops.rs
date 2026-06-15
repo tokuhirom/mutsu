@@ -457,8 +457,8 @@ impl VM {
             Value::Slip(items) => (*items).to_vec(),
             Value::Seq(items) => (*items).to_vec(),
             Value::Capture { positional, named } => {
-                let mut items = positional.clone();
-                for (k, v) in named {
+                let mut items = (**positional).clone();
+                for (k, v) in named.iter() {
                     items.push(Value::Pair(k.clone(), Box::new(v.clone())));
                 }
                 items

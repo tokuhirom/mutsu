@@ -663,8 +663,8 @@ impl Interpreter {
     pub(super) fn capture_to_call_args(value: &Value) -> Vec<Value> {
         match value {
             Value::Capture { positional, named } => {
-                let mut args = positional.clone();
-                for (k, v) in named {
+                let mut args = (**positional).clone();
+                for (k, v) in named.iter() {
                     args.push(Value::Pair(k.clone(), Box::new(v.clone())));
                 }
                 args

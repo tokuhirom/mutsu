@@ -138,7 +138,7 @@ impl Interpreter {
                                 positional.push(arg);
                             }
                         }
-                        Some(Value::Capture { positional, named })
+                        Some(Value::capture(positional, named))
                     } else {
                         // For single-star slurpy (*@), flatten list arguments but preserve
                         // itemized Arrays ($[...] / .item) as single positional values.

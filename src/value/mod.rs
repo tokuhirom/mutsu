@@ -1053,7 +1053,7 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
     if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
         Value::Rat(n_i64, d_i64)
     } else {
-        Value::BigRat(n, d)
+        Value::bigrat(n, d)
     }
 }
 
@@ -1087,7 +1087,7 @@ pub fn make_big_rat_arith(num: NumBigInt, den: NumBigInt) -> Value {
         // The bits() check is a redundant safety net for d.to_u64().
         Value::Num(bigrat_to_f64(&n, &d))
     } else {
-        Value::BigRat(n, d)
+        Value::bigrat(n, d)
     }
 }
 
@@ -1114,7 +1114,7 @@ pub fn make_big_fat_rat(num: NumBigInt, den: NumBigInt) -> Value {
     if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
         Value::Rat(n_i64, d_i64)
     } else {
-        Value::BigRat(n, d)
+        Value::bigrat(n, d)
     }
 }
 
@@ -1534,7 +1534,7 @@ pub enum Value {
     Hash(Arc<HashData>),
     Rat(i64, i64),
     FatRat(i64, i64),
-    BigRat(NumBigInt, NumBigInt),
+    BigRat(Box<NumBigInt>, Box<NumBigInt>),
     Complex(f64, f64),
     /// Set (immutable) or SetHash (mutable). The bool is `true` for mutable (SetHash).
     Set(Arc<SetData>, bool),
@@ -1609,10 +1609,12 @@ pub enum Value {
     /// A value with mixin overrides from the `but` operator.
     /// Inner value is the original; the HashMap maps type names (e.g. "Bool") to override values.
     Mixin(Arc<Value>, Arc<HashMap<String, Value>>),
-    /// A Capture: positional args + named args
+    /// A Capture: positional args + named args.
+    /// Both fields are boxed to keep `Value` small (the inline `Vec` + `HashMap`
+    /// otherwise made this the largest variant, inflating every `Value`).
     Capture {
-        positional: Vec<Value>,
-        named: HashMap<String, Value>,
+        positional: Box<Vec<Value>>,
+        named: Box<HashMap<String, Value>>,
     },
     /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
     /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".
@@ -2442,15 +2444,18 @@ impl PartialEq for Value {
             }
             (Value::BigRat(an, ad), Value::BigRat(bn, bd)) => an == bn && ad == bd,
             (Value::BigRat(n, d), Value::Int(i)) | (Value::Int(i), Value::BigRat(n, d)) => {
+                let (n, d) = (n.as_ref(), d.as_ref());
                 !d.is_zero() && *n == NumBigInt::from(*i) * d
             }
             (Value::BigRat(n, d), Value::Rat(rn, rd))
             | (Value::Rat(rn, rd), Value::BigRat(n, d)) => {
+                let (n, d) = (n.as_ref(), d.as_ref());
                 !d.is_zero()
                     && *rd != 0
                     && n.clone() * NumBigInt::from(*rd) == NumBigInt::from(*rn) * d
             }
             (Value::BigRat(n, d), Value::Num(f)) | (Value::Num(f), Value::BigRat(n, d)) => {
+                let (n, d) = (n.as_ref(), d.as_ref());
                 if d.is_zero() {
                     return false;
                 }
@@ -2475,6 +2480,7 @@ impl PartialEq for Value {
             }
             (Value::Complex(r, i), Value::BigRat(n, d))
             | (Value::BigRat(n, d), Value::Complex(r, i)) => {
+                let (n, d) = (n.as_ref(), d.as_ref());
                 !d.is_zero()
                     && *i == 0.0
                     && *r == (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
@@ -2733,6 +2739,19 @@ impl Value {
     }
     pub fn array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::List)
+    }
+    /// Create a Capture value. Boxes the positional/named payloads (the variant
+    /// stores them behind `Box` to keep `Value` small).
+    pub fn capture(positional: Vec<Value>, named: HashMap<String, Value>) -> Self {
+        Value::Capture {
+            positional: Box::new(positional),
+            named: Box::new(named),
+        }
+    }
+    /// Create a BigRat value. The numerator/denominator are boxed (the variant
+    /// stores them behind `Box` to keep `Value` small).
+    pub fn bigrat(num: NumBigInt, den: NumBigInt) -> Self {
+        Value::BigRat(Box::new(num), Box::new(den))
     }
     /// Create a true Array value (from [...] literals).
     pub fn real_array(items: Vec<Value>) -> Self {
@@ -3879,7 +3898,7 @@ impl Value {
             }
             Value::BigRat(n, d) => {
                 if !d.is_zero() {
-                    n / d
+                    n.as_ref() / d.as_ref()
                 } else {
                     NumBigInt::from(0)
                 }
@@ -3914,6 +3933,21 @@ const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Value>();
 };
+
+#[cfg(test)]
+mod value_size_guard {
+    use super::*;
+    #[test]
+    fn value_stays_small() {
+        // `Capture` and `BigRat` previously held their large payloads inline,
+        // making `Value` 72 bytes. Boxing them dropped it to 64. Guard against
+        // regressing the layout (every `Value` clone/move pays for the largest
+        // variant). Remaining 64-byte variants (CustomTypeInstance, ...) are
+        // boxed in follow-up steps to shrink this further.
+        let sz = std::mem::size_of::<Value>();
+        assert!(sz <= 64, "size_of::<Value>() = {sz}, expected <= 64");
+    }
+}
 
 #[cfg(test)]
 mod hash_chokepoint_tests {

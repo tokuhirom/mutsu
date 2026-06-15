@@ -3058,10 +3058,7 @@ impl Interpreter {
             let mut named = std::collections::HashMap::new();
             named.insert("__mutsu_varref_name".to_string(), Value::str(source_name));
             named.insert("__mutsu_varref_value".to_string(), source_value);
-            return Ok(Value::Capture {
-                positional: Vec::new(),
-                named,
-            });
+            return Ok(Value::capture(Vec::new(), named));
         }
 
         // .join on LazyList

@@ -665,7 +665,7 @@ impl Interpreter {
     fn dispatch_values_method(&self, target: Value) -> Result<Value, RuntimeError> {
         match target {
             Value::Capture { positional, named } => {
-                let mut vals = positional.clone();
+                let mut vals = *positional;
                 vals.extend(named.values().cloned());
                 Ok(Value::array(vals))
             }

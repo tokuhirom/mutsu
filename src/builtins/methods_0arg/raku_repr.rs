@@ -370,6 +370,7 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         Value::BigRat(n, d) => {
+            let (n, d) = (n.as_ref(), d.as_ref());
             if d == &num_bigint::BigInt::from(0) {
                 if n == &num_bigint::BigInt::from(0) {
                     "NaN".to_string()
@@ -607,7 +608,7 @@ pub fn raku_value(v: &Value) -> String {
         }
         Value::Capture { positional, named } => {
             let mut parts = Vec::new();
-            for v in positional {
+            for v in positional.iter() {
                 // Pairs appearing as positional items in a Capture are rendered
                 // with quoted key syntax ("key" => value) to distinguish them
                 // from named arguments which use colonpair syntax (:key(value)).

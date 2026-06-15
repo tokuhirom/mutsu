@@ -387,7 +387,7 @@ pub(super) fn dispatch(
                 }
                 Value::BigRat(n, d) if !d.is_zero() => {
                     use num_traits::ToPrimitive;
-                    Value::Int((n / d).to_i64().unwrap_or(i64::MAX))
+                    Value::Int((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX))
                 }
                 Value::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(s) {

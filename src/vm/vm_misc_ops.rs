@@ -1692,10 +1692,7 @@ impl VM {
         let mut named = std::collections::HashMap::new();
         named.insert("__mutsu_varref_name".to_string(), Value::str(name));
         named.insert("__mutsu_varref_value".to_string(), value);
-        self.stack.push(Value::Capture {
-            positional: Vec::new(),
-            named,
-        });
+        self.stack.push(Value::capture(Vec::new(), named));
     }
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
