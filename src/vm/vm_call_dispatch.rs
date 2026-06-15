@@ -91,8 +91,10 @@ impl VM {
         // since ?LINE in env may not reflect the call site yet.
         let callsite_line = crate::runtime::Interpreter::peek_callsite_line(&args)
             .or_else(|| self.interpreter.pending_callsite_line());
-        self.interpreter
-            .check_deprecation_for_def_with_line(def, callsite_line);
+        loan_env!(
+            self,
+            check_deprecation_for_def_with_line(def, callsite_line)
+        );
         let name = def.name.resolve();
         let pkg = def.package.resolve();
 

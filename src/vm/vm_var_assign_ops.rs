@@ -1740,8 +1740,7 @@ impl VM {
         {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let new_val = self.apply_compound_base_op(op, fetched, rhs)?;
-            self.interpreter
-                .assign_proxy_lvalue(raw_val, new_val.clone())?;
+            loan_env!(self, assign_proxy_lvalue(raw_val, new_val.clone()))?;
             self.stack.push(new_val);
             return Ok(());
         }
@@ -1781,8 +1780,7 @@ impl VM {
             let raw_val = loan_env!(self, get_caller_var(&bare_name, depth))?;
             let val = Self::normalize_incdec_source(raw_val);
             let new_val = self.increment_value_smart(&val)?;
-            self.interpreter
-                .set_caller_var(&bare_name, depth, new_val)?;
+            loan_env!(self, set_caller_var(&bare_name, depth, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
@@ -1839,7 +1837,7 @@ impl VM {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let val = Self::normalize_incdec_source(fetched);
             let new_val = self.increment_value_smart(&val)?;
-            self.interpreter.assign_proxy_lvalue(raw_val, new_val)?;
+            loan_env!(self, assign_proxy_lvalue(raw_val, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
@@ -4667,8 +4665,7 @@ impl VM {
                         } else {
                             &key
                         };
-                    self.interpreter
-                        .set_caller_var(bare_name, depth, val.clone())?;
+                    loan_env!(self, set_caller_var(bare_name, depth, val.clone()))?;
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -5488,7 +5485,7 @@ impl VM {
                 && !matches!(storer.as_ref(), Value::Nil)
             {
                 let proxy_val = self.locals[idx].clone();
-                self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+                loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
                 return Ok(());
             }
             // First write through a missing-key `:=` bind (a local holding a
@@ -6310,7 +6307,7 @@ impl VM {
             && !matches!(storer.as_ref(), Value::Nil)
         {
             let proxy_val = self.locals[idx].clone();
-            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             return Ok(());
         }
         // First write through a missing-key `:=` bind: materialize the path into
@@ -6625,7 +6622,7 @@ impl VM {
         {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let proxy_val = self.locals[idx].clone();
-            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             return Ok(());
         }
 

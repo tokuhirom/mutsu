@@ -788,8 +788,7 @@ impl VM {
                     if let Some(ref def) = resolved_def {
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args)
                             .or_else(|| self.interpreter.pending_callsite_line());
-                        self.interpreter
-                            .check_deprecation_for_def_with_line(def, cl);
+                        loan_env!(self, check_deprecation_for_def_with_line(def, cl));
                     }
                     resolved_def
                         .map(|def| def.package.resolve())

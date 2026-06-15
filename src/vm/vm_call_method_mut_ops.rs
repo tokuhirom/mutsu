@@ -580,10 +580,7 @@ impl VM {
                 self,
                 push_to_existing_shared_array(&target_name, args.clone())
             )
-            .unwrap_or_else(|| {
-                self.interpreter
-                    .push_to_shared_var(&target_name, args, &target)
-            });
+            .unwrap_or_else(|| loan_env!(self, push_to_shared_var(&target_name, args, &target)));
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());

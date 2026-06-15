@@ -1564,8 +1564,7 @@ impl VM {
                 && !matches!(storer.as_ref(), Value::Nil)
             {
                 let proxy_val = current_proxy.unwrap();
-                self.interpreter
-                    .assign_proxy_lvalue(proxy_val, val.clone())?;
+                loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
                 self.stack.push(val);
                 return Ok(());
             }

@@ -249,7 +249,7 @@ impl VM {
                         }
                         // Process pending DESTROY submethods at loop iteration boundaries,
                         // mimicking GC-like behavior so DESTROY fires during execution.
-                        if let Err(e) = self.interpreter.run_pending_instance_destroys() {
+                        if let Err(e) = loan_env!(self, run_pending_instance_destroys()) {
                             self.pop_loop_local_scope(code);
                             return Err(e);
                         }

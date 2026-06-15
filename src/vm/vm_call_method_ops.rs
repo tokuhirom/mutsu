@@ -150,8 +150,7 @@ impl VM {
             Some(v) => {
                 let out = v.clone();
                 if let Some(msg) = self.interpreter.class_attribute_deprecated(&cn, method) {
-                    self.interpreter
-                        .check_deprecation_for_method(method, &cn, &msg);
+                    loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
                 Some(out)
             }

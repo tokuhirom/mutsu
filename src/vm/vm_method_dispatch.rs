@@ -24,11 +24,9 @@ impl VM {
                 Value::Int(i) => Some(*i),
                 _ => None,
             });
-            self.interpreter.check_deprecation_for_method_with_line(
-                method_name,
-                owner_class,
-                msg,
-                cl,
+            loan_env!(
+                self,
+                check_deprecation_for_method_with_line(method_name, owner_class, msg, cl,)
             );
         }
         // Build the base (self) value
@@ -871,11 +869,9 @@ impl VM {
         can_skip_merge: bool,
     ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
         if let Some(ref msg) = method_def.deprecated_message {
-            self.interpreter.check_deprecation_for_method_with_line(
-                method_name,
-                owner_class,
-                msg,
-                None,
+            loan_env!(
+                self,
+                check_deprecation_for_method_with_line(method_name, owner_class, msg, None,)
             );
         }
 

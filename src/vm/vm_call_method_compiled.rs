@@ -84,9 +84,10 @@ impl VM {
         else {
             return Ok(None);
         };
-        let result = self
-            .interpreter
-            .push_to_shared_var(&sigiled_target, values, &target_value);
+        let result = loan_env!(
+            self,
+            push_to_shared_var(&sigiled_target, values, &target_value)
+        );
         Ok(Some(result))
     }
 
@@ -258,12 +259,9 @@ impl VM {
                                 } else {
                                     new_attrs
                                 };
-                                return self.interpreter.proxy_fetch(
-                                    fetcher,
-                                    None,
-                                    &cn,
-                                    &proxy_attrs,
-                                    id,
+                                return loan_env!(
+                                    self,
+                                    proxy_fetch(fetcher, None, &cn, &proxy_attrs, id)
                                 );
                             }
                         }
@@ -1385,9 +1383,7 @@ impl VM {
                 } else {
                     new_attrs
                 };
-                return self
-                    .interpreter
-                    .proxy_fetch(fetcher, None, cn, &proxy_attrs, id);
+                return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
             }
         }
         Ok(result)
@@ -1646,12 +1642,9 @@ impl VM {
                                 } else {
                                     new_attrs
                                 };
-                                return self.interpreter.proxy_fetch(
-                                    fetcher,
-                                    None,
-                                    &cn,
-                                    &proxy_attrs,
-                                    id,
+                                return loan_env!(
+                                    self,
+                                    proxy_fetch(fetcher, None, &cn, &proxy_attrs, id)
                                 );
                             }
                         }
@@ -1759,9 +1752,7 @@ impl VM {
                         } else {
                             new_attrs
                         };
-                        return self
-                            .interpreter
-                            .proxy_fetch(fetcher, None, &cn, &proxy_attrs, id);
+                        return loan_env!(self, proxy_fetch(fetcher, None, &cn, &proxy_attrs, id));
                     }
                 }
                 return Ok(result);

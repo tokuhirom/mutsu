@@ -1173,7 +1173,7 @@ impl VM {
                 if let Some(tn) = &left_type_object {
                     return Err(Self::does_type_object_error("does", tn));
                 }
-                return self.interpreter.eval_does_values_list(left, items.as_ref());
+                return loan_env!(self, eval_does_values_list(left, items.as_ref()));
             }
         }
         // Check if the RHS is a role that needs to be composed onto the value.

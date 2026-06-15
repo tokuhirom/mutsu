@@ -4558,8 +4558,7 @@ impl VM {
             OpCode::SetCallerVar { name_idx, depth } => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let name = Self::const_str(code, *name_idx);
-                self.interpreter
-                    .set_caller_var(name, *depth as usize, val)?;
+                loan_env!(self, set_caller_var(name, *depth as usize, val))?;
                 *ip += 1;
             }
             OpCode::BindCallerVar {
