@@ -36,13 +36,14 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 ### A. Track C — 並行（共有セル）
 
-スライス 1〜5 landed（共有スカラ / state / compound-assign / hash-elem / array-elem index 代入 #3063）。残り:
+スライス 1〜5 landed（共有スカラ / state / compound-assign / hash-elem / array-elem index 代入 #3063）。
+スカラ `$counter`・`state $n` の `start` 間ライブ共有は **landed・実機確認済み**（mutsu 4/3＝raku 一致、ANALYSIS rev2 §2.2/§8.3）。残り:
 
-- [ ] **並行 state/lexical/global の真共有**（ANALYSIS §8.3, §2.2）— `clone_for_thread` のスナップショットコピーをやめ、
-      共有すべき値を `Arc<Mutex>` のライブセルに。`start` ブロック間で `$counter`/`state $n` が共有されない（mutsu 1/0, raku 4/3）。
-      BLOCKERS の Threading/Async 31 件に直結。`state @`/`%` 共有は Track B 要素セル基盤に依存。
-- [ ] **`unsafe` の single-thread 前提を是正**（ANALYSIS §2.3）— `Arc::as_ptr as *mut` のエイリアス書き換え 11 箇所が
-      スレッド生成と矛盾し UB の余地。配列/ハッシュを共有セル化して撤廃。
+- [ ] **`state @`/`%`・lexical aggregate の真共有** — `start` 間で配列/ハッシュ集約変数を共有。Track B 要素セル基盤に依存。
+- [ ] **`unsafe` の single-thread 前提コメント是正**（ANALYSIS rev2 §2.3）— `Arc::as_ptr as *mut` のエイリアス書き換えは
+      11→4 箇所に減り `strong_count` ガード＋`Arc::make_mut` フォールバックで UB の実発生は回避済み。だが SAFETY コメントは
+      "mutsu is single-threaded" のまま陳腐化（`vm/vm_var_assign_ops.rs:2098,2559,2587,2908,3514`）。コメントを実態（strong_count
+      ガード前提）に是正し、最終的には配列/ハッシュ要素も `ContainerRef` 化して生ポインタ改竄を撤廃（Phase 2 依存）。
 
 ### B. perf — 起動 / 実行速度（計測駆動・MUTSU_VM_STATS / timed roast）
 
@@ -54,6 +55,12 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 ### C. roast backlog（BLOCKERS.md 駆動・インパクト順）
 
+- [ ] **【クラッシュ】無限 Range の `.Supply` 化が worker thread で abort**（ANALYSIS rev2 §8.7）—
+      `my $s = (1..Inf).Supply; $s.tap({...})` が `capacity overflow` でプロセス abort（exit 0 に偽装）。二重の穴:
+      ① `builtins/methods_0arg/coercion.rs:536-537` の Supply coercion が無限 Range を `i64::MAX` 無ガードで
+      `(a..=b).map(Value::Int).collect()`（§8.2 の掃討漏れ）→ `materialize_capped` 経由へ。
+      ② `.tap`/`start{}` のワーカースレッド本体に panic→`X::` 変換境界が無い（#3045 はメインスレッドのみ）→
+      worker の panic を親 Promise/Supply の失敗として伝播させる。
 - [ ] **残りの型付き例外**（X::Str::Numeric / X::Method::NotFound / X::Undeclared / X::Cannot::Lazy /
       X::EXPORTHOW::InvalidDirective 等）。詳細は BLOCKERS.md "throws-like / Exception Types"。
 - [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる
@@ -128,7 +135,7 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 | 指標 | 現在 | 目標 |
 |------|------|------|
-| Whitelist | **1218** | 1220+ |
+| Whitelist | **1270** | 1280+ |
 | fib(25) vs raku | **1.0x** | <10x |
 | method-call vs raku | **2.7x** | <1.5x |
 | bench-class vs raku | **2.3x** | <1.5x |
