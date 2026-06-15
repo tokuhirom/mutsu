@@ -65,6 +65,21 @@ impl Interpreter {
             "put" if args.is_empty() => Some(self.dispatch_put(&target)),
             "printf" if args.is_empty() => Some(self.dispatch_printf(&target)),
             "sprintf" if args.is_empty() => Some(self.dispatch_sprintf(&target)),
+            "sprintf" => {
+                // Method form `$format.sprintf(*@args)` == `sprintf($format, @args)`
+                // for two or more args (the 1-arg form is a native fast-path
+                // method; the 0-arg arm above is a no-directive passthrough).
+                let fmt = target.to_string_value();
+                Some(
+                    crate::runtime::sprintf::validate_sprintf_directives(&fmt, args.len())
+                        .and_then(|_| {
+                            crate::runtime::sprintf::validate_sprintf_arg_types(&fmt, &args)
+                        })
+                        .map(|_| {
+                            Value::str(crate::runtime::sprintf::format_sprintf_args(&fmt, &args))
+                        }),
+                )
+            }
             "shape" if args.is_empty() => self.dispatch_shape(&target),
             "default" if args.is_empty() => Self::dispatch_default(&target),
             "note" if args.is_empty() => Some(self.dispatch_note(&target)),
