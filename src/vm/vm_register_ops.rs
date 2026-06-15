@@ -671,7 +671,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        self.env_dirty = true;
+        // CP-2 eager reconcile: a module load writes imported symbols into env by
+        // name. Reconcile them into locals now rather than deferring via the
+        // env_dirty flag. GetLocal is itself a barrier (it calls
+        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
+        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
+        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
+        self.sync_locals_from_env(code);
         Ok(())
     }
 
@@ -699,7 +705,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        self.env_dirty = true;
+        // CP-2 eager reconcile: a module load writes imported symbols into env by
+        // name. Reconcile them into locals now rather than deferring via the
+        // env_dirty flag. GetLocal is itself a barrier (it calls
+        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
+        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
+        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
+        self.sync_locals_from_env(code);
         Ok(())
     }
 
@@ -714,7 +726,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        self.env_dirty = true;
+        // CP-2 eager reconcile: a module load writes imported symbols into env by
+        // name. Reconcile them into locals now rather than deferring via the
+        // env_dirty flag. GetLocal is itself a barrier (it calls
+        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
+        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
+        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
+        self.sync_locals_from_env(code);
         Ok(())
     }
 
@@ -729,7 +747,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        self.env_dirty = true;
+        // CP-2 eager reconcile: a module load writes imported symbols into env by
+        // name. Reconcile them into locals now rather than deferring via the
+        // env_dirty flag. GetLocal is itself a barrier (it calls
+        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
+        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
+        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
+        self.sync_locals_from_env(code);
         Ok(())
     }
 
