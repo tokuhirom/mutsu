@@ -533,8 +533,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
                     items.to_vec()
                 }
-                Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
-                Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
+                // Route Range-family sources through `value_to_list`, which caps at
+                // `MAX_RANGE_EXPAND` instead of expanding `(a..=i64::MAX)` directly.
+                // The raw `.collect()` here used to `capacity overflow`-panic on an
+                // infinite range, e.g. `(1..Inf).Supply` (ANALYSIS §8.7 / §8.2).
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. } => crate::runtime::utils::value_to_list(target),
                 _ => vec![target.clone()],
             };
             let mut attrs = std::collections::HashMap::new();
