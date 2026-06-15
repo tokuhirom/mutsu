@@ -232,6 +232,35 @@ impl Interpreter {
                 let (_, dname, _) = Self::io_path_parts_spec(&p, attributes);
                 Ok(Value::str(dname))
             }
+            // IO::Path is Cool: `.Numeric`/`.Int`/`.Rat`/`.Num`/`.FatRat`/`.Real`
+            // coerce the *basename* to a number, failing with an X::Str::Numeric
+            // Failure (a soft fail, what `fails-like` expects) when the basename
+            // is not numerical (raku-doc Type/IO/Path: method Numeric / method Int).
+            "Numeric" | "Real" | "Int" | "Rat" | "Num" | "FatRat" => {
+                let (_, _, bname) = Self::io_path_parts_spec(&p, attributes);
+                let bname_val = Value::str(bname.clone());
+                if crate::runtime::str_numeric::parse_raku_str_to_numeric(&bname).is_some() {
+                    // Per the spec, IO::Path's `.Int`/`.Rat`/`.Num`/`.FatRat` fall
+                    // out of `.Numeric` (Cool): coerce the basename to its natural
+                    // numeric first (so "3.5" -> Rat, "1+1i" -> Complex), then to
+                    // the requested type. Going straight to `Str.Num` would choke on
+                    // a complex-valued basename like "3+0i".
+                    let numeric = self.call_method_with_values(bname_val, "Numeric", vec![])?;
+                    match method {
+                        "Numeric" | "Real" => Ok(numeric),
+                        _ => self.call_method_with_values(numeric, method, args),
+                    }
+                } else {
+                    // Non-numerical basename: fail with an X::Str::Numeric Failure
+                    // (a soft fail, what `fails-like` expects), not a thrown error.
+                    let err = crate::runtime::utils::check_str_numeric(&bname_val)
+                        .err()
+                        .unwrap_or_else(|| {
+                            crate::runtime::utils::str_numeric_error(&bname, 0, "malformed number")
+                        });
+                    Ok(self.fail_error_to_failure_value(&err))
+                }
+            }
             "cleanup" => {
                 let normalized = if Self::is_win32_spec(attributes) {
                     Self::cleanup_io_path_lexical_win32(&p)
