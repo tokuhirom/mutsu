@@ -495,6 +495,37 @@ fn parse_bracket_meta_assign_op(input: &str) -> Option<(&str, String, String)> {
     if !after_bracket.starts_with('=') || after_bracket.starts_with("==") {
         return None;
     }
+    // Distinguish a reduction compound assignment (`[+]=`, `[max]=`, `[,]=`,
+    // `[R,]=`) from a subscript-then-assign (`@a[0]=1`, `@a[$i]=…`, `@a[-1]=…`,
+    // `@a[1,2]=…`, `@a[*-1]=…`). A reduction operator begins with an operator
+    // symbol/word and never with a value: a leading digit, sigil, quote,
+    // negative-index `-N`, or `*`-Whatever end-index marks a subscript/slice, so
+    // bail and let the caller parse the `[...]` as a postfix subscript on the
+    // lvalue. (A value-slice like `@a[1,2]` already trips the leading-digit/sigil
+    // test, so the comma-reductions `[,]`/`[R,]` are left intact.)
+    {
+        let t = inner.trim_start();
+        let subscript_like = match t.bytes().next() {
+            None => false, // empty `[]` keeps the prior (degenerate-reduce) path
+            Some(c) if c.is_ascii_digit() => true,
+            Some(b'$' | b'@' | b'%' | b'&' | b'"' | b'\'') => true,
+            Some(b'-') => t[1..]
+                .trim_start()
+                .bytes()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit()),
+            // A `*`-Whatever end-index (`@a[*-1]`, `@a[* - 1]`, `@a[*/2]`) — but
+            // not the bare reduction ops `[*]` (multiply) / `[**]` (power).
+            Some(b'*') => matches!(
+                t[1..].trim_start().bytes().next(),
+                Some(b'-' | b'+' | b'/' | b'%')
+            ),
+            _ => false,
+        };
+        if subscript_like {
+            return None;
+        }
+    }
     let flattened = flatten_bracket_op(inner);
     let (meta, op) = if let Some(op) = flattened.strip_prefix('R') {
         ("R", op)
