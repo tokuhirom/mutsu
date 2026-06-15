@@ -6,7 +6,7 @@ use Test;
 # params/placeholders/bare-expr fall through to the closure/smartmatch path.
 # All shapes must remain behavior-identical.
 
-plan 23;
+plan 25;
 
 # --- inline block ($_-only bare block) ---
 subset Even of Int where { $_ %% 2 };
@@ -24,10 +24,16 @@ subset Halvable of Int where { my $h = $_ div 2; $h * 2 == $_ };
 ok 10 ~~ Halvable, 'multi-stmt block: 10 halvable';
 nok 11 ~~ Halvable, 'multi-stmt block: 11 not halvable';
 
-# --- named pointy param (closure path) ---
+# --- named pointy param (inline path: Lambda{param}) ---
 subset Pos of Int where -> $x { $x > 0 };
 ok 3 ~~ Pos, 'pointy param: 3 is Pos';
 nok -3 ~~ Pos, 'pointy param: -3 is not Pos';
+
+# --- named pointy param closing over an outer lexical ---
+my $floor = 100;
+subset Above of Int where -> $n { $n > $floor };
+ok 150 ~~ Above, 'pointy param closure: 150 > 100';
+nok 50 ~~ Above, 'pointy param closure: 50 not > 100';
 
 # --- placeholder block (closure path) ---
 subset Big of Int where { $^a > 100 };
