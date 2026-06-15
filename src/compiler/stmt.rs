@@ -1670,6 +1670,18 @@ impl Compiler {
             }
             // Given/When/Default
             Stmt::Given { topic, body } => {
+                // A pointy `-> $_ is copy` block is desugared by the parser into a
+                // `$_ = $_` head (see `pointy_topic_bind`): the topic becomes a
+                // fresh, writable copy with NO writeback to the source. Detect that
+                // head so the topic is not marked read-only (`given 42 -> $_ is copy`
+                // must allow `$_ = ...`) and so a bare-variable topic is not tagged
+                // for writeback (`given $x -> $_ is copy { $_ = ... }` leaves `$x`
+                // untouched).
+                let is_copy_topic = matches!(
+                    body.first(),
+                    Some(Stmt::Assign { name, op: AssignOp::Assign, expr: Expr::Var(t) })
+                        if name == "_" && t == "_"
+                );
                 // An lvalue container *element* topic (`given %h<k>` /
                 // `given @a[i]`) aliases that element rw: both `$_ = ...` and
                 // container mutations (`.push`) propagate to the element. Push
@@ -1694,19 +1706,27 @@ impl Compiler {
                     topic_readonly = false;
                 } else {
                     self.compile_expr(topic);
-                    if let Some(source_name) = match topic {
-                        Expr::Var(name) => Some(name.clone()),
-                        Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                        Expr::HashVar(name) => Some(format!("%{}", name)),
-                        _ => None,
-                    } {
+                    // `is copy` makes a detached copy, so suppress the
+                    // source-writeback tag even for a bare-variable topic.
+                    let source_name = if is_copy_topic {
+                        None
+                    } else {
+                        match topic {
+                            Expr::Var(name) => Some(name.clone()),
+                            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                            Expr::HashVar(name) => Some(format!("%{}", name)),
+                            _ => None,
+                        }
+                    };
+                    if let Some(source_name) = source_name {
                         let name_idx = self.code.add_constant(Value::str(source_name));
                         self.code.emit(OpCode::TagContainerRef(name_idx));
                     }
                     // The topic is read-only unless it is a bare scalar variable
-                    // (`given $x` aliases `$x` rw). `given @a` / `given 42` /
-                    // `given expr()` are read-only (Raku errors on `$_ = ...`).
-                    topic_readonly = !matches!(topic, Expr::Var(_));
+                    // (`given $x` aliases `$x` rw) or an `is copy` writable copy.
+                    // `given @a` / `given 42` / `given expr()` are read-only (Raku
+                    // errors on `$_ = ...`).
+                    topic_readonly = !is_copy_topic && !matches!(topic, Expr::Var(_));
                 }
                 // A pointy block (`given @a -> @p { ... }`) is desugared by the
                 // parser into `@p := $_` at the body head. Record that bound
