@@ -81,23 +81,42 @@ CI（`make test` + 包括的 `make roast`）が全マージをゲートするの
 dedup 作業中に発見・修正。②「1 操作 = 1 実装」に加え**「単一実装が正しいレイヤに在るか」**も問う（comb の純粋分割を
 interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に残すのが正しい）。
 
-### 最終ゴール（現・主作業）: Interpreter 実行パスの撤去 → dual-store 削除
+### 最終ゴール（現・主作業）: tree-walking Interpreter オブジェクトの撤去
 
 重複カタログ（本丸）完了に伴い、主作業はここへ移った。VM はいまも Interpreter を**共有実行状態 ＋
 フォールバック先**として使う（[ANALYSIS.md](ANALYSIS.md) §1.1: `self.interpreter.*` 参照 1300+、内訳上位は
 `env()`/`env_mut()` ~480、`type_matches_value`、`var_type_constraint`、`current_package`、`restore_let_saves`、
-`readonly_vars_mut`…）。これを VM 所有へ移し切り、真の tree-walk フォールバックを撲滅するのが最終ゴール。
-完了すると **env を任意名で書く唯一の存在＝interpreter ブリッジが消え**、`env_dirty`/`ensure_locals_synced`/
-`sync_locals_from_env`/`saved_env_dirty` の **dual-store 機構を削除**できる（レバー B 完遂）。
+`readonly_vars_mut`…）。残る状態を VM 所有へ移し切り、残る tree-walk carrier を VM-native 化して
+**Interpreter オブジェクト（`src/runtime/`）を削除する**のが最終ゴール。
+
+> #### ★重要な再フレーム（2026-06-15）: dual-store 削除と Interpreter 撤去は「分離」した
+>
+> 旧 PLAN は「Interpreter 撤去 → その後 dual-store（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/
+> `saved_env_dirty`）削除（最終 fold）」という依存を仮定していた。**この依存は誤りと判明（CP-2 依存調査の結論。
+> 詳細 = [docs/vm-dual-store.md](docs/vm-dual-store.md) 冒頭「CP-2 status & corrected plan」）**:
+> - `EVAL` は仕様上、caller の lexical を**任意の名前で書く**永続 carrier。その伝播には env→locals の name→slot
+>   再構築（`sync_locals_from_env`）が本質的に必須。
+> - その再構築は**安全な barrier まで遅延せねばならない**（eager 化すると cyclic `:=` bind 等の in-place cell 変異を
+>   clobber する。`t/element-bind-cell.t` で実証）。遅延機構が `env_dirty` フラグそのもの。
+> - フラグ削除＝`GetLocal` で無条件 pull ＝ **fib ホットパスの perf 回帰**。
+> - ∴ `env_dirty`/`ensure_locals_synced`/`sync_locals_from_env` は **slot-locals + EVAL 共存下で永続**。これは
+>   Interpreter **オブジェクト**の有無とは無関係な **VM 内部の最適化機構**になる。
+>
+> → **結論: dual-store 機構は Interpreter 撤去後も VM 内部に残る。「dual-store 削除」は Interpreter 撤去の
+> ゲート/終了条件ではない。** これにより最終 fold が解放される（dual-store 削除を待たずに Interpreter を消せる）。
+> 完全な store 統合（`locals` を廃し env 単一化して env_dirty すら消す）は fib 等の最ホットパスを HashMap lookup 化
+> する**別プロジェクト**で、起動速度優位と逆行するため Interpreter 撤去には不要（やるなら別途・実測判断）。
 
 進捗台帳: [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md)
 （完了履歴 ①真フォールバック可視化 / ②registry VM 所有化 / ③pure-data 消化 → [news/2026-06.md](news/2026-06.md)）。
 
-#### 現在地（2026-06-15）: CP-1 env-loan flip 完了（env は VM 所有）→ 次は CP-2 dual-store 削除
+#### 現在地（2026-06-15）: CP-1 env-loan flip 完了（env は VM 所有）。CP-2 は「機構削除は不可・footprint reduction のみ」で確定
 
 **CP-1（env を VM 所有へ）= 完了（PR #3075, `make test` PASS）。** 下記 1a〜1e 全て done。env は `VM.env` に住み、
-carrier は `loan_env!`/`loan_env_for` で借用。次は CP-2（dual-store 機構の削除）。なお poison ガードは benign 化済み
-（`MUTSU_POISON_DIAG` opt-in）で、env-読み interpreter ヘルパが全て VM-native 化されたら撤去する interim scaffolding。
+carrier は `loan_env!`/`loan_env_for` で借用。poison ガードは benign 化済み（`MUTSU_POISON_DIAG` opt-in）。
+**CP-2（dual-store）= 上記再フレームで「機構削除は構造的に不可」と確定**。達成できたのは spurious マーク/precision の
+footprint reduction（perf 改善・#3080/#3083/#3084 マージ済）のみで、`env_dirty` 機構自体は永続として残す。
+**→ 主作業は CP-3（Interpreter オブジェクト撤去）へ移る。**
 
 #### （履歴）Phase I 完了 → Phase II（env 所有移管・Interpreter 撤去）
 
@@ -144,18 +163,43 @@ VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env
       - 参照: defensive wrap-all 試行は branch `cp1-1e-blanket-loan`（broken・保存）。
       - 検証: cargo build + clippy 緑 / `make test` PASS（debug cargo test + release prove, 797 files / 7425 tests）/ 全 roast は CI。
 
-#### 後続（CP-1 後・逐次）
+#### CP-2: dual-store = 機構削除は不可（確定）。footprint reduction のみ実施済
 
-- [~] **CP-2: dual-store *遅延フラグ* 機構の削除**（多 PR キャンペーン）— **スコープ訂正 (2026-06-15、依存調査の結論。
-      詳細 = [docs/vm-dual-store.md](docs/vm-dual-store.md) 冒頭「CP-2 status & corrected plan」)**: `sync_locals_from_env`
-      は **`EVAL`（仕様上の永続 by-name lexical writer）が存在する限り削除不可**＝env→locals name→slot 再構築は本質的に必須。
-      よって達成可能 CP-2 = **遅延フラグ層**（`env_dirty` / `saved_env_dirty` / `ensure_locals_synced` + `VmCallFrame` の
-      dirty フィールド）の撤去。166 個の `env_dirty = true` setter を ①pure→無マーク ②native by-name→surgical local 更新
-      ③carrier→eager-precise reconcile に変換しきってから削除。`sync_locals_from_env` は eager reconcile primitive として残す。
-      - [x] **slice 1**: `vm_call_method_ops.rs` の pure な hyper/race wrap + reflection 分岐の spurious mark を撤去
-            （pin = `t/hyper-reflection-env.t` / `t/say-env-roundtrip.t`）。
-- [ ] **CP-3: Interpreter を carrier-only へ縮退 → 撤去**（**4〜8 PR**）— 残る **86 フィールド**を VM へ畳むか撤去、
-      ping-pong 撤去、carrier（subset-where/regex-`{}`）を VM-native 化して carrier 面を縮小 → **Interpreter 削除**。
+詳細 = [docs/vm-dual-store.md](docs/vm-dual-store.md) 冒頭「CP-2 status & corrected plan」。`env_dirty`/
+`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty` は **永続**（上記再フレーム参照）。残った作業は
+spurious マーク/precision の footprint reduction（perf）のみで、**完了扱い**:
+- [x] #3080 — pure な hyper/race wrap + reflection 分岐の spurious mark 撤去（pin `t/hyper-reflection-env.t`/`t/say-env-roundtrip.t`）
+- [x] #3083 — `.emit`/`Deprecation.report`/hash-sentinel native/Nil-fallback の spurious mark 撤去
+- [x] #3084 — exec-call の native マーク + precision を打ち消す冗長 blanket マーク撤去。**unsafe な eager-reconcile
+      パターン（#3081 module-load 含む）を flag へ revert**（cyclic-bind clobber を実証して撤回）
+- 残る `env_dirty=true` setter は全て genuine carrier/mutation で削除不可。これ以上の footprint reduction は
+      diminishing returns のため打ち切り。
+
+#### CP-3: Interpreter オブジェクト撤去（= 最終ゴール本体）。2 トラック並行 → 最後に削除
+
+設計 = [docs/vm-state-ownership.md](docs/vm-state-ownership.md)。`Interpreter` = **約 86 フィールド（状態）** +
+**少数の tree-walk carrier（実行）**。VM からの汎用 dispatch フォールバックはベンチ ~0%（§1/§2 ほぼ枯渇）。
+**dual-store を残したまま** Interpreter オブジェクトを消す。下記 2 トラックは独立・並行可:
+
+- [ ] **Track 1 — 状態を VM へ畳む（Role A・bulk・機械的・低リスク）**: 確立済みパターンを適用
+      （env=VM 所有(loan)済 / registry・io・output・current_package=`Arc<RwLock>` peer handle 済 / type-meta=handle 化済 PR-1）。
+      残りを順次 VM フィールド化: type-meta の VM-native consumer (PR-2) → `readonly_vars` → `let_saves`/`restore_let_saves`
+      → `supply_emit_buffer` → `shared_vars` → `pending_*` キャッシュ → 他 ~80。再入で変異する状態だけ loan/peer
+      パターン、それ以外は plain field 移設。各 PR が Interpreter を物理的に縮める。
+- [ ] **Track 2 — tree-walk carrier を VM-native 化（Role B・実行役割の除去・高難度）**:
+      - **subset `where` / 型制約**（`type_matches_value` ~690 行）→ where 式を bytecode コンパイルして sub-VM 実行（最大の獲物）。
+      - **regex 埋め込み `{}`** → 埋め込みコードを bytecode 化。
+      - **MOP / reflection**（`.^methods` 等）→ registry/type-meta 上の pure helper 化。
+      - **trait handler**（`is` 適用）→ 宣言時 pure helper 化。
+      - **EVAL** → 既に env を借りる carrier。**残す**（env_dirty 永続の理由そのもの・仕様で正しい）。
+- [ ] **最終 — Interpreter オブジェクト削除**: 状態ゼロ・tree-walk 実行ゼロになったら `self.interpreter` を撤去。
+      carrier と EVAL の sub-VM は VM 状態を直接借用。`env_dirty`/`locals↔env` は VM 内部に残る。
+
+**終点**: tree-walking Interpreter なし。VM が唯一の実行エンジン。全状態 VM 所有。EVAL + slot 性能の代償として
+最小の `env_dirty` locals↔env 同期だけが VM 内部に残る。
+
+**推奨着手順**: Track 1（低リスク・bulk で Interpreter を縮める）を主軸に、Track 2 の subset `where`→bytecode を
+並行で進める。
 
 #### 並行可能トラック（critical path 外・互いに独立・CP のブロッカーにならない）
 
