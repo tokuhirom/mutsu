@@ -1891,7 +1891,13 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Ok((rest, hash_expr)) = crate::parser::primary::misc::block_or_hash_expr(input)
         && matches!(hash_expr, Expr::Hash(_))
     {
-        return parse_statement_modifier(rest, Stmt::Expr(hash_expr));
+        // A statement-leading hash literal may carry postfix operators
+        // (`{a => 1}.keys`, `{a => 1}<b>`, `{a => 1}.map(...)`). Without this the
+        // hash terminated the statement and a following `.keys` was mis-parsed as
+        // a new `$_.keys` statement. `postfix_expr_continue` is a no-op when no
+        // postfix follows, so a bare `{a => 1}` statement is unchanged.
+        let (rest, expr) = super::super::expr::postfix_expr_continue(rest, hash_expr)?;
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
     let (rest, body) = block(input)?;
     let (r_ws, _) = ws(rest)?;
