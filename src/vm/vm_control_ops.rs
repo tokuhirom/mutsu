@@ -24,9 +24,10 @@ pub(super) struct ForLoopSpec {
     /// When true (`.pairs`/`.antipairs`), the loop variable is a `Pair` wrapping
     /// the element, so the plain per-element source writeback is suppressed.
     pub(super) loop_var_wraps_element: bool,
-    /// When true (`%h.values`), the loop variable aliases a hash value, so a
-    /// `$_ = ...` topic writeback must update the hash by key order.
-    pub(super) hash_values_mode: bool,
+    /// When true (`%h.values` / `$b.values`), the loop variable aliases the
+    /// container's value, so a `$_ = ...` topic writeback updates the source
+    /// (plain Hash or mutable MixHash/BagHash) by key order.
+    pub(super) values_mode: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -658,29 +659,45 @@ impl Interpreter {
         if source_immutable_quant {
             rw_writeback = false;
         }
+        // A *mutable* QuantHash (MixHash/BagHash/SetHash) source iterated via
+        // `.values`/`.kv`/`.pairs` aliases its weights: `$_ = X for $b.values`,
+        // `for $b.kv -> \k,\v { v = X }` and `.value = X for $b.pairs` all mutate
+        // the QuantHash. Detect it so the topic stays writable (not readonly) and
+        // the writeback paths can update the weight by key order, coercing the
+        // assigned value (X::Str::Numeric on a bad string; weight 0 removes the key).
+        let source_mutable_quant = container_binding.as_ref().is_some_and(|name| {
+            matches!(
+                self.get_env_with_main_alias(name),
+                Some(Value::Mix(_, true)) | Some(Value::Set(_, true)) | Some(Value::Bag(_, true))
+            )
+        });
         let mut grep_view_writes: Vec<(usize, Value)> = Vec::new();
         let container_reversed = self.container_ref_reversed;
         self.container_ref_reversed = false;
         // Capture hash key order before the loop so writeback uses the
         // original key order even after the hash is mutated during iteration.
         // Needed for the rw-param `%h.values -> $v is rw` writeback and for the
-        // plain topic `$_ = X for %h.values` writeback (hash_values_mode).
-        let hash_keys_for_writeback: Option<Vec<String>> = if rw_writeback
-            || (writes_back_loop_var && spec.hash_values_mode)
-        {
-            container_binding
-                .as_ref()
-                .filter(|s| s.starts_with('%'))
-                .and_then(|source| {
-                    if let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source) {
-                        Some(hash_items.keys().cloned().collect())
-                    } else {
-                        None
+        // plain topic `$_ = X for %h.values` writeback (values_mode).
+        let hash_keys_for_writeback: Option<Vec<String>> =
+            if rw_writeback || (writes_back_loop_var && spec.values_mode) {
+                container_binding.as_ref().and_then(|source| {
+                    match self.get_env_with_main_alias(source) {
+                        Some(Value::Hash(hash_items)) if source.starts_with('%') => {
+                            Some(hash_items.keys().cloned().collect())
+                        }
+                        // A mutable QuantHash bound to a scalar: capture the weight
+                        // map's key order so `.values`/`.kv` writeback lands on the
+                        // same key `.values()`/`.kv` yielded (same unmodified map →
+                        // identical iteration order).
+                        Some(Value::Bag(b, true)) => Some(b.keys().cloned().collect()),
+                        Some(Value::Mix(m, true)) => Some(m.keys().cloned().collect()),
+                        Some(Value::Set(s, true)) => Some(s.elements.iter().cloned().collect()),
+                        _ => None,
                     }
                 })
-        } else {
-            None
-        };
+            } else {
+                None
+            };
         // Save multi-param values and readonly state so they can be restored
         // after the loop (inner loops must not clobber outer scope bindings).
         let saved_multi_params: Vec<(String, Option<Value>, bool, Option<Value>)> = spec
@@ -707,17 +724,22 @@ impl Interpreter {
         // (owned_captures). Balanced by pop on every exit.
         self.push_loop_local_scope();
         // Determine if the implicit topic ($_) should be read-only.
-        // Only mark $_ readonly when iterating over a known immutable collection
-        // (Mix, Set, Bag). This blocks `.value = ...` mutations on pairs from
-        // immutable collections while keeping $_ writable for expression results,
-        // multi-param for loops, and Scalar containers holding plain values.
+        // Only mark $_ readonly when iterating over an *immutable* collection
+        // (Mix/Set/Bag, the `(_, false)` variants). This blocks `.value = ...`
+        // and `$_ = ...` mutations on values/pairs from immutable collections
+        // while keeping $_ writable for a *mutable* QuantHash (MixHash/BagHash —
+        // `for $b.values { $_ = X }` / `.value = X for $b.pairs` must write back),
+        // expression results, multi-param loops, and Scalar containers.
         let topic_readonly =
             !spec.is_rw && param_name.is_none() && spec.multi_param_names.is_empty() && {
                 match &container_binding {
                     None => false,
                     Some(name) => {
                         if let Some(val) = self.get_env_with_main_alias(name) {
-                            matches!(val, Value::Mix(_, _) | Value::Set(_, _) | Value::Bag(_, _))
+                            matches!(
+                                val,
+                                Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false)
+                            )
                         } else {
                             false
                         }
@@ -726,11 +748,19 @@ impl Interpreter {
             };
         let total_items = chunked_items.len();
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate().skip(resume_index) {
-            self.topic_source_var = if writes_back_topic {
-                container_binding.clone()
-            } else {
-                None
-            };
+            // `topic_source_var` drives the whole-topic writeback for a scalar
+            // source (`for $x { $_[1] = ... }` writes the mutated `$_` back to
+            // `$x`). For a `.values` loop over a mutable QuantHash the topic is a
+            // *weight*, not the container — wholesale-overwriting `$b` with the
+            // weight would clobber the MixHash/BagHash. The per-element
+            // `write_back_quanthash_value_item` handles that source, so suppress
+            // the whole-topic writeback here.
+            self.topic_source_var =
+                if writes_back_topic && !(spec.values_mode && source_mutable_quant) {
+                    container_binding.clone()
+                } else {
+                    None
+                };
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
             if param_name.is_none() {
@@ -804,6 +834,48 @@ impl Interpreter {
                 {
                     body_result = Err(err);
                 }
+                // `$_ = X for $b.values` / `for $b.values -> $v { $v = X }` where
+                // `$b` is a mutable QuantHash: write the aliased weight back here,
+                // before the match, so a coercion failure (X::Str::Numeric on a
+                // non-numeric string) flows through the shared Err-arm cleanup. The
+                // Ok arm's `write_back_for_topic_item` skips scalar quant sources.
+                if body_result.is_ok()
+                    && writes_back_loop_var
+                    && spec.values_mode
+                    && source_mutable_quant
+                    && let Some(ref source) = container_binding
+                    && let Err(err) = self.write_back_quanthash_value_item(
+                        code,
+                        source,
+                        &param_name,
+                        idx,
+                        &hash_keys_for_writeback,
+                    )
+                {
+                    body_result = Err(err);
+                }
+                // The rw-param sibling of the above: `for $b.kv -> \k, \v { v = X }`
+                // and `for $b.values -> $v is rw { $v = X }` over a mutable QuantHash.
+                // Handled pre-match (coercion may raise X::Str::Numeric) so the
+                // Ok-arm `write_back_for_rw_param` (which no-ops on scalar quant
+                // sources) need not change.
+                if body_result.is_ok()
+                    && rw_writeback
+                    && source_mutable_quant
+                    && (spec.kv_mode || spec.values_mode)
+                    && let Some(ref source) = container_binding
+                    && let Err(err) = self.write_back_quanthash_rw(
+                        code,
+                        source,
+                        &spec.rw_param_names,
+                        &param_name,
+                        idx,
+                        spec.kv_mode,
+                        &hash_keys_for_writeback,
+                    )
+                {
+                    body_result = Err(err);
+                }
                 match body_result {
                     Ok(()) => {
                         // Sync state variables modified in this iteration so
@@ -820,7 +892,7 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
-                                spec.hash_values_mode,
+                                spec.values_mode,
                                 &hash_keys_for_writeback,
                             );
                         }
@@ -881,7 +953,7 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
-                                spec.hash_values_mode,
+                                spec.values_mode,
                                 &hash_keys_for_writeback,
                             );
                         }
@@ -943,7 +1015,7 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
-                                spec.hash_values_mode,
+                                spec.values_mode,
                                 &hash_keys_for_writeback,
                             );
                         }
@@ -986,7 +1058,7 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
-                                spec.hash_values_mode,
+                                spec.values_mode,
                                 &hash_keys_for_writeback,
                             );
                         }
@@ -1019,7 +1091,7 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
-                                spec.hash_values_mode,
+                                spec.values_mode,
                                 &hash_keys_for_writeback,
                             );
                         }
@@ -1972,7 +2044,7 @@ impl Interpreter {
         idx: usize,
         reversed: bool,
         total_items: usize,
-        hash_values_mode: bool,
+        values_mode: bool,
         hash_keys: &Option<Vec<String>>,
     ) {
         let Some(source) = source_var else {
@@ -1981,13 +2053,17 @@ impl Interpreter {
         // `$_ = X for %h.values` / `for %h.values -> $v { $v = X }`: the loop
         // variable aliases a hash *value*, so write it back to the source hash
         // by the pre-captured key order. Bare `for %h` (Pairs) and `.keys` do
-        // not reach here (no hash_values_mode tag).
+        // not reach here (no values_mode tag).
         if source.starts_with('%') {
-            if hash_values_mode {
+            if values_mode {
                 self.write_back_hash_value_item(code, source, param_name, idx, hash_keys);
             }
             return;
         }
+        // A scalar source iterated via `.values` binding a mutable QuantHash is
+        // written back by `write_back_quanthash_value_item`, called *before* the
+        // body-result match (its coercion can raise X::Str::Numeric, which must
+        // flow through the loop's shared error cleanup). So nothing to do here.
         if !source.starts_with('@') {
             return;
         }
@@ -2027,6 +2103,129 @@ impl Interpreter {
         );
         self.set_env_with_main_alias(source, updated_value.clone());
         self.update_local_if_exists(code, source, &updated_value);
+    }
+
+    /// Set a single weight on a mutable QuantHash bound to a scalar `source`,
+    /// coercing the assigned value the same way an element store (`$b<k> = v`)
+    /// does: Int for Bag, Real for Mix, truthiness for Set. A non-numeric `Str`
+    /// raises X::Str::Numeric, and a zero weight removes the key (Raku semantics).
+    /// No-op (and Ok) if `source` does not hold a mutable QuantHash.
+    fn quanthash_set_weight(
+        &mut self,
+        code: &CompiledCode,
+        source: &str,
+        key: String,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        let updated = match self.get_env_with_main_alias(source) {
+            Some(Value::Bag(bag, true)) => {
+                let count = Self::bag_assignment_count(value)?;
+                let mut b = (*bag).clone();
+                if count == 0 {
+                    b.counts.remove(&key);
+                } else {
+                    b.counts.insert(key, count);
+                }
+                Value::Bag(std::sync::Arc::new(b), true)
+            }
+            Some(Value::Mix(mix, true)) => {
+                let weight = Self::mix_assignment_weight(value)?;
+                let mut m = (*mix).clone();
+                if weight == 0.0 {
+                    m.remove(&key);
+                } else {
+                    m.insert(key, weight);
+                }
+                Value::Mix(std::sync::Arc::new(m), true)
+            }
+            Some(Value::Set(set, true)) => {
+                let mut s = (*set).clone();
+                if value.truthy() {
+                    s.elements.insert(key);
+                } else {
+                    s.elements.remove(&key);
+                }
+                Value::Set(std::sync::Arc::new(s), true)
+            }
+            _ => return Ok(()),
+        };
+        self.set_env_with_main_alias(source, updated.clone());
+        self.update_local_if_exists(code, source, &updated);
+        Ok(())
+    }
+
+    /// Write the loop variable back to a mutable QuantHash weight during
+    /// `for $b.values` (`$_ = X for $b.values` / `for $b.values -> $v { $v = X }`,
+    /// `$b` a MixHash/BagHash/SetHash). The key at iteration position `idx` comes
+    /// from the pre-captured key order (same unmodified weight map → identical
+    /// iteration order as the materialized `.values` list).
+    fn write_back_quanthash_value_item(
+        &mut self,
+        code: &CompiledCode,
+        source: &str,
+        param_name: &Option<String>,
+        idx: usize,
+        hash_keys: &Option<Vec<String>>,
+    ) -> Result<(), RuntimeError> {
+        let loop_var = param_name.as_deref().unwrap_or("_");
+        let Some(current) = self.env().get(loop_var).cloned() else {
+            return Ok(());
+        };
+        let Some(keys) = hash_keys else {
+            return Ok(());
+        };
+        let Some(key) = keys.get(idx).cloned() else {
+            return Ok(());
+        };
+        self.quanthash_set_weight(code, source, key, &current)
+    }
+
+    /// Write a mutable QuantHash weight back from an rw for-loop param: either
+    /// `for $b.kv -> \k, \v { v = X }` (key from the `\k` param, value from `\v`)
+    /// or `for $b.values -> $v is rw { $v = X }` (key from the captured order at
+    /// `idx`, value from the single rw param / `$_`). Coercion may raise
+    /// X::Str::Numeric; weight 0 removes the key.
+    #[allow(clippy::too_many_arguments)]
+    fn write_back_quanthash_rw(
+        &mut self,
+        code: &CompiledCode,
+        source: &str,
+        rw_param_names: &[String],
+        param_name: &Option<String>,
+        idx: usize,
+        kv_mode: bool,
+        hash_keys: &Option<Vec<String>>,
+    ) -> Result<(), RuntimeError> {
+        if kv_mode {
+            // `.kv -> \k, \v`: the key is the first param, the value the second.
+            if rw_param_names.len() < 2 {
+                return Ok(());
+            }
+            let Some(key) = self.env().get(&rw_param_names[0]).cloned() else {
+                return Ok(());
+            };
+            let Some(value) = self.env().get(&rw_param_names[1]).cloned() else {
+                return Ok(());
+            };
+            self.quanthash_set_weight(code, source, key.to_string_value(), &value)
+        } else {
+            // `.values -> $v is rw`: single rw param, key by captured order.
+            let var = rw_param_names
+                .first()
+                .map(String::as_str)
+                .or(param_name.as_deref())
+                .unwrap_or("_");
+            let Some(value) = self.env().get(var).cloned() else {
+                return Ok(());
+            };
+            let Some(keys) = hash_keys else {
+                return Ok(());
+            };
+            let Some(key) = keys.get(idx).cloned() else {
+                return Ok(());
+            };
+            self.quanthash_set_weight(code, source, key, &value)
+        }
     }
 
     /// Write the loop variable back to a hash value during `for %h.values`
@@ -2207,6 +2406,17 @@ impl Interpreter {
         } else if source.starts_with('%') {
             // Hash writeback: not straightforward by index; skip for now
         } else {
+            // A mutable QuantHash bound to a scalar (`for $b.values -> $v is rw`,
+            // `for $b.kv -> \k, \v`) is written back to its weights by
+            // `write_back_quanthash_rw` *before* the body-result match (its
+            // coercion can throw). Skip the generic scalar writeback here, which
+            // would otherwise clobber `$b` with the bare weight value.
+            if matches!(
+                self.get_env_with_main_alias(source),
+                Some(Value::Bag(_, true) | Value::Mix(_, true) | Value::Set(_, true))
+            ) {
+                return;
+            }
             // Scalar binding: write back directly
             // For kv_mode with arity > 1 on a Pair source (e.g. `for $pair.kv -> $key, $value is rw`),
             // read the value from the second rw param and reconstruct the Pair.

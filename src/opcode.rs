@@ -752,12 +752,14 @@ pub(crate) enum OpCode {
         /// source tag is still kept so the Pair's rw `.value` alias can detect
         /// immutability and propagate.
         loop_var_wraps_element: bool,
-        /// When true, the iterable is `%h.values` on a hash variable: the loop
-        /// variable (`$_` / a plain named param) aliases the hash *value*, so a
-        /// `$_ = ...` topic assignment must write back to the hash by key order
-        /// (`$_ = X for %h.values` mutates `%h`). Distinguished from bare `for
-        /// %h` (iterates Pairs, no value writeback) and `.keys` (read-only).
-        hash_values_mode: bool,
+        /// When true, the iterable is `%h.values` / `$b.values` on a variable:
+        /// the loop variable (`$_` / a plain named param) aliases the container's
+        /// *value*, so a `$_ = ...` topic assignment writes back to the source by
+        /// key order (`$_ = X for %h.values` mutates `%h`; `for $b.values` mutates
+        /// a mutable MixHash/BagHash). The VM branches on the runtime container
+        /// type. Distinguished from bare `for %h` (Pairs, no value writeback) and
+        /// `.keys` (read-only).
+        values_mode: bool,
     },
     /// Restore the single named for-loop param's prior binding, deferred until
     /// after the loop's LAST/post phasers have run (which must still see the
