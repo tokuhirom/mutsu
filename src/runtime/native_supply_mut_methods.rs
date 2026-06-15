@@ -485,7 +485,15 @@ impl Interpreter {
                         }
                     }
                     if Self::supply_has_active_callback(&tap_cb) {
-                        self.call_sub_value(tap_cb.clone(), vec![v.clone()], true)?;
+                        // A `done`/`last` inside the tap callback completes the tap
+                        // cleanly: stop emitting and fall through to the done
+                        // callback. It must not surface as a runtime error (this is
+                        // how `(1..Inf).Supply.tap({ ...; done if ... })` terminates).
+                        match self.call_sub_value(tap_cb.clone(), vec![v.clone()], true) {
+                            Ok(_) => {}
+                            Err(err) if err.is_react_done || err.is_last => break,
+                            Err(err) => return Err(err),
+                        }
                     }
                 }
 
