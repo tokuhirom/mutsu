@@ -3376,30 +3376,42 @@ impl Interpreter {
                 // to allow in-place mutation (preserving shared identity).
                 let is_bound_hash_var =
                     var_name.starts_with('%') && self.readonly_vars().contains(&var_name);
-                // Type check for parameterized SetHash[T] element binding.
-                // Only applies when the declared type is explicitly parameterized
-                // (e.g. SetHash[Str]), not when the constraint is just `is SetHash`.
+                // Type check for parameterized SetHash[T]/BagHash[T]/MixHash[T]
+                // element binding. Only applies when the declared type is explicitly
+                // parameterized (e.g. SetHash[Str]), not when the constraint is just
+                // `is SetHash`. The subscript key is the element, so it must satisfy
+                // the parameterized element (keyof) type.
                 let set_val_clone = self
                     .env()
                     .get(&var_name)
-                    .filter(|v| matches!(v, Value::Set(..)))
+                    .filter(|v| matches!(v, Value::Set(..) | Value::Bag(..) | Value::Mix(..)))
                     .cloned();
-                if let Some(set_val) = set_val_clone
-                    && let Some(info) = self.container_type_metadata(&set_val)
-                    && info
-                        .declared_type
-                        .as_deref()
-                        .is_some_and(|t| t.contains('['))
-                    && !info.value_type.is_empty()
-                    && info.value_type != "Any"
-                    && info.value_type != "Mu"
-                    && !self.type_matches_value(&info.value_type, &idx)
+                // The subscript key is checked against the element (keyof) type.
+                // For Set/Bag that equals `value_type`; for Mix the keyof lives in
+                // `key_type` (while `value_type` is the weight type, Real).
+                let elem_type = set_val_clone.as_ref().and_then(|sv| {
+                    self.container_type_metadata(sv).and_then(|info| {
+                        if !info
+                            .declared_type
+                            .as_deref()
+                            .is_some_and(|t| t.contains('['))
+                        {
+                            return None;
+                        }
+                        info.key_type
+                            .filter(|t| !t.is_empty())
+                            .or(Some(info.value_type))
+                            .filter(|t| !t.is_empty() && t != "Any" && t != "Mu")
+                    })
+                });
+                if let Some(elem_type) = elem_type
+                    && !self.type_matches_value(&elem_type, &idx)
                 {
                     let got_type = crate::value::what_type_name(&idx);
                     let got_repr = idx.to_string_value();
                     let msg = format!(
                         "Type check failed in binding; expected {} but got {} (\"{}\")",
-                        info.value_type, got_type, got_repr,
+                        elem_type, got_type, got_repr,
                     );
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -3407,7 +3419,7 @@ impl Interpreter {
                     attrs.insert("got".to_string(), idx.clone());
                     attrs.insert(
                         "expected".to_string(),
-                        Value::Package(crate::symbol::Symbol::intern(&info.value_type)),
+                        Value::Package(crate::symbol::Symbol::intern(&elem_type)),
                     );
                     let ex = Value::make_instance(
                         crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
