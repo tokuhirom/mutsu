@@ -3422,6 +3422,9 @@ impl Interpreter {
             }
             pred.clone()
         });
+        // Drop any cached compiled predicate for this name so a redeclaration
+        // recompiles against the new predicate (see `subset_predicate_cache`).
+        self.subset_predicate_cache.remove(name);
         self.registry_mut().subsets.insert(
             name.to_string(),
             SubsetDef {
