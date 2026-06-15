@@ -203,7 +203,7 @@ impl VM {
         // the source's per-Arc element-type metadata (`my Int @a` → `Array[Int]`),
         // so re-register it on the new container.
         if let Some(name) = writeback_name {
-            let meta = self.interpreter.container_type_metadata(target);
+            let meta = loan_env!(self, container_type_metadata(target));
             let mut new_array = Value::real_array(source_after);
             if let Some(info) = meta {
                 new_array = self.interpreter.tag_container_metadata(new_array, info);

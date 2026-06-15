@@ -63,7 +63,6 @@ impl VM {
             format!("@{}", var_name)
         };
         let target_val = self
-            .interpreter
             .env()
             .get(&arr_key)
             .or_else(|| self.env().get(&var_name))
@@ -93,8 +92,7 @@ impl VM {
         } else {
             &var_name
         };
-        self.interpreter
-            .env_mut()
+        self.env_mut()
             .insert(lookup_key.to_string(), Value::Array(Arc::new(items), kind));
         self.env_dirty = true;
         Ok(Some(result.items))
@@ -138,12 +136,7 @@ impl VM {
         for _ in 0..n {
             match self.run_reuse(&code, &compiled_fns) {
                 Ok(()) => {
-                    let val = self
-                        .interpreter
-                        .env()
-                        .get("_")
-                        .cloned()
-                        .unwrap_or(Value::Nil);
+                    let val = self.env().get("_").cloned().unwrap_or(Value::Nil);
                     out.push(val);
                 }
                 Err(e) => {
@@ -269,7 +262,7 @@ impl VM {
         right: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
         let args = vec![left.clone(), right.clone()];
-        if let Some(def) = self.interpreter.resolve_function_with_types(op_name, &args) {
+        if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args)) {
             let empty_fns = HashMap::new();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
             return Ok(Some(result));
@@ -502,12 +495,7 @@ impl VM {
             Value::Regex(_)
             | Value::RegexWithAdverbs { .. }
             | Value::Routine { is_regex: true, .. } => {
-                let topic = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 Value::Bool(self.vm_smart_match(&topic, &val))
             }
             _ => {
@@ -990,19 +978,19 @@ impl VM {
                 if self.interpreter.has_role(name)
                     && matches!(boxed.as_ref(), Value::Array(..)) =>
             {
-                Some(
-                    self.interpreter
-                        .eval_does_values(left.clone(), right.clone()),
-                )
+                Some(loan_env!(
+                    self,
+                    eval_does_values(left.clone(), right.clone())
+                ))
             }
-            Value::Package(name) if self.interpreter.has_role(&name.resolve()) => Some(
-                self.interpreter
-                    .eval_does_values(left.clone(), right.clone()),
-            ),
-            Value::Str(name) if self.interpreter.has_role(name) => Some(
-                self.interpreter
-                    .eval_does_values(left.clone(), right.clone()),
-            ),
+            Value::Package(name) if self.interpreter.has_role(&name.resolve()) => Some(loan_env!(
+                self,
+                eval_does_values(left.clone(), right.clone())
+            )),
+            Value::Str(name) if self.interpreter.has_role(name) => Some(loan_env!(
+                self,
+                eval_does_values(left.clone(), right.clone())
+            )),
             _ => None,
         };
         if let Some(composed) = role_composed {
@@ -1185,7 +1173,7 @@ impl VM {
                 if let Some(tn) = &left_type_object {
                     return Err(Self::does_type_object_error("does", tn));
                 }
-                return self.interpreter.eval_does_values_list(left, items.as_ref());
+                return loan_env!(self, eval_does_values_list(left, items.as_ref()));
             }
         }
         // Check if the RHS is a role that needs to be composed onto the value.
@@ -1194,7 +1182,7 @@ impl VM {
             if let Some(tn) = &left_type_object {
                 return Err(Self::does_type_object_error("does", tn));
             }
-            return self.interpreter.eval_does_values(left, right);
+            return loan_env!(self, eval_does_values(left, right));
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
         if matches!(&right, Value::Enum { .. }) {
@@ -1265,9 +1253,7 @@ impl VM {
         // Sync back: BUILD submethods may have modified closure variables.
         self.sync_locals_from_env(code);
         let name = Self::const_str(code, name_idx).to_string();
-        self.interpreter
-            .env_mut()
-            .insert(name.clone(), updated.clone());
+        self.env_mut().insert(name.clone(), updated.clone());
         self.update_local_if_exists(code, &name, &updated);
         // Capture Mixin value for trait_mod writeback: when `$r does Role`
         // runs inside a trait_mod:<is>, the Mixin needs to propagate back

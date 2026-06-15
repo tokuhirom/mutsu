@@ -73,10 +73,10 @@ impl VM {
             };
             values.push(value);
         }
-        if let Some(result) = self
-            .interpreter
-            .push_to_existing_shared_array(&sigiled_target, values.clone())
-        {
+        if let Some(result) = loan_env!(
+            self,
+            push_to_existing_shared_array(&sigiled_target, values.clone())
+        ) {
             return Ok(Some(result));
         }
         let Some(target_value) =
@@ -84,9 +84,10 @@ impl VM {
         else {
             return Ok(None);
         };
-        let result = self
-            .interpreter
-            .push_to_shared_var(&sigiled_target, values, &target_value);
+        let result = loan_env!(
+            self,
+            push_to_shared_var(&sigiled_target, values, &target_value)
+        );
         Ok(Some(result))
     }
 
@@ -104,9 +105,7 @@ impl VM {
         // interpreter fallback).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(result) = self
-                .interpreter
-                .try_native_default_construct(*class_name, &args)
+            && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
             // Native construction is pure data assembly: it returns a fresh
             // instance and writes nothing to the caller env (Slice 6.3).
@@ -172,9 +171,7 @@ impl VM {
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self
-                    .interpreter
-                    .call_method_with_values(target, method, args);
+                return loan_env!(self, call_method_with_values(target, method, args));
             }
         }
         // CARRIER: MOP pseudo-methods (reflection; no bytecode form). See ledger §C.
@@ -185,9 +182,7 @@ impl VM {
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
         ) {
             crate::vm::vm_stats::record_method_fallback(method);
-            return self
-                .interpreter
-                .call_method_with_values(target, method, args);
+            return loan_env!(self, call_method_with_values(target, method, args));
         }
         // Private method fast path: resolve private candidate and run compiled code
         // when caller context clearly allows direct dispatch.
@@ -198,9 +193,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name {
-                let resolved = self
-                    .interpreter
-                    .resolve_private_method_for_vm(&cn, method, &args);
+                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
                     let caller_allowed = self
                         .interpreter
@@ -224,11 +217,9 @@ impl VM {
                         } else {
                             target.clone()
                         };
-                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                            &cn,
-                            method,
-                            &args,
-                            invocant_for_dispatch,
+                        let pushed_dispatch = loan_env!(
+                            self,
+                            push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
                         );
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
@@ -268,12 +259,9 @@ impl VM {
                                 } else {
                                     new_attrs
                                 };
-                                return self.interpreter.proxy_fetch(
-                                    fetcher,
-                                    None,
-                                    &cn,
-                                    &proxy_attrs,
-                                    id,
+                                return loan_env!(
+                                    self,
+                                    proxy_fetch(fetcher, None, &cn, &proxy_attrs, id)
                                 );
                             }
                         }
@@ -300,9 +288,7 @@ impl VM {
                 how_args.extend(args);
                 // CARRIER: user-defined ^metamethod dispatch (MOP). See ledger §C.
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self
-                    .interpreter
-                    .call_method_with_values(target, method, how_args);
+                return loan_env!(self, call_method_with_values(target, method, how_args));
             }
         }
         // Only attempt compiled path for Instance or Package targets
@@ -376,9 +362,10 @@ impl VM {
                         {
                             hit.clone()
                         } else {
-                            let resolved = self
-                                .interpreter
-                                .resolve_method_with_owner_invocant(cn, method, &args, &target);
+                            let resolved = loan_env!(
+                                self,
+                                resolve_method_with_owner_invocant(cn, method, &args, &target)
+                            );
                             let resolved_arc =
                                 resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
                             if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
@@ -511,8 +498,7 @@ impl VM {
         // the `dispatch_method_by_name_*` machinery) that depends on interpreter-
         // owned state (③ state ownership / first-class container Phase 2).
         crate::vm::vm_stats::record_method_fallback(method);
-        self.interpreter
-            .call_method_with_values(target, method, args)
+        self.vm_call_method_with_values(target, method, args)
     }
 
     /// VM-native dispatch for the pure-handle methods of an `IO::Handle`
@@ -787,7 +773,7 @@ impl VM {
             Kind::Say => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_gist_value(arg));
+                    c.push_str(&loan_env!(self, render_gist_value(arg)));
                 }
                 (c, true, method)
             }
@@ -795,14 +781,14 @@ impl VM {
             Kind::Print => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_str_value(arg));
+                    c.push_str(&loan_env!(self, render_str_value(arg)));
                 }
                 (c, false, method)
             }
             Kind::Put => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_str_value(arg));
+                    c.push_str(&loan_env!(self, render_str_value(arg)));
                 }
                 (c, true, method)
             }
@@ -917,7 +903,7 @@ impl VM {
                 if Self::is_buf_value(arg) {
                     out.extend(self.interpreter.supply_chunk_to_bytes(arg, "utf-8"));
                 } else {
-                    out.extend(self.interpreter.render_str_value(arg).into_bytes());
+                    out.extend(loan_env!(self, render_str_value(arg)).into_bytes());
                 }
             }
             out
@@ -1286,9 +1272,10 @@ impl VM {
         // so the registry re-entrancy discipline (②) is respected.
         self.interpreter.compile_class_methods(owner_class);
         self.interpreter.compile_role_methods(owner_class);
-        let (owner, def) = self
-            .interpreter
-            .resolve_method_with_owner_invocant(cn, method, args, target)?;
+        let (owner, def) = loan_env!(
+            self,
+            resolve_method_with_owner_invocant(cn, method, args, target)
+        )?;
         if def.compiled_code.is_some() {
             Some((owner, std::sync::Arc::new(def)))
         } else {
@@ -1328,11 +1315,9 @@ impl VM {
             } else {
                 target.clone()
             };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                cn,
-                method,
-                &args,
-                invocant_for_dispatch,
+            let pushed_dispatch = loan_env!(
+                self,
+                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
             );
             let result = self.call_compiled_method_fast(
                 cn,
@@ -1357,11 +1342,9 @@ impl VM {
             } else {
                 target.clone()
             };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                cn,
-                method,
-                &args,
-                invocant_for_dispatch,
+            let pushed_dispatch = loan_env!(
+                self,
+                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
             );
             let invocant = Some(target);
             let result = self.call_compiled_method(
@@ -1400,9 +1383,7 @@ impl VM {
                 } else {
                     new_attrs
                 };
-                return self
-                    .interpreter
-                    .proxy_fetch(fetcher, None, cn, &proxy_attrs, id);
+                return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
             }
         }
         Ok(result)
@@ -1496,9 +1477,7 @@ impl VM {
         // Native default construction (see `try_compiled_method_or_interpret`).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(result) = self
-                .interpreter
-                .try_native_default_construct(*class_name, &args)
+            && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
             // Pure construction: fresh instance, no caller-env write (Slice 6.3).
             self.method_dispatch_pure = true;
@@ -1555,12 +1534,7 @@ impl VM {
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self.interpreter.call_method_mut_with_values(
-                    target_name,
-                    target,
-                    method,
-                    args,
-                );
+                return self.vm_call_method_mut_with_values(target_name, target, method, args);
             }
         }
         if matches!(
@@ -1569,9 +1543,10 @@ impl VM {
         ) {
             // CARRIER: MOP pseudo-methods, mut (reflection). See ledger §C.
             crate::vm::vm_stats::record_method_fallback(method);
-            return self
-                .interpreter
-                .call_method_mut_with_values(target_name, target, method, args);
+            return loan_env!(
+                self,
+                call_method_mut_with_values(target_name, target, method, args)
+            );
         }
         // User-defined ^method (metamethod) dispatch:
         // Foo.^bar passes Foo as the first positional argument.
@@ -1591,9 +1566,7 @@ impl VM {
                 how_args.extend(args);
                 // CARRIER: user-defined ^metamethod dispatch, mut (MOP). See ledger §C.
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self
-                    .interpreter
-                    .call_method_with_values(target, method, how_args);
+                return loan_env!(self, call_method_with_values(target, method, how_args));
             }
         }
         if method.starts_with('!') {
@@ -1603,9 +1576,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name {
-                let resolved = self
-                    .interpreter
-                    .resolve_private_method_for_vm(&cn, method, &args);
+                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
                     let caller_allowed = self
                         .interpreter
@@ -1629,11 +1600,9 @@ impl VM {
                         } else {
                             target.clone()
                         };
-                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                            &cn,
-                            method,
-                            &args,
-                            invocant_for_dispatch,
+                        let pushed_dispatch = loan_env!(
+                            self,
+                            push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
                         );
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
@@ -1673,12 +1642,9 @@ impl VM {
                                 } else {
                                     new_attrs
                                 };
-                                return self.interpreter.proxy_fetch(
-                                    fetcher,
-                                    None,
-                                    &cn,
-                                    &proxy_attrs,
-                                    id,
+                                return loan_env!(
+                                    self,
+                                    proxy_fetch(fetcher, None, &cn, &proxy_attrs, id)
                                 );
                             }
                         }
@@ -1693,9 +1659,10 @@ impl VM {
             _ => None,
         };
         if let Some(cn) = class_name
-            && let Some((owner_class, method_def)) = self
-                .interpreter
-                .resolve_method_with_owner_invocant(&cn, method, &args, &target)
+            && let Some((owner_class, method_def)) = loan_env!(
+                self,
+                resolve_method_with_owner_invocant(&cn, method, &args, &target)
+            )
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
@@ -1746,11 +1713,9 @@ impl VM {
                 } else {
                     target.clone()
                 };
-                let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                    &cn,
-                    method,
-                    &args,
-                    invocant_for_dispatch,
+                let pushed_dispatch = loan_env!(
+                    self,
+                    push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
                 );
                 let invocant = Some(target);
                 let empty_fns = HashMap::new();
@@ -1787,9 +1752,7 @@ impl VM {
                         } else {
                             new_attrs
                         };
-                        return self
-                            .interpreter
-                            .proxy_fetch(fetcher, None, &cn, &proxy_attrs, id);
+                        return loan_env!(self, proxy_fetch(fetcher, None, &cn, &proxy_attrs, id));
                     }
                 }
                 return Ok(result);
@@ -1826,8 +1789,7 @@ impl VM {
         // demand above); what remains is native receiver dispatch blocked on
         // ③ state ownership / first-class container Phase 2.
         crate::vm::vm_stats::record_method_fallback(method);
-        self.interpreter
-            .call_method_mut_with_values(target_name, target, method, args)
+        self.vm_call_method_mut_with_values(target_name, target, method, args)
     }
 
     /// Execute a protect block inline in the current VM, avoiding the overhead
@@ -1932,9 +1894,10 @@ impl VM {
                         Some(Value::Array(..) | Value::Hash(..))
                     )
                 {
-                    self.interpreter
-                        .env_mut()
-                        .insert(name.clone(), self.locals[*slot].clone());
+                    {
+                        let __v = self.locals[*slot].clone();
+                        self.env_mut().insert(name.clone(), __v);
+                    }
                 }
             }
         }
@@ -1975,9 +1938,10 @@ impl VM {
             .get_method_wrap_chain(owner_class, method, cand_idx)?
             .clone();
         let invocant_for_dispatch = target.clone();
-        let pushed_dispatch =
-            self.interpreter
-                .push_method_dispatch_frame(cn, method, args, invocant_for_dispatch);
+        let pushed_dispatch = loan_env!(
+            self,
+            push_method_dispatch_frame(cn, method, args, invocant_for_dispatch)
+        );
         let mut orig_env = crate::env::Env::new();
         orig_env.insert(
             "__mutsu_method_wrap_original".to_string(),
@@ -2011,7 +1975,7 @@ impl VM {
             None
         };
         self.interpreter.push_wrap_dispatch_frame(frame);
-        let result = self.interpreter.call_sub_value(outermost, call_args, false);
+        let result = self.vm_call_sub_value(outermost, call_args, false);
         self.interpreter.pop_wrap_dispatch_frame();
         // Propagate closure variable mutations from the wrapper back to the
         // current env so captured variables are visible to the caller.

@@ -273,9 +273,9 @@ impl VM {
         }
     }
 
-    pub(super) fn reduction_callable_for_op(&self, op: &str) -> Option<Value> {
+    pub(super) fn reduction_callable_for_op(&mut self, op: &str) -> Option<Value> {
         if let Some(name) = op.strip_prefix('&') {
-            let callable = self.interpreter.resolve_code_var(name);
+            let callable = loan_env!(self, resolve_code_var(name));
             if matches!(
                 callable,
                 Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
@@ -287,18 +287,14 @@ impl VM {
             return None;
         }
         let infix_name = format!("infix:<{}>", op);
-        let callable = self.interpreter.resolve_code_var(&infix_name);
+        let callable = loan_env!(self, resolve_code_var(&infix_name));
         if matches!(
             callable,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
         ) {
             return Some(callable);
         }
-        if let Some(callable) = self
-            .interpreter
-            .env()
-            .get(&format!("&{}", infix_name))
-            .cloned()
+        if let Some(callable) = self.env().get(&format!("&{}", infix_name)).cloned()
             && matches!(
                 callable,
                 Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
@@ -374,9 +370,7 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         if let Some(callable) = callable {
             if let Value::Routine { name, .. } = callable {
-                return self
-                    .interpreter
-                    .call_user_routine_direct(&name.resolve(), args);
+                return loan_env!(self, call_user_routine_direct(&name.resolve(), args));
             }
             return self.vm_call_on_value(callable.clone(), args, None);
         }
@@ -400,7 +394,7 @@ impl VM {
                     // Each element is checked as a whole against the constraint
                     items
                         .iter()
-                        .all(|item| self.interpreter.type_matches_value(constraint, item))
+                        .all(|item| self.type_matches_value(constraint, item))
                 } else {
                     // Recurse into sub-arrays for simple element types
                     items
@@ -413,7 +407,7 @@ impl VM {
                     // Each element is checked as a whole against the constraint
                     items
                         .iter()
-                        .all(|item| self.interpreter.type_matches_value(constraint, item))
+                        .all(|item| self.type_matches_value(constraint, item))
                 } else {
                     // Recurse into sub-arrays for simple element types
                     items
@@ -429,7 +423,7 @@ impl VM {
             {
                 true
             }
-            _ => self.interpreter.type_matches_value(constraint, value),
+            _ => self.type_matches_value(constraint, value),
         }
     }
 
@@ -473,7 +467,7 @@ impl VM {
             Value::Array(items, ..) => {
                 for item in items.iter() {
                     if is_container_constraint {
-                        if !self.interpreter.type_matches_value(constraint, item) {
+                        if !self.type_matches_value(constraint, item) {
                             return Some(item.clone());
                         }
                     } else if let Some(bad) = self.first_array_element_mismatch(constraint, item) {
@@ -485,7 +479,7 @@ impl VM {
             Value::Seq(items) => {
                 for item in items.iter() {
                     if is_container_constraint {
-                        if !self.interpreter.type_matches_value(constraint, item) {
+                        if !self.type_matches_value(constraint, item) {
                             return Some(item.clone());
                         }
                     } else if let Some(bad) = self.first_array_element_mismatch(constraint, item) {
@@ -496,7 +490,7 @@ impl VM {
             }
             Value::Nil => None,
             _ => {
-                if self.interpreter.type_matches_value(constraint, value) {
+                if self.type_matches_value(constraint, value) {
                     None
                 } else {
                     Some(value.clone())
@@ -718,7 +712,7 @@ impl VM {
     pub(super) fn exec_num_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
-        let val = self.interpreter.auto_fetch_proxy(&val)?;
+        let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // Junction auto-threading for prefix:<+>
         if let Value::Junction { kind, values } = &val {
             let kind = kind.clone();
@@ -812,7 +806,7 @@ impl VM {
     pub(super) fn exec_str_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
-        let val = self.interpreter.auto_fetch_proxy(&val)?;
+        let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
         if let Value::Package(name) = &val
@@ -847,10 +841,7 @@ impl VM {
         // .Stringy() is defined as `{ ~self }` which delegates to prefix:<~>.
         {
             let args = vec![val.clone()];
-            if let Some(def) = self
-                .interpreter
-                .resolve_function_with_types("prefix:<~>", &args)
-            {
+            if let Some(def) = loan_env!(self, resolve_function_with_types("prefix:<~>", &args)) {
                 let empty_fns = std::collections::HashMap::new();
                 let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
                 self.stack.push(result);
@@ -1132,7 +1123,7 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
-        let mut val = self.interpreter.resolve_code_var(name);
+        let mut val = loan_env!(self, resolve_code_var(name));
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.
@@ -1181,7 +1172,7 @@ impl VM {
         } else {
             format!("{}::{}", pkg_str, func_name)
         };
-        let val = self.interpreter.resolve_code_var(&qualified);
+        let val = loan_env!(self, resolve_code_var(&qualified));
         self.stack.push(val);
     }
 
@@ -1196,7 +1187,7 @@ impl VM {
         // For %::("x"), look up "%x" (hashes are stored with sigil).
         // For &::("x"), resolve as a code variable (function lookup).
         if sigil == "&" {
-            let val = self.interpreter.resolve_code_var(&name);
+            let val = loan_env!(self, resolve_code_var(&name));
             self.stack.push(val);
             return;
         }
@@ -1258,9 +1249,7 @@ impl VM {
         } else {
             raw_value
         };
-        self.interpreter
-            .env_mut()
-            .insert(store_name.clone(), value.clone());
+        self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
         self.stack.push(value);
     }
@@ -1277,9 +1266,7 @@ impl VM {
         } else {
             name.to_string()
         };
-        self.interpreter
-            .env_mut()
-            .insert(store_name.clone(), value.clone());
+        self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
         self.stack.push(value);
     }
@@ -1463,7 +1450,7 @@ impl VM {
                     crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
                     // Preserve container type metadata from old array
                     if let Some(ref cv) = current_val
-                        && let Some(info) = self.interpreter.container_type_metadata(cv)
+                        && let Some(info) = loan_env!(self, container_type_metadata(cv))
                     {
                         assigned = self.interpreter.tag_container_metadata(assigned, info);
                     }
@@ -1511,13 +1498,12 @@ impl VM {
         // When assigning Nil to a typed variable, reset to the type object
         let mut val =
             if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
-                if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
+                if let Some(constraint) = loan_env!(self, var_type_constraint(&name)) {
                     if constraint == "Mu" {
                         val
                     } else {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal =
+                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     }
                 } else {
@@ -1543,12 +1529,9 @@ impl VM {
                 };
                 resolved_source = next.to_string();
             }
-            self.interpreter
-                .env_mut()
+            self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source));
-            self.interpreter
-                .env_mut()
-                .insert(readonly_key, Value::Bool(false));
+            self.env_mut().insert(readonly_key, Value::Bool(false));
         }
         // If the current value is a Proxy (in locals or env), invoke STORE instead of overwriting
         {
@@ -1581,8 +1564,7 @@ impl VM {
                 && !matches!(storer.as_ref(), Value::Nil)
             {
                 let proxy_val = current_proxy.unwrap();
-                self.interpreter
-                    .assign_proxy_lvalue(proxy_val, val.clone())?;
+                loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
                 self.stack.push(val);
                 return Ok(());
             }
@@ -1635,8 +1617,7 @@ impl VM {
         // explicitly assigned, record the value so `eval_map_over_items_rw` can
         // read it back even after the block return value overwrites `_`.
         if name == "_" {
-            self.interpreter
-                .env_mut()
+            self.env_mut()
                 .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
         }
         let mut alias_name = self.env().get(&alias_key).and_then(|v| {
@@ -1652,9 +1633,7 @@ impl VM {
                 break;
             }
             self.update_local_if_exists(code, &current_alias, &val);
-            self.interpreter
-                .env_mut()
-                .insert(current_alias.clone(), val.clone());
+            self.env_mut().insert(current_alias.clone(), val.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
             alias_name = self.env().get(&next_key).and_then(|v| {
                 if let Value::Str(name) = v {
@@ -1665,13 +1644,9 @@ impl VM {
             });
         }
         if let Some(attr) = name.strip_prefix('.') {
-            self.interpreter
-                .env_mut()
-                .insert(format!("!{}", attr), val.clone());
+            self.env_mut().insert(format!("!{}", attr), val.clone());
         } else if let Some(attr) = name.strip_prefix('!') {
-            self.interpreter
-                .env_mut()
-                .insert(format!(".{}", attr), val.clone());
+            self.env_mut().insert(format!(".{}", attr), val.clone());
         }
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
@@ -2473,7 +2448,7 @@ impl VM {
         }
         let stmt = &code.stmt_pool[idx as usize];
         if let crate::ast::Stmt::Phaser { body, .. } = stmt {
-            self.interpreter.push_end_phaser(body.clone());
+            loan_env!(self, push_end_phaser(body.clone()));
         }
     }
 
@@ -2507,7 +2482,7 @@ impl VM {
         let raw_constraint = Self::const_str(code, tc_idx);
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
         // Apply `use variables :D/:U` pragma to the constraint
-        let effective_constraint = self.interpreter.apply_variables_pragma(raw_constraint);
+        let effective_constraint = loan_env!(self, apply_variables_pragma(raw_constraint));
         let constraint: &str = &effective_constraint;
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let declared_constraint = base_constraint
@@ -2606,13 +2581,12 @@ impl VM {
                     && !matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever)
             );
             let range_ok = if is_finite_int_range {
-                self.interpreter
-                    .type_matches_value(constraint, &Value::Int(0))
+                loan_env!(self, type_matches_value(constraint, &Value::Int(0)))
             } else if is_finite_generic_range {
                 match &value {
                     Value::GenericRange { start, end, .. } => {
-                        self.interpreter.type_matches_value(constraint, start)
-                            && self.interpreter.type_matches_value(constraint, end)
+                        self.type_matches_value(constraint, start)
+                            && self.type_matches_value(constraint, end)
                     }
                     _ => false,
                 }
@@ -2653,9 +2627,7 @@ impl VM {
             return Ok(());
         }
         if runtime::is_known_type_constraint(base_constraint) {
-            if !matches!(value, Value::Nil)
-                && !self.interpreter.type_matches_value(constraint, &value)
-            {
+            if !matches!(value, Value::Nil) && !self.type_matches_value(constraint, &value) {
                 if base_constraint == "Int"
                     && matches!(value, Value::Num(f) if f.is_nan() || f.is_infinite())
                 {
@@ -2703,9 +2675,7 @@ impl VM {
             }
         } else if !self.interpreter.has_type(declared_constraint)
             && !is_core_raku_type(declared_constraint)
-            && !self
-                .interpreter
-                .has_type_capture_binding(declared_constraint)
+            && !loan_env!(self, has_type_capture_binding(declared_constraint))
         {
             // Check if this is a suppressed nested class name that can be resolved
             if self
@@ -2752,7 +2722,7 @@ impl VM {
             }
         }
         if !matches!(value, Value::Nil)
-            && !self.interpreter.type_matches_value(constraint, &value)
+            && !self.type_matches_value(constraint, &value)
             && !self.interpreter.is_container_subclass(constraint)
         {
             if bind_mode {
@@ -2765,9 +2735,10 @@ impl VM {
             ));
         }
         if !matches!(value, Value::Nil) {
-            let coerced = self
-                .interpreter
-                .try_coerce_value_for_constraint(constraint, value.clone())?;
+            let coerced = loan_env!(
+                self,
+                try_coerce_value_for_constraint(constraint, value.clone())
+            )?;
             *self.stack.last_mut().unwrap() = coerced;
         }
         Ok(())
@@ -2777,7 +2748,7 @@ impl VM {
         let name_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = name_val.to_string_value();
         self.stack
-            .push(self.interpreter.resolve_indirect_type_name(&name));
+            .push(loan_env!(self, resolve_indirect_type_name(&name)));
     }
 
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
@@ -2938,9 +2909,7 @@ impl VM {
                 // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
                 Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
             };
-            self.interpreter
-                .env_mut()
-                .insert("!".to_string(), err_val.clone());
+            self.env_mut().insert("!".to_string(), err_val.clone());
             for (i, name) in code.locals.iter().enumerate() {
                 if name == "!" {
                     self.locals[i] = err_val;
@@ -2974,9 +2943,7 @@ impl VM {
                 Ok(()) => self.last_topic_value.clone().unwrap_or(Value::Nil),
                 Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
             };
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), post_topic.clone());
+            self.env_mut().insert("_".to_string(), post_topic.clone());
             // Also update the local slot for $_ if present
             for (i, name) in code.locals.iter().enumerate() {
                 if name == "_" {
@@ -2996,9 +2963,7 @@ impl VM {
                     // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
                     Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
                 };
-                self.interpreter
-                    .env_mut()
-                    .insert("!".to_string(), err_val.clone());
+                self.env_mut().insert("!".to_string(), err_val.clone());
                 // Also update the local slot for $! if present
                 for (i, name) in code.locals.iter().enumerate() {
                     if name == "!" {
@@ -3113,13 +3078,13 @@ impl VM {
         for (idx, name) in code.locals.iter().enumerate() {
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
-                let local_val = &self.locals[idx];
-                if let Some(env_val) = self.env().get(target.as_str())
-                    && local_val != env_val
-                {
-                    self.interpreter
-                        .env_mut()
-                        .insert(target.to_string(), local_val.clone());
+                let local_val = self.locals[idx].clone();
+                let differs = self
+                    .env()
+                    .get(target.as_str())
+                    .is_some_and(|env_val| &local_val != env_val);
+                if differs {
+                    self.env_mut().insert(target.to_string(), local_val);
                 }
             }
         }
@@ -3349,9 +3314,7 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let scope = self
-            .interpreter
-            .current_once_scope()
+        let scope = loan_env!(self, current_once_scope())
             .unwrap_or_else(|| self.interpreter.next_once_scope_id());
         let site_key = Self::const_str(code, key_idx);
         let cache_key = format!("{scope}::{site_key}");
@@ -3441,18 +3404,13 @@ impl VM {
         let end = body_end as usize;
         match self.run_range(code, body_start, end, compiled_fns) {
             Ok(()) => {
-                let topic = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 let success = Self::is_let_success(&topic);
-                self.interpreter.resolve_let_saves_on_success(mark, success);
+                loan_env!(self, resolve_let_saves_on_success(mark, success));
                 self.env_dirty = true;
             }
             Err(e) => {
-                self.interpreter.restore_let_saves(mark);
+                loan_env!(self, restore_let_saves(mark));
                 self.env_dirty = true;
                 return Err(e);
             }

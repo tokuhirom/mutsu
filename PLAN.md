@@ -93,7 +93,13 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 進捗台帳: [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md)
 （完了履歴 ①真フォールバック可視化 / ②registry VM 所有化 / ③pure-data 消化 → [news/2026-06.md](news/2026-06.md)）。
 
-#### 現在地（2026-06-14）: Phase I 完了 → Phase II（env 所有移管・Interpreter 撤去）
+#### 現在地（2026-06-15）: CP-1 env-loan flip 完了（env は VM 所有）→ 次は CP-2 dual-store 削除
+
+**CP-1（env を VM 所有へ）= 完了（PR #3075, `make test` PASS）。** 下記 1a〜1e 全て done。env は `VM.env` に住み、
+carrier は `loan_env!`/`loan_env_for` で借用。次は CP-2（dual-store 機構の削除）。なお poison ガードは benign 化済み
+（`MUTSU_POISON_DIAG` opt-in）で、env-読み interpreter ヘルパが全て VM-native 化されたら撤去する interim scaffolding。
+
+#### （履歴）Phase I 完了 → Phase II（env 所有移管・Interpreter 撤去）
 
 Phase I（§1/§2 tree-walk フォールバック撲滅）完了（履歴 → [news/2026-06.md](news/2026-06.md)）。残る
 VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env fold 可否調査の結論**
@@ -121,20 +127,22 @@ VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env
       - **外部 driver**: `runtime/resolution.rs` の map/sort `run_reuse` carrier（`vm.interpreter().env()` 読み 6 + `vm.interpreter_mut().env_insert()` 書き）も
         `vm.env()`/`vm.env_mut()` へ揃え、未使用化した `VM::interpreter_mut` を削除。**これで VM env アクセスは 100% seam 経由**。
       - 検証: `make test` PASS（797 files / 7425 tests）/ clippy 緑 / env 系 roast（let/subset 6c/6e/eval_lex/in-eval/pointy-rw/given/sort/proto/class）緑。
-- [x] **1c. borrow 衝突サイトを解消**（1b に畳み込み済 — 衝突は2件のみだった）。
-- [!] **1d/1e は flip 試行で BLOCKER 判明（2026-06-15・PLAN を要改訂）**。1b の上で 1e flip を実装したところ
-      **smoke で広範崩壊**（`map`→Any・typed `Even $e`→Any・`$*dyn`→空）。実測: **VM が呼ぶ interpreter メソッド 227 個中
-      62 個が `self.env` を読む**（transitive 含めさらに多い）＝旧 1e 前提「env を読む carrier は ~15 サイト」は誤り。
-      env を物理移動すると 62+ メソッドが「貸出されて空の interpreter.env」を読む。詳細・機構・次スライス候補は
-      [docs/vm-state-ownership.md](docs/vm-state-ownership.md)「1e 実装試行で判明した致命的事実」。試行ブランチ
-      `cp1-1e-env-loan-flip`（broken・参照用、`loan_env_for`+pull/push+carrier ラッパ）に機構を保存。
-      - **正しい順序 = 1b（seam・完了）→ ① env-読み interpreter ヘルパ surface の削減（CP-3 前倒し）→ ② 1e flip + carrier loan**。
-      - **① surface 削減の入口（各スライス挙動不変・CI 安全網）**: `var_type_constraint`/`var_default`/`var_hash_key_constraint`
-        を `registry`+value-type+`instance_type_metadata` handle（#3068）で env 非依存判定に / `get|set_state_var`・
-        `get|set_shared_var`・`sync_shared_vars_to_env` の env sync 経路を切る / `get|set_our_var`・`our_vars_iter` を
-        package stash 経由に。env を読むヘルパが carrier（EVAL/subset-where/regex`{}`/Promise.then）だけに減ったら ②。
-      - **② 1e flip**: surface 削減後、`cp1-1e-env-loan-flip` の機構（`VM.env` field・accessor flip・`VM::new` pull /
-        `run`/`into_interpreter` push back・carrier swap ラッパ）を再利用して flip。`make test`+ローカル roast → CI で全 roast。
+- [x] **1c. borrow 衝突サイトを解消**（1b に畳み込み済）。
+- [x] **1d/1e. env-loan flip = env を VM 所有へ物理移管** — **DONE 2026-06-15（PR #3075, `make test` PASS, CI 検証中）**。
+      `VM.env` 新設・accessor flip・`VM::new` pull / `run`/`into_interpreter` push back・**`loan_env!` マクロ + `loan_env_for`** で
+      env を読む全 VM→interpreter carrier/helper（~350 サイト: var_type_constraint/get_dynamic_*/type_matches_value/smart_match/
+      register_*_decl/state・shared・our・caller vars/bind_function_args/call_*/eval_block_value/run_*/proxy/regex補間/atomic）を貸借。
+      - **発見の経緯**: 旧「~15 carrier」前提は誤り（VM が呼ぶ interpreter メソッド 227 中 62+ が env を読む）。ユーザー方針
+        「interim 汚さ/遅さ OK で end-state へ」に従い **blanket-loan を grind 完遂**（Phase-2-first は env-読みヘルパが $*OUT/
+        型キャプチャ/変数ルックアップ等の*本物の env データ*を読むため切り離せず不成立と判明）。
+      - **discovery = guard 駆動**: `VM::new` が interpreter.env に poison sentinel を残し、`MUTSU_POISON_DIAG=1` で
+        VM→interpreter **entry frame** の未包み env 読みを検出して順次 wrap。
+      - **root-cause fix**: `loan_env!` 引数内の `?`（`maybe_fetch_rw_proxy(result?,..)` 等）が Err 時に 2 swap の間で早期 return
+        → swap-back スキップ → env poison leak（try/CATCH topic・`:$n is required` メッセージ等が破損）。全 `?` を loan の外へ。
+      - poison ガードは **benign 化**（`MUTSU_POISON_DIAG` opt-in 診断・通常 no-op・debug==release）。env-読みヘルパが全て
+        VM-native 化されたら poison 機構ごと撤去。
+      - 参照: defensive wrap-all 試行は branch `cp1-1e-blanket-loan`（broken・保存）。
+      - 検証: cargo build + clippy 緑 / `make test` PASS（debug cargo test + release prove, 797 files / 7425 tests）/ 全 roast は CI。
 
 #### 後続（CP-1 後・逐次）
 

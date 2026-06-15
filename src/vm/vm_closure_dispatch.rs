@@ -105,7 +105,7 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         let (mut args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         if callsite_line.is_some() {
-            self.interpreter.set_pending_callsite_line(callsite_line);
+            loan_env!(self, set_pending_callsite_line(callsite_line));
         }
 
         // Apply assumed args from .assuming() (same logic as tree-walker call_sub_value)
@@ -205,7 +205,7 @@ impl VM {
         let saved_state_scope = self.state_scope_id;
         self.state_scope_id = Some(data.id);
 
-        self.interpreter.inject_pending_callsite_line();
+        loan_env!(self, inject_pending_callsite_line());
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the (flat) caller so the captured-env merge,
@@ -216,8 +216,7 @@ impl VM {
         // own mutations, which is what it must propagate back to the caller.
         {
             let parent = self.env().clone();
-            self.interpreter
-                .set_env(crate::env::Env::scoped_child(parent));
+            self.set_env(crate::env::Env::scoped_child(parent));
         }
 
         // Merge captured environment into current env (or_insert = don't overwrite existing).
@@ -231,9 +230,7 @@ impl VM {
             if matches!(v, Value::ContainerRef(_)) {
                 self.env_mut().insert_sym(*k, v.clone());
             } else {
-                self.interpreter
-                    .env_mut()
-                    .entry_or_insert_sym(*k, v.clone());
+                self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
         }
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
@@ -279,7 +276,7 @@ impl VM {
             self.env_mut().insert_sym(k, val);
         }
 
-        self.interpreter.push_caller_env();
+        loan_env!(self, push_caller_env());
 
         // Push Sub value to block_stack for callframe().code
         // Also set &?BLOCK as a weak self-reference (mirrors resolution.rs)
@@ -348,27 +345,26 @@ impl VM {
         }
 
         // Bind parameters
-        let rw_bindings =
-            match self
-                .interpreter
-                .bind_function_args_values(&data.param_defs, &data.params, &args)
-            {
-                Ok(bindings) => bindings,
-                Err(e) => {
-                    self.interpreter.pop_routine();
-                    self.interpreter.pop_block();
-                    self.interpreter.pop_caller_env();
-                    self.stack.truncate(saved_stack_depth);
-                    let frame = self.pop_call_frame();
-                    *self.env_mut() = frame.saved_env;
-                    return Err(Interpreter::enhance_binding_error(
-                        e,
-                        &data.name.resolve(),
-                        &data.param_defs,
-                        &args,
-                    ));
-                }
-            };
+        let rw_bindings = match loan_env!(
+            self,
+            bind_function_args_values(&data.param_defs, &data.params, &args)
+        ) {
+            Ok(bindings) => bindings,
+            Err(e) => {
+                self.interpreter.pop_routine();
+                self.interpreter.pop_block();
+                self.interpreter.pop_caller_env();
+                self.stack.truncate(saved_stack_depth);
+                let frame = self.pop_call_frame();
+                *self.env_mut() = frame.saved_env;
+                return Err(Interpreter::enhance_binding_error(
+                    e,
+                    &data.name.resolve(),
+                    &data.param_defs,
+                    &args,
+                ));
+            }
+        };
 
         // Handle implicit $_ for bare blocks (no explicit params, single arg)
         let uses_positional = data.params.iter().any(|p| p != "_" && !p.starts_with(':'));
@@ -379,9 +375,7 @@ impl VM {
             // Named params with placeholders: handled by bind_function_args_values
         } else if !uses_positional && !args.is_empty() {
             if let Some(first) = args.iter().find(|v| !matches!(v, Value::Pair(_, _))) {
-                self.interpreter
-                    .env_mut()
-                    .insert("_".to_string(), first.clone());
+                self.env_mut().insert("_".to_string(), first.clone());
             }
         } else if data.params.is_empty() && args.is_empty() && data.name.is_empty() {
             let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
@@ -400,9 +394,7 @@ impl VM {
 
         // Raku: $! is scoped per routine — fresh Nil on entry
         if !data.name.resolve().is_empty() {
-            self.interpreter
-                .env_mut()
-                .insert("!".to_string(), Value::Nil);
+            self.env_mut().insert("!".to_string(), Value::Nil);
         }
 
         // Explicit topic override (native `.map` over Pair-shaped elements). The
@@ -504,7 +496,7 @@ impl VM {
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -535,7 +527,7 @@ impl VM {
                             {
                                 e.return_target_callable_id = Some(*id as u64);
                             }
-                            self.interpreter.restore_let_saves(let_mark);
+                            loan_env!(self, restore_let_saves(let_mark));
                             result = Err(e);
                             break;
                         }
@@ -546,7 +538,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && target_id != data.id
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -561,14 +553,14 @@ impl VM {
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -603,25 +595,19 @@ impl VM {
                 .map(|i| self.locals[i].clone());
             self.rw_map_topic_capture = local_topic
                 .or_else(|| self.env().get("_").cloned())
-                .or_else(|| {
-                    self.interpreter
-                        .env()
-                        .get("__mutsu_rw_map_topic__")
-                        .cloned()
-                });
+                .or_else(|| self.env().get("__mutsu_rw_map_topic__").cloned());
         }
 
         // Sync state variables back using scoped keys
         for (slot, key) in &cc.state_locals {
             let local_name = &cc.locals[*slot];
             let val = self
-                .interpreter
                 .env()
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
             let scoped_key = self.scoped_state_key(key);
-            self.interpreter.set_state_var(scoped_key, val);
+            loan_env!(self, set_state_var(scoped_key, val));
         }
 
         // Restore the previous state scope
@@ -644,9 +630,10 @@ impl VM {
         // locals to flush at all).
         for (i, local_name) in cc.locals.iter().enumerate() {
             if !local_name.is_empty() && data.env.contains_key(local_name) {
-                self.interpreter
-                    .env_mut()
-                    .insert(local_name.clone(), self.locals[i].clone());
+                {
+                    let __v = self.locals[i].clone();
+                    self.env_mut().insert(local_name.clone(), __v);
+                }
             }
         }
 
@@ -666,8 +653,10 @@ impl VM {
         let mut restored_env = frame.saved_env;
         self.interpreter
             .pop_caller_env_with_writeback(&mut restored_env);
-        self.interpreter
-            .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        loan_env!(
+            self,
+            apply_rw_bindings_to_env(&rw_bindings, &mut restored_env)
+        );
         // Build set of parameter names — these are strictly local to the
         // function call and must never leak back to the caller's env, even
         // when they share a name with a captured outer variable.
@@ -823,7 +812,7 @@ impl VM {
                 if let Some(Value::Str(state_key)) = self.env().get(&meta_key).cloned()
                     && let Some(val) = self.env().get_sym(*k).cloned()
                 {
-                    self.interpreter.set_state_var(state_key.to_string(), val);
+                    loan_env!(self, set_state_var(state_key.to_string(), val));
                 }
             }
         }
@@ -864,15 +853,17 @@ impl VM {
         });
         let effective_return_spec = return_spec
             .as_deref()
-            .map(|spec| self.interpreter.resolved_type_capture_name(spec));
+            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
                 // For closures, absorb `return` — don't re-propagate as error.
                 let base_val = explicit_return.unwrap_or(ret_val);
-                self.interpreter
-                    .finalize_return_with_spec(Ok(base_val), effective_return_spec.as_deref())
+                loan_env!(
+                    self,
+                    finalize_return_with_spec(Ok(base_val), effective_return_spec.as_deref())
+                )
             }
             Err(e) => Err(e),
         }

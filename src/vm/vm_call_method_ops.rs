@@ -150,8 +150,7 @@ impl VM {
             Some(v) => {
                 let out = v.clone();
                 if let Some(msg) = self.interpreter.class_attribute_deprecated(&cn, method) {
-                    self.interpreter
-                        .check_deprecation_for_method(method, &cn, &msg);
+                    loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
                 Some(out)
             }
@@ -270,10 +269,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
-                && self
-                    .interpreter
-                    .resolve_method_with_owner(&cn, "Bool", &[])
-                    .is_some()
+                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
             {
                 let t = self.eval_truthy(&target);
                 self.stack
@@ -737,12 +733,7 @@ impl VM {
                     | Value::Routine { is_regex: true, .. }
             )
         {
-            let topic = self
-                .interpreter
-                .env()
-                .get("_")
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
             let matched = self.vm_smart_match(&topic, &target);
             self.stack.push(Value::Bool(matched));
             self.env_dirty = true;

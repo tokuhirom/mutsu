@@ -166,10 +166,14 @@ impl VM {
     /// Like normalize_incdec_source, but also checks the variable's type
     /// constraint when the value is Nil. This ensures that e.g. `my Num $v; ++$v`
     /// starts from Num(0.0) rather than Int(0).
-    pub(super) fn normalize_incdec_source_with_type(&self, var_name: &str, value: Value) -> Value {
+    pub(super) fn normalize_incdec_source_with_type(
+        &mut self,
+        var_name: &str,
+        value: Value,
+    ) -> Value {
         match &value {
             Value::Nil => {
-                if let Some(tc) = self.interpreter.var_type_constraint(var_name) {
+                if let Some(tc) = loan_env!(self, var_type_constraint(var_name)) {
                     match tc.as_str() {
                         "Num" | "num" => Value::Num(0.0),
                         "Rat" => crate::value::make_rat(0, 1),
@@ -443,13 +447,15 @@ impl VM {
     }
 
     /// Get the current $*COLLATION settings, falling back to defaults.
-    pub(super) fn get_collation_settings(&self) -> crate::builtins::collation::CollationSettings {
+    pub(super) fn get_collation_settings(
+        &mut self,
+    ) -> crate::builtins::collation::CollationSettings {
         // Check local env first (variable stored as "*COLLATION")
         if let Some(val) = self.get_env_with_main_alias("*COLLATION") {
             return crate::builtins::collation::CollationSettings::from_value(&val);
         }
         // Try dynamic lookup through caller stack
-        if let Ok(val) = self.interpreter.get_dynamic_var("*COLLATION") {
+        if let Ok(val) = loan_env!(self, get_dynamic_var("*COLLATION")) {
             return crate::builtins::collation::CollationSettings::from_value(&val);
         }
         // Also check with $* prefix
@@ -461,16 +467,12 @@ impl VM {
 
     /// If the variable has a native int type constraint, wrap the value.
     /// Used by increment/decrement to implement overflow/underflow wrapping.
-    pub(super) fn maybe_wrap_native_int(
-        interp: &crate::runtime::Interpreter,
-        var_name: &str,
-        value: Value,
-    ) -> Value {
+    pub(super) fn maybe_wrap_native_int(&mut self, var_name: &str, value: Value) -> Value {
         use crate::runtime::native_types;
         use num_bigint::BigInt as NumBigInt;
         use num_traits::ToPrimitive;
 
-        let constraint = match interp.var_type_constraint(var_name) {
+        let constraint = match loan_env!(self, var_type_constraint(var_name)) {
             Some(c) => c,
             None => return value,
         };

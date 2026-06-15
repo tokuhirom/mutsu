@@ -288,19 +288,18 @@ impl VM {
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut parts = Vec::new();
         for v in &values {
-            let v = self.interpreter.auto_fetch_proxy(v)?;
+            let v = loan_env!(self, auto_fetch_proxy(v))?;
             check_rat_divide_by_zero(&v)?;
             // Resolve bound-element sentinels inside arrays before gist
             let v = self.resolve_bound_array_elements(v);
             if needs_method_dispatch(&v) {
-                parts.push(self.interpreter.render_gist_value(&v));
+                parts.push(loan_env!(self, render_gist_value(&v)));
             } else {
                 parts.push(runtime::gist_value(&v));
             }
         }
         let line = parts.join("");
-        self.interpreter
-            .write_to_named_handle("$*OUT", &line, true)?;
+        loan_env!(self, write_to_named_handle("$*OUT", &line, true))?;
         Ok(())
     }
 
@@ -314,15 +313,14 @@ impl VM {
             let mut parts = Vec::new();
             for v in &values {
                 if needs_method_dispatch(v) {
-                    parts.push(self.interpreter.render_gist_value(v));
+                    parts.push(loan_env!(self, render_gist_value(v)));
                 } else {
                     parts.push(runtime::gist_value(v));
                 }
             }
             parts.join("")
         };
-        self.interpreter
-            .write_to_named_handle("$*ERR", &content, true)?;
+        loan_env!(self, write_to_named_handle("$*ERR", &content, true))?;
         Ok(())
     }
 
@@ -333,13 +331,12 @@ impl VM {
         // put threads through Junctions: each eigenstate gets put individually
         let mut lines = Vec::new();
         for v in &values {
-            let v = self.interpreter.auto_fetch_proxy(v)?;
+            let v = loan_env!(self, auto_fetch_proxy(v))?;
             check_rat_divide_by_zero(&v)?;
             self.collect_put_lines(&v, &mut lines)?;
         }
         for line in &lines {
-            self.interpreter
-                .write_to_named_handle("$*OUT", line, true)?;
+            loan_env!(self, write_to_named_handle("$*OUT", line, true))?;
         }
         Ok(())
     }
@@ -354,8 +351,7 @@ impl VM {
             // For Junctions, thread: call .Str on each element recursively
             self.collect_str_threaded(v, &mut content)?;
         }
-        self.interpreter
-            .write_to_named_handle("$*OUT", &content, false)?;
+        loan_env!(self, write_to_named_handle("$*OUT", &content, false))?;
         Ok(())
     }
 
@@ -372,7 +368,7 @@ impl VM {
                 }
             }
             _ if needs_method_dispatch(v) => {
-                lines.push(self.interpreter.render_str_value(v));
+                lines.push(loan_env!(self, render_str_value(v)));
             }
             _ => {
                 lines.push(v.to_str_context());
@@ -390,7 +386,7 @@ impl VM {
                 }
             }
             _ if needs_method_dispatch(v) => {
-                out.push_str(&self.interpreter.render_str_value(v));
+                out.push_str(&loan_env!(self, render_str_value(v)));
             }
             _ => {
                 out.push_str(&v.to_str_context());
@@ -413,15 +409,8 @@ impl VM {
         // Fall back to interpreter for shared arrays (threaded context)
         if self.interpreter.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::Nil);
-            let target = self
-                .interpreter
-                .env()
-                .get(target_name)
-                .cloned()
-                .unwrap_or(Value::Nil);
-            let result = self
-                .interpreter
-                .call_method_with_values(target, "push", vec![val])?;
+            let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -434,15 +423,8 @@ impl VM {
             && *kind == crate::value::ArrayKind::Shaped
         {
             let val = self.stack.pop().unwrap_or(Value::Nil);
-            let target = self
-                .interpreter
-                .env()
-                .get(target_name)
-                .cloned()
-                .unwrap_or(Value::Nil);
-            let result = self
-                .interpreter
-                .call_method_with_values(target, "push", vec![val])?;
+            let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -453,12 +435,7 @@ impl VM {
         if let Value::Slip(ref items) = val
             && items.is_empty()
         {
-            let result = self
-                .interpreter
-                .env()
-                .get(target_name)
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let result = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
             self.stack.push(result);
             return Ok(());
         }
@@ -469,34 +446,24 @@ impl VM {
         // Check the target exists as a simple Array in env.
         // If not (e.g., captured closure var, or non-Array), fall back to interpreter.
         let is_simple_array = self
-            .interpreter
             .env()
             .get(target_name)
             .is_some_and(|v| matches!(v, Value::Array(..)));
         if !is_simple_array {
-            let target = self
-                .interpreter
-                .env()
-                .get(target_name)
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
             // Phase 2 Stage 2: a `:=`-cell-bound variable (`@x[0] := @b` /
             // `%h<k> := @b`) holds a shared `ContainerRef` cell. Decont for
             // the dispatch and write the mutated container back through the
             // cell so every alias observes the push.
             if let Value::ContainerRef(cell) = target {
                 let inner = cell.lock().unwrap().clone();
-                let result = self
-                    .interpreter
-                    .call_method_with_values(inner, "push", vec![val])?;
+                let result = loan_env!(self, call_method_with_values(inner, "push", vec![val]))?;
                 *cell.lock().unwrap() = result.clone();
                 self.stack.push(result);
                 self.env_dirty = true;
                 return Ok(());
             }
-            let result = self
-                .interpreter
-                .call_method_with_values(target, "push", vec![val])?;
+            let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -514,7 +481,7 @@ impl VM {
                 other => vec![other],
             };
             for item in items_to_check {
-                if !self.interpreter.type_matches_value(&type_name, item) {
+                if !self.type_matches_value(&type_name, item) {
                     return Err(RuntimeError::typecheck_assignment(
                         &type_name,
                         item,
@@ -543,9 +510,7 @@ impl VM {
                 Value::Slip(slip_items) => Value::real_array(slip_items.to_vec()),
                 _ => Value::real_array(vec![val]),
             };
-            self.interpreter
-                .env_mut()
-                .insert(target_name.to_string(), arr.clone());
+            self.env_mut().insert(target_name.to_string(), arr.clone());
             arr
         };
 

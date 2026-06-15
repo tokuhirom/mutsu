@@ -252,7 +252,7 @@ impl VM {
             words,
         } = val
         {
-            let forced = self.interpreter.force_lazy_io_lines(handle, words)?;
+            let forced = loan_env!(self, force_lazy_io_lines(handle, words))?;
             if kv {
                 // Apply .kv transformation on the forced array
                 let items = crate::runtime::utils::value_to_list(&forced);
@@ -480,9 +480,10 @@ impl VM {
         // to the interpreter env. We must flush them so the merge logic below
         // can see the changes made by the gather body.
         for (i, name) in cc.locals.iter().enumerate() {
-            self.interpreter
-                .env_mut()
-                .insert(name.clone(), self.locals[i].clone());
+            {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert(name.clone(), __v);
+            }
         }
 
         // Restore the outer environment, selectively merging changes from
@@ -719,9 +720,10 @@ impl VM {
 
         // Sync locals back to env
         for (i, name) in cc.locals.iter().enumerate() {
-            self.interpreter
-                .env_mut()
-                .insert(name.clone(), self.locals[i].clone());
+            {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert(name.clone(), __v);
+            }
         }
 
         // Save coroutine state before restoring outer env
@@ -1078,8 +1080,8 @@ impl VM {
         f: fn(&mut VM, Value, Value) -> Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
         // Auto-FETCH Proxy containers in binary operations
-        let left = self.interpreter.auto_fetch_proxy(&left)?;
-        let right = self.interpreter.auto_fetch_proxy(&right)?;
+        let left = loan_env!(self, auto_fetch_proxy(&left))?;
+        let right = loan_env!(self, auto_fetch_proxy(&right))?;
         // Decontainerize Scalar wrappers
         let left = left.descalarize().clone();
         let right = right.descalarize().clone();
@@ -1304,12 +1306,7 @@ impl VM {
         if is_regex {
             // When $/ is a Junction (from :nth with junction argument),
             // the ~~ operator collapses the result to a Bool.
-            let slash = self
-                .interpreter
-                .env()
-                .get("/")
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let slash = self.env().get("/").cloned().unwrap_or(Value::Nil);
             if matches!(&slash, Value::Junction { .. }) {
                 Ok(Value::Bool(matched))
             } else if matched {

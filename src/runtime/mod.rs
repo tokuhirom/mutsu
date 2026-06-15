@@ -4354,6 +4354,7 @@ impl Interpreter {
         &self.env
     }
 
+    #[allow(dead_code)] // env-loan (CP-1 1e): VM callers migrated to the seam; kept for carriers.
     pub(crate) fn env_insert(&mut self, key: String, value: Value) {
         self.env.insert(key, value);
     }
@@ -4364,6 +4365,7 @@ impl Interpreter {
     /// flat env so the captured copy exposes the full lexical view to consumers
     /// that iterate it overlay-only (nested call merges, `clone_for_thread`). See
     /// docs/vm-dual-store.md (Slice 6).
+    #[allow(dead_code)] // env-loan (CP-1 1e): VM callers migrated to the seam; kept for carriers.
     pub(crate) fn clone_env(&self) -> Env {
         self.env.flattened()
     }
@@ -4378,6 +4380,13 @@ impl Interpreter {
     #[allow(dead_code)]
     pub(crate) fn take_env(&mut self) -> Env {
         std::mem::take(&mut self.env)
+    }
+
+    /// env-loan (CP-1 1e): take the env out for the VM to own, leaving a
+    /// *poisoned* sentinel behind so any unwrapped VM->interpreter env access
+    /// trips the guard. Mirror: `set_env` restores a real env on the way back.
+    pub(crate) fn loan_out_env(&mut self) -> Env {
+        std::mem::replace(&mut self.env, Env::poisoned())
     }
 
     fn normalize_var_meta_name(name: &str) -> &str {

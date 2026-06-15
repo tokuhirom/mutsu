@@ -469,12 +469,7 @@ impl VM {
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
-        let target = self
-            .interpreter
-            .env()
-            .get("_")
-            .cloned()
-            .unwrap_or(Value::Nil);
+        let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
@@ -491,33 +486,25 @@ impl VM {
                         samespace,
                     );
                     let result = Value::str(out);
-                    self.interpreter
-                        .env_mut()
-                        .insert("_".to_string(), result.clone());
-                    self.interpreter
-                        .env_mut()
-                        .insert("$_".to_string(), result.clone());
-                    self.interpreter
-                        .env_mut()
+                    self.env_mut().insert("_".to_string(), result.clone());
+                    self.env_mut().insert("$_".to_string(), result.clone());
+                    self.env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), result);
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), match_obj.clone());
+                    self.env_mut().insert("/".to_string(), match_obj.clone());
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
                 } else {
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::Nil);
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(Value::Bool(false));
                 }
             } else {
-                let found = self
-                    .interpreter
-                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                let found = loan_env!(
+                    self,
+                    regex_find_first_from_with_captures(&pattern, &text, 0)
+                );
                 if let Some((start, end, captures)) = found {
                     let out = if has_code_block {
                         self.apply_substitutions_dynamic(
@@ -544,26 +531,17 @@ impl VM {
                         )
                     };
                     let result = Value::str(out);
-                    self.interpreter
-                        .env_mut()
-                        .insert("_".to_string(), result.clone());
-                    self.interpreter
-                        .env_mut()
-                        .insert("$_".to_string(), result.clone());
-                    self.interpreter
-                        .env_mut()
+                    self.env_mut().insert("_".to_string(), result.clone());
+                    self.env_mut().insert("$_".to_string(), result.clone());
+                    self.env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), result);
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), match_obj.clone());
+                    self.env_mut().insert("/".to_string(), match_obj.clone());
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
                 } else {
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::Nil);
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(Value::Bool(false));
                 }
@@ -574,7 +552,7 @@ impl VM {
         // For Raku regex with capture references, collect per-match captures
         // so each match can expand $0, $1 etc. independently.
         let (ranges, per_match_captures) = if perl5 {
-            let all_matches = self.interpreter.regex_find_all_p5(&pattern, &text);
+            let all_matches = loan_env!(self, regex_find_all_p5(&pattern, &text));
             let selected = if global && nth_spec.is_none() && x_count.is_none() {
                 all_matches
             } else {
@@ -585,10 +563,10 @@ impl VM {
             // Find all matches with captures using iterative find_first_from
             let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
             let mut pos = 0;
-            while let Some((start, end, caps)) = self
-                .interpreter
-                .regex_find_first_from_with_captures(&pattern, &text, pos)
-            {
+            while let Some((start, end, caps)) = loan_env!(
+                self,
+                regex_find_first_from_with_captures(&pattern, &text, pos)
+            ) {
                 matches_with_caps.push((start, end, caps));
                 pos = if end > start { end } else { start + 1 };
             }
@@ -622,16 +600,12 @@ impl VM {
             if result_is_list {
                 // :g / :x with no match: result is an empty List (falsy).
                 let empty = Value::array(Vec::new());
-                self.interpreter
-                    .env_mut()
-                    .insert("/".to_string(), empty.clone());
+                self.env_mut().insert("/".to_string(), empty.clone());
                 self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                 self.stack.push(empty);
                 return Ok(());
             }
-            self.interpreter
-                .env_mut()
-                .insert("/".to_string(), Value::Nil);
+            self.env_mut().insert("/".to_string(), Value::Nil);
             self.substitution_in_smartmatch = self.in_smartmatch_rhs;
             self.stack.push(Value::Bool(false));
             return Ok(());
@@ -673,15 +647,10 @@ impl VM {
             )
         };
         let result = Value::str(out);
-        self.interpreter
-            .env_mut()
-            .insert("_".to_string(), result.clone());
-        self.interpreter
-            .env_mut()
-            .insert("$_".to_string(), result.clone());
+        self.env_mut().insert("_".to_string(), result.clone());
+        self.env_mut().insert("$_".to_string(), result.clone());
         // Track topic mutation for map rw writeback
-        self.interpreter
-            .env_mut()
+        self.env_mut()
             .insert("__mutsu_rw_map_topic__".to_string(), result);
         // For :g / :x, $/ and the substitution result are a List of Match
         // objects; otherwise a single Match for the first (and only) range.
@@ -691,9 +660,7 @@ impl VM {
                 .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
                 .collect();
             let list = Value::array(matches);
-            self.interpreter
-                .env_mut()
-                .insert("/".to_string(), list.clone());
+            self.env_mut().insert("/".to_string(), list.clone());
             self.substitution_in_smartmatch = self.in_smartmatch_rhs;
             self.stack.push(list);
             return Ok(());
@@ -701,9 +668,7 @@ impl VM {
         // Create Match object from first match range and set $/
         let (first_start, first_end) = ranges[0];
         let match_obj = Self::make_subst_match(&text, first_start, first_end);
-        self.interpreter
-            .env_mut()
-            .insert("/".to_string(), match_obj.clone());
+        self.env_mut().insert("/".to_string(), match_obj.clone());
         self.substitution_in_smartmatch = self.in_smartmatch_rhs;
         self.stack.push(match_obj);
         Ok(())
@@ -738,12 +703,7 @@ impl VM {
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
-        let target = self
-            .interpreter
-            .env()
-            .get("_")
-            .cloned()
-            .unwrap_or(Value::Nil);
+        let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
@@ -761,20 +721,17 @@ impl VM {
                     );
                     // S/// sets $/ to the match (without mutating $_).
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), match_obj);
+                    self.env_mut().insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::Nil);
                     self.stack.push(Value::str(text));
                 }
             } else {
-                let found = self
-                    .interpreter
-                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                let found = loan_env!(
+                    self,
+                    regex_find_first_from_with_captures(&pattern, &text, 0)
+                );
                 if let Some((start, end, captures)) = found {
                     let out = if has_code_block {
                         self.apply_substitutions_dynamic(
@@ -800,14 +757,10 @@ impl VM {
                         )
                     };
                     let match_obj = Self::make_subst_match(&text, start, end);
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), match_obj);
+                    self.env_mut().insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
-                    self.interpreter
-                        .env_mut()
-                        .insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::Nil);
                     self.stack.push(Value::str(text));
                 }
             }
@@ -815,7 +768,7 @@ impl VM {
         }
 
         let (ranges, per_match_captures) = if perl5 {
-            let all_matches = self.interpreter.regex_find_all_p5(&pattern, &text);
+            let all_matches = loan_env!(self, regex_find_all_p5(&pattern, &text));
             let selected = if global && nth_spec.is_none() && x_count.is_none() {
                 all_matches
             } else {
@@ -825,10 +778,10 @@ impl VM {
         } else {
             let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
             let mut pos = 0;
-            while let Some((start, end, caps)) = self
-                .interpreter
-                .regex_find_first_from_with_captures(&pattern, &text, pos)
-            {
+            while let Some((start, end, caps)) = loan_env!(
+                self,
+                regex_find_first_from_with_captures(&pattern, &text, pos)
+            ) {
                 matches_with_caps.push((start, end, caps));
                 pos = if end > start { end } else { start + 1 };
             }
@@ -904,15 +857,12 @@ impl VM {
                 .iter()
                 .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
                 .collect();
-            self.interpreter
-                .env_mut()
+            self.env_mut()
                 .insert("/".to_string(), Value::array(matches));
         } else {
             let (s, e) = ranges[0];
             let match_obj = Self::make_subst_match(&text, s, e);
-            self.interpreter
-                .env_mut()
-                .insert("/".to_string(), match_obj);
+            self.env_mut().insert("/".to_string(), match_obj);
         }
         self.stack.push(Value::str(out));
         Ok(())
@@ -1136,13 +1086,10 @@ impl VM {
                 &[],
                 Some(text),
             );
-            self.interpreter
-                .env_mut()
-                .insert("/".to_string(), match_obj);
+            self.env_mut().insert("/".to_string(), match_obj);
             for n in 0..10 {
                 if let Some(cap) = caps.get(n) {
-                    self.interpreter
-                        .env_mut()
+                    self.env_mut()
                         .insert(n.to_string(), Value::str(cap.clone()));
                 } else {
                     self.env_mut().remove(&n.to_string());
@@ -1216,12 +1163,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let from = Self::const_str(code, from_idx);
         let to = Self::const_str(code, to_idx);
-        let target = self
-            .interpreter
-            .env()
-            .get("_")
-            .cloned()
-            .unwrap_or(Value::Nil);
+        let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
         // If $_ is bound to a read-only topic (e.g. `with 'literal' { ... }`),
         // tr/// must throw X::Assignment::RO. The `with` desugaring marks the
         // topic value with a Mixin override `__mutsu_topic_ro__` when the
@@ -1251,9 +1193,7 @@ impl VM {
         // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
         // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
         if !non_destructive || self.in_smartmatch_rhs {
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), translated_value);
+            self.env_mut().insert("_".to_string(), translated_value);
         }
         // Signal to the smartmatch handler that this is a transliterate result
         // so it returns the result directly (as StrDistance) instead of comparing.
@@ -2051,7 +1991,7 @@ impl VM {
         if let Some(cf) = self.find_compiled_function(compiled_fns, name, &probe) {
             return cf.param_defs.first().map(writable).unwrap_or(false);
         }
-        if let Some(def) = self.interpreter.resolve_function_with_types(name, &probe) {
+        if let Some(def) = loan_env!(self, resolve_function_with_types(name, &probe)) {
             return def.param_defs.first().map(writable).unwrap_or(false);
         }
         false
@@ -2075,8 +2015,7 @@ impl VM {
             "R" => {
                 if op == "..." || op == "...^" {
                     let exclude_end = op == "...^";
-                    self.interpreter
-                        .eval_sequence_values(right, left, exclude_end)?
+                    loan_env!(self, eval_sequence_values(right, left, exclude_end))?
                 } else if op == "~~" {
                     Value::Bool(self.vm_smart_match(&right, &left))
                 } else {
@@ -2306,9 +2245,8 @@ impl VM {
                 // For multi-arg calls (list-associative flattened chains),
                 // try the user-defined function first before falling back
                 // to built-in reduction.
-                if let Some(def) = self
-                    .interpreter
-                    .resolve_function_with_types(&infix_name, &call_args)
+                if let Some(def) =
+                    loan_env!(self, resolve_function_with_types(&infix_name, &call_args))
                 {
                     self.compile_and_call_function_def(&def, call_args.clone(), compiled_fns)?
                 } else {
@@ -2341,12 +2279,7 @@ impl VM {
             Value::Regex(_)
             | Value::RegexWithAdverbs { .. }
             | Value::Routine { is_regex: true, .. } => {
-                let topic = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 self.vm_smart_match(&topic, value)
             }
             _ => value.truthy(),
@@ -2534,9 +2467,7 @@ impl VM {
             }
         }
         if let Some(op_name) = infix_name
-            && let Ok(v) = self
-                .interpreter
-                .call_user_routine_direct(op_name, call_args.clone())
+            && let Ok(v) = loan_env!(self, call_user_routine_direct(op_name, call_args.clone()))
         {
             return Ok(v);
         }
@@ -2710,10 +2641,7 @@ impl VM {
                         // Save $_ before evaluating the code block, as
                         // eval_block_value may clobber the topic variable.
                         let saved_topic = self.env().get("_").cloned();
-                        let val = self
-                            .interpreter
-                            .eval_block_value(&stmts)
-                            .unwrap_or(Value::Nil);
+                        let val = loan_env!(self, eval_block_value(&stmts)).unwrap_or(Value::Nil);
                         // Restore $_ so the substitution can find the target
                         if let Some(topic) = saved_topic {
                             self.env_mut().insert("_".to_string(), topic);
@@ -2735,12 +2663,7 @@ impl VM {
                     && let Some(close) = template[i + 2..].find('}')
                 {
                     let name = &template[i + 2..i + 2 + close];
-                    let value = self
-                        .interpreter
-                        .env()
-                        .get(name)
-                        .cloned()
-                        .unwrap_or(Value::Nil);
+                    let value = self.env().get(name).cloned().unwrap_or(Value::Nil);
                     out.push_str(&value.to_string_value());
                     i += 2 + close + 1;
                     continue;
@@ -2757,12 +2680,7 @@ impl VM {
                         && let Some(close) = after_name.find(']')
                     {
                         let idx_str = &after_name[1..close];
-                        let value = self
-                            .interpreter
-                            .env()
-                            .get(name)
-                            .cloned()
-                            .unwrap_or(Value::Nil);
+                        let value = self.env().get(name).cloned().unwrap_or(Value::Nil);
                         if let Ok(idx) = idx_str.parse::<i64>() {
                             match &value {
                                 Value::Array(arr, _) => {
@@ -2784,12 +2702,7 @@ impl VM {
                         i += 1 + name_len + close + 1;
                         continue;
                     }
-                    let value = self
-                        .interpreter
-                        .env()
-                        .get(name)
-                        .cloned()
-                        .unwrap_or(Value::Nil);
+                    let value = self.env().get(name).cloned().unwrap_or(Value::Nil);
                     out.push_str(&value.to_string_value());
                     i += 1 + name_len;
                     continue;
@@ -2805,23 +2718,13 @@ impl VM {
                         && let Some(close) = after_name.find(']')
                     {
                         let arr_name = format!("@{}", name);
-                        let value = self
-                            .interpreter
-                            .env()
-                            .get(&arr_name)
-                            .cloned()
-                            .unwrap_or(Value::Nil);
+                        let value = self.env().get(&arr_name).cloned().unwrap_or(Value::Nil);
                         out.push_str(&value.to_string_value());
                         i += 1 + name_len + close + 1;
                         continue;
                     }
                     let arr_name = format!("@{}", name);
-                    let value = self
-                        .interpreter
-                        .env()
-                        .get(&arr_name)
-                        .cloned()
-                        .unwrap_or(Value::Nil);
+                    let value = self.env().get(&arr_name).cloned().unwrap_or(Value::Nil);
                     out.push_str(&value.to_string_value());
                     i += 1 + name_len;
                     continue;

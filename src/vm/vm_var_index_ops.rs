@@ -234,7 +234,7 @@ impl VM {
     /// returning a fresh native array; slices of ordinary arrays decontainerize to
     /// a `List` (real-array kind) or `Seq` (non-real kind), matching Raku.
     fn slice_result_value(&mut self, source: &Value, items: Vec<Value>) -> Value {
-        if let Some(meta) = self.interpreter.container_type_metadata(source)
+        if let Some(meta) = loan_env!(self, container_type_metadata(source))
             && crate::runtime::native_types::is_native_array_element_type(&meta.value_type)
         {
             let result = Value::real_array(items);
@@ -470,7 +470,7 @@ impl VM {
             {
                 if let Value::Array(ref keys, ..) = index {
                     for k in keys.iter() {
-                        if !self.interpreter.type_matches_value(&key_type, k) {
+                        if !self.type_matches_value(&key_type, k) {
                             return Err(RuntimeError::new(format!(
                                 "Type check failed for object hash key; expected {} but got {} ({})",
                                 key_type,
@@ -502,7 +502,7 @@ impl VM {
                     self.stack.push(result);
                     return Ok(());
                 }
-                if !self.interpreter.type_matches_value(&key_type, &index) {
+                if !self.type_matches_value(&key_type, &index) {
                     return Err(RuntimeError::new(format!(
                         "Type check failed for object hash key; expected {} but got {} ({})",
                         key_type,
@@ -591,10 +591,8 @@ impl VM {
                             }
                             let saved_env = std::mem::take(self.env_mut());
                             *self.env_mut() = sub_env;
-                            let result = self
-                                .interpreter
-                                .eval_block_value(&data.body)
-                                .unwrap_or(Value::Nil);
+                            let result =
+                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                             *self.env_mut() = saved_env;
                             Some(result)
                         } else {
@@ -620,12 +618,8 @@ impl VM {
                                 // Lazy index: stop at array boundary
                                 break;
                             }
-                            out.push(self.resolve_array_entry(
-                                items,
-                                *kind,
-                                i,
-                                self.typed_container_default(&target),
-                            ));
+                            let def = self.typed_container_default(&target);
+                            out.push(self.resolve_array_entry(items, *kind, i, def));
                         } else if !is_lazy_index {
                             out.push(self.typed_container_default(&target));
                         }
@@ -745,10 +739,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
@@ -838,10 +829,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 match &idx {
                     Value::Int(i) if *i < 0 => Self::make_out_of_range_failure(*i),
@@ -1176,10 +1164,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
@@ -1346,10 +1331,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 // If the WhateverCode returned a Range, use it to slice the array
                 if idx.is_range() {
@@ -1411,10 +1393,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
@@ -1461,10 +1440,8 @@ impl VM {
                             }
                             let saved_env = std::mem::take(self.env_mut());
                             *self.env_mut() = sub_env;
-                            let result = self
-                                .interpreter
-                                .eval_block_value(&data.body)
-                                .unwrap_or(Value::Nil);
+                            let result =
+                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                             *self.env_mut() = saved_env;
                             match result {
                                 Value::Int(i) => i,
@@ -1507,10 +1484,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),
@@ -1713,10 +1687,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 let i = match &idx {
                     Value::Int(i) => Some(*i),

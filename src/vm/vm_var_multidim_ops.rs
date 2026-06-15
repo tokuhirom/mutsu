@@ -222,10 +222,7 @@ impl VM {
             }
             let saved_env = std::mem::take(self.env_mut());
             *self.env_mut() = sub_env;
-            let result = self
-                .interpreter
-                .eval_block_value(&data.body)
-                .unwrap_or(Value::Nil);
+            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
             *self.env_mut() = saved_env;
             return Some(result);
         }
@@ -262,12 +259,7 @@ impl VM {
         let var_name = Self::const_str(code, name_idx).to_string();
 
         // Resolve WhateverCode indices
-        let target_val = self
-            .interpreter
-            .env()
-            .get(&var_name)
-            .cloned()
-            .unwrap_or(Value::Nil);
+        let target_val = self.env().get(&var_name).cloned().unwrap_or(Value::Nil);
         let dims = self.resolve_multidim_indices_for_assign(&target_val, &dims)?;
 
         // Check if the index is bound (read-only)
@@ -285,17 +277,16 @@ impl VM {
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let is_shaped = has_declared_shape
             || self
-                .interpreter
                 .env()
                 .get(&var_name)
                 .is_some_and(crate::runtime::utils::is_shaped_array);
 
         // Capture container type metadata before mutation (Arc pointer may change)
         let old_type_info = self
-            .interpreter
             .env()
             .get(&var_name)
-            .and_then(|v| self.interpreter.container_type_metadata(v));
+            .cloned()
+            .and_then(|v| loan_env!(self, container_type_metadata(&v)));
 
         // Get mutable reference to the target variable
         if let Some(container) = self.env_mut().get_mut(&var_name) {
@@ -322,9 +313,7 @@ impl VM {
             && let Some(updated) = self.env().get(&var_name).cloned()
         {
             let tagged = self.interpreter.tag_container_metadata(updated, info);
-            self.interpreter
-                .env_mut()
-                .insert(var_name.clone(), tagged.clone());
+            self.env_mut().insert(var_name.clone(), tagged.clone());
             self.update_local_if_exists(code, &var_name, &tagged);
         }
 
@@ -514,11 +503,8 @@ impl VM {
                 let mut resolved_items = Vec::with_capacity(items.len());
                 for item in items.iter() {
                     if let Value::Sub(..) = item {
-                        let result = self.interpreter.call_sub_value(
-                            item.clone(),
-                            vec![len.clone()],
-                            false,
-                        )?;
+                        let result =
+                            self.vm_call_sub_value(item.clone(), vec![len.clone()], false)?;
                         resolved_items.push(result);
                     } else {
                         resolved_items.push(item.clone());

@@ -2568,8 +2568,7 @@ impl Interpreter {
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::Nil);
                             let updated_item = if arity == 1 {
-                                vm.interpreter()
-                                    .env()
+                                vm.env()
                                     .get(&topic_source_key)
                                     .cloned()
                                     .unwrap_or_else(|| chunk[0].clone())

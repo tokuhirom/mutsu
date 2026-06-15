@@ -123,7 +123,7 @@ impl VM {
                             // Extract callsite line for deprecation tracking
                             let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
                             if cl.is_some() {
-                                self.interpreter.set_pending_callsite_line(cl);
+                                loan_env!(self, set_pending_callsite_line(cl));
                             }
                             let result = self.call_compiled_function_positional_light(
                                 cf,
@@ -162,7 +162,7 @@ impl VM {
                         // Extract callsite line for deprecation tracking
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
                         if cl.is_some() {
-                            self.interpreter.set_pending_callsite_line(cl);
+                            loan_env!(self, set_pending_callsite_line(cl));
                         }
                         let result = self.call_compiled_function_light(cf, args, compiled_fns)?;
                         self.stack.push(result);
@@ -203,7 +203,7 @@ impl VM {
                         // Extract callsite line for deprecation tracking
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
                         if cl.is_some() {
-                            self.interpreter.set_pending_callsite_line(cl);
+                            loan_env!(self, set_pending_callsite_line(cl));
                         }
 
                         let result = if Self::is_light_call_eligible(&cf, name_str) {
@@ -219,7 +219,7 @@ impl VM {
                             let pkg = self.current_package().to_string();
                             self.interpreter.push_samewith_context(name_str, None);
                             let pushed_dispatch =
-                                self.interpreter.push_multi_dispatch_frame(name_str, &args);
+                                loan_env!(self, push_multi_dispatch_frame(name_str, &args));
                             let r = self.call_compiled_function_named(
                                 &cf,
                                 args,
@@ -289,9 +289,7 @@ impl VM {
             if use_cache
                 && self.fn_resolve_cache_gen == self.fn_resolve_gen
                 && self.interpreter.wrap_sub_id_for_name(name_str).is_none()
-                && !self
-                    .interpreter
-                    .routine_is_test_assertion_by_name(name_str, &[])
+                && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
                 && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key.as_str())
                 && cf.fingerprint == *cached_fp
@@ -305,7 +303,7 @@ impl VM {
                     let popped: Vec<Value> = self.stack.drain(start..).collect();
                     let cl = crate::runtime::Interpreter::peek_callsite_line(&popped);
                     if cl.is_some() {
-                        self.interpreter.set_pending_callsite_line(cl);
+                        loan_env!(self, set_pending_callsite_line(cl));
                     }
                 }
                 let result = self.call_compiled_function_fast(cf, compiled_fns)?;
@@ -369,25 +367,24 @@ impl VM {
         } else {
             self.auto_fetch_proxy_args(args)?
         };
-        self.interpreter.set_pending_callsite_line(callsite_line);
+        loan_env!(self, set_pending_callsite_line(callsite_line));
         // Check if there's a CALL-ME override from trait_mod mixin
-        let call_me_override = self
-            .interpreter
-            .env()
-            .get(&format!("&{}", name))
-            .cloned()
-            .and_then(|callable| {
-                if let Value::Mixin(_, ref mixins) = callable {
-                    let has_call_me = mixins.keys().any(|key| {
-                        key.strip_prefix("__mutsu_role__")
-                            .is_some_and(|rn| self.interpreter.role_has_method(rn, "CALL-ME"))
-                    });
-                    if has_call_me {
-                        return Some(callable);
+        let call_me_override =
+            self.env()
+                .get(&format!("&{}", name))
+                .cloned()
+                .and_then(|callable| {
+                    if let Value::Mixin(_, ref mixins) = callable {
+                        let has_call_me = mixins.keys().any(|key| {
+                            key.strip_prefix("__mutsu_role__")
+                                .is_some_and(|rn| self.interpreter.role_has_method(rn, "CALL-ME"))
+                        });
+                        if has_call_me {
+                            return Some(callable);
+                        }
                     }
-                }
-                None
-            });
+                    None
+                });
         // Junction auto-threading for function call arguments:
         // If any positional arg is a Junction and the function parameter doesn't accept
         // Junction (i.e., not typed as Mu or Junction), auto-thread over the junction.
@@ -404,7 +401,7 @@ impl VM {
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
         {
-            let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+            let result = self.vm_call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -484,7 +481,7 @@ impl VM {
         }
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
-        self.interpreter.set_pending_callsite_line(callsite_line);
+        loan_env!(self, set_pending_callsite_line(callsite_line));
         // A lexical `&name` parameter (or `my &name`) that shadows a same-named
         // package sub wins over the package sub, even when the call slips its
         // args (`op(|@args)`). This mirrors the `lexical_override` handling in
@@ -516,7 +513,7 @@ impl VM {
                 .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
             // Slice 6.3 step 2: precise env_dirty from the named-call merge.
-        } else if self.interpreter.user_function_matches_call(&name, &args) {
+        } else if loan_env!(self, user_function_matches_call(&name, &args)) {
             // A user-defined sub shadows a same-named builtin (③ PR-2). OTF-compile
             // the resolved def to bytecode when it is a plain single candidate and
             // simple enough; otherwise keep tree-walking. Restricted to genuine
@@ -529,15 +526,15 @@ impl VM {
             if crate::runtime::Interpreter::is_builtin_function(&name)
                 && !self.has_proto(&name)
                 && !self.has_multi_candidates_cached(&name)
-                && let Some(def) = self.interpreter.resolve_function_with_types(&name, &args)
+                && let Some(def) = loan_env!(self, resolve_function_with_types(&name, &args))
                 && Self::def_is_otf_compilable(&def)
             {
                 let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
                 self.stack.push(result);
             } else {
                 crate::vm::vm_stats::record_function_fallback(&name);
-                let result = self.interpreter.call_function_fallback(&name, &args)?;
-                let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
+                let result = self.vm_call_function_fallback(&name, &args)?;
+                let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
                 self.stack.push(result);
             }
             self.env_dirty = true;
@@ -558,7 +555,7 @@ impl VM {
                 self.sync_env_from_locals(code);
             }
             let result = self.call_function_compiled_first(&name, args, compiled_fns)?;
-            let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
+            let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
             self.stack.push(result);
             self.env_dirty = true;
         }
@@ -618,7 +615,8 @@ impl VM {
         self.interpreter.set_pending_call_arg_sources(arg_sources);
         let result = self.vm_call_on_value(target, args, Some(compiled_fns));
         self.interpreter.set_pending_call_arg_sources(None);
-        let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
+        let result = result?;
+        let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
@@ -646,7 +644,7 @@ impl VM {
             Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
-        self.interpreter.set_pending_callsite_line(callsite_line);
+        loan_env!(self, set_pending_callsite_line(callsite_line));
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
             None
@@ -654,7 +652,7 @@ impl VM {
             arg_sources
         };
         // resolve_code_var handles pseudo-package stripping internally
-        let mut target = self.interpreter.resolve_code_var(&name);
+        let mut target = loan_env!(self, resolve_code_var(&name));
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.
@@ -676,7 +674,8 @@ impl VM {
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.vm_call_on_value(target, args, Some(compiled_fns));
             self.interpreter.set_pending_call_arg_sources(None);
-            self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?
+            let result = result?;
+            loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
         } else if !self.has_proto(&name)
@@ -688,8 +687,8 @@ impl VM {
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
-            self.interpreter
-                .maybe_fetch_rw_proxy(result?, cf_auto_fetch)?
+            let result = result?;
+            loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))?
         } else {
             // Sync VM locals to env before spawning threads so closures capture them
             if name == "start" {
@@ -700,7 +699,7 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(None);
             result?
         };
-        let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
+        let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
@@ -720,7 +719,8 @@ impl VM {
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             self.env_dirty = true;
-            self.interpreter.maybe_fetch_rw_proxy(result?, true)
+            let result = result?;
+            loan_env!(self, maybe_fetch_rw_proxy(result, true))
         } else {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
@@ -735,9 +735,7 @@ impl VM {
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
                 if Self::is_positional_light_call_eligible(cf, name)
                     && !self.has_multi_candidates_cached(name)
-                    && !self
-                        .interpreter
-                        .routine_is_test_assertion_by_name(name, &args)
+                    && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.interpreter.wrap_sub_id_for_name(name).is_none()
                 {
                     let name_sym = Symbol::intern(name);
@@ -752,14 +750,13 @@ impl VM {
                     }
                     let result =
                         self.call_compiled_function_positional_light(cf, &args, compiled_fns, name);
-                    return self.interpreter.maybe_fetch_rw_proxy(result?, true);
+                    let result = result?;
+                    return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }
                 // Try light call path for simple functions in tight loops.
                 // This avoids the expensive env clone/restore cycle.
                 if Self::is_light_call_eligible(cf, name)
-                    && !self
-                        .interpreter
-                        .routine_is_test_assertion_by_name(name, &args)
+                    && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.interpreter.wrap_sub_id_for_name(name).is_none()
                 {
                     // Populate light-call cache so subsequent calls skip resolution
@@ -775,23 +772,23 @@ impl VM {
                         }
                     }
                     let result = self.call_compiled_function_light(cf, args, compiled_fns);
-                    return self.interpreter.maybe_fetch_rw_proxy(result?, true);
+                    let result = result?;
+                    return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }
                 self.interpreter
                     .set_pending_call_arg_sources(arg_sources.clone());
-                let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(name, &args);
+                let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(name, &args));
                 self.interpreter.push_samewith_context(name, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.
                 let pkg = if let Some(cached_pkg) = self.cached_fn_package(name, args.len()) {
                     cached_pkg
                 } else {
-                    let resolved_def = self.interpreter.resolve_function_with_types(name, &args);
+                    let resolved_def = loan_env!(self, resolve_function_with_types(name, &args));
                     if let Some(ref def) = resolved_def {
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args)
                             .or_else(|| self.interpreter.pending_callsite_line());
-                        self.interpreter
-                            .check_deprecation_for_def_with_line(def, cl);
+                        loan_env!(self, check_deprecation_for_def_with_line(def, cl));
                     }
                     resolved_def
                         .map(|def| def.package.resolve())
@@ -810,8 +807,8 @@ impl VM {
                 // wrote a caller-aliasing value. A pure heavy-signature call (default
                 // param, return type, where-constraint) no longer forces a per-call
                 // O(caller-locals) pull.
-                self.interpreter
-                    .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
+                let result = result?;
+                loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))
             } else {
                 // Interpreter / native fallback paths route through the
                 // tree-walking interpreter, which can mutate the shared env by
@@ -847,7 +844,7 @@ impl VM {
                     // is_interpreter_handled_function gate below.
                     let _ = self.interpreter.take_pending_dispatch_error();
                     if !self.is_interpreter_handled_function(name)
-                        && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+                        && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                         && Self::def_is_otf_compilable(&def)
                         && !Self::function_body_declares_state(&def.body)
                     {
@@ -855,11 +852,12 @@ impl VM {
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
                         self.interpreter.set_pending_call_arg_sources(arg_sources);
-                        let result = self.interpreter.call_function_fallback(name, &args);
+                        let result = self.vm_call_function_fallback(name, &args);
                         self.interpreter.set_pending_call_arg_sources(None);
-                        self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                        let result = result?;
+                        loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
-                } else if self.interpreter.user_function_matches_call(name, &args) {
+                } else if loan_env!(self, user_function_matches_call(name, &args)) {
                     // A user-defined sub shadows a same-named builtin (③ PR-2). When
                     // the resolved def is a plain single candidate that is
                     // OTF-compilable, run it as compiled bytecode — but resolve it
@@ -880,16 +878,17 @@ impl VM {
                     if crate::runtime::Interpreter::is_builtin_function(name)
                         && !self.has_proto(name)
                         && !self.has_multi_candidates_cached(name)
-                        && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+                        && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                         && Self::def_is_otf_compilable(&def)
                     {
                         self.compile_and_call_function_def(&def, args, compiled_fns)
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
                         self.interpreter.set_pending_call_arg_sources(arg_sources);
-                        let result = self.interpreter.call_function_fallback(name, &args);
+                        let result = self.vm_call_function_fallback(name, &args);
                         self.interpreter.set_pending_call_arg_sources(None);
-                        self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                        let result = result?;
+                        loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
                 } else if let Some(native_result) =
                     self.try_native_function(Symbol::intern(name), &args)
@@ -897,7 +896,7 @@ impl VM {
                     native_result
                 } else if !self.is_interpreter_handled_function(name)
                 && !self.has_multi_candidates_cached(name)
-                && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+                && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                 // Only OTF-compile simple functions: no default params, no
                 // code params (&foo), no where constraints, no closures.
                 && Self::def_is_otf_compilable(&def)
@@ -934,14 +933,15 @@ impl VM {
                         crate::vm::vm_stats::record_function_fallback(name);
                     }
                     self.interpreter.set_pending_call_arg_sources(arg_sources);
-                    let result = self.interpreter.call_function(name, args);
+                    let result = self.vm_call_function(name, args);
                     self.interpreter.set_pending_call_arg_sources(None);
                     // Interpreter function calls (e.g. `require`) may register
                     // new subs — invalidate function resolution caches.
                     self.fn_resolve_gen += 1;
                     // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
                     let auto_fetch = name != "substr-rw";
-                    self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, auto_fetch))
                 }
             }
         }

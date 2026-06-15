@@ -410,10 +410,9 @@ impl VM {
                         (*ptr).items = items.clone();
                     }
                 }
-                self.interpreter.overwrite_array_items_by_identity_for_vm(
-                    existing,
-                    items.clone(),
-                    *kind,
+                loan_env!(
+                    self,
+                    overwrite_array_items_by_identity_for_vm(existing, items.clone(), *kind,)
                 );
             }
             if let Some(gv) = existing.grep_source.as_deref() {
@@ -423,10 +422,13 @@ impl VM {
                         source_items[*source_idx] = items[filtered_idx].clone();
                     }
                 }
-                self.interpreter.overwrite_array_items_by_identity_for_vm(
-                    &gv.source,
-                    source_items,
-                    gv.source_kind,
+                loan_env!(
+                    self,
+                    overwrite_array_items_by_identity_for_vm(
+                        &gv.source,
+                        source_items,
+                        gv.source_kind,
+                    )
                 );
             }
             self.env_dirty = true;
@@ -783,10 +785,9 @@ impl VM {
                     (*ptr).items = items.clone();
                 }
             }
-            self.interpreter.overwrite_array_items_by_identity_for_vm(
-                existing,
-                items.clone(),
-                *kind,
+            loan_env!(
+                self,
+                overwrite_array_items_by_identity_for_vm(existing, items.clone(), *kind,)
             );
             self.env_dirty = true;
         }

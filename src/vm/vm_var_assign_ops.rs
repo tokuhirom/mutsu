@@ -207,9 +207,7 @@ impl VM {
             arr[i] = value;
             return Ok(());
         }
-        self.interpreter
-            .env_mut()
-            .insert(source_name.to_string(), value);
+        self.env_mut().insert(source_name.to_string(), value);
         Ok(())
     }
 
@@ -234,10 +232,7 @@ impl VM {
             }
             let saved_env = std::mem::take(self.env_mut());
             *self.env_mut() = sub_env;
-            let result = self
-                .interpreter
-                .eval_block_value(&data.body)
-                .unwrap_or(Value::Nil);
+            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
             *self.env_mut() = saved_env;
             return result;
         }
@@ -260,10 +255,8 @@ impl VM {
                         }
                         let saved_env = std::mem::take(self.env_mut());
                         *self.env_mut() = sub_env;
-                        let result = self
-                            .interpreter
-                            .eval_block_value(&data.body)
-                            .unwrap_or(Value::Nil);
+                        let result =
+                            loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                         *self.env_mut() = saved_env;
                         resolved.push(result);
                     } else {
@@ -518,7 +511,7 @@ impl VM {
         if !name.starts_with('%') {
             return Ok(());
         }
-        let Some(constraint) = self.interpreter.var_type_constraint(name) else {
+        let Some(constraint) = loan_env!(self, var_type_constraint(name)) else {
             return Ok(());
         };
         // Only enforce for a plain value-type constraint (`my Int %h`). Skip
@@ -544,9 +537,7 @@ impl VM {
             return Ok(());
         }
         // The bound container's element type (defaults to Mu when untyped).
-        let rhs_value_type = self
-            .interpreter
-            .container_type_metadata(value)
+        let rhs_value_type = loan_env!(self, container_type_metadata(value))
             .map(|info| info.value_type)
             .filter(|vt| !vt.is_empty())
             .unwrap_or_else(|| "Mu".to_string());
@@ -628,7 +619,7 @@ impl VM {
                 return self.try_compiled_method_or_interpret(value, tn, vec![]);
             }
         }
-        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+        if let Some(constraint) = loan_env!(self, var_type_constraint(name))
             && constraint.starts_with("SetHash")
         {
             let result = runtime::utils::coerce_value_to_quanthash(&value);
@@ -1068,7 +1059,7 @@ impl VM {
             None
         };
         if var_name.starts_with('@')
-            && let Some(constraint) = self.interpreter.var_type_constraint(var_name)
+            && let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
             && let Value::Array(items, kind) = value
         {
             // Native typed arrays cannot store lazy sequences
@@ -1114,8 +1105,8 @@ impl VM {
             // (coercion creates a new Arc, losing the registration).
             let saved_original_keys =
                 runtime::utils::hash_original_keys_snapshot(&Value::Hash(map.clone()));
-            let value_constraint = self.interpreter.var_type_constraint(var_name);
-            let key_constraint = self.interpreter.var_hash_key_constraint(var_name);
+            let value_constraint = loan_env!(self, var_type_constraint(var_name));
+            let key_constraint = loan_env!(self, var_hash_key_constraint(var_name));
             let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
             for (key, val) in map.iter() {
                 let coerced_key = if let Some(constraint) = &key_constraint {
@@ -1128,10 +1119,7 @@ impl VM {
                     let target_type =
                         coercion_target(constraint).unwrap_or_else(|| constraint.clone());
                     let key_as_typed_value = Self::try_reconstruct_typed_key(key, &target_type);
-                    if !self
-                        .interpreter
-                        .type_matches_value(&target_type, &key_as_typed_value)
-                    {
+                    if !loan_env!(self, type_matches_value(&target_type, &key_as_typed_value)) {
                         return Err(runtime::utils::type_check_element_typed_error(
                             var_name,
                             constraint,
@@ -1158,13 +1146,15 @@ impl VM {
                     } else {
                         let target_type =
                             coercion_target(constraint).unwrap_or_else(|| constraint.clone());
-                        let coerced = if self.interpreter.type_matches_value(&target_type, val) {
+                        let coerced = if self.type_matches_value(&target_type, val) {
                             val.clone()
                         } else {
-                            self.interpreter
-                                .try_coerce_value_for_constraint(constraint, val.clone())?
+                            loan_env!(
+                                self,
+                                try_coerce_value_for_constraint(constraint, val.clone())
+                            )?
                         };
-                        if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                        if !self.type_matches_value(&target_type, &coerced) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 var_name, constraint, val,
                             ));
@@ -1267,7 +1257,7 @@ impl VM {
             // A plain type constraint (e.g. `Array`) must type-check elements
             // strictly without coercing scalars into containers.
             let is_coercion = coercion_target(constraint).is_some();
-            let coerced = if self.interpreter.type_matches_value(&target_type, item) {
+            let coerced = if self.type_matches_value(&target_type, item) {
                 item.clone()
             } else if target_type == "Array" {
                 match item {
@@ -1279,24 +1269,28 @@ impl VM {
                             Value::Array(items.clone(), crate::value::ArrayKind::Array)
                         }
                         Value::Array(..) => inner.as_ref().clone(),
-                        _ if is_coercion => self
-                            .interpreter
-                            .try_coerce_value_for_constraint("Array()", item.clone())?,
+                        _ if is_coercion => loan_env!(
+                            self,
+                            try_coerce_value_for_constraint("Array()", item.clone())
+                        )?,
                         _ => item.clone(),
                     },
-                    _ if is_coercion => self
-                        .interpreter
-                        .try_coerce_value_for_constraint("Array()", item.clone())?,
+                    _ if is_coercion => loan_env!(
+                        self,
+                        try_coerce_value_for_constraint("Array()", item.clone())
+                    )?,
                     _ => item.clone(),
                 }
             } else if matches!(target_type.as_str(), "Array" | "List" | "Hash") && is_coercion {
                 self.interpreter
                     .try_coerce_value_for_constraint(&format!("{target_type}()"), item.clone())?
             } else {
-                self.interpreter
-                    .try_coerce_value_for_constraint(constraint, item.clone())?
+                loan_env!(
+                    self,
+                    try_coerce_value_for_constraint(constraint, item.clone())
+                )?
             };
-            if !self.interpreter.type_matches_value(&target_type, &coerced) {
+            if !self.type_matches_value(&target_type, &coerced) {
                 return Err(runtime::utils::type_check_element_typed_error(
                     var_name, constraint, item,
                 ));
@@ -1327,13 +1321,13 @@ impl VM {
                         for p in &data.params {
                             sub_env.insert(p.to_string(), Value::Int(len));
                         }
-                        let saved_env = std::mem::take(vm.interpreter.env_mut());
-                        *vm.interpreter.env_mut() = sub_env;
+                        let saved_env = std::mem::take(vm.env_mut());
+                        *vm.env_mut() = sub_env;
                         let result = vm
                             .interpreter
                             .eval_block_value(&data.body)
                             .unwrap_or(Value::Nil);
-                        *vm.interpreter.env_mut() = saved_env;
+                        *vm.env_mut() = saved_env;
                         match result {
                             Value::Int(i) => i,
                             _ => 0,
@@ -1508,15 +1502,13 @@ impl VM {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return Ok(());
         }
-        if let Some(constraint) = self.interpreter.var_type_constraint(name) {
+        if let Some(constraint) = loan_env!(self, var_type_constraint(name)) {
             if crate::runtime::native_types::is_native_int_type(&constraint)
                 || matches!(constraint.as_str(), "num" | "num32" | "num64" | "str")
             {
                 return Ok(());
             }
-            if !matches!(new_val, Value::Nil)
-                && !self.interpreter.type_matches_value(&constraint, new_val)
-            {
+            if !matches!(new_val, Value::Nil) && !self.type_matches_value(&constraint, new_val) {
                 let display = if name.starts_with('$') {
                     name.to_string()
                 } else {
@@ -1628,7 +1620,7 @@ impl VM {
         name: &str,
         new_val: Value,
     ) -> Result<Value, RuntimeError> {
-        let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
+        let new_val = self.maybe_wrap_native_int(name, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
@@ -1746,10 +1738,9 @@ impl VM {
         if let Value::Proxy { storer, .. } = &raw_val
             && !matches!(storer.as_ref(), Value::Nil)
         {
-            let fetched = self.interpreter.auto_fetch_proxy(&raw_val)?;
+            let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let new_val = self.apply_compound_base_op(op, fetched, rhs)?;
-            self.interpreter
-                .assign_proxy_lvalue(raw_val, new_val.clone())?;
+            loan_env!(self, assign_proxy_lvalue(raw_val, new_val.clone()))?;
             self.stack.push(new_val);
             return Ok(());
         }
@@ -1786,11 +1777,10 @@ impl VM {
         let name = Self::const_str(code, name_idx);
         // Handle $CALLER::varname++ — increment through caller scope
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
-            let raw_val = self.interpreter.get_caller_var(&bare_name, depth)?;
+            let raw_val = loan_env!(self, get_caller_var(&bare_name, depth))?;
             let val = Self::normalize_incdec_source(raw_val);
             let new_val = self.increment_value_smart(&val)?;
-            self.interpreter
-                .set_caller_var(&bare_name, depth, new_val)?;
+            loan_env!(self, set_caller_var(&bare_name, depth, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
@@ -1844,10 +1834,10 @@ impl VM {
         if let Value::Proxy { storer, .. } = &raw_val
             && !matches!(storer.as_ref(), Value::Nil)
         {
-            let fetched = self.interpreter.auto_fetch_proxy(&raw_val)?;
+            let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let val = Self::normalize_incdec_source(fetched);
             let new_val = self.increment_value_smart(&val)?;
-            self.interpreter.assign_proxy_lvalue(raw_val, new_val)?;
+            loan_env!(self, assign_proxy_lvalue(raw_val, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
@@ -1973,12 +1963,12 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         // Element type constraint of the variable, used to fill array holes with
         // the proper type object (`(Int)`) instead of Nil when autovivifying.
-        let declared_constraint_incdec = self.interpreter.var_type_constraint(&name);
+        let declared_constraint_incdec = loan_env!(self, var_type_constraint(&name));
         let declared_type_incdec = self
-            .interpreter
             .env()
             .get(&name)
-            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .cloned()
+            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
             .and_then(|info| info.declared_type);
         let _target_is_mixhash_incdec = declared_type_incdec
             .as_deref()
@@ -2090,7 +2080,7 @@ impl VM {
             )
             && !self.interpreter.is_container_subclass(constraint)
             && !matches!(&new_val, Value::Nil)
-            && !self.interpreter.type_matches_value(constraint, &new_val)
+            && !self.type_matches_value(constraint, &new_val)
         {
             return Err(runtime::utils::type_check_element_typed_error(
                 &name, constraint, &new_val,
@@ -2223,7 +2213,7 @@ impl VM {
             }
         } else {
             // Autovivify typed containers for inc/dec on undefined variables
-            let constraint = self.interpreter.var_type_constraint(&name);
+            let constraint = loan_env!(self, var_type_constraint(&name));
             let effective_type = declared_type_incdec.as_deref().or(constraint.as_deref());
             if let Some(type_name) = effective_type
                 && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
@@ -2255,9 +2245,7 @@ impl VM {
                     }
                     _ => unreachable!(),
                 };
-                self.interpreter
-                    .env_mut()
-                    .insert(name.clone(), new_container);
+                self.env_mut().insert(name.clone(), new_container);
                 if let Some(val) = self.env().get(&name).cloned() {
                     self.update_local_if_exists(code, &name, &val);
                 }
@@ -2344,10 +2332,10 @@ impl VM {
         // Commit: pop idx then val and write through the shared cell.
         let idx = self.stack.pop().unwrap();
         let val = self.stack.pop().unwrap();
-        match self
-            .interpreter
-            .assign_hash_elem_to_shared_var(&var_name, key, val.clone())
-        {
+        match loan_env!(
+            self,
+            assign_hash_elem_to_shared_var(&var_name, key, val.clone())
+        ) {
             Some(_) => {
                 self.stack.push(val);
                 Some(Ok(()))
@@ -2421,10 +2409,10 @@ impl VM {
         // Commit: pop idx then val and write through the shared cell.
         let idx_val = self.stack.pop().unwrap();
         let val = self.stack.pop().unwrap();
-        match self
-            .interpreter
-            .assign_array_elem_to_shared_var(&var_name, idx, val.clone())
-        {
+        match loan_env!(
+            self,
+            assign_array_elem_to_shared_var(&var_name, idx, val.clone())
+        ) {
             Some(_) => {
                 self.stack.push(val);
                 Some(Ok(()))
@@ -2594,12 +2582,9 @@ impl VM {
                     if key == "HOME" {
                         let home_str = val.to_string_value();
                         let home_val = self.interpreter.make_io_path_instance(&home_str);
-                        self.interpreter
-                            .env_mut()
+                        self.env_mut()
                             .insert("$*HOME".to_string(), home_val.clone());
-                        self.interpreter
-                            .env_mut()
-                            .insert("*HOME".to_string(), home_val);
+                        self.env_mut().insert("*HOME".to_string(), home_val);
                     }
                 }
                 self.stack.push(val);
@@ -2612,8 +2597,7 @@ impl VM {
                 let key = idx.to_string_value();
                 let mut map = std::collections::HashMap::new();
                 map.insert(key.clone(), val.clone());
-                self.interpreter
-                    .env_mut()
+                self.env_mut()
                     .insert(var_name.to_string(), Value::hash(map));
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
@@ -2625,12 +2609,9 @@ impl VM {
                     if key == "HOME" {
                         let home_str = val.to_string_value();
                         let home_val = self.interpreter.make_io_path_instance(&home_str);
-                        self.interpreter
-                            .env_mut()
+                        self.env_mut()
                             .insert("$*HOME".to_string(), home_val.clone());
-                        self.interpreter
-                            .env_mut()
-                            .insert("*HOME".to_string(), home_val);
+                        self.env_mut().insert("*HOME".to_string(), home_val);
                     }
                 }
                 self.stack.push(val);
@@ -2672,16 +2653,15 @@ impl VM {
         // embedded in `HashData` and travels with the hash across copy-on-write,
         // so the old name-based reconcile healing is no longer needed.
         let saved_type_meta_outer = self
-            .interpreter
             .env()
             .get(&save_var_name)
-            .and_then(|v| self.interpreter.container_type_metadata(v));
+            .cloned()
+            .and_then(|v| loan_env!(self, container_type_metadata(&v)));
         // Guard against stale pointer-keyed defaults (Arc reuse across
         // allocations): only trust the saved default when a name-based
         // var_default is also registered.
         let saved_default_outer = if self.interpreter.var_default(&save_var_name).is_some() {
-            self.interpreter
-                .env()
+            self.env()
                 .get(&save_var_name)
                 .and_then(|v| self.interpreter.container_default(v).cloned())
         } else {
@@ -2700,20 +2680,14 @@ impl VM {
         // entry silently degrades them to string-keyed lookups returning Nil.
         if let Some(info) = saved_type_meta_outer
             && let Some(container) = self.env().get(&save_var_name).cloned()
-            && self
-                .interpreter
-                .container_type_metadata(&container)
-                .as_ref()
-                != Some(&info)
+            && loan_env!(self, container_type_metadata(&container)).as_ref() != Some(&info)
         {
             // Hashes embed metadata in `HashData`, so the re-tagged value must
             // be written back into both env and the fast-path local slot
             // (`tag_container_metadata` returns the same Arc for non-hash
             // containers, whose Arc-pointer side table is updated in place).
             let tagged = self.interpreter.tag_container_metadata(container, info);
-            self.interpreter
-                .env_mut()
-                .insert(save_var_name.clone(), tagged.clone());
+            self.env_mut().insert(save_var_name.clone(), tagged.clone());
             self.locals_set_by_name(code, &save_var_name, tagged);
         }
         if let Some(def) = saved_default_outer
@@ -2721,9 +2695,7 @@ impl VM {
             && self.interpreter.container_default(&container).is_none()
         {
             let tagged = self.interpreter.tag_container_default(container, def);
-            self.interpreter
-                .env_mut()
-                .insert(save_var_name.clone(), tagged.clone());
+            self.env_mut().insert(save_var_name.clone(), tagged.clone());
             self.locals_set_by_name(code, &save_var_name, tagged);
         }
         // Object-hash original keys are embedded in `HashData` and travel with
@@ -2757,7 +2729,7 @@ impl VM {
         // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
         // Must be done before mutable borrows to avoid borrow conflicts.
         let native_fill = {
-            let tc = self.interpreter.var_type_constraint(&var_name);
+            let tc = loan_env!(self, var_type_constraint(&var_name));
             Self::native_fill_for_constraint(tc.as_deref())
         };
         // Capture the old Arc pointer before any mutation so the post-mutation
@@ -2773,10 +2745,10 @@ impl VM {
                 None
             };
         let declared_type = self
-            .interpreter
             .env()
             .get(&var_name)
-            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .cloned()
+            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
             .and_then(|info| info.declared_type);
         let _target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
@@ -2794,19 +2766,19 @@ impl VM {
         // indices expanded to an explicit index list so the slice-assign path
         // distributes each value to a single element (rather than checking the
         // whole RHS list against the scalar element type).
+        let vtc_native = loan_env!(self, var_type_constraint(&var_name))
+            .as_deref()
+            .is_some_and(crate::runtime::native_types::is_native_array_element_type);
+        let ct_native = index_target
+            .as_ref()
+            .cloned()
+            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
+            .is_some_and(|info| {
+                crate::runtime::native_types::is_native_array_element_type(&info.value_type)
+            });
         let array_var_is_native = !var_name.starts_with('%')
             && matches!(index_target, Some(Value::Array(..)))
-            && (self
-                .interpreter
-                .var_type_constraint(&var_name)
-                .as_deref()
-                .is_some_and(crate::runtime::native_types::is_native_array_element_type)
-                || index_target
-                    .as_ref()
-                    .and_then(|v| self.interpreter.container_type_metadata(v))
-                    .is_some_and(|info| {
-                        crate::runtime::native_types::is_native_array_element_type(&info.value_type)
-                    }));
+            && (vtc_native || ct_native);
         let expand_range = var_name.starts_with('%') || array_var_is_native;
         let idx = match idx {
             Value::Seq(items) => Value::Array(
@@ -2873,10 +2845,8 @@ impl VM {
         let val = if matches!(val, Value::Nil) {
             if let Some(default) = self.interpreter.var_default(&var_name) {
                 default.clone()
-            } else if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
+            } else if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name)) {
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 Value::Package(Symbol::intern(&nominal))
             } else {
                 val
@@ -2906,7 +2876,7 @@ impl VM {
                 || matches!(&current_val, Some(Value::Nil))
                 || matches!(&current_val, Some(Value::Package(_)));
             if is_undefined {
-                let constraint_owned = self.interpreter.var_type_constraint(&var_name);
+                let constraint_owned = loan_env!(self, var_type_constraint(&var_name));
                 let type_name_check = declared_type.as_deref().or(constraint_owned.as_deref());
                 if type_name_check.is_some_and(|t| matches!(t, "Mix" | "Set" | "Bag")) {
                     let type_name = type_name_check.unwrap_or("Mix");
@@ -2983,7 +2953,7 @@ impl VM {
         // their elements: `my num @a; @a[0] := $x` is illegal.
         if bind_mode
             && var_name.starts_with('@')
-            && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+            && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
             && crate::runtime::native_types::is_native_array_element_type(&constraint)
         {
             return Err(RuntimeError::new(format!(
@@ -3061,12 +3031,10 @@ impl VM {
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if var_name.starts_with('@')
-                    && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+                    && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
                 {
                     for v in &vals {
-                        if !matches!(v, Value::Nil)
-                            && !self.interpreter.type_matches_value(&constraint, v)
-                        {
+                        if !matches!(v, Value::Nil) && !self.type_matches_value(&constraint, v) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &constraint,
@@ -3143,13 +3111,11 @@ impl VM {
                     vals.push(Value::Nil);
                 }
                 // Check value type constraint for hash slice assignment
-                if let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+                if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
                     && !self.interpreter.is_container_subclass(&constraint)
                 {
                     for v in &vals {
-                        if !matches!(v, Value::Nil)
-                            && !self.interpreter.type_matches_value(&constraint, v)
-                        {
+                        if !matches!(v, Value::Nil) && !self.type_matches_value(&constraint, v) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &constraint,
@@ -3159,9 +3125,9 @@ impl VM {
                     }
                 }
                 // Check key type constraint for hash slice assignment
-                if let Some(key_constraint) = self.interpreter.var_hash_key_constraint(&var_name) {
+                if let Some(key_constraint) = loan_env!(self, var_hash_key_constraint(&var_name)) {
                     for key in keys.iter() {
-                        if !self.interpreter.type_matches_value(&key_constraint, key) {
+                        if !self.type_matches_value(&key_constraint, key) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &key_constraint,
@@ -3176,10 +3142,8 @@ impl VM {
                         Value::hash(std::collections::HashMap::new()),
                     );
                 }
-                let slice_is_object_hash = self
-                    .interpreter
-                    .var_hash_key_constraint(&var_name)
-                    .is_some();
+                let slice_is_object_hash =
+                    loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
                 // Phase 2 Stage 2 (hash slice bind): pre-read each bind source
                 // before the mutable container borrow, reusing an existing
                 // `ContainerRef` cell binding or creating a fresh cell to
@@ -3256,16 +3220,13 @@ impl VM {
             _ => {
                 // For object hashes, use .WHICH as the internal key.
                 let is_object_hash = var_name.starts_with('%')
-                    && self
-                        .interpreter
-                        .var_hash_key_constraint(&var_name)
-                        .is_some();
+                    && loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
                 let key = if is_object_hash {
                     runtime::utils::value_which_key(&idx)
                 } else {
                     idx.to_string_value()
                 };
-                let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
+                let array_elem_constraint = loan_env!(self, var_type_constraint(&var_name));
                 // A `%h is BagHash`/`MixHash`/`SetHash` (or `Bag`/`Mix`/`Set`)
                 // variable IS that QuantHash: the constraint names the *whole*
                 // container, not the element type, and `%h<k> = weight` sets a
@@ -3279,7 +3240,7 @@ impl VM {
                 if let Some(constraint) = array_elem_constraint
                     && !target_is_quanthash
                     && !matches!(val, Value::Nil)
-                    && !self.interpreter.type_matches_value(&constraint, &val)
+                    && !self.type_matches_value(&constraint, &val)
                     // For `$`-sigil variables holding a container (e.g. a `Hash $h`
                     // parameter), a container type constraint describes the whole
                     // container, not its elements, so element assignment like
@@ -3303,8 +3264,8 @@ impl VM {
                 // Check key type constraint for single-key hash element assignment
                 if var_name.starts_with('%')
                     && let Some(key_constraint) =
-                        self.interpreter.var_hash_key_constraint(&var_name)
-                    && !self.interpreter.type_matches_value(&key_constraint, &idx)
+                        loan_env!(self, var_hash_key_constraint(&var_name))
+                    && !self.type_matches_value(&key_constraint, &idx)
                 {
                     return Err(runtime::utils::type_check_element_typed_error(
                         &var_name,
@@ -3314,8 +3275,7 @@ impl VM {
                 }
                 // Native integer arrays store the wrapped value (`-1` -> `255` in a
                 // uint8 array); the assignment expression still yields the original.
-                let native_store_val =
-                    Self::wrap_native_int_for_var(&self.interpreter, &var_name, val.clone());
+                let native_store_val = self.wrap_native_int_for_var(&var_name, val.clone());
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
                 let idx_for_slice = if let Value::GenericRange { .. } = &idx {
@@ -3340,12 +3300,10 @@ impl VM {
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if let Some((_, ref rhs_values)) = range_slice
                     && (var_name.starts_with('@') || var_name.starts_with('%'))
-                    && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+                    && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
                 {
                     for v in rhs_values {
-                        if !matches!(v, Value::Nil)
-                            && !self.interpreter.type_matches_value(&constraint, v)
-                        {
+                        if !matches!(v, Value::Nil) && !self.type_matches_value(&constraint, v) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &constraint,
@@ -3439,8 +3397,13 @@ impl VM {
                 // Type check for parameterized SetHash[T] element binding.
                 // Only applies when the declared type is explicitly parameterized
                 // (e.g. SetHash[Str]), not when the constraint is just `is SetHash`.
-                if let Some(set_val @ Value::Set(..)) = self.env().get(&var_name)
-                    && let Some(info) = self.interpreter.container_type_metadata(set_val)
+                let set_val_clone = self
+                    .env()
+                    .get(&var_name)
+                    .filter(|v| matches!(v, Value::Set(..)))
+                    .cloned();
+                if let Some(set_val) = set_val_clone
+                    && let Some(info) = loan_env!(self, container_type_metadata(&set_val))
                     && info
                         .declared_type
                         .as_deref()
@@ -3448,7 +3411,7 @@ impl VM {
                     && !info.value_type.is_empty()
                     && info.value_type != "Any"
                     && info.value_type != "Mu"
-                    && !self.interpreter.type_matches_value(&info.value_type, &idx)
+                    && !self.type_matches_value(&info.value_type, &idx)
                 {
                     let got_type = crate::value::what_type_name(&idx);
                     let got_repr = idx.to_string_value();
@@ -3493,14 +3456,12 @@ impl VM {
                     }
                     let hash_map: HashMap<String, Value> = HashMap::clone(&attributes.as_map());
                     let hash_val = Value::hash(hash_map);
-                    self.interpreter
-                        .env_mut()
-                        .insert(var_name.clone(), hash_val);
+                    self.env_mut().insert(var_name.clone(), hash_val);
                 }
                 // Autovivify Nil-valued typed containers (MixHash, BagHash, SetHash)
                 // before the main container dispatch so they are handled correctly.
                 {
-                    let constraint = self.interpreter.var_type_constraint(&var_name);
+                    let constraint = loan_env!(self, var_type_constraint(&var_name));
                     let effective_type = declared_type.as_deref().or(constraint.as_deref());
                     if let Some(type_name) = effective_type
                         && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
@@ -3536,9 +3497,7 @@ impl VM {
                             }
                             _ => unreachable!(),
                         };
-                        self.interpreter
-                            .env_mut()
-                            .insert(var_name.clone(), new_container);
+                        self.env_mut().insert(var_name.clone(), new_container);
                         self.stack.push(val);
                         // Update local slot
                         if let Some(new_val) = self.env().get(&var_name).cloned() {
@@ -3823,8 +3782,7 @@ impl VM {
                     {
                         let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
                         arr[i] = val.clone();
-                        self.interpreter
-                            .env_mut()
+                        self.env_mut()
                             .insert(var_name.clone(), Value::real_array(arr));
                     } else {
                         let mut hash = std::collections::HashMap::new();
@@ -3835,9 +3793,7 @@ impl VM {
                             orig.insert(key.clone(), idx.clone());
                             hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
                         }
-                        self.interpreter
-                            .env_mut()
-                            .insert(var_name.clone(), hash_val);
+                        self.env_mut().insert(var_name.clone(), hash_val);
                     }
                 }
                 if let Some((source_name, source_index, source_value)) = pending_varref_update {
@@ -3865,12 +3821,9 @@ impl VM {
                 if var_name == "%*ENV" && key == "HOME" {
                     let home_str = val.to_string_value();
                     let home_val = self.interpreter.make_io_path_instance(&home_str);
-                    self.interpreter
-                        .env_mut()
+                    self.env_mut()
                         .insert("$*HOME".to_string(), home_val.clone());
-                    self.interpreter
-                        .env_mut()
-                        .insert("*HOME".to_string(), home_val);
+                    self.env_mut().insert("*HOME".to_string(), home_val);
                 }
             }
         }
@@ -3912,8 +3865,7 @@ impl VM {
         if let Some(ref alias_target) = sigilless_alias_target
             && let Some(updated_container) = self.env().get(alias_target).cloned()
         {
-            self.interpreter
-                .env_mut()
+            self.env_mut()
                 .insert(original_var_name.clone(), updated_container.clone());
             self.update_local_if_exists(code, &original_var_name, &updated_container);
         }
@@ -3994,18 +3946,17 @@ impl VM {
             if resolved_name.starts_with('@') || resolved_name.starts_with('%') {
                 val = self.coerce_typed_container_assignment(&resolved_name, val, false)?;
             }
-            if let Some(constraint) = self.interpreter.var_type_constraint(&resolved_name)
+            if let Some(constraint) = loan_env!(self, var_type_constraint(&resolved_name))
                 && !resolved_name.starts_with('@')
                 && !resolved_name.starts_with('%')
             {
                 if matches!(val, Value::Nil) {
                     if constraint != "Mu" {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal =
+                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         val = Value::Package(Symbol::intern(&nominal));
                     }
-                } else if !self.interpreter.type_matches_value(&constraint, &val) {
+                } else if !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         &resolved_name,
                         &constraint,
@@ -4013,9 +3964,7 @@ impl VM {
                     ));
                 }
                 if !matches!(val, Value::Nil | Value::Package(_)) {
-                    val = self
-                        .interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?;
+                    val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
                 }
             }
 
@@ -4034,7 +3983,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let native_fill = {
-            let tc = self.interpreter.var_type_constraint(&var_name);
+            let tc = loan_env!(self, var_type_constraint(&var_name));
             Self::native_fill_for_constraint(tc.as_deref())
         };
         let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
@@ -4097,13 +4046,10 @@ impl VM {
         // would need to create a Hash value which won't match the constraint
         // (e.g. `my Int %h; %h<z><t> = 3` should die because %h<z> can't be a Hash).
         if var_name.starts_with('%')
-            && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+            && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
         {
             let inner_hash = Value::hash(std::collections::HashMap::new());
-            if !self
-                .interpreter
-                .type_matches_value(&constraint, &inner_hash)
-            {
+            if !loan_env!(self, type_matches_value(&constraint, &inner_hash)) {
                 return Err(RuntimeError::new(format!(
                     "Type check failed in assignment to {var_name}; expected {constraint} but got Hash (autovivification)"
                 )));
@@ -4346,7 +4292,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let native_fill = {
-            let tc = self.interpreter.var_type_constraint(&var_name);
+            let tc = loan_env!(self, var_type_constraint(&var_name));
             Self::native_fill_for_constraint(tc.as_deref())
         };
         let depth = depth as usize;
@@ -4719,8 +4665,7 @@ impl VM {
                         } else {
                             &key
                         };
-                    self.interpreter
-                        .set_caller_var(bare_name, depth, val.clone())?;
+                    loan_env!(self, set_caller_var(bare_name, depth, val.clone()))?;
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -5154,9 +5099,7 @@ impl VM {
                 .as_ref()
                 .is_some_and(|v| Self::same_container_arc(v, &cell_val))
             {
-                self.interpreter
-                    .env_mut()
-                    .insert(name.clone(), cell_val.clone());
+                self.env_mut().insert(name.clone(), cell_val.clone());
                 if let Some(slot) = self.find_local_slot(code, &name) {
                     self.locals[slot] = cell_val.clone();
                 }
@@ -5294,14 +5237,15 @@ impl VM {
             // Array (@) variables with `atomicint` constraint are element-wise
             // atomic and should go through the normal array read path.
             let is_atomic_int = !name.starts_with('@')
-                && (self.interpreter.var_type_constraint(&name).as_deref() == Some("atomicint")
-                    || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                && (loan_env!(self, var_type_constraint(&name)).as_deref() == Some("atomicint")
+                    || loan_env!(self, var_type_constraint(atomic_name)).as_deref()
                         == Some("atomicint")
                     || self.interpreter.get_shared_var(&atomic_name_key).is_some());
             if is_atomic_int {
-                let fetched = self
-                    .interpreter
-                    .builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])?;
+                let fetched = loan_env!(
+                    self,
+                    builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])
+                )?;
                 self.locals[idx] = fetched.clone();
                 self.stack.push(fetched);
                 return Ok(());
@@ -5399,9 +5343,7 @@ impl VM {
                 return Ok(());
             }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(&name).cloned() {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 // Nil type constraint: the type object for Nil is Value::Nil itself,
                 // not Value::Package("Nil").
                 if nominal == "Nil" {
@@ -5497,9 +5439,7 @@ impl VM {
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it.
             if matches!(self.env().get(name), Some(Value::ContainerRef(_))) {
-                self.interpreter
-                    .env_mut()
-                    .insert(name.to_string(), Value::Nil);
+                self.env_mut().insert(name.to_string(), Value::Nil);
             }
             // Per-iteration freshness for box-on-capture (lever C Slice 2): if a
             // previous iteration's closure boxed this loop-body `my` into a
@@ -5545,7 +5485,7 @@ impl VM {
                 && !matches!(storer.as_ref(), Value::Nil)
             {
                 let proxy_val = self.locals[idx].clone();
-                self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+                loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
                 return Ok(());
             }
             // First write through a missing-key `:=` bind (a local holding a
@@ -5585,9 +5525,7 @@ impl VM {
                         constraint
                     )));
                 }
-                if !matches!(val, Value::Nil)
-                    && !self.interpreter.type_matches_value(&constraint, &val)
-                {
+                if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
                         &constraint,
@@ -5595,8 +5533,7 @@ impl VM {
                     ));
                 }
                 let val = if !matches!(val, Value::Nil) {
-                    self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                    loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
                 };
@@ -5621,8 +5558,7 @@ impl VM {
             }
             // Update env when shared_vars is active; otherwise write through to env.
             if self.interpreter.shared_vars_active {
-                self.interpreter
-                    .set_shared_var(name, self.locals[idx].clone());
+                loan_env!(self, set_shared_var(name, self.locals[idx].clone()));
             } else {
                 self.flush_local_to_env(code, idx);
             }
@@ -5661,9 +5597,10 @@ impl VM {
                 if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
                     let is_co_local = code.locals.iter().any(|n| n == target.as_str());
                     if !is_co_local {
-                        self.interpreter
-                            .env_mut()
-                            .insert(target.to_string(), self.locals[idx].clone());
+                        {
+                            let __v = self.locals[idx].clone();
+                            self.env_mut().insert(target.to_string(), __v);
+                        }
                     }
                 }
             }
@@ -5703,7 +5640,7 @@ impl VM {
                 && !is_constant
                 && !is_bind
                 && matches!(raw_popped, Value::Nil)
-                && let Some(constraint) = self.interpreter.var_type_constraint(name)
+                && let Some(constraint) = loan_env!(self, var_type_constraint(name))
             {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
@@ -5750,7 +5687,7 @@ impl VM {
                 && !is_constant
                 && !is_bind
                 && matches!(raw_popped, Value::Nil)
-                && let Some(constraint) = self.interpreter.var_type_constraint(name)
+                && let Some(constraint) = loan_env!(self, var_type_constraint(name))
             {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
@@ -5761,7 +5698,7 @@ impl VM {
             // Native typed arrays cannot store lazy sequences — check before
             // eager evaluation so the error is raised even if the sequence is
             // infinite.
-            if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            if let Some(constraint) = loan_env!(self, var_type_constraint(name))
                 && crate::runtime::native_types::is_native_array_element_type(&constraint)
             {
                 let is_lazy_value = match &raw_popped {
@@ -6029,7 +5966,7 @@ impl VM {
                 );
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(&shape));
                 // Preserve container type metadata
-                if let Some(info) = self.interpreter.container_type_metadata(&self.locals[idx]) {
+                if let Some(info) = loan_env!(self, container_type_metadata(&self.locals[idx])) {
                     assigned = self.interpreter.tag_container_metadata(assigned, info);
                 }
             }
@@ -6094,7 +6031,7 @@ impl VM {
         if !is_bind && (name.starts_with('@') || name.starts_with('%')) {
             val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
         }
-        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+        if let Some(constraint) = loan_env!(self, var_type_constraint(name))
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
@@ -6111,8 +6048,7 @@ impl VM {
                     constraint
                 )));
             }
-            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
-            {
+            if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
@@ -6120,9 +6056,7 @@ impl VM {
                 ));
             }
             if !matches!(val, Value::Nil) {
-                val = self
-                    .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
             // Wrap native integer values on assignment (overflow wrapping)
             val = Self::wrap_native_int_by_constraint(&constraint, val)?;
@@ -6139,7 +6073,7 @@ impl VM {
             return Err(RuntimeError::assignment_ro(None));
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
-            self.interpreter.reset_atomic_var_key(name);
+            loan_env!(self, reset_atomic_var_key(name));
         }
         // When rebinding a variable (`$x := expr`), remove any existing
         // bind pairs where this slot was the source.  Rebinding replaces
@@ -6164,12 +6098,9 @@ impl VM {
         }
         if let Some(source_name) = bind_source {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
-            self.interpreter
-                .env_mut()
+            self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source.clone()));
-            self.interpreter
-                .env_mut()
-                .insert(readonly_key, Value::Bool(false));
+            self.env_mut().insert(readonly_key, Value::Bool(false));
             // Create a shared ContainerRef for cross-scope binding (source in
             // outer call frame) OR same-scope rebinding (`:=` on existing vars).
             // ContainerRef ensures bidirectional container sharing: writing to
@@ -6213,7 +6144,7 @@ impl VM {
                 // the early return below skips).
                 if name.starts_with('@') || name.starts_with('%') {
                     let inner = cell.lock().unwrap().clone();
-                    if let Some(info) = self.interpreter.container_type_metadata(&inner)
+                    if let Some(info) = loan_env!(self, container_type_metadata(&inner))
                         && !info.value_type.is_empty()
                     {
                         let constraint_str = if name.starts_with('%') {
@@ -6225,13 +6156,12 @@ impl VM {
                         } else {
                             info.value_type.clone()
                         };
-                        self.interpreter
-                            .set_var_type_constraint(name, Some(constraint_str));
+                        self.vm_set_var_type_constraint(name, Some(constraint_str));
                     } else {
                         // Untyped source: clear any declared constraint inherited
                         // from this variable's own declaration so it does not
                         // over-constrain the shared container.
-                        self.interpreter.set_var_type_constraint(name, None);
+                        self.vm_set_var_type_constraint(name, None);
                     }
                 }
                 let container = Value::ContainerRef(cell);
@@ -6297,8 +6227,7 @@ impl VM {
                     self.flush_local_to_env(code, source_idx);
                 }
                 // Update source in env
-                self.interpreter
-                    .env_mut()
+                self.env_mut()
                     .insert(resolved_source.clone(), container.clone());
                 // Propagate ContainerRef to all saved call frame envs AND locals
                 // so the binding survives method returns (env restore) and a
@@ -6378,7 +6307,7 @@ impl VM {
             && !matches!(storer.as_ref(), Value::Nil)
         {
             let proxy_val = self.locals[idx].clone();
-            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             return Ok(());
         }
         // First write through a missing-key `:=` bind: materialize the path into
@@ -6414,8 +6343,8 @@ impl VM {
             && (name.starts_with('%') || name.starts_with('@'))
             && !name.contains('.')
             && !name.contains('!')
-            && self.interpreter.var_type_constraint(name).is_none()
-            && self.interpreter.container_type_metadata(&val).is_some()
+            && loan_env!(self, var_type_constraint(name)).is_none()
+            && loan_env!(self, container_type_metadata(&val)).is_some()
         {
             // Clear the embedded container type metadata in place so an
             // untyped variable never reports a typed element/key constraint.
@@ -6430,7 +6359,7 @@ impl VM {
         // are type-checked (e.g. `my %h := Hash[Int].new; %h<a> = "b"` should die).
         if is_bind
             && (name.starts_with('%') || name.starts_with('@'))
-            && let Some(info) = self.interpreter.container_type_metadata(&val)
+            && let Some(info) = loan_env!(self, container_type_metadata(&val))
             && !info.value_type.is_empty()
         {
             // Build the constraint string that set_var_type_constraint expects.
@@ -6445,8 +6374,7 @@ impl VM {
             } else {
                 info.value_type.clone()
             };
-            self.interpreter
-                .set_var_type_constraint(name, Some(constraint_str));
+            self.vm_set_var_type_constraint(name, Some(constraint_str));
         }
         // Circular hash reference fixup: when assigning to a hash variable,
         // if any values in the new hash reference the old hash (captured on the
@@ -6468,7 +6396,7 @@ impl VM {
         // updates the Arc-pointer side table. Done before the value is cloned
         // and propagated to env/aliases below, so every copy carries it.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+            && let Some(value_type) = loan_env!(self, var_type_constraint(name))
         {
             let info = crate::runtime::ContainerTypeInfo {
                 declared_type: if name.starts_with('@')
@@ -6480,7 +6408,7 @@ impl VM {
                 },
                 value_type,
                 key_type: if name.starts_with('%') {
-                    self.interpreter.var_hash_key_constraint(name)
+                    loan_env!(self, var_hash_key_constraint(name))
                 } else {
                     None
                 },
@@ -6497,20 +6425,15 @@ impl VM {
         if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.
-            self.interpreter
-                .env_mut()
-                .insert(name.to_string(), val.clone());
+            self.env_mut().insert(name.to_string(), val.clone());
         } else {
             self.set_env_with_main_alias(name, val.clone());
         }
         if let Some(symbol) = Self::term_symbol_from_name(name) {
-            self.interpreter
-                .env_mut()
-                .insert(symbol.to_string(), val.clone());
+            self.env_mut().insert(symbol.to_string(), val.clone());
             let pkg = self.current_package().to_string();
             if pkg != "GLOBAL" {
-                self.interpreter
-                    .env_mut()
+                self.env_mut()
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
             }
         }
@@ -6527,9 +6450,7 @@ impl VM {
                 break;
             }
             self.update_local_if_exists(code, &current_alias, &val);
-            self.interpreter
-                .env_mut()
-                .insert(current_alias.clone(), val.clone());
+            self.env_mut().insert(current_alias.clone(), val.clone());
             // Sigilless attribute write: mirror an attr-twigil alias (`!x`) into
             // self's shared cell (no-op for non-attribute aliases). Stage 2c (ii).
             self.write_self_attr_cell(&current_alias, val.clone());
@@ -6554,13 +6475,9 @@ impl VM {
             }
         }
         if let Some(attr) = name.strip_prefix('.') {
-            self.interpreter
-                .env_mut()
-                .insert(format!("!{}", attr), val.clone());
+            self.env_mut().insert(format!("!{}", attr), val.clone());
         } else if let Some(attr) = name.strip_prefix('!') {
-            self.interpreter
-                .env_mut()
-                .insert(format!(".{}", attr), val.clone());
+            self.env_mut().insert(format!(".{}", attr), val.clone());
         }
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
@@ -6581,12 +6498,12 @@ impl VM {
         dynamic: bool,
     ) {
         let name = Self::const_str(code, name_idx);
-        self.interpreter.set_var_dynamic(name, dynamic);
+        loan_env!(self, set_var_dynamic(name, dynamic));
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name.
-        self.interpreter.set_var_type_constraint(name, None);
+        self.vm_set_var_type_constraint(name, None);
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
-            self.interpreter.reset_atomic_var_key_decl(name);
+            loan_env!(self, reset_atomic_var_key_decl(name));
         }
         // A fresh @-variable declaration must clear any CAS atomic array
         // state left over from a previous lexical with the same name
@@ -6705,7 +6622,7 @@ impl VM {
         {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let proxy_val = self.locals[idx].clone();
-            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             return Ok(());
         }
 
@@ -6754,20 +6671,18 @@ impl VM {
                     if constraint == "Mu" {
                         val
                     } else {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal =
+                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     }
-                } else if !self.interpreter.type_matches_value(&constraint, &val) {
+                } else if !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
                         &constraint,
                         &val,
                     ));
                 } else if !matches!(val, Value::Nil | Value::Package(_)) {
-                    self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                    loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
                 };
@@ -6787,8 +6702,7 @@ impl VM {
             }
             // Update env when shared_vars is active; otherwise write through to env.
             if self.interpreter.shared_vars_active {
-                self.interpreter
-                    .set_shared_var(name, self.locals[idx].clone());
+                loan_env!(self, set_shared_var(name, self.locals[idx].clone()));
             } else {
                 self.flush_local_to_env(code, idx);
             }
@@ -6849,19 +6763,18 @@ impl VM {
         if name.starts_with('@') || name.starts_with('%') {
             val = self.coerce_typed_container_assignment(name, val, false)?;
         }
-        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+        if let Some(constraint) = loan_env!(self, var_type_constraint(name))
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
             if matches!(val, Value::Nil) {
                 if constraint != "Mu" {
                     // Assigning Nil to a typed variable resets it to the type object
-                    let nominal = self
-                        .interpreter
-                        .nominal_type_object_name_for_constraint(&constraint);
+                    let nominal =
+                        loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                     val = Value::Package(Symbol::intern(&nominal));
                 }
-            } else if !self.interpreter.type_matches_value(&constraint, &val) {
+            } else if !self.type_matches_value(&constraint, &val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
@@ -6869,9 +6782,7 @@ impl VM {
                 ));
             }
             if !matches!(val, Value::Nil | Value::Package(_)) {
-                val = self
-                    .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
@@ -6882,7 +6793,7 @@ impl VM {
             return Err(RuntimeError::assignment_ro(None));
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
-            self.interpreter.reset_atomic_var_key(name);
+            loan_env!(self, reset_atomic_var_key(name));
         }
         if self.interpreter.fatal_mode
             && !name.contains("__mutsu_")
@@ -6894,7 +6805,7 @@ impl VM {
         // before it is stored, so the embedded `HashData` metadata (or array
         // side-table entry) is carried by every copy below.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+            && let Some(value_type) = loan_env!(self, var_type_constraint(name))
         {
             let info = crate::runtime::ContainerTypeInfo {
                 declared_type: if name.starts_with('@')
@@ -6906,7 +6817,7 @@ impl VM {
                 },
                 value_type,
                 key_type: if name.starts_with('%') {
-                    self.interpreter.var_hash_key_constraint(name)
+                    loan_env!(self, var_hash_key_constraint(name))
                 } else {
                     None
                 },
@@ -6926,13 +6837,9 @@ impl VM {
             self.env_mut().insert(alias_name, val.clone());
         }
         if let Some(attr) = name.strip_prefix('.') {
-            self.interpreter
-                .env_mut()
-                .insert(format!("!{}", attr), val.clone());
+            self.env_mut().insert(format!("!{}", attr), val.clone());
         } else if let Some(attr) = name.strip_prefix('!') {
-            self.interpreter
-                .env_mut()
-                .insert(format!(".{}", attr), val.clone());
+            self.env_mut().insert(format!(".{}", attr), val.clone());
         }
         self.stack.push(val);
         Ok(())
@@ -6969,7 +6876,7 @@ impl VM {
             && !package.is_empty()
         {
             self.stack
-                .push(self.interpreter.package_stash_value(package));
+                .push(loan_env!(self, package_stash_value(package)));
             return;
         }
 
@@ -7016,7 +6923,7 @@ impl VM {
             return Value::Hash(Value::hash_arc(entries));
         }
         if name != "MY" && name != "LEXICAL" {
-            return self.interpreter.package_stash_value(name);
+            return loan_env!(self, package_stash_value(name));
         }
         // MY / LEXICAL: collect locals + env
         self.ensure_locals_synced(code);
@@ -7188,12 +7095,8 @@ impl VM {
     /// Wrap `val` for storage into the native-integer array named by `var_name`
     /// (e.g. `-1` -> `255` for a `uint8` array). Returns the value unchanged when
     /// the variable is not a native integer array or wrapping does not apply.
-    fn wrap_native_int_for_var(
-        interpreter: &crate::runtime::Interpreter,
-        var_name: &str,
-        val: Value,
-    ) -> Value {
-        if let Some(constraint) = interpreter.var_type_constraint(var_name)
+    fn wrap_native_int_for_var(&mut self, var_name: &str, val: Value) -> Value {
+        if let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
             && crate::runtime::native_types::is_native_int_type(&constraint)
         {
             return Self::wrap_native_int_by_constraint(&constraint, val.clone()).unwrap_or(val);

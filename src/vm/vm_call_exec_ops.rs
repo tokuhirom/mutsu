@@ -51,13 +51,13 @@ impl VM {
         } else {
             self.auto_fetch_proxy_args(args)?
         };
-        self.interpreter.set_pending_callsite_line(callsite_line);
+        loan_env!(self, set_pending_callsite_line(callsite_line));
         // Check wrap chain for named function calls
         if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(&name)
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
         {
-            let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+            let result = self.vm_call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -75,7 +75,7 @@ impl VM {
             native_result?;
         } else {
             self.interpreter.set_pending_call_arg_sources(arg_sources);
-            let exec_result = self.interpreter.exec_call_values(&name, args);
+            let exec_result = loan_env!(self, exec_call_values(&name, args));
             self.interpreter.set_pending_call_arg_sources(None);
             exec_result?;
             self.env_dirty = true;
@@ -117,7 +117,7 @@ impl VM {
             return Ok(());
         }
         // Fall back to interpreter
-        self.interpreter.exec_call_pairs_values(&name, args)?;
+        loan_env!(self, exec_call_pairs_values(&name, args))?;
         self.env_dirty = true;
         Ok(())
     }
@@ -171,7 +171,7 @@ impl VM {
             return Ok(());
         }
         // Fall back to interpreter
-        self.interpreter.exec_call_pairs_values(&name, args)?;
+        loan_env!(self, exec_call_pairs_values(&name, args))?;
         self.env_dirty = true;
         Ok(())
     }

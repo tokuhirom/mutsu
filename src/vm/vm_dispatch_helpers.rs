@@ -138,7 +138,7 @@ impl VM {
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
                 let args = vec![left.clone(), right.clone()];
                 if let Some(name) = normalized_op.strip_prefix('&') {
-                    let callable = self.interpreter.resolve_code_var(name);
+                    let callable = loan_env!(self, resolve_code_var(name));
                     if matches!(
                         callable,
                         Value::Sub(_)
@@ -153,19 +153,10 @@ impl VM {
                     if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
                         return Ok(v);
                     }
-                    if let Some(callable) = self
-                        .interpreter
-                        .env()
-                        .get(&format!("&{}", infix_name))
-                        .cloned()
-                    {
+                    if let Some(callable) = self.env().get(&format!("&{}", infix_name)).cloned() {
                         return self.vm_call_on_value(callable, args.clone(), None);
                     }
-                    if let Some(callable) = self
-                        .interpreter
-                        .env()
-                        .get(&format!("&{}", normalized_op))
-                        .cloned()
+                    if let Some(callable) = self.env().get(&format!("&{}", normalized_op)).cloned()
                     {
                         return self.vm_call_on_value(callable, args.clone(), None);
                     }
@@ -186,7 +177,7 @@ impl VM {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        self.interpreter.coerce_infix_operand_numeric(value)
+        loan_env!(self, coerce_infix_operand_numeric(value))
     }
 
     pub(super) fn coerce_numeric_bridge_pair(
@@ -222,10 +213,7 @@ impl VM {
         match val {
             Value::Package(name) => {
                 let class_name = name.resolve().to_string();
-                if self
-                    .interpreter
-                    .resolve_method_with_owner(&class_name, "Bool", &[])
-                    .is_some()
+                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[])).is_some()
                     && let Ok(result) =
                         self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {
@@ -235,10 +223,7 @@ impl VM {
             }
             Value::Instance { class_name, .. } => {
                 let cn = class_name.resolve().to_string();
-                if self
-                    .interpreter
-                    .resolve_method_with_owner(&cn, "Bool", &[])
-                    .is_some()
+                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
                     && let Ok(result) =
                         self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {
@@ -249,12 +234,7 @@ impl VM {
             Value::Regex(_)
             | Value::RegexWithAdverbs { .. }
             | Value::Routine { is_regex: true, .. } => {
-                let topic = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 self.vm_smart_match(&topic, val)
             }
             _ => val.truthy(),
@@ -391,7 +371,7 @@ impl VM {
                 // is a `Value::Sub` and never reaches this Routine branch). Otherwise
                 // route user subs/multi/proto through compiled-first.
                 if crate::runtime::Interpreter::is_builtin_function(&name_str) {
-                    return self.interpreter.call_function(&name_str, args);
+                    return self.vm_call_function(&name_str, args);
                 }
                 return self.call_function_compiled_first(&name_str, args, fns);
             }
@@ -448,7 +428,7 @@ impl VM {
         // call_sub_value, avoiding the eval_call_on_value indirection since we
         // already know the target is a Sub.
         if matches!(target, Value::Sub(_)) {
-            return self.interpreter.call_sub_value(target, args, true);
+            return self.vm_call_sub_value(target, args, true);
         }
 
         // Any remaining value (Int, Str, Num, ...) is not Callable. Invoking it

@@ -132,7 +132,7 @@ impl VM {
                 // the interpreter's reflective scope resolution. See ledger §C.
                 // For regular qualified names, try compiled dispatch first.
                 let result = if self.is_interpreter_handled_function(name) {
-                    self.interpreter.call_function(name, Vec::new())?
+                    self.vm_call_function(name, Vec::new())?
                 } else {
                     self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
                 };
@@ -144,7 +144,7 @@ impl VM {
                 Value::str(name.to_string())
             }
         } else if name.contains("::")
-            && let Some(def) = self.interpreter.resolve_function_with_types(name, &[])
+            && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = def.package.resolve();
@@ -186,7 +186,7 @@ impl VM {
             && name.contains('-')
         {
             // CARRIER: Test-framework function dispatch (test-mode state). See ledger §C.
-            let result = self.interpreter.call_function(name, Vec::new())?;
+            let result = self.vm_call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
         } else if self.has_function(name)
@@ -218,7 +218,7 @@ impl VM {
             || name == "lastcall"
         {
             // CARRIER: call-chain introspection (interpreter MOP dispatch stack). See ledger §C.
-            let result = self.interpreter.call_function(name, Vec::new())?;
+            let result = self.vm_call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
         } else if name.starts_with("Metamodel::") {

@@ -113,7 +113,7 @@ impl VM {
         needle: &Value,
         whole: &Value,
     ) -> bool {
-        if let Some(info) = self.interpreter.container_type_metadata(whole) {
+        if let Some(info) = loan_env!(self, container_type_metadata(whole)) {
             if let Some(key_type) = info.key_type {
                 if (key_type == "Any" || key_type == "Mu")
                     && matches!(needle, Value::Str(s) if s.parse::<i128>().is_ok())
@@ -124,7 +124,7 @@ impl VM {
                 }
                 if key_type != "Any"
                     && key_type != "Mu"
-                    && !self.interpreter.type_matches_value(&key_type, needle)
+                    && !self.type_matches_value(&key_type, needle)
                 {
                     return false;
                 }
@@ -825,10 +825,7 @@ impl VM {
         values.reverse();
 
         // Check for user-defined override
-        if let Some(def) = self
-            .interpreter
-            .resolve_function_with_types(infix_name, &values)
-        {
+        if let Some(def) = loan_env!(self, resolve_function_with_types(infix_name, &values)) {
             let empty_fns = HashMap::new();
             let result = self.compile_and_call_function_def(&def, values.clone(), &empty_fns)?;
             self.stack.push(result);
