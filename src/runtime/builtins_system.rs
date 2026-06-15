@@ -127,8 +127,10 @@ impl Interpreter {
         };
 
         spawn_user_thread(move || {
-            let vm = crate::vm::VM::new(thread_interp);
-            let (mut thread_interp, result) = vm.call_value(block, vec![]);
+            // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
+            // block on it directly instead of wrapping it in a sub-VM.
+            let mut thread_interp = thread_interp;
+            let result = thread_interp.call_value(block, vec![]);
             // Transfer any handles opened by this thread back to the awaiter.
             let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
             let new_ids: Vec<usize> = thread_interp
@@ -173,8 +175,8 @@ impl Interpreter {
                         let handler_interp = thread_interp.clone_for_thread();
                         let ex_val = error_val;
                         spawn_user_thread(move || {
-                            let vm = crate::vm::VM::new(handler_interp);
-                            let (_interp, _result) = vm.call_value(handler, vec![ex_val]);
+                            let mut handler_interp = handler_interp;
+                            let _ = handler_interp.call_value(handler, vec![ex_val]);
                         });
                     }
                 }

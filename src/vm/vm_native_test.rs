@@ -37,9 +37,7 @@ impl VM {
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !crate::runtime::Interpreter::is_test_function_name(name)
-            || !self.interpreter.test_module_loaded()
-        {
+        if !crate::runtime::Interpreter::is_test_function_name(name) || !self.test_module_loaded() {
             return None;
         }
         // Some Test names collide with core builtins (notably `run`, which is the
@@ -54,11 +52,11 @@ impl VM {
         // `call_function` do before reaching `call_test_function`: strip the
         // synthetic `__test_callsite_line` argument and stash it so TAP
         // diagnostics report the right source line.
-        let (clean_args, callsite_line) = self.interpreter.sanitize_call_args(args);
+        let (clean_args, callsite_line) = self.sanitize_call_args(args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         match loan_env!(self, call_test_function(name, &clean_args)) {
             // Matched and handled by the typed Test dispatcher.
-            Ok(Some(value)) => Some(self.interpreter.maybe_fetch_rw_proxy(value, true)),
+            Ok(Some(value)) => Some(self.maybe_fetch_rw_proxy(value, true)),
             // `is_test_function_name` said yes but the dispatcher declined: fall
             // back to the generic path so behaviour is never lost.
             Ok(None) => None,

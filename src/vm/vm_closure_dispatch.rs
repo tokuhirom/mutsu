@@ -51,7 +51,7 @@ impl VM {
                         // No auto-threading needed
                     } else {
                         // Check if constraint is a subset with Mu/Junction base
-                        let resolved_base = self.interpreter.resolve_subset_base_type(constraint);
+                        let resolved_base = self.resolve_subset_base_type(constraint);
                         if resolved_base != "Mu" && resolved_base != "Junction" {
                             return Some(i);
                         }
@@ -103,7 +103,7 @@ impl VM {
         capture_rw_topic: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
-        let (mut args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        let (mut args, callsite_line) = self.sanitize_call_args(&args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
         }
@@ -183,7 +183,7 @@ impl VM {
                 let is_foreign = method_pkg != class
                     && (method_pkg.is_empty()
                         || method_pkg == "GLOBAL"
-                        || !self.interpreter.has_class(&method_pkg));
+                        || !self.has_class(&method_pkg));
                 if is_foreign {
                     // Check if the compiled code has any !attr locals
                     let has_attr_locals = cc
@@ -267,8 +267,7 @@ impl VM {
                 if matches!(data.env.get_sym(*k), Some(Value::ContainerRef(_))) {
                     return None;
                 }
-                self.interpreter
-                    .get_closure_captured_state(data.id, *k)
+                self.get_closure_captured_state(data.id, *k)
                     .map(|val| (*k, val.clone()))
             })
             .collect();
@@ -304,7 +303,7 @@ impl VM {
             "&?BLOCK".to_string(),
             Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
         );
-        self.interpreter.push_block(Value::Sub(block_arc));
+        self.push_block(Value::Sub(block_arc));
 
         // Push routine info for leave/return/when targeting.
         // For pointy blocks, we push a special marker name so that
@@ -315,14 +314,14 @@ impl VM {
             // Bare blocks and pointy blocks are NOT routine boundaries.
             // Push a marker name so &?ROUTINE skips them and finds the
             // enclosing sub/method.
-            self.interpreter.push_block_routine_with_location(
+            self.push_block_routine_with_location(
                 data.package.resolve(),
                 "<pointy-block>".to_string(),
                 call_line,
                 call_file,
             );
         } else {
-            self.interpreter.push_block_routine_with_location(
+            self.push_block_routine_with_location(
                 data.package.resolve(),
                 data.name.resolve(),
                 call_line,
@@ -335,9 +334,9 @@ impl VM {
         );
 
         if data.empty_sig && !args.is_empty() {
-            self.interpreter.pop_routine();
-            self.interpreter.pop_block();
-            self.interpreter.pop_caller_env();
+            self.pop_routine();
+            self.pop_block();
+            self.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
             let frame = self.pop_call_frame();
             *self.env_mut() = frame.saved_env;
@@ -351,9 +350,9 @@ impl VM {
         ) {
             Ok(bindings) => bindings,
             Err(e) => {
-                self.interpreter.pop_routine();
-                self.interpreter.pop_block();
-                self.interpreter.pop_caller_env();
+                self.pop_routine();
+                self.pop_block();
+                self.pop_caller_env();
                 self.stack.truncate(saved_stack_depth);
                 let frame = self.pop_call_frame();
                 *self.env_mut() = frame.saved_env;
@@ -442,7 +441,7 @@ impl VM {
         // will generate closure-instance-specific keys automatically).
         for (slot, key) in &cc.state_locals {
             let scoped_key = self.scoped_state_key(key);
-            if let Some(val) = self.interpreter.get_state_var(&scoped_key) {
+            if let Some(val) = self.get_state_var(&scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -468,7 +467,7 @@ impl VM {
             .iter()
             .any(|n| !n.is_empty() && data.env.contains_key(n));
 
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = self.let_saves_len();
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -492,7 +491,7 @@ impl VM {
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
-                        self.interpreter.discard_let_saves(let_mark);
+                        self.discard_let_saves(let_mark);
                         result = Ok(());
                         break;
                     }
@@ -507,7 +506,7 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    self.discard_let_saves(let_mark);
                     result = Ok(());
                     break;
                 }
@@ -546,13 +545,13 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    self.discard_let_saves(let_mark);
                     result = Ok(());
                     break;
                 }
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
-                    let failure = self.interpreter.fail_error_to_failure_value(&e);
+                    let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
@@ -565,7 +564,7 @@ impl VM {
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if self.is_halted() {
                 break;
             }
         }
@@ -613,8 +612,8 @@ impl VM {
         // Restore the previous state scope
         self.state_scope_id = saved_state_scope;
 
-        self.interpreter.pop_routine();
-        self.interpreter.pop_block();
+        self.pop_routine();
+        self.pop_block();
 
         if self.env_dirty {
             self.sync_locals_from_env(cc);
@@ -643,16 +642,14 @@ impl VM {
         // the body, so only those need persisting.
         for k in &cc.free_var_syms {
             if let Some(val) = self.env().get_sym(*k).cloned() {
-                self.interpreter
-                    .set_closure_captured_state(data.id, *k, val);
+                self.set_closure_captured_state(data.id, *k, val);
             }
         }
 
         // Environment writeback: merge changes back to caller
         let frame = self.pop_call_frame();
         let mut restored_env = frame.saved_env;
-        self.interpreter
-            .pop_caller_env_with_writeback(&mut restored_env);
+        self.pop_caller_env_with_writeback(&mut restored_env);
         loan_env!(
             self,
             apply_rw_bindings_to_env(&rw_bindings, &mut restored_env)
@@ -793,8 +790,7 @@ impl VM {
                     restored_env.insert(alias_key, v);
                 }
             }
-            self.interpreter
-                .merge_sigilless_alias_writes(&mut restored_env, self.env());
+            self.merge_sigilless_alias_writes(&mut restored_env, self.env());
         }
 
         // Only run the state-variable sync and cleanup when the closure
@@ -836,15 +832,14 @@ impl VM {
         // ensures END phasers see the final values rather than stale copies.
         // Only update keys matching the closure's captured variable names to
         // avoid overwriting unrelated captured lexicals in other END phasers.
-        if self.interpreter.end_phaser_count() > 0 && !data.env.is_empty() {
+        if self.end_phaser_count() > 0 && !data.env.is_empty() {
             let captured_strs: Vec<String> = data.env.keys().map(|s| s.resolve()).collect();
             let captured_names: std::collections::HashSet<&str> =
                 captured_strs.iter().map(|s| s.as_str()).collect();
             // Flatten: END phasers run at program exit with this captured env;
             // it must hold the full lexical view, not a transient scoped overlay.
             let current = self.clone_env();
-            self.interpreter
-                .update_end_phaser_envs_for_keys(&captured_names, &current);
+            self.update_end_phaser_envs_for_keys(&captured_names, &current);
         }
 
         let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {

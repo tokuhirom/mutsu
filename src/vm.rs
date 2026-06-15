@@ -1,6 +1,6 @@
 #![allow(clippy::result_large_err)]
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::ast::Stmt;
 use crate::env::Env;
@@ -9,12 +9,12 @@ use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{
-    ArrayKind, EnumValue, ForLoopResumeState, GatherCoroutineState, JunctionKind, LazyList,
-    RuntimeError, Value, make_rat,
+    ArrayKind, EnumValue, GatherCoroutineState, JunctionKind, LazyList, RuntimeError, Value,
+    make_rat,
 };
 use num_traits::{Signed, Zero};
 
-type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
+pub(crate) type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
 
 thread_local! {
     /// Set while execution is inside the `VM::run` catch_unwind boundary, so the
@@ -62,7 +62,7 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// Pre-computed fast dispatch entry for compiled methods.
 /// Caches all the information needed to skip intermediate dispatch steps
 /// (wrap chain check, compiled_code extraction, fast-path eligibility checks).
-struct FastMethodCacheEntry {
+pub(crate) struct FastMethodCacheEntry {
     owner_class: Symbol,
     method_def: Arc<crate::runtime::MethodDef>,
     compiled_code: Arc<CompiledCode>,
@@ -72,23 +72,24 @@ struct FastMethodCacheEntry {
 }
 
 /// env-loan (CP-1 1e): call an interpreter carrier/helper that reads
-/// `self.interpreter.env`, lending the VM-owned env for the duration.
+/// `self.env`, lending the VM-owned env for the duration.
 ///
 /// Expands to: swap the real env into the interpreter's loan slot, run
-/// `$self.interpreter.<call>`, swap it back. Unlike a closure-based helper, the
+/// `$self.<call>`, swap it back. Unlike a closure-based helper, the
 /// call is inlined so it keeps the *partial* `self.interpreter` borrow — args may
 /// still borrow other `self` fields (e.g. `self.locals[i]`) exactly as the
-/// original `self.interpreter.<call>` did, so no new borrow conflicts arise.
+/// original `self.<call>` did, so no new borrow conflicts arise.
 ///
 /// Only for **value/Result-returning** helpers: the post-call swap re-borrows
 /// `self.interpreter`, so a returned reference into the interpreter cannot escape
 /// (those few sites are handled individually). See docs/vm-state-ownership.md.
 macro_rules! loan_env {
     ($self:ident, $($call:tt)+) => {{
-        ::std::mem::swap(&mut $self.env, $self.interpreter.env_mut());
-        let __loan_r = $self.interpreter.$($call)+;
-        ::std::mem::swap(&mut $self.env, $self.interpreter.env_mut());
-        __loan_r
+        // CP-3 collapse: the VM dissolved into the Interpreter, so env is no
+        // longer loaned across a VM->interpreter boundary — it is just `self.env`.
+        // This macro is now a thin self-call kept so the ~350 call sites need no
+        // edit; it will be removed in a later cosmetic pass.
+        $self.$($call)+
     }};
 }
 
@@ -139,7 +140,7 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
 }
 
 /// Saved state for a compiled function/closure/method call frame.
-pub(super) struct VmCallFrame {
+pub(crate) struct VmCallFrame {
     pub saved_env: Env,
     pub saved_locals: Vec<Value>,
     pub saved_stack_depth: usize,
@@ -149,237 +150,11 @@ pub(super) struct VmCallFrame {
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
 }
 
-pub(crate) struct VM {
-    interpreter: Interpreter,
-    /// Handle to the shared declaration [`Registry`](crate::runtime::Registry),
-    /// cloned from the interpreter at construction (PLAN.md ② → A: the VM holds the
-    /// registry as a *peer* rather than reaching through `self.interpreter`). Points
-    /// at the same `RwLock` as `self.interpreter`'s handle, so mutations through
-    /// either are visible. Stable for the VM's lifetime: the interpreter's registry
-    /// Arc is only ever replaced by `clone_for_thread` (which builds a fresh
-    /// Interpreter for a child thread), never reassigned in place during a run.
-    registry: Arc<RwLock<crate::runtime::Registry>>,
-    /// Handle to the shared [`IoHandleTable`](crate::runtime::IoHandleTable),
-    /// cloned from the interpreter at construction (PLAN.md ③ native IO PR-C: the
-    /// VM holds the IO handle table as a *peer*, mirroring `registry`). Points at
-    /// the same `RwLock` as `self.interpreter`'s handle, so mutations through
-    /// either are visible. Stable for the VM's lifetime (same `clone_for_thread`
-    /// reasoning as `registry`). Used by `try_native_io_handle_method` to resolve
-    /// pure-handle IO methods natively instead of bouncing through the interpreter.
-    io_handles: Arc<RwLock<crate::runtime::IoHandleTable>>,
-    /// The VM's clone of the shared [`OutputSink`](crate::runtime::OutputSink)
-    /// handle (same `RwLock` as the interpreter's), so Stdout/Stderr output
-    /// dispatch resolves natively instead of bouncing through the interpreter
-    /// (③後段 PR-C).
-    output_sink: Arc<RwLock<crate::runtime::OutputSink>>,
-    /// The VM's clone of the shared `current_package` handle (same `RwLock` as
-    /// the interpreter's), so the VM reads/writes the in-scope package name
-    /// through its own peer handle instead of bouncing through
-    /// `self.interpreter` — a step toward removing the interpreter bridge.
-    /// Stable for the VM's lifetime (same `clone_for_thread` reasoning as
-    /// `registry`).
-    current_package: Arc<RwLock<String>>,
-    /// The VM's clone of the shared `instance_type_metadata` handle (same
-    /// `RwLock` as the interpreter's), so the VM reads container type metadata
-    /// for `Instance` values natively (`VM::container_type_metadata`) instead of
-    /// bouncing through `self.interpreter` (CP-3 Track 1). The read touches no
-    /// env, so it needs no env loan. Writes (`register_container_type_metadata`)
-    /// still go through the interpreter and are visible here via the shared lock.
-    /// Stable for the VM's lifetime (same `clone_for_thread` reasoning as
-    /// `registry`).
-    instance_type_metadata: Arc<RwLock<HashMap<u64, crate::runtime::ContainerTypeInfo>>>,
-    /// The variable store (env), owned by the VM during opcode execution
-    /// (CP-1 env-loan, step 1e). On `VM::new` the env is pulled out of the
-    /// interpreter into here; `run`/`into_interpreter` push it back so the
-    /// returned interpreter is coherent. The interpreter keeps its own `env`
-    /// field as a *loan slot*: a carrier call (EVAL / subset-`where` /
-    /// call_sub_value / …) reads `self.interpreter.env`, so the VM swaps this
-    /// env into the interpreter around each such call (`loan_env_for`) and
-    /// swaps it back afterwards. See docs/vm-state-ownership.md
-    /// "CP-1 env-loan 設計".
-    env: Env,
-    stack: Vec<Value>,
-    locals: Vec<Value>,
-    in_smartmatch_rhs: bool,
-    /// Set by transliterate op when executed inside smartmatch RHS.
-    /// The smartmatch handler uses this to return the transliterate result
-    /// as a StrDistance-like value instead of performing eq comparison.
-    transliterate_in_smartmatch: bool,
-    /// Set by substitution op when executed inside smartmatch RHS.
-    /// The smartmatch handler returns `$/` (Match) on success or False on failure.
-    substitution_in_smartmatch: bool,
-    /// Tracks the last value passed to SetTopic, used as the REPL display value.
-    last_topic_value: Option<Value>,
-    topic_save_stack: Vec<Value>,
-    /// Container name from when/default body (for Scalar container binding)
-    container_ref_var: Option<String>,
-    /// When true, the container ref is reversed (e.g. `for @a.reverse`)
-    container_ref_reversed: bool,
-    /// Source variable name for topic binding in for loops
-    topic_source_var: Option<String>,
-    /// Element source for an lvalue container-element topic (`given %h<k>` /
-    /// `given @a[i]`): (container var name, resolved index, positional). After
-    /// the `given`/`with` body runs, the final `$_` is written back to this
-    /// element so `$_ = ...` and container mutations (`.push`) propagate.
-    element_source: Option<(String, Value, bool)>,
-    /// rw aggregate view writeback for `for @a.grep(...) { $_++ }`: when the
-    /// for-loop iterable is a grep result with a registered grep-view binding,
-    /// this holds (source array Arc, per-filtered-index source indices, kind)
-    /// so the loop can write modified topics back to the original array slots.
-    for_grep_view: Option<(
-        Arc<crate::value::ArrayData>,
-        Vec<usize>,
-        crate::value::ArrayKind,
-    )>,
-    /// Names of multi-param for-loop bindings (`-> %a, %b`) whose `%`/`@` params
-    /// must preserve a QuantHash (Set/Bag/Mix) value rather than coercing it to
-    /// a plain Hash, matching Raku's parameter-binding semantics.
-    quanthash_bind_params: Vec<String>,
-    /// Stack of single named for-loop params whose prior binding must be
-    /// restored *after* the loop's LAST/post phasers run. A for-loop pushes its
-    /// saved (name, prior-value) on normal completion; the matching
-    /// `RestoreForParam` opcode (emitted after the post phasers) pops and
-    /// applies it. LIFO so nested loops with the same param name nest correctly.
-    for_param_restore_stack: Vec<(String, Option<Value>)>,
-    /// Stack of saved call frames for compiled function/closure/method calls.
-    call_frames: Vec<VmCallFrame>,
-    /// When true, locals may be stale relative to env (interpreter bridge modified env).
-    /// Cleared after sync_locals_from_env or pop_call_frame.
-    env_dirty: bool,
-    /// Set by a compiled method dispatch to report whether it left the caller's
-    /// local slots coherent (Slice 6.3). `true` means the call provably wrote
-    /// nothing the caller can observe in its slots (a read-only / no-merge method
-    /// or a merge that propagated nothing), so the CallMethod/CallMethodMut
-    /// opcode skips its env_dirty mark and the caller avoids a per-call env->locals
-    /// pull. Defaults to `false` (conservative) for every non-compiled path
-    /// (native fallback, interpreter bridge, blocks) so a missed signal can only
-    /// cost a redundant pull, never a stale read.
-    method_dispatch_pure: bool,
-    /// The instruction pointer to resume at after a .resume call in a CATCH block.
-    /// Set when Die/Fail creates an exception, used by exec_try_catch_op.
-    resume_ip: Option<usize>,
-    /// When true, the next SetLocal is a `:=` bind (preserves container type for `@` vars).
-    bind_context: bool,
-    /// When true, the next SetLocal binds a `$` scalar to a Positional via `:=` and
-    /// must record the scalar as decontainerized. Independent of `bind_context` so
-    /// scalar binds keep their existing (fast-path) store routing.
-    scalar_bind_context: bool,
-    /// True once any scalar has been bound (`:=`) to a Positional value, marking
-    /// it as decontainerized in the env (`__mutsu_bound_decont::$name`). Guards the
-    /// (otherwise hot) marker-clearing in scalar assignment so the common case
-    /// (no such binds) stays zero-cost.
-    bound_decont_active: bool,
-    /// When true, the next SetLocal is a `:=` rebind (not VarDecl).
-    /// Used to trigger cleanup of old bind pairs and reverse aliases.
-    rebind_context: bool,
-    /// When true, the next SetLocal skips @/% container coercion (for `constant @x`).
-    constant_context: bool,
-    /// When true, the next SetLocal came from an explicit initializer (`= expr`).
-    explicit_initializer_context: bool,
-    /// When true, the next SetLocal is from a `my` VarDecl (not a plain assignment).
-    /// Used to allow overwriting immutable Blob containers in loop redeclarations.
-    vardecl_context: bool,
-    /// Local-slot binding pairs created by `:=` VarDecl in the current scope.
-    /// Each entry is (source_slot, target_slot): writing to source_slot should
-    /// propagate the value to target_slot.
-    local_bind_pairs: Vec<(usize, usize)>,
-    /// Cache for on-the-fly compiled functions, keyed by fingerprint.
-    /// Prevents re-compilation which would break state variables.
-    otf_compile_cache: HashMap<u64, CompiledFunction>,
-    /// Current closure instance ID for state variable scoping.
-    /// When Some, state var keys are suffixed with `#c{id}` to give each
-    /// closure clone its own state. Pushed/popped around closure calls.
-    state_scope_id: Option<u64>,
-    /// Cache for compiled function resolution.
-    /// Maps (name, arity) → (compiled_fns key, fingerprint).
-    #[allow(clippy::type_complexity)]
-    fn_resolve_cache: HashMap<(Symbol, usize, Vec<String>), (String, u64, String)>,
-    /// Generation counter for fn_resolve_cache invalidation.
-    fn_resolve_gen: u64,
-    /// The generation at which fn_resolve_cache was last populated.
-    fn_resolve_cache_gen: u64,
-    /// Cache for has_multi_candidates results, invalidated by fn_resolve_gen.
-    multi_candidates_cache: HashMap<Symbol, bool>,
-    /// The generation at which multi_candidates_cache was last valid.
-    multi_candidates_cache_gen: u64,
-    /// Light-call cache: maps function name symbol to (compiled_fns key, fingerprint).
-    /// Used by the light call fast path in exec_call_func_op to skip expensive
-    /// function resolution on repeated calls to the same function.
-    light_call_cache: HashMap<Symbol, (String, u64)>,
-    /// The generation at which light_call_cache was last valid.
-    light_call_cache_gen: u64,
-    /// Positional light-call cache for simple positional-only functions.
-    pos_light_call_cache: HashMap<Symbol, (String, u64)>,
-    /// The generation at which pos_light_call_cache was last valid.
-    pos_light_call_cache_gen: u64,
-    /// Method resolution cache: maps (class_name, method_name) to resolved
-    /// (owner_class, MethodDef). Avoids repeated MRO walks for the same method.
-    method_resolve_cache: HashMap<(Symbol, Symbol), MethodResolveEntry>,
-    /// Monomorphic inline cache: stores the last (class, method, owner, def)
-    /// resolution result. Skips HashMap lookup for repeated same-class calls.
-    last_method_resolve: Option<(Symbol, Symbol, String, Arc<crate::runtime::MethodDef>)>,
-    /// Fast method dispatch cache: maps (class, method) to pre-computed dispatch
-    /// info including compiled code and fast-path eligibility. Skips wrap chain
-    /// checks, compiled_code extraction, and param_def eligibility scans.
-    fast_method_cache: HashMap<(Symbol, Symbol), FastMethodCacheEntry>,
-    /// Stack of sets tracking variable names declared (via SetVarDynamic) within
-    /// each active BlockScope. Used during BlockScope restoration to avoid
-    /// propagating block-local variable values to the outer scope.
-    block_declared_vars: Vec<std::collections::HashSet<String>>,
-    /// Stack of sets tracking variable names declared (via SetVarDynamic) within
-    /// each active loop body. A loop body is re-entered per iteration, so a `my`
-    /// declared in it is a *fresh binding each iteration* — a closure created in
-    /// the body must capture that iteration's value, not the shared lexical name
-    /// (Raku per-iteration binding). When a closure is created, free variables
-    /// found in this stack are recorded as its `owned_captures`, and at call time
-    /// the closure reads them from its own frozen captured env (overwriting the
-    /// caller's current value) — immune to the dual-store slot re-injection that
-    /// otherwise leaks the loop's final value into every closure. See
-    /// docs/vm-dual-store.md / PLAN.md lever C.
-    loop_local_vars: Vec<std::collections::HashSet<String>>,
-    /// Parallel stack to `loop_local_vars`: for each loop-body-local `my` name
-    /// that *shadows an existing outer binding*, the env value it shadowed at the
-    /// moment it was first declared in the loop body. On loop exit that outer
-    /// value is restored (in both env and the shared local slot), so a block-local
-    /// `my $x` inside a loop body does not clobber an enclosing same-named outer
-    /// `$x` (Raku lexical block scoping). Names with no prior binding are not
-    /// recorded. See pop_loop_local_scope / PLAN.md lever C Slice 3.
-    loop_local_saved_env: Vec<std::collections::HashMap<String, Value>>,
-    /// True while a loop's *condition* (not its body) is being evaluated. A `my`
-    /// declared in a `while`/`until`/`loop` condition — including the statement-
-    /// modifier form `... until COND` — is lexically the enclosing scope's, not
-    /// the loop body's, and is commonly read after the loop. Suppress recording
-    /// such a declaration in `loop_local_saved_env` so loop-exit restoration does
-    /// not wipe it. See pop_loop_local_scope.
-    loop_cond_active: bool,
-    /// Stack of saved locals snapshots for each active BlockScope.
-    /// Used by GetOuterVar to access variables from enclosing lexical scopes.
-    outer_scope_locals: Vec<Vec<Value>>,
-    /// Pending alias-based bind pairs created by `:=` binding inside closures
-    /// (e.g. `$a := $arg` where `$arg is rw`).  Each entry is
-    /// (target_name, source_name): after the closure returns, the caller
-    /// creates local_bind_pairs from these so writes to source propagate to target.
-    pending_alias_bind_names: Vec<(String, String)>,
-    /// On-the-fly compiled function call cache: maps function name to its
-    /// compiled form. Used to avoid going through the interpreter fallback
-    /// for user-defined functions that were compiled on-the-fly.
-    otf_call_cache: HashMap<Symbol, CompiledFunction>,
-    /// The generation at which otf_call_cache was last valid.
-    otf_call_cache_gen: u64,
-    /// Depth counter for CHECK phaser scope. When > 0, runtime errors should
-    /// be wrapped in X::Comp::BeginTime before propagating.
-    check_phaser_depth: u32,
-    /// Temporary storage for for-loop resume state when a gather take-limit
-    /// interrupts a for loop.
-    gather_for_loop_resume: Option<ForLoopResumeState>,
-    /// Scratch slot for the native rw-`.map` writeback path. When a closure call
-    /// is made with rw-topic capture armed, `call_compiled_closure_with_topic`
-    /// stashes the block's final `$_` mutation here (read from
-    /// `__mutsu_rw_map_topic__` before the call frame is popped) so the native
-    /// map loop can write it back to the source array element. `None` when the
-    /// block did not mutate `$_`. See `vm_native_map.rs`.
-    rw_map_topic_capture: Option<Value>,
-}
+/// CP-3 collapse: the bytecode VM has been dissolved into the `Interpreter`
+/// struct (the Interpreter *is* the bytecode VM now). `VM` is kept as a crate
+/// alias so the ~40 `impl VM` blocks and internal `VM::`/`vm: VM` references
+/// compile unchanged; a later cosmetic pass can rename them to `Interpreter`.
+pub(crate) type VM = crate::interpreter::Interpreter;
 
 impl VM {
     /// Wrap a runtime error in X::Comp::BeginTime (used for errors inside CHECK phasers).
@@ -487,7 +262,6 @@ impl VM {
                 || cn.starts_with("X::")
                 || cn.starts_with("CX::")
                 || self
-                    .interpreter
                     .mro_readonly(&cn)
                     .iter()
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
@@ -516,174 +290,6 @@ impl VM {
         err
     }
 
-    pub(crate) fn new(mut interpreter: Interpreter) -> Self {
-        let registry = interpreter.registry_handle();
-        let io_handles = interpreter.io_handles_handle();
-        let output_sink = interpreter.output_sink_handle();
-        let current_package = interpreter.current_package_handle();
-        let instance_type_metadata = interpreter.instance_type_metadata_handle();
-        // env-loan (CP-1 step 1e): pull the env out of the interpreter so the VM
-        // owns it during opcode execution. The interpreter's env field is left
-        // *poisoned* (a loan-slot sentinel) so any VM->interpreter call that
-        // reads env without a loan wrapper trips the debug guard; restored to a
-        // real env by `run`/`into_interpreter`.
-        let env = interpreter.loan_out_env();
-        Self {
-            interpreter,
-            registry,
-            io_handles,
-            output_sink,
-            current_package,
-            instance_type_metadata,
-            env,
-            stack: Vec::new(),
-            locals: Vec::new(),
-            in_smartmatch_rhs: false,
-            transliterate_in_smartmatch: false,
-            substitution_in_smartmatch: false,
-            last_topic_value: None,
-            topic_save_stack: Vec::new(),
-            container_ref_var: None,
-            container_ref_reversed: false,
-            topic_source_var: None,
-            element_source: None,
-            for_grep_view: None,
-            quanthash_bind_params: Vec::new(),
-            for_param_restore_stack: Vec::new(),
-            call_frames: Vec::new(),
-            env_dirty: false,
-            method_dispatch_pure: false,
-            resume_ip: None,
-            bind_context: false,
-            scalar_bind_context: false,
-            bound_decont_active: false,
-            rebind_context: false,
-            constant_context: false,
-            explicit_initializer_context: false,
-            vardecl_context: false,
-            local_bind_pairs: Vec::new(),
-            otf_compile_cache: HashMap::new(),
-            state_scope_id: None,
-            fn_resolve_cache: HashMap::new(),
-            fn_resolve_gen: 0,
-            fn_resolve_cache_gen: 0,
-            multi_candidates_cache: HashMap::new(),
-            multi_candidates_cache_gen: 0,
-            light_call_cache: HashMap::new(),
-            light_call_cache_gen: 0,
-            pos_light_call_cache: HashMap::new(),
-            pos_light_call_cache_gen: 0,
-            method_resolve_cache: HashMap::new(),
-            last_method_resolve: None,
-            fast_method_cache: HashMap::new(),
-            block_declared_vars: Vec::new(),
-            loop_local_vars: Vec::new(),
-            loop_local_saved_env: Vec::new(),
-            loop_cond_active: false,
-            outer_scope_locals: Vec::new(),
-            pending_alias_bind_names: Vec::new(),
-            otf_call_cache: HashMap::new(),
-            otf_call_cache_gen: 0,
-            check_phaser_depth: 0,
-            gather_for_loop_resume: None,
-            rw_map_topic_capture: None,
-        }
-    }
-
-    /// Write access to the shared declaration [`Registry`](crate::runtime::Registry)
-    /// via the VM's own handle (no `self.interpreter` bounce). Same lock and same
-    /// guard discipline as the interpreter's `registry_mut`: never hold the guard
-    /// across user-code re-entry.
-    #[inline]
-    pub(crate) fn registry_mut(&self) -> crate::runtime::RegistryWriteGuard<'_> {
-        crate::runtime::RegistryWriteGuard::new(&self.registry, "registry")
-    }
-
-    /// Read access to the shared declaration [`Registry`] via the VM's own handle.
-    /// Used by the VM-native dispatch predicates ([`Self::has_proto`] /
-    /// [`Self::has_multi_candidates`]) so they read the registry without bouncing
-    /// through `self.interpreter`. The guard must not be held across user-code
-    /// re-entry (same discipline as `registry_mut`).
-    #[inline]
-    pub(crate) fn registry(&self) -> crate::runtime::RegistryReadGuard<'_> {
-        crate::runtime::RegistryReadGuard::new(&self.registry, "registry")
-    }
-
-    /// VM-native `proto`-declaration check, mirroring
-    /// `Interpreter::has_proto`: reads the VM's own registry + `current_package`
-    /// handles and delegates to the single [`Registry::has_proto`] implementation.
-    #[inline]
-    pub(crate) fn has_proto(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_proto(&pkg, name)
-    }
-
-    /// VM-native multi-candidate check, mirroring
-    /// `Interpreter::has_multi_candidates` via the single
-    /// [`Registry::has_multi_candidates`] implementation.
-    #[inline]
-    pub(crate) fn has_multi_candidates(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_multi_candidates(&pkg, name)
-    }
-
-    /// VM-native declared-(non-multi-)function check, mirroring
-    /// `Interpreter::has_declared_function` via the single
-    /// [`Registry::has_declared_function`] implementation.
-    #[inline]
-    pub(crate) fn has_declared_function(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_declared_function(&pkg, name)
-    }
-
-    /// Alias of [`Self::has_declared_function`], mirroring
-    /// `Interpreter::has_function` (which delegates to `has_declared_function`).
-    #[inline]
-    pub(crate) fn has_function(&self, name: &str) -> bool {
-        self.has_declared_function(name)
-    }
-
-    /// VM-native multi-function check, mirroring
-    /// `Interpreter::has_multi_function` via the single
-    /// [`Registry::has_multi_function`] implementation.
-    #[inline]
-    pub(crate) fn has_multi_function(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_multi_function(&pkg, name)
-    }
-
-    /// The in-scope package name, read out of the VM's own `current_package`
-    /// handle as an owned `String` (no `self.interpreter` bounce). The guard is
-    /// dropped before returning, so no lock is held across the caller's work.
-    #[inline]
-    pub(crate) fn current_package(&self) -> String {
-        self.current_package.read().unwrap().clone()
-    }
-
-    /// Set the in-scope package name through the VM's own handle. Visible to the
-    /// interpreter too (same `RwLock`), preserving save/restore semantics across
-    /// the VM↔interpreter ping-pong.
-    #[inline]
-    pub(crate) fn set_current_package(&self, pkg: String) {
-        *self.current_package.write().unwrap() = pkg;
-    }
-
-    /// Write access to the shared [`IoHandleTable`](crate::runtime::IoHandleTable)
-    /// via the VM's own handle (no `self.interpreter` bounce). Same lock and guard
-    /// discipline as the interpreter's `io_handles_mut`: never hold the guard
-    /// across a re-entrant handle op.
-    #[inline]
-    pub(crate) fn io_handles_mut(&self) -> crate::runtime::IoHandlesWriteGuard<'_> {
-        crate::runtime::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
-    }
-
-    /// Write access to the shared [`OutputSink`](crate::runtime::OutputSink) via
-    /// the VM's own handle. Same guard discipline as `io_handles_mut`.
-    #[inline]
-    pub(crate) fn output_sink_mut(&self) -> crate::runtime::OutputSinkWriteGuard<'_> {
-        crate::runtime::OutputSinkWriteGuard::new(&self.output_sink, "output_sink")
-    }
-
     /// VM-native Stdout emit (③後段 PR-C), mirroring `Interpreter::emit_output`:
     /// bump the Stdout-target handle's `bytes_written`, then push to the sink
     /// (immediate real-stdout flush / buffer / thread-clone shared buffer per the
@@ -698,7 +304,7 @@ impl VM {
                 h.add_bytes_written(byte_count);
             }
         }
-        let subtest_active = self.interpreter.subtest_active();
+        let subtest_active = self.subtest_active();
         self.output_sink_mut().emit(text, subtest_active);
     }
 
@@ -706,7 +312,7 @@ impl VM {
     /// `write_to_handle_value_trying` (immediate real-stderr flush or the stderr
     /// buffer; no `bytes_written` scan, no `output_emitted`).
     pub(crate) fn vm_emit_stderr(&mut self, text: &str) {
-        let subtest_active = self.interpreter.subtest_active();
+        let subtest_active = self.subtest_active();
         self.output_sink_mut().emit_stderr(text, subtest_active);
     }
 
@@ -719,37 +325,40 @@ impl VM {
     /// `try`/`CATCH`) instead of crashing the whole process (exit 101). This also
     /// covers EVAL and sub-VMs, which run through `VM::run`. Stack overflow
     /// `abort`s rather than unwinding, so it is out of scope here.
-    pub(crate) fn run(
-        mut self,
+    pub(crate) fn run_top(
+        &mut self,
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
-    ) -> (Interpreter, Result<Option<Value>, RuntimeError>) {
+    ) -> Result<Option<Value>, RuntimeError> {
+        self.run_inner_guarded(code, compiled_fns)
+    }
+
+    /// Run `run_inner` inside the `catch_unwind` panic->`X::AdHoc` boundary so a
+    /// Rust `panic!`/overflow/index-OOB triggered by user code becomes a
+    /// catchable `RuntimeError` instead of crashing the process. This is the
+    /// boundary the old ping-pong `VM::run` provided; both `run_top` (outermost)
+    /// and `run_nested` (re-entrant carriers like `run_compiled_block`,
+    /// `eval_block_value`, `run_block_raw` invoked by `dies-ok`/`try`) route
+    /// through it so nested user-code panics still flow through try/CATCH.
+    fn run_inner_guarded(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Option<Value>, RuntimeError> {
         install_vm_panic_hook();
-        // Save/restore the flag so nested `VM::run` calls (EVAL, sub-VMs) don't
+        // Save/restore the flag so nested boundaries (EVAL, sub-VMs) don't
         // clobber an outer boundary's state.
         let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.run_inner(code, compiled_fns)
         }));
         IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
-        let result = match caught {
+        match caught {
             Ok(r) => r,
             Err(payload) => Err(Self::vm_panic_error(panic_payload_message(
                 payload.as_ref(),
             ))),
-        };
-        self.restore_env_to_interp();
-        (self.interpreter, result)
-    }
-
-    /// env-loan (CP-1 1e): push the VM-owned env back into the interpreter's
-    /// loan slot so a returned interpreter is coherent for its caller (the
-    /// ping-pong `*self = interp`, carriers, or `into_interpreter`). Mirrors the
-    /// pull in `VM::new`.
-    #[inline]
-    fn restore_env_to_interp(&mut self) {
-        let env = std::mem::take(&mut self.env);
-        self.interpreter.set_env(env);
+        }
     }
 
     /// Build a catchable `X::AdHoc` error from a caught panic message.
@@ -782,8 +391,8 @@ impl VM {
             }
         }
         self.load_state_locals(code);
-        let root_once_scope = self.interpreter.next_once_scope_id();
-        self.interpreter.push_once_scope(root_once_scope);
+        let root_once_scope = self.next_once_scope_id();
+        self.push_once_scope(root_once_scope);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -794,9 +403,9 @@ impl VM {
                     ip = target_ip;
                     continue;
                 }
-                if e.is_warn && self.interpreter.control_handler_depth == 0 {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                if e.is_warn && self.control_handler_depth == 0 {
+                    if !self.warning_suppressed() {
+                        self.write_warn_to_stderr(&e.message);
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -805,7 +414,7 @@ impl VM {
                     continue;
                 }
                 self.sync_state_locals(code);
-                self.interpreter.pop_once_scope();
+                self.pop_once_scope();
                 // An uncaught CX::Return signal that escapes the top-level
                 // VM loop means the lexical target routine was not on the
                 // dynamic call stack when `return` executed, so it surfaces
@@ -814,7 +423,7 @@ impl VM {
                 // stack contains no routine — otherwise the return is meant
                 // for an enclosing routine that will catch it via its own
                 // call-frame handling further up the stack.
-                if e.is_return && self.interpreter.routine_stack().is_empty() {
+                if e.is_return && self.routine_stack().is_empty() {
                     let inner_err = RuntimeError::controlflow_return(true);
                     if self.check_phaser_depth > 0 {
                         return Err(Self::wrap_in_begin_time(inner_err));
@@ -826,12 +435,12 @@ impl VM {
                 }
                 return Err(e);
             }
-            if self.interpreter.is_halted() {
+            if self.is_halted() {
                 break;
             }
         }
         self.sync_state_locals(code);
-        self.interpreter.pop_once_scope();
+        self.pop_once_scope();
         // Sync local variables back to the interpreter's env so that
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
@@ -864,6 +473,24 @@ impl VM {
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Option<Value>, RuntimeError> {
+        // Use the guarded runner so a Rust panic in a re-entrant carrier
+        // (run_compiled_block / eval_block_value / run_block_raw — e.g. a
+        // `dies-ok { ... }` block) is caught and converted, exactly as the old
+        // ping-pong `VM::run` did. (The map/grep `run_reuse` loops call
+        // `with_nested_registers` directly and keep their no-boundary behavior.)
+        self.with_nested_registers(|me| me.run_inner_guarded(code, compiled_fns))
+    }
+
+    /// Run `f` with fresh per-execution registers (stack/locals/call_frames/topic/
+    /// context flags reset to their `VM::new` defaults), restoring the outer
+    /// registers afterwards and flagging `env_dirty` so the outer execution
+    /// re-syncs its locals from env. This is the in-place replacement for the old
+    /// `mem::take(self)` + `VM::new` ping-pong: shared state (env, interpreter
+    /// fields, registry/io/output handles, gen-counted caches) is *not* reset, so
+    /// the nested work observes and mutates the same state. Used by `run_nested`
+    /// (single compiled block) and by the map/sort `run_reuse` loops (many
+    /// iterations sharing one fresh-register scope).
+    pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         // Save the per-execution registers (the fields `VM::new` initializes
         // fresh) and reset them to their fresh-VM defaults for the nested run.
         let saved_stack = std::mem::take(&mut self.stack);
@@ -915,7 +542,7 @@ impl VM {
         self.vardecl_context = false;
         self.loop_cond_active = false;
 
-        let result = self.run_inner(code, compiled_fns);
+        let result = f(self);
 
         // Restore the outer execution registers.
         self.stack = saved_stack;
@@ -968,13 +595,11 @@ impl VM {
     /// Invoke a callable value using the VM fast paths when available and
     /// return the interpreter state to the caller.
     pub(crate) fn call_value(
-        mut self,
+        &mut self,
         target: Value,
         args: Vec<Value>,
-    ) -> (Interpreter, Result<Value, RuntimeError>) {
-        let result = self.vm_call_on_value(target, args, None);
-        self.restore_env_to_interp();
-        (self.interpreter, result)
+    ) -> Result<Value, RuntimeError> {
+        self.vm_call_on_value(target, args, None)
     }
 
     /// Run compiled bytecode without consuming self.
@@ -996,8 +621,8 @@ impl VM {
             }
         }
         self.load_state_locals(code);
-        let root_once_scope = self.interpreter.next_once_scope_id();
-        self.interpreter.push_once_scope(root_once_scope);
+        let root_once_scope = self.next_once_scope_id();
+        self.push_once_scope(root_once_scope);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -1008,9 +633,9 @@ impl VM {
                     ip = target_ip;
                     continue;
                 }
-                if e.is_warn && self.interpreter.control_handler_depth == 0 {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                if e.is_warn && self.control_handler_depth == 0 {
+                    if !self.warning_suppressed() {
+                        self.write_warn_to_stderr(&e.message);
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -1019,15 +644,15 @@ impl VM {
                     continue;
                 }
                 self.sync_state_locals(code);
-                self.interpreter.pop_once_scope();
+                self.pop_once_scope();
                 return Err(e);
             }
-            if self.interpreter.is_halted() {
+            if self.is_halted() {
                 break;
             }
         }
         self.sync_state_locals(code);
-        self.interpreter.pop_once_scope();
+        self.pop_once_scope();
         Ok(())
     }
 
@@ -1042,7 +667,7 @@ impl VM {
 
     fn load_state_locals(&mut self, code: &CompiledCode) {
         for (slot, key) in &code.state_locals {
-            if let Some(val) = self.interpreter.get_state_var(key) {
+            if let Some(val) = self.get_state_var(key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -1056,7 +681,7 @@ impl VM {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            self.set_state_var(key.clone(), val);
         }
     }
 
@@ -1092,89 +717,35 @@ impl VM {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            self.set_state_var(key.clone(), val);
         }
     }
 
-    /// Read access to the variable store (env) through the VM's own seam.
-    ///
-    /// CP-1 (env-loan, step 1b): the env physically still lives in
-    /// `self.interpreter` and this accessor forwards there, so the change is
-    /// behavior-invariant. The point of routing every VM env read through this
-    /// single method now is that step 1e can flip the body to `&self.env` (env
-    /// moved into the VM) in one place. See docs/vm-state-ownership.md
-    /// "CP-1 env-loan 設計".
-    #[inline]
-    pub(crate) fn env(&self) -> &Env {
-        &self.env
-    }
-
-    /// Write access to the variable store (env) — the VM-owned env (CP-1 1e).
-    /// See [`VM::env`].
-    #[inline]
-    pub(crate) fn env_mut(&mut self) -> &mut Env {
-        &mut self.env
-    }
-
-    /// Clone the env for capture across a call/block/thread boundary
-    /// (flattens a scoped overlay). See [`VM::env`].
-    #[inline]
-    pub(crate) fn clone_env(&self) -> Env {
-        self.env.flattened()
-    }
-
-    /// Replace the entire VM-owned env. See [`VM::env`].
-    #[inline]
-    pub(crate) fn set_env(&mut self, env: Env) {
-        self.env = env;
-    }
-
-    /// Take the VM-owned env out, replacing it with an empty `Env`. See [`VM::env`].
-    #[inline]
-    pub(crate) fn take_env(&mut self) -> Env {
-        std::mem::take(&mut self.env)
-    }
+    // (CP-3 collapse) The VM's env / env_mut / clone_env / set_env / take_env
+    // accessors are gone — they duplicated the canonical `Interpreter` methods
+    // (env now lives on the merged struct), so callers reach those directly.
 
     /// env-loan (CP-1 1e): swap the VM-owned env into the interpreter's loan
-    /// slot, run `f` (a carrier that reads `self.interpreter.env`), then swap the
+    /// slot, run `f` (a carrier that reads `self.env`), then swap the
     /// env back. The interpreter sees the live env for the duration of the
     /// carrier; the nested ping-pong (`run_block_raw` → `mem::take(self)` →
     /// `VM::new`) carries the loaned env into the inner VM and back, so the swap
     /// nests correctly. Returns whatever the carrier returns.
     #[inline]
     fn loan_env_for<R>(&mut self, f: impl FnOnce(&mut Interpreter) -> R) -> R {
-        // Swap the VM-owned env into the interpreter's loan slot so the carrier
-        // sees the live env; `self.interpreter.env_mut()` is the *interpreter's*
-        // env field (disjoint from `self.env`), so the two-field swap is sound.
-        std::mem::swap(&mut self.env, self.interpreter.env_mut());
-        let r = f(&mut self.interpreter);
-        std::mem::swap(&mut self.env, self.interpreter.env_mut());
-        r
+        // CP-3 collapse: the VM dissolved into the Interpreter, so there is no
+        // separate interpreter to lend the env to — env is just `self.env`. This
+        // is now a thin self-call kept so the existing call sites need no edit.
+        f(self)
     }
 
-    /// env-loan wrapper for the interpreter's `type_matches_value` carrier
-    /// (subset `where` clauses read/write `self.env`). Lends the VM-owned env
-    /// for the duration of the type check. See [`VM::loan_env_for`].
-    #[inline]
-    pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
-        self.loan_env_for(|i| i.type_matches_value(constraint, value))
-    }
-
-    /// Read a value's container type metadata natively through the VM's peer
-    /// handle, with no interpreter bounce or env loan (CP-3 Track 1). Shares the
-    /// single implementation (`container_type_metadata_with`) with
-    /// `Interpreter::container_type_metadata`; container values read embedded
-    /// metadata, `Instance` values read the shared `instance_type_metadata` map.
-    #[inline]
-    pub(crate) fn container_type_metadata(
-        &self,
-        value: &Value,
-    ) -> Option<crate::runtime::ContainerTypeInfo> {
-        crate::runtime::container_type_metadata_with(value, &self.instance_type_metadata)
-    }
+    // (CP-3 collapse) The former `type_matches_value` and `container_type_metadata`
+    // env-loan wrappers are gone: they collided with the real `Interpreter`
+    // methods of the same name, and after the merge a plain `self.<name>(...)`
+    // call reaches the single implementation directly.
 
     // env-loan wrappers for the interpreter's tree-walk carriers (they read/
-    // write `self.interpreter.env`, so the VM-owned env must be lent for the
+    // write `self.env`, so the VM-owned env must be lent for the
     // call). See [`VM::loan_env_for`] and docs/vm-state-ownership.md.
     #[inline]
     pub(crate) fn vm_call_function(
@@ -1238,7 +809,7 @@ impl VM {
         // (which spins up a fresh sub-VM via `mem::take`/`VM::new` — the
         // ping-pong), compile the block (pure, no env) and run it in-place on
         // this VM via `run_nested`, sharing the same interpreter + env directly.
-        let (code, compiled_fns) = self.interpreter.compile_block_raw(stmts);
+        let (code, compiled_fns) = self.compile_block_raw(stmts);
         let result = self.run_nested(&code, &compiled_fns);
         // Mirror `run_block_raw`'s trailing DESTROY pass (may run user code, so
         // it needs the env loaned).
@@ -1259,12 +830,12 @@ impl VM {
         // callers pass a single `Stmt::Expr` (registration-time default / enum /
         // role-arg evaluation). Any other shape falls back to the interpreter.
         if body.iter().all(|s| matches!(s, Stmt::Expr(_))) {
-            let (code, compiled_fns) = self.interpreter.compile_block_value(body);
-            let let_mark = self.interpreter.let_saves_len();
-            self.interpreter.push_block_scope_depth();
+            let (code, compiled_fns) = self.compile_block_value(body);
+            let let_mark = self.let_saves_len();
+            self.push_block_scope_depth();
             let result = self.run_nested(&code, &compiled_fns);
-            self.interpreter.pop_block_scope_depth();
-            self.interpreter.restore_let_saves(let_mark);
+            self.pop_block_scope_depth();
+            self.restore_let_saves(let_mark);
             self.loan_env_for(|i| i.run_pending_instance_destroys())?;
             return result.map(|v| v.unwrap_or(Value::Nil));
         }
@@ -1307,13 +878,6 @@ impl VM {
     /// Override the source variable used when mutating `$_` in VM execution.
     pub(crate) fn set_topic_source_var(&mut self, name: Option<String>) {
         self.topic_source_var = name;
-    }
-
-    /// Consume the VM and return the interpreter, pushing the VM-owned env back
-    /// into the interpreter's loan slot first (env-loan, CP-1 1e).
-    pub(crate) fn into_interpreter(mut self) -> Interpreter {
-        self.restore_env_to_interp();
-        self.interpreter
     }
 
     /// Execute opcodes in [start..end), used by loop compound opcodes.
@@ -1366,9 +930,9 @@ impl VM {
                     continue;
                 }
                 // Handle warn signals inline when no CONTROL handler is active.
-                if e.is_warn && self.interpreter.control_handler_depth == 0 {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                if e.is_warn && self.control_handler_depth == 0 {
+                    if !self.warning_suppressed() {
+                        self.write_warn_to_stderr(&e.message);
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -1386,7 +950,7 @@ impl VM {
                 }
                 return Err(e);
             }
-            if self.interpreter.is_halted() {
+            if self.is_halted() {
                 break;
             }
         }
@@ -1508,7 +1072,7 @@ impl VM {
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if name == "?CALLER::LINE" {
-                    let line = self.interpreter.get_caller_line(1).unwrap_or(Value::Nil);
+                    let line = self.get_caller_line(1).unwrap_or(Value::Nil);
                     self.stack.push(line);
                     *ip += 1;
                     return Ok(());
@@ -1523,14 +1087,14 @@ impl VM {
                 // storage has been registered. Skip the whole check (a `format!`
                 // plus two `var_type_constraint` lookups) on the hot read path when
                 // no atomics exist, which is the overwhelmingly common case.
-                if self.interpreter.atomic_var_seen() {
+                if self.atomic_var_seen() {
                     let atomic_name = name.strip_prefix('$').unwrap_or(name);
                     let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
                     let is_atomic_int = loan_env!(self, var_type_constraint(name)).as_deref()
                         == Some("atomicint")
                         || loan_env!(self, var_type_constraint(atomic_name)).as_deref()
                             == Some("atomicint")
-                        || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+                        || self.get_shared_var(&atomic_name_key).is_some();
                     if is_atomic_int {
                         let fetched = self.vm_call_function(
                             "__mutsu_atomic_fetch_var",
@@ -1560,8 +1124,7 @@ impl VM {
                         // Bare variable names should NOT fall back to our_vars — the
                         // lexical alias for `our` variables is block-scoped.
                         if name.contains("::") {
-                            self.interpreter
-                                .get_our_var(name)
+                            self.get_our_var(name)
                                 .cloned()
                                 .or_else(|| self.our_var_pseudo_unqualified(name))
                                 .or_else(|| {
@@ -1597,9 +1160,7 @@ impl VM {
                                         if candidate == name {
                                             continue;
                                         }
-                                        if let Some(v) =
-                                            self.interpreter.get_our_var(&candidate).cloned()
-                                        {
+                                        if let Some(v) = self.get_our_var(&candidate).cloned() {
                                             return Some(v);
                                         }
                                         if let Some(v) = self.get_env_with_main_alias(&candidate) {
@@ -1676,8 +1237,7 @@ impl VM {
                         } else {
                             format!("{cur}::{name}")
                         };
-                        self.interpreter
-                            .get_our_var(&candidate)
+                        self.get_our_var(&candidate)
                             .cloned()
                             .or_else(|| self.get_env_with_main_alias(&candidate))
                     })
@@ -1714,11 +1274,9 @@ impl VM {
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
                 let val = if matches!(val, Value::Nil) {
-                    if let Some(def) = self.interpreter.var_default(name) {
+                    if let Some(def) = self.var_default(name) {
                         def.clone()
-                    } else if let Some(constraint) =
-                        self.interpreter.var_type_constraint_fast(name).cloned()
-                    {
+                    } else if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
                         let nominal =
                             loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
@@ -1858,7 +1416,7 @@ impl VM {
                 }
                 // %?RESOURCES — build from the current package's distribution context
                 if name == "%?RESOURCES" {
-                    let resources = self.interpreter.build_resources_for_package();
+                    let resources = self.build_resources_for_package();
                     self.stack.push(resources);
                     *ip += 1;
                     return Ok(());
@@ -1927,7 +1485,6 @@ impl VM {
             OpCode::GetOurVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 let val = self
-                    .interpreter
                     .get_our_var(name)
                     .cloned()
                     .or_else(|| self.get_env_with_main_alias(name))
@@ -1959,12 +1516,9 @@ impl VM {
                 if name_str == "__ANON_STATE__"
                     && !raw_mode
                     && !is_rebind
-                    && !self.interpreter.fatal_mode
-                    && self
-                        .interpreter
-                        .var_type_constraint_fast(name_str)
-                        .is_none()
-                    && !self.interpreter.is_readonly(name_str)
+                    && !self.fatal_mode
+                    && self.var_type_constraint_fast(name_str).is_none()
+                    && !self.is_readonly(name_str)
                     && !matches!(self.stack.last(), Some(Value::Capture { .. }))
                     && !matches!(self.env().get(name_str), Some(Value::ContainerRef(_)))
                 {
@@ -2001,17 +1555,14 @@ impl VM {
                         )));
                     }
                 }
-                if self.interpreter.strict_mode
-                    && !name.contains("::")
-                    && !self.env().contains_key(&name)
-                {
+                if self.strict_mode && !name.contains("::") && !self.env().contains_key(&name) {
                     return Err(self.strict_undeclared_error(&name));
                 }
                 // Check readonly variables (e.g., $*USAGE).
                 // Skip readonly check for SetGlobalRaw which is used for constant
                 // declarations — the constant will be re-marked readonly after this.
                 if !raw_mode {
-                    self.interpreter.check_readonly_for_modify(&name)?;
+                    self.check_readonly_for_modify(&name)?;
                 } else {
                     // Clear any previous readonly marking so this constant
                     // redeclaration can proceed (e.g., `constant sym` followed
@@ -2021,7 +1572,7 @@ impl VM {
                         .next()
                         .unwrap_or(&name)
                         .trim_start_matches(['$', '@', '%', '&']);
-                    self.interpreter.unmark_readonly(bare);
+                    self.unmark_readonly(bare);
                 }
                 // Prevent re-assignment of immutable containers (Mix, Set, Bag)
                 // Only when the variable has an explicit immutable type constraint
@@ -2056,7 +1607,7 @@ impl VM {
                     && !name.starts_with('&')
                     && !name.contains("::")
                     && matches!(self.env().get(&name), Some(Value::Package(_)))
-                    && self.interpreter.has_class(&name)
+                    && self.has_class(&name)
                 {
                     return Err(RuntimeError::new(format!(
                         "Cannot modify an immutable '{}' type object",
@@ -2110,7 +1661,6 @@ impl VM {
                                     | "buf16"
                                     | "buf32"
                             ) || self
-                                .interpreter
                                 .class_composed_roles(&cn)
                                 .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
                             if does_positional {
@@ -2160,8 +1710,7 @@ impl VM {
                         if let Value::Instance { class_name, .. } = &val
                             && class_name.resolve() == "Failure"
                             && !val.is_failure_handled()
-                            && let Some(err) =
-                                self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                         {
                             return Err(err);
                         }
@@ -2177,9 +1726,9 @@ impl VM {
                     // Wrap native integer values on assignment (overflow wrapping)
                     val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                 }
-                if self.interpreter.fatal_mode
+                if self.fatal_mode
                     && !name.contains("__mutsu_")
-                    && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                    && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                 {
                     return Err(err);
                 }
@@ -2205,11 +1754,11 @@ impl VM {
                     // Propagate readonly status from the source variable.
                     // Binding to a readonly parameter should make the target
                     // readonly as well (persisted in env for cross-scope survival).
-                    let source_readonly = self.interpreter.is_readonly(&source_name);
+                    let source_readonly = self.is_readonly(&source_name);
                     self.env_mut()
                         .insert(readonly_key.clone(), Value::Bool(source_readonly));
                     if source_readonly {
-                        self.interpreter.mark_readonly(&name);
+                        self.mark_readonly(&name);
                     }
                     // Create a shared ContainerRef for cross-scope binding persistence.
                     if !name.starts_with('@')
@@ -2272,17 +1821,15 @@ impl VM {
                         // package-qualified variants (e.g., "K::x" for bare "x")
                         // so GetGlobal fallback (which uses qualified keys) can
                         // find the binding.
-                        self.interpreter
-                            .set_our_var(name.clone(), container.clone());
+                        self.set_our_var(name.clone(), container.clone());
                         // Update the package-qualified our_var key (e.g., "K::x"
                         // for bare "x" in class K) so GetGlobal fallback can find
                         // the binding. Only match the exact class from the method
                         // class stack to avoid clobbering unrelated package vars.
-                        if let Some(method_class) = self.interpreter.method_class_stack_top() {
+                        if let Some(method_class) = self.method_class_stack_top() {
                             let qualified = format!("{}::{}", method_class, name);
-                            if self.interpreter.get_our_var(&qualified).is_some() {
-                                self.interpreter
-                                    .set_our_var(qualified.clone(), container.clone());
+                            if self.get_our_var(&qualified).is_some() {
+                                self.set_our_var(qualified.clone(), container.clone());
                                 self.env_mut().insert(qualified, container.clone());
                             }
                         }
@@ -2330,7 +1877,7 @@ impl VM {
                 // Persist `our`-scoped variables so they survive block-scope
                 // restoration (which only preserves env keys that existed
                 // before the block).  `::('name')` falls back to this store.
-                self.interpreter.set_our_var(name.clone(), val.clone());
+                self.set_our_var(name.clone(), val.clone());
                 // Track topic mutations for map rw writeback
                 if name == "_" {
                     self.env_mut()
@@ -2412,7 +1959,7 @@ impl VM {
                 // Clear stale atomic CAS state when an @-variable is
                 // (re-)declared with a type constraint like atomicint.
                 if name.starts_with('@') && constraint == "atomicint" {
-                    self.interpreter.clear_atomic_array_state(&name);
+                    self.clear_atomic_array_state(&name);
                 }
                 self.vm_set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
@@ -2451,7 +1998,7 @@ impl VM {
                     };
                     // Hashes embed metadata in `HashData`; write the tagged value
                     // back (no-op Arc for array/instance side-table containers).
-                    let tagged = self.interpreter.tag_container_metadata(value, info);
+                    let tagged = self.tag_container_metadata(value, info);
                     self.set_env_with_main_alias(&name, tagged.clone());
                     self.update_local_if_exists(code, &name, &tagged);
                 }
@@ -2862,7 +2409,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::SetDoesContext(flag) => {
-                self.interpreter.in_does_rhs = *flag;
+                self.in_does_rhs = *flag;
                 *ip += 1;
             }
 
@@ -3091,7 +2638,7 @@ impl VM {
                 };
                 let has_user_defined = class_name
                     .as_ref()
-                    .is_some_and(|cn| self.interpreter.has_user_method(&cn.resolve(), "defined"));
+                    .is_some_and(|cn| self.has_user_method(&cn.resolve(), "defined"));
                 let defined = if has_user_defined {
                     // Call user method directly, bypassing native method dispatch
                     let cn = class_name.unwrap();
@@ -3180,7 +2727,6 @@ impl VM {
                                 | "buf16"
                                 | "buf32"
                         ) || self
-                            .interpreter
                             .class_composed_roles(&cn)
                             .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
                         if does_positional {
@@ -3276,9 +2822,7 @@ impl VM {
                         }
                         _ => {
                             // Sinking an unhandled Failure always throws (Raku behavior)
-                            if let Some(err) =
-                                self.interpreter.failure_to_runtime_error_if_unhandled(&val)
-                            {
+                            if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
                                 return Err(err);
                             }
                             // Sinking a Proc with non-zero exitcode throws X::Proc::Unsuccessful
@@ -4278,9 +3822,7 @@ impl VM {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let pkg_val = Value::Package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                self.interpreter
-                    .chain_declared_packages
-                    .insert(name.clone());
+                self.chain_declared_packages.insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 self.env_dirty = true;
                 *ip += 1;
@@ -4289,13 +3831,11 @@ impl VM {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let pkg_val = Value::Package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                self.interpreter
-                    .chain_declared_packages
-                    .insert(name.clone());
+                self.chain_declared_packages.insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 // Mark as my-scoped so the package is hidden from global
                 // lookups and package stash resolution outside its scope.
-                self.interpreter.mark_my_scoped_package_item(name.clone());
+                self.mark_my_scoped_package_item(name.clone());
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
                 if let Some(set) = self.block_declared_vars.last_mut() {
@@ -4488,7 +4028,7 @@ impl VM {
             OpCode::StateVarInitGuard(key_idx, jump_to) => {
                 let base_key = Self::const_str(code, *key_idx);
                 let scoped_key = self.scoped_state_key(base_key);
-                if self.interpreter.get_state_var(&scoped_key).is_some() {
+                if self.get_state_var(&scoped_key).is_some() {
                     // State already initialized: push a placeholder value on the
                     // stack (StateVarInit will discard it and use the stored value)
                     // and skip the RHS initializer.
@@ -4654,11 +4194,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PushImportScope => {
-                self.interpreter.push_import_scope();
+                self.push_import_scope();
                 *ip += 1;
             }
             OpCode::PopImportScope => {
-                self.interpreter.pop_import_scope();
+                self.pop_import_scope();
                 *ip += 1;
             }
             OpCode::RegisterEnum(idx) => {
@@ -4744,8 +4284,7 @@ impl VM {
             } => {
                 let target = Self::const_str(code, *target_idx);
                 let source = Self::const_str(code, *source_idx);
-                self.interpreter
-                    .bind_caller_var(target, source, *depth as usize)?;
+                self.bind_caller_var(target, source, *depth as usize)?;
                 *ip += 1;
             }
             OpCode::GetOuterVar { name_idx, depth } => {
@@ -4769,7 +4308,7 @@ impl VM {
             }
             OpCode::CheckReadOnly(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                self.interpreter.check_readonly_for_modify(name)?;
+                self.check_readonly_for_modify(name)?;
                 // Also check env-based readonly status set by cross-scope
                 // `:=` binding (e.g. binding to a readonly sub parameter
                 // in a closure).  The readonly_vars set is scope-local
@@ -4782,7 +4321,7 @@ impl VM {
             }
             OpCode::MarkVarReadonly(name_idx) => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.interpreter.mark_readonly(&name);
+                self.mark_readonly(&name);
                 *ip += 1;
             }
 

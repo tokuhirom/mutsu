@@ -75,7 +75,7 @@ impl VM {
             return None;
         }
         // Mixin role method bypass
-        if self.interpreter.mixin_role_has_method(target, &method_name) {
+        if self.mixin_role_has_method(target, &method_name) {
             return None;
         }
         // Instance-specific bypasses (avoid for non-Instance targets)
@@ -126,17 +126,16 @@ impl VM {
                     method_name.as_str(),
                     "gist" | "Str" | "Stringy" | "raku" | "perl"
                 );
-                let render_overridden =
-                    is_pure_render && self.interpreter.has_user_method(&cn, &method_name);
+                let render_overridden = is_pure_render && self.has_user_method(&cn, &method_name);
                 if (!is_pure_render || render_overridden)
                     && (self.type_matches_value("Real", target)
                         || self.type_matches_value("Numeric", target)
-                        || self.interpreter.has_user_method(&cn, "Bridge"))
+                        || self.has_user_method(&cn, "Bridge"))
                 {
                     return None;
                 }
                 // Native method on instance class
-                if self.interpreter.is_native_method(&cn, &method_name) {
+                if self.is_native_method(&cn, &method_name) {
                     return None;
                 }
             }
@@ -247,9 +246,7 @@ impl VM {
         if method_name == "decode" {
             return result.map(|res| {
                 res.map(|value| match value {
-                    Value::Str(decoded) => {
-                        Value::str(self.interpreter.translate_newlines_for_decode(&decoded))
-                    }
+                    Value::Str(decoded) => Value::str(self.translate_newlines_for_decode(&decoded)),
                     other => other,
                 })
             });
@@ -319,7 +316,7 @@ impl VM {
         {
             // Hashes embed metadata in `HashData`; re-tag the cloned value
             // (no-op Arc for array/instance side-table containers).
-            result = Some(Ok(self.interpreter.tag_container_metadata(v, info)));
+            result = Some(Ok(self.tag_container_metadata(v, info)));
         }
 
         result

@@ -206,7 +206,7 @@ impl VM {
             let meta = self.container_type_metadata(target);
             let mut new_array = Value::real_array(source_after);
             if let Some(info) = meta {
-                new_array = self.interpreter.tag_container_metadata(new_array, info);
+                new_array = self.tag_container_metadata(new_array, info);
             }
             self.set_env_with_main_alias(&name, new_array);
         }

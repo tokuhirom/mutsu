@@ -377,11 +377,7 @@ impl VM {
             }
             // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
             // Only use this when the package is a known class.
-            if !args.is_empty()
-                && !pkg.is_empty()
-                && pkg != "GLOBAL"
-                && self.interpreter.has_class(&pkg)
-            {
+            if !args.is_empty() && !pkg.is_empty() && pkg != "GLOBAL" && self.has_class(&pkg) {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
                 // Route through the VM's unified compiled-first dispatch (ledger §1):
@@ -409,7 +405,7 @@ impl VM {
             // Check if any mixed-in role provides CALL-ME
             for key in mixins.keys() {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
-                    && self.interpreter.role_has_method(role_name, "CALL-ME")
+                    && self.role_has_method(role_name, "CALL-ME")
                 {
                     // TODO: complex case -- fall back to interpreter for CALL-ME on Mixin
                     return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
@@ -451,9 +447,7 @@ impl VM {
             }
         }
         // Evaluate the thunk (call the sub with no args)
-        let result = self
-            .interpreter
-            .call_sub_value(thunk_data.thunk.clone(), vec![], true)?;
+        let result = self.call_sub_value(thunk_data.thunk.clone(), vec![], true)?;
         // Cache the result
         {
             let mut cache = thunk_data.cache.lock().unwrap();

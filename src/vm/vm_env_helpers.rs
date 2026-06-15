@@ -36,7 +36,7 @@ impl VM {
         // phasers, threads) still flatten via `clone_env` at the capture site.
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
-            saved_readonly: Some(self.interpreter.save_readonly_vars()),
+            saved_readonly: Some(self.save_readonly_vars()),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
@@ -72,7 +72,7 @@ impl VM {
         self.locals = std::mem::take(&mut frame.saved_locals);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
-            self.interpreter.restore_readonly_vars(readonly);
+            self.restore_readonly_vars(readonly);
         }
         self.env_dirty = frame.saved_env_dirty;
         frame
@@ -102,7 +102,7 @@ impl VM {
     /// after stripping pseudo-package prefixes like GLOBAL::, OUR::, etc.
     pub(super) fn our_var_pseudo_unqualified(&self, name: &str) -> Option<Value> {
         Self::pseudo_package_unqualified_name(name)
-            .and_then(|bare| self.interpreter.get_our_var(&bare).cloned())
+            .and_then(|bare| self.get_our_var(&bare).cloned())
     }
 
     /// Strip pseudo-package qualifiers (GLOBAL::, OUR::, MY::) from a
@@ -171,16 +171,16 @@ impl VM {
         // observe the latest CAS'd value.
         if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
-            if let Some(v) = self.interpreter.get_shared_var(&atomic_key) {
+            if let Some(v) = self.get_shared_var(&atomic_key) {
                 return Some(v);
             }
         }
         // Thread-clone @/% lookups must prefer the shared copy. Child thread
         // env snapshots can lag behind sibling mutations even when Lock::Async
         // serializes the writes through shared_vars.
-        if self.interpreter.is_thread_clone()
+        if self.is_thread_clone()
             && (name.starts_with('@') || name.starts_with('%'))
-            && let Some(v) = self.interpreter.get_shared_var(name)
+            && let Some(v) = self.get_shared_var(name)
         {
             return Some(v);
         }
@@ -197,11 +197,11 @@ impl VM {
         }
         // Fall back to shared_vars for cross-thread visibility of variables
         // that were explicitly updated by other threads.
-        if let Some(v) = self.interpreter.get_shared_var(name) {
+        if let Some(v) = self.get_shared_var(name) {
             return Some(v);
         }
         // Follow binding aliases ($CALLER::target := $source)
-        if let Some(resolved) = self.interpreter.resolve_binding(name)
+        if let Some(resolved) = self.resolve_binding(name)
             && let Some(val) = self.env().get(resolved)
         {
             return Some(val.clone());
@@ -227,7 +227,7 @@ impl VM {
             if let Some(val) = self.env().get(&placeholder) {
                 return Some(val.clone());
             }
-            if let Some(val) = self.interpreter.get_shared_var(&placeholder) {
+            if let Some(val) = self.get_shared_var(&placeholder) {
                 return Some(val);
             }
         }

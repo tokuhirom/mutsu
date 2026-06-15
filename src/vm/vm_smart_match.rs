@@ -610,7 +610,7 @@ impl VM {
                 Err(err) => {
                     // Non-existing method or attribute dies.
                     // Set pending dispatch error so the caller can propagate it.
-                    self.interpreter.set_pending_dispatch_error(err);
+                    self.set_pending_dispatch_error(err);
                     return false;
                 }
             }

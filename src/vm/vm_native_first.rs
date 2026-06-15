@@ -29,7 +29,7 @@ impl FirstMatcher for VmFirstMatcher<'_> {
                 .vm_call_on_value(pattern.clone(), vec![call_item], None)?
                 .truthy())
         } else {
-            Ok(self.0.interpreter.smart_match(item, pattern))
+            Ok(self.0.smart_match(item, pattern))
         }
     }
 }

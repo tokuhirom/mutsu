@@ -113,7 +113,7 @@ impl VM {
         )
     }
 
-    fn string_succ(s: &str) -> String {
+    pub(crate) fn string_succ(s: &str) -> String {
         crate::builtins::str_increment::string_succ(s)
     }
 

@@ -14,7 +14,7 @@ impl VM {
     ///   - <unit> (outermost): use the outermost routine frame's stored
     ///     call-site (where <unit> called the first function)
     pub(super) fn build_backtrace_string(&self) -> String {
-        let stack = self.interpreter.routine_stack();
+        let stack = self.routine_stack();
         let current_line = self.current_source_line();
         let current_file = self.current_source_file();
         // Build reversed list: stack[last] is innermost, stack[0] is outermost
@@ -62,7 +62,7 @@ impl VM {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
-        let stack = self.interpreter.routine_stack();
+        let stack = self.routine_stack();
         let current_line = self.current_source_line();
         let current_file = self.current_source_file();
         let reversed: Vec<_> = stack.iter().rev().collect();
@@ -402,7 +402,7 @@ impl VM {
         // If no compiled code, fall back to interpreter
         let (cc, fns) = match (&list.compiled_code, &list.compiled_fns) {
             (Some(cc), Some(fns)) => (cc.clone(), fns.clone()),
-            _ => return self.interpreter.force_lazy_list_bridge(list),
+            _ => return self.force_lazy_list_bridge(list),
         };
 
         // Save current VM state. Locals are kept coherent with env by
@@ -422,9 +422,9 @@ impl VM {
         *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
 
         // Push gather items collector
-        let saved_gather_len = self.interpreter.gather_items_len();
-        self.interpreter.push_gather_items(Vec::new());
-        self.interpreter.push_gather_take_limit(None);
+        let saved_gather_len = self.gather_items_len();
+        self.push_gather_items(Vec::new());
+        self.push_gather_take_limit(None);
 
         // Initialize locals for the compiled code
         self.locals = vec![Value::Nil; cc.locals.len()];
@@ -446,8 +446,8 @@ impl VM {
             match self.exec_one(&cc, &mut ip, run_fns) {
                 Ok(()) => {}
                 Err(e) if e.is_warn => {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                    if !self.warning_suppressed() {
+                        self.write_warn_to_stderr(&e.message);
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -460,19 +460,19 @@ impl VM {
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if self.is_halted() {
                 break;
             }
         }
 
         // Collect gather items
-        let items = self.interpreter.pop_gather_items().unwrap_or_default();
-        self.interpreter.pop_gather_take_limit();
+        let items = self.pop_gather_items().unwrap_or_default();
+        self.pop_gather_take_limit();
 
         // Clean up extra gather items if needed
-        while self.interpreter.gather_items_len() > saved_gather_len {
-            self.interpreter.pop_gather_items();
-            self.interpreter.pop_gather_take_limit();
+        while self.gather_items_len() > saved_gather_len {
+            self.pop_gather_items();
+            self.pop_gather_take_limit();
         }
 
         // Sync locals back to env before reading the result environment.
@@ -589,7 +589,7 @@ impl VM {
             (Some(cc), Some(fns)) => (cc.clone(), fns.clone()),
             _ => {
                 // Fall back to interpreter prefix bridge
-                return self.interpreter.force_lazy_list_prefix_bridge(list, needed);
+                return self.force_lazy_list_prefix_bridge(list, needed);
             }
         };
 
@@ -648,7 +648,7 @@ impl VM {
         self.env_dirty = false;
 
         // Push gather items collector with the take limit
-        let saved_gather_len = self.interpreter.gather_items_len();
+        let saved_gather_len = self.gather_items_len();
 
         // If resuming, restore already-cached items into the gather collector
         // so that the take_value limit check accounts for them.
@@ -656,13 +656,13 @@ impl VM {
             let cache = list.cache.lock().unwrap();
             let items = cache.as_ref().cloned().unwrap_or_default();
             let len = items.len();
-            self.interpreter.push_gather_items(items);
+            self.push_gather_items(items);
             len
         } else {
-            self.interpreter.push_gather_items(Vec::new());
+            self.push_gather_items(Vec::new());
             0
         };
-        self.interpreter.push_gather_take_limit(Some(needed));
+        self.push_gather_take_limit(Some(needed));
 
         // Run the compiled code
         let run_fns = fns.as_ref();
@@ -673,8 +673,8 @@ impl VM {
             match self.exec_one(&cc, &mut ip, run_fns) {
                 Ok(()) => {}
                 Err(e) if e.is_warn => {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                    if !self.warning_suppressed() {
+                        self.write_warn_to_stderr(&e.message);
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -699,7 +699,7 @@ impl VM {
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if self.is_halted() {
                 break;
             }
         }
@@ -710,12 +710,12 @@ impl VM {
         }
 
         // Collect gather items
-        let items = self.interpreter.pop_gather_items().unwrap_or_default();
-        self.interpreter.pop_gather_take_limit();
+        let items = self.pop_gather_items().unwrap_or_default();
+        self.pop_gather_take_limit();
 
-        while self.interpreter.gather_items_len() > saved_gather_len {
-            self.interpreter.pop_gather_items();
-            self.interpreter.pop_gather_take_limit();
+        while self.gather_items_len() > saved_gather_len {
+            self.pop_gather_items();
+            self.pop_gather_take_limit();
         }
 
         // Sync locals back to env
@@ -1300,7 +1300,7 @@ impl VM {
             return Err(err);
         }
         // Check for pending dispatch error (e.g., from Any ~~ Pair method call)
-        if let Some(err) = self.interpreter.take_pending_dispatch_error() {
+        if let Some(err) = self.take_pending_dispatch_error() {
             return Err(err);
         }
         if is_regex {

@@ -132,29 +132,6 @@ impl Interpreter {
             })
     }
 
-    pub(crate) fn call_supply_quit_handler(
-        &mut self,
-        quit_cb: Value,
-        reason: Value,
-    ) -> Result<(), RuntimeError> {
-        let saved_when = self.when_matched();
-        self.set_when_matched(false);
-        let handled = match self.call_sub_value(quit_cb, vec![reason.clone()], true) {
-            Ok(_) => true,
-            Err(err) if err.is_succeed => true,
-            Err(err) => {
-                self.set_when_matched(saved_when);
-                return Err(err);
-            }
-        };
-        self.set_when_matched(saved_when);
-        if handled {
-            Ok(())
-        } else {
-            Err(Self::runtime_error_from_supply_reason(reason))
-        }
-    }
-
     /// Run a single `whenever` QUIT phaser body with `reason` bound as `$_`,
     /// reporting how it handled the exception:
     /// - `Unhandled`: nothing matched / it rethrew — the quit propagates.

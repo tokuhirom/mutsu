@@ -43,11 +43,12 @@ impl VM {
         let mut handles: Vec<std::thread::JoinHandle<ThreadResult>> =
             Vec::with_capacity(num_batches);
         for batch in batches {
-            let thread_interp = self.interpreter.clone_for_thread();
+            let thread_interp = self.clone_for_thread();
             let block_clone = block.clone();
             let is_map_flag = is_map;
             handles.push(std::thread::spawn(move || {
-                let mut vm = crate::vm::VM::new(thread_interp);
+                // CP-3 collapse: the cloned per-thread Interpreter *is* the VM.
+                let mut vm = thread_interp;
                 let mut results = Vec::with_capacity(batch.len());
                 let mut error: Option<RuntimeError> = None;
                 for item in &batch {
@@ -71,13 +72,13 @@ impl VM {
                         }
                     }
                 }
-                let output = vm.interpreter.take_output();
-                let stderr = vm.interpreter.take_stderr_output();
+                let output = vm.take_output();
+                let stderr = vm.take_stderr_output();
                 let final_result = match error {
                     Some(e) => Err(e),
                     None => Ok(results),
                 };
-                (vm.interpreter, final_result, output, stderr)
+                (vm, final_result, output, stderr)
             }));
         }
         let mut all_results = Vec::with_capacity(items.len());
@@ -85,7 +86,7 @@ impl VM {
         for handle in handles {
             let (thread_interp, batch_result, output, stderr) =
                 handle.join().unwrap_or_else(|_| {
-                    let interp = self.interpreter.clone_for_thread();
+                    let interp = self.clone_for_thread();
                     (
                         interp,
                         Err(RuntimeError::new("Thread panicked in hyper/race")),
@@ -93,8 +94,8 @@ impl VM {
                         String::new(),
                     )
                 });
-            self.interpreter.emit_output(&output);
-            self.interpreter.emit_stderr(&stderr);
+            self.emit_output(&output);
+            self.emit_stderr(&stderr);
             // Shared vars are synced through the shared Arc<RwLock<>>
             drop(thread_interp);
             match batch_result {
@@ -111,7 +112,7 @@ impl VM {
             }
         }
         // Sync any shared variable updates from threads back to our env
-        self.interpreter.sync_shared_vars_to_env();
+        self.sync_shared_vars_to_env();
         if let Some(e) = first_error {
             return Err(e);
         }

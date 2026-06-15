@@ -854,10 +854,10 @@ impl Interpreter {
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
         let (code, compiled_fns) = compiler.compile(&body_main);
-        let interp = std::mem::take(self);
-        let vm = crate::vm::VM::new(interp);
-        let (interp, body_result) = vm.run(&code, &compiled_fns);
-        *self = interp;
+        // CP-3 collapse: the Interpreter *is* the bytecode VM now, so run the
+        // compiled mainline directly (outermost run → fresh registers) instead of
+        // the `mem::take(self)` + `VM::new` + `*self = interp` ping-pong.
+        let body_result = self.run_top(&code, &compiled_fns);
         let queue_result = if Self::should_run_success_queue_vm(&body_result, self.env.get("_")) {
             self.run_block_raw(&success_ph)
         } else {
@@ -995,10 +995,11 @@ impl Interpreter {
             return Ok(());
         }
         let (code, compiled_fns) = self.compile_block_raw(stmts);
-        let interp = std::mem::take(self);
-        let vm = crate::vm::VM::new(interp);
-        let (interp, result) = vm.run(&code, &compiled_fns);
-        *self = interp;
+        // CP-3 collapse: run the compiled block re-entrantly in place (no
+        // `mem::take(self)` + `VM::new` ping-pong), exactly like the VM-side
+        // `vm_run_block_raw`. `run_nested` saves/resets/restores the per-execution
+        // registers and flags env_dirty so the outer locals re-sync from env.
+        let result = self.run_nested(&code, &compiled_fns);
         self.run_pending_instance_destroys()?;
         result.map(|_| ())
     }
@@ -1085,24 +1086,6 @@ impl Interpreter {
             }
         }
         Ok(())
-    }
-
-    fn is_exceptional_block_exit(err: &RuntimeError) -> bool {
-        if err.is_fail {
-            return true;
-        }
-        if err.return_value.is_some() {
-            return false;
-        }
-        !(err.is_last
-            || err.is_next
-            || err.is_redo
-            || err.is_goto
-            || err.is_proceed
-            || err.is_succeed
-            || err.is_leave
-            || err.is_resume
-            || err.is_react_done)
     }
 
     fn should_run_success_queue_raw(

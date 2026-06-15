@@ -228,12 +228,11 @@ mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
-pub(crate) use self::io_handles::{IoHandleTable, IoHandlesWriteGuard};
 pub(crate) use self::output_sink::OutputSink;
 #[allow(unused_imports)]
 pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};
 pub(crate) use self::registration_class::ClassDeclModifiers;
-pub(crate) use self::registry::{Registry, RegistryReadGuard, RegistryWriteGuard};
+pub(crate) use self::registry::Registry;
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
 
 pub(crate) use utils::*;
@@ -1152,6 +1151,68 @@ pub struct Interpreter {
     precomp_enabled: bool,
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
     monkey_typing: bool,
+
+    // === Merged VM execution registers (CP-3 collapse: the bytecode VM was
+    // dissolved into the Interpreter; these were the per-execution fields of the
+    // former `VM` struct). The Interpreter IS the bytecode VM now. ===
+    pub(crate) stack: Vec<Value>,
+    pub(crate) locals: Vec<Value>,
+    pub(crate) in_smartmatch_rhs: bool,
+    pub(crate) transliterate_in_smartmatch: bool,
+    pub(crate) substitution_in_smartmatch: bool,
+    pub(crate) last_topic_value: Option<Value>,
+    pub(crate) topic_save_stack: Vec<Value>,
+    pub(crate) container_ref_var: Option<String>,
+    pub(crate) container_ref_reversed: bool,
+    pub(crate) topic_source_var: Option<String>,
+    pub(crate) element_source: Option<(String, Value, bool)>,
+    #[allow(clippy::type_complexity)]
+    pub(crate) for_grep_view: Option<(
+        Arc<crate::value::ArrayData>,
+        Vec<usize>,
+        crate::value::ArrayKind,
+    )>,
+    pub(crate) quanthash_bind_params: Vec<String>,
+    pub(crate) for_param_restore_stack: Vec<(String, Option<Value>)>,
+    pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
+    pub(crate) env_dirty: bool,
+    pub(crate) method_dispatch_pure: bool,
+    pub(crate) resume_ip: Option<usize>,
+    pub(crate) bind_context: bool,
+    pub(crate) scalar_bind_context: bool,
+    pub(crate) bound_decont_active: bool,
+    pub(crate) rebind_context: bool,
+    pub(crate) constant_context: bool,
+    pub(crate) explicit_initializer_context: bool,
+    pub(crate) vardecl_context: bool,
+    pub(crate) local_bind_pairs: Vec<(usize, usize)>,
+    pub(crate) otf_compile_cache: HashMap<u64, CompiledFunction>,
+    pub(crate) state_scope_id: Option<u64>,
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn_resolve_cache: HashMap<(Symbol, usize, Vec<String>), (String, u64, String)>,
+    pub(crate) fn_resolve_gen: u64,
+    pub(crate) fn_resolve_cache_gen: u64,
+    pub(crate) multi_candidates_cache: HashMap<Symbol, bool>,
+    pub(crate) multi_candidates_cache_gen: u64,
+    pub(crate) light_call_cache: HashMap<Symbol, (String, u64)>,
+    pub(crate) light_call_cache_gen: u64,
+    pub(crate) pos_light_call_cache: HashMap<Symbol, (String, u64)>,
+    pub(crate) pos_light_call_cache_gen: u64,
+    pub(crate) method_resolve_cache: HashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
+    #[allow(clippy::type_complexity)]
+    pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
+    pub(crate) fast_method_cache: HashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
+    pub(crate) block_declared_vars: Vec<HashSet<String>>,
+    pub(crate) loop_local_vars: Vec<HashSet<String>>,
+    pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
+    pub(crate) loop_cond_active: bool,
+    pub(crate) outer_scope_locals: Vec<Vec<Value>>,
+    pub(crate) pending_alias_bind_names: Vec<(String, String)>,
+    pub(crate) otf_call_cache: HashMap<Symbol, CompiledFunction>,
+    pub(crate) otf_call_cache_gen: u64,
+    pub(crate) check_phaser_depth: u32,
+    pub(crate) gather_for_loop_resume: Option<crate::value::ForLoopResumeState>,
+    pub(crate) rw_map_topic_capture: Option<Value>,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -3240,6 +3301,60 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: true,
             monkey_typing: false,
+
+            // Merged VM execution registers (CP-3 collapse) — same defaults the
+            // former `VM::new` installed.
+            stack: Vec::new(),
+            locals: Vec::new(),
+            in_smartmatch_rhs: false,
+            transliterate_in_smartmatch: false,
+            substitution_in_smartmatch: false,
+            last_topic_value: None,
+            topic_save_stack: Vec::new(),
+            container_ref_var: None,
+            container_ref_reversed: false,
+            topic_source_var: None,
+            element_source: None,
+            for_grep_view: None,
+            quanthash_bind_params: Vec::new(),
+            for_param_restore_stack: Vec::new(),
+            call_frames: Vec::new(),
+            env_dirty: false,
+            method_dispatch_pure: false,
+            resume_ip: None,
+            bind_context: false,
+            scalar_bind_context: false,
+            bound_decont_active: false,
+            rebind_context: false,
+            constant_context: false,
+            explicit_initializer_context: false,
+            vardecl_context: false,
+            local_bind_pairs: Vec::new(),
+            otf_compile_cache: HashMap::new(),
+            state_scope_id: None,
+            fn_resolve_cache: HashMap::new(),
+            fn_resolve_gen: 0,
+            fn_resolve_cache_gen: 0,
+            multi_candidates_cache: HashMap::new(),
+            multi_candidates_cache_gen: 0,
+            light_call_cache: HashMap::new(),
+            light_call_cache_gen: 0,
+            pos_light_call_cache: HashMap::new(),
+            pos_light_call_cache_gen: 0,
+            method_resolve_cache: HashMap::new(),
+            last_method_resolve: None,
+            fast_method_cache: HashMap::new(),
+            block_declared_vars: Vec::new(),
+            loop_local_vars: Vec::new(),
+            loop_local_saved_env: Vec::new(),
+            loop_cond_active: false,
+            outer_scope_locals: Vec::new(),
+            pending_alias_bind_names: Vec::new(),
+            otf_call_cache: HashMap::new(),
+            otf_call_cache_gen: 0,
+            check_phaser_depth: 0,
+            gather_for_loop_resume: None,
+            rw_map_topic_capture: None,
         };
         interpreter.init_io_environment();
         // Built-in enum constants (Order/Endian/ProtocolFamily/Signal) are
@@ -4442,13 +4557,6 @@ impl Interpreter {
         std::mem::take(&mut self.env)
     }
 
-    /// env-loan (CP-1 1e): take the env out for the VM to own, leaving a
-    /// *poisoned* sentinel behind so any unwrapped VM->interpreter env access
-    /// trips the guard. Mirror: `set_env` restores a real env on the way back.
-    pub(crate) fn loan_out_env(&mut self) -> Env {
-        std::mem::replace(&mut self.env, Env::poisoned())
-    }
-
     fn normalize_var_meta_name(name: &str) -> &str {
         name.trim_start_matches(['$', '@', '%', '&'])
     }
@@ -4845,18 +4953,6 @@ impl Interpreter {
 
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
         container_type_metadata_with(value, &self.instance_type_metadata)
-    }
-
-    /// Clone the shared instance-type-metadata handle so the VM can read
-    /// container type metadata for `Instance` values through its own peer handle
-    /// (same reasoning as [`Self::registry_handle`]) rather than bouncing through
-    /// `self.interpreter`. Container values (Array/Hash/Set/Bag/Mix) carry their
-    /// metadata embedded in the backing data struct, so this handle only covers
-    /// the `Instance` arm of [`container_type_metadata_with`].
-    pub(crate) fn instance_type_metadata_handle(
-        &self,
-    ) -> Arc<RwLock<HashMap<u64, ContainerTypeInfo>>> {
-        self.instance_type_metadata.clone()
     }
 
     // Object-hash original keys are embedded in `HashData.original_keys`
@@ -5315,18 +5411,6 @@ impl Interpreter {
         crate::runtime::registry::RegistryReadGuard::new(&self.registry, "registry")
     }
 
-    /// Clone the shared declaration [`Registry`] handle so the VM can hold it as a
-    /// peer (PLAN.md ② → A: VM owns its own handle to the same `RwLock`). Both the
-    /// Interpreter and the VM end up pointing at the *same* lock, so mutations
-    /// through either are visible and the debug re-entrancy guard (keyed by lock
-    /// address) still correctly flags a deadlocking re-acquire. Once the
-    /// Interpreter execution path is removed (④/⑤), this collapses to a plain VM
-    /// field and the handle clone disappears.
-    #[inline]
-    pub(crate) fn registry_handle(&self) -> Arc<RwLock<Registry>> {
-        self.registry.clone()
-    }
-
     /// Write access to the shared declaration [`Registry`]. Same guard discipline
     /// as [`Self::registry`].
     #[inline]
@@ -5363,32 +5447,6 @@ impl Interpreter {
     #[inline]
     pub(crate) fn io_handles_mut(&self) -> io_handles::IoHandlesWriteGuard<'_> {
         io_handles::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
-    }
-
-    /// Clone the shared [`IoHandleTable`](io_handles::IoHandleTable) handle so the
-    /// VM can hold it as a peer (PLAN.md ③ native IO PR-C: VM owns its own handle
-    /// to the same `RwLock`, mirroring [`Self::registry_handle`]). Both point at
-    /// the same lock, so mutations through either are visible and the debug
-    /// re-entrancy guard (keyed by lock address) still flags deadlocking
-    /// re-acquires. Collapses to a plain VM field once the Interpreter execution
-    /// path is removed (④/⑤).
-    #[inline]
-    pub(crate) fn io_handles_handle(&self) -> Arc<RwLock<io_handles::IoHandleTable>> {
-        self.io_handles.clone()
-    }
-
-    /// Clone the shared [`OutputSink`] handle so the VM can write Stdout/Stderr
-    /// output natively as a peer (③後段 PR-C, same reasoning as
-    /// [`Self::io_handles_handle`]).
-    pub(crate) fn output_sink_handle(&self) -> Arc<RwLock<OutputSink>> {
-        self.output_sink.clone()
-    }
-
-    /// Clone the shared `current_package` handle so the VM can read/write the
-    /// in-scope package name through its own peer handle (same reasoning as
-    /// [`Self::registry_handle`]) rather than bouncing through `self.interpreter`.
-    pub(crate) fn current_package_handle(&self) -> Arc<RwLock<String>> {
-        self.current_package.clone()
     }
 
     /// Whether a TAP subtest is currently in progress. The VM queries this (the
@@ -5699,6 +5757,61 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
             monkey_typing: self.monkey_typing,
+
+            // Merged VM execution registers (CP-3 collapse): a thread clone starts
+            // with fresh per-execution registers, exactly as the former
+            // `VM::new(thread_interp)` did for a spawned thread.
+            stack: Vec::new(),
+            locals: Vec::new(),
+            in_smartmatch_rhs: false,
+            transliterate_in_smartmatch: false,
+            substitution_in_smartmatch: false,
+            last_topic_value: None,
+            topic_save_stack: Vec::new(),
+            container_ref_var: None,
+            container_ref_reversed: false,
+            topic_source_var: None,
+            element_source: None,
+            for_grep_view: None,
+            quanthash_bind_params: Vec::new(),
+            for_param_restore_stack: Vec::new(),
+            call_frames: Vec::new(),
+            env_dirty: false,
+            method_dispatch_pure: false,
+            resume_ip: None,
+            bind_context: false,
+            scalar_bind_context: false,
+            bound_decont_active: false,
+            rebind_context: false,
+            constant_context: false,
+            explicit_initializer_context: false,
+            vardecl_context: false,
+            local_bind_pairs: Vec::new(),
+            otf_compile_cache: HashMap::new(),
+            state_scope_id: None,
+            fn_resolve_cache: HashMap::new(),
+            fn_resolve_gen: 0,
+            fn_resolve_cache_gen: 0,
+            multi_candidates_cache: HashMap::new(),
+            multi_candidates_cache_gen: 0,
+            light_call_cache: HashMap::new(),
+            light_call_cache_gen: 0,
+            pos_light_call_cache: HashMap::new(),
+            pos_light_call_cache_gen: 0,
+            method_resolve_cache: HashMap::new(),
+            last_method_resolve: None,
+            fast_method_cache: HashMap::new(),
+            block_declared_vars: Vec::new(),
+            loop_local_vars: Vec::new(),
+            loop_local_saved_env: Vec::new(),
+            loop_cond_active: false,
+            outer_scope_locals: Vec::new(),
+            pending_alias_bind_names: Vec::new(),
+            otf_call_cache: HashMap::new(),
+            otf_call_cache_gen: 0,
+            check_phaser_depth: 0,
+            gather_for_loop_resume: None,
+            rw_map_topic_capture: None,
         };
         // Raku gives each start block fresh $/ and $! (they are lexically scoped).
         cloned.env.insert("/".to_string(), Value::Nil);
