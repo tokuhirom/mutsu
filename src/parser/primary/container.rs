@@ -5,7 +5,9 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-use super::super::expr::{expression, expression_no_sequence};
+use super::super::expr::{
+    contains_whatever, expression, expression_no_sequence, wrap_whatevercode,
+};
 use super::super::helpers::{is_non_breaking_space, split_angle_words, ws};
 use super::super::stmt::keyword;
 use super::quote_adverbs::QuoteFlags;
@@ -192,7 +194,13 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         } else {
             first
         };
-        let result = normalize_chained_zip_meta(first);
+        // Curry BEFORE normalizing chained Z meta-ops: `1 Z+ * Z+ 3` must become
+        // a WhateverCode wrapping the nested meta-op, not a (non-curryable) `zip`
+        // call. A non-currying meta-op still normalizes as before.
+        let result = match maybe_curry_xz_metaop(first) {
+            curried @ (Expr::Lambda { .. } | Expr::AnonSubParams { .. }) => curried,
+            other => normalize_chained_zip_meta(other),
+        };
         // Wrap in Grouped so the compiler's chain-flattener can
         // distinguish `(1|2)|3` from `1|2|3` for junction operators.
         //
@@ -317,9 +325,65 @@ fn finalize_paren_list(items: Vec<Expr>) -> Expr {
         && (matches!(&lifted[0], Expr::MetaOp { .. })
             || matches!(&lifted[0], Expr::Call { name, .. } if *name == Symbol::intern("zip")))
     {
-        return lifted.into_iter().next().unwrap();
+        return maybe_curry_xz_metaop(lifted.into_iter().next().unwrap());
     }
+    // A standalone X/Z meta-op element with Whatever operands curries into a
+    // WhateverCode (e.g. `(* X+ *, 5)`); list-operand metaops were already folded
+    // by the lift above and left as plain (extending) MetaOps.
+    let lifted = lifted.into_iter().map(maybe_curry_xz_metaop).collect();
     Expr::ArrayLiteral(lifted)
+}
+
+/// Whatever-curry an X/Z meta-op when (and only when) a *standalone* `*` operand
+/// makes it a WhateverCode. A `*` that is merely the trailing element of a
+/// comma-list operand is a list *extender* (zip/cross repeats the last element),
+/// not a curry placeholder, so an `ArrayLiteral` operand never triggers currying.
+fn maybe_curry_xz_metaop(expr: Expr) -> Expr {
+    if matches!(&expr, Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z")
+        && xz_metaop_curries(&expr)
+    {
+        wrap_whatevercode(&expr)
+    } else {
+        expr
+    }
+}
+
+/// True when an X/Z meta-op (possibly a left-nested chain of them) has a
+/// standalone Whatever operand that should curry.
+fn xz_metaop_curries(expr: &Expr) -> bool {
+    if let Expr::MetaOp {
+        meta, left, right, ..
+    } = expr
+        && (meta == "X" || meta == "Z")
+    {
+        operand_curries(left) || operand_curries(right)
+    } else {
+        false
+    }
+}
+
+/// An operand curries when it carries a standalone Whatever placeholder. A
+/// comma-list operand (`ArrayLiteral`) is an extender, never a curry. Nested
+/// X/Z meta-ops recurse (so `1 X+ * X+ 3` curries through the inner op even
+/// though the global `contains_whatever` deliberately ignores X/Z).
+fn operand_curries(e: &Expr) -> bool {
+    match e {
+        Expr::ArrayLiteral(_) => false,
+        Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z" => xz_metaop_curries(e),
+        _ => {
+            contains_whatever(e)
+                || matches!(
+                    e,
+                    Expr::Lambda {
+                        is_whatever_code: true,
+                        ..
+                    } | Expr::AnonSubParams {
+                        is_whatever_code: true,
+                        ..
+                    }
+                )
+        }
+    }
 }
 
 fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
@@ -554,17 +618,22 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
         columns_rev.push(first_col);
         columns_rev.reverse();
 
-        let lifted_expr = if *meta == "Z" && columns_rev.len() > 2 {
-            let mut args: Vec<Expr> = columns_rev
-                .into_iter()
-                .map(|col| {
-                    if col.len() == 1 {
-                        col.into_iter().next().unwrap()
-                    } else {
-                        Expr::ArrayLiteral(col)
-                    }
-                })
-                .collect();
+        let col_to_expr = |col: Vec<Expr>| {
+            if col.len() == 1 {
+                col.into_iter().next().unwrap()
+            } else {
+                Expr::ArrayLiteral(col)
+            }
+        };
+        // A standalone `*` column (`(1,2 Z~ * Z~ 3,4)`) makes the whole chain a
+        // WhateverCode. We must keep it as a nested meta-op so the curry logic in
+        // `maybe_curry_xz_metaop` can wrap it; the lazy multi-arg `zip` call form
+        // (used for plain `Z` chains to preserve laziness) is not curryable.
+        let has_standalone_whatever = columns_rev
+            .iter()
+            .any(|col| col.len() == 1 && matches!(col[0], Expr::Whatever));
+        let lifted_expr = if *meta == "Z" && columns_rev.len() > 2 && !has_standalone_whatever {
+            let mut args: Vec<Expr> = columns_rev.into_iter().map(col_to_expr).collect();
             args.push(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str_from("with"))),
                 op: TokenKind::FatArrow,
@@ -575,25 +644,20 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
                 args,
             }
         } else {
-            let mut iter = columns_rev.into_iter();
-            let lhs = iter.next().unwrap_or_default();
-            let rhs = iter.next().unwrap_or_default();
-            let lhs = if lhs.len() == 1 {
-                lhs.into_iter().next().unwrap()
-            } else {
-                Expr::ArrayLiteral(lhs)
-            };
-            let rhs = if rhs.len() == 1 {
-                rhs.into_iter().next().unwrap()
-            } else {
-                Expr::ArrayLiteral(rhs)
-            };
-            Expr::MetaOp {
-                meta: meta.clone(),
-                op: op.clone(),
-                left: Box::new(lhs),
-                right: Box::new(rhs),
+            // Left-fold the columns into a nested meta-op chain. This handles X
+            // chains of any arity (`a X~ b X~ c` => `(a X~ b) X~ c`, previously
+            // the trailing columns were dropped) and curryable Z chains alike.
+            let mut iter = columns_rev.into_iter().map(col_to_expr);
+            let mut acc = iter.next().unwrap_or(Expr::ArrayLiteral(Vec::new()));
+            for col in iter {
+                acc = Expr::MetaOp {
+                    meta: meta.clone(),
+                    op: op.clone(),
+                    left: Box::new(acc),
+                    right: Box::new(col),
+                };
             }
+            acc
         };
 
         let mut result = vec![lifted_expr];
