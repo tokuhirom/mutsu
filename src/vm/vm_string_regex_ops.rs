@@ -478,7 +478,7 @@ impl VM {
 
         if nth_spec.is_none() && x_count.is_none() && !global {
             if perl5 {
-                let found = self.interpreter.regex_find_first_p5(&pattern, &text);
+                let found = self.regex_find_first_p5(&pattern, &text);
                 if let Some((start, end)) = found {
                     let out = Self::apply_substitutions(
                         &text,
@@ -674,7 +674,7 @@ impl VM {
     /// reached after a substitution actually occurred, so a non-matching
     /// `s///` against a read-only topic stays a no-op.
     fn write_subst_topic_checked(&mut self, result: Value) -> Result<(), RuntimeError> {
-        if self.interpreter.readonly_vars().contains("_") {
+        if self.readonly_vars().contains("_") {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "message".to_string(),
@@ -724,7 +724,7 @@ impl VM {
 
         if nth_spec.is_none() && x_count.is_none() && !global {
             if perl5 {
-                let found = self.interpreter.regex_find_first_p5(&pattern, &text);
+                let found = self.regex_find_first_p5(&pattern, &text);
                 if let Some((start, end)) = found {
                     let out = Self::apply_substitutions(
                         &text,
@@ -2184,7 +2184,6 @@ impl VM {
             let lookup_name = Self::canonical_infix_lookup_name(&name);
             let infix_name = format!("infix:<{}>", lookup_name.as_ref());
             let assoc = self
-                .interpreter
                 .infix_associativity(&infix_name)
                 .unwrap_or_else(|| "left".to_string());
             if assoc == "chain" && call_args.len() > 2 {
@@ -2247,7 +2246,7 @@ impl VM {
         if let Some(Value::Int(id)) = self.env().get("__mutsu_callable_id") {
             return format!("callable:{id}");
         }
-        if let Some(frame) = self.interpreter.routine_stack_top() {
+        if let Some(frame) = self.routine_stack_top() {
             return format!("routine:{}::{}", frame.package, frame.name);
         }
         "top".to_string()
@@ -2290,7 +2289,6 @@ impl VM {
         is_fff: bool,
     ) -> Value {
         let seq = self
-            .interpreter
             .get_state_var(key)
             .and_then(|v| match v {
                 Value::Int(i) if *i > 0 => Some(*i),
@@ -2301,30 +2299,26 @@ impl VM {
         if seq > 0 {
             let current = seq;
             if rhs {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(0));
+                self.set_state_var(key.to_string(), Value::Int(0));
                 if exclude_end {
                     Value::Nil
                 } else {
                     Value::Int(current)
                 }
             } else {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(current + 1));
+                self.set_state_var(key.to_string(), Value::Int(current + 1));
                 Value::Int(current)
             }
         } else if lhs {
             if !is_fff && rhs {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(0));
+                self.set_state_var(key.to_string(), Value::Int(0));
                 if exclude_start || exclude_end {
                     Value::Nil
                 } else {
                     Value::Int(1)
                 }
             } else {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(2));
+                self.set_state_var(key.to_string(), Value::Int(2));
                 if exclude_start {
                     Value::Nil
                 } else {
@@ -2375,7 +2369,6 @@ impl VM {
         let scope = self.flip_flop_scope_key();
         let state_key = format!("__mutsu_ff_state::{scope}::{site_id}");
         let seq = self
-            .interpreter
             .get_state_var(&state_key)
             .and_then(|v| match v {
                 Value::Int(i) if *i > 0 => Some(*i),

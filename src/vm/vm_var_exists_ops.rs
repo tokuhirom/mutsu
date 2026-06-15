@@ -116,7 +116,7 @@ impl VM {
                                 return Ok(());
                             }
                         }
-                        let is_obj_hash = self.interpreter.is_object_hash(&target);
+                        let is_obj_hash = self.is_object_hash(&target);
                         let pairs: Vec<(Value, bool)> = items
                             .iter()
                             .map(|k| {
@@ -316,7 +316,7 @@ impl VM {
                     }
                     _ => {
                         // For object hashes, use WHICH for lookup, fallback to hash_key_encode
-                        let lookup_key = if self.interpreter.is_object_hash(&target) {
+                        let lookup_key = if self.is_object_hash(&target) {
                             let which = crate::runtime::utils::value_which_key(&idx);
                             if map.contains_key(&which) {
                                 which

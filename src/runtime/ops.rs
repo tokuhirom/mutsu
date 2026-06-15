@@ -22,62 +22,6 @@ impl Interpreter {
         }
     }
 
-    fn union_insert_set_elem(elems: &mut std::collections::HashSet<String>, value: &Value) {
-        let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
-        match value {
-            Value::Set(items, _) => {
-                elems.extend(items.iter().cloned());
-            }
-            Value::Bag(items, _) => {
-                for (k, v) in items.iter() {
-                    if *v > 0 {
-                        elems.insert(k.clone());
-                    }
-                }
-            }
-            Value::Mix(items, _) => {
-                for (k, v) in items.iter() {
-                    if *v != 0.0 {
-                        elems.insert(k.clone());
-                    }
-                }
-            }
-            Value::Hash(items) => {
-                for (k, v) in items.iter() {
-                    if v.truthy() || matches!(v, Value::Nil) {
-                        elems.insert(k.clone());
-                    }
-                }
-            }
-            _ if value.as_list_items().is_some() => {
-                for item in value.as_list_items().unwrap().iter() {
-                    Self::union_insert_set_elem(elems, item);
-                }
-            }
-            range if range.is_range() => {
-                for item in Self::value_to_list(range) {
-                    Self::union_insert_set_elem(elems, &item);
-                }
-            }
-            Value::Pair(key, weight) => {
-                if pair_selected(weight) {
-                    elems.insert(key.clone());
-                }
-            }
-            Value::ValuePair(key, weight) => {
-                if pair_selected(weight) {
-                    elems.insert(key.to_string_value());
-                }
-            }
-            other => {
-                let sv = other.to_string_value();
-                if !sv.is_empty() {
-                    elems.insert(sv);
-                }
-            }
-        }
-    }
-
     fn union_set_keys(value: &Value) -> Result<std::collections::HashSet<String>, RuntimeError> {
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
@@ -739,38 +683,6 @@ impl Interpreter {
             )),
             Value::Package(_) => Ok(Some(0)),
             _ => Ok(Some(0)),
-        }
-    }
-
-    fn is_buf_value(val: &Value) -> bool {
-        if let Value::Instance { class_name, .. } = val {
-            let cn = class_name.resolve();
-            cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-                || cn.starts_with("buf")
-                || cn.starts_with("blob")
-        } else {
-            false
-        }
-    }
-
-    fn extract_buf_bytes(val: &Value) -> Vec<u8> {
-        if let Value::Instance { attributes, .. } = val
-            && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
-        {
-            items
-                .iter()
-                .map(|v| match v {
-                    Value::Int(n) => *n as u8,
-                    _ => 0,
-                })
-                .collect()
-        } else {
-            Vec::new()
         }
     }
 

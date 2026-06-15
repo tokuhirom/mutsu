@@ -1815,18 +1815,16 @@ impl Interpreter {
         compiled_fns: &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         self.block_scope_depth += 1;
-        let interp = std::mem::take(self);
-        let vm = crate::vm::VM::new(interp);
-        let (mut interp, result) = vm.run(code, compiled_fns);
+        // CP-3 collapse: run the precompiled block re-entrantly in place.
+        let result = self.run_nested(code, compiled_fns);
         for (slot, key) in &code.state_locals {
             if let Some(name) = code.locals.get(*slot)
-                && let Some(val) = interp.env().get(name).cloned()
+                && let Some(val) = self.env().get(name).cloned()
             {
-                interp.set_state_var(key.clone(), val);
+                self.set_state_var(key.clone(), val);
             }
         }
-        let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
-        *self = interp;
+        let value = self.env().get("_").cloned().unwrap_or(Value::Nil);
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
         result.map(|last_value| last_value.unwrap_or(value))
     }
@@ -1942,19 +1940,17 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
         compiled_fns: &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
-        let interp = std::mem::take(self);
-        let vm = crate::vm::VM::new(interp);
-        let (mut interp, result) = vm.run(code, compiled_fns);
+        // CP-3 collapse: run the compiled block re-entrantly in place.
+        let result = self.run_nested(code, compiled_fns);
         // Persist state variables for top-level compiled blocks too.
         for (slot, key) in &code.state_locals {
             if let Some(name) = code.locals.get(*slot)
-                && let Some(val) = interp.env().get(name).cloned()
+                && let Some(val) = self.env().get(name).cloned()
             {
-                interp.set_state_var(key.clone(), val);
+                self.set_state_var(key.clone(), val);
             }
         }
-        let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
-        *self = interp;
+        let value = self.env().get("_").cloned().unwrap_or(Value::Nil);
         result.map(|last_value| last_value.unwrap_or(value))
     }
 
@@ -2102,109 +2098,92 @@ impl Interpreter {
                 }
             }
 
-            // Create VM once, reuse across iterations
-            let interp = std::mem::take(self);
-            let mut vm = crate::vm::VM::new(interp);
-
-            let mut i = 0usize;
-            while i < list_items.len() {
-                if arity > 1 && i + arity > list_items.len() {
-                    *self = vm.into_interpreter();
-                    for (k, orig) in &saved {
-                        match orig {
-                            Some(v) => {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            None => {
-                                self.env.remove(k);
-                            }
-                        }
+            // CP-3 collapse: run the map loop with fresh execution registers
+            // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
+            // register scope across all iterations). The closure returns the
+            // loop's Result; `with_nested_registers` restores the outer registers
+            // and flags env_dirty. The temporary-binding env restore (`saved`) is
+            // hoisted to after the call — it ran on every old exit path.
+            let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
+                let mut i = 0usize;
+                while i < list_items.len() {
+                    if arity > 1 && i + arity > list_items.len() {
+                        return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
-                    return Err(RuntimeError::new("Not enough elements for map block arity"));
-                }
-                {
-                    let assumed_count = data.assumed_positional.len();
-                    // Bind assumed positional args first
-                    for (idx, val) in data.assumed_positional.iter().enumerate() {
-                        if let Some(p) = data.params.get(idx) {
-                            vm.env_mut().insert(p.clone(), val.clone());
-                        }
-                    }
-                    if arity == 1 {
-                        let item = list_items[i].clone();
-                        if let Some(p) = data.params.get(assumed_count) {
-                            vm.env_mut().insert(p.clone(), item.clone());
-                        }
-                        vm.env_mut().insert(underscore.clone(), item.clone());
-                        vm.env_mut().insert(dollar_topic.clone(), item);
-                    } else {
-                        for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
-                            if i + idx < list_items.len() {
-                                vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
+                    {
+                        let assumed_count = data.assumed_positional.len();
+                        // Bind assumed positional args first
+                        for (idx, val) in data.assumed_positional.iter().enumerate() {
+                            if let Some(p) = data.params.get(idx) {
+                                vm.env_mut().insert(p.clone(), val.clone());
                             }
                         }
-                        vm.env_mut()
-                            .insert(underscore.clone(), list_items[i].clone());
-                        vm.env_mut()
-                            .insert(dollar_topic.clone(), list_items[i].clone());
-                    }
-                }
-                match vm.run_reuse(&code, &compiled_fns) {
-                    Ok(()) => {
-                        let val = vm
-                            .last_stack_value()
-                            .cloned()
-                            .or_else(|| vm.env().get("_").cloned())
-                            .unwrap_or(Value::Nil);
-                        match val {
-                            Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                            v => result.push(v),
-                        }
-                    }
-                    Err(e) if e.is_next => {}
-                    Err(e) if e.is_last => break,
-                    Err(mut e) => {
-                        *self = vm.into_interpreter();
-                        for (k, orig) in &saved {
-                            match orig {
-                                Some(v) => {
-                                    self.env.insert(k.clone(), v.clone());
-                                }
-                                None => {
-                                    self.env.remove(k);
+                        if arity == 1 {
+                            let item = list_items[i].clone();
+                            if let Some(p) = data.params.get(assumed_count) {
+                                vm.env_mut().insert(p.clone(), item.clone());
+                            }
+                            vm.env_mut().insert(underscore.clone(), item.clone());
+                            vm.env_mut().insert(dollar_topic.clone(), item);
+                        } else {
+                            for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                                if i + idx < list_items.len() {
+                                    vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
                                 }
                             }
+                            vm.env_mut()
+                                .insert(underscore.clone(), list_items[i].clone());
+                            vm.env_mut()
+                                .insert(dollar_topic.clone(), list_items[i].clone());
                         }
-                        // A `return` inside the map block targets the routine
-                        // that lexically encloses the block. Stamp the signal
-                        // with that routine's callable id (captured in the
-                        // closure env) so propagation/out-of-dynamic-scope
-                        // detection works when the map is forced lazily after
-                        // the enclosing routine has exited.
-                        if e.is_return
-                            && e.return_target_callable_id.is_none()
-                            && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
-                        {
-                            e.return_target_callable_id = Some(*id as u64);
+                    }
+                    match vm.run_reuse(&code, &compiled_fns) {
+                        Ok(()) => {
+                            let val = vm
+                                .last_stack_value()
+                                .cloned()
+                                .or_else(|| vm.env().get("_").cloned())
+                                .unwrap_or(Value::Nil);
+                            match val {
+                                Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                                v => result.push(v),
+                            }
                         }
-                        return Err(e);
+                        Err(e) if e.is_next => {}
+                        Err(e) if e.is_last => break,
+                        Err(mut e) => {
+                            // A `return` inside the map block targets the routine
+                            // that lexically encloses the block. Stamp the signal
+                            // with that routine's callable id (captured in the
+                            // closure env) so propagation/out-of-dynamic-scope
+                            // detection works when the map is forced lazily after
+                            // the enclosing routine has exited.
+                            if e.is_return
+                                && e.return_target_callable_id.is_none()
+                                && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
+                            {
+                                e.return_target_callable_id = Some(*id as u64);
+                            }
+                            return Err(e);
+                        }
+                    }
+                    i += arity;
+                }
+
+                // Run LAST phasers after the map loop completes (natural end or `last`)
+                if !last_phaser_bodies.is_empty() && i > 0 {
+                    for phaser_body in &last_phaser_bodies {
+                        let phaser_compiler = crate::compiler::Compiler::new();
+                        let (phaser_code, phaser_fns) = phaser_compiler.compile(phaser_body);
+                        // Ignore errors from LAST phasers (best-effort)
+                        let _ = vm.run_reuse(&phaser_code, &phaser_fns);
                     }
                 }
-                i += arity;
-            }
 
-            // Run LAST phasers after the map loop completes (natural end or `last`)
-            if !last_phaser_bodies.is_empty() && i > 0 {
-                for phaser_body in &last_phaser_bodies {
-                    let phaser_compiler = crate::compiler::Compiler::new();
-                    let (phaser_code, phaser_fns) = phaser_compiler.compile(phaser_body);
-                    // Ignore errors from LAST phasers (best-effort)
-                    let _ = vm.run_reuse(&phaser_code, &phaser_fns);
-                }
-            }
+                Ok(Value::array(result))
+            });
 
-            *self = vm.into_interpreter();
-            // Restore original values
+            // Restore original values (was done on every exit of the old loop).
             for (k, orig) in saved {
                 match orig {
                     Some(v) => {
@@ -2215,7 +2194,7 @@ impl Interpreter {
                     }
                 }
             }
-            return Ok(Value::array(result));
+            return loop_result;
         }
         if let Some(func) = func {
             let mut result = Vec::new();
@@ -2343,97 +2322,88 @@ impl Interpreter {
                 }
             }
 
-            let interp = std::mem::take(self);
-            let mut vm = crate::vm::VM::new(interp);
-
-            let mut i = 0usize;
-            while i < list_items.len() {
-                if arity > 1 && i + arity > list_items.len() {
-                    *self = vm.into_interpreter();
-                    for (k, orig) in &saved {
-                        match orig {
-                            Some(v) => self.env.insert(k.clone(), v.clone()),
-                            None => self.env.remove(k),
-                        };
+            // CP-3 collapse: run the rw map loop with fresh execution registers
+            // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
+            // returns the loop's Result; `with_nested_registers` restores the
+            // outer registers and flags env_dirty. The `saved`/`topic_key` env
+            // restore is hoisted to after the call (ran on every old exit).
+            let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
+                let mut i = 0usize;
+                while i < list_items.len() {
+                    if arity > 1 && i + arity > list_items.len() {
+                        return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
-                    return Err(RuntimeError::new("Not enough elements for map block arity"));
-                }
-                {
-                    let assumed_count = data.assumed_positional.len();
-                    for (idx, val) in data.assumed_positional.iter().enumerate() {
-                        if let Some(p) = data.params.get(idx) {
-                            vm.env_mut().insert(p.clone(), val.clone());
-                        }
-                    }
-                    // Clear the topic tracker before each iteration
-                    vm.env_mut().remove(topic_key);
-                    if arity == 1 {
-                        let item = list_items[i].clone();
-                        if let Some(p) = data.params.get(assumed_count) {
-                            vm.env_mut().insert(p.clone(), item.clone());
-                        }
-                        vm.env_mut().insert(underscore.clone(), item.clone());
-                        vm.env_mut().insert(dollar_topic.clone(), item);
-                    } else {
-                        for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
-                            if i + idx < list_items.len() {
-                                vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
+                    {
+                        let assumed_count = data.assumed_positional.len();
+                        for (idx, val) in data.assumed_positional.iter().enumerate() {
+                            if let Some(p) = data.params.get(idx) {
+                                vm.env_mut().insert(p.clone(), val.clone());
                             }
                         }
-                        vm.env_mut()
-                            .insert(underscore.clone(), list_items[i].clone());
-                        vm.env_mut()
-                            .insert(dollar_topic.clone(), list_items[i].clone());
+                        // Clear the topic tracker before each iteration
+                        vm.env_mut().remove(topic_key);
+                        if arity == 1 {
+                            let item = list_items[i].clone();
+                            if let Some(p) = data.params.get(assumed_count) {
+                                vm.env_mut().insert(p.clone(), item.clone());
+                            }
+                            vm.env_mut().insert(underscore.clone(), item.clone());
+                            vm.env_mut().insert(dollar_topic.clone(), item);
+                        } else {
+                            for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                                if i + idx < list_items.len() {
+                                    vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
+                                }
+                            }
+                            vm.env_mut()
+                                .insert(underscore.clone(), list_items[i].clone());
+                            vm.env_mut()
+                                .insert(dollar_topic.clone(), list_items[i].clone());
+                        }
                     }
+                    match vm.run_reuse(&code, &compiled_fns) {
+                        Ok(()) => {
+                            let val = vm
+                                .last_stack_value()
+                                .cloned()
+                                .or_else(|| vm.env().get("_").cloned())
+                                .unwrap_or(Value::Nil);
+                            // Write back topic mutation if it happened
+                            if arity == 1
+                                && let Some(mutated) = vm.env().get(topic_key).cloned()
+                            {
+                                list_items[i] = mutated;
+                            }
+                            match val {
+                                Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                                v => result.push(v),
+                            }
+                        }
+                        Err(e) if e.is_next => {
+                            if arity == 1
+                                && let Some(mutated) = vm.env().get(topic_key).cloned()
+                            {
+                                list_items[i] = mutated;
+                            }
+                        }
+                        Err(e) if e.is_last => {
+                            if arity == 1
+                                && let Some(mutated) = vm.env().get(topic_key).cloned()
+                            {
+                                list_items[i] = mutated;
+                            }
+                            break;
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+                    i += arity;
                 }
-                match vm.run_reuse(&code, &compiled_fns) {
-                    Ok(()) => {
-                        let val = vm
-                            .last_stack_value()
-                            .cloned()
-                            .or_else(|| vm.env().get("_").cloned())
-                            .unwrap_or(Value::Nil);
-                        // Write back topic mutation if it happened
-                        if arity == 1
-                            && let Some(mutated) = vm.env().get(topic_key).cloned()
-                        {
-                            list_items[i] = mutated;
-                        }
-                        match val {
-                            Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                            v => result.push(v),
-                        }
-                    }
-                    Err(e) if e.is_next => {
-                        if arity == 1
-                            && let Some(mutated) = vm.env().get(topic_key).cloned()
-                        {
-                            list_items[i] = mutated;
-                        }
-                    }
-                    Err(e) if e.is_last => {
-                        if arity == 1
-                            && let Some(mutated) = vm.env().get(topic_key).cloned()
-                        {
-                            list_items[i] = mutated;
-                        }
-                        break;
-                    }
-                    Err(e) => {
-                        *self = vm.into_interpreter();
-                        for (k, orig) in &saved {
-                            match orig {
-                                Some(v) => self.env.insert(k.clone(), v.clone()),
-                                None => self.env.remove(k),
-                            };
-                        }
-                        return Err(e);
-                    }
-                }
-                i += arity;
-            }
 
-            *self = vm.into_interpreter();
+                Ok(Value::array(result))
+            });
+
             for (k, orig) in saved {
                 match orig {
                     Some(v) => self.env.insert(k, v),
@@ -2441,7 +2411,7 @@ impl Interpreter {
                 };
             }
             self.env.remove(topic_key);
-            return Ok(Value::array(result));
+            return loop_result;
         }
         // Non-Sub func: delegate to regular map
         self.eval_map_over_items(func, list_items.to_vec())
@@ -2533,104 +2503,96 @@ impl Interpreter {
                 self.env.insert_sym(*k, v.clone());
             }
 
-            // Create VM once, reuse across iterations
-            let interp = std::mem::take(self);
-            let mut vm = crate::vm::VM::new(interp);
-
-            let mut i = 0usize;
-            let mut stop = false;
-            while i < list_items.len() {
-                if arity > 1 && i + arity > list_items.len() {
-                    break;
-                }
-                let chunk: Vec<Value> = if arity == 1 {
-                    vec![list_items[i].clone()]
-                } else {
-                    list_items[i..i + arity].to_vec()
-                };
-                'body_redo: loop {
-                    {
-                        let assumed_count = data.assumed_positional.len();
-                        for (idx, val) in data.assumed_positional.iter().enumerate() {
-                            if let Some(p) = data.params.get(idx) {
-                                vm.env_mut().insert(p.clone(), val.clone());
-                            }
-                        }
-                        if arity == 1 {
-                            if let Some(p) = data.params.get(assumed_count) {
-                                vm.env_mut().insert(p.clone(), chunk[0].clone());
-                            }
-                            vm.env_mut().insert(underscore.clone(), chunk[0].clone());
-                            vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
-                            vm.env_mut()
-                                .insert(topic_source_key.clone(), chunk[0].clone());
-                        } else {
-                            for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
-                                if idx < chunk.len() {
-                                    vm.env_mut().insert(p.clone(), chunk[idx].clone());
+            // CP-3 collapse: run the grep loop with fresh execution registers
+            // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
+            // returns Ok(()) / Err on the loop; `with_nested_registers` restores
+            // the outer registers and flags env_dirty. The `saved` env restore is
+            // hoisted to after the call (ran on every old exit path).
+            let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
+                let mut i = 0usize;
+                let mut stop = false;
+                while i < list_items.len() {
+                    if arity > 1 && i + arity > list_items.len() {
+                        break;
+                    }
+                    let chunk: Vec<Value> = if arity == 1 {
+                        vec![list_items[i].clone()]
+                    } else {
+                        list_items[i..i + arity].to_vec()
+                    };
+                    'body_redo: loop {
+                        {
+                            let assumed_count = data.assumed_positional.len();
+                            for (idx, val) in data.assumed_positional.iter().enumerate() {
+                                if let Some(p) = data.params.get(idx) {
+                                    vm.env_mut().insert(p.clone(), val.clone());
                                 }
                             }
-                            vm.env_mut().insert(underscore.clone(), chunk[0].clone());
-                            vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
-                        }
-                    }
-                    vm.set_topic_source_var((arity == 1).then_some(topic_source_key.clone()));
-                    match vm.run_reuse(&code, &compiled_fns) {
-                        Ok(()) => {
-                            let pred = vm
-                                .last_stack_value()
-                                .cloned()
-                                .or_else(|| vm.env().get("_").cloned())
-                                .unwrap_or(Value::Nil);
-                            let updated_item = if arity == 1 {
-                                vm.env()
-                                    .get(&topic_source_key)
-                                    .cloned()
-                                    .unwrap_or_else(|| chunk[0].clone())
-                            } else {
-                                chunk[0].clone()
-                            };
                             if arity == 1 {
-                                list_items[i] = updated_item.clone();
+                                if let Some(p) = data.params.get(assumed_count) {
+                                    vm.env_mut().insert(p.clone(), chunk[0].clone());
+                                }
+                                vm.env_mut().insert(underscore.clone(), chunk[0].clone());
+                                vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
+                                vm.env_mut()
+                                    .insert(topic_source_key.clone(), chunk[0].clone());
+                            } else {
+                                for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                                    if idx < chunk.len() {
+                                        vm.env_mut().insert(p.clone(), chunk[idx].clone());
+                                    }
+                                }
+                                vm.env_mut().insert(underscore.clone(), chunk[0].clone());
+                                vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
                             }
-                            if pred.truthy() {
-                                if arity == 1 {
-                                    result.push(updated_item);
+                        }
+                        vm.set_topic_source_var((arity == 1).then_some(topic_source_key.clone()));
+                        match vm.run_reuse(&code, &compiled_fns) {
+                            Ok(()) => {
+                                let pred = vm
+                                    .last_stack_value()
+                                    .cloned()
+                                    .or_else(|| vm.env().get("_").cloned())
+                                    .unwrap_or(Value::Nil);
+                                let updated_item = if arity == 1 {
+                                    vm.env()
+                                        .get(&topic_source_key)
+                                        .cloned()
+                                        .unwrap_or_else(|| chunk[0].clone())
                                 } else {
-                                    result.push(Value::array(chunk));
+                                    chunk[0].clone()
+                                };
+                                if arity == 1 {
+                                    list_items[i] = updated_item.clone();
                                 }
-                            }
-                            break 'body_redo;
-                        }
-                        Err(e) if e.is_redo => continue 'body_redo,
-                        Err(e) if e.is_next => break 'body_redo,
-                        Err(e) if e.is_last => {
-                            stop = true;
-                            break 'body_redo;
-                        }
-                        Err(e) => {
-                            *self = vm.into_interpreter();
-                            for (k, orig) in &saved {
-                                match orig {
-                                    Some(v) => {
-                                        self.env.insert(k.clone(), v.clone());
-                                    }
-                                    None => {
-                                        self.env.remove(k);
+                                if pred.truthy() {
+                                    if arity == 1 {
+                                        result.push(updated_item);
+                                    } else {
+                                        result.push(Value::array(chunk));
                                     }
                                 }
+                                break 'body_redo;
                             }
-                            return Err(e);
+                            Err(e) if e.is_redo => continue 'body_redo,
+                            Err(e) if e.is_next => break 'body_redo,
+                            Err(e) if e.is_last => {
+                                stop = true;
+                                break 'body_redo;
+                            }
+                            Err(e) => {
+                                return Err(e);
+                            }
                         }
                     }
+                    if stop {
+                        break;
+                    }
+                    i += arity;
                 }
-                if stop {
-                    break;
-                }
-                i += arity;
-            }
+                Ok(())
+            });
 
-            *self = vm.into_interpreter();
             for (k, orig) in saved {
                 match orig {
                     Some(v) => {
@@ -2641,6 +2603,7 @@ impl Interpreter {
                     }
                 }
             }
+            loop_result?;
             return Ok((Value::array(result), list_items));
         }
         if let Some(pattern) = func {

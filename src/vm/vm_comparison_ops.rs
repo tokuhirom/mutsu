@@ -1215,7 +1215,7 @@ impl VM {
         // that, after the match, a non-empty `pending_local_updates` reliably means
         // *this* match's embedded `{ }` code blocks wrote a caller variable by name
         // (the engine records them there but nothing consumes the log otherwise).
-        self.interpreter.pending_local_updates.clear();
+        self.pending_local_updates.clear();
         let saved_topic = self.env().get("_").cloned();
         self.env_mut().insert("_".to_string(), left.clone());
         // Sync env->locals first so that any values modified by interpreter
@@ -1301,14 +1301,14 @@ impl VM {
         //     continued matching reads it back across calls).
         // A plain regex match otherwise only writes `$/`/captures, which are
         // special vars read by name, never a caller local slot, so no pull.
-        let wrote_caller_via_code = !self.interpreter.pending_local_updates.is_empty();
+        let wrote_caller_via_code = !self.pending_local_updates.is_empty();
         let match_var_is_local = code.locals.iter().any(|n| n == "/");
         let pure = rhs_pure_regex
             && !was_substitution
             && !was_transliterate
             && !wrote_caller_via_code
             && !match_var_is_local;
-        self.interpreter.pending_local_updates.clear();
+        self.pending_local_updates.clear();
         if !pure {
             self.env_dirty = true;
         }

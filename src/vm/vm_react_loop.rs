@@ -53,12 +53,12 @@ impl VM {
     /// gone the VM react loop dispatches every `whenever`/`LAST`/`QUIT`/`CLOSE`
     /// callback natively. A `when`/`default`/`succeed` inside the body counts as
     /// handled; any other error propagates.
-    fn call_supply_quit_handler(
+    pub(crate) fn call_supply_quit_handler(
         &mut self,
         quit_cb: Value,
         reason: Value,
     ) -> Result<(), RuntimeError> {
-        let saved_when = self.interpreter.when_matched();
+        let saved_when = self.when_matched();
         loan_env!(self, set_when_matched(false));
         match self.call_react_callback(&quit_cb, vec![reason]) {
             Ok(_) => {
@@ -82,7 +82,7 @@ impl VM {
     /// Used when `done;` was called in the react body and we just need to
     /// clean up without processing events.
     pub(crate) fn run_react_event_loop_drain(&mut self) {
-        let _ = self.interpreter.supply_emit_buffer.pop();
+        let _ = self.supply_emit_buffer.pop();
     }
 
     /// Deliver one value to a `whenever` subscription's callback, mapping the
@@ -126,11 +126,7 @@ impl VM {
 
     pub(crate) fn run_react_event_loop(&mut self) -> Result<(), RuntimeError> {
         // Take the subscriptions collected during the react body
-        let subscriptions = self
-            .interpreter
-            .supply_emit_buffer
-            .pop()
-            .unwrap_or_default();
+        let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default();
         if subscriptions.is_empty() {
             return Ok(());
         }
@@ -233,19 +229,16 @@ impl VM {
                             // return). Direct emits stream live; inner `whenever`
                             // registrations still flow through `supply_emit_buffer`
                             // and are set up as ReactSubscriptions below.
-                            self.interpreter
-                                .supply_stream_consumers
-                                .push(StreamConsumer {
-                                    supplier_id: emitter_supplier_id,
-                                    consumer_cb: callback.clone(),
-                                    done: false,
-                                });
+                            self.supply_stream_consumers.push(StreamConsumer {
+                                supplier_id: emitter_supplier_id,
+                                consumer_cb: callback.clone(),
+                                done: false,
+                            });
                             let (od_res, emitted, body_ran_done) = loan_env!(
                                 self,
                                 run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
                             );
                             let streamed_done = self
-                                .interpreter
                                 .supply_stream_consumers
                                 .pop()
                                 .map(|c| c.done)
@@ -281,9 +274,7 @@ impl VM {
                                 if crate::runtime::Interpreter::is_supply_subscription_registration(
                                     &v,
                                 ) {
-                                    if let Some(mut rsub) =
-                                        self.interpreter.value_to_react_subscription(&v)
-                                    {
+                                    if let Some(mut rsub) = self.value_to_react_subscription(&v) {
                                         rsub.on_demand_done = Some(done_promise.clone());
                                         react_subs.push(rsub);
                                     }
@@ -376,7 +367,7 @@ impl VM {
             }
         }
 
-        self.drive_react_subscriptions(react_subs, SupplyDrivePolicy::React)
+        self.drive_react_subscriptions_nested(react_subs, SupplyDrivePolicy::React)
     }
 
     /// Shared subscription drive loop backing both `react { ... }` and the
@@ -384,7 +375,7 @@ impl VM {
     /// promise-built subscriptions poll through here; `policy` selects how each
     /// emitted value is dispatched and when the loop completes (see
     /// [`SupplyDrivePolicy`]).
-    pub(crate) fn drive_react_subscriptions(
+    pub(crate) fn drive_react_subscriptions_nested(
         &mut self,
         mut react_subs: Vec<ReactSubscription>,
         mut policy: SupplyDrivePolicy,
@@ -588,14 +579,10 @@ impl VM {
                         } => {
                             // Capture values the whenever block `emit`s so a
                             // later `done` resolves the promise with the last one.
-                            self.interpreter.supply_emit_buffer.push(Vec::new());
+                            self.supply_emit_buffer.push(Vec::new());
                             let cb_result =
                                 self.call_react_callback(&sub.callback.clone(), vec![value]);
-                            let emitted = self
-                                .interpreter
-                                .supply_emit_buffer
-                                .pop()
-                                .unwrap_or_default();
+                            let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                             if let Some(last) = emitted.last() {
                                 *last_value = last.clone();
                             }

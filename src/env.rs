@@ -151,24 +151,6 @@ impl Env {
         }
     }
 
-    /// A *poisoned* env: a sentinel left in `Interpreter.env` while the VM owns
-    /// the real env (CP-1 1e env-loan, interim scaffolding). Any access
-    /// (`get`/`insert`/…) `debug_assert!`s `!poisoned`, so a VM→interpreter call
-    /// that reads env *without* a loan wrapper (`VM::loan_env_for`) panics
-    /// deterministically in debug test runs — pinpointing the missing wrapper
-    /// (catches direct `self.env.get(..)` field access, which an interpreter-side
-    /// flag could not). Remove once env-reading interpreter helpers are all
-    /// VM-native. See docs/vm-state-ownership.md.
-    pub(crate) fn poisoned() -> Self {
-        Self {
-            inner: Arc::new(HashMap::new()),
-            parent: None,
-            tombstones: None,
-            depth: 0,
-            poisoned: true,
-        }
-    }
-
     #[inline(always)]
     fn assert_not_poisoned(&self) {
         // env-loan (CP-1 1e) diagnostic: the interpreter's env field is a poisoned

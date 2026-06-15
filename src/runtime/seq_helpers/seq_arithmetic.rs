@@ -120,11 +120,6 @@ impl Interpreter {
         }
     }
 
-    // Compute the successor of a string (increment the last character, carrying over)
-    pub(in crate::runtime) fn string_succ(s: &str) -> String {
-        crate::builtins::str_increment::string_succ(s)
-    }
-
     pub(in crate::runtime) fn digit_string_succ_radix(s: &str, radix: u32) -> String {
         if s.is_empty() || !(2..=10).contains(&radix) {
             return s.to_string();

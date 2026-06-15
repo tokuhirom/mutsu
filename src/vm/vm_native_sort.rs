@@ -42,7 +42,7 @@ impl SortCaller for VmSortCaller<'_> {
     }
 
     fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError> {
-        self.0.interpreter.sort_callable_arity(callable)
+        self.0.sort_callable_arity(callable)
     }
 }
 

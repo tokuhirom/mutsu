@@ -526,13 +526,11 @@ impl VM {
     fn eval_concat_with_junctions(&mut self, left: Value, right: Value) -> Value {
         // Auto-FETCH and decontainerize
         let left = self
-            .interpreter
             .auto_fetch_proxy(&left)
             .unwrap_or(left)
             .descalarize()
             .clone();
         let right = self
-            .interpreter
             .auto_fetch_proxy(&right)
             .unwrap_or(right)
             .descalarize()
@@ -846,9 +844,9 @@ impl VM {
         // Warn on uninitialized type object used as repeat count
         if let Value::Package(name) = &right
             && name == "Int"
-            && !self.interpreter.warning_suppressed()
+            && !self.warning_suppressed()
         {
-            self.interpreter.write_warn_to_stderr(&format!(
+            self.write_warn_to_stderr(&format!(
                 "Use of uninitialized value of type {} in numeric context",
                 name
             ));
@@ -856,7 +854,7 @@ impl VM {
 
         // Whatever on RHS produces a WhateverCode closure
         if matches!(&right, Value::Whatever) {
-            self.stack.push(self.interpreter.make_x_whatevercode(left));
+            self.stack.push(self.make_x_whatevercode(left));
             return Ok(());
         }
 
@@ -904,9 +902,9 @@ impl VM {
         // Warn on uninitialized type object used as repeat count
         if let Value::Package(name) = &right
             && name == "Int"
-            && !self.interpreter.warning_suppressed()
+            && !self.warning_suppressed()
         {
-            self.interpreter.write_warn_to_stderr(&format!(
+            self.write_warn_to_stderr(&format!(
                 "Use of uninitialized value of type {} in numeric context",
                 name
             ));
@@ -945,7 +943,7 @@ impl VM {
             }
         } else {
             for _ in 0..repeat {
-                items.push(self.interpreter.repeat_lhs_once(&left)?);
+                items.push(self.repeat_lhs_once(&left)?);
             }
         }
 
@@ -962,7 +960,7 @@ impl VM {
     pub(super) fn exec_function_compose_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let composed = self.interpreter.compose_callables(left, right);
+        let composed = self.compose_callables(left, right);
         self.stack.push(composed);
     }
 
@@ -975,19 +973,18 @@ impl VM {
         let left_type_object = self.does_invocant_type_object(&left);
         let role_composed = match &right {
             Value::Pair(name, boxed)
-                if self.interpreter.has_role(name)
-                    && matches!(boxed.as_ref(), Value::Array(..)) =>
+                if self.has_role(name) && matches!(boxed.as_ref(), Value::Array(..)) =>
             {
                 Some(loan_env!(
                     self,
                     eval_does_values(left.clone(), right.clone())
                 ))
             }
-            Value::Package(name) if self.interpreter.has_role(&name.resolve()) => Some(loan_env!(
+            Value::Package(name) if self.has_role(&name.resolve()) => Some(loan_env!(
                 self,
                 eval_does_values(left.clone(), right.clone())
             )),
-            Value::Str(name) if self.interpreter.has_role(name) => Some(loan_env!(
+            Value::Str(name) if self.has_role(name) => Some(loan_env!(
                 self,
                 eval_does_values(left.clone(), right.clone())
             )),
@@ -1104,7 +1101,7 @@ impl VM {
             Value::Nil => Some("Any".to_string()),
             Value::Package(name) => {
                 let n = name.resolve();
-                if self.interpreter.has_class(&n) {
+                if self.has_class(&n) {
                     None
                 } else {
                     Some(n.to_string())
@@ -1166,9 +1163,7 @@ impl VM {
         let left_type_object = self.does_invocant_type_object(&left);
         // Handle array of roles: `$obj does (RoleA, RoleB)`
         if let Value::Array(ref items, ..) = right {
-            let all_roles = items
-                .iter()
-                .all(|item| self.interpreter.is_role_application(item));
+            let all_roles = items.iter().all(|item| self.is_role_application(item));
             if all_roles && !items.is_empty() {
                 if let Some(tn) = &left_type_object {
                     return Err(Self::does_type_object_error("does", tn));
@@ -1178,7 +1173,7 @@ impl VM {
         }
         // Check if the RHS is a role that needs to be composed onto the value.
         // If so, delegate to the interpreter which manages role state.
-        if self.interpreter.is_role_application(&right) {
+        if self.is_role_application(&right) {
             if let Some(tn) = &left_type_object {
                 return Err(Self::does_type_object_error("does", tn));
             }
@@ -1231,9 +1226,8 @@ impl VM {
         // Sync back: BUILD submethods may have modified closure variables.
         self.sync_locals_from_env(code);
         // Capture Mixin value for trait_mod writeback (same as DoesVar path)
-        if matches!(&result, Value::Mixin(..)) && self.interpreter.trait_mod_writeback_key.is_some()
-        {
-            self.interpreter.trait_mod_writeback_value = Some(result.clone());
+        if matches!(&result, Value::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
+            self.trait_mod_writeback_value = Some(result.clone());
         }
         self.stack.push(result);
         Ok(())
@@ -1258,10 +1252,8 @@ impl VM {
         // Capture Mixin value for trait_mod writeback: when `$r does Role`
         // runs inside a trait_mod:<is>, the Mixin needs to propagate back
         // to the outer scope's `&name` variable.
-        if matches!(&updated, Value::Mixin(..))
-            && self.interpreter.trait_mod_writeback_key.is_some()
-        {
-            self.interpreter.trait_mod_writeback_value = Some(updated.clone());
+        if matches!(&updated, Value::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
+            self.trait_mod_writeback_value = Some(updated.clone());
         }
         self.stack.push(updated);
         Ok(())

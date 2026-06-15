@@ -407,7 +407,7 @@ impl VM {
         // TODO: compile to bytecode — shared-array push, blocked-by: lever B
         // (threaded shared-cell ownership). See ledger §1.
         // Fall back to interpreter for shared arrays (threaded context)
-        if self.interpreter.shared_vars_active {
+        if self.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
             let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
@@ -472,7 +472,6 @@ impl VM {
         // Check type constraint on the array variable.
         // For Slip values, check each element individually.
         if let Some(type_name) = self
-            .interpreter
             .var_type_constraint_fast(target_name)
             .map(|s| s.to_string())
         {

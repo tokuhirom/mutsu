@@ -313,7 +313,7 @@ impl VM {
 
     pub(super) fn typed_container_default(&mut self, target: &Value) -> Value {
         // Check for explicit `is default(...)` on the container first.
-        if let Some(def) = self.interpreter.container_default(target) {
+        if let Some(def) = self.container_default(target) {
             return def.clone();
         }
         if let Some(info) = self.container_type_metadata(target) {
@@ -374,7 +374,7 @@ impl VM {
 
     pub(super) fn anon_state_value(&self, name: &str) -> Option<Value> {
         let key = Self::anon_state_key(name)?;
-        self.interpreter.get_state_var(&key).cloned()
+        self.get_state_var(&key).cloned()
     }
 
     pub(super) fn sync_anon_state_value(&mut self, name: &str, value: &Value) {

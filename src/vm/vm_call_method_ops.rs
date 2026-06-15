@@ -126,7 +126,7 @@ impl VM {
             return None;
         }
         let cn = class_name.resolve();
-        if self.interpreter.has_user_method(&cn, method) {
+        if self.has_user_method(&cn, method) {
             return None;
         }
         // Only a *public* accessor reads through the fast path. Gating on this
@@ -134,7 +134,7 @@ impl VM {
         // under the `secret!` key, so reading it by the bare name must fall
         // through to the interpreter (which denies the access) rather than
         // leaking the private value.
-        if !self.interpreter.has_public_accessor(&cn, method) {
+        if !self.has_public_accessor(&cn, method) {
             return None;
         }
         // Public accessor confirmed. Read its backing value, stored under the
@@ -149,7 +149,7 @@ impl VM {
         match val {
             Some(v) => {
                 let out = v.clone();
-                if let Some(msg) = self.interpreter.class_attribute_deprecated(&cn, method) {
+                if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                     loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
                 Some(out)
@@ -170,8 +170,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        self.interpreter
-            .set_pending_call_arg_sources(arg_sources.clone());
+        self.set_pending_call_arg_sources(arg_sources.clone());
         let method_raw = Self::const_str(code, name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let method_cow = Self::rewrite_method_name_cow(method_raw, modifier);
@@ -218,9 +217,7 @@ impl VM {
         // `@x[0].push('foo')` still dies), and the result is written back to the slot.
         if let Value::Package(type_name) = &target
             && matches!(method, "push" | "append" | "unshift" | "prepend")
-            && let Some(result) = self
-                .interpreter
-                .autoviv_typed_array_push(&type_name.resolve(), &args)?
+            && let Some(result) = self.autoviv_typed_array_push(&type_name.resolve(), &args)?
         {
             self.stack.push(result);
             self.env_dirty = true;
@@ -236,7 +233,7 @@ impl VM {
                 Value::Instance { class_name, .. } if class_name == "Supplier"
             )
         {
-            if let Some(buf) = self.interpreter.supply_emit_buffer.last_mut() {
+            if let Some(buf) = self.supply_emit_buffer.last_mut() {
                 buf.push(target);
                 self.stack.push(Value::Nil);
                 // Buffering into the supply emit buffer touches no env: no mark.
@@ -408,7 +405,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(&cn, method)
+                && self.has_user_method(&cn, method)
             {
                 skip_native = true;
             }
@@ -470,7 +467,7 @@ impl VM {
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
-            self.interpreter.skip_pseudo_method_native = Some(method.to_string());
+            self.skip_pseudo_method_native = Some(method.to_string());
         }
         // Auto-FETCH Proxy containers for non-meta method calls
         // Skip auto-FETCH for Proxy subclass attribute access and decontainerized proxies
@@ -492,7 +489,7 @@ impl VM {
             if has_subclass_attr {
                 target
             } else {
-                self.interpreter.auto_fetch_proxy(&target)?
+                self.auto_fetch_proxy(&target)?
             }
         } else {
             target
@@ -797,9 +794,7 @@ impl VM {
                     | "Failure"
                     | "sink"
             )
-            && let Some(err) = self
-                .interpreter
-                .failure_to_runtime_error_if_unhandled(&target)
+            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
         {
             return Err(err);
         }
@@ -845,13 +840,9 @@ impl VM {
                 } = &target
                 {
                     let cn = class_name.resolve();
-                    if !self.interpreter.has_user_method(&cn, method)
+                    if !self.has_user_method(&cn, method)
                         && attributes.contains_key("__mutsu_array_storage")
-                        && self
-                            .interpreter
-                            .mro_readonly(&cn)
-                            .iter()
-                            .any(|n| n == "Array")
+                        && self.mro_readonly(&cn).iter().any(|n| n == "Array")
                     {
                         let storage = attributes
                             .as_map()
@@ -1010,12 +1001,10 @@ impl VM {
                     method,
                     "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
                 ) && matches!(&target, Value::Array(..))
-                    && let Some((attrs_ref, attr_name)) =
-                        self.interpreter.pending_proxy_subclass_attr.take()
+                    && let Some((attrs_ref, attr_name)) = self.pending_proxy_subclass_attr.take()
                 {
-                    let result = self
-                        .interpreter
-                        .proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args)?;
+                    let result =
+                        self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args)?;
                     self.stack.push(result);
                     self.env_dirty = true;
                     return Ok(());
@@ -1079,7 +1068,7 @@ impl VM {
                     // .Slip on arrays with `is default(X)`: fill holes with
                     // the default value instead of leaving Package("Any").
                     if method == "Slip" && args.is_empty() && matches!(&target, Value::Array(..)) {
-                        if let Some(def) = self.interpreter.container_default(&target).cloned() {
+                        if let Some(def) = self.container_default(&target).cloned() {
                             let Value::Array(items, ..) = &target else {
                                 unreachable!()
                             };

@@ -19,7 +19,7 @@ impl VM {
         }
     }
 
-    fn is_failure_value(value: &Value) -> bool {
+    pub(crate) fn is_failure_value(value: &Value) -> bool {
         matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
     }
 
@@ -216,7 +216,7 @@ impl VM {
         }
     }
 
-    fn union_insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
+    pub(crate) fn union_insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
         match value {
             Value::Set(items, _) => {

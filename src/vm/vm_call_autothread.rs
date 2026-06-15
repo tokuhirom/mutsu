@@ -126,7 +126,7 @@ impl VM {
                             if matches!(tc.as_str(), "Mu" | "Junction") {
                                 return false;
                             }
-                            let resolved_base = self.interpreter.resolve_subset_base_type(tc);
+                            let resolved_base = self.resolve_subset_base_type(tc);
                             return !matches!(resolved_base.as_str(), "Mu" | "Junction");
                         }
                         return true; // No type constraint = default Any
@@ -147,7 +147,7 @@ impl VM {
                         // whose ultimate base type is Mu or Junction — the
                         // junction should be passed as-is to the subset's
                         // where-clause check.
-                        let resolved_base = self.interpreter.resolve_subset_base_type(tc);
+                        let resolved_base = self.resolve_subset_base_type(tc);
                         if matches!(resolved_base.as_str(), "Mu" | "Junction") {
                             return false;
                         }
@@ -271,7 +271,7 @@ impl VM {
                 if let Value::Mixin(_, ref mixins) = callable {
                     let has_call_me = mixins.keys().any(|key| {
                         key.strip_prefix("__mutsu_role__")
-                            .is_some_and(|rn| self.interpreter.role_has_method(rn, "CALL-ME"))
+                            .is_some_and(|rn| self.role_has_method(rn, "CALL-ME"))
                     });
                     if has_call_me {
                         return Some(callable);

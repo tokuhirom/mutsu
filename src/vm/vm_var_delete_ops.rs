@@ -105,11 +105,8 @@ impl VM {
         ) {
             return None;
         }
-        if self
-            .interpreter
-            .var_type_constraint_fast(var_name)
-            .is_some()
-            || self.interpreter.readonly_vars().contains(var_name)
+        if self.var_type_constraint_fast(var_name).is_some()
+            || self.readonly_vars().contains(var_name)
         {
             return None;
         }
@@ -271,10 +268,10 @@ impl VM {
         // for this variable: Arc pointers can be reused across
         // allocations, so a stale pointer-keyed entry from a freed
         // same-named container must not leak into the new container.
-        let saved_default = if self.interpreter.var_default(&var_name).is_some() {
+        let saved_default = if self.var_default(&var_name).is_some() {
             self.env()
                 .get(&var_name)
-                .and_then(|v| self.interpreter.container_default(v).cloned())
+                .and_then(|v| self.container_default(v).cloned())
         } else {
             None
         };
@@ -375,7 +372,7 @@ impl VM {
             && self.container_type_metadata(&container).is_none()
         {
             let container = container.clone();
-            let tagged = self.interpreter.tag_container_metadata(container, info);
+            let tagged = self.tag_container_metadata(container, info);
             self.env_mut().insert(var_name.to_string(), tagged.clone());
             self.update_local_if_exists(code, &var_name, &tagged);
         }
@@ -385,9 +382,9 @@ impl VM {
         // outer scope.
         if let Some(def) = saved_default
             && let Some(container) = self.env().get(&var_name).cloned()
-            && self.interpreter.container_default(&container).is_none()
+            && self.container_default(&container).is_none()
         {
-            let tagged = self.interpreter.tag_container_default(container, def);
+            let tagged = self.tag_container_default(container, def);
             self.env_mut().insert(var_name.clone(), tagged);
         }
         // Sync env value to locals so reads through locals see the

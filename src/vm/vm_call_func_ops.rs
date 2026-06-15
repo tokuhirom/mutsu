@@ -217,7 +217,7 @@ impl VM {
                             )
                         } else {
                             let pkg = self.current_package().to_string();
-                            self.interpreter.push_samewith_context(name_str, None);
+                            self.push_samewith_context(name_str, None);
                             let pushed_dispatch =
                                 loan_env!(self, push_multi_dispatch_frame(name_str, &args));
                             let r = self.call_compiled_function_named(
@@ -227,9 +227,9 @@ impl VM {
                                 &pkg,
                                 name_str,
                             );
-                            self.interpreter.pop_samewith_context();
+                            self.pop_samewith_context();
                             if pushed_dispatch {
-                                self.interpreter.pop_multi_dispatch();
+                                self.pop_multi_dispatch();
                             }
                             r
                         };
@@ -288,7 +288,7 @@ impl VM {
             let use_cache = !self.has_multi_candidates_cached(name_str);
             if use_cache
                 && self.fn_resolve_cache_gen == self.fn_resolve_gen
-                && self.interpreter.wrap_sub_id_for_name(name_str).is_none()
+                && self.wrap_sub_id_for_name(name_str).is_none()
                 && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
                 && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key.as_str())
@@ -349,7 +349,7 @@ impl VM {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
-        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args(&args);
         // Don't auto-FETCH Proxy args for control flow builtins that must preserve containers,
         // or when in lvalue assignment context (e.g. f() = 42 calls f with in_lvalue_assignment=true).
         let skip_proxy_fetch = matches!(
@@ -361,7 +361,7 @@ impl VM {
                 | "leave"
                 | "__mutsu_assign_method_lvalue"
                 | "__mutsu_index_assign_method_lvalue"
-        ) || self.interpreter.in_lvalue_assignment;
+        ) || self.in_lvalue_assignment;
         let args = if skip_proxy_fetch {
             args
         } else {
@@ -377,7 +377,7 @@ impl VM {
                     if let Value::Mixin(_, ref mixins) = callable {
                         let has_call_me = mixins.keys().any(|key| {
                             key.strip_prefix("__mutsu_role__")
-                                .is_some_and(|rn| self.interpreter.role_has_method(rn, "CALL-ME"))
+                                .is_some_and(|rn| self.role_has_method(rn, "CALL-ME"))
                         });
                         if has_call_me {
                             return Some(callable);
@@ -397,9 +397,9 @@ impl VM {
         }
 
         // Check wrap chain for named function calls
-        if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(&name)
-            && !self.interpreter.is_wrap_dispatching(sub_id)
-            && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
+        if let Some(sub_id) = self.wrap_sub_id_for_name(&name)
+            && !self.is_wrap_dispatching(sub_id)
+            && let Some(sub_val) = self.get_wrapped_sub(&name)
         {
             let result = self.vm_call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
@@ -480,7 +480,7 @@ impl VM {
             Self::append_slip_value(&mut args, slip_val);
         }
         let args = self.normalize_call_args_for_target(&name, args);
-        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args(&args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         // A lexical `&name` parameter (or `my &name`) that shadows a same-named
         // package sub wins over the package sub, even when the call slips its
@@ -508,9 +508,7 @@ impl VM {
             let cf_auto_fetch = !cf.is_raw;
             let pkg = self.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
-            let result = self
-                .interpreter
-                .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
+            let result = self.maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
             // Slice 6.3 step 2: precise env_dirty from the named-call merge.
         } else if loan_env!(self, user_function_matches_call(&name, &args)) {
@@ -612,9 +610,9 @@ impl VM {
         } else {
             false
         };
-        self.interpreter.set_pending_call_arg_sources(arg_sources);
+        self.set_pending_call_arg_sources(arg_sources);
         let result = self.vm_call_on_value(target, args, Some(compiled_fns));
-        self.interpreter.set_pending_call_arg_sources(None);
+        self.set_pending_call_arg_sources(None);
         let result = result?;
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
         self.stack.push(result);
@@ -643,7 +641,7 @@ impl VM {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, false);
         }
-        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args(&args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -670,10 +668,9 @@ impl VM {
             } else {
                 false
             };
-            self.interpreter
-                .set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources(arg_sources.clone());
             let result = self.vm_call_on_value(target, args, Some(compiled_fns));
-            self.interpreter.set_pending_call_arg_sources(None);
+            self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
@@ -683,10 +680,9 @@ impl VM {
         {
             let cf_auto_fetch = !cf.is_raw;
             let pkg = self.current_package().to_string();
-            self.interpreter
-                .set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources(arg_sources.clone());
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
-            self.interpreter.set_pending_call_arg_sources(None);
+            self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))?
         } else {
@@ -694,9 +690,9 @@ impl VM {
             if name == "start" {
                 self.sync_env_from_locals(code);
             }
-            self.interpreter.set_pending_call_arg_sources(arg_sources);
+            self.set_pending_call_arg_sources(arg_sources);
             let result = self.call_function_compiled_first(&name, args, compiled_fns);
-            self.interpreter.set_pending_call_arg_sources(None);
+            self.set_pending_call_arg_sources(None);
             result?
         };
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
@@ -722,21 +718,20 @@ impl VM {
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, true))
         } else {
-            self.interpreter
-                .set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources(arg_sources.clone());
             let compiled = if !self.has_proto(name) {
                 self.find_compiled_function(compiled_fns, name, &args)
             } else {
                 None
             };
-            self.interpreter.set_pending_call_arg_sources(None);
+            self.set_pending_call_arg_sources(None);
             if let Some(cf) = compiled {
                 // Try positional light call path first (ultra-fast, no env clone).
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
                 if Self::is_positional_light_call_eligible(cf, name)
                     && !self.has_multi_candidates_cached(name)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
-                    && self.interpreter.wrap_sub_id_for_name(name).is_none()
+                    && self.wrap_sub_id_for_name(name).is_none()
                 {
                     let name_sym = Symbol::intern(name);
                     if !self.pos_light_call_cache.contains_key(&name_sym) {
@@ -757,7 +752,7 @@ impl VM {
                 // This avoids the expensive env clone/restore cycle.
                 if Self::is_light_call_eligible(cf, name)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
-                    && self.interpreter.wrap_sub_id_for_name(name).is_none()
+                    && self.wrap_sub_id_for_name(name).is_none()
                 {
                     // Populate light-call cache so subsequent calls skip resolution
                     let name_sym = Symbol::intern(name);
@@ -775,10 +770,9 @@ impl VM {
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }
-                self.interpreter
-                    .set_pending_call_arg_sources(arg_sources.clone());
+                self.set_pending_call_arg_sources(arg_sources.clone());
                 let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(name, &args));
-                self.interpreter.push_samewith_context(name, None);
+                self.push_samewith_context(name, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.
                 let pkg = if let Some(cached_pkg) = self.cached_fn_package(name, args.len()) {
@@ -787,7 +781,7 @@ impl VM {
                     let resolved_def = loan_env!(self, resolve_function_with_types(name, &args));
                     if let Some(ref def) = resolved_def {
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args)
-                            .or_else(|| self.interpreter.pending_callsite_line());
+                            .or_else(|| self.pending_callsite_line());
                         loan_env!(self, check_deprecation_for_def_with_line(def, cl));
                     }
                     resolved_def
@@ -796,10 +790,10 @@ impl VM {
                 };
                 let cf_auto_fetch = !cf.is_raw;
                 let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
-                self.interpreter.set_pending_call_arg_sources(None);
-                self.interpreter.pop_samewith_context();
+                self.set_pending_call_arg_sources(None);
+                self.pop_samewith_context();
                 if pushed_dispatch {
-                    self.interpreter.pop_multi_dispatch();
+                    self.pop_multi_dispatch();
                 }
                 // Slice 6.3 step 2: no blanket mark. call_compiled_function_named
                 // now signals env_dirty precisely — its return merge sets it when a
@@ -842,7 +836,7 @@ impl VM {
                     // and corrupts behaviour (regressed S16-io/words.t,
                     // S32-io/slurp.t via is-eqv). Mirrors the non-builtin OTF path's
                     // is_interpreter_handled_function gate below.
-                    let _ = self.interpreter.take_pending_dispatch_error();
+                    let _ = self.take_pending_dispatch_error();
                     if !self.is_interpreter_handled_function(name)
                         && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                         && Self::def_is_otf_compilable(&def)
@@ -851,9 +845,9 @@ impl VM {
                         self.compile_and_call_function_def(&def, args, compiled_fns)
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
-                        self.interpreter.set_pending_call_arg_sources(arg_sources);
+                        self.set_pending_call_arg_sources(arg_sources);
                         let result = self.vm_call_function_fallback(name, &args);
-                        self.interpreter.set_pending_call_arg_sources(None);
+                        self.set_pending_call_arg_sources(None);
                         let result = result?;
                         loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
@@ -884,9 +878,9 @@ impl VM {
                         self.compile_and_call_function_def(&def, args, compiled_fns)
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
-                        self.interpreter.set_pending_call_arg_sources(arg_sources);
+                        self.set_pending_call_arg_sources(arg_sources);
                         let result = self.vm_call_function_fallback(name, &args);
-                        self.interpreter.set_pending_call_arg_sources(None);
+                        self.set_pending_call_arg_sources(None);
                         let result = result?;
                         loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
@@ -932,9 +926,9 @@ impl VM {
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
                     }
-                    self.interpreter.set_pending_call_arg_sources(arg_sources);
+                    self.set_pending_call_arg_sources(arg_sources);
                     let result = self.vm_call_function(name, args);
-                    self.interpreter.set_pending_call_arg_sources(None);
+                    self.set_pending_call_arg_sources(None);
                     // Interpreter function calls (e.g. `require`) may register
                     // new subs — invalidate function resolution caches.
                     self.fn_resolve_gen += 1;

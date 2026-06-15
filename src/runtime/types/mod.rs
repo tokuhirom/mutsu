@@ -95,19 +95,6 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
-    fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
-        let mut resolved = source_name.to_string();
-        let mut seen = std::collections::HashSet::new();
-        while seen.insert(resolved.clone()) {
-            let key = sigilless_alias_key(&resolved);
-            let Some(Value::Str(next)) = self.env.get(&key) else {
-                break;
-            };
-            resolved = next.to_string();
-        }
-        resolved
-    }
-
     /// Save the current readonly_vars set (call before function body execution).
     pub(crate) fn save_readonly_vars(&self) -> HashSet<String> {
         self.readonly_vars.clone()

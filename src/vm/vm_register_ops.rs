@@ -316,7 +316,7 @@ impl VM {
                 // next await — disconnecting the parent from the shared cell.
                 // `set_shared_var` only updates entries that already exist, so this
                 // is a no-op when the name was never snapshotted.
-                if self.interpreter.shared_vars_active {
+                if self.shared_vars_active {
                     loan_env!(self, set_shared_var(s, container.clone()));
                 }
             });
@@ -484,24 +484,16 @@ impl VM {
             self.method_resolve_cache.clear();
             self.last_method_resolve = None;
             self.fast_method_cache.clear();
-            if *is_export && !self.interpreter.suppress_exports {
+            if *is_export && !self.suppress_exports {
                 let pkg = self.current_package().to_string();
-                self.interpreter.register_exported_sub(
-                    pkg.clone(),
-                    resolved_name.clone(),
-                    export_tags.clone(),
-                );
+                self.register_exported_sub(pkg.clone(), resolved_name.clone(), export_tags.clone());
                 // If a custom `is` trait mixed a role into this routine, the
                 // resulting Mixin lives in the lexical env as `&name` but would
                 // be dropped when the module scope exits. Capture it so `import`
                 // can restore the trait-modified value.
                 let code_var_key = format!("&{}", resolved_name);
                 if let Some(val @ Value::Mixin(..)) = self.env().get(&code_var_key) {
-                    self.interpreter.record_exported_sub_value(
-                        pkg,
-                        resolved_name.clone(),
-                        val.clone(),
-                    );
+                    self.record_exported_sub_value(pkg, resolved_name.clone(), val.clone());
                 }
             }
             for (alt_params, alt_param_defs) in signature_alternates {
@@ -553,13 +545,7 @@ impl VM {
                 body,
                 multi,
             } => {
-                self.interpreter.register_token_decl(
-                    &name.resolve(),
-                    params,
-                    param_defs,
-                    body,
-                    *multi,
-                );
+                self.register_token_decl(&name.resolve(), params, param_defs, body, *multi);
                 Ok(())
             }
             _ => Err(RuntimeError::new(
@@ -584,11 +570,9 @@ impl VM {
         } = stmt
         {
             let name_str = name.resolve();
-            self.interpreter
-                .register_proto_decl(&name_str, params, param_defs, body)?;
+            self.register_proto_decl(&name_str, params, param_defs, body)?;
             if *is_export {
-                self.interpreter
-                    .register_proto_decl_as_global(&name_str, params, param_defs, body)?;
+                self.register_proto_decl_as_global(&name_str, params, param_defs, body)?;
             }
             // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
             if !custom_traits.is_empty() {
@@ -640,7 +624,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::ProtoToken { name } = stmt {
-            self.interpreter.register_proto_token_decl(&name.resolve());
+            self.register_proto_token_decl(&name.resolve());
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterProtoToken expects ProtoToken"))
@@ -721,7 +705,7 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
-        self.interpreter.no_module(module)?;
+        self.no_module(module)?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
@@ -742,7 +726,7 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
-        self.interpreter.need_module(module)?;
+        self.need_module(module)?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
@@ -779,7 +763,7 @@ impl VM {
                 Value::make_instance(Symbol::intern("CompUnit::Repository::Installation"), attrs);
             self.env_mut().insert("*REPO".to_string(), repo);
         }
-        self.interpreter.add_lib_path(path);
+        self.add_lib_path(path);
         Ok(())
     }
 
@@ -802,8 +786,7 @@ impl VM {
                 _ => None,
             })
             .unwrap_or_else(|| vec!["DEFAULT".to_string()]);
-        self.interpreter
-            .register_exported_var(self.current_package().to_string(), name, tags);
+        self.register_exported_var(self.current_package().to_string(), name, tags);
         Ok(())
     }
 
@@ -825,16 +808,13 @@ impl VM {
                 Value::Bool(true)
             };
             let name = name.to_string();
-            self.interpreter
-                .set_var_default(&name, default_value.clone());
+            self.set_var_default(&name, default_value.clone());
             // For array/hash variables, also register the container default
             // so that element access on missing indices returns the default.
             if (name.starts_with('@') || name.starts_with('%'))
                 && let Some(container) = self.locals_get_by_name(code, &name)
             {
-                let container = self
-                    .interpreter
-                    .tag_container_default(container, default_value.clone());
+                let container = self.tag_container_default(container, default_value.clone());
                 self.locals_set_by_name(code, &name, container.clone());
                 self.set_env_with_main_alias(&name, container.clone());
                 // Replace existing Nil and uninitialized (Package("Any"))
@@ -861,9 +841,7 @@ impl VM {
                             .collect();
                         let new_arr =
                             Value::Array(Arc::new(crate::value::ArrayData::new(replaced)), kind);
-                        let new_arr = self
-                            .interpreter
-                            .tag_container_default(new_arr, default_value.clone());
+                        let new_arr = self.tag_container_default(new_arr, default_value.clone());
                         self.locals_set_by_name(code, &name, new_arr.clone());
                         self.set_env_with_main_alias(&name, new_arr);
                     }
@@ -888,7 +866,7 @@ impl VM {
                 if has_arg {
                     self.stack.pop(); // discard unsupported trait argument
                 }
-                self.interpreter.mark_readonly(name);
+                self.mark_readonly(name);
                 return Ok(());
             }
             let is_buf_trait = matches!(
@@ -914,7 +892,6 @@ impl VM {
                 let buf_type = match trait_name.as_str() {
                     "buf" | "blob" => {
                         let resolved = self
-                            .interpreter
                             .call_function("EVAL", vec![Value::str(trait_name.clone())])
                             .ok()
                             .or_else(|| self.get_env_with_main_alias(&trait_name))
@@ -982,12 +959,12 @@ impl VM {
                 };
                 // Hashes embed metadata in `HashData`; store the tagged value
                 // back into both the local slot and env.
-                let tagged = self.interpreter.tag_container_metadata(container, info);
+                let tagged = self.tag_container_metadata(container, info);
                 self.locals_set_by_name(code, &name_str, tagged.clone());
                 self.set_env_with_main_alias(&name_str, tagged);
             }
             // Mark the variable read-only to prevent mutation
-            self.interpreter.mark_readonly(&name_str);
+            self.mark_readonly(&name_str);
             self.env_dirty = true;
             return Ok(());
         }
@@ -1072,7 +1049,7 @@ impl VM {
                         // Try to coerce keys to the constraint type for type checking
                         let mut typed_keys = std::collections::HashMap::new();
                         for key in &keys {
-                            let coerced = self.interpreter.try_coerce_str_to_type(key, constraint);
+                            let coerced = self.try_coerce_str_to_type(key, constraint);
                             if let Some(ref typed_val) = coerced {
                                 if !self.type_matches_value(constraint, typed_val) {
                                     let got_type = crate::value::what_type_name(typed_val);
@@ -1128,7 +1105,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some(trait_name.clone()),
                 };
-                let instance = self.interpreter.tag_container_metadata(instance, info);
+                let instance = self.tag_container_metadata(instance, info);
                 self.locals_set_by_name(code, &name_str, instance.clone());
                 self.set_env_with_main_alias(&name_str, instance.clone());
                 // Set type constraint so future assignments are coerced correctly
@@ -1210,8 +1187,7 @@ impl VM {
             )?;
             // Store language revision metadata from the version captured at parse time
             if !name.resolve().is_empty() {
-                self.interpreter
-                    .store_language_revision_from_version(&name.resolve(), language_version);
+                self.store_language_revision_from_version(&name.resolve(), language_version);
             }
             // For anonymous enums, push the Map result onto the stack
             if name.resolve().is_empty() {
@@ -1267,7 +1243,7 @@ impl VM {
             // If the name was previously suppressed (e.g. by a `my class` in an
             // earlier block), clear the suppression before running the class body
             // so that references to the class name inside the body can resolve.
-            self.interpreter.unsuppress_name(&resolved_name);
+            self.unsuppress_name(&resolved_name);
             // TODO: Detect redeclaration of package-scoped classes across
             // EVAL boundaries (X::Redeclaration). Currently deferred because
             // distinguishing EVAL re-definitions from normal re-execution
@@ -1291,19 +1267,16 @@ impl VM {
             )?;
             // Check for assignment to native read-only params before
             // compiling (X::Assignment::RO::Comp).
-            if let Some(err) = self
-                .interpreter
-                .check_class_native_readonly_param_errors(&qualified_name)
-            {
+            if let Some(err) = self.check_class_native_readonly_param_errors(&qualified_name) {
                 return Err(err);
             }
             // Compile method bodies to bytecode for the fast path
-            self.interpreter.compile_class_methods(&qualified_name);
+            self.compile_class_methods(&qualified_name);
             // Register CUnion repr if present
             if let Some(repr_name) = repr
                 && repr_name == "CUnion"
             {
-                self.interpreter.register_cunion_class(&qualified_name);
+                self.register_cunion_class(&qualified_name);
             }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
@@ -1326,10 +1299,10 @@ impl VM {
             // within the enclosing class body and its methods.
             let parent_is_class = qualified_name
                 .rsplit_once("::")
-                .map(|(parent, _)| self.interpreter.has_class(parent))
+                .map(|(parent, _)| self.has_class(parent))
                 .unwrap_or(false);
             if qualified_name != resolved_name && !resolved_name.contains("::") && parent_is_class {
-                self.interpreter.suppress_name(&resolved_name);
+                self.suppress_name(&resolved_name);
                 // Register the short name in the lexical env so it resolves
                 // within the enclosing class scope (e.g. `Frog` inside `Forest`).
                 let env = self.env_mut();
@@ -1360,15 +1333,12 @@ impl VM {
             // When `my class` is used, register the class name as lexically scoped
             // so it gets suppressed when the enclosing block scope exits.
             if *is_lexical {
-                self.interpreter
-                    .register_lexical_class(resolved_name.clone());
+                self.register_lexical_class(resolved_name.clone());
                 // Also mark as my-scoped so it's excluded from the parent package stash
-                self.interpreter
-                    .mark_my_scoped_package_item(qualified_name.clone());
+                self.mark_my_scoped_package_item(qualified_name.clone());
             }
             // Store language revision metadata from the version captured at parse time
-            self.interpreter
-                .store_language_revision_from_version(&qualified_name, language_version);
+            self.store_language_revision_from_version(&qualified_name, language_version);
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
             // Merge explicitly parsed custom_traits with deferred_traits
@@ -1417,18 +1387,18 @@ impl VM {
             // Check MONKEY-TYPING pragma: we check if `use MONKEY-TYPING` or `use MONKEY`
             // was issued. Since the compiler simply ignores these `use` statements,
             // we track them at the interpreter level.
-            if !self.interpreter.monkey_typing_enabled() {
+            if !self.monkey_typing_enabled() {
                 return Err(RuntimeError::typed_msg(
                     "X::Syntax::Augment::WithoutMonkeyTyping",
                     "augment not allowed without 'use MONKEY-TYPING'",
                 ));
             }
             if *is_role {
-                return Err(self.interpreter.augment_role_error(&name_str));
+                return Err(self.augment_role_error(&name_str));
             }
             loan_env!(self, augment_class(&name_str, body))?;
             // Recompile augmented class methods for the fast path
-            self.interpreter.compile_class_methods(&name_str);
+            self.compile_class_methods(&name_str);
             Ok(())
         } else {
             Err(RuntimeError::new("AugmentClass expects AugmentClass stmt"))
@@ -1467,12 +1437,12 @@ impl VM {
             };
             // If the short name was suppressed by an earlier lexical type with
             // the same name, re-enable it before registering the new role.
-            self.interpreter.unsuppress_name(&name_str);
+            self.unsuppress_name(&name_str);
             loan_env!(
                 self,
                 register_role_decl(&qualified_name, type_params, type_param_defs, body, *is_rw,)
             )?;
-            if *is_export && !self.interpreter.suppress_exports {
+            if *is_export && !self.suppress_exports {
                 // The compiler may have pre-qualified the role name
                 // (e.g. `R1` → `GH2613::R1`) when compiling under a
                 // `unit module`. Exports use the short bare name and
@@ -1483,17 +1453,12 @@ impl VM {
                     } else {
                         (current_package.clone(), name_str.clone())
                     };
-                self.interpreter.register_exported_var(
-                    export_pkg,
-                    export_short,
-                    export_tags.clone(),
-                );
+                self.register_exported_var(export_pkg, export_short, export_tags.clone());
             }
             // Store language revision metadata from the version captured at parse time
-            self.interpreter
-                .store_language_revision_from_version(&qualified_name, language_version);
+            self.store_language_revision_from_version(&qualified_name, language_version);
             // Compile role method bodies to bytecode
-            self.interpreter.compile_role_methods(&qualified_name);
+            self.compile_role_methods(&qualified_name);
             self.env_mut().insert(
                 "_".to_string(),
                 Value::Package(Symbol::intern(&qualified_name)),
@@ -1530,7 +1495,6 @@ impl VM {
             // `role R { method foo {}; R.foo }` work.
             if type_params.is_empty() {
                 let deferred = self
-                    .interpreter
                     .get_role_def(&qualified_name)
                     .map(|r| r.deferred_body_stmts.clone())
                     .unwrap_or_default();
@@ -1541,7 +1505,6 @@ impl VM {
 
             // Gather deferred custom traits from role registration
             let role_deferred = self
-                .interpreter
                 .get_role_def(&qualified_name)
                 .map(|r| r.deferred_custom_traits.clone())
                 .unwrap_or_default();
@@ -1598,18 +1561,14 @@ impl VM {
             // The subset type itself is already registered under its bare name
             // in the global env by `register_subset_decl`, so importing only
             // needs to make `import M` succeed (and validate export tags).
-            if *is_export && !self.interpreter.suppress_exports {
+            if *is_export && !self.suppress_exports {
                 let (export_pkg, export_short) =
                     if let Some((pkg, short)) = resolved_name.rsplit_once("::") {
                         (pkg.to_string(), short.to_string())
                     } else {
                         (self.current_package().to_string(), resolved_name)
                     };
-                self.interpreter.register_exported_var(
-                    export_pkg,
-                    export_short,
-                    export_tags.clone(),
-                );
+                self.register_exported_var(export_pkg, export_short, export_tags.clone());
             }
             self.env_dirty = true;
             Ok(())
@@ -1628,11 +1587,11 @@ impl VM {
         let end = body_end as usize;
         let body_start = *ip + 1;
         let label = self.stack.pop().unwrap_or(Value::Nil).to_string_value();
-        let ctx = self.interpreter.begin_subtest();
+        let ctx = self.begin_subtest();
         let saved_depth = self.stack.len();
         let run_result = self.run_range(code, body_start, end, compiled_fns);
         self.stack.truncate(saved_depth);
-        self.interpreter.finish_subtest(ctx, &label, run_result)?;
+        self.finish_subtest(ctx, &label, run_result)?;
         self.env_dirty = true;
         *ip = end;
         Ok(())
@@ -1658,7 +1617,7 @@ impl VM {
         self.sync_env_from_locals(code);
 
         // Enter react mode: whenever blocks will register subscriptions
-        self.interpreter.enter_react();
+        self.enter_react();
         let saved_depth = self.stack.len();
         let run_result = self.run_range(code, body_start, end, compiled_fns);
         self.stack.truncate(saved_depth);
@@ -1721,7 +1680,7 @@ impl VM {
     /// Walk the MRO of `class_name` to find a parameterized Array or Hash parent.
     /// Returns the element type if found (e.g. "Str" for `Array[Str]`).
     fn find_parameterized_container_parent(&self, class_name: &str) -> Option<String> {
-        let parents = self.interpreter.class_parents_readonly(class_name);
+        let parents = self.class_parents_readonly(class_name);
         for parent in &parents {
             if let Some(inner) = parent
                 .strip_prefix("Array[")

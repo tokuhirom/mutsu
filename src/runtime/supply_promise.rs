@@ -224,11 +224,9 @@ impl Interpreter {
         react_subs: Vec<crate::runtime::subtest::ReactSubscription>,
         policy: crate::runtime::subtest::SupplyDrivePolicy,
     ) -> Result<(), RuntimeError> {
-        let interp = std::mem::take(self);
-        let mut vm = crate::vm::VM::new(interp);
-        let result = vm.drive_react_subscriptions(react_subs, policy);
-        *self = vm.into_interpreter();
-        result
+        // CP-3 collapse: run the react drive loop with fresh execution registers
+        // in place instead of the `mem::take(self)` + `VM::new` sub-VM.
+        self.with_nested_registers(|vm| vm.drive_react_subscriptions_nested(react_subs, policy))
     }
 
     /// On the `await`/`.Promise` path, replay a finite/static `whenever` source

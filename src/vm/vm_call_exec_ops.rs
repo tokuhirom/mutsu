@@ -44,18 +44,18 @@ impl VM {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
-        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args(&args);
         // Auto-FETCH Proxy args for statement-level calls (same as CallFunc)
-        let args = if self.interpreter.in_lvalue_assignment {
+        let args = if self.in_lvalue_assignment {
             args
         } else {
             self.auto_fetch_proxy_args(args)?
         };
         loan_env!(self, set_pending_callsite_line(callsite_line));
         // Check wrap chain for named function calls
-        if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(&name)
-            && !self.interpreter.is_wrap_dispatching(sub_id)
-            && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
+        if let Some(sub_id) = self.wrap_sub_id_for_name(&name)
+            && !self.is_wrap_dispatching(sub_id)
+            && let Some(sub_val) = self.get_wrapped_sub(&name)
         {
             let result = self.vm_call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
@@ -63,12 +63,11 @@ impl VM {
             return Ok(());
         }
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
-            self.interpreter
-                .set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources(arg_sources.clone());
             let pkg = self.current_package().to_string();
             let call_result =
                 self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
-            self.interpreter.set_pending_call_arg_sources(None);
+            self.set_pending_call_arg_sources(None);
             call_result?;
             // No blanket mark: call_compiled_function_named already signals
             // env_dirty precisely from its return merge (matches the hot
@@ -77,9 +76,9 @@ impl VM {
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?;
         } else {
-            self.interpreter.set_pending_call_arg_sources(arg_sources);
+            self.set_pending_call_arg_sources(arg_sources);
             let exec_result = loan_env!(self, exec_call_values(&name, args));
-            self.interpreter.set_pending_call_arg_sources(None);
+            self.set_pending_call_arg_sources(None);
             exec_result?;
             // Carrier may write the caller env by name (e.g. EVAL'd lexicals). Keep
             // the env_dirty flag rather than an eager sync_locals_from_env here: an
@@ -106,7 +105,7 @@ impl VM {
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         // Auto-FETCH Proxy args
-        let args = if self.interpreter.in_lvalue_assignment {
+        let args = if self.in_lvalue_assignment {
             args
         } else {
             self.auto_fetch_proxy_args(args)?

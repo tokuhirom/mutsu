@@ -151,7 +151,7 @@ impl VM {
                     _ => None,
                 };
                 if let Some(cn) = class_name
-                    && self.interpreter.has_user_method(&cn, &method)
+                    && self.has_user_method(&cn, &method)
                 {
                     skip_native = true;
                 }
@@ -450,8 +450,7 @@ impl VM {
                 // arm); avoids corrupting a COW copy `my %g = %h`.
                 self.write_back_hyper_target_var(code, var, new_hash);
             } else {
-                self.interpreter
-                    .overwrite_hash_bindings_by_identity(existing, new_hash);
+                self.overwrite_hash_bindings_by_identity(existing, new_hash);
             }
             self.env_dirty = true;
         }

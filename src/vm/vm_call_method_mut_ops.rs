@@ -328,8 +328,7 @@ impl VM {
         crate::vm::vm_stats::record_method_dispatch();
         // Set pending arg sources for `is rw` dispatch matching
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        self.interpreter
-            .set_pending_call_arg_sources(arg_sources.clone());
+        self.set_pending_call_arg_sources(arg_sources.clone());
         let method_raw = Self::const_str(code, name_idx);
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -458,11 +457,11 @@ impl VM {
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase())
-            && !self.interpreter.has_type(&target_name)
+            && !self.has_type(&target_name)
             && !Self::is_builtin_type(&target_name)
-            && !self.interpreter.has_class(&target_name)
+            && !self.has_class(&target_name)
         {
-            let suggestions = self.interpreter.suggest_type_names(&target_name);
+            let suggestions = self.suggest_type_names(&target_name);
             return Err(RuntimeError::undeclared_type_symbols(
                 &target_name,
                 format!("Undeclared name:\n    {} used at line 1", target_name),
@@ -574,7 +573,7 @@ impl VM {
             && !args.is_empty()
             && target_name.starts_with('@')
             && matches!(&target, Value::Array(..))
-            && self.interpreter.shared_vars_active
+            && self.shared_vars_active
         {
             let result = loan_env!(
                 self,
@@ -613,7 +612,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(&cn, &method)
+                && self.has_user_method(&cn, &method)
             {
                 skip_native = true;
             }
@@ -676,7 +675,7 @@ impl VM {
             skip_native = true;
         }
         if skip_native {
-            self.interpreter.skip_pseudo_method_native = Some(method.clone());
+            self.skip_pseudo_method_native = Some(method.clone());
         }
         // Handle Match.make — must mutate the Match instance's `ast` attribute
         // and write the modified Match back to the variable.
@@ -704,7 +703,7 @@ impl VM {
                 };
                 self.env_mut().insert(target_name.to_string(), updated);
                 self.env_mut().insert("made".to_string(), value.clone());
-                self.interpreter.action_made = Some(value.clone());
+                self.action_made = Some(value.clone());
             }
             self.stack.push(value);
             self.env_dirty = true;
@@ -888,7 +887,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
+                        let new_hash = self.tag_container_metadata(new_hash, meta);
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(value);
                         self.env_dirty = true;
@@ -983,7 +982,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
+                        let new_hash = self.tag_container_metadata(new_hash, meta);
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(old_value);
                         self.env_dirty = true;
@@ -1077,7 +1076,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
+                        let new_hash = self.tag_container_metadata(new_hash, meta);
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         if let Some((source_name, cell_val)) = bind_source_install {
                             self.set_env_with_main_alias(&source_name, cell_val.clone());
@@ -1268,13 +1267,9 @@ impl VM {
                             | "BIND-POS"
                     );
                     if is_array_method
-                        && !self.interpreter.has_user_method(&cn, &method)
+                        && !self.has_user_method(&cn, &method)
                         && attributes.contains_key("__mutsu_array_storage")
-                        && self
-                            .interpreter
-                            .mro_readonly(&cn)
-                            .iter()
-                            .any(|n| n == "Array")
+                        && self.mro_readonly(&cn).iter().any(|n| n == "Array")
                     {
                         let mut storage = attributes
                             .as_map()
@@ -1453,7 +1448,7 @@ impl VM {
         // Shared arrays keep their interior-mutation (Arc>1) semantics in the
         // interpreter so bound aliases observe the change; type-constrained or
         // metadata-bearing containers need element checks / typed empty Failures.
-        if self.interpreter.shared_vars_active
+        if self.shared_vars_active
             || loan_env!(self, var_type_constraint(target_name)).is_some()
             || self.container_type_metadata(target).is_some()
         {
@@ -1657,7 +1652,7 @@ impl VM {
         // Shared / type-constrained / metadata-bearing containers need the
         // interpreter's element checks, native-array semantics, and identity
         // sharing; let it own those.
-        if self.interpreter.shared_vars_active
+        if self.shared_vars_active
             || loan_env!(self, var_type_constraint(target_name)).is_some()
             || self.container_type_metadata(target).is_some()
         {
