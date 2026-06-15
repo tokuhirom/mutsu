@@ -228,16 +228,16 @@ impl Interpreter {
                 "prepend" => flatten_append_args(args),
                 _ => unreachable!(),
             };
-            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
-            unsafe {
-                let data = &mut *ptr;
-                if matches!(method, "unshift" | "prepend") {
-                    let mut combined = vals;
-                    combined.append(&mut data.items);
-                    data.items = combined;
-                } else {
-                    data.items.extend(vals);
-                }
+            // SAFETY: aliased in-place mutation of a shared array (guarded by
+            // strong_count > 1, the exact case that needs the shared write); see
+            // `arc_contents_mut`. No borrow into the items is live across this.
+            let data = unsafe { crate::value::arc_contents_mut(arc) };
+            if matches!(method, "unshift" | "prepend") {
+                let mut combined = vals;
+                combined.append(&mut data.items);
+                data.items = combined;
+            } else {
+                data.items.extend(vals);
             }
             return Ok(target);
         }

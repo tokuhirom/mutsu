@@ -3296,12 +3296,13 @@ impl Interpreter {
                 if let Some(val) = self.get_env_with_main_alias(name) {
                     match &val {
                         Value::Array(arc, _) => {
-                            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
-                            unsafe { (&mut *ptr).items.clear() };
+                            // SAFETY: aliased in-place clear of a shared container;
+                            // see `arc_contents_mut`.
+                            unsafe { crate::value::arc_contents_mut(arc).items.clear() };
                         }
                         Value::Hash(arc) => {
-                            let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
-                            unsafe { (*ptr).map.clear() };
+                            // SAFETY: aliased in-place clear; see `arc_contents_mut`.
+                            unsafe { crate::value::arc_contents_mut(arc).map.clear() };
                         }
                         _ => {}
                     }
@@ -3310,12 +3311,12 @@ impl Interpreter {
                 if let Some(slot) = self.find_local_slot(code, name) {
                     match &self.locals[slot] {
                         Value::Array(arc, _) => {
-                            let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
-                            unsafe { (&mut *ptr).items.clear() };
+                            // SAFETY: aliased in-place clear; see `arc_contents_mut`.
+                            unsafe { crate::value::arc_contents_mut(arc).items.clear() };
                         }
                         Value::Hash(arc) => {
-                            let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
-                            unsafe { (*ptr).map.clear() };
+                            // SAFETY: aliased in-place clear; see `arc_contents_mut`.
+                            unsafe { crate::value::arc_contents_mut(arc).map.clear() };
                         }
                         _ => {
                             self.locals[slot] = Value::Nil;
