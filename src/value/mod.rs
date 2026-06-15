@@ -1561,21 +1561,9 @@ pub enum Value {
         index: usize,
     },
     Regex(Arc<String>),
-    RegexWithAdverbs {
-        pattern: Arc<String>,
-        global: bool,
-        exhaustive: bool,
-        overlap: bool,
-        repeat: Option<usize>,
-        nth: Option<Arc<String>>,
-        perl5: bool,
-        pos: bool,
-        continue_: bool,
-        ignore_case: bool,
-        sigspace: bool,
-        samecase: bool,
-        samespace: bool,
-    },
+    /// A regex literal carrying adverbs. Boxed payload to keep `Value` small
+    /// (this variant has 13 fields).
+    RegexWithAdverbs(Box<RegexAdverbs>),
     Sub(Arc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
     /// Upgrade to the strong value when accessed; returns Nil if expired.
@@ -1618,11 +1606,8 @@ pub enum Value {
     },
     /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
     /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".
-    /// `text` is the normalized string.
-    Uni {
-        form: String,
-        text: String,
-    },
+    /// `text` is the normalized string. Boxed to keep `Value` small.
+    Uni(Box<UniData>),
     /// A Proxy container with FETCH and STORE callbacks.
     Proxy {
         fetcher: Box<Value>,
@@ -1639,13 +1624,9 @@ pub enum Value {
         type_args: Vec<Value>,
     },
     /// A type object created by Metamodel::Primitives.create_type.
-    /// `how` is the meta-object (HOW), `repr` is the REPR name, `name` is the type name.
-    CustomType {
-        how: Box<Value>,
-        repr: String,
-        name: Symbol,
-        id: u64,
-    },
+    /// `how` is the meta-object (HOW), `repr` is the REPR name, `name` is the type
+    /// name. Boxed payload to keep `Value` small.
+    CustomType(Box<CustomTypeData>),
     /// An instance of a custom type (created by .CREATE on a CustomType).
     /// Boxed payload to keep `Value` small (this variant has six fields).
     CustomTypeInstance(Box<CustomTypeInstanceData>),
@@ -1697,6 +1678,40 @@ pub struct CustomTypeInstanceData {
     pub type_name: Symbol,
     pub attributes: Arc<HashMap<String, Value>>,
     pub id: u64,
+}
+
+/// Boxed payload of [`Value::CustomType`] (a type object from create_type).
+#[derive(Debug, Clone)]
+pub struct CustomTypeData {
+    pub how: Box<Value>,
+    pub repr: String,
+    pub name: Symbol,
+    pub id: u64,
+}
+
+/// Boxed payload of [`Value::Uni`] (a Uni in a normalization form).
+#[derive(Debug, Clone)]
+pub struct UniData {
+    pub form: String,
+    pub text: String,
+}
+
+/// Boxed payload of [`Value::RegexWithAdverbs`] (a regex literal carrying adverbs).
+#[derive(Debug, Clone)]
+pub struct RegexAdverbs {
+    pub pattern: Arc<String>,
+    pub global: bool,
+    pub exhaustive: bool,
+    pub overlap: bool,
+    pub repeat: Option<usize>,
+    pub nth: Option<Arc<String>>,
+    pub perl5: bool,
+    pub pos: bool,
+    pub continue_: bool,
+    pub ignore_case: bool,
+    pub sigspace: bool,
+    pub samecase: bool,
+    pub samespace: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -2521,51 +2536,20 @@ impl PartialEq for Value {
                 },
             ) => at == bt && ak == bk,
             (Value::Regex(a), Value::Regex(b)) => a == b,
-            (
-                Value::RegexWithAdverbs {
-                    pattern: ap,
-                    global: ag,
-                    exhaustive: aex,
-                    overlap: aov,
-                    repeat: ar,
-                    nth: anth,
-                    perl5: ap5,
-                    pos: apos,
-                    continue_: ac,
-                    ignore_case: aic,
-                    sigspace: ass,
-                    samecase: asc,
-                    samespace: asp,
-                },
-                Value::RegexWithAdverbs {
-                    pattern: bp,
-                    global: bg,
-                    exhaustive: bex,
-                    overlap: bov,
-                    repeat: br,
-                    nth: bnth,
-                    perl5: bp5,
-                    pos: bpos,
-                    continue_: bc,
-                    ignore_case: bic,
-                    sigspace: bss,
-                    samecase: bsc,
-                    samespace: bsp,
-                },
-            ) => {
-                ap == bp
-                    && ag == bg
-                    && aex == bex
-                    && aov == bov
-                    && ar == br
-                    && anth == bnth
-                    && ap5 == bp5
-                    && apos == bpos
-                    && ac == bc
-                    && aic == bic
-                    && ass == bss
-                    && asc == bsc
-                    && asp == bsp
+            (Value::RegexWithAdverbs(a), Value::RegexWithAdverbs(b)) => {
+                a.pattern == b.pattern
+                    && a.global == b.global
+                    && a.exhaustive == b.exhaustive
+                    && a.overlap == b.overlap
+                    && a.repeat == b.repeat
+                    && a.nth == b.nth
+                    && a.perl5 == b.perl5
+                    && a.pos == b.pos
+                    && a.continue_ == b.continue_
+                    && a.ignore_case == b.ignore_case
+                    && a.sigspace == b.sigspace
+                    && a.samecase == b.samecase
+                    && a.samespace == b.samespace
             }
             (
                 Value::Routine {
@@ -2677,9 +2661,7 @@ impl PartialEq for Value {
                     false
                 }
             }
-            (Value::Uni { form: af, text: at }, Value::Uni { form: bf, text: bt }) => {
-                af == bf && at == bt
-            }
+            (Value::Uni(a), Value::Uni(b)) => a.form == b.form && a.text == b.text,
             // ContainerRef: deref and compare inner values.
             // Check Arc pointer identity first to avoid deadlock on same-Arc comparison.
             (Value::ContainerRef(a), Value::ContainerRef(b)) => {
@@ -2760,10 +2742,10 @@ impl Value {
         Value::BigRat(Box::new(num), Box::new(den))
     }
     /// The HOW (meta-object) of a `CustomType` or `CustomTypeInstance`, if this
-    /// is one. Centralizes access now that `CustomTypeInstance` is a boxed payload.
+    /// is one. Centralizes access now that both are boxed payloads.
     pub fn custom_how(&self) -> Option<&Value> {
         match self {
-            Value::CustomType { how, .. } => Some(how),
+            Value::CustomType(d) => Some(&d.how),
             Value::CustomTypeInstance(d) => Some(&d.how),
             _ => None,
         }
@@ -2771,10 +2753,23 @@ impl Value {
     /// The REPR name of a `CustomType` or `CustomTypeInstance`, if this is one.
     pub fn custom_repr(&self) -> Option<&str> {
         match self {
-            Value::CustomType { repr, .. } => Some(repr),
+            Value::CustomType(d) => Some(&d.repr),
             Value::CustomTypeInstance(d) => Some(&d.repr),
             _ => None,
         }
+    }
+    /// Create a CustomType value (boxed payload).
+    pub fn custom_type(how: Box<Value>, repr: String, name: Symbol, id: u64) -> Self {
+        Value::CustomType(Box::new(CustomTypeData {
+            how,
+            repr,
+            name,
+            id,
+        }))
+    }
+    /// Create a Uni value (boxed payload).
+    pub fn uni(form: String, text: String) -> Self {
+        Value::Uni(Box::new(UniData { form, text }))
     }
     /// Create a CustomTypeInstance value (boxed payload).
     pub fn custom_type_instance(
@@ -3983,11 +3978,11 @@ mod value_size_guard {
         // Oversized variants used to hold their payloads inline, making `Value`
         // 72 bytes (every clone/move pays for the largest variant). Boxing the
         // big payloads shrank it: Capture+BigRat (72->64), CustomTypeInstance
-        // (64->56). Remaining 48-byte variants (Uni, RegexWithAdverbs,
-        // CustomType) + their missing niche are boxed in follow-up steps to
-        // reach the next tier. Guard against layout regressions.
+        // (64->56), Uni+RegexWithAdverbs+CustomType (56->48). Remaining 40-byte
+        // variants (Proxy, Enum, ...) are boxed in follow-up steps. Guard against
+        // layout regressions.
         let sz = std::mem::size_of::<Value>();
-        assert!(sz <= 56, "size_of::<Value>() = {sz}, expected <= 56");
+        assert!(sz <= 48, "size_of::<Value>() = {sz}, expected <= 48");
     }
 }
 

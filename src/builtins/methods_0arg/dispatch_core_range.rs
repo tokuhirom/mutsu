@@ -512,7 +512,12 @@ pub(super) fn dispatch(
             Value::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
                 Some(Ok(Value::Package(Symbol::intern("Mu"))))
             }
-            Value::Package(name) | Value::CustomType { name, .. } => {
+            Value::Package(_) | Value::CustomType(_) => {
+                let name = match target {
+                    Value::Package(name) => *name,
+                    Value::CustomType(c) => c.name,
+                    _ => unreachable!(),
+                };
                 let n = name.resolve();
                 if matches!(n.as_ref(), "Bag" | "BagHash")
                     || n.starts_with("Bag[")
@@ -545,7 +550,12 @@ pub(super) fn dispatch(
                 None
             }
             Value::Hash(_) => None,
-            Value::Package(name) | Value::CustomType { name, .. } => {
+            Value::Package(_) | Value::CustomType(_) => {
+                let name = match target {
+                    Value::Package(name) => *name,
+                    Value::CustomType(c) => c.name,
+                    _ => unreachable!(),
+                };
                 let n = name.resolve();
                 if let Some(bracket_pos) = n.find('[') {
                     let base = &n[..bracket_pos];

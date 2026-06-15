@@ -640,10 +640,7 @@ pub(super) fn dispatch(
                 "NFKC" => s.nfkc().collect(),
                 _ => s.nfkd().collect(),
             };
-            Some(Some(Ok(Value::Uni {
-                form: method.to_string(),
-                text: normalized,
-            })))
+            Some(Some(Ok(Value::uni(method.to_string(), normalized))))
         }
         _ => None,
     }

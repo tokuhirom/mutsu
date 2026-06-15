@@ -110,10 +110,7 @@ impl Interpreter {
                     _ => value.to_string_value().parse::<u32>().unwrap_or(0),
                 };
                 let text: String = char::from_u32(cp).into_iter().collect();
-                Value::Uni {
-                    form: String::new(),
-                    text,
-                }
+                Value::uni(String::new(), text)
             }
             _ => Value::Nil,
         };

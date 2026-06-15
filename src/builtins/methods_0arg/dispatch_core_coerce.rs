@@ -133,8 +133,8 @@ pub(super) fn dispatch(
             );
             let which_str = match target {
                 Value::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
-                Value::CustomType { name, id, .. } => {
-                    format!("{}|U{}", name.resolve(), id)
+                Value::CustomType(c) => {
+                    format!("{}|U{}", c.name.resolve(), c.id)
                 }
                 Value::Int(n) => format!("Int|{}", n),
                 Value::BigInt(n) => format!("Int|{}", n),
@@ -187,8 +187,8 @@ pub(super) fn dispatch(
                 Value::Regex(pattern) => {
                     format!("Regex|{:p}", Arc::as_ptr(pattern))
                 }
-                Value::RegexWithAdverbs { pattern, .. } => {
-                    format!("Regex|{:p}", Arc::as_ptr(pattern))
+                Value::RegexWithAdverbs(a) => {
+                    format!("Regex|{:p}", Arc::as_ptr(&a.pattern))
                 }
                 Value::Instance { id, .. } => {
                     format!("{}|{}", runtime::utils::value_type_name(target), id)

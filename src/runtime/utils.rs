@@ -1560,7 +1560,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             }
             "Capture"
         }
-        Value::Uni { form, .. } => match form.as_str() {
+        Value::Uni(u) => match u.form.as_str() {
             "NFC" => "NFC",
             "NFD" => "NFD",
             "NFKC" => "NFKC",
@@ -2305,7 +2305,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 y, mo, d, h, mi, s, tz,
             ))
         }
-        Value::Uni { ref text, .. } => Value::Int(text.chars().count() as i64),
+        Value::Uni(u) => Value::Int(u.text.chars().count() as i64),
         Value::Capture { ref positional, .. } => Value::Int(positional.len() as i64),
         _ => Value::Int(0),
     }
@@ -3499,7 +3499,7 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
         Value::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
         Value::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
-        Value::CustomType { name, id, .. } => format!("{}|U{}", name.resolve(), id),
+        Value::CustomType(c) => format!("{}|U{}", c.name.resolve(), c.id),
         Value::Instance { id, .. } => {
             format!("{}|{}", value_type_name(value), id)
         }

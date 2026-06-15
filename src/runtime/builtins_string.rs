@@ -191,9 +191,8 @@ impl Interpreter {
         limit: Option<usize>,
     ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
         match splitter {
-            Value::Regex(pattern) | Value::RegexWithAdverbs { pattern, .. } => {
-                self.split_by_regex(text, pattern, limit)
-            }
+            Value::Regex(pattern) => self.split_by_regex(text, pattern, limit),
+            Value::RegexWithAdverbs(a) => self.split_by_regex(text, &a.pattern, limit),
             Value::Array(items, _) => {
                 // Check if any item is a regex
                 let has_regex = items
@@ -327,7 +326,12 @@ impl Interpreter {
 
             for (idx, splitter) in splitters.iter().enumerate() {
                 match splitter {
-                    Value::Regex(pattern) | Value::RegexWithAdverbs { pattern, .. } => {
+                    Value::Regex(_) | Value::RegexWithAdverbs(_) => {
+                        let pattern: &str = match splitter {
+                            Value::Regex(p) => p,
+                            Value::RegexWithAdverbs(a) => &a.pattern,
+                            _ => unreachable!(),
+                        };
                         if let Some((from, to)) = self.regex_find_first_from(pattern, text, pos) {
                             let matched: String = chars[from..to].iter().collect();
                             let is_better = match &best {
