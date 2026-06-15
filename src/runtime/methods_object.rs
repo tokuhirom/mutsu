@@ -1627,6 +1627,27 @@ impl Interpreter {
         None
     }
 
+    /// Drop *named* arguments from a Hash/QuantHash constructor's argument list.
+    ///
+    /// A bareword `key => value` argument is a named argument that `.new`
+    /// silently eats — it does NOT become an element (`Bag.new(a => 1).elems`
+    /// is 0, while `Bag.new("a" => 1).elems` is 1). mutsu keeps the
+    /// named/positional distinction in the value form: a named argument reaches
+    /// here un-containerized as a `Value::Pair`, whereas a positional pair
+    /// literal (`(a => 1)`, `"a" => 1`) is a `Value::ValuePair`, and pairs
+    /// flattened out of an array/variable remain inside their `Array`. So
+    /// dropping top-level `Value::Pair`s strips exactly the named arguments
+    /// while preserving every positional pair.
+    fn strip_named_pair_args(args: Vec<Value>) -> Vec<Value> {
+        if args.iter().any(|a| matches!(a, Value::Pair(..))) {
+            args.into_iter()
+                .filter(|a| !matches!(a, Value::Pair(..)))
+                .collect()
+        } else {
+            args
+        }
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,
@@ -2376,6 +2397,12 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "Hash" | "Map" => {
+                    // NOTE: Hash/Map deliberately do NOT strip named args here.
+                    // rakudo eats them (`Hash.new(:42a) eqv {}`), but roast
+                    // hash.t (rakudo issue #3211) asserts `Hash.new(:42a, :666b)`
+                    // equals the positional `Hash.new((:42a, :666b))` — i.e. the
+                    // named args should become data. mutsu already does that, so
+                    // keep it (only the QuantHash constructors eat named args).
                     let mut flat = Vec::new();
                     for arg in &args {
                         flat.extend(Self::value_to_list(arg));
@@ -2875,6 +2902,7 @@ impl Interpreter {
                     return Ok(Self::build_native_pair_value(&args));
                 }
                 "Set" | "SetHash" => {
+                    let args = Self::strip_named_pair_args(args);
                     // Check for lazy inputs
                     for a in &args {
                         if Self::is_lazy_for_coerce(a) {
@@ -2998,6 +3026,7 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "Bag" | "BagHash" => {
+                    let args = Self::strip_named_pair_args(args);
                     // Check for lazy inputs
                     for a in &args {
                         if Self::is_lazy_for_coerce(a) {
@@ -3130,6 +3159,7 @@ impl Interpreter {
                     });
                 }
                 "Mix" | "MixHash" => {
+                    let args = Self::strip_named_pair_args(args);
                     // MixHash.new treats all positional arguments as elements
                     // to count. Pairs are NOT decomposed into key=>weight;
                     // they are stringified and treated as individual elements.
