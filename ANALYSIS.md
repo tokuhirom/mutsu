@@ -10,10 +10,12 @@
 > / `【⚠️残存】` を付記した。サマリ:
 > - **✅ 修正済み**: §2.1 / §8.1 遅延リスト崩壊・`grep` eager collect、§8.2 無限 Range 即時展開クラッシュ、
 >   §2.2 / §8.3 並行 scalar / state 共有（Track C: #2980/#2982 ほか）、§8.4 regex 毎マッチ再パース（#3064/#3065）、
->   §5 panic→`X::` 変換境界（#3045）、§4-1 roast fudge のユーザコード誤作動（`MUTSU_FUDGE` ゲート化）。
+>   §5 panic→`X::` 変換境界（#3045）、§4-1 roast fudge のユーザコード誤作動（`MUTSU_FUDGE` ゲート化）、
+>   §5 `Value` enum 肥大 variant の Box 化（#3073/#3074/#3076、`size_of::<Value>()` 72→48・-33%、40B tier は
+>   hot path 回避で意図的打ち切り）。
 > - **⚠️ 残存**: §2.3 unsafe aliasing の UB 余地（本格修正は Track B 依存）、§2.4 `RuntimeError` god-struct、
->   §4-2 `.^methods`/`.can` 直書きリストのドリフト、§5 `Value` enum 肥大 variant の Box 化（性能）、
->   §1.x VM/Interpreter 結合・locals↔env 二重ストア（CP-1 env-loan で進行中）。
+>   §4-2 `.^methods`/`.can` 直書きリストのドリフト、§1.x VM/Interpreter 結合・locals↔env 二重ストア
+>   （CP-1 env-loan で進行中）。
 
 ---
 
@@ -277,10 +279,15 @@ CLAUDE.md の「slang 未対応・将来課題」は正確。ユーザ定義 gra
 
 ## 5. 値モデル・性能・robustness
 
-- **Value enum の肥大 variant**: `BigRat(BigInt, BigInt)` (`value/mod.rs:947`)、
-  `RegexWithAdverbs` (~13 フィールド, `:974`)、`Capture { Vec, HashMap }` (`:1023`)、`Uni` (`:1030`)
-  が非 Box でインライン。全 Value が最大 variant のサイズになるため、`Vec<Value>`/`clone` のコスト増。
-  **改善**: これらを Box 化。
+- **Value enum の肥大 variant** 【✅大半修正済み (2026-06-15)】: `BigRat`/`RegexWithAdverbs`/
+  `Capture`/`Uni`/`CustomType`/`CustomTypeInstance` が非 Box でインラインで、全 Value が最大 variant の
+  サイズになり `Vec<Value>`/`clone` のコスト増だった。
+  **✅ 改善実施**: これら 6 variant の payload を Box 化し **`size_of::<Value>()` を 72→48 (-33%)** に縮小
+  （PR #3073 Capture+BigRat 72→64 / #3074 CustomTypeInstance 64→56 / #3076 Uni+RegexWithAdverbs+CustomType
+  56→48）。`value_size_guard` 単体テストで <=48 を恒久ロック。残る 40B tier（`Enum`/`Proxy`）は
+  **意図的に未着手**: `Enum` は `<=>`/`cmp`/`sort` の Order 結果（`Value::Enum`）で hot path のため、
+  全体 Box 化は比較ごとに heap alloc を生み perf 回帰になる。perf 安全な代替（`EnumValue::Str`+`Proxy` のみ
+  Box 化）は ~72 サイトで -8B と churn/benefit 比が悪く、48 で打ち切り（user 判断 2026-06-15）。
 - **状態を値の外に置く設計**: Failure の handled/pending (`value/mod.rs:553,587`) と
   pending DESTROY (`:435`) が `thread_local!`。Value がスレッド境界を越えると登録が失われる。
   Seq の consumed/lazy 状態は 7 個の `OnceLock<Mutex<Vec<Weak>>>` (`:17-43`) に Arc アドレスをキーに
