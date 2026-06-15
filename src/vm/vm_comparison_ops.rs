@@ -439,9 +439,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
-        let tolerance = self
-            .interpreter
-            .get_dynamic_var("*TOLERANCE")
+        let tolerance = loan_env!(self, get_dynamic_var("*TOLERANCE"))
             .ok()
             .and_then(|v| match v {
                 Value::Num(n) => Some(n),
@@ -1060,14 +1058,12 @@ impl VM {
     /// If a Complex value has an imaginary part within `$*TOLERANCE` (relative),
     /// coerce it to its real part. Otherwise throw if it's Complex with a
     /// significant imaginary component.
-    fn coerce_complex_to_real_if_tolerant(&self, val: &Value) -> Result<Value, RuntimeError> {
+    fn coerce_complex_to_real_if_tolerant(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         if let Value::Complex(re, im) = val {
             if *im == 0.0 {
                 return Ok(Value::Num(*re));
             }
-            let tolerance = self
-                .interpreter
-                .get_dynamic_var("$*TOLERANCE")
+            let tolerance = loan_env!(self, get_dynamic_var("$*TOLERANCE"))
                 .ok()
                 .and_then(|v| runtime::to_float_value(&v))
                 .unwrap_or(1e-15);
@@ -1221,9 +1217,7 @@ impl VM {
         // (the engine records them there but nothing consumes the log otherwise).
         self.interpreter.pending_local_updates.clear();
         let saved_topic = self.env().get("_").cloned();
-        self
-            .env_mut()
-            .insert("_".to_string(), left.clone());
+        self.env_mut().insert("_".to_string(), left.clone());
         // Sync env->locals first so that any values modified by interpreter
         // calls (e.g. EVAL modifying $GLOBAL:: variables) are picked up
         // before we overwrite env with local values for regex interpolation.
@@ -1258,14 +1252,8 @@ impl VM {
             return Err(RuntimeError::assignment_ro(Some("Str")));
         }
         if let Some(var_name) = lhs_var {
-            let modified_topic = self
-                .interpreter
-                .env()
-                .get("_")
-                .cloned()
-                .unwrap_or(Value::Nil);
-            self
-                .env_mut()
+            let modified_topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
+            self.env_mut()
                 .insert(var_name.clone(), modified_topic.clone());
             // Reverse write-through: if the lhs alias names a compiled local slot,
             // mirror the (possibly substitution-modified) topic into it so the

@@ -709,23 +709,15 @@ impl VM {
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
             if param_name.is_none() {
-                self
-                    .env_mut()
-                    .insert("_".to_string(), item.clone());
+                self.env_mut().insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self
-                    .env_mut()
-                    .insert(name.clone(), item.clone());
+                self.env_mut().insert(name.clone(), item.clone());
                 // Create non-twigil alias for placeholder params: $^a → $a
                 if let Some(bare) = name.strip_prefix("&^") {
-                    self
-                        .env_mut()
-                        .insert(format!("&{}", bare), item.clone());
+                    self.env_mut().insert(format!("&{}", bare), item.clone());
                 } else if let Some(bare) = name.strip_prefix('^') {
-                    self
-                        .env_mut()
-                        .insert(bare.to_string(), item.clone());
+                    self.env_mut().insert(bare.to_string(), item.clone());
                 }
             }
             if let Some(slot) = spec.param_local {
@@ -736,8 +728,7 @@ impl VM {
             // assignments like .value = ... are blocked too.
             if topic_readonly {
                 self.interpreter.mark_readonly("_");
-                self
-                    .env_mut()
+                self.env_mut()
                     .insert("__mutsu_deep_readonly::_".to_string(), Value::Bool(true));
             }
             // Mark named params readonly when not in rw mode.
@@ -883,14 +874,10 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self
-                                .env_mut()
-                                .insert("_".to_string(), item.clone());
+                            self.env_mut().insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self
-                                .env_mut()
-                                .insert(name.clone(), item.clone());
+                            self.env_mut().insert(name.clone(), item.clone());
                         }
                         if let Some(slot) = spec.param_local {
                             self.locals[slot as usize] = item.clone();
@@ -935,9 +922,7 @@ impl VM {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
                             } else {
-                                self
-                                    .env_mut()
-                                    .insert("_".to_string(), v.clone());
+                                self.env_mut().insert("_".to_string(), v.clone());
                                 // Push return value on stack so enclosing compiled
                                 // closures can see it as the block result.
                                 self.stack.push(v);
@@ -1019,9 +1004,7 @@ impl VM {
                             });
                         if topic_readonly {
                             self.interpreter.unmark_readonly("_");
-                            self
-                                .env_mut()
-                                .remove("__mutsu_deep_readonly::_");
+                            self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
                             && let Some(ref name) = param_name
@@ -1047,9 +1030,7 @@ impl VM {
                         // Unmark readonly before propagating error
                         if topic_readonly {
                             self.interpreter.unmark_readonly("_");
-                            self
-                                .env_mut()
-                                .remove("__mutsu_deep_readonly::_");
+                            self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
                             && let Some(ref name) = param_name
@@ -1097,9 +1078,7 @@ impl VM {
         // Unmark readonly topic after loop completion
         if topic_readonly {
             self.interpreter.unmark_readonly("_");
-            self
-                .env_mut()
-                .remove("__mutsu_deep_readonly::_");
+            self.env_mut().remove("__mutsu_deep_readonly::_");
         }
         // Unmark readonly params after loop completion
         if !spec.is_rw
@@ -1246,22 +1225,14 @@ impl VM {
             self.topic_source_var = None;
 
             if !use_local_only && param_name.is_none() {
-                self
-                    .env_mut()
-                    .insert("_".to_string(), item.clone());
+                self.env_mut().insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self
-                    .env_mut()
-                    .insert(name.clone(), item.clone());
+                self.env_mut().insert(name.clone(), item.clone());
                 if let Some(bare) = name.strip_prefix("&^") {
-                    self
-                        .env_mut()
-                        .insert(format!("&{}", bare), item.clone());
+                    self.env_mut().insert(format!("&{}", bare), item.clone());
                 } else if let Some(bare) = name.strip_prefix('^') {
-                    self
-                        .env_mut()
-                        .insert(bare.to_string(), item.clone());
+                    self.env_mut().insert(bare.to_string(), item.clone());
                 }
             }
             if let Some(slot) = spec.param_local {
@@ -1286,14 +1257,10 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self
-                                .env_mut()
-                                .insert("_".to_string(), item.clone());
+                            self.env_mut().insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self
-                                .env_mut()
-                                .insert(name.clone(), item.clone());
+                            self.env_mut().insert(name.clone(), item.clone());
                         }
                         if let Some(slot) = spec.param_local {
                             self.locals[slot as usize] = item.clone();
@@ -1307,9 +1274,7 @@ impl VM {
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
                         if let Some(v) = e.return_value {
-                            self
-                                .env_mut()
-                                .insert("_".to_string(), v.clone());
+                            self.env_mut().insert("_".to_string(), v.clone());
                             self.stack.push(v);
                         }
                         break 'for_loop;
@@ -1501,14 +1466,10 @@ impl VM {
 
             self.topic_source_var = None;
             if param_name.is_none() {
-                self
-                    .env_mut()
-                    .insert("_".to_string(), item.clone());
+                self.env_mut().insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self
-                    .env_mut()
-                    .insert(name.clone(), item.clone());
+                self.env_mut().insert(name.clone(), item.clone());
             }
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
@@ -1526,14 +1487,10 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self
-                                .env_mut()
-                                .insert("_".to_string(), item.clone());
+                            self.env_mut().insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self
-                                .env_mut()
-                                .insert(name.clone(), item.clone());
+                            self.env_mut().insert(name.clone(), item.clone());
                         }
                         if let Some(slot) = spec.param_local {
                             self.locals[slot as usize] = item.clone();
@@ -1679,7 +1636,7 @@ impl VM {
             let line = if words {
                 self.interpreter.read_word_from_handle_value(handle)?
             } else {
-                self.interpreter.read_line_from_handle_value(handle)?
+                loan_env!(self, read_line_from_handle_value(handle))?
             };
             let Some(line_str) = line else {
                 break 'for_loop; // EOF
@@ -1713,22 +1670,14 @@ impl VM {
 
             // Set up parameters
             if param_name.is_none() {
-                self
-                    .env_mut()
-                    .insert("_".to_string(), item.clone());
+                self.env_mut().insert("_".to_string(), item.clone());
             }
             if let Some(ref name) = param_name {
-                self
-                    .env_mut()
-                    .insert(name.clone(), item.clone());
+                self.env_mut().insert(name.clone(), item.clone());
                 if let Some(bare) = name.strip_prefix("&^") {
-                    self
-                        .env_mut()
-                        .insert(format!("&{}", bare), item.clone());
+                    self.env_mut().insert(format!("&{}", bare), item.clone());
                 } else if let Some(bare) = name.strip_prefix('^') {
-                    self
-                        .env_mut()
-                        .insert(bare.to_string(), item.clone());
+                    self.env_mut().insert(bare.to_string(), item.clone());
                 }
             }
             if let Some(slot) = spec.param_local {
@@ -1761,14 +1710,10 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self
-                                .env_mut()
-                                .insert("_".to_string(), item.clone());
+                            self.env_mut().insert("_".to_string(), item.clone());
                         }
                         if let Some(ref name) = param_name {
-                            self
-                                .env_mut()
-                                .insert(name.clone(), item.clone());
+                            self.env_mut().insert(name.clone(), item.clone());
                         }
                         if let Some(slot) = spec.param_local {
                             self.locals[slot as usize] = item.clone();
@@ -2004,9 +1949,7 @@ impl VM {
             return;
         };
         let target = &source_var_names[idx];
-        self
-            .env_mut()
-            .insert(target.clone(), current_val.clone());
+        self.env_mut().insert(target.clone(), current_val.clone());
         self.update_local_if_exists(code, target, &current_val);
     }
 
@@ -2339,7 +2282,7 @@ impl VM {
             self.topic_source_var = container_binding.clone();
         }
         self.env_mut().insert("_".to_string(), topic);
-        self.interpreter.set_when_matched(false);
+        loan_env!(self, set_when_matched(false));
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
         // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
         // written back to the source below. A bare scalar var (`given $x`) is rw,
@@ -2448,7 +2391,7 @@ impl VM {
         let saved_topic = self.env().get("_").cloned();
         let saved_when = self.interpreter.when_matched();
         self.env_mut().insert("_".to_string(), topic);
-        self.interpreter.set_when_matched(false);
+        loan_env!(self, set_when_matched(false));
 
         let mut last = Value::Nil;
         let stack_base = self.stack.len();
@@ -2465,10 +2408,10 @@ impl VM {
                     last = v;
                 }
                 self.container_ref_var = e.container_name;
-                self.interpreter.set_when_matched(true);
+                loan_env!(self, set_when_matched(true));
             }
             Err(e) => {
-                self.interpreter.set_when_matched(saved_when);
+                loan_env!(self, set_when_matched(saved_when));
                 if let Some(v) = saved_topic {
                     self.env_mut().insert("_".to_string(), v);
                 } else {
@@ -2478,7 +2421,7 @@ impl VM {
             }
         }
 
-        self.interpreter.set_when_matched(saved_when);
+        loan_env!(self, set_when_matched(saved_when));
         if let Some(v) = saved_topic {
             self.env_mut().insert("_".to_string(), v);
         } else {
@@ -2506,12 +2449,7 @@ impl VM {
         {
             true
         } else {
-            let topic = self
-                .interpreter
-                .env()
-                .get("_")
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
             match cond_val {
                 Value::Sub(_) | Value::Routine { .. } => {
                     let (_params, param_defs) = self.interpreter.callable_signature(&cond_val);
@@ -2541,8 +2479,7 @@ impl VM {
                         } else {
                             vec![topic.clone()]
                         };
-                        self
-                            .vm_call_sub_value(cond_val.clone(), call_args, false)
+                        self.vm_call_sub_value(cond_val.clone(), call_args, false)
                             .map(|v| v.truthy())?
                     } else {
                         // Builtin/proto callables without explicit signature metadata:
@@ -2561,7 +2498,7 @@ impl VM {
                     did_proceed = true;
                 }
                 Err(e) if e.is_succeed => {
-                    self.interpreter.set_when_matched(true);
+                    loan_env!(self, set_when_matched(true));
                     return Err(e);
                 }
                 // The `when` matched, so record the match before propagating any
@@ -2569,12 +2506,12 @@ impl VM {
                 // inside the block). Otherwise a `when` body that exits via a
                 // control flow signal would lose the fact that it matched.
                 Err(e) => {
-                    self.interpreter.set_when_matched(true);
+                    loan_env!(self, set_when_matched(true));
                     return Err(e);
                 }
             }
             if !did_proceed {
-                self.interpreter.set_when_matched(true);
+                loan_env!(self, set_when_matched(true));
                 let last = self.stack.last().cloned().unwrap_or(Value::Nil);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
@@ -2598,12 +2535,12 @@ impl VM {
         match self.run_range(code, body_start, end, compiled_fns) {
             Ok(()) => {}
             Err(e) if e.is_succeed => {
-                self.interpreter.set_when_matched(true);
+                loan_env!(self, set_when_matched(true));
                 return Err(e);
             }
             Err(e) => return Err(e),
         }
-        self.interpreter.set_when_matched(true);
+        loan_env!(self, set_when_matched(true));
         let last = self.stack.last().cloned().unwrap_or(Value::Nil);
         let mut sig = RuntimeError::succeed_signal();
         sig.return_value = Some(last);
@@ -2752,9 +2689,7 @@ impl VM {
         match body_result {
             Ok(()) => {
                 // Successful try resets $! to Nil
-                self
-                    .env_mut()
-                    .insert("!".to_string(), Value::Nil);
+                self.env_mut().insert("!".to_string(), Value::Nil);
                 self.interpreter.discard_let_saves(let_mark);
                 // A `try` that completes normally but yields a soft Failure value
                 // (e.g. the result of an expression that returned a Failure rather
@@ -2774,12 +2709,10 @@ impl VM {
                     self.stack.truncate(saved_depth);
                     let saved_topic = self.env().get("_").cloned();
                     if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
-                        self
-                            .env_mut()
-                            .insert("_".to_string(), signal_topic);
+                        self.env_mut().insert("_".to_string(), signal_topic);
                     }
                     let saved_when = self.interpreter.when_matched();
-                    self.interpreter.set_when_matched(false);
+                    loan_env!(self, set_when_matched(false));
                     match self.run_range(code, control_begin, end, compiled_fns) {
                         Ok(()) => {
                             self.stack.truncate(saved_depth);
@@ -2791,7 +2724,7 @@ impl VM {
                         }
                         Err(control_err) => return Err(control_err),
                     }
-                    self.interpreter.set_when_matched(saved_when);
+                    loan_env!(self, set_when_matched(saved_when));
                     if let Some(v) = saved_topic {
                         self.env_mut().insert("_".to_string(), v);
                     } else {
@@ -2851,11 +2784,9 @@ impl VM {
                 let mut pending_err = e;
                 loop {
                     if let Some(signal_topic) = Self::control_signal_topic_value(&pending_err) {
-                        self
-                            .env_mut()
-                            .insert("_".to_string(), signal_topic);
+                        self.env_mut().insert("_".to_string(), signal_topic);
                     }
-                    self.interpreter.set_when_matched(false);
+                    loan_env!(self, set_when_matched(false));
                     let control_result = self.run_range(code, control_begin, end, compiled_fns);
                     let next_resume = match control_result {
                         Ok(()) => None,
@@ -2873,7 +2804,7 @@ impl VM {
                             self.resume_ip.take()
                         }
                         Err(ce) => {
-                            self.interpreter.set_when_matched(saved_when);
+                            loan_env!(self, set_when_matched(saved_when));
                             if let Some(v) = saved_topic {
                                 self.env_mut().insert("_".to_string(), v);
                             } else {
@@ -2885,7 +2816,7 @@ impl VM {
                     match next_resume {
                         None => break,
                         Some(resume_point) => {
-                            self.interpreter.set_when_matched(saved_when);
+                            loan_env!(self, set_when_matched(saved_when));
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);
                             } else {
@@ -2938,7 +2869,7 @@ impl VM {
                         }
                     }
                 }
-                self.interpreter.set_when_matched(saved_when);
+                loan_env!(self, set_when_matched(saved_when));
                 if let Some(v) = saved_topic {
                     self.env_mut().insert("_".to_string(), v);
                 } else {
@@ -2976,12 +2907,10 @@ impl VM {
                     Value::make_instance(Symbol::intern("X::AdHoc"), exc_attrs)
                 };
                 let saved_topic = self.env().get("_").cloned();
-                self
-                    .env_mut()
-                    .insert("!".to_string(), err_val.clone());
+                self.env_mut().insert("!".to_string(), err_val.clone());
                 self.env_mut().insert("_".to_string(), err_val);
                 let saved_when = self.interpreter.when_matched();
-                self.interpreter.set_when_matched(false);
+                loan_env!(self, set_when_matched(false));
                 let catch_stack_base = self.stack.len();
                 let when_handled =
                     match self.run_range(code, catch_begin, control_begin, compiled_fns) {
@@ -2997,7 +2926,7 @@ impl VM {
                         // .resume called inside CATCH: resume execution after the die
                         Err(catch_err) if catch_err.is_resume => {
                             self.stack.truncate(catch_stack_base);
-                            self.interpreter.set_when_matched(saved_when);
+                            loan_env!(self, set_when_matched(saved_when));
                             if let Some(v) = saved_topic {
                                 self.env_mut().insert("_".to_string(), v);
                             } else {

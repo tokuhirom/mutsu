@@ -121,9 +121,7 @@ impl VM {
 
         if matches.is_empty() {
             // No match: `$/` becomes Nil and the original string is returned.
-            self
-                .env_mut()
-                .insert("/".to_string(), Value::Nil);
+            self.env_mut().insert("/".to_string(), Value::Nil);
             return Ok(Value::str(text.to_string()));
         }
 
@@ -167,9 +165,7 @@ impl VM {
                 &[],
                 Some(text),
             );
-            self
-                .env_mut()
-                .insert("/".to_string(), match_obj);
+            self.env_mut().insert("/".to_string(), match_obj);
         }
 
         Ok(Value::str(result))

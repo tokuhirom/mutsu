@@ -71,6 +71,27 @@ struct FastMethodCacheEntry {
     has_defaults: bool,
 }
 
+/// env-loan (CP-1 1e): call an interpreter carrier/helper that reads
+/// `self.interpreter.env`, lending the VM-owned env for the duration.
+///
+/// Expands to: swap the real env into the interpreter's loan slot, run
+/// `$self.interpreter.<call>`, swap it back. Unlike a closure-based helper, the
+/// call is inlined so it keeps the *partial* `self.interpreter` borrow — args may
+/// still borrow other `self` fields (e.g. `self.locals[i]`) exactly as the
+/// original `self.interpreter.<call>` did, so no new borrow conflicts arise.
+///
+/// Only for **value/Result-returning** helpers: the post-call swap re-borrows
+/// `self.interpreter`, so a returned reference into the interpreter cannot escape
+/// (those few sites are handled individually). See docs/vm-state-ownership.md.
+macro_rules! loan_env {
+    ($self:ident, $($call:tt)+) => {{
+        ::std::mem::swap(&mut $self.env, $self.interpreter.env_mut());
+        let __loan_r = $self.interpreter.$($call)+;
+        ::std::mem::swap(&mut $self.env, $self.interpreter.env_mut());
+        __loan_r
+    }};
+}
+
 mod vm_arith_ops;
 mod vm_call_autothread;
 mod vm_call_dispatch;
@@ -431,8 +452,7 @@ impl VM {
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| {
                     // Try calling the user-defined .Str method
-                    self
-                        .vm_call_method_with_values(value.clone(), "Str", vec![])
+                    self.vm_call_method_with_values(value.clone(), "Str", vec![])
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|_| value.to_string_value())
                 })
@@ -440,9 +460,7 @@ impl VM {
             // Multi-arg die: concatenate .Str of each element
             let mut parts = Vec::new();
             for item in items.iter() {
-                let s = self
-                    .interpreter
-                    .call_method_with_values(item.clone(), "Str", vec![])
+                let s = loan_env!(self, call_method_with_values(item.clone(), "Str", vec![]))
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|_| item.to_string_value());
                 parts.push(s);
@@ -898,7 +916,6 @@ impl VM {
         for (slot, key) in &code.state_locals {
             let local_name = &code.locals[*slot];
             let val = self
-                .interpreter
                 .env()
                 .get(local_name)
                 .cloned()
@@ -935,7 +952,6 @@ impl VM {
             }
             let local_name = &code.locals[*slot];
             let val = self
-                .interpreter
                 .env()
                 .get(local_name)
                 .cloned()
@@ -1334,9 +1350,9 @@ impl VM {
                 if self.interpreter.atomic_var_seen() {
                     let atomic_name = name.strip_prefix('$').unwrap_or(name);
                     let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
-                    let is_atomic_int = self.interpreter.var_type_constraint(name).as_deref()
+                    let is_atomic_int = loan_env!(self, var_type_constraint(name)).as_deref()
                         == Some("atomicint")
-                        || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                        || loan_env!(self, var_type_constraint(atomic_name)).as_deref()
                             == Some("atomicint")
                         || self.interpreter.get_shared_var(&atomic_name_key).is_some();
                     if is_atomic_int {
@@ -1836,7 +1852,7 @@ impl VM {
                 // Only when the variable has an explicit immutable type constraint
                 // (e.g., `my %h is Mix`), not for regular scalar variables holding
                 // an immutable value.
-                if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
+                if let Some(constraint) = loan_env!(self, var_type_constraint(&name)) {
                     let base = constraint.split('[').next().unwrap_or(&constraint);
                     if matches!(base, "Mix" | "Set" | "Bag")
                         && let Some(existing) = self.env().get(&name)
@@ -1954,18 +1970,16 @@ impl VM {
                     raw_val
                 };
                 if (name.starts_with('@') || name.starts_with('%'))
-                    && (self.interpreter.var_type_constraint(&name).is_some()
-                        || self.interpreter.var_hash_key_constraint(&name).is_some())
+                    && (loan_env!(self, var_type_constraint(&name)).is_some()
+                        || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
                     val = self.coerce_typed_container_assignment(&name, val, false)?;
                 }
-                if let Some(constraint) = self.interpreter.var_type_constraint(&name)
+                if let Some(constraint) = loan_env!(self, var_type_constraint(&name))
                     && !name.starts_with('%')
                     && !name.starts_with('@')
                 {
-                    if !matches!(val, Value::Nil)
-                        && !self.type_matches_value(&constraint, &val)
-                    {
+                    if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
                         // When assigning an unhandled Failure to a typed variable
                         // that can't hold it, explode the Failure first (Raku behavior)
                         if let Value::Instance { class_name, .. } = &val
@@ -2013,15 +2027,13 @@ impl VM {
                         };
                         resolved_source = next.to_string();
                     }
-                    self
-                        .env_mut()
+                    self.env_mut()
                         .insert(alias_key.clone(), Value::str(resolved_source.clone()));
                     // Propagate readonly status from the source variable.
                     // Binding to a readonly parameter should make the target
                     // readonly as well (persisted in env for cross-scope survival).
                     let source_readonly = self.interpreter.is_readonly(&source_name);
-                    self
-                        .env_mut()
+                    self.env_mut()
                         .insert(readonly_key.clone(), Value::Bool(source_readonly));
                     if source_readonly {
                         self.interpreter.mark_readonly(&name);
@@ -2039,8 +2051,7 @@ impl VM {
                         };
                         // Store ContainerRef in target and source env
                         self.set_env_with_main_alias(&name, container.clone());
-                        self
-                            .env_mut()
+                        self.env_mut()
                             .insert(resolved_source.clone(), container.clone());
                         // If the target is an attribute alias (`has $x` makes `x`
                         // an alias for `!x`), also store the ContainerRef under
@@ -2054,9 +2065,7 @@ impl VM {
                                 && target.as_str() == name
                             {
                                 let priv_key = format!("!{}", name);
-                                self
-                                    .env_mut()
-                                    .insert(priv_key, container.clone());
+                                self.env_mut().insert(priv_key, container.clone());
                             }
                         }
                         // When rebinding to a new source, the old alias target
@@ -2101,9 +2110,7 @@ impl VM {
                             if self.interpreter.get_our_var(&qualified).is_some() {
                                 self.interpreter
                                     .set_our_var(qualified.clone(), container.clone());
-                                self
-                                    .env_mut()
-                                    .insert(qualified, container.clone());
+                                self.env_mut().insert(qualified, container.clone());
                             }
                         }
                         *ip += 1;
@@ -2153,14 +2160,13 @@ impl VM {
                 self.interpreter.set_our_var(name.clone(), val.clone());
                 // Track topic mutations for map rw writeback
                 if name == "_" {
-                    self
-                        .env_mut()
+                    self.env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
                 }
                 // Sync to shared_vars for cross-thread visibility.
                 // Skip for raw_mode @-variables to preserve List kind.
                 if !(raw_mode && name.starts_with('@')) {
-                    self.interpreter.set_shared_var(&name, val.clone());
+                    loan_env!(self, set_shared_var(&name, val.clone()));
                 }
                 let mut alias_name = self.env().get(&alias_key).and_then(|v| {
                     if let Value::Str(name) = v {
@@ -2204,7 +2210,6 @@ impl VM {
                 {
                     let prefix = "__mutsu_sigilless_alias::";
                     let reverse_targets: Vec<String> = self
-                        .interpreter
                         .env()
                         .iter()
                         .filter_map(|(k, v)| {
@@ -2236,8 +2241,7 @@ impl VM {
                 if name.starts_with('@') && constraint == "atomicint" {
                     self.interpreter.clear_atomic_array_state(&name);
                 }
-                self
-                    .vm_set_var_type_constraint(&name, Some(constraint.clone()));
+                self.vm_set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
                 // Exception: if the constraint is "Nil", keep the value as Value::Nil
                 // (the Nil type object is Value::Nil, not Value::Package("Nil")).
@@ -2254,9 +2258,7 @@ impl VM {
                                 Value::Str(String::new().into())
                             } else {
                                 Value::Package(Symbol::intern(
-                                    &self
-                                        .interpreter
-                                        .var_type_constraint(&name)
+                                    &loan_env!(self, var_type_constraint(&name))
                                         .unwrap_or(constraint.clone()),
                                 ))
                             };
@@ -2265,12 +2267,10 @@ impl VM {
                     }
                 } else if let Some(value) = self.get_env_with_main_alias(&name) {
                     let info = crate::runtime::ContainerTypeInfo {
-                        value_type: self
-                            .interpreter
-                            .var_type_constraint(&name)
+                        value_type: loan_env!(self, var_type_constraint(&name))
                             .unwrap_or(constraint),
                         key_type: if name.starts_with('%') {
-                            self.interpreter.var_hash_key_constraint(&name)
+                            loan_env!(self, var_hash_key_constraint(&name))
                         } else {
                             None
                         },
@@ -2291,12 +2291,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::SaveTopic => {
-                let current = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let current = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 self.topic_save_stack.push(current);
                 *ip += 1;
             }
@@ -4111,9 +4106,7 @@ impl VM {
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let pkg_val = Value::Package(Symbol::intern(&name));
-                self
-                    .env_mut()
-                    .insert(name.clone(), pkg_val.clone());
+                self.env_mut().insert(name.clone(), pkg_val.clone());
                 self.interpreter
                     .chain_declared_packages
                     .insert(name.clone());
@@ -4124,9 +4117,7 @@ impl VM {
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let pkg_val = Value::Package(Symbol::intern(&name));
-                self
-                    .env_mut()
-                    .insert(name.clone(), pkg_val.clone());
+                self.env_mut().insert(name.clone(), pkg_val.clone());
                 self.interpreter
                     .chain_declared_packages
                     .insert(name.clone());
@@ -4292,9 +4283,9 @@ impl VM {
                 let name = Self::const_str(code, *name_idx);
                 if let Value::Str(ref s) = value {
                     if name == "variables" {
-                        self.interpreter.set_variables_pragma(s);
+                        loan_env!(self, set_variables_pragma(s));
                     } else if name == "attributes" {
-                        self.interpreter.set_attributes_pragma(s);
+                        loan_env!(self, set_attributes_pragma(s));
                     }
                 }
                 *ip += 1;
@@ -4565,7 +4556,7 @@ impl VM {
             }
             OpCode::GetCallerVar { name_idx, depth } => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.interpreter.get_caller_var(name, *depth as usize)?;
+                let val = loan_env!(self, get_caller_var(name, *depth as usize))?;
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -4595,7 +4586,7 @@ impl VM {
             }
             OpCode::GetDynamicVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.interpreter.get_dynamic_var(name)?;
+                let val = loan_env!(self, get_dynamic_var(name))?;
                 self.stack.push(val);
                 *ip += 1;
             }

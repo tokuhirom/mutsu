@@ -311,12 +311,12 @@ impl VM {
         Ok(Some(result))
     }
 
-    pub(super) fn typed_container_default(&self, target: &Value) -> Value {
+    pub(super) fn typed_container_default(&mut self, target: &Value) -> Value {
         // Check for explicit `is default(...)` on the container first.
         if let Some(def) = self.interpreter.container_default(target) {
             return def.clone();
         }
-        if let Some(info) = self.interpreter.container_type_metadata(target) {
+        if let Some(info) = loan_env!(self, container_type_metadata(target)) {
             // Native typed arrays default their elements to the native type's
             // zero value rather than the (uninstantiable) type object:
             // int -> 0, num -> 0e0, str -> "".
@@ -379,7 +379,7 @@ impl VM {
 
     pub(super) fn sync_anon_state_value(&mut self, name: &str, value: &Value) {
         if let Some(key) = Self::anon_state_key(name) {
-            self.interpreter.set_state_var(key, value.clone());
+            loan_env!(self, set_state_var(key, value.clone()));
         }
     }
 
@@ -649,9 +649,7 @@ impl VM {
             Arc::make_mut(map)
         } else {
             let m = std::collections::HashMap::new();
-            self
-                .env_mut()
-                .insert(key.clone(), Value::hash(m));
+            self.env_mut().insert(key.clone(), Value::hash(m));
             match self.env_mut().get_mut(&key) {
                 Some(Value::Hash(map)) => Arc::make_mut(map),
                 _ => return,

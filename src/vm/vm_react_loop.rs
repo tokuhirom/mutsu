@@ -59,18 +59,18 @@ impl VM {
         reason: Value,
     ) -> Result<(), RuntimeError> {
         let saved_when = self.interpreter.when_matched();
-        self.interpreter.set_when_matched(false);
+        loan_env!(self, set_when_matched(false));
         match self.call_react_callback(&quit_cb, vec![reason]) {
             Ok(_) => {
-                self.interpreter.set_when_matched(saved_when);
+                loan_env!(self, set_when_matched(saved_when));
                 Ok(())
             }
             Err(err) if err.is_succeed => {
-                self.interpreter.set_when_matched(saved_when);
+                loan_env!(self, set_when_matched(saved_when));
                 Ok(())
             }
             Err(err) => {
-                self.interpreter.set_when_matched(saved_when);
+                loan_env!(self, set_when_matched(saved_when));
                 Err(err)
             }
         }

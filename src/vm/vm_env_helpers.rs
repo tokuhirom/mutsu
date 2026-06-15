@@ -253,12 +253,12 @@ impl VM {
         if !name.starts_with('^') {
             let placeholder = format!("^{name}");
             if self.env().contains_key(&placeholder) {
-                self.interpreter.set_shared_var(&placeholder, value.clone());
+                loan_env!(self, set_shared_var(&placeholder, value.clone()));
                 self.env_mut().insert(placeholder, value);
                 return;
             }
         }
-        self.interpreter.set_shared_var(name, value.clone());
+        loan_env!(self, set_shared_var(name, value.clone()));
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
             self.env_mut().insert(alias, value.clone());
         }
@@ -268,8 +268,7 @@ impl VM {
             .or_else(|| name.strip_prefix("&postfix:<"))
             && let Some(op_name) = inner.strip_suffix('>')
         {
-            self
-                .env_mut()
+            self.env_mut()
                 .insert(format!("&{}", op_name), value.clone());
         }
         if let Some(alias) = Self::main_unqualified_name(name) {

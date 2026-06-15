@@ -55,7 +55,7 @@ impl VM {
         // synthetic `__test_callsite_line` argument and stash it so TAP
         // diagnostics report the right source line.
         let (clean_args, callsite_line) = self.interpreter.sanitize_call_args(args);
-        self.interpreter.set_pending_callsite_line(callsite_line);
+        loan_env!(self, set_pending_callsite_line(callsite_line));
         match self.interpreter.call_test_function(name, &clean_args) {
             // Matched and handled by the typed Test dispatcher.
             Ok(Some(value)) => Some(self.interpreter.maybe_fetch_rw_proxy(value, true)),

@@ -18,10 +18,7 @@ impl VM {
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let resolved = self
-                    .interpreter
-                    .eval_block_value(&data.body)
-                    .unwrap_or(Value::Nil);
+                let resolved = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
                 resolved
             }
@@ -46,7 +43,6 @@ impl VM {
         let init_key = format!("__mutsu_initialized_index::{}", var_name);
         // Clone the initialized set to avoid borrow conflicts
         let initialized: std::collections::HashSet<String> = self
-            .interpreter
             .env()
             .get(&init_key)
             .and_then(|v| {
@@ -58,10 +54,7 @@ impl VM {
             })
             .unwrap_or_default();
         // Get the type constraint for typed arrays (e.g. "Int" for `my Int @a`)
-        let type_constraint = self
-            .interpreter
-            .var_type_constraint(var_name)
-            .unwrap_or_default();
+        let type_constraint = loan_env!(self, var_type_constraint(var_name)).unwrap_or_default();
         let env = self.env_mut();
         let Some(container) = env.get_mut(var_name) else {
             return;
@@ -184,9 +177,7 @@ impl VM {
                 *cell.lock().unwrap() = mutated;
             }
             let cell_val = Value::ContainerRef(cell);
-            self
-                .env_mut()
-                .insert(var_name.clone(), cell_val.clone());
+            self.env_mut().insert(var_name.clone(), cell_val.clone());
             self.locals_set_by_name(code, &var_name, cell_val);
         }
         result
@@ -205,10 +196,10 @@ impl VM {
             return Ok(());
         }
         let declared_type_del = self
-            .interpreter
             .env()
             .get(&var_name)
-            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .cloned()
+            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
             .and_then(|info| info.declared_type);
         let _target_is_mixhash = declared_type_del.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type_del.as_deref().is_some_and(|t| t == "BagHash");
@@ -264,20 +255,16 @@ impl VM {
                 _ => idx.to_string_value() == "HOME",
             };
             if deletes_home {
-                self
-                    .env_mut()
-                    .insert("$*HOME".to_string(), Value::Nil);
-                self
-                    .env_mut()
-                    .insert("*HOME".to_string(), Value::Nil);
+                self.env_mut().insert("$*HOME".to_string(), Value::Nil);
+                self.env_mut().insert("*HOME".to_string(), Value::Nil);
             }
         }
         // Save type metadata before delete (Arc::make_mut may change pointer)
         let saved_meta = self
-            .interpreter
             .env()
             .get(&var_name)
-            .and_then(|v| self.interpreter.container_type_metadata(v));
+            .cloned()
+            .and_then(|v| loan_env!(self, container_type_metadata(&v)));
         // Save container default (pointer-keyed) before delete so we can
         // re-apply it after `Arc::make_mut` changes the pointer. Only
         // trust this when a name-based `var_default` is also registered
@@ -285,8 +272,7 @@ impl VM {
         // allocations, so a stale pointer-keyed entry from a freed
         // same-named container must not leak into the new container.
         let saved_default = if self.interpreter.var_default(&var_name).is_some() {
-            self
-                .env()
+            self.env()
                 .get(&var_name)
                 .and_then(|v| self.interpreter.container_default(v).cloned())
         } else {
@@ -300,15 +286,10 @@ impl VM {
         };
         // For typed arrays (e.g. `my Int @a`), deleted elements become
         // the type object (e.g. `Int`) instead of `Any`.
-        let hole_type = self
-            .interpreter
-            .var_type_constraint(&var_name)
-            .unwrap_or_else(|| "Any".to_string());
+        let hole_type =
+            loan_env!(self, var_type_constraint(&var_name)).unwrap_or_else(|| "Any".to_string());
         // For object hashes, convert index to WHICH-based key format
-        let is_obj_hash_del = self
-            .interpreter
-            .var_hash_key_constraint(&var_name)
-            .is_some();
+        let is_obj_hash_del = loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
         let idx =
             if is_obj_hash_del && !matches!(idx, Value::Whatever | Value::Nil | Value::Array(..)) {
                 // Convert index value to a Str containing the WHICH key
@@ -390,17 +371,12 @@ impl VM {
         // embed metadata in `HashData`, so the re-tagged value is written back
         // (no-op Arc for array/instance side-table containers).
         if let Some(info) = saved_meta
-            && let Some(container) = self.env().get(&var_name)
-            && self
-                .interpreter
-                .container_type_metadata(container)
-                .is_none()
+            && let Some(container) = self.env().get(&var_name).cloned()
+            && loan_env!(self, container_type_metadata(&container)).is_none()
         {
             let container = container.clone();
             let tagged = self.interpreter.tag_container_metadata(container, info);
-            self
-                .env_mut()
-                .insert(var_name.to_string(), tagged.clone());
+            self.env_mut().insert(var_name.to_string(), tagged.clone());
             self.update_local_if_exists(code, &var_name, &tagged);
         }
         // Re-register container default if it was lost due to Arc::make_mut.

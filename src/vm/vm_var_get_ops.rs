@@ -144,7 +144,7 @@ impl VM {
                 Value::str(name.to_string())
             }
         } else if name.contains("::")
-            && let Some(def) = self.interpreter.resolve_function_with_types(name, &[])
+            && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = def.package.resolve();
