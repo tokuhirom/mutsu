@@ -110,13 +110,23 @@ interp から降ろした。WhateverCode/regex 結合な部分は `runtime/` に
 進捗台帳: [docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md)
 （完了履歴 ①真フォールバック可視化 / ②registry VM 所有化 / ③pure-data 消化 → [news/2026-06.md](news/2026-06.md)）。
 
-#### 現在地（2026-06-15）: CP-1 env-loan flip 完了（env は VM 所有）。CP-2 は「機構削除は不可・footprint reduction のみ」で確定
+#### 現在地（2026-06-15）: CP-3 big-bang collapse 着地（PR #3102 マージ）。VM struct は Interpreter へ溶けた
 
-**CP-1（env を VM 所有へ）= 完了（PR #3075, `make test` PASS）。** 下記 1a〜1e 全て done。env は `VM.env` に住み、
-carrier は `loan_env!`/`loan_env_for` で借用。poison ガードは benign 化済み（`MUTSU_POISON_DIAG` opt-in）。
-**CP-2（dual-store）= 上記再フレームで「機構削除は構造的に不可」と確定**。達成できたのは spurious マーク/precision の
-footprint reduction（perf 改善・#3080/#3083/#3084 マージ済）のみで、`env_dirty` 機構自体は永続として残す。
-**→ 主作業は CP-3（Interpreter オブジェクト撤去）へ移る。**
+**CP-3 collapse 本体 = 完了（PR #3102, CI フル `make roast`+`make test` PASS, net −794 行）。** 旧来 `VM { interpreter: Interpreter, ... }`
+の 2 struct 相互参照 + ping-pong（`mem::take(self)`+`VM::new(self)`+`*self=interp`）を撤去し、**単一 struct が bytecode VM そのもの**に。
+- **方向の確定（doc の当初案と逆）**: survivor = **`Interpreter`**（公開エントリ型 `Interpreter::new()`/`.run()` を main/lib/repl/test が使用 →
+  エントリ・公開 API を無改修に保つため）。`pub(crate) type VM = Interpreter` alias で ~40 個の `impl VM` を無改修化（cosmetic rename は後続）。
+- VM の実行レジスタを Interpreter へ統合。ping-pong 全 10 サイトを in-place 再入へ（carrier=`run_nested`、map/grep/sort `run_reuse`=
+  `with_nested_registers`、thread spawn=clone 済 Interpreter 直接実行）。パニック境界 `run_inner_guarded` を run_top/run_nested 双方へ。
+- `loan_env!`/`loan_env_for` は thin self-call 化、重複アクセサ/ヘルパ・dead な loan/handle 機構（`loan_out_env`/`*_handle`）削除。
+- `env_dirty` dual-store は CP-2 通り**意図的に存続**（VM 内部最適化）。
+
+**残: 後続 cleanup（独立・低リスク）** = ① `VM` alias 撤去の cosmetic rename（`impl VM`/`VM::`/`vm:` → `Interpreter`）、
+② `Env::poisoned` 機構（field+debug_assert）の完全除去。これらが済めば Interpreter 撤去ゴールは「VM が唯一の実行エンジン・
+全状態 VM(Interpreter) 所有・`env_dirty` のみ残存」で**達成**。
+
+（履歴）**CP-1（env を VM 所有へ）= 完了（PR #3075）**。**CP-2（dual-store）= 「機構削除は構造的に不可」確定**、footprint reduction
+（#3080/#3083/#3084）のみ実施。詳細は [news/2026-06.md](news/2026-06.md)。
 
 #### （履歴）Phase I 完了 → Phase II（env 所有移管・Interpreter 撤去）
 
