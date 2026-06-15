@@ -157,8 +157,7 @@ impl VM {
         // under the overlay.
         if cc.closure_compiled_codes.is_empty() {
             let parent = self.env().clone();
-            self
-                .set_env(crate::env::Env::scoped_child(parent));
+            self.set_env(crate::env::Env::scoped_child(parent));
         }
 
         // Clear var_bindings so attribute aliases from outer interpreter-level
@@ -203,11 +202,8 @@ impl VM {
         }
 
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
-        self
-            .env_mut()
-            .insert("self".to_string(), base.clone());
-        self
-            .env_mut()
+        self.env_mut().insert("self".to_string(), base.clone());
+        self.env_mut()
             .insert("__ANON_STATE__".to_string(), base.clone());
 
         // In Raku, methods do NOT set $_ to the invocant by default.
@@ -220,9 +216,7 @@ impl VM {
         );
 
         // Raku: $! is scoped per routine — fresh Nil on entry
-        self
-            .env_mut()
-            .insert("!".to_string(), Value::Nil);
+        self.env_mut().insert("!".to_string(), Value::Nil);
 
         // Assign a unique callable ID for this method invocation so that
         // non-local returns from blocks defined inside this method can target it.
@@ -235,18 +229,14 @@ impl VM {
         // Role param bindings
         if let Some(role_bindings) = self.interpreter.class_role_param_bindings(owner_class) {
             for (name, value) in &role_bindings {
-                self
-                    .env_mut()
-                    .insert(name.clone(), value.clone());
+                self.env_mut().insert(name.clone(), value.clone());
             }
         } else if let Some(role_bindings) = self
             .interpreter
             .class_role_param_bindings(receiver_class_name)
         {
             for (name, value) in &role_bindings {
-                self
-                    .env_mut()
-                    .insert(name.clone(), value.clone());
+                self.env_mut().insert(name.clone(), value.clone());
             }
         }
 
@@ -264,7 +254,7 @@ impl VM {
                     && let Some(constraint) = &pd.type_constraint
                 {
                     if let Some(captured_name) = constraint.strip_prefix("::") {
-                        self.interpreter.bind_type_capture(captured_name, &base);
+                        loan_env!(self, bind_type_capture(captured_name, &base));
                     } else {
                         let coercion_target = if let Some(open) = constraint.find('(') {
                             if constraint.ends_with(')') && open > 0 {
@@ -292,9 +282,7 @@ impl VM {
                             }
                             if self.type_matches_value(expected, &candidate) {
                                 base = candidate;
-                                self
-                                    .env_mut()
-                                    .insert("self".to_string(), base.clone());
+                                self.env_mut().insert("self".to_string(), base.clone());
                             }
                         } else if !self.type_matches_value(constraint, &base)
                             && let Ok(coerced) = self
@@ -302,9 +290,7 @@ impl VM {
                                 .try_coerce_value_for_constraint(constraint, base.clone())
                         {
                             base = coerced;
-                            self
-                                .env_mut()
-                                .insert("self".to_string(), base.clone());
+                            self.env_mut().insert("self".to_string(), base.clone());
                         }
                         if !self.type_matches_value(expected, &base) {
                             self.interpreter.restore_var_bindings(saved_var_bindings);
@@ -336,9 +322,7 @@ impl VM {
                         }
                     }
                 }
-                self
-                    .env_mut()
-                    .insert(param_name.clone(), base.clone());
+                self.env_mut().insert(param_name.clone(), base.clone());
                 continue;
             }
             bind_params.push(param_name.clone());
@@ -379,8 +363,7 @@ impl VM {
                     );
                     // Also set up the alias name with the current attribute value
                     if let Some(attr_value) = attributes.get(actual_attr) {
-                        self
-                            .env_mut()
+                        self.env_mut()
                             .insert(source_name.to_string(), attr_value.clone());
                     }
                 }
@@ -428,22 +411,21 @@ impl VM {
         }
 
         // Bind method parameters
-        let rw_bindings =
-            match self
-                .interpreter
-                .bind_function_args_values(&bind_param_defs, &bind_params, &args)
-            {
-                Ok(bindings) => bindings,
-                Err(e) => {
-                    self.interpreter.restore_var_bindings(saved_var_bindings);
-                    self.interpreter.pop_method_class();
-                    self.set_current_package(saved_package.clone());
-                    self.stack.truncate(saved_stack_depth);
-                    let frame = self.pop_call_frame();
-                    *self.env_mut() = frame.saved_env;
-                    return Err(e);
-                }
-            };
+        let rw_bindings = match loan_env!(
+            self,
+            bind_function_args_values(&bind_param_defs, &bind_params, &args)
+        ) {
+            Ok(bindings) => bindings,
+            Err(e) => {
+                self.interpreter.restore_var_bindings(saved_var_bindings);
+                self.interpreter.pop_method_class();
+                self.set_current_package(saved_package.clone());
+                self.stack.truncate(saved_stack_depth);
+                let frame = self.pop_call_frame();
+                *self.env_mut() = frame.saved_env;
+                return Err(e);
+            }
+        };
 
         // Initialize locals from env
         self.locals = vec![Value::Nil; cc.locals.len()];
@@ -549,11 +531,7 @@ impl VM {
                 self.stack.pop().unwrap_or(Value::Nil)
             } else {
                 // Implicit return from env "_"
-                self
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil)
+                self.env().get("_").cloned().unwrap_or(Value::Nil)
             }
         } else {
             Value::Nil
@@ -565,12 +543,11 @@ impl VM {
         for (slot, key) in &cc.state_locals {
             let local_name = &cc.locals[*slot];
             let val = self
-                .interpreter
                 .env()
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            loan_env!(self, set_state_var(key.clone(), val));
         }
 
         let attrs_adjusted;
@@ -595,9 +572,9 @@ impl VM {
             for (i, local_name) in cc.locals.iter().enumerate() {
                 if !local_name.is_empty() {
                     {
-                let __v = self.locals[i].clone();
-                self.env_mut().insert(local_name.clone(), __v);
-            }
+                        let __v = self.locals[i].clone();
+                        self.env_mut().insert(local_name.clone(), __v);
+                    }
                 }
             }
 
@@ -640,8 +617,7 @@ impl VM {
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
-                    self
-                        .env()
+                    self.env()
                         .get(param_name)
                         .cloned()
                         .or_else(|| {
@@ -795,7 +771,6 @@ impl VM {
             .iter()
             .any(|v| matches!(v, Value::ContainerRef(_)))
             || self
-                .interpreter
                 .env()
                 .overlay_iter()
                 .any(|(_, v)| matches!(v, Value::ContainerRef(_)));
@@ -1210,7 +1185,7 @@ impl VM {
         // Sync state variables
         for (slot, key) in &cc.state_locals {
             let val = self.locals[*slot].clone();
-            self.interpreter.set_state_var(key.clone(), val);
+            loan_env!(self, set_state_var(key.clone(), val));
         }
 
         if !can_skip_merge {
@@ -1225,9 +1200,9 @@ impl VM {
                     || local_name.starts_with("%.")
                 {
                     {
-                let __v = self.locals[i].clone();
-                self.env_mut().insert(local_name.clone(), __v);
-            }
+                        let __v = self.locals[i].clone();
+                        self.env_mut().insert(local_name.clone(), __v);
+                    }
                 }
             }
         }

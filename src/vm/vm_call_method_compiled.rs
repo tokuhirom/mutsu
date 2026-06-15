@@ -73,10 +73,10 @@ impl VM {
             };
             values.push(value);
         }
-        if let Some(result) = self
-            .interpreter
-            .push_to_existing_shared_array(&sigiled_target, values.clone())
-        {
+        if let Some(result) = loan_env!(
+            self,
+            push_to_existing_shared_array(&sigiled_target, values.clone())
+        ) {
             return Ok(Some(result));
         }
         let Some(target_value) =
@@ -172,9 +172,7 @@ impl VM {
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self
-                    .interpreter
-                    .call_method_with_values(target, method, args);
+                return loan_env!(self, call_method_with_values(target, method, args));
             }
         }
         // CARRIER: MOP pseudo-methods (reflection; no bytecode form). See ledger §C.
@@ -185,9 +183,7 @@ impl VM {
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
         ) {
             crate::vm::vm_stats::record_method_fallback(method);
-            return self
-                .interpreter
-                .call_method_with_values(target, method, args);
+            return loan_env!(self, call_method_with_values(target, method, args));
         }
         // Private method fast path: resolve private candidate and run compiled code
         // when caller context clearly allows direct dispatch.
@@ -300,9 +296,7 @@ impl VM {
                 how_args.extend(args);
                 // CARRIER: user-defined ^metamethod dispatch (MOP). See ledger §C.
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self
-                    .interpreter
-                    .call_method_with_values(target, method, how_args);
+                return loan_env!(self, call_method_with_values(target, method, how_args));
             }
         }
         // Only attempt compiled path for Instance or Package targets
@@ -511,8 +505,7 @@ impl VM {
         // the `dispatch_method_by_name_*` machinery) that depends on interpreter-
         // owned state (③ state ownership / first-class container Phase 2).
         crate::vm::vm_stats::record_method_fallback(method);
-        self
-            .vm_call_method_with_values(target, method, args)
+        self.vm_call_method_with_values(target, method, args)
     }
 
     /// VM-native dispatch for the pure-handle methods of an `IO::Handle`
@@ -1555,12 +1548,7 @@ impl VM {
             if self.interpreter.is_native_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self.vm_call_method_mut_with_values(
-                    target_name,
-                    target,
-                    method,
-                    args,
-                );
+                return self.vm_call_method_mut_with_values(target_name, target, method, args);
             }
         }
         if matches!(
@@ -1569,9 +1557,10 @@ impl VM {
         ) {
             // CARRIER: MOP pseudo-methods, mut (reflection). See ledger §C.
             crate::vm::vm_stats::record_method_fallback(method);
-            return self
-                .interpreter
-                .call_method_mut_with_values(target_name, target, method, args);
+            return loan_env!(
+                self,
+                call_method_mut_with_values(target_name, target, method, args)
+            );
         }
         // User-defined ^method (metamethod) dispatch:
         // Foo.^bar passes Foo as the first positional argument.
@@ -1591,9 +1580,7 @@ impl VM {
                 how_args.extend(args);
                 // CARRIER: user-defined ^metamethod dispatch, mut (MOP). See ledger §C.
                 crate::vm::vm_stats::record_method_fallback(method);
-                return self
-                    .interpreter
-                    .call_method_with_values(target, method, how_args);
+                return loan_env!(self, call_method_with_values(target, method, how_args));
             }
         }
         if method.starts_with('!') {
@@ -1826,8 +1813,7 @@ impl VM {
         // demand above); what remains is native receiver dispatch blocked on
         // ③ state ownership / first-class container Phase 2.
         crate::vm::vm_stats::record_method_fallback(method);
-        self
-            .vm_call_method_mut_with_values(target_name, target, method, args)
+        self.vm_call_method_mut_with_values(target_name, target, method, args)
     }
 
     /// Execute a protect block inline in the current VM, avoiding the overhead
@@ -1933,9 +1919,9 @@ impl VM {
                     )
                 {
                     {
-                let __v = self.locals[*slot].clone();
-                self.env_mut().insert(name.clone(), __v);
-            }
+                        let __v = self.locals[*slot].clone();
+                        self.env_mut().insert(name.clone(), __v);
+                    }
                 }
             }
         }

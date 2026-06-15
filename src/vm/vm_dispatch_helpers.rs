@@ -138,7 +138,7 @@ impl VM {
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
                 let args = vec![left.clone(), right.clone()];
                 if let Some(name) = normalized_op.strip_prefix('&') {
-                    let callable = self.interpreter.resolve_code_var(name);
+                    let callable = loan_env!(self, resolve_code_var(name));
                     if matches!(
                         callable,
                         Value::Sub(_)
@@ -153,19 +153,10 @@ impl VM {
                     if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
                         return Ok(v);
                     }
-                    if let Some(callable) = self
-                        .interpreter
-                        .env()
-                        .get(&format!("&{}", infix_name))
-                        .cloned()
-                    {
+                    if let Some(callable) = self.env().get(&format!("&{}", infix_name)).cloned() {
                         return self.vm_call_on_value(callable, args.clone(), None);
                     }
-                    if let Some(callable) = self
-                        .interpreter
-                        .env()
-                        .get(&format!("&{}", normalized_op))
-                        .cloned()
+                    if let Some(callable) = self.env().get(&format!("&{}", normalized_op)).cloned()
                     {
                         return self.vm_call_on_value(callable, args.clone(), None);
                     }
@@ -249,12 +240,7 @@ impl VM {
             Value::Regex(_)
             | Value::RegexWithAdverbs { .. }
             | Value::Routine { is_regex: true, .. } => {
-                let topic = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 self.vm_smart_match(&topic, val)
             }
             _ => val.truthy(),

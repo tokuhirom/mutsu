@@ -111,7 +111,7 @@ impl VM {
     ) -> Result<Vec<Value>, RuntimeError> {
         let mut out = Vec::with_capacity(args.len());
         for arg in args {
-            out.push(self.interpreter.auto_fetch_proxy(&arg)?);
+            out.push(loan_env!(self, auto_fetch_proxy(&arg)?));
         }
         Ok(out)
     }
@@ -216,15 +216,10 @@ impl VM {
         slot: usize,
     ) -> Result<(Value, Value), RuntimeError> {
         let temp_name = format!("__mutsu_hyper_target_{slot}");
-        self
-            .env_mut()
-            .insert(temp_name.clone(), item.clone());
+        self.env_mut().insert(temp_name.clone(), item.clone());
         // TODO: compile to bytecode — hyper method call over a temp-bound item (ledger §1).
-        let result =
-            self
-                .vm_call_method_mut_with_values(&temp_name, item.clone(), method, args)?;
+        let result = self.vm_call_method_mut_with_values(&temp_name, item.clone(), method, args)?;
         let updated = self
-            .interpreter
             .env()
             .get(&temp_name)
             .cloned()
@@ -241,14 +236,11 @@ impl VM {
         slot: usize,
     ) -> Result<(Vec<Value>, Value), RuntimeError> {
         let temp_name = format!("__mutsu_hyper_target_{slot}");
-        self
-            .env_mut()
-            .insert(temp_name.clone(), item.clone());
+        self.env_mut().insert(temp_name.clone(), item.clone());
         let result = self
             .interpreter
             .call_method_all_with_values(item.clone(), method, args)?;
         let updated = self
-            .interpreter
             .env()
             .get(&temp_name)
             .cloned()

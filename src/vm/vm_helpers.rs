@@ -1080,8 +1080,8 @@ impl VM {
         f: fn(&mut VM, Value, Value) -> Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
         // Auto-FETCH Proxy containers in binary operations
-        let left = self.interpreter.auto_fetch_proxy(&left)?;
-        let right = self.interpreter.auto_fetch_proxy(&right)?;
+        let left = loan_env!(self, auto_fetch_proxy(&left))?;
+        let right = loan_env!(self, auto_fetch_proxy(&right))?;
         // Decontainerize Scalar wrappers
         let left = left.descalarize().clone();
         let right = right.descalarize().clone();
@@ -1306,12 +1306,7 @@ impl VM {
         if is_regex {
             // When $/ is a Junction (from :nth with junction argument),
             // the ~~ operator collapses the result to a Bool.
-            let slash = self
-                .interpreter
-                .env()
-                .get("/")
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let slash = self.env().get("/").cloned().unwrap_or(Value::Nil);
             if matches!(&slash, Value::Junction { .. }) {
                 Ok(Value::Bool(matched))
             } else if matched {

@@ -275,11 +275,8 @@ impl VM {
                     // boxing it (inline `where` desugars to an anonymous subset, so
                     // var_type_constraint catches block/whatever/`&pred` forms).
                     // Applied to (B) only — the loop path (A) is left unchanged.
-                    if self.interpreter.var_type_constraint(s).is_some()
-                        || self
-                            .interpreter
-                            .var_type_constraint(s.trim_start_matches('$'))
-                            .is_some()
+                    if loan_env!(self, var_type_constraint(s)).is_some()
+                        || loan_env!(self, var_type_constraint(s.trim_start_matches('$'))).is_some()
                     {
                         return None;
                     }
@@ -310,9 +307,7 @@ impl VM {
             let container = cur.clone().into_container_ref();
             self.locals[idx] = container.clone();
             sym.with_str(|s| {
-                self
-                    .env_mut()
-                    .insert(s.to_string(), container.clone());
+                self.env_mut().insert(s.to_string(), container.clone());
                 // Track C: if a thread is already running (shared_vars active) and a
                 // stale plain snapshot of this name lives in `shared_vars` (seeded
                 // by an earlier `start` before this local was boxed), replace it
@@ -322,7 +317,7 @@ impl VM {
                 // `set_shared_var` only updates entries that already exist, so this
                 // is a no-op when the name was never snapshotted.
                 if self.interpreter.shared_vars_active {
-                    self.interpreter.set_shared_var(s, container.clone());
+                    loan_env!(self, set_shared_var(s, container.clone()));
                 }
             });
         }
@@ -464,8 +459,7 @@ impl VM {
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
-                self
-                    .vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
+                self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
                     .to_string_value()
             } else {
                 name.resolve()
@@ -628,9 +622,7 @@ impl VM {
                     // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
                     // store it in the env so function dispatch can find it.
                     if matches!(result, Value::Mixin(..)) {
-                        self
-                            .env_mut()
-                            .insert(format!("&{}", name), result);
+                        self.env_mut().insert(format!("&{}", name), result);
                     }
                 }
             }
@@ -754,12 +746,7 @@ impl VM {
         // An `inst#PREFIX` spec selects a CompUnit::Repository::Installation as
         // the current `$*REPO`, chained in front of whatever was there before.
         if let Some(prefix) = path.strip_prefix("inst#") {
-            let prev = self
-                .interpreter
-                .env()
-                .get("*REPO")
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let prev = self.env().get("*REPO").cloned().unwrap_or(Value::Nil);
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
             attrs.insert("next-repo".to_string(), prev);
@@ -1120,8 +1107,7 @@ impl VM {
                 self.locals_set_by_name(code, &name_str, instance.clone());
                 self.set_env_with_main_alias(&name_str, instance.clone());
                 // Set type constraint so future assignments are coerced correctly
-                self
-                    .vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));
+                self.vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));
                 self.env_dirty = true;
                 return Ok(());
             }
@@ -1136,8 +1122,7 @@ impl VM {
                     self.stack.pop(); // discard unused trait argument
                 }
                 let name_str = name.to_string();
-                self
-                    .vm_set_var_type_constraint(&name_str, Some(et));
+                self.vm_set_var_type_constraint(&name_str, Some(et));
                 self.env_dirty = true;
                 return Ok(());
             }
@@ -1167,20 +1152,15 @@ impl VM {
         } else {
             Value::Bool(true)
         };
-        let target = self
-            .interpreter
-            .env()
-            .get(name)
-            .cloned()
-            .unwrap_or(Value::Nil);
+        let target = self.env().get(name).cloned().unwrap_or(Value::Nil);
         // CARRIER: `.VAR` pseudo-method + `trait_mod:<is>` metaprogramming hook
         // (reflective container object + user trait handler). See ledger §C.
-        let var_obj = self
-            .interpreter
-            .call_method_mut_with_values(name, target, "VAR", vec![])?;
+        let var_obj = loan_env!(
+            self,
+            call_method_mut_with_values(name, target, "VAR", vec![])
+        )?;
         let named_arg = Value::Pair(trait_name, Box::new(trait_value));
-        self
-            .vm_call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
+        self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
         self.env_dirty = true;
         Ok(())
     }
@@ -1199,11 +1179,9 @@ impl VM {
             language_version,
         } = stmt
         {
-            let result = self.interpreter.register_enum_decl(
-                &name.resolve(),
-                variants,
-                *is_export,
-                base_type.as_deref(),
+            let result = loan_env!(
+                self,
+                register_enum_decl(&name.resolve(), variants, *is_export, base_type.as_deref(),)
             )?;
             // Store language revision metadata from the version captured at parse time
             if !name.resolve().is_empty() {
@@ -1244,8 +1222,7 @@ impl VM {
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
-                self
-                    .vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
+                self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
                     .to_string_value()
             } else {
                 name.resolve()
@@ -1271,18 +1248,21 @@ impl VM {
             // distinguishing EVAL re-definitions from normal re-execution
             // (e.g., anonymous classes in loops, augment) requires tracking
             // compilation unit boundaries.
-            let deferred_traits = self.interpreter.register_class_decl(
-                &qualified_name,
-                parents,
-                crate::runtime::ClassDeclModifiers {
-                    class_is_rw: *class_is_rw,
-                    is_hidden: *is_hidden,
-                    is_lexical: *is_lexical,
-                    hidden_parents,
-                    does_parents,
-                    language_version,
-                },
-                body,
+            let deferred_traits = loan_env!(
+                self,
+                register_class_decl(
+                    &qualified_name,
+                    parents,
+                    crate::runtime::ClassDeclModifiers {
+                        class_is_rw: *class_is_rw,
+                        is_hidden: *is_hidden,
+                        is_lexical: *is_lexical,
+                        hidden_parents,
+                        does_parents,
+                        language_version,
+                    },
+                    body,
+                )
             )?;
             // Check for assignment to native read-only params before
             // compiling (X::Assignment::RO::Comp).
@@ -1375,20 +1355,17 @@ impl VM {
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
                     let trait_value = if let Some(arg_expr) = trait_arg {
-                        self
-                            .vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
+                        self.vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
                     } else {
                         Value::Bool(true)
                     };
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
-                    self
-                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
                 // Dispatch deferred unknown parents as custom traits (no args)
                 for trait_name in &deferred_traits {
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
-                    self
-                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
             }
 
@@ -1554,20 +1531,17 @@ impl VM {
                 let type_obj = Value::Package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
                     let trait_value = if let Some(arg_expr) = trait_arg {
-                        self
-                            .vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
+                        self.vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
                     } else {
                         Value::Bool(true)
                     };
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
-                    self
-                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
                 // Dispatch deferred unknown parents as custom traits (no args)
                 for trait_name in &role_deferred {
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
-                    self
-                        .vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
             }
 
@@ -1593,11 +1567,9 @@ impl VM {
         } = stmt
         {
             let resolved_name = name.resolve();
-            self.interpreter.register_subset_decl(
-                &resolved_name,
-                base,
-                predicate.as_ref(),
-                version,
+            loan_env!(
+                self,
+                register_subset_decl(&resolved_name, base, predicate.as_ref(), version,)
             );
             // When a subset is declared `is export` inside a module, record it
             // in the export table so `import M` (and `use M`) can find it.
@@ -1713,8 +1685,10 @@ impl VM {
         let target_var = target_var_idx.map(|idx| Self::const_str(code, idx));
         let stmt = &code.stmt_pool[body_idx as usize];
         if let Stmt::Block(body) = stmt {
-            self.interpreter
-                .run_whenever_with_value(supply_val, target_var, &param, body)?;
+            loan_env!(
+                self,
+                run_whenever_with_value(supply_val, target_var, &param, body)
+            )?;
             self.env_dirty = true;
             Ok(())
         } else {

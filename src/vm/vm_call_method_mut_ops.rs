@@ -307,8 +307,7 @@ impl VM {
             self.vm_call_on_value(name_val, call_args, None)?
         } else {
             // TODO: compile to bytecode — generic mut method fork (ledger §1).
-            self
-                .vm_call_method_mut_with_values(&target_name, target, &method, args)?
+            self.vm_call_method_mut_with_values(&target_name, target, &method, args)?
         };
         self.stack.push(call_result);
         self.env_dirty = true;
@@ -580,13 +579,14 @@ impl VM {
             && matches!(&target, Value::Array(..))
             && self.interpreter.shared_vars_active
         {
-            let result = self
-                .interpreter
-                .push_to_existing_shared_array(&target_name, args.clone())
-                .unwrap_or_else(|| {
-                    self.interpreter
-                        .push_to_shared_var(&target_name, args, &target)
-                });
+            let result = loan_env!(
+                self,
+                push_to_existing_shared_array(&target_name, args.clone())
+            )
+            .unwrap_or_else(|| {
+                self.interpreter
+                    .push_to_shared_var(&target_name, args, &target)
+            });
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -633,10 +633,7 @@ impl VM {
         if !skip_native
             && method == "keys"
             && target_name.starts_with('%')
-            && self
-                .interpreter
-                .var_hash_key_constraint(&target_name)
-                .is_some()
+            && loan_env!(self, var_hash_key_constraint(&target_name)).is_some()
         {
             skip_native = true;
         }
@@ -711,12 +708,8 @@ impl VM {
                     )),
                     id,
                 };
-                self
-                    .env_mut()
-                    .insert(target_name.to_string(), updated);
-                self
-                    .env_mut()
-                    .insert("made".to_string(), value.clone());
+                self.env_mut().insert(target_name.to_string(), updated);
+                self.env_mut().insert("made".to_string(), value.clone());
                 self.interpreter.action_made = Some(value.clone());
             }
             self.stack.push(value);
@@ -889,10 +882,8 @@ impl VM {
                 };
                 match inner_target {
                     Value::Hash(_) => {
-                        let old_meta = self
-                            .interpreter
-                            .container_type_metadata(inner_target)
-                            .clone();
+                        let old_meta =
+                            loan_env!(self, container_type_metadata(inner_target)).clone();
                         let mut hash = match inner_target {
                             Value::Hash(map) => map.map.clone(),
                             _ => std::collections::HashMap::new(),
@@ -905,9 +896,7 @@ impl VM {
                             declared_type: None,
                         });
                         let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_hash);
+                        self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());
@@ -924,9 +913,7 @@ impl VM {
                             new_set.remove(&key);
                         }
                         let new_val = Value::set_hash(new_set);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_val);
+                        self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());
@@ -943,9 +930,7 @@ impl VM {
                             new_counts.remove(&key);
                         }
                         let new_val = Value::bag_hash(new_counts);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_val);
+                        self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());
@@ -962,9 +947,7 @@ impl VM {
                             new_weights.remove(&key);
                         }
                         let new_val = Value::mix_hash(new_weights);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_val);
+                        self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
                         self.env_dirty = true;
                         return Ok(());
@@ -972,8 +955,7 @@ impl VM {
                     Value::Nil | Value::Package(_) => {
                         let mut hash = std::collections::HashMap::new();
                         hash.insert(key, value.clone());
-                        self
-                            .env_mut()
+                        self.env_mut()
                             .insert(target_name.to_string(), Value::Hash(Value::hash_arc(hash)));
                         self.stack.push(value);
                         self.env_dirty = true;
@@ -990,10 +972,8 @@ impl VM {
                 };
                 match inner_target {
                     Value::Hash(map) => {
-                        let old_meta = self
-                            .interpreter
-                            .container_type_metadata(inner_target)
-                            .clone();
+                        let old_meta =
+                            loan_env!(self, container_type_metadata(inner_target)).clone();
                         let old_value = if map.contains_key(&key) {
                             self.resolve_hash_entry(map, &key)
                         } else {
@@ -1012,9 +992,7 @@ impl VM {
                             declared_type: None,
                         });
                         let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_hash);
+                        self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(old_value);
                         self.env_dirty = true;
                         return Ok(());
@@ -1027,9 +1005,7 @@ impl VM {
                         let mut new_set = data.elements.clone();
                         new_set.remove(&key);
                         let new_val = Value::set_hash(new_set);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_val);
+                        self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(Value::Bool(existed));
                         self.env_dirty = true;
                         return Ok(());
@@ -1042,9 +1018,7 @@ impl VM {
                         let mut new_counts = data.counts.clone();
                         new_counts.remove(&key);
                         let new_val = Value::bag_hash(new_counts);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_val);
+                        self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(Value::Int(old_count));
                         self.env_dirty = true;
                         return Ok(());
@@ -1057,9 +1031,7 @@ impl VM {
                         let mut new_weights = data.weights.clone();
                         new_weights.remove(&key);
                         let new_val = Value::mix_hash(new_weights);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_val);
+                        self.env_mut().insert(target_name.to_string(), new_val);
                         let result = crate::value::mix_weight_to_value(old_weight);
                         self.stack.push(result);
                         self.env_dirty = true;
@@ -1080,10 +1052,8 @@ impl VM {
                 };
                 match inner_target {
                     Value::Hash(map) => {
-                        let old_meta = self
-                            .interpreter
-                            .container_type_metadata(inner_target)
-                            .clone();
+                        let old_meta =
+                            loan_env!(self, container_type_metadata(inner_target)).clone();
                         let key = args[0].to_string_value();
                         let value = args[1].clone();
                         let source_var = arg_sources
@@ -1117,9 +1087,7 @@ impl VM {
                             declared_type: None,
                         });
                         let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
-                        self
-                            .env_mut()
-                            .insert(target_name.to_string(), new_hash);
+                        self.env_mut().insert(target_name.to_string(), new_hash);
                         if let Some((source_name, cell_val)) = bind_source_install {
                             self.set_env_with_main_alias(&source_name, cell_val.clone());
                             self.update_local_if_exists(code, &source_name, &cell_val);
@@ -1191,8 +1159,7 @@ impl VM {
                     Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
                 )) {
             let empty_array = Value::real_array(vec![]);
-            self
-                .env_mut()
+            self.env_mut()
                 .insert(target_name.to_string(), empty_array.clone());
             self.env_dirty = true;
             empty_array
@@ -1346,22 +1313,19 @@ impl VM {
                         // TODO: compile to bytecode — Array-backed instance method
                         // (non-simple methods on `is Array` storage). See ledger §1.
                         crate::vm::vm_stats::record_method_fallback(&method);
-                        let result = self
-                            .interpreter
-                            .call_method_mut_with_values(
+                        let result = loan_env!(
+                            self,
+                            call_method_mut_with_values(
                                 "__mutsu_array_tmp",
                                 storage.clone(),
                                 &method,
                                 args,
                             )
-                            .or_else(|_| {
-                                // Try non-mut dispatch for read-only methods
-                                self.vm_call_method_with_values(
-                                    storage.clone(),
-                                    &method,
-                                    vec![],
-                                )
-                            })?;
+                        )
+                        .or_else(|_| {
+                            // Try non-mut dispatch for read-only methods
+                            self.vm_call_method_with_values(storage.clone(), &method, vec![])
+                        })?;
                         // Read back the (potentially mutated) storage
                         if let Some(updated_storage) = self.env().get("__mutsu_array_tmp").cloned()
                         {
@@ -1499,8 +1463,8 @@ impl VM {
         // interpreter so bound aliases observe the change; type-constrained or
         // metadata-bearing containers need element checks / typed empty Failures.
         if self.interpreter.shared_vars_active
-            || self.interpreter.var_type_constraint(target_name).is_some()
-            || self.interpreter.container_type_metadata(target).is_some()
+            || loan_env!(self, var_type_constraint(target_name)).is_some()
+            || loan_env!(self, container_type_metadata(target)).is_some()
         {
             return None;
         }
@@ -1661,8 +1625,7 @@ impl VM {
             )),
             id: inst_id,
         };
-        self
-            .env_mut()
+        self.env_mut()
             .insert(target_name.to_string(), updated_instance);
         self.env_dirty = true;
     }
@@ -1704,8 +1667,8 @@ impl VM {
         // interpreter's element checks, native-array semantics, and identity
         // sharing; let it own those.
         if self.interpreter.shared_vars_active
-            || self.interpreter.var_type_constraint(target_name).is_some()
-            || self.interpreter.container_type_metadata(target).is_some()
+            || loan_env!(self, var_type_constraint(target_name)).is_some()
+            || loan_env!(self, container_type_metadata(target)).is_some()
         {
             return None;
         }
@@ -1883,8 +1846,7 @@ impl VM {
             ),
         );
         let updated = Value::write_back_sharing(attributes, *class_name, updated_attrs, *id);
-        self
-            .env_mut()
+        self.env_mut()
             .insert(target_name.to_string(), updated.clone());
         Some(Ok(updated))
     }

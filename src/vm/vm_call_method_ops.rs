@@ -737,12 +737,7 @@ impl VM {
                     | Value::Routine { is_regex: true, .. }
             )
         {
-            let topic = self
-                .interpreter
-                .env()
-                .get("_")
-                .cloned()
-                .unwrap_or(Value::Nil);
+            let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
             let matched = self.vm_smart_match(&topic, &target);
             self.stack.push(Value::Bool(matched));
             self.env_dirty = true;

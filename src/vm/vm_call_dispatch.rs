@@ -8,7 +8,6 @@ impl VM {
         if let Some((ref kind, ref name, ref package, ref msg)) = cf.deprecated_info {
             let cl = self.interpreter.pending_callsite_line();
             let file = self
-                .interpreter
                 .env()
                 .get("*PROGRAM-NAME")
                 .map(|v| v.to_string_value())
@@ -61,7 +60,7 @@ impl VM {
         // Try resolving the function definition and compiling on-the-fly.
         // Skip functions that need special interpreter handling.
         if !self.is_interpreter_handled_function(name)
-            && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+            && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
         {
             return self.compile_and_call_function_def(&def, args, compiled_fns);
         }
@@ -278,7 +277,7 @@ impl VM {
             self.fn_resolve_cache.clear();
             self.fn_resolve_cache_gen = self.fn_resolve_gen;
         }
-        let resolved_def = self.interpreter.resolve_function_with_types(name, args);
+        let resolved_def = loan_env!(self, resolve_function_with_types(name, args));
         let expected_fingerprint = resolved_def.as_ref().map(|def| {
             crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
         });
@@ -327,7 +326,6 @@ impl VM {
                 let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
                     self.env().get(pkg_prefix).is_some()
                         || self
-                            .interpreter
                             .env()
                             .get(&format!("{}::{}", pkg, pkg_prefix))
                             .is_some()
@@ -599,12 +597,11 @@ impl VM {
         for (slot, key) in &cf.code.state_locals {
             let local_name = &cf.code.locals[*slot];
             let val = self
-                .interpreter
                 .env()
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            loan_env!(self, set_state_var(key.clone(), val));
         }
 
         // Flush any dirty locals to env before restoring, so that captured
@@ -1219,9 +1216,7 @@ impl VM {
                             if let Some(slot) = cf.code.locals.iter().position(|n| n == sub_name) {
                                 self.locals[slot] = v.clone();
                             }
-                            self
-                                .env_mut()
-                                .insert(sub_name.clone(), v.clone());
+                            self.env_mut().insert(sub_name.clone(), v.clone());
                         }
                     }
                     Some(v)
@@ -1276,9 +1271,7 @@ impl VM {
             if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
                 self.locals[slot] = bound_val.clone();
             }
-            self
-                .env_mut()
-                .insert(param_name.clone(), bound_val);
+            self.env_mut().insert(param_name.clone(), bound_val);
         }
 
         // Mark parameters as readonly (by default, params are immutable in Raku).
@@ -1307,8 +1300,7 @@ impl VM {
                 .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
                 .map(|a| unwrap_varref_value(a.clone()))
                 .collect();
-            self
-                .env_mut()
+            self.env_mut()
                 .insert("@_".to_string(), Value::array(plain_args));
         }
 
@@ -1329,9 +1321,7 @@ impl VM {
                         self.locals[slot] = val.clone();
                     }
                     // Also set in (overlay) env for the placeholder and its alias
-                    self
-                        .env_mut()
-                        .insert(param.clone(), val.clone());
+                    self.env_mut().insert(param.clone(), val.clone());
                     // Create de-careted alias: ^foo -> foo, ^k -> k
                     if let Some(bare) = param.strip_prefix('^') {
                         let bare = bare.to_string();
@@ -1472,19 +1462,19 @@ impl VM {
         let saved_env_dirty = self.env_dirty;
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         if callsite_line.is_some() {
-            self.interpreter.set_pending_callsite_line(callsite_line);
+            loan_env!(self, set_pending_callsite_line(callsite_line));
         }
         // Record deprecation for cached compiled functions
         self.record_cf_deprecation(cf);
         // Inject callsite line BEFORE push_call_frame so the parent env
         // contains the updated ?LINE. This avoids triggering Arc::make_mut
         // deep clone after the env Arc is shared with the call frame.
-        self.interpreter.inject_pending_callsite_line();
+        loan_env!(self, inject_pending_callsite_line());
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         let return_spec = cf.return_type.clone();
 
-        self.interpreter.push_caller_env();
+        loan_env!(self, push_caller_env());
 
         // Push Sub value to block_stack for callframe().code
         let sub_val = Value::make_sub(
@@ -1507,8 +1497,7 @@ impl VM {
         // caller env. frame.saved_env holds the flat caller for restoration.
         {
             let parent = self.env().clone();
-            self
-                .set_env(crate::env::Env::scoped_child(parent));
+            self.set_env(crate::env::Env::scoped_child(parent));
         }
 
         // Always push a routine frame so that &?ROUTINE works inside anonymous
@@ -1528,7 +1517,6 @@ impl VM {
         if !fn_name.is_empty() {
             let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
             let resolved_callable_id = self
-                .interpreter
                 .env()
                 .get(&callable_key)
                 .and_then(|v| match v {
@@ -1602,10 +1590,10 @@ impl VM {
         let rw_bindings = if args.is_empty() && cf.param_defs.is_empty() && cf.params.is_empty() {
             vec![]
         } else {
-            match self
-                .interpreter
-                .bind_function_args_values(&cf.param_defs, &cf.params, &args)
-            {
+            match loan_env!(
+                self,
+                bind_function_args_values(&cf.param_defs, &cf.params, &args)
+            ) {
                 Ok(bindings) => bindings,
                 Err(e) => {
                     self.set_current_package(saved_package);
@@ -1633,14 +1621,11 @@ impl VM {
         // Arc::make_mut deep clone on the CoW env.
         if !fn_name.is_empty() {
             let needs_reset = self
-                .interpreter
                 .env()
                 .get("!")
                 .is_some_and(|v| !matches!(v, Value::Nil));
             if needs_reset {
-                self
-                    .env_mut()
-                    .insert("!".to_string(), Value::Nil);
+                self.env_mut().insert("!".to_string(), Value::Nil);
             }
         }
 
@@ -1787,12 +1772,11 @@ impl VM {
         for (slot, key) in &cf.code.state_locals {
             let local_name = &cf.code.locals[*slot];
             let val = self
-                .interpreter
                 .env()
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            loan_env!(self, set_state_var(key.clone(), val));
         }
 
         self.set_current_package(saved_package);
@@ -1821,8 +1805,10 @@ impl VM {
             let mut restored_env = restored_env;
             self.interpreter
                 .pop_caller_env_with_writeback(&mut restored_env);
-            self.interpreter
-                .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+            loan_env!(
+                self,
+                apply_rw_bindings_to_env(&rw_bindings, &mut restored_env)
+            );
             // An `is rw` param writeback aliases the caller's argument container,
             // which may be a caller local slot -> force a re-sync.
             if !rw_bindings.is_empty() {
