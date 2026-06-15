@@ -773,10 +773,16 @@ fn count_whatever(expr: &Expr) -> usize {
         Expr::InfixFunc { left, right, .. } => {
             count_whatever(left) + right.iter().map(count_whatever).sum::<usize>()
         }
-        // R meta-operators
+        // R/X/Z meta-operators. R always curries on a Whatever operand; X/Z
+        // currying is decided at parse time in `container.rs` (a standalone `*`
+        // operand curries, a trailing `*` in a comma-list operand extends), but
+        // once the decision to wrap is made we must count placeholders here so
+        // the WhateverCode gets the right arity.
         Expr::MetaOp {
             meta, left, right, ..
-        } if meta == "R" => count_whatever(left) + count_whatever(right),
+        } if matches!(meta.as_str(), "R" | "X" | "Z") => {
+            count_whatever(left) + count_whatever(right)
+        }
         _ => 0,
     }
 }
