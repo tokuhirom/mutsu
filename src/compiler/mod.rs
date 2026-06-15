@@ -657,19 +657,23 @@ impl Compiler {
         )
     }
 
-    /// Detect `%h.values` on a hash variable: the loop variable aliases a hash
-    /// value, so a plain (`$_` / named) topic writeback must update the hash by
-    /// key order (`$_ = X for %h.values` mutates `%h`). Bare `for %h` iterates
-    /// Pairs (no value writeback) and `.keys` yields read-only keys, so this is
-    /// intentionally narrow: only the `.values` transform on a `%`-source.
-    fn for_iterable_is_hash_values(iterable: &Expr) -> bool {
+    /// Detect `%h.values` / `$b.values` on a variable: the loop variable aliases
+    /// the container's *value*, so a plain (`$_` / named) topic writeback must
+    /// update the source by key order. `$_ = X for %h.values` mutates `%h`;
+    /// `$_ = X for $b.values` mutates a mutable QuantHash (MixHash/BagHash). The
+    /// VM branches on the runtime container type (Hash vs Mix/Bag/Set). Bare
+    /// `for %h` iterates Pairs (no value writeback) and `.keys` yields read-only
+    /// keys, so this is intentionally narrow: only the `.values` transform.
+    /// (`@a.values` already writes back via the `@`-source path; the flag is a
+    /// harmless no-op there.)
+    fn for_iterable_is_values_alias(iterable: &Expr) -> bool {
         if let Expr::MethodCall {
             target, name, args, ..
         } = iterable
             && args.is_empty()
             && *name == "values"
         {
-            return Self::for_iterable_source_name(target).is_some_and(|s| s.starts_with('%'));
+            return Self::for_iterable_source_name(target).is_some();
         }
         false
     }
