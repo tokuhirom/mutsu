@@ -853,7 +853,7 @@ impl VM {
         });
         let effective_return_spec = return_spec
             .as_deref()
-            .map(|spec| self.interpreter.resolved_type_capture_name(spec));
+            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),

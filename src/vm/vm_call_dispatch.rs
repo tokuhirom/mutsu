@@ -1786,7 +1786,7 @@ impl VM {
         self.interpreter.pop_block();
         let effective_return_spec = return_spec
             .as_deref()
-            .map(|spec| self.interpreter.resolved_type_capture_name(spec));
+            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
 
         let frame = self.pop_call_frame();
         let restored_env = frame.saved_env;

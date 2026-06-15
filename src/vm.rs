@@ -2235,7 +2235,7 @@ impl VM {
                 let raw_constraint = Self::const_str(code, *tc_idx).to_string();
                 // Resolve type capture variables (e.g., `T` → `Int` when `::T`
                 // was captured earlier in the signature).
-                let constraint = self.interpreter.resolved_type_capture_name(&raw_constraint);
+                let constraint = loan_env!(self, resolved_type_capture_name(&raw_constraint));
                 // Clear stale atomic CAS state when an @-variable is
                 // (re-)declared with a type constraint like atomicint.
                 if name.starts_with('@') && constraint == "atomicint" {
