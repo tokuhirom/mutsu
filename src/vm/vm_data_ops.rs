@@ -67,7 +67,7 @@ fn check_rat_divide_by_zero(v: &Value) -> Result<(), RuntimeError> {
             Value::Int(*n),
         ))),
         Value::BigRat(n, d) if d.is_zero() => Err(RuntimeError::numeric_divide_by_zero_with(Some(
-            Value::from_bigint(n.clone()),
+            Value::from_bigint((**n).clone()),
         ))),
         _ => Ok(()),
     }
@@ -263,8 +263,8 @@ impl VM {
                     named: n,
                 } => {
                     // Flatten inner capture (from |capture slip)
-                    positional.extend(p);
-                    named.extend(n);
+                    positional.extend(*p);
+                    named.extend(*n);
                 }
                 Value::Slip(items) => {
                     for item in items.iter() {
@@ -279,7 +279,7 @@ impl VM {
                 other => positional.push(other),
             }
         }
-        self.stack.push(Value::Capture { positional, named });
+        self.stack.push(Value::capture(positional, named));
     }
 
     pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {

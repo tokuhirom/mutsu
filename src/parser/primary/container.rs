@@ -1481,7 +1481,7 @@ fn negate_angle_numeric(val: Value) -> Value {
         Value::Num(n) => Value::Num(-n),
         Value::Rat(n, d) => Value::Rat(-n, d),
         Value::FatRat(n, d) => Value::FatRat(-n, d),
-        Value::BigRat(n, d) => Value::BigRat(-n, d),
+        Value::BigRat(n, d) => Value::bigrat(-(*n), *d),
         other => other,
     }
 }

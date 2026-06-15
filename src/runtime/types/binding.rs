@@ -412,7 +412,7 @@ impl Interpreter {
                             named.insert(key, *val);
                         }
                     }
-                    let capture_value = Value::Capture { positional, named };
+                    let capture_value = Value::capture(positional, named);
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, capture_value.clone());
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());

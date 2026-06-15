@@ -150,7 +150,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         }
         Value::Rat(n, d) => Ok(SerValue::Rat(*n, *d)),
         Value::FatRat(n, d) => Ok(SerValue::FatRat(*n, *d)),
-        Value::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone())),
+        Value::BigRat(n, d) => Ok(SerValue::BigRat((**n).clone(), (**d).clone())),
         Value::Complex(r, i) => Ok(SerValue::Complex(*r, *i)),
         Value::Set(s, _) => Ok(SerValue::Set(s.elements.clone())),
         Value::Bag(b, _) => Ok(SerValue::Bag(b.counts.clone())),
@@ -348,7 +348,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         ),
         SerValue::Rat(n, d) => Value::Rat(n, d),
         SerValue::FatRat(n, d) => Value::FatRat(n, d),
-        SerValue::BigRat(n, d) => Value::BigRat(n, d),
+        SerValue::BigRat(n, d) => Value::bigrat(n, d),
         SerValue::Complex(r, i) => Value::Complex(r, i),
         SerValue::Set(s) => Value::set(s),
         SerValue::Bag(b) => Value::bag(b),
@@ -452,13 +452,13 @@ fn ser_to_value(sv: SerValue) -> Value {
                     .collect(),
             ),
         ),
-        SerValue::Capture { positional, named } => Value::Capture {
-            positional: positional.into_iter().map(ser_to_value).collect(),
-            named: named
+        SerValue::Capture { positional, named } => Value::capture(
+            positional.into_iter().map(ser_to_value).collect(),
+            named
                 .into_iter()
                 .map(|(k, v)| (k, ser_to_value(v)))
                 .collect(),
-        },
+        ),
         SerValue::Uni { form, text } => Value::Uni { form, text },
         SerValue::ParametricRole {
             base_name,

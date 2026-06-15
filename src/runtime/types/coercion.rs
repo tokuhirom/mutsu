@@ -123,7 +123,7 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
             Value::Rat(n, d) if *d != 0 => Value::Complex(*n as f64 / *d as f64, 0.0),
             Value::FatRat(n, d) if *d != 0 => Value::Complex(*n as f64 / *d as f64, 0.0),
             Value::BigInt(n) => Value::Complex(n.to_f64().unwrap_or(0.0), 0.0),
-            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+            Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => {
                 Value::Complex(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0), 0.0)
             }
             Value::Str(s) => match crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {

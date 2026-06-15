@@ -24,7 +24,9 @@ pub(super) fn format_rat_fixed(
     let (numer, denom) = match arg {
         Some(Value::Rat(n, d)) if *d != 0 => (BigInt::from(*n), BigInt::from(*d)),
         Some(Value::FatRat(n, d)) if *d != 0 => (BigInt::from(*n), BigInt::from(*d)),
-        Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => (n.clone(), d.clone()),
+        Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
+            ((**n).clone(), (**d).clone())
+        }
         _ => return None,
     };
     let is_neg = numer < BigInt::from(0);

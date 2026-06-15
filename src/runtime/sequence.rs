@@ -4,7 +4,7 @@ use crate::symbol::Symbol;
 impl Interpreter {
     fn normalize_sequence_arg(value: &Value) -> Value {
         match value {
-            Value::Capture { positional, .. } => Value::array(positional.clone()),
+            Value::Capture { positional, .. } => Value::array((**positional).clone()),
             other => other.clone(),
         }
     }

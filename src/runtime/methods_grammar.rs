@@ -87,7 +87,7 @@ impl Interpreter {
                             positional,
                             named: _,
                         } => {
-                            rule_args = positional.clone();
+                            rule_args = (**positional).clone();
                         }
                         Value::Array(arr, _) => {
                             rule_args = arr.as_ref().clone().items;

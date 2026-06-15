@@ -38,10 +38,7 @@ impl VM {
                 positional.push(a.clone());
             }
         }
-        let capture = Value::Capture {
-            positional,
-            named: std::collections::HashMap::new(),
-        };
+        let capture = Value::capture(positional, std::collections::HashMap::new());
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.clone()));
         attrs.insert("capture".to_string(), capture);

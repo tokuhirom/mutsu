@@ -64,7 +64,7 @@ fn negate_literal_value(value: &Value) -> Option<Value> {
         Value::Num(n) => Some(Value::Num(-n)),
         Value::Rat(n, d) => Some(crate::value::make_rat(-n, *d)),
         Value::FatRat(n, d) => Some(Value::FatRat(-n, *d)),
-        Value::BigRat(n, d) => Some(crate::value::make_big_rat(-n.clone(), d.clone())),
+        Value::BigRat(n, d) => Some(crate::value::make_big_rat(-(**n).clone(), (**d).clone())),
         Value::Complex(re, im) => Some(Value::Complex(-re, -im)),
         _ => None,
     }

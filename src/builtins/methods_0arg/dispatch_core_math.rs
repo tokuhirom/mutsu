@@ -179,7 +179,7 @@ pub(super) fn dispatch(
             Value::Complex(r, i) => Some(Ok(Value::Complex(r + 1.0, *i))),
             Value::Rat(n, d) => Some(Ok(make_rat(n + d, *d))),
             Value::FatRat(n, d) => Some(Ok(Value::FatRat(n + d, *d))),
-            Value::BigRat(n, d) => Some(Ok(Value::BigRat(n + d, d.clone()))),
+            Value::BigRat(n, d) => Some(Ok(Value::bigrat(n.as_ref() + d.as_ref(), (**d).clone()))),
             Value::Bool(_) => Some(Ok(Value::Bool(true))),
             Value::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_succ(
                 s,
@@ -193,7 +193,7 @@ pub(super) fn dispatch(
             Value::Complex(r, i) => Some(Ok(Value::Complex(r - 1.0, *i))),
             Value::Rat(n, d) => Some(Ok(make_rat(n - d, *d))),
             Value::FatRat(n, d) => Some(Ok(Value::FatRat(n - d, *d))),
-            Value::BigRat(n, d) => Some(Ok(Value::BigRat(n - d, d.clone()))),
+            Value::BigRat(n, d) => Some(Ok(Value::bigrat(n.as_ref() - d.as_ref(), (**d).clone()))),
             Value::Bool(_) => Some(Ok(Value::Bool(false))),
             Value::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_pred(
                 s,
@@ -205,9 +205,9 @@ pub(super) fn dispatch(
             Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).ln()))),
             Value::Num(f) => Some(Ok(Value::Num(f.ln()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).ln()))),
-            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).ln(),
-            ))),
+            Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => Some(Ok(
+                Value::Num((n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).ln()),
+            )),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(*r);
@@ -220,9 +220,9 @@ pub(super) fn dispatch(
             Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log2()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log2()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).log2()))),
-            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log2(),
-            ))),
+            Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => Some(Ok(
+                Value::Num((n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log2()),
+            )),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(*r);
@@ -236,9 +236,9 @@ pub(super) fn dispatch(
             Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log10()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log10()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).log10()))),
-            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log10(),
-            ))),
+            Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => Some(Ok(
+                Value::Num((n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log10()),
+            )),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(*r);
@@ -252,9 +252,9 @@ pub(super) fn dispatch(
             Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).exp()))),
             Value::Num(f) => Some(Ok(Value::Num(f.exp()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).exp()))),
-            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).exp(),
-            ))),
+            Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => Some(Ok(
+                Value::Num((n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).exp()),
+            )),
             Value::Complex(r, i) => {
                 // exp(a+bi) = exp(a) * (cos(b) + i*sin(b))
                 let ea = r.exp();
@@ -270,7 +270,7 @@ pub(super) fn dispatch(
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => {
                     n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
                 }
                 Value::Str(s) => match s.parse::<f64>() {
@@ -295,7 +295,7 @@ pub(super) fn dispatch(
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => {
                     n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
                 }
                 Value::Str(s) => match s.parse::<f64>() {
@@ -474,7 +474,7 @@ pub(super) fn dispatch(
                 let rat = str_to_rat(s);
                 match rat {
                     Value::Rat(n, d) => Some(Ok(Value::FatRat(n, d))),
-                    Value::BigRat(n, d) => Some(Ok(crate::value::make_big_fat_rat(n, d))),
+                    Value::BigRat(n, d) => Some(Ok(crate::value::make_big_fat_rat(*n, *d))),
                     _ => Some(Ok(Value::FatRat(0, 1))),
                 }
             }

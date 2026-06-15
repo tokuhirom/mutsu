@@ -167,9 +167,9 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             Some(Value::Num(f)) => *f as i64,
             Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
             Some(Value::FatRat(n, d)) if *d != 0 => *n / *d,
-            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
                 use num_traits::ToPrimitive;
-                (n / d).to_i64().unwrap_or(0)
+                (n.as_ref() / d.as_ref()).to_i64().unwrap_or(0)
             }
             Some(Value::Str(s)) => s
                 .trim()
@@ -185,7 +185,9 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             Some(Value::Num(f)) => BigInt::from(*f as i64),
             Some(Value::Rat(n, d)) if *d != 0 => BigInt::from(*n / *d),
             Some(Value::FatRat(n, d)) if *d != 0 => BigInt::from(*n / *d),
-            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => n / d,
+            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
+                n.as_ref() / d.as_ref()
+            }
             Some(Value::Str(s)) => s
                 .trim()
                 .parse::<BigInt>()
@@ -199,9 +201,9 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             Some(Value::Num(f)) => *f,
             Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
             Some(Value::FatRat(n, d)) if *d != 0 => *n as f64 / *d as f64,
-            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
                 use num_traits::ToPrimitive;
-                let result = n * BigInt::from(1_000_000_000i64) / d;
+                let result = n.as_ref() * BigInt::from(1_000_000_000i64) / d.as_ref();
                 result.to_f64().unwrap_or(0.0) / 1_000_000_000.0
             }
             Some(Value::Str(s)) => s.trim().parse::<f64>().unwrap_or(0.0),

@@ -1786,7 +1786,9 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     Value::Num(f) => Some(Value::Num(*f + 1.0)),
                     Value::Rat(n, d) => Some(crate::value::make_rat(n + d, *d)),
                     Value::FatRat(n, d) => Some(Value::FatRat(n + d, *d)),
-                    Value::BigRat(n, d) => Some(Value::BigRat(n + d, d.clone())),
+                    Value::BigRat(n, d) => {
+                        Some(Value::bigrat(n.as_ref() + d.as_ref(), (**d).clone()))
+                    }
                     other if other.is_numeric() => Some(Value::Num(other.to_f64() + 1.0)),
                     _ => None,
                 }
@@ -2937,7 +2939,7 @@ pub(crate) fn to_big_rat_parts(val: &Value) -> Option<(BigInt, BigInt)> {
         Value::Int(i) => Some((BigInt::from(*i), BigInt::from(1))),
         Value::BigInt(i) => Some(((**i).clone(), BigInt::from(1))),
         Value::Rat(n, d) | Value::FatRat(n, d) => Some((BigInt::from(*n), BigInt::from(*d))),
-        Value::BigRat(n, d) => Some((n.clone(), d.clone())),
+        Value::BigRat(n, d) => Some(((**n).clone(), (**d).clone())),
         _ => None,
     }
 }
@@ -3049,6 +3051,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             }
         }
         Value::BigRat(n, d) => {
+            let (n, d) = (n.as_ref(), d.as_ref());
             if !d.is_zero() {
                 if let (Some(nn), Some(dd)) = (n.to_f64(), d.to_f64())
                     && nn.is_finite()

@@ -622,26 +622,17 @@ fn dispatch_capture(
             Some(Ok(Value::str(format!("\\({})", parts.join(", ")))))
         }
         "gist" | "Str" => {
-            let target = Value::Capture {
-                positional: positional.to_vec(),
-                named: named.clone(),
-            };
+            let target = Value::capture(positional.to_vec(), named.clone());
             Some(Ok(Value::str(target.to_string_value())))
         }
         "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
         "WHAT" => Some(Ok(Value::Package(Symbol::intern("Capture")))),
         "flat" => {
-            let cap = Value::Capture {
-                positional: positional.to_vec(),
-                named: named.clone(),
-            };
+            let cap = Value::capture(positional.to_vec(), named.clone());
             Some(Ok(Value::Seq(Arc::new(vec![cap]))))
         }
         "Seq" | "List" => {
-            let cap = Value::Capture {
-                positional: positional.to_vec(),
-                named: named.clone(),
-            };
+            let cap = Value::capture(positional.to_vec(), named.clone());
             Some(Ok(Value::Seq(Arc::new(vec![cap]))))
         }
         _ => None,

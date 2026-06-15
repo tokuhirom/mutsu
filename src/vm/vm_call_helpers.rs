@@ -65,8 +65,8 @@ impl VM {
                 args.extend(elements.iter().cloned());
             }
             Value::Capture { positional, named } => {
-                args.extend(positional);
-                for (k, v) in named {
+                args.extend(*positional);
+                for (k, v) in *named {
                     args.push(Value::Pair(k, Box::new(v)));
                 }
             }

@@ -90,7 +90,7 @@ pub(super) fn dispatch(
             use num_traits::Zero;
             if d.is_zero() && (method == "gist" || method == "Str") {
                 Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
-                    Value::from_bigint(n.clone()),
+                    Value::from_bigint((**n).clone()),
                 ))))
             } else if method == "gist" {
                 Some(Ok(Value::str(target.to_string_value())))

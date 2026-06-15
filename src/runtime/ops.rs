@@ -717,7 +717,7 @@ impl Interpreter {
                         },
                     ));
                 }
-                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+                Ok(Some((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX)))
             }
             Value::Str(s) => {
                 let parsed = s.trim().parse::<f64>().map_err(|_| {
