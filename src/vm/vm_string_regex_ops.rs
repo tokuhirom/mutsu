@@ -490,10 +490,7 @@ impl VM {
                         samespace,
                     );
                     let result = Value::str(out);
-                    self.env_mut().insert("_".to_string(), result.clone());
-                    self.env_mut().insert("$_".to_string(), result.clone());
-                    self.env_mut()
-                        .insert("__mutsu_rw_map_topic__".to_string(), result);
+                    self.write_subst_topic_checked(result)?;
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
                     self.env_mut().insert("/".to_string(), match_obj.clone());
@@ -535,10 +532,7 @@ impl VM {
                         )
                     };
                     let result = Value::str(out);
-                    self.env_mut().insert("_".to_string(), result.clone());
-                    self.env_mut().insert("$_".to_string(), result.clone());
-                    self.env_mut()
-                        .insert("__mutsu_rw_map_topic__".to_string(), result);
+                    self.write_subst_topic_checked(result)?;
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
                     self.env_mut().insert("/".to_string(), match_obj.clone());
@@ -651,11 +645,7 @@ impl VM {
             )
         };
         let result = Value::str(out);
-        self.env_mut().insert("_".to_string(), result.clone());
-        self.env_mut().insert("$_".to_string(), result.clone());
-        // Track topic mutation for map rw writeback
-        self.env_mut()
-            .insert("__mutsu_rw_map_topic__".to_string(), result);
+        self.write_subst_topic_checked(result)?;
         // For :g / :x, $/ and the substitution result are a List of Match
         // objects; otherwise a single Match for the first (and only) range.
         if result_is_list {
@@ -675,6 +665,28 @@ impl VM {
         self.env_mut().insert("/".to_string(), match_obj.clone());
         self.substitution_in_smartmatch = self.in_smartmatch_rhs;
         self.stack.push(match_obj);
+        Ok(())
+    }
+
+    /// Write a destructive `s///` result back to the topic, throwing
+    /// `X::Assignment::RO` when the topic is bound read-only (e.g. a
+    /// `method ro($_) {...}` / `sub ($x is readonly) {...}` parameter). Only
+    /// reached after a substitution actually occurred, so a non-matching
+    /// `s///` against a read-only topic stays a no-op.
+    fn write_subst_topic_checked(&mut self, result: Value) -> Result<(), RuntimeError> {
+        if self.interpreter.readonly_vars().contains("_") {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::str("Cannot modify an immutable Str".to_string()),
+            );
+            attrs.insert("value".to_string(), result);
+            return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+        }
+        self.env_mut().insert("_".to_string(), result.clone());
+        self.env_mut().insert("$_".to_string(), result.clone());
+        self.env_mut()
+            .insert("__mutsu_rw_map_topic__".to_string(), result);
         Ok(())
     }
 
