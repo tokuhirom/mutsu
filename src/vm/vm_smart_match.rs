@@ -617,6 +617,6 @@ impl VM {
         }
 
         // Fall back to interpreter for complex cases
-        self.interpreter.smart_match_values(left, right)
+        loan_env!(self, smart_match_values(left, right))
     }
 }

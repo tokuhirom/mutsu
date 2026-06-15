@@ -129,7 +129,7 @@ impl VM {
             return None;
         }
         let cn = class_name.resolve();
-        if self.interpreter.has_user_method(&cn, method) {
+        if loan_env!(self, has_user_method(&cn, method)) {
             return None;
         }
         // Only a *public* accessor reads through the fast path. Gating on this
@@ -137,7 +137,7 @@ impl VM {
         // under the `secret!` key, so reading it by the bare name must fall
         // through to the interpreter (which denies the access) rather than
         // leaking the private value.
-        if !self.interpreter.has_public_accessor(&cn, method) {
+        if !loan_env!(self, has_public_accessor(&cn, method)) {
             return None;
         }
         // Public accessor confirmed. Read its backing value, stored under the
@@ -152,9 +152,8 @@ impl VM {
         match val {
             Some(v) => {
                 let out = v.clone();
-                if let Some(msg) = self.interpreter.class_attribute_deprecated(&cn, method) {
-                    self.interpreter
-                        .check_deprecation_for_method(method, &cn, &msg);
+                if let Some(msg) = loan_env!(self, class_attribute_deprecated(&cn, method)) {
+                    loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
                 Some(out)
             }
@@ -174,8 +173,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        self.interpreter
-            .set_pending_call_arg_sources(arg_sources.clone());
+        loan_env!(self, set_pending_call_arg_sources(arg_sources.clone()));
         let method_raw = Self::const_str(code, name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let method_cow = Self::rewrite_method_name_cow(method_raw, modifier);
@@ -222,9 +220,7 @@ impl VM {
         // `@x[0].push('foo')` still dies), and the result is written back to the slot.
         if let Value::Package(type_name) = &target
             && matches!(method, "push" | "append" | "unshift" | "prepend")
-            && let Some(result) = self
-                .interpreter
-                .autoviv_typed_array_push(&type_name.resolve(), &args)?
+            && let Some(result) = loan_env!(self, autoviv_typed_array_push(&type_name.resolve(), &args))?
         {
             self.stack.push(result);
             self.env_dirty = true;
@@ -273,9 +269,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
-                && self
-                    .interpreter
-                    .resolve_method_with_owner(&cn, "Bool", &[])
+                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[]))
                     .is_some()
             {
                 let t = self.eval_truthy(&target);
@@ -415,7 +409,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(&cn, method)
+                && loan_env!(self, has_user_method(&cn, method))
             {
                 skip_native = true;
             }
@@ -499,7 +493,7 @@ impl VM {
             if has_subclass_attr {
                 target
             } else {
-                self.interpreter.auto_fetch_proxy(&target)?
+                loan_env!(self, auto_fetch_proxy(&target))?
             }
         } else {
             target
@@ -804,9 +798,7 @@ impl VM {
                     | "Failure"
                     | "sink"
             )
-            && let Some(err) = self
-                .interpreter
-                .failure_to_runtime_error_if_unhandled(&target)
+            && let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&target))
         {
             return Err(err);
         }
@@ -852,11 +844,9 @@ impl VM {
                 } = &target
                 {
                     let cn = class_name.resolve();
-                    if !self.interpreter.has_user_method(&cn, method)
+                    if !loan_env!(self, has_user_method(&cn, method))
                         && attributes.contains_key("__mutsu_array_storage")
-                        && self
-                            .interpreter
-                            .mro_readonly(&cn)
+                        && loan_env!(self, mro_readonly(&cn))
                             .iter()
                             .any(|n| n == "Array")
                     {
@@ -1019,9 +1009,7 @@ impl VM {
                     && let Some((attrs_ref, attr_name)) =
                         self.interpreter.pending_proxy_subclass_attr.take()
                 {
-                    let result = self
-                        .interpreter
-                        .proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args)?;
+                    let result = loan_env!(self, proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args))?;
                     self.stack.push(result);
                     self.env_dirty = true;
                     return Ok(());

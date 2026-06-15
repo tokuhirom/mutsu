@@ -177,7 +177,7 @@ impl VM {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        self.interpreter.coerce_infix_operand_numeric(value)
+        loan_env!(self, coerce_infix_operand_numeric(value))
     }
 
     pub(super) fn coerce_numeric_bridge_pair(
@@ -213,9 +213,7 @@ impl VM {
         match val {
             Value::Package(name) => {
                 let class_name = name.resolve().to_string();
-                if self
-                    .interpreter
-                    .resolve_method_with_owner(&class_name, "Bool", &[])
+                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[]))
                     .is_some()
                     && let Ok(result) =
                         self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
@@ -226,9 +224,7 @@ impl VM {
             }
             Value::Instance { class_name, .. } => {
                 let cn = class_name.resolve().to_string();
-                if self
-                    .interpreter
-                    .resolve_method_with_owner(&cn, "Bool", &[])
+                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[]))
                     .is_some()
                     && let Ok(result) =
                         self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
@@ -386,7 +382,7 @@ impl VM {
             if !args.is_empty()
                 && !pkg.is_empty()
                 && pkg != "GLOBAL"
-                && self.interpreter.has_class(&pkg)
+                && loan_env!(self, has_class(&pkg))
             {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
@@ -415,7 +411,7 @@ impl VM {
             // Check if any mixed-in role provides CALL-ME
             for key in mixins.keys() {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
-                    && self.interpreter.role_has_method(role_name, "CALL-ME")
+                    && loan_env!(self, role_has_method(role_name, "CALL-ME"))
                 {
                     // TODO: complex case -- fall back to interpreter for CALL-ME on Mixin
                     return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
@@ -457,9 +453,7 @@ impl VM {
             }
         }
         // Evaluate the thunk (call the sub with no args)
-        let result = self
-            .interpreter
-            .call_sub_value(thunk_data.thunk.clone(), vec![], true)?;
+        let result = loan_env!(self, call_sub_value(thunk_data.thunk.clone(), vec![], true))?;
         // Cache the result
         {
             let mut cache = thunk_data.cache.lock().unwrap();

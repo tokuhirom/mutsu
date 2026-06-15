@@ -57,7 +57,7 @@ impl VM {
         let sigiled_target = format!("@{target_name}");
         if !self.interpreter.shared_vars_active
             || !matches!(
-                self.interpreter.get_shared_var(&sigiled_target),
+                loan_env!(self, get_shared_var(&sigiled_target)),
                 Some(Value::Array(..))
             )
         {
@@ -84,9 +84,7 @@ impl VM {
         else {
             return Ok(None);
         };
-        let result = self
-            .interpreter
-            .push_to_shared_var(&sigiled_target, values, &target_value);
+        let result = loan_env!(self, push_to_shared_var(&sigiled_target, values, &target_value));
         Ok(Some(result))
     }
 
@@ -104,9 +102,7 @@ impl VM {
         // interpreter fallback).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(result) = self
-                .interpreter
-                .try_native_default_construct(*class_name, &args)
+            && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
             // Native construction is pure data assembly: it returns a fresh
             // instance and writes nothing to the caller env (Slice 6.3).
@@ -169,7 +165,7 @@ impl VM {
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
                 return result;
             }
-            if self.interpreter.is_native_method(&class, method) {
+            if loan_env!(self, is_native_method(&class, method)) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return loan_env!(self, call_method_with_values(target, method, args));
@@ -194,13 +190,9 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name {
-                let resolved = self
-                    .interpreter
-                    .resolve_private_method_for_vm(&cn, method, &args);
+                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
-                    let caller_allowed = self
-                        .interpreter
-                        .can_fast_dispatch_private_method_vm(&owner_class);
+                    let caller_allowed = loan_env!(self, can_fast_dispatch_private_method_vm(&owner_class));
                     if caller_allowed && let Some(ref cc) = method_def.compiled_code {
                         let cc = cc.clone();
                         let target_id = match &target {
@@ -220,12 +212,12 @@ impl VM {
                         } else {
                             target.clone()
                         };
-                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                        let pushed_dispatch = loan_env!(self, push_method_dispatch_frame(
                             &cn,
                             method,
                             &args,
                             invocant_for_dispatch,
-                        );
+                        ));
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
                         let method_result = self.call_compiled_method(
@@ -240,9 +232,9 @@ impl VM {
                             &empty_fns,
                         );
                         if pushed_dispatch {
-                            self.interpreter.pop_method_dispatch();
+                            loan_env!(self, pop_method_dispatch());
                         }
-                        self.interpreter.pop_method_samewith_context();
+                        loan_env!(self, pop_method_samewith_context());
                         let (result, new_attrs, attrs_adjusted) = method_result?;
                         if let Some(id) = target_id {
                             // Commit only a `:=`-adjusted snapshot: an unadjusted
@@ -264,13 +256,13 @@ impl VM {
                                 } else {
                                     new_attrs
                                 };
-                                return self.interpreter.proxy_fetch(
+                                return loan_env!(self, proxy_fetch(
                                     fetcher,
                                     None,
                                     &cn,
                                     &proxy_attrs,
                                     id,
-                                );
+                                ));
                             }
                         }
                         return Ok(result);
@@ -290,7 +282,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(&cn, method)
+                && loan_env!(self, has_user_method(&cn, method))
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
@@ -312,7 +304,7 @@ impl VM {
 
             // Fast method dispatch cache: skip wrap chain check, compiled_code
             // extraction, and param_def eligibility scans for known-fast methods.
-            if !self.interpreter.has_any_wrap_chains()
+            if !loan_env!(self, has_any_wrap_chains())
                 && let Some(entry) = self.fast_method_cache.get(&cache_key)
                 && args.len() <= entry.positional_count
             {
@@ -370,9 +362,7 @@ impl VM {
                         {
                             hit.clone()
                         } else {
-                            let resolved = self
-                                .interpreter
-                                .resolve_method_with_owner_invocant(cn, method, &args, &target);
+                            let resolved = loan_env!(self, resolve_method_with_owner_invocant(cn, method, &args, &target));
                             let resolved_arc =
                                 resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
                             if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
@@ -780,7 +770,7 @@ impl VM {
             Kind::Say => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_gist_value(arg));
+                    c.push_str(&loan_env!(self, render_gist_value(arg)));
                 }
                 (c, true, method)
             }
@@ -788,14 +778,14 @@ impl VM {
             Kind::Print => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_str_value(arg));
+                    c.push_str(&loan_env!(self, render_str_value(arg)));
                 }
                 (c, false, method)
             }
             Kind::Put => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_str_value(arg));
+                    c.push_str(&loan_env!(self, render_str_value(arg)));
                 }
                 (c, true, method)
             }
@@ -908,9 +898,9 @@ impl VM {
             let mut out = Vec::new();
             for arg in args {
                 if Self::is_buf_value(arg) {
-                    out.extend(self.interpreter.supply_chunk_to_bytes(arg, "utf-8"));
+                    out.extend(loan_env!(self, supply_chunk_to_bytes(arg, "utf-8")));
                 } else {
-                    out.extend(self.interpreter.render_str_value(arg).into_bytes());
+                    out.extend(loan_env!(self, render_str_value(arg)).into_bytes());
                 }
             }
             out
@@ -1277,11 +1267,9 @@ impl VM {
         // respective registry, so calling both safely covers class- and
         // role-owned methods. Neither re-enters user code (pure compilation),
         // so the registry re-entrancy discipline (②) is respected.
-        self.interpreter.compile_class_methods(owner_class);
-        self.interpreter.compile_role_methods(owner_class);
-        let (owner, def) = self
-            .interpreter
-            .resolve_method_with_owner_invocant(cn, method, args, target)?;
+        loan_env!(self, compile_class_methods(owner_class));
+        loan_env!(self, compile_role_methods(owner_class));
+        let (owner, def) = loan_env!(self, resolve_method_with_owner_invocant(cn, method, args, target))?;
         if def.compiled_code.is_some() {
             Some((owner, std::sync::Arc::new(def)))
         } else {
@@ -1321,12 +1309,12 @@ impl VM {
             } else {
                 target.clone()
             };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+            let pushed_dispatch = loan_env!(self, push_method_dispatch_frame(
                 cn,
                 method,
                 &args,
                 invocant_for_dispatch,
-            );
+            ));
             let result = self.call_compiled_method_fast(
                 cn,
                 owner_class,
@@ -1340,9 +1328,9 @@ impl VM {
                 csm,
             );
             if pushed_dispatch {
-                self.interpreter.pop_method_dispatch();
+                loan_env!(self, pop_method_dispatch());
             }
-            self.interpreter.pop_method_samewith_context();
+            loan_env!(self, pop_method_samewith_context());
             result
         } else {
             let invocant_for_dispatch = if attributes.is_empty() {
@@ -1350,12 +1338,12 @@ impl VM {
             } else {
                 target.clone()
             };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+            let pushed_dispatch = loan_env!(self, push_method_dispatch_frame(
                 cn,
                 method,
                 &args,
                 invocant_for_dispatch,
-            );
+            ));
             let invocant = Some(target);
             let result = self.call_compiled_method(
                 cn,
@@ -1369,9 +1357,9 @@ impl VM {
                 &empty_fns,
             );
             if pushed_dispatch {
-                self.interpreter.pop_method_dispatch();
+                loan_env!(self, pop_method_dispatch());
             }
-            self.interpreter.pop_method_samewith_context();
+            loan_env!(self, pop_method_samewith_context());
             result
         };
         let (result, new_attrs, attrs_adjusted) = method_result?;
@@ -1393,9 +1381,7 @@ impl VM {
                 } else {
                     new_attrs
                 };
-                return self
-                    .interpreter
-                    .proxy_fetch(fetcher, None, cn, &proxy_attrs, id);
+                return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
             }
         }
         Ok(result)
@@ -1440,13 +1426,9 @@ impl VM {
                     .as_ref()
                     .is_some_and(|tc| tc.contains('('))
         });
-        let has_role_bindings = self
-            .interpreter
-            .class_role_param_bindings(owner_class)
+        let has_role_bindings = loan_env!(self, class_role_param_bindings(owner_class))
             .is_some()
-            || self
-                .interpreter
-                .class_role_param_bindings(receiver_class)
+            || loan_env!(self, class_role_param_bindings(receiver_class))
                 .is_some();
         if has_invocant_constraint || has_complex_params || has_role_bindings {
             return;
@@ -1489,9 +1471,7 @@ impl VM {
         // Native default construction (see `try_compiled_method_or_interpret`).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(result) = self
-                .interpreter
-                .try_native_default_construct(*class_name, &args)
+            && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
             // Pure construction: fresh instance, no caller-env write (Slice 6.3).
             self.method_dispatch_pure = true;
@@ -1545,7 +1525,7 @@ impl VM {
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
                 return result;
             }
-            if self.interpreter.is_native_method(&class, method) {
+            if loan_env!(self, is_native_method(&class, method)) {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self.vm_call_method_mut_with_values(target_name, target, method, args);
@@ -1574,7 +1554,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(&cn, method)
+                && loan_env!(self, has_user_method(&cn, method))
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
@@ -1590,13 +1570,9 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name {
-                let resolved = self
-                    .interpreter
-                    .resolve_private_method_for_vm(&cn, method, &args);
+                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
-                    let caller_allowed = self
-                        .interpreter
-                        .can_fast_dispatch_private_method_vm(&owner_class);
+                    let caller_allowed = loan_env!(self, can_fast_dispatch_private_method_vm(&owner_class));
                     if caller_allowed && let Some(ref cc) = method_def.compiled_code {
                         let cc = cc.clone();
                         let target_id = match &target {
@@ -1616,12 +1592,12 @@ impl VM {
                         } else {
                             target.clone()
                         };
-                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                        let pushed_dispatch = loan_env!(self, push_method_dispatch_frame(
                             &cn,
                             method,
                             &args,
                             invocant_for_dispatch,
-                        );
+                        ));
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
                         let method_result = self.call_compiled_method(
@@ -1636,9 +1612,9 @@ impl VM {
                             &empty_fns,
                         );
                         if pushed_dispatch {
-                            self.interpreter.pop_method_dispatch();
+                            loan_env!(self, pop_method_dispatch());
                         }
-                        self.interpreter.pop_method_samewith_context();
+                        loan_env!(self, pop_method_samewith_context());
                         let (result, new_attrs, attrs_adjusted) = method_result?;
                         if let Some(id) = target_id {
                             // Commit only a `:=`-adjusted snapshot: an unadjusted
@@ -1660,13 +1636,13 @@ impl VM {
                                 } else {
                                     new_attrs
                                 };
-                                return self.interpreter.proxy_fetch(
+                                return loan_env!(self, proxy_fetch(
                                     fetcher,
                                     None,
                                     &cn,
                                     &proxy_attrs,
                                     id,
-                                );
+                                ));
                             }
                         }
                         return Ok(result);
@@ -1680,17 +1656,13 @@ impl VM {
             _ => None,
         };
         if let Some(cn) = class_name
-            && let Some((owner_class, method_def)) = self
-                .interpreter
-                .resolve_method_with_owner_invocant(&cn, method, &args, &target)
+            && let Some((owner_class, method_def)) = loan_env!(self, resolve_method_with_owner_invocant(&cn, method, &args, &target))
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
             if self.interpreter.dispatch_ambiguous {
                 self.interpreter.dispatch_ambiguous = false;
-                let sigs = self
-                    .interpreter
-                    .format_method_candidate_signatures(&cn, method);
+                let sigs = loan_env!(self, format_method_candidate_signatures(&cn, method));
                 return Err(
                     crate::runtime::methods_signature::make_multi_ambiguous_error(
                         method, &cn, &sigs,
@@ -1733,12 +1705,12 @@ impl VM {
                 } else {
                     target.clone()
                 };
-                let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                let pushed_dispatch = loan_env!(self, push_method_dispatch_frame(
                     &cn,
                     method,
                     &args,
                     invocant_for_dispatch,
-                );
+                ));
                 let invocant = Some(target);
                 let empty_fns = HashMap::new();
                 let method_result = self.call_compiled_method(
@@ -1753,9 +1725,9 @@ impl VM {
                     &empty_fns,
                 );
                 if pushed_dispatch {
-                    self.interpreter.pop_method_dispatch();
+                    loan_env!(self, pop_method_dispatch());
                 }
-                self.interpreter.pop_method_samewith_context();
+                loan_env!(self, pop_method_samewith_context());
                 let (result, new_attrs, attrs_adjusted) = method_result?;
                 if let Some(id) = target_id {
                     // Commit only a `:=`-adjusted snapshot (cell-CAS race
@@ -1774,9 +1746,7 @@ impl VM {
                         } else {
                             new_attrs
                         };
-                        return self
-                            .interpreter
-                            .proxy_fetch(fetcher, None, &cn, &proxy_attrs, id);
+                        return loan_env!(self, proxy_fetch(fetcher, None, &cn, &proxy_attrs, id));
                     }
                 }
                 return Ok(result);
@@ -1838,9 +1808,7 @@ impl VM {
                         captured_bindings,
                         writeback_bindings,
                         captured_names,
-                    ) = self
-                        .interpreter
-                        .get_or_compile_protect_block_with_slots(data);
+                    ) = loan_env!(self, get_or_compile_protect_block_with_slots(data));
                     self.interpreter.sync_shared_vars_for_names(
                         captured_names.iter().map(|name| name.as_str()),
                     );
@@ -1855,7 +1823,7 @@ impl VM {
                 _ => {
                     // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
                     // in the VM. Currently these are rare and delegate to interpreter.
-                    return self.interpreter.call_protect_block(code_val);
+                    return loan_env!(self, call_protect_block(code_val));
                 }
             };
 
@@ -1870,7 +1838,7 @@ impl VM {
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
-                    && self.interpreter.get_shared_var(name).is_some()
+                    && loan_env!(self, get_shared_var(name)).is_some()
                 {
                     // Leave shared collections unmaterialized in locals.
                     // GetLocal will read the shared value on demand.
@@ -1902,7 +1870,7 @@ impl VM {
         if let Some(captured) = captured_env {
             for (slot, name) in writeback_bindings.iter() {
                 if matches!(
-                    self.interpreter.get_shared_var(name),
+                    loan_env!(self, get_shared_var(name)),
                     Some(Value::Array(..) | Value::Hash(..))
                 ) {
                     continue;
@@ -1914,7 +1882,7 @@ impl VM {
                 }
                 if captured.contains_key(name)
                     && !matches!(
-                        self.interpreter.get_shared_var(name),
+                        loan_env!(self, get_shared_var(name)),
                         Some(Value::Array(..) | Value::Hash(..))
                     )
                 {
@@ -1951,20 +1919,18 @@ impl VM {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !self.interpreter.has_any_wrap_chains() || self.interpreter.is_inside_wrap_dispatch() {
+        if !loan_env!(self, has_any_wrap_chains()) || loan_env!(self, is_inside_wrap_dispatch()) {
             return None;
         }
         let cand_idx =
-            self.interpreter
-                .find_method_candidate_index(owner_class, method, method_def)?;
+            loan_env!(self, find_method_candidate_index(owner_class, method, method_def))?;
         let chain = self
             .interpreter
             .get_method_wrap_chain(owner_class, method, cand_idx)?
             .clone();
         let invocant_for_dispatch = target.clone();
         let pushed_dispatch =
-            self.interpreter
-                .push_method_dispatch_frame(cn, method, args, invocant_for_dispatch);
+            loan_env!(self, push_method_dispatch_frame(cn, method, args, invocant_for_dispatch));
         let mut orig_env = crate::env::Env::new();
         orig_env.insert(
             "__mutsu_method_wrap_original".to_string(),
@@ -1997,13 +1963,13 @@ impl VM {
         } else {
             None
         };
-        self.interpreter.push_wrap_dispatch_frame(frame);
+        loan_env!(self, push_wrap_dispatch_frame(frame));
         let result = self.vm_call_sub_value(outermost, call_args, false);
         self.interpreter.pop_wrap_dispatch_frame();
         // Propagate closure variable mutations from the wrapper back to the
         // current env so captured variables are visible to the caller.
         if let Some(wid) = wrapper_id
-            && let Some(persisted) = self.interpreter.get_closure_env_override(wid)
+            && let Some(persisted) = loan_env!(self, get_closure_env_override(wid))
         {
             for (k, v) in persisted.iter() {
                 if self.env().contains_key_sym(*k) {
@@ -2013,9 +1979,9 @@ impl VM {
             self.env_dirty = true;
         }
         if pushed_dispatch {
-            self.interpreter.pop_method_dispatch();
+            loan_env!(self, pop_method_dispatch());
         }
-        self.interpreter.pop_method_samewith_context();
+        loan_env!(self, pop_method_samewith_context());
         Some(result)
     }
 }

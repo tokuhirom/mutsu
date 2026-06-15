@@ -204,8 +204,7 @@ impl VM {
         {
             return Ok(vec![native_result?]);
         }
-        self.interpreter
-            .call_method_all_with_values(target.clone(), method, args.to_vec())
+        loan_env!(self, call_method_all_with_values(target.clone(), method, args.to_vec()))
     }
 
     pub(super) fn call_method_mut_with_temp_target(
@@ -237,9 +236,7 @@ impl VM {
     ) -> Result<(Vec<Value>, Value), RuntimeError> {
         let temp_name = format!("__mutsu_hyper_target_{slot}");
         self.env_mut().insert(temp_name.clone(), item.clone());
-        let result = self
-            .interpreter
-            .call_method_all_with_values(item.clone(), method, args)?;
+        let result = loan_env!(self, call_method_all_with_values(item.clone(), method, args))?;
         let updated = self
             .env()
             .get(&temp_name)

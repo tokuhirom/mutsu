@@ -238,7 +238,7 @@ impl VM {
             && crate::runtime::native_types::is_native_array_element_type(&meta.value_type)
         {
             let result = Value::real_array(items);
-            let result = self.interpreter.tag_container_metadata(result, meta);
+            let result = loan_env!(self, tag_container_metadata(result, meta));
             return result;
         }
         match source {
@@ -355,7 +355,7 @@ impl VM {
             };
             target = match needed {
                 Some(n) => {
-                    let forced = self.interpreter.force_lazy_io_lines_n(handle, n, words)?;
+                    let forced = loan_env!(self, force_lazy_io_lines_n(handle, n, words))?;
                     if kv {
                         let items = crate::runtime::utils::value_to_list(&forced);
                         let mut kv_items = Vec::with_capacity(items.len() * 2);
@@ -465,7 +465,7 @@ impl VM {
         };
         if let Value::Hash(ref items) = target {
             let hash_val = Value::Hash(items.clone());
-            if let Some(key_type) = self.interpreter.hash_key_type(&hash_val)
+            if let Some(key_type) = loan_env!(self, hash_key_type(&hash_val))
                 && !matches!(index, Value::Whatever | Value::Nil | Value::Sub(..))
             {
                 if let Value::Array(ref keys, ..) = index {
@@ -1577,7 +1577,7 @@ impl VM {
                 ));
             }
             // Role parameterization: e.g. R1[C1] → ParametricRole
-            (Value::Package(name), idx) if self.interpreter.is_role(&name.resolve()) => {
+            (Value::Package(name), idx) if loan_env!(self, is_role(&name.resolve())) => {
                 let type_args = match idx {
                     Value::Array(items, ..) => items.to_vec(),
                     other => vec![other],

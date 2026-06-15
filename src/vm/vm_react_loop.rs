@@ -58,7 +58,7 @@ impl VM {
         quit_cb: Value,
         reason: Value,
     ) -> Result<(), RuntimeError> {
-        let saved_when = self.interpreter.when_matched();
+        let saved_when = loan_env!(self, when_matched());
         loan_env!(self, set_when_matched(false));
         match self.call_react_callback(&quit_cb, vec![reason]) {
             Ok(_) => {
@@ -241,10 +241,10 @@ impl VM {
                                     done: false,
                                 });
                             let (od_res, emitted, body_ran_done) =
-                                self.interpreter.run_on_demand_body(
+                                loan_env!(self, run_on_demand_body(
                                     on_demand_cb.clone(),
                                     Some(emitter_supplier_id),
-                                );
+                                ));
                             let streamed_done = self
                                 .interpreter
                                 .supply_stream_consumers
@@ -283,7 +283,7 @@ impl VM {
                                     &v,
                                 ) {
                                     if let Some(mut rsub) =
-                                        self.interpreter.value_to_react_subscription(&v)
+                                        loan_env!(self, value_to_react_subscription(&v))
                                     {
                                         rsub.on_demand_done = Some(done_promise.clone());
                                         react_subs.push(rsub);

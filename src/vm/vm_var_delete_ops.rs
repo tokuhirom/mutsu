@@ -375,7 +375,7 @@ impl VM {
             && loan_env!(self, container_type_metadata(&container)).is_none()
         {
             let container = container.clone();
-            let tagged = self.interpreter.tag_container_metadata(container, info);
+            let tagged = loan_env!(self, tag_container_metadata(container, info));
             self.env_mut().insert(var_name.to_string(), tagged.clone());
             self.update_local_if_exists(code, &var_name, &tagged);
         }
@@ -387,7 +387,7 @@ impl VM {
             && let Some(container) = self.env().get(&var_name).cloned()
             && self.interpreter.container_default(&container).is_none()
         {
-            let tagged = self.interpreter.tag_container_default(container, def);
+            let tagged = loan_env!(self, tag_container_default(container, def));
             self.env_mut().insert(var_name.clone(), tagged);
         }
         // Sync env value to locals so reads through locals see the

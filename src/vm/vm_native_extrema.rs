@@ -67,7 +67,7 @@ impl VM {
 
         let by_arity = by
             .as_ref()
-            .map(|b| self.interpreter.extrema_callable_arity(b));
+            .map(|b| loan_env!(self, extrema_callable_arity(b)));
 
         // The generic fold flattens a single list argument, so wrap the target.
         let positional = [target.clone()];
@@ -85,12 +85,12 @@ impl VM {
 
         match adverb {
             None => Some(Ok(result)),
-            Some(adv) => Some(self.interpreter.apply_extrema_adverb(
+            Some(adv) => Some(loan_env!(self, apply_extrema_adverb(
                 &positional,
                 result,
                 want_max,
                 Some(&adv),
-            )),
+            ))),
         }
     }
 
@@ -127,7 +127,7 @@ impl VM {
 
         let by_arity = by
             .as_ref()
-            .map(|b| self.interpreter.extrema_callable_arity(b));
+            .map(|b| loan_env!(self, extrema_callable_arity(b)));
         let positional = [target.clone()];
         Some(crate::runtime::Interpreter::minmax_from_values_generic(
             &positional,

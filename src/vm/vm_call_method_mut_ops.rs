@@ -328,8 +328,7 @@ impl VM {
         crate::vm::vm_stats::record_method_dispatch();
         // Set pending arg sources for `is rw` dispatch matching
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        self.interpreter
-            .set_pending_call_arg_sources(arg_sources.clone());
+        loan_env!(self, set_pending_call_arg_sources(arg_sources.clone()));
         let method_raw = Self::const_str(code, name_idx);
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -433,9 +432,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
-                && self
-                    .interpreter
-                    .resolve_method_with_owner(&cn, "Bool", &[])
+                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[]))
                     .is_some()
             {
                 let t = self.eval_truthy(&target);
@@ -461,11 +458,11 @@ impl VM {
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase())
-            && !self.interpreter.has_type(&target_name)
+            && !loan_env!(self, has_type(&target_name))
             && !Self::is_builtin_type(&target_name)
-            && !self.interpreter.has_class(&target_name)
+            && !loan_env!(self, has_class(&target_name))
         {
-            let suggestions = self.interpreter.suggest_type_names(&target_name);
+            let suggestions = loan_env!(self, suggest_type_names(&target_name));
             return Err(RuntimeError::undeclared_type_symbols(
                 &target_name,
                 format!("Undeclared name:\n    {} used at line 1", target_name),
@@ -584,8 +581,7 @@ impl VM {
                 push_to_existing_shared_array(&target_name, args.clone())
             )
             .unwrap_or_else(|| {
-                self.interpreter
-                    .push_to_shared_var(&target_name, args, &target)
+                loan_env!(self, push_to_shared_var(&target_name, args, &target))
             });
             self.stack.push(result);
             self.env_dirty = true;
@@ -619,7 +615,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(&cn, &method)
+                && loan_env!(self, has_user_method(&cn, &method))
             {
                 skip_native = true;
             }
@@ -895,7 +891,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
+                        let new_hash = loan_env!(self, tag_container_metadata(new_hash, meta));
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(value);
                         self.env_dirty = true;
@@ -991,7 +987,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
+                        let new_hash = loan_env!(self, tag_container_metadata(new_hash, meta));
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(old_value);
                         self.env_dirty = true;
@@ -1086,7 +1082,7 @@ impl VM {
                             key_type: None,
                             declared_type: None,
                         });
-                        let new_hash = self.interpreter.tag_container_metadata(new_hash, meta);
+                        let new_hash = loan_env!(self, tag_container_metadata(new_hash, meta));
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         if let Some((source_name, cell_val)) = bind_source_install {
                             self.set_env_with_main_alias(&source_name, cell_val.clone());
@@ -1277,11 +1273,9 @@ impl VM {
                             | "BIND-POS"
                     );
                     if is_array_method
-                        && !self.interpreter.has_user_method(&cn, &method)
+                        && !loan_env!(self, has_user_method(&cn, &method))
                         && attributes.contains_key("__mutsu_array_storage")
-                        && self
-                            .interpreter
-                            .mro_readonly(&cn)
+                        && loan_env!(self, mro_readonly(&cn))
                             .iter()
                             .any(|n| n == "Array")
                     {

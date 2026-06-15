@@ -24,12 +24,12 @@ impl VM {
                 Value::Int(i) => Some(*i),
                 _ => None,
             });
-            self.interpreter.check_deprecation_for_method_with_line(
+            loan_env!(self, check_deprecation_for_method_with_line(
                 method_name,
                 owner_class,
                 msg,
                 cl,
-            );
+            ));
         }
         // Build the base (self) value
         let mut base = if let Some(inv) = invocant {
@@ -61,13 +61,9 @@ impl VM {
             let has_attr_aliases = attributes
                 .keys()
                 .any(|k| k.starts_with(ATTR_ALIAS_META_PREFIX));
-            let has_role_bindings = self
-                .interpreter
-                .class_role_param_bindings(owner_class)
+            let has_role_bindings = loan_env!(self, class_role_param_bindings(owner_class))
                 .is_some()
-                || self
-                    .interpreter
-                    .class_role_param_bindings(receiver_class_name)
+                || loan_env!(self, class_role_param_bindings(receiver_class_name))
                     .is_some();
             let has_complex_params = method_def.param_defs.iter().any(|pd| {
                 if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
@@ -163,14 +159,14 @@ impl VM {
         // Clear var_bindings so attribute aliases from outer interpreter-level
         // method calls don't leak into compiled method locals (e.g. `x → !x`
         // from run_instance_method_resolved shadowing a local parameter `x`).
-        let saved_var_bindings = self.interpreter.take_var_bindings();
+        let saved_var_bindings = loan_env!(self, take_var_bindings());
 
-        self.interpreter.push_method_class(owner_class.to_string());
+        loan_env!(self, push_method_class(owner_class.to_string()));
 
         // Detect role context: use the pre-computed role_origin stored on the
         // MethodDef (set during role composition) instead of expensive fingerprint
         // matching on every call.
-        let role_context = if self.interpreter.is_role(owner_class) {
+        let role_context = if loan_env!(self, is_role(owner_class)) {
             Some(owner_class.to_string())
         } else {
             method_def
@@ -197,7 +193,7 @@ impl VM {
         // Set current_package so class-scoped subs are found during method execution.
         // Only change package if the class has subs declared in its body.
         let saved_package = self.current_package().to_string();
-        if self.interpreter.has_class_scoped_subs(receiver_class_name) {
+        if loan_env!(self, has_class_scoped_subs(receiver_class_name)) {
             self.set_current_package(receiver_class_name.to_string());
         }
 
@@ -227,13 +223,11 @@ impl VM {
         );
 
         // Role param bindings
-        if let Some(role_bindings) = self.interpreter.class_role_param_bindings(owner_class) {
+        if let Some(role_bindings) = loan_env!(self, class_role_param_bindings(owner_class)) {
             for (name, value) in &role_bindings {
                 self.env_mut().insert(name.clone(), value.clone());
             }
-        } else if let Some(role_bindings) = self
-            .interpreter
-            .class_role_param_bindings(receiver_class_name)
+        } else if let Some(role_bindings) = loan_env!(self, class_role_param_bindings(receiver_class_name))
         {
             for (name, value) in &role_bindings {
                 self.env_mut().insert(name.clone(), value.clone());
@@ -267,9 +261,7 @@ impl VM {
                         };
                         let expected = coercion_target.unwrap_or(constraint.as_str());
                         if coercion_target.is_some() {
-                            let mut candidate = self
-                                .interpreter
-                                .try_coerce_value_for_constraint(constraint, base.clone())
+                            let mut candidate = loan_env!(self, try_coerce_value_for_constraint(constraint, base.clone()))
                                 .unwrap_or_else(|_| base.clone());
                             if !self.type_matches_value(expected, &candidate)
                                 && let Ok(coerced) = self.try_compiled_method_or_interpret(
@@ -285,16 +277,14 @@ impl VM {
                                 self.env_mut().insert("self".to_string(), base.clone());
                             }
                         } else if !self.type_matches_value(constraint, &base)
-                            && let Ok(coerced) = self
-                                .interpreter
-                                .try_coerce_value_for_constraint(constraint, base.clone())
+                            && let Ok(coerced) = loan_env!(self, try_coerce_value_for_constraint(constraint, base.clone()))
                         {
                             base = coerced;
                             self.env_mut().insert("self".to_string(), base.clone());
                         }
                         if !self.type_matches_value(expected, &base) {
-                            self.interpreter.restore_var_bindings(saved_var_bindings);
-                            self.interpreter.pop_method_class();
+                            loan_env!(self, restore_var_bindings(saved_var_bindings));
+                            loan_env!(self, pop_method_class());
                             self.set_current_package(saved_package.clone());
                             self.stack.truncate(saved_stack_depth);
                             let frame = self.pop_call_frame();
@@ -384,12 +374,9 @@ impl VM {
                 continue;
             }
             // Check both the owner class and the receiver class for defaults
-            let default_val = self
-                .interpreter
-                .class_attribute_default(owner_class, attr_name)
+            let default_val = loan_env!(self, class_attribute_default(owner_class, attr_name))
                 .or_else(|| {
-                    self.interpreter
-                        .class_attribute_default(receiver_class_name, attr_name)
+                    loan_env!(self, class_attribute_default(receiver_class_name, attr_name))
                 });
             if let Some(def) = default_val {
                 // Register for $!attr and $.attr variable names
@@ -417,8 +404,8 @@ impl VM {
         ) {
             Ok(bindings) => bindings,
             Err(e) => {
-                self.interpreter.restore_var_bindings(saved_var_bindings);
-                self.interpreter.pop_method_class();
+                loan_env!(self, restore_var_bindings(saved_var_bindings));
+                loan_env!(self, pop_method_class());
                 self.set_current_package(saved_package.clone());
                 self.stack.truncate(saved_stack_depth);
                 let frame = self.pop_call_frame();
@@ -449,15 +436,15 @@ impl VM {
         }
 
         // Push routine_stack so &?ROUTINE can find the current method
-        self.interpreter.push_method_routine_with_location(
+        loan_env!(self, push_method_routine_with_location(
             owner_class.to_string(),
             method_name.to_string(),
             self.current_source_line(),
             self.current_source_file(),
-        );
+        ));
 
         // Execute bytecode
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = loan_env!(self, let_saves_len());
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -481,11 +468,11 @@ impl VM {
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
-                        self.interpreter.discard_let_saves(let_mark);
+                        loan_env!(self, discard_let_saves(let_mark));
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -495,7 +482,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && target_id != method_callable_id
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -503,25 +490,25 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    loan_env!(self, discard_let_saves(let_mark));
                     result = Ok(());
                     break;
                 }
                 Err(e) if e.is_fail => {
-                    let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    let failure = loan_env!(self, fail_error_to_failure_value(&e));
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -558,15 +545,15 @@ impl VM {
             // single source; the legacy attribute writeback is gone.
             attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
 
-            let method_var_bindings = self.interpreter.take_var_bindings();
+            let method_var_bindings = loan_env!(self, take_var_bindings());
             let mut restored_bindings = saved_var_bindings;
             for (k, v) in method_var_bindings {
                 restored_bindings.insert(k, v);
             }
-            self.interpreter.restore_var_bindings(restored_bindings);
+            loan_env!(self, restore_var_bindings(restored_bindings));
 
             self.interpreter.pop_routine();
-            self.interpreter.pop_method_class();
+            loan_env!(self, pop_method_class());
         } else {
             // Sync locals back to env
             for (i, local_name) in cc.locals.iter().enumerate() {
@@ -647,15 +634,15 @@ impl VM {
                 merged_env.insert(source_name.clone(), val.clone());
             }
 
-            let method_var_bindings = self.interpreter.take_var_bindings();
+            let method_var_bindings = loan_env!(self, take_var_bindings());
             let mut restored_bindings = saved_var_bindings;
             for (k, v) in method_var_bindings {
                 restored_bindings.insert(k, v);
             }
-            self.interpreter.restore_var_bindings(restored_bindings);
+            loan_env!(self, restore_var_bindings(restored_bindings));
 
             self.interpreter.pop_routine();
-            self.interpreter.pop_method_class();
+            loan_env!(self, pop_method_class());
             self.set_current_package(saved_package.clone());
             *self.env_mut() = merged_env;
         }
@@ -675,7 +662,7 @@ impl VM {
 
         // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
         let final_result = if let Some(ref return_spec) = method_def.return_type {
-            let effective_return_spec = self.interpreter.resolved_type_capture_name(return_spec);
+            let effective_return_spec = loan_env!(self, resolved_type_capture_name(return_spec));
             self.interpreter
                 .finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
         } else {
@@ -869,12 +856,12 @@ impl VM {
         can_skip_merge: bool,
     ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
         if let Some(ref msg) = method_def.deprecated_message {
-            self.interpreter.check_deprecation_for_method_with_line(
+            loan_env!(self, check_deprecation_for_method_with_line(
                 method_name,
                 owner_class,
                 msg,
                 None,
-            );
+            ));
         }
 
         self.push_light_call_frame();
@@ -895,16 +882,16 @@ impl VM {
             let scoped = crate::env::Env::scoped_child(parent);
             self.set_env(scoped);
         }
-        let saved_var_bindings = self.interpreter.take_var_bindings();
-        self.interpreter.push_method_class(owner_class.to_string());
+        let saved_var_bindings = loan_env!(self, take_var_bindings());
+        loan_env!(self, push_method_class(owner_class.to_string()));
 
         let saved_package = self.current_package().to_string();
-        if self.interpreter.has_class_scoped_subs(receiver_class_name) {
+        if loan_env!(self, has_class_scoped_subs(receiver_class_name)) {
             self.set_current_package(receiver_class_name.to_string());
         }
 
         // Compute role context without touching env
-        let role_context: Option<String> = if self.interpreter.is_role(owner_class) {
+        let role_context: Option<String> = if loan_env!(self, is_role(owner_class)) {
             Some(owner_class.to_string())
         } else {
             method_def
@@ -932,8 +919,8 @@ impl VM {
                     && !self.type_matches_value(constraint, &val)
                 {
                     // Type mismatch — fall back to slow path for proper error
-                    self.interpreter.restore_var_bindings(saved_var_bindings);
-                    self.interpreter.pop_method_class();
+                    loan_env!(self, restore_var_bindings(saved_var_bindings));
+                    loan_env!(self, pop_method_class());
                     self.set_current_package(saved_package);
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
@@ -1073,12 +1060,9 @@ impl VM {
             if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
                 continue;
             }
-            let default_val = self
-                .interpreter
-                .class_attribute_default(owner_class, attr_name)
+            let default_val = loan_env!(self, class_attribute_default(owner_class, attr_name))
                 .or_else(|| {
-                    self.interpreter
-                        .class_attribute_default(receiver_class_name, attr_name)
+                    loan_env!(self, class_attribute_default(receiver_class_name, attr_name))
                 });
             if let Some(def) = default_val {
                 self.interpreter
@@ -1096,15 +1080,15 @@ impl VM {
             }
         }
 
-        self.interpreter.push_method_routine_with_location(
+        loan_env!(self, push_method_routine_with_location(
             owner_class.to_string(),
             method_name.to_string(),
             self.current_source_line(),
             self.current_source_file(),
-        );
+        ));
 
         // Execute bytecode (same as slow path)
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = loan_env!(self, let_saves_len());
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1127,11 +1111,11 @@ impl VM {
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
-                        self.interpreter.discard_let_saves(let_mark);
+                        loan_env!(self, discard_let_saves(let_mark));
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1139,7 +1123,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && target_id != method_callable_id
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -1147,25 +1131,25 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter.discard_let_saves(let_mark);
+                    loan_env!(self, discard_let_saves(let_mark));
                     result = Ok(());
                     break;
                 }
                 Err(e) if e.is_fail => {
-                    let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    let failure = loan_env!(self, fail_error_to_failure_value(&e));
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -1210,15 +1194,15 @@ impl VM {
         // local/env writes before the env is torn down.
         let attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
 
-        let method_var_bindings = self.interpreter.take_var_bindings();
+        let method_var_bindings = loan_env!(self, take_var_bindings());
         let mut restored_bindings = saved_var_bindings;
         for (k, v) in method_var_bindings {
             restored_bindings.insert(k, v);
         }
-        self.interpreter.restore_var_bindings(restored_bindings);
+        loan_env!(self, restore_var_bindings(restored_bindings));
 
         self.interpreter.pop_routine();
-        self.interpreter.pop_method_class();
+        loan_env!(self, pop_method_class());
         self.set_current_package(saved_package);
 
         if can_skip_merge {
@@ -1282,7 +1266,7 @@ impl VM {
         };
 
         let final_result = if let Some(ref return_spec) = method_def.return_type {
-            let effective_return_spec = self.interpreter.resolved_type_capture_name(return_spec);
+            let effective_return_spec = loan_env!(self, resolved_type_capture_name(return_spec));
             self.interpreter
                 .finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
         } else {

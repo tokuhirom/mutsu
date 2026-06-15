@@ -151,7 +151,7 @@ impl VM {
                     _ => None,
                 };
                 if let Some(cn) = class_name
-                    && self.interpreter.has_user_method(&cn, &method)
+                    && loan_env!(self, has_user_method(&cn, &method))
                 {
                     skip_native = true;
                 }
@@ -410,11 +410,11 @@ impl VM {
                         (*ptr).items = items.clone();
                     }
                 }
-                self.interpreter.overwrite_array_items_by_identity_for_vm(
+                loan_env!(self, overwrite_array_items_by_identity_for_vm(
                     existing,
                     items.clone(),
                     *kind,
-                );
+                ));
             }
             if let Some(gv) = existing.grep_source.as_deref() {
                 let mut source_items = gv.source.to_vec();
@@ -423,11 +423,11 @@ impl VM {
                         source_items[*source_idx] = items[filtered_idx].clone();
                     }
                 }
-                self.interpreter.overwrite_array_items_by_identity_for_vm(
+                loan_env!(self, overwrite_array_items_by_identity_for_vm(
                     &gv.source,
                     source_items,
                     gv.source_kind,
-                );
+                ));
             }
             self.env_dirty = true;
         }
@@ -448,8 +448,7 @@ impl VM {
                 // arm); avoids corrupting a COW copy `my %g = %h`.
                 self.write_back_hyper_target_var(code, var, new_hash);
             } else {
-                self.interpreter
-                    .overwrite_hash_bindings_by_identity(existing, new_hash);
+                loan_env!(self, overwrite_hash_bindings_by_identity(existing, new_hash));
             }
             self.env_dirty = true;
         }
@@ -783,11 +782,11 @@ impl VM {
                     (*ptr).items = items.clone();
                 }
             }
-            self.interpreter.overwrite_array_items_by_identity_for_vm(
+            loan_env!(self, overwrite_array_items_by_identity_for_vm(
                 existing,
                 items.clone(),
                 *kind,
-            );
+            ));
             self.env_dirty = true;
         }
         // Preserve the container type of the target for QuantHash types

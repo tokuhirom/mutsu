@@ -255,9 +255,9 @@ impl VM {
         )
     }
 
-    fn reduction_op_associativity(&self, op: &str) -> ReductionAssoc {
+    fn reduction_op_associativity(&mut self, op: &str) -> ReductionAssoc {
         let infix_name = format!("infix:<{}>", op);
-        if let Some(assoc) = self.interpreter.infix_associativity(&infix_name) {
+        if let Some(assoc) = loan_env!(self, infix_associativity(&infix_name)) {
             return match assoc.as_str() {
                 "right" => ReductionAssoc::Right,
                 "chain" => ReductionAssoc::Chain,
@@ -332,8 +332,8 @@ impl VM {
         Some(inner)
     }
 
-    fn reduction_callable_arity(&self, callable: &Value) -> usize {
-        let (params, param_defs) = self.interpreter.callable_signature(callable);
+    fn reduction_callable_arity(&mut self, callable: &Value) -> usize {
+        let (params, param_defs) = loan_env!(self, callable_signature(callable));
         if !param_defs.is_empty() {
             let mut total = 0usize;
             let mut required = 0usize;
@@ -833,7 +833,7 @@ impl VM {
             ));
         }
         // Stringifying an unhandled Failure throws
-        if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
+        if let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&val)) {
             return Err(err);
         }
         // Check for user-defined prefix:<~> multi sub first (operator overloading).
@@ -1148,7 +1148,7 @@ impl VM {
             let env_key = format!("&{}", name);
             let is_declared = self.env().contains_key(&env_key);
             if !is_declared {
-                let suggestions = self.interpreter.suggest_routine_names(name);
+                let suggestions = loan_env!(self, suggest_routine_names(name));
                 return Err(RuntimeError::undeclared_routine_symbols(
                     name,
                     format!("Undeclared routine:\n    {} used at line 1", name),
@@ -1205,9 +1205,7 @@ impl VM {
                 "%" => format!("%{}", remaining),
                 _ => remaining.to_string(),
             };
-            let val = self
-                .interpreter
-                .get_caller_var(&bare_name, caller_depth)
+            let val = loan_env!(self, get_caller_var(&bare_name, caller_depth))
                 .unwrap_or(Value::Nil);
             self.stack.push(val);
             return;
@@ -1303,7 +1301,7 @@ impl VM {
             Value::Str(s) => s.to_string(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
-        self.interpreter.check_readonly_for_modify(&name)?;
+        loan_env!(self, check_readonly_for_modify(&name))?;
         if name.starts_with('%')
             && self
                 .interpreter
@@ -1322,8 +1320,8 @@ impl VM {
             let is_routine_symbol = self.has_function(bare)
                 || self.has_multi_function(bare)
                 || self.has_proto(bare)
-                || self.interpreter.resolve_token_defs(bare).is_some()
-                || self.interpreter.has_proto_token(bare);
+                || loan_env!(self, resolve_token_defs(bare)).is_some()
+                || loan_env!(self, has_proto_token(bare));
             if is_routine_symbol && !has_variable_slot {
                 return Err(RuntimeError::assignment_ro(None));
             }
@@ -1452,7 +1450,7 @@ impl VM {
                     if let Some(ref cv) = current_val
                         && let Some(info) = loan_env!(self, container_type_metadata(cv))
                     {
-                        assigned = self.interpreter.tag_container_metadata(assigned, info);
+                        assigned = loan_env!(self, tag_container_metadata(assigned, info));
                     }
                 }
             }
@@ -1491,7 +1489,7 @@ impl VM {
         }
         if self.interpreter.fatal_mode
             && !name.contains("__mutsu_")
-            && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+            && let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&val))
         {
             return Err(err);
         }
@@ -1502,9 +1500,7 @@ impl VM {
                     if constraint == "Mu" {
                         val
                     } else {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     }
                 } else {
@@ -1565,8 +1561,7 @@ impl VM {
                 && !matches!(storer.as_ref(), Value::Nil)
             {
                 let proxy_val = current_proxy.unwrap();
-                self.interpreter
-                    .assign_proxy_lvalue(proxy_val, val.clone())?;
+                loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
                 self.stack.push(val);
                 return Ok(());
             }
@@ -2091,7 +2086,7 @@ impl VM {
                 if base_op == "o" {
                     let mut acc = list[0].clone();
                     for item in &list[1..] {
-                        acc = self.interpreter.compose_callables(acc, item.clone());
+                        acc = loan_env!(self, compose_callables(acc, item.clone()));
                     }
                     self.stack.push(acc);
                     return Ok(());
@@ -2401,8 +2396,8 @@ impl VM {
 
     pub(super) fn exec_take_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap_or(Value::Nil);
-        if self.interpreter.gather_items_len() > 0 {
-            self.interpreter.take_value(val)
+        if loan_env!(self, gather_items_len()) > 0 {
+            loan_env!(self, take_value(val))
         } else {
             // No enclosing gather — raise a CX::Take control exception so a
             // CONTROL block can observe it. If unhandled, the runtime wraps
@@ -2448,7 +2443,7 @@ impl VM {
     pub(super) fn exec_phaser_end_op(&mut self, code: &CompiledCode, idx: u32, site_id: u64) {
         // Only register each END phaser once (by site_id), even if the
         // opcode is encountered multiple times inside a repeatedly-called closure.
-        if !self.interpreter.register_end_phaser_site(site_id) {
+        if !loan_env!(self, register_end_phaser_site(site_id)) {
             return;
         }
         let stmt = &code.stmt_pool[idx as usize];
@@ -2538,9 +2533,7 @@ impl VM {
             declared_constraint,
             "List" | "Array" | "Positional" | "Seq" | "Cool" | "Any" | "Mu" | "Iterable"
         ) || {
-            let ultimate_base = self
-                .interpreter
-                .resolve_subset_base_type(declared_constraint);
+            let ultimate_base = loan_env!(self, resolve_subset_base_type(declared_constraint));
             matches!(
                 ultimate_base.as_str(),
                 "List"
@@ -2603,7 +2596,7 @@ impl VM {
             }
             // Infinite ranges and non-matching types fall through to normal check
         }
-        if matches!(value, Value::Nil) && self.interpreter.is_definite_constraint(constraint) {
+        if matches!(value, Value::Nil) && loan_env!(self, is_definite_constraint(constraint)) {
             return Err(RuntimeError::new(format!(
                 "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
                 constraint
@@ -2659,9 +2652,7 @@ impl VM {
                 } else {
                     // When assigning an unhandled Failure to a typed variable,
                     // explode the Failure first (Raku behavior)
-                    if let Some(err) = self
-                        .interpreter
-                        .failure_to_runtime_error_if_unhandled(&value)
+                    if let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&value))
                     {
                         return Err(err);
                     }
@@ -2678,21 +2669,19 @@ impl VM {
                     ));
                 }
             }
-        } else if !self.interpreter.has_type(declared_constraint)
+        } else if !loan_env!(self, has_type(declared_constraint))
             && !is_core_raku_type(declared_constraint)
             && !loan_env!(self, has_type_capture_binding(declared_constraint))
         {
             // Check if this is a suppressed nested class name that can be resolved
-            if self
-                .interpreter
-                .resolve_suppressed_type(declared_constraint)
+            if loan_env!(self, resolve_suppressed_type(declared_constraint))
                 .is_none()
             {
                 // Unknown user-defined type — reject it.
                 // In Raku this is a compile-time failure grouped into an
                 // X::Comp::Group whose `.sorrows` holds the underlying
                 // X::Undeclared (with type "Did you mean" suggestions).
-                let suggestions = self.interpreter.suggest_type_names(constraint);
+                let suggestions = loan_env!(self, suggest_type_names(constraint));
                 let mut undecl_msg = format!("Type '{}' is not declared.", constraint);
                 if suggestions.len() == 1 {
                     undecl_msg.push_str(&format!(" Did you mean '{}'?", suggestions[0]));
@@ -2728,7 +2717,7 @@ impl VM {
         }
         if !matches!(value, Value::Nil)
             && !self.type_matches_value(constraint, &value)
-            && !self.interpreter.is_container_subclass(constraint)
+            && !loan_env!(self, is_container_subclass(constraint))
         {
             if bind_mode {
                 return Err(crate::runtime::utils::type_check_binding_typed_error(
@@ -2740,9 +2729,7 @@ impl VM {
             ));
         }
         if !matches!(value, Value::Nil) {
-            let coerced = self
-                .interpreter
-                .try_coerce_value_for_constraint(constraint, value.clone())?;
+            let coerced = loan_env!(self, try_coerce_value_for_constraint(constraint, value.clone()))?;
             *self.stack.last_mut().unwrap() = coerced;
         }
         Ok(())
@@ -2796,13 +2783,10 @@ impl VM {
                 "__mutsu_shared_state::{}",
                 crate::runtime::Interpreter::normalize_state_key(&scoped_key)
             );
-            let cell = self
-                .interpreter
-                .get_or_init_shared_state_cell(&shared_key, initial);
+            let cell = loan_env!(self, get_or_init_shared_state_cell(&shared_key, initial));
             // Keep the local store pointing at the cell too, so the exit-time
             // writeback and any non-cell reader observe the same Arc.
-            self.interpreter
-                .set_state_var(scoped_key.clone(), cell.clone());
+            loan_env!(self, set_state_var(scoped_key.clone(), cell.clone()));
             cell
         } else if let Some(stored) = self.interpreter.get_state_var(&scoped_key) {
             stored.clone()
@@ -2816,8 +2800,7 @@ impl VM {
             } else {
                 init_val
             };
-            self.interpreter
-                .set_state_var(scoped_key.clone(), coerced.clone());
+            loan_env!(self, set_state_var(scoped_key.clone(), coerced.clone()));
             coerced
         };
         self.locals[slot_idx] = val.clone();
@@ -2865,10 +2848,10 @@ impl VM {
         let undo_start = undo_start as usize;
         let post_start = post_start as usize;
         let end = end as usize;
-        let routine_snapshot = self.interpreter.snapshot_routine_registry();
+        let routine_snapshot = loan_env!(self, snapshot_routine_registry());
         let saved_env = self.env().clone();
         let saved_locals = self.locals.clone();
-        let once_scope = self.interpreter.next_once_scope_id();
+        let once_scope = loan_env!(self, next_once_scope_id());
         // Track variables declared within this block scope.
         self.block_declared_vars
             .push(std::collections::HashSet::new());
@@ -2879,13 +2862,13 @@ impl VM {
         self.run_range(code, pre_start, enter_start, compiled_fns)?;
 
         let enter_result = self.run_range(code, enter_start, body_start, compiled_fns);
-        self.interpreter.push_once_scope(once_scope);
-        self.interpreter.push_block_scope_depth();
-        self.interpreter.push_lexical_class_scope();
-        self.interpreter.push_enum_scope();
+        loan_env!(self, push_once_scope(once_scope));
+        loan_env!(self, push_block_scope_depth());
+        loan_env!(self, push_lexical_class_scope());
+        loan_env!(self, push_enum_scope());
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
-        let end_phaser_count_before = self.interpreter.end_phaser_count();
+        let end_phaser_count_before = loan_env!(self, end_phaser_count());
         // If ENTER died, skip the body but still run LEAVE phasers
         let mut body_result = if let Err(e) = enter_result {
             Err(e)
@@ -2979,7 +2962,7 @@ impl VM {
         }
         let post_res = self.run_range(code, post_start, end, compiled_fns);
 
-        self.interpreter.restore_routine_registry(routine_snapshot);
+        loan_env!(self, restore_routine_registry(routine_snapshot));
 
         // Pop the block-declared variables set.
         let block_declared = self.block_declared_vars.pop().unwrap_or_default();
@@ -2989,10 +2972,9 @@ impl VM {
         // Update captured envs of END phasers registered during this block
         // so they see the final values of block-scoped variables (which will
         // be removed from env when the block scope is restored below).
-        if self.interpreter.end_phaser_count() > end_phaser_count_before {
+        if loan_env!(self, end_phaser_count()) > end_phaser_count_before {
             let current = self.env().clone();
-            self.interpreter
-                .update_end_phaser_envs(end_phaser_count_before, &current);
+            loan_env!(self, update_end_phaser_envs(end_phaser_count_before, &current));
         }
         let current_env = self.env().clone();
         let mut restored_env = saved_env.clone();
@@ -3101,10 +3083,10 @@ impl VM {
         }
         // Note: `our`-scoped variables persist in our_vars and are accessible
         // via package-qualified names (e.g., $Pkg::var) after block exit.
-        self.interpreter.pop_enum_scope();
-        self.interpreter.pop_lexical_class_scope();
-        self.interpreter.pop_block_scope_depth();
-        self.interpreter.pop_once_scope();
+        loan_env!(self, pop_enum_scope());
+        loan_env!(self, pop_lexical_class_scope());
+        loan_env!(self, pop_block_scope_depth());
+        loan_env!(self, pop_once_scope());
 
         if let Err(e) = post_res {
             // POST failure overrides successful body and return-value body exits
@@ -3207,9 +3189,9 @@ impl VM {
         let end = body_end as usize;
         let label = label.clone();
         let stack_base = self.stack.len();
-        let once_scope = self.interpreter.next_once_scope_id();
-        self.interpreter.push_once_scope(once_scope);
-        self.interpreter.push_enum_scope();
+        let once_scope = loan_env!(self, next_once_scope_id());
+        loan_env!(self, push_once_scope(once_scope));
+        loan_env!(self, push_enum_scope());
         let saved_env = if scope_isolate {
             Some((self.env().clone(), self.locals.clone()))
         } else {
@@ -3255,8 +3237,8 @@ impl VM {
                 Err(e) => break Err(e),
             }
         };
-        self.interpreter.pop_enum_scope();
-        self.interpreter.pop_once_scope();
+        loan_env!(self, pop_enum_scope());
+        loan_env!(self, pop_once_scope());
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
             let block_result = self.stack.pop().unwrap_or(Value::Nil);
@@ -3318,10 +3300,8 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let scope = self
-            .interpreter
-            .current_once_scope()
-            .unwrap_or_else(|| self.interpreter.next_once_scope_id());
+        let scope = loan_env!(self, current_once_scope())
+            .unwrap_or_else(|| loan_env!(self, next_once_scope_id()));
         let site_key = Self::const_str(code, key_idx);
         let cache_key = format!("{scope}::{site_key}");
         if let Some(value) = self.interpreter.get_once_value(&cache_key).cloned() {
@@ -3339,7 +3319,7 @@ impl VM {
         } else {
             Value::Nil
         };
-        self.interpreter.set_once_value(cache_key, value.clone());
+        loan_env!(self, set_once_value(cache_key, value.clone()));
         self.stack.push(value);
         *ip = end;
         Ok(())
@@ -3372,7 +3352,7 @@ impl VM {
         } else {
             old_val
         };
-        self.interpreter.let_saves_push(name, save_val, is_temp);
+        loan_env!(self, let_saves_push(name, save_val, is_temp));
     }
 
     /// Recursively deep-copy a Value so that Array/Hash snapshots are
@@ -3405,7 +3385,7 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let mark = self.interpreter.let_saves_len();
+        let mark = loan_env!(self, let_saves_len());
         let body_start = *ip + 1;
         let end = body_end as usize;
         match self.run_range(code, body_start, end, compiled_fns) {
@@ -3416,7 +3396,7 @@ impl VM {
                 self.env_dirty = true;
             }
             Err(e) => {
-                self.interpreter.restore_let_saves(mark);
+                loan_env!(self, restore_let_saves(mark));
                 self.env_dirty = true;
                 return Err(e);
             }

@@ -47,8 +47,7 @@ impl VM {
         mixins: &std::collections::HashMap<String, Value>,
         method_name: &str,
     ) -> Option<String> {
-        self.interpreter
-            .delegated_role_attr_key_from_mixins(mixins, method_name)
+        loan_env!(self, delegated_role_attr_key_from_mixins(mixins, method_name))
     }
 
     fn assign_mixin_container_slot(
@@ -592,7 +591,7 @@ impl VM {
                 return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
             }
         }
-        if self.interpreter.check_readonly_for_modify(name).is_err()
+        if loan_env!(self, check_readonly_for_modify(name)).is_err()
             && matches!(
                 value,
                 Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)
@@ -725,9 +724,7 @@ impl VM {
                         | "SetHash"
                         | "BagHash"
                         | "MixHash"
-                ) || self
-                    .interpreter
-                    .class_composed_roles(&cn)
+                ) || loan_env!(self, class_composed_roles(&cn))
                     .is_some_and(|roles| roles.iter().any(|r| r == "Associative"));
                 if does_associative {
                     Ok(value)
@@ -777,7 +774,7 @@ impl VM {
                         key_type: None,
                         declared_type: Some("Map".to_string()),
                     };
-                    Ok(self.interpreter.tag_container_metadata(mapped_val, info))
+                    Ok(loan_env!(self, tag_container_metadata(mapped_val, info)))
                 }
             }
             // Non-Associative values: coerce to Map
@@ -788,7 +785,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                Ok(self.interpreter.tag_container_metadata(hash, info))
+                Ok(loan_env!(self, tag_container_metadata(hash, info)))
             }
             Value::Seq(items) | Value::Slip(items) => {
                 let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
@@ -797,7 +794,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                Ok(self.interpreter.tag_container_metadata(hash, info))
+                Ok(loan_env!(self, tag_container_metadata(hash, info)))
             }
             _ => {
                 // For other types (Int, Str, etc.), coerce to Map via
@@ -809,7 +806,7 @@ impl VM {
                     key_type: None,
                     declared_type: Some("Map".to_string()),
                 };
-                Ok(self.interpreter.tag_container_metadata(hash, info))
+                Ok(loan_env!(self, tag_container_metadata(hash, info)))
             }
         }
     }
@@ -1138,7 +1135,7 @@ impl VM {
                         if let Some(default) = self.interpreter.var_default(var_name) {
                             default.clone()
                         } else if explicit_initializer
-                            && self.interpreter.is_definite_constraint(constraint)
+                            && loan_env!(self, is_definite_constraint(constraint))
                         {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 var_name, constraint, val,
@@ -1152,8 +1149,7 @@ impl VM {
                         let coerced = if self.type_matches_value(&target_type, val) {
                             val.clone()
                         } else {
-                            self.interpreter
-                                .try_coerce_value_for_constraint(constraint, val.clone())?
+                            loan_env!(self, try_coerce_value_for_constraint(constraint, val.clone()))?
                         };
                         if !self.type_matches_value(&target_type, &coerced) {
                             return Err(runtime::utils::type_check_element_typed_error(
@@ -1225,7 +1221,7 @@ impl VM {
                 if let Some(default) = self.interpreter.var_default(var_name) {
                     coerced_items.push(default.clone());
                 } else if explicit_initializer
-                    && self.interpreter.is_definite_constraint(constraint)
+                    && loan_env!(self, is_definite_constraint(constraint))
                 {
                     return Err(runtime::utils::type_check_element_typed_error(
                         var_name, constraint, item,
@@ -1270,22 +1266,17 @@ impl VM {
                             Value::Array(items.clone(), crate::value::ArrayKind::Array)
                         }
                         Value::Array(..) => inner.as_ref().clone(),
-                        _ if is_coercion => self
-                            .interpreter
-                            .try_coerce_value_for_constraint("Array()", item.clone())?,
+                        _ if is_coercion => loan_env!(self, try_coerce_value_for_constraint("Array()", item.clone()))?,
                         _ => item.clone(),
                     },
-                    _ if is_coercion => self
-                        .interpreter
-                        .try_coerce_value_for_constraint("Array()", item.clone())?,
+                    _ if is_coercion => loan_env!(self, try_coerce_value_for_constraint("Array()", item.clone()))?,
                     _ => item.clone(),
                 }
             } else if matches!(target_type.as_str(), "Array" | "List" | "Hash") && is_coercion {
                 self.interpreter
                     .try_coerce_value_for_constraint(&format!("{target_type}()"), item.clone())?
             } else {
-                self.interpreter
-                    .try_coerce_value_for_constraint(constraint, item.clone())?
+                loan_env!(self, try_coerce_value_for_constraint(constraint, item.clone()))?
             };
             if !self.type_matches_value(&target_type, &coerced) {
                 return Err(runtime::utils::type_check_element_typed_error(
@@ -1708,7 +1699,7 @@ impl VM {
         let rhs = self.stack.pop().unwrap();
         self.resolve_pending_alias_binds(code);
         let name = Self::const_str(code, name_idx);
-        self.interpreter.check_readonly_for_increment(name)?;
+        loan_env!(self, check_readonly_for_increment(name))?;
         // Default to Nil (NOT Int(0) like `++`) so `my $w; $w ~= "z"` yields "z",
         // not "0z"; the binary op descalarizes/numifies/stringifies Nil itself.
         let raw_val = self
@@ -1737,8 +1728,7 @@ impl VM {
         {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let new_val = self.apply_compound_base_op(op, fetched, rhs)?;
-            self.interpreter
-                .assign_proxy_lvalue(raw_val, new_val.clone())?;
+            loan_env!(self, assign_proxy_lvalue(raw_val, new_val.clone()))?;
             self.stack.push(new_val);
             return Ok(());
         }
@@ -1778,12 +1768,11 @@ impl VM {
             let raw_val = loan_env!(self, get_caller_var(&bare_name, depth))?;
             let val = Self::normalize_incdec_source(raw_val);
             let new_val = self.increment_value_smart(&val)?;
-            self.interpreter
-                .set_caller_var(&bare_name, depth, new_val)?;
+            loan_env!(self, set_caller_var(&bare_name, depth, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
-        self.interpreter.check_readonly_for_increment(name)?;
+        loan_env!(self, check_readonly_for_increment(name))?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot], Value::Proxy { .. })
@@ -1836,7 +1825,7 @@ impl VM {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let val = Self::normalize_incdec_source(fetched);
             let new_val = self.increment_value_smart(&val)?;
-            self.interpreter.assign_proxy_lvalue(raw_val, new_val)?;
+            loan_env!(self, assign_proxy_lvalue(raw_val, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
@@ -1868,7 +1857,7 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
-        self.interpreter.check_readonly_for_increment(name)?;
+        loan_env!(self, check_readonly_for_increment(name))?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot], Value::Proxy { .. })
@@ -2077,7 +2066,7 @@ impl VM {
                     | "MixHash"
                     | "Seq"
             )
-            && !self.interpreter.is_container_subclass(constraint)
+            && !loan_env!(self, is_container_subclass(constraint))
             && !matches!(&new_val, Value::Nil)
             && !self.type_matches_value(constraint, &new_val)
         {
@@ -2315,7 +2304,7 @@ impl VM {
             .var_type_constraint_fast(var_name)
             .is_some()
             || self.interpreter.var_default(var_name).is_some()
-            || self.interpreter.var_hash_key_constraint_fast(var_name)
+            || loan_env!(self, var_hash_key_constraint_fast(var_name))
             || self.interpreter.readonly_vars().contains(var_name)
         {
             return None;
@@ -2496,7 +2485,7 @@ impl VM {
             .var_type_constraint_fast(var_name)
             .is_some()
             || self.interpreter.var_default(var_name).is_some()
-            || self.interpreter.var_hash_key_constraint_fast(var_name)
+            || loan_env!(self, var_hash_key_constraint_fast(var_name))
             || self.interpreter.readonly_vars().contains(var_name)
         {
             return None;
@@ -2580,7 +2569,7 @@ impl VM {
                     // Sync $*HOME when %*ENV<HOME> changes
                     if key == "HOME" {
                         let home_str = val.to_string_value();
-                        let home_val = self.interpreter.make_io_path_instance(&home_str);
+                        let home_val = loan_env!(self, make_io_path_instance(&home_str));
                         self.env_mut()
                             .insert("$*HOME".to_string(), home_val.clone());
                         self.env_mut().insert("*HOME".to_string(), home_val);
@@ -2607,7 +2596,7 @@ impl VM {
                     }
                     if key == "HOME" {
                         let home_str = val.to_string_value();
-                        let home_val = self.interpreter.make_io_path_instance(&home_str);
+                        let home_val = loan_env!(self, make_io_path_instance(&home_str));
                         self.env_mut()
                             .insert("$*HOME".to_string(), home_val.clone());
                         self.env_mut().insert("*HOME".to_string(), home_val);
@@ -2685,7 +2674,7 @@ impl VM {
             // be written back into both env and the fast-path local slot
             // (`tag_container_metadata` returns the same Arc for non-hash
             // containers, whose Arc-pointer side table is updated in place).
-            let tagged = self.interpreter.tag_container_metadata(container, info);
+            let tagged = loan_env!(self, tag_container_metadata(container, info));
             self.env_mut().insert(save_var_name.clone(), tagged.clone());
             self.locals_set_by_name(code, &save_var_name, tagged);
         }
@@ -2693,7 +2682,7 @@ impl VM {
             && let Some(container) = self.env().get(&save_var_name).cloned()
             && self.interpreter.container_default(&container).is_none()
         {
-            let tagged = self.interpreter.tag_container_default(container, def);
+            let tagged = loan_env!(self, tag_container_default(container, def));
             self.env_mut().insert(save_var_name.clone(), tagged.clone());
             self.locals_set_by_name(code, &save_var_name, tagged);
         }
@@ -2845,9 +2834,7 @@ impl VM {
             if let Some(default) = self.interpreter.var_default(&var_name) {
                 default.clone()
             } else if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name)) {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 Value::Package(Symbol::intern(&nominal))
             } else {
                 val
@@ -3113,7 +3100,7 @@ impl VM {
                 }
                 // Check value type constraint for hash slice assignment
                 if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
-                    && !self.interpreter.is_container_subclass(&constraint)
+                    && !loan_env!(self, is_container_subclass(&constraint))
                 {
                     for v in &vals {
                         if !matches!(v, Value::Nil) && !self.type_matches_value(&constraint, v) {
@@ -3254,7 +3241,7 @@ impl VM {
                             constraint.as_str(),
                             "Hash" | "Array" | "Map" | "List" | "Bag" | "Set" | "Mix"
                                 | "BagHash" | "SetHash" | "MixHash" | "Seq"
-                        ) || self.interpreter.is_container_subclass(&constraint)))
+                        ) || loan_env!(self, is_container_subclass(&constraint))))
                 {
                     return Err(runtime::utils::type_check_element_typed_error(
                         &var_name,
@@ -3446,12 +3433,10 @@ impl VM {
                     attributes,
                     ..
                 }) = self.env().get(&var_name)
-                    && self
-                        .interpreter
-                        .is_container_subclass(&class_name.resolve())
+                    && loan_env!(self, is_container_subclass(&class_name.resolve()))
                 {
                     let cn = class_name.resolve();
-                    if self.interpreter.class_inherits_from_immutable_setty(&cn) {
+                    if loan_env!(self, class_inherits_from_immutable_setty(&cn)) {
                         let display = format!("{}()", cn);
                         return Err(RuntimeError::assignment_ro_typename(&cn, &display));
                     }
@@ -3821,7 +3806,7 @@ impl VM {
                 // Sync $*HOME when %*ENV<HOME> changes
                 if var_name == "%*ENV" && key == "HOME" {
                     let home_str = val.to_string_value();
-                    let home_val = self.interpreter.make_io_path_instance(&home_str);
+                    let home_val = loan_env!(self, make_io_path_instance(&home_str));
                     self.env_mut()
                         .insert("$*HOME".to_string(), home_val.clone());
                     self.env_mut().insert("*HOME".to_string(), home_val);
@@ -3855,7 +3840,7 @@ impl VM {
             if let Some(def) = self.interpreter.var_default(&var_name).cloned()
                 && self.interpreter.container_default(&updated).is_none()
             {
-                let tagged = self.interpreter.tag_container_default(updated.clone(), def);
+                let tagged = loan_env!(self, tag_container_default(updated.clone(), def));
                 self.set_env_with_main_alias(&var_name, tagged.clone());
                 self.update_local_if_exists(code, &var_name, &tagged);
             }
@@ -3938,7 +3923,7 @@ impl VM {
                 Self::normalize_scalar_assignment_value(val)
             };
 
-            self.interpreter.check_readonly_for_modify(&resolved_name)?;
+            loan_env!(self, check_readonly_for_modify(&resolved_name))?;
             if let Some(default) = self.interpreter.var_default(&resolved_name)
                 && matches!(val, Value::Nil)
             {
@@ -3953,9 +3938,7 @@ impl VM {
             {
                 if matches!(val, Value::Nil) {
                     if constraint != "Mu" {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         val = Value::Package(Symbol::intern(&nominal));
                     }
                 } else if !self.type_matches_value(&constraint, &val) {
@@ -3966,9 +3949,7 @@ impl VM {
                     ));
                 }
                 if !matches!(val, Value::Nil | Value::Package(_)) {
-                    val = self
-                        .interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?;
+                    val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
                 }
             }
 
@@ -4669,8 +4650,7 @@ impl VM {
                         } else {
                             &key
                         };
-                    self.interpreter
-                        .set_caller_var(bare_name, depth, val.clone())?;
+                    loan_env!(self, set_caller_var(bare_name, depth, val.clone()))?;
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -4924,7 +4904,7 @@ impl VM {
     ) -> Option<String> {
         let (bare, is_private) = Self::attr_twigil_base(name)?;
         let map = attrs.as_map();
-        if is_private && let Some(owner) = self.interpreter.method_class_stack_top() {
+        if is_private && let Some(owner) = loan_env!(self, method_class_stack_top()) {
             let qkey = format!("{}\0{}", owner, bare);
             if map.contains_key(&qkey) {
                 return Some(qkey);
@@ -5088,7 +5068,7 @@ impl VM {
         let name = name.to_string();
         let env_val = self
             .get_env_with_main_alias(&name)
-            .or_else(|| self.interpreter.get_shared_var(&name));
+            .or_else(|| loan_env!(self, get_shared_var(&name)));
         // `:=` bindings / slot refs keep their legacy env handling.
         if env_val
             .as_ref()
@@ -5144,7 +5124,7 @@ impl VM {
         // The mutating ops write the new container into env (or shared_vars).
         let val = self
             .get_env_with_main_alias(&name)
-            .or_else(|| self.interpreter.get_shared_var(&name));
+            .or_else(|| loan_env!(self, get_shared_var(&name)));
         let Some(val) = val else {
             return;
         };
@@ -5225,7 +5205,7 @@ impl VM {
         // Attribute locals (!attr) modified by CAS: env holds the authoritative
         // value since sync_locals_from_env skips !-prefixed names for performance.
         if name.starts_with('!')
-            && self.interpreter.is_shared_var_dirty(&name)
+            && loan_env!(self, is_shared_var_dirty(&name))
             && let Some(val) = self.env().get(&name).cloned()
         {
             self.locals[idx] = val.clone();
@@ -5235,7 +5215,7 @@ impl VM {
         // Atomic-variable read: skip entirely (a `format!` plus two
         // `var_type_constraint` lookups) when no atomic storage has ever been
         // registered — the common case on this hot local-read path.
-        if self.interpreter.atomic_var_seen() {
+        if loan_env!(self, atomic_var_seen()) {
             let atomic_name = name.strip_prefix('$').unwrap_or(&name);
             let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
             // Only use the scalar atomic fast path for scalar ($) variables.
@@ -5245,7 +5225,7 @@ impl VM {
                 && (loan_env!(self, var_type_constraint(&name)).as_deref() == Some("atomicint")
                     || loan_env!(self, var_type_constraint(atomic_name)).as_deref()
                         == Some("atomicint")
-                    || self.interpreter.get_shared_var(&atomic_name_key).is_some());
+                    || loan_env!(self, get_shared_var(&atomic_name_key)).is_some());
             if is_atomic_int {
                 let fetched = self
                     .interpreter
@@ -5259,7 +5239,7 @@ impl VM {
         // shared key.  Check it first so reads pick up the latest CAS'd value.
         if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
-            if let Some(shared_val) = self.interpreter.get_shared_var(&atomic_key) {
+            if let Some(shared_val) = loan_env!(self, get_shared_var(&atomic_key)) {
                 self.locals[idx] = shared_val.clone();
                 self.stack.push(shared_val);
                 return Ok(());
@@ -5269,7 +5249,7 @@ impl VM {
         // still holds an old local snapshot. Prefer the shared copy so reads
         // observe the latest value without forcing array COW on every push.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(shared_val) = self.interpreter.get_shared_var(&name)
+            && let Some(shared_val) = loan_env!(self, get_shared_var(&name))
         {
             self.stack.push(shared_val);
             return Ok(());
@@ -5325,7 +5305,7 @@ impl VM {
         }
         // Fast path: non-Nil values are always valid — skip env lookup
         if matches!(val, Value::Nil) {
-            if let Some(shared_val) = self.interpreter.get_shared_var(&name) {
+            if let Some(shared_val) = loan_env!(self, get_shared_var(&name)) {
                 self.stack.push(shared_val);
                 return Ok(());
             }
@@ -5347,9 +5327,7 @@ impl VM {
                 return Ok(());
             }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(&name).cloned() {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 // Nil type constraint: the type object for Nil is Value::Nil itself,
                 // not Value::Package("Nil").
                 if nominal == "Nil" {
@@ -5431,7 +5409,7 @@ impl VM {
         // trait op will re-set it immediately after.
         if is_vardecl {
             let name = &code.locals[idx];
-            self.interpreter.clear_var_default(name);
+            loan_env!(self, clear_var_default(name));
             // Clear the deleted-index tracker left over from a previous
             // same-named variable in an outer scope.
             let deleted_key = format!("__mutsu_deleted_index::{}", name);
@@ -5491,7 +5469,7 @@ impl VM {
                 && !matches!(storer.as_ref(), Value::Nil)
             {
                 let proxy_val = self.locals[idx].clone();
-                self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+                loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
                 return Ok(());
             }
             // First write through a missing-key `:=` bind (a local holding a
@@ -5517,7 +5495,7 @@ impl VM {
                 val = def.clone();
             }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
-                if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
+                if matches!(val, Value::Nil) && loan_env!(self, is_definite_constraint(&constraint))
                 {
                     if has_explicit_initializer {
                         return Err(runtime::utils::type_check_assignment_typed_error(
@@ -5539,8 +5517,7 @@ impl VM {
                     ));
                 }
                 let val = if !matches!(val, Value::Nil) {
-                    self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                    loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
                 };
@@ -5553,13 +5530,11 @@ impl VM {
             // Track lazy-thunk readonly: mark when storing a LazyThunk,
             // unmark when overwriting a LazyThunk with a non-LazyThunk (rebinding).
             if matches!(self.locals[idx], Value::LazyThunk(..)) {
-                self.interpreter.mark_readonly(name);
+                loan_env!(self, mark_readonly(name));
             }
             if self.interpreter.fatal_mode
                 && !name.contains("__mutsu_")
-                && let Some(err) = self
-                    .interpreter
-                    .failure_to_runtime_error_if_unhandled(&self.locals[idx])
+                && let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&self.locals[idx]))
             {
                 return Err(err);
             }
@@ -5772,9 +5747,7 @@ impl VM {
                                 | "buf8"
                                 | "buf16"
                                 | "buf32"
-                        ) || self
-                            .interpreter
-                            .class_composed_roles(&cn)
+                        ) || loan_env!(self, class_composed_roles(&cn))
                             .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
                         if does_positional {
                             raw_popped
@@ -5884,9 +5857,7 @@ impl VM {
                                 | "buf8"
                                 | "buf16"
                                 | "buf32"
-                        ) || self
-                            .interpreter
-                            .class_composed_roles(&cn)
+                        ) || loan_env!(self, class_composed_roles(&cn))
                             .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
                             || attributes.contains_key("__mutsu_array_storage")
                     }
@@ -5974,7 +5945,7 @@ impl VM {
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(&shape));
                 // Preserve container type metadata
                 if let Some(info) = loan_env!(self, container_type_metadata(&self.locals[idx])) {
-                    assigned = self.interpreter.tag_container_metadata(assigned, info);
+                    assigned = loan_env!(self, tag_container_metadata(assigned, info));
                 }
             }
             let class_name = match &self.locals[idx] {
@@ -6042,7 +6013,7 @@ impl VM {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
-            if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
+            if matches!(val, Value::Nil) && loan_env!(self, is_definite_constraint(&constraint)) {
                 if has_explicit_initializer {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
@@ -6063,9 +6034,7 @@ impl VM {
                 ));
             }
             if !matches!(val, Value::Nil) {
-                val = self
-                    .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
             // Wrap native integer values on assignment (overflow wrapping)
             val = Self::wrap_native_int_by_constraint(&constraint, val)?;
@@ -6316,7 +6285,7 @@ impl VM {
             && !matches!(storer.as_ref(), Value::Nil)
         {
             let proxy_val = self.locals[idx].clone();
-            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             return Ok(());
         }
         // First write through a missing-key `:=` bind: materialize the path into
@@ -6337,7 +6306,7 @@ impl VM {
         let val = Self::update_proxy_closure_envs(val, name);
         if self.interpreter.fatal_mode
             && !name.contains("__mutsu_")
-            && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+            && let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&val))
         {
             return Err(err);
         }
@@ -6423,13 +6392,13 @@ impl VM {
                 },
             };
             let stored = std::mem::replace(&mut self.locals[idx], Value::Nil);
-            self.locals[idx] = self.interpreter.tag_container_metadata(stored, info);
+            self.locals[idx] = loan_env!(self, tag_container_metadata(stored, info));
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();
         // Mark variable as readonly when storing a LazyThunk
         if matches!(val, Value::LazyThunk(..)) {
-            self.interpreter.mark_readonly(name);
+            loan_env!(self, mark_readonly(name));
         }
         if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
@@ -6518,7 +6487,7 @@ impl VM {
         // state left over from a previous lexical with the same name
         // (e.g. when `my @arr[N]` is declared inside a loop body).
         if name.starts_with('@') {
-            self.interpreter.clear_atomic_array_state(name);
+            loan_env!(self, clear_atomic_array_state(name));
         }
         // Before this loop-body-local declaration overwrites the env entry for
         // `name`, record the outer value it shadows so the enclosing same-named
@@ -6631,7 +6600,7 @@ impl VM {
         {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let proxy_val = self.locals[idx].clone();
-            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             return Ok(());
         }
 
@@ -6680,9 +6649,7 @@ impl VM {
                     if constraint == "Mu" {
                         val
                     } else {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     }
                 } else if !self.type_matches_value(&constraint, &val) {
@@ -6692,8 +6659,7 @@ impl VM {
                         &val,
                     ));
                 } else if !matches!(val, Value::Nil | Value::Package(_)) {
-                    self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                    loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
                 };
@@ -6705,9 +6671,7 @@ impl VM {
             }
             if self.interpreter.fatal_mode
                 && !name.contains("__mutsu_")
-                && let Some(err) = self
-                    .interpreter
-                    .failure_to_runtime_error_if_unhandled(&self.locals[idx])
+                && let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&self.locals[idx]))
             {
                 return Err(err);
             }
@@ -6729,7 +6693,7 @@ impl VM {
 
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
-        self.interpreter.check_readonly_for_modify(name)?;
+        loan_env!(self, check_readonly_for_modify(name))?;
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
@@ -6781,9 +6745,7 @@ impl VM {
             if matches!(val, Value::Nil) {
                 if constraint != "Mu" {
                     // Assigning Nil to a typed variable resets it to the type object
-                    let nominal = self
-                        .interpreter
-                        .nominal_type_object_name_for_constraint(&constraint);
+                    let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                     val = Value::Package(Symbol::intern(&nominal));
                 }
             } else if !self.type_matches_value(&constraint, &val) {
@@ -6794,9 +6756,7 @@ impl VM {
                 ));
             }
             if !matches!(val, Value::Nil | Value::Package(_)) {
-                val = self
-                    .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
@@ -6811,7 +6771,7 @@ impl VM {
         }
         if self.interpreter.fatal_mode
             && !name.contains("__mutsu_")
-            && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+            && let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&val))
         {
             return Err(err);
         }
@@ -6836,7 +6796,7 @@ impl VM {
                     None
                 },
             };
-            val = self.interpreter.tag_container_metadata(val, info);
+            val = loan_env!(self, tag_container_metadata(val, info));
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
@@ -6867,7 +6827,7 @@ impl VM {
             let mut entries: HashMap<String, Value> = HashMap::new();
             for (key, val) in self.env().iter() {
                 let key_str = key.resolve();
-                if self.interpreter.should_hide_from_my_global_stash(&key_str) {
+                if loan_env!(self, should_hide_from_my_global_stash(&key_str)) {
                     continue;
                 }
                 let display_key = Self::add_sigil_prefix(&key_str);
@@ -6904,7 +6864,7 @@ impl VM {
         }
         for (key, val) in self.env().iter() {
             let key_str = key.resolve();
-            if self.interpreter.should_hide_from_my_global_stash(&key_str) {
+            if loan_env!(self, should_hide_from_my_global_stash(&key_str)) {
                 continue;
             }
             let display_key = Self::add_sigil_prefix(&key_str);
@@ -6920,7 +6880,7 @@ impl VM {
             let mut entries: HashMap<String, Value> = HashMap::new();
             for (key, val) in self.env().iter() {
                 let key_str = key.resolve();
-                if self.interpreter.should_hide_from_my_global_stash(&key_str) {
+                if loan_env!(self, should_hide_from_my_global_stash(&key_str)) {
                     continue;
                 }
                 let display_key = Self::add_sigil_prefix(&key_str);
@@ -6949,7 +6909,7 @@ impl VM {
         }
         for (key, val) in self.env().iter() {
             let key_str = key.resolve();
-            if self.interpreter.should_hide_from_my_global_stash(&key_str) {
+            if loan_env!(self, should_hide_from_my_global_stash(&key_str)) {
                 continue;
             }
             let display_key = Self::add_sigil_prefix(&key_str);

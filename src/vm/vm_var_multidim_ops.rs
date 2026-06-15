@@ -312,7 +312,7 @@ impl VM {
         if let Some(info) = old_type_info
             && let Some(updated) = self.env().get(&var_name).cloned()
         {
-            let tagged = self.interpreter.tag_container_metadata(updated, info);
+            let tagged = loan_env!(self, tag_container_metadata(updated, info));
             self.env_mut().insert(var_name.clone(), tagged.clone());
             self.update_local_if_exists(code, &var_name, &tagged);
         }
@@ -487,9 +487,7 @@ impl VM {
                     Value::Array(items, ..) => Value::Int(items.len() as i64),
                     _ => Value::Int(0),
                 };
-                let result = self
-                    .interpreter
-                    .call_sub_value(idx.clone(), vec![len], false)?;
+                let result = loan_env!(self, call_sub_value(idx.clone(), vec![len], false))?;
                 current =
                     Self::index_array_multidim(&current, std::slice::from_ref(&result), false)
                         .unwrap_or(Value::Nil);

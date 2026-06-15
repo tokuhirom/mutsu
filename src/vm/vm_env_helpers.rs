@@ -36,7 +36,7 @@ impl VM {
         // phasers, threads) still flatten via `clone_env` at the capture site.
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
-            saved_readonly: Some(self.interpreter.save_readonly_vars()),
+            saved_readonly: Some(loan_env!(self, save_readonly_vars())),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
@@ -165,22 +165,22 @@ impl VM {
         self.get_env_with_main_alias_inner(name)
     }
 
-    fn get_env_with_main_alias_inner(&self, name: &str) -> Option<Value> {
+    fn get_env_with_main_alias_inner(&mut self, name: &str) -> Option<Value> {
         // Atomic array CAS stores the authoritative copy under an internal key.
         // Always check it first so both thread-clone and non-clone reads
         // observe the latest CAS'd value.
         if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
-            if let Some(v) = self.interpreter.get_shared_var(&atomic_key) {
+            if let Some(v) = loan_env!(self, get_shared_var(&atomic_key)) {
                 return Some(v);
             }
         }
         // Thread-clone @/% lookups must prefer the shared copy. Child thread
         // env snapshots can lag behind sibling mutations even when Lock::Async
         // serializes the writes through shared_vars.
-        if self.interpreter.is_thread_clone()
+        if loan_env!(self, is_thread_clone())
             && (name.starts_with('@') || name.starts_with('%'))
-            && let Some(v) = self.interpreter.get_shared_var(name)
+            && let Some(v) = loan_env!(self, get_shared_var(name))
         {
             return Some(v);
         }
@@ -197,7 +197,7 @@ impl VM {
         }
         // Fall back to shared_vars for cross-thread visibility of variables
         // that were explicitly updated by other threads.
-        if let Some(v) = self.interpreter.get_shared_var(name) {
+        if let Some(v) = loan_env!(self, get_shared_var(name)) {
             return Some(v);
         }
         // Follow binding aliases ($CALLER::target := $source)
@@ -227,7 +227,7 @@ impl VM {
             if let Some(val) = self.env().get(&placeholder) {
                 return Some(val.clone());
             }
-            if let Some(val) = self.interpreter.get_shared_var(&placeholder) {
+            if let Some(val) = loan_env!(self, get_shared_var(&placeholder)) {
                 return Some(val);
             }
         }

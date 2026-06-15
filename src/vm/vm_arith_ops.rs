@@ -525,15 +525,11 @@ impl VM {
 
     fn eval_concat_with_junctions(&mut self, left: Value, right: Value) -> Value {
         // Auto-FETCH and decontainerize
-        let left = self
-            .interpreter
-            .auto_fetch_proxy(&left)
+        let left = loan_env!(self, auto_fetch_proxy(&left))
             .unwrap_or(left)
             .descalarize()
             .clone();
-        let right = self
-            .interpreter
-            .auto_fetch_proxy(&right)
+        let right = loan_env!(self, auto_fetch_proxy(&right))
             .unwrap_or(right)
             .descalarize()
             .clone();
@@ -846,17 +842,17 @@ impl VM {
         // Warn on uninitialized type object used as repeat count
         if let Value::Package(name) = &right
             && name == "Int"
-            && !self.interpreter.warning_suppressed()
+            && !loan_env!(self, warning_suppressed())
         {
-            self.interpreter.write_warn_to_stderr(&format!(
+            loan_env!(self, write_warn_to_stderr(&format!(
                 "Use of uninitialized value of type {} in numeric context",
                 name
-            ));
+            )));
         }
 
         // Whatever on RHS produces a WhateverCode closure
         if matches!(&right, Value::Whatever) {
-            self.stack.push(self.interpreter.make_x_whatevercode(left));
+            self.stack.push(loan_env!(self, make_x_whatevercode(left)));
             return Ok(());
         }
 
@@ -904,12 +900,12 @@ impl VM {
         // Warn on uninitialized type object used as repeat count
         if let Value::Package(name) = &right
             && name == "Int"
-            && !self.interpreter.warning_suppressed()
+            && !loan_env!(self, warning_suppressed())
         {
-            self.interpreter.write_warn_to_stderr(&format!(
+            loan_env!(self, write_warn_to_stderr(&format!(
                 "Use of uninitialized value of type {} in numeric context",
                 name
-            ));
+            )));
         }
 
         const EAGER_LIMIT: usize = 10_000;
@@ -945,7 +941,7 @@ impl VM {
             }
         } else {
             for _ in 0..repeat {
-                items.push(self.interpreter.repeat_lhs_once(&left)?);
+                items.push(loan_env!(self, repeat_lhs_once(&left))?);
             }
         }
 
@@ -962,7 +958,7 @@ impl VM {
     pub(super) fn exec_function_compose_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let composed = self.interpreter.compose_callables(left, right);
+        let composed = loan_env!(self, compose_callables(left, right));
         self.stack.push(composed);
     }
 
@@ -975,21 +971,18 @@ impl VM {
         let left_type_object = self.does_invocant_type_object(&left);
         let role_composed = match &right {
             Value::Pair(name, boxed)
-                if self.interpreter.has_role(name)
+                if loan_env!(self, has_role(name))
                     && matches!(boxed.as_ref(), Value::Array(..)) =>
             {
                 Some(
-                    self.interpreter
-                        .eval_does_values(left.clone(), right.clone()),
+                    loan_env!(self, eval_does_values(left.clone(), right.clone())),
                 )
             }
-            Value::Package(name) if self.interpreter.has_role(&name.resolve()) => Some(
-                self.interpreter
-                    .eval_does_values(left.clone(), right.clone()),
+            Value::Package(name) if loan_env!(self, has_role(&name.resolve())) => Some(
+                loan_env!(self, eval_does_values(left.clone(), right.clone())),
             ),
-            Value::Str(name) if self.interpreter.has_role(name) => Some(
-                self.interpreter
-                    .eval_does_values(left.clone(), right.clone()),
+            Value::Str(name) if loan_env!(self, has_role(name)) => Some(
+                loan_env!(self, eval_does_values(left.clone(), right.clone())),
             ),
             _ => None,
         };
@@ -1099,12 +1092,12 @@ impl VM {
     /// object (including an anonymous `class {}`) may have a role mixed in —
     /// that creates a new anonymous subtype — so it is excluded here. Undefined
     /// scalars are stored as `Nil` and act as the `Any` type object.
-    fn does_invocant_type_object(&self, left: &Value) -> Option<String> {
+    fn does_invocant_type_object(&mut self, left: &Value) -> Option<String> {
         match left {
             Value::Nil => Some("Any".to_string()),
             Value::Package(name) => {
                 let n = name.resolve();
-                if self.interpreter.has_class(&n) {
+                if loan_env!(self, has_class(&n)) {
                     None
                 } else {
                     Some(n.to_string())
@@ -1168,21 +1161,21 @@ impl VM {
         if let Value::Array(ref items, ..) = right {
             let all_roles = items
                 .iter()
-                .all(|item| self.interpreter.is_role_application(item));
+                .all(|item| loan_env!(self, is_role_application(item)));
             if all_roles && !items.is_empty() {
                 if let Some(tn) = &left_type_object {
                     return Err(Self::does_type_object_error("does", tn));
                 }
-                return self.interpreter.eval_does_values_list(left, items.as_ref());
+                return loan_env!(self, eval_does_values_list(left, items.as_ref()));
             }
         }
         // Check if the RHS is a role that needs to be composed onto the value.
         // If so, delegate to the interpreter which manages role state.
-        if self.interpreter.is_role_application(&right) {
+        if loan_env!(self, is_role_application(&right)) {
             if let Some(tn) = &left_type_object {
                 return Err(Self::does_type_object_error("does", tn));
             }
-            return self.interpreter.eval_does_values(left, right);
+            return loan_env!(self, eval_does_values(left, right));
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
         if matches!(&right, Value::Enum { .. }) {

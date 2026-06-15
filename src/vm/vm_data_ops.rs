@@ -293,14 +293,13 @@ impl VM {
             // Resolve bound-element sentinels inside arrays before gist
             let v = self.resolve_bound_array_elements(v);
             if needs_method_dispatch(&v) {
-                parts.push(self.interpreter.render_gist_value(&v));
+                parts.push(loan_env!(self, render_gist_value(&v)));
             } else {
                 parts.push(runtime::gist_value(&v));
             }
         }
         let line = parts.join("");
-        self.interpreter
-            .write_to_named_handle("$*OUT", &line, true)?;
+        loan_env!(self, write_to_named_handle("$*OUT", &line, true))?;
         Ok(())
     }
 
@@ -314,15 +313,14 @@ impl VM {
             let mut parts = Vec::new();
             for v in &values {
                 if needs_method_dispatch(v) {
-                    parts.push(self.interpreter.render_gist_value(v));
+                    parts.push(loan_env!(self, render_gist_value(v)));
                 } else {
                     parts.push(runtime::gist_value(v));
                 }
             }
             parts.join("")
         };
-        self.interpreter
-            .write_to_named_handle("$*ERR", &content, true)?;
+        loan_env!(self, write_to_named_handle("$*ERR", &content, true))?;
         Ok(())
     }
 
@@ -338,8 +336,7 @@ impl VM {
             self.collect_put_lines(&v, &mut lines)?;
         }
         for line in &lines {
-            self.interpreter
-                .write_to_named_handle("$*OUT", line, true)?;
+            loan_env!(self, write_to_named_handle("$*OUT", line, true))?;
         }
         Ok(())
     }
@@ -354,8 +351,7 @@ impl VM {
             // For Junctions, thread: call .Str on each element recursively
             self.collect_str_threaded(v, &mut content)?;
         }
-        self.interpreter
-            .write_to_named_handle("$*OUT", &content, false)?;
+        loan_env!(self, write_to_named_handle("$*OUT", &content, false))?;
         Ok(())
     }
 
@@ -372,7 +368,7 @@ impl VM {
                 }
             }
             _ if needs_method_dispatch(v) => {
-                lines.push(self.interpreter.render_str_value(v));
+                lines.push(loan_env!(self, render_str_value(v)));
             }
             _ => {
                 lines.push(v.to_str_context());
@@ -390,7 +386,7 @@ impl VM {
                 }
             }
             _ if needs_method_dispatch(v) => {
-                out.push_str(&self.interpreter.render_str_value(v));
+                out.push_str(&loan_env!(self, render_str_value(v)));
             }
             _ => {
                 out.push_str(&v.to_str_context());

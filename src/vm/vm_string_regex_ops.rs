@@ -501,9 +501,7 @@ impl VM {
                     self.stack.push(Value::Bool(false));
                 }
             } else {
-                let found = self
-                    .interpreter
-                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                let found = loan_env!(self, regex_find_first_from_with_captures(&pattern, &text, 0));
                 if let Some((start, end, captures)) = found {
                     let out = if has_code_block {
                         self.apply_substitutions_dynamic(
@@ -562,9 +560,7 @@ impl VM {
             // Find all matches with captures using iterative find_first_from
             let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
             let mut pos = 0;
-            while let Some((start, end, caps)) = self
-                .interpreter
-                .regex_find_first_from_with_captures(&pattern, &text, pos)
+            while let Some((start, end, caps)) = loan_env!(self, regex_find_first_from_with_captures(&pattern, &text, pos))
             {
                 matches_with_caps.push((start, end, caps));
                 pos = if end > start { end } else { start + 1 };
@@ -727,9 +723,7 @@ impl VM {
                     self.stack.push(Value::str(text));
                 }
             } else {
-                let found = self
-                    .interpreter
-                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                let found = loan_env!(self, regex_find_first_from_with_captures(&pattern, &text, 0));
                 if let Some((start, end, captures)) = found {
                     let out = if has_code_block {
                         self.apply_substitutions_dynamic(
@@ -776,9 +770,7 @@ impl VM {
         } else {
             let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
             let mut pos = 0;
-            while let Some((start, end, caps)) = self
-                .interpreter
-                .regex_find_first_from_with_captures(&pattern, &text, pos)
+            while let Some((start, end, caps)) = loan_env!(self, regex_find_first_from_with_captures(&pattern, &text, pos))
             {
                 matches_with_caps.push((start, end, caps));
                 pos = if end > start { end } else { start + 1 };
@@ -2013,8 +2005,7 @@ impl VM {
             "R" => {
                 if op == "..." || op == "...^" {
                     let exclude_end = op == "...^";
-                    self.interpreter
-                        .eval_sequence_values(right, left, exclude_end)?
+                    loan_env!(self, eval_sequence_values(right, left, exclude_end))?
                 } else if op == "~~" {
                     Value::Bool(self.vm_smart_match(&right, &left))
                 } else {
@@ -2202,9 +2193,7 @@ impl VM {
             }
             let lookup_name = Self::canonical_infix_lookup_name(&name);
             let infix_name = format!("infix:<{}>", lookup_name.as_ref());
-            let assoc = self
-                .interpreter
-                .infix_associativity(&infix_name)
+            let assoc = loan_env!(self, infix_associativity(&infix_name))
                 .unwrap_or_else(|| "left".to_string());
             if assoc == "chain" && call_args.len() > 2 {
                 let mut all_true = true;
@@ -2320,30 +2309,26 @@ impl VM {
         if seq > 0 {
             let current = seq;
             if rhs {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(0));
+                loan_env!(self, set_state_var(key.to_string(), Value::Int(0)));
                 if exclude_end {
                     Value::Nil
                 } else {
                     Value::Int(current)
                 }
             } else {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(current + 1));
+                loan_env!(self, set_state_var(key.to_string(), Value::Int(current + 1)));
                 Value::Int(current)
             }
         } else if lhs {
             if !is_fff && rhs {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(0));
+                loan_env!(self, set_state_var(key.to_string(), Value::Int(0)));
                 if exclude_start || exclude_end {
                     Value::Nil
                 } else {
                     Value::Int(1)
                 }
             } else {
-                self.interpreter
-                    .set_state_var(key.to_string(), Value::Int(2));
+                loan_env!(self, set_state_var(key.to_string(), Value::Int(2)));
                 if exclude_start {
                     Value::Nil
                 } else {

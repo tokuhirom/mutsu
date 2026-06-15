@@ -249,7 +249,7 @@ impl VM {
                         }
                         // Process pending DESTROY submethods at loop iteration boundaries,
                         // mimicking GC-like behavior so DESTROY fires during execution.
-                        if let Err(e) = self.interpreter.run_pending_instance_destroys() {
+                        if let Err(e) = loan_env!(self, run_pending_instance_destroys()) {
                             self.pop_loop_local_scope(code);
                             return Err(e);
                         }
@@ -322,7 +322,7 @@ impl VM {
                     }
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -727,7 +727,7 @@ impl VM {
             // Also set a deep-readonly flag so that method-lvalue
             // assignments like .value = ... are blocked too.
             if topic_readonly {
-                self.interpreter.mark_readonly("_");
+                loan_env!(self, mark_readonly("_"));
                 self.env_mut()
                     .insert("__mutsu_deep_readonly::_".to_string(), Value::Bool(true));
             }
@@ -740,7 +740,7 @@ impl VM {
                 && !name.starts_with('@')
                 && !name.starts_with('%')
             {
-                self.interpreter.mark_readonly(name);
+                loan_env!(self, mark_readonly(name));
             }
             // `%`-sigil for-loop bindings preserve a QuantHash value (and keep
             // its type across a `%a = ...pairs` reset) instead of coercing it to
@@ -757,7 +757,7 @@ impl VM {
             // re-bind variables that may be readonly from an outer scope.
             for mp_name in &spec.multi_param_names {
                 // Clear regular readonly flag
-                self.interpreter.unmark_readonly(mp_name);
+                loan_env!(self, unmark_readonly(mp_name));
                 // Clear sigilless readonly flag
                 let key = format!("__mutsu_sigilless_readonly::{}", mp_name);
                 self.env_mut().insert(key, Value::Bool(false));
@@ -1003,7 +1003,7 @@ impl VM {
                                 next_index: idx + 1,
                             });
                         if topic_readonly {
-                            self.interpreter.unmark_readonly("_");
+                            loan_env!(self, unmark_readonly("_"));
                             self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
@@ -1029,7 +1029,7 @@ impl VM {
                     Err(e) => {
                         // Unmark readonly before propagating error
                         if topic_readonly {
-                            self.interpreter.unmark_readonly("_");
+                            loan_env!(self, unmark_readonly("_"));
                             self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
@@ -1052,7 +1052,7 @@ impl VM {
                     }
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -1068,16 +1068,16 @@ impl VM {
                     source_items[src_idx] = val;
                 }
             }
-            self.interpreter.overwrite_array_items_by_identity_for_vm(
+            loan_env!(self, overwrite_array_items_by_identity_for_vm(
                 &source,
                 source_items,
                 source_kind,
-            );
+            ));
             self.env_dirty = true;
         }
         // Unmark readonly topic after loop completion
         if topic_readonly {
-            self.interpreter.unmark_readonly("_");
+            loan_env!(self, unmark_readonly("_"));
             self.env_mut().remove("__mutsu_deep_readonly::_");
         }
         // Unmark readonly params after loop completion
@@ -1094,9 +1094,9 @@ impl VM {
                 self.env_mut().remove(&name);
             }
             if was_readonly {
-                self.interpreter.mark_readonly(&name);
+                loan_env!(self, mark_readonly(&name));
             } else {
-                self.interpreter.unmark_readonly(&name);
+                loan_env!(self, unmark_readonly(&name));
             }
             let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
             if let Some(ro_val) = sigilless_ro {
@@ -1205,10 +1205,10 @@ impl VM {
         if !spec.is_rw {
             if let Some(ref name) = param_name {
                 if !name.starts_with('@') && !name.starts_with('%') {
-                    self.interpreter.mark_readonly(name);
+                    loan_env!(self, mark_readonly(name));
                 }
             } else {
-                self.interpreter.mark_readonly("_");
+                loan_env!(self, mark_readonly("_"));
             }
         }
 
@@ -1302,7 +1302,7 @@ impl VM {
                             self.interpreter.readonly_vars_mut().remove(name);
                         }
                         if !was_topic_readonly {
-                            self.interpreter.unmark_readonly("_");
+                            loan_env!(self, unmark_readonly("_"));
                         }
                         self.topic_source_var = saved_topic_source;
                         if spec.restore_topic {
@@ -1326,7 +1326,7 @@ impl VM {
                             self.interpreter.readonly_vars_mut().remove(name);
                         }
                         if !was_topic_readonly {
-                            self.interpreter.unmark_readonly("_");
+                            loan_env!(self, unmark_readonly("_"));
                         }
                         if spec.restore_topic {
                             match saved_topic.clone() {
@@ -1343,7 +1343,7 @@ impl VM {
                     }
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
             // Use checked_add to avoid overflow when i is i64::MAX
@@ -1359,7 +1359,7 @@ impl VM {
             self.interpreter.readonly_vars_mut().remove(name);
         }
         if !was_topic_readonly {
-            self.interpreter.unmark_readonly("_");
+            loan_env!(self, unmark_readonly("_"));
         }
         self.topic_source_var = saved_topic_source;
         if spec.restore_topic {
@@ -1447,10 +1447,10 @@ impl VM {
         if !spec.is_rw {
             if let Some(ref name) = param_name {
                 if !name.starts_with('@') && !name.starts_with('%') {
-                    self.interpreter.mark_readonly(name);
+                    loan_env!(self, mark_readonly(name));
                 }
             } else {
-                self.interpreter.mark_readonly("_");
+                loan_env!(self, mark_readonly("_"));
             }
         }
 
@@ -1527,7 +1527,7 @@ impl VM {
                             self.interpreter.readonly_vars_mut().remove(name);
                         }
                         if !was_topic_readonly {
-                            self.interpreter.unmark_readonly("_");
+                            loan_env!(self, unmark_readonly("_"));
                         }
                         self.topic_source_var = saved_topic_source;
                         if spec.restore_topic {
@@ -1549,7 +1549,7 @@ impl VM {
                             self.interpreter.readonly_vars_mut().remove(name);
                         }
                         if !was_topic_readonly {
-                            self.interpreter.unmark_readonly("_");
+                            loan_env!(self, unmark_readonly("_"));
                         }
                         if spec.restore_topic {
                             match saved_topic.clone() {
@@ -1565,7 +1565,7 @@ impl VM {
                     }
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -1576,7 +1576,7 @@ impl VM {
             self.interpreter.readonly_vars_mut().remove(name);
         }
         if !was_topic_readonly {
-            self.interpreter.unmark_readonly("_");
+            loan_env!(self, unmark_readonly("_"));
         }
         self.topic_source_var = saved_topic_source;
         if spec.restore_topic {
@@ -1634,7 +1634,7 @@ impl VM {
         'for_loop: loop {
             // Read the next record (word or line) from the handle
             let line = if words {
-                self.interpreter.read_word_from_handle_value(handle)?
+                loan_env!(self, read_word_from_handle_value(handle))?
             } else {
                 loan_env!(self, read_line_from_handle_value(handle))?
             };
@@ -1686,7 +1686,7 @@ impl VM {
             if !spec.is_rw
                 && let Some(ref name) = param_name
             {
-                self.interpreter.mark_readonly(name);
+                loan_env!(self, mark_readonly(name));
             }
 
             'body_redo: loop {
@@ -1746,7 +1746,7 @@ impl VM {
                     }
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -2229,7 +2229,7 @@ impl VM {
                     }
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
             if let Err(e) = self.run_range(code, step_begin, loop_end, compiled_fns) {
@@ -2269,7 +2269,7 @@ impl VM {
         let stack_base = self.stack.len();
 
         let saved_topic = self.env().get("_").cloned();
-        let saved_when = self.interpreter.when_matched();
+        let saved_when = loan_env!(self, when_matched());
         let saved_topic_source = self.topic_source_var.take();
         let saved_element_source = self.element_source.take();
         let container_binding = self.container_ref_var.take();
@@ -2297,7 +2297,7 @@ impl VM {
             && pointy_param.is_none()
             && !self.interpreter.readonly_vars().contains("_");
         if mark_ro {
-            self.interpreter.mark_readonly("_");
+            loan_env!(self, mark_readonly("_"));
         }
 
         let restore = |this: &mut Self, write_back: bool| {
@@ -2362,7 +2362,7 @@ impl VM {
                 restore(self, false);
                 return Err(e);
             }
-            if self.interpreter.when_matched() || self.interpreter.is_halted() {
+            if loan_env!(self, when_matched()) || loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -2389,7 +2389,7 @@ impl VM {
         let end = body_end as usize;
 
         let saved_topic = self.env().get("_").cloned();
-        let saved_when = self.interpreter.when_matched();
+        let saved_when = loan_env!(self, when_matched());
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
 
@@ -2452,7 +2452,7 @@ impl VM {
             let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
             match cond_val {
                 Value::Sub(_) | Value::Routine { .. } => {
-                    let (_params, param_defs) = self.interpreter.callable_signature(&cond_val);
+                    let (_params, param_defs) = loan_env!(self, callable_signature(&cond_val));
                     if !param_defs.is_empty() {
                         let mut positional_required = 0usize;
                         let mut positional_total = 0usize;
@@ -2616,7 +2616,7 @@ impl VM {
                     }
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -2670,7 +2670,7 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let saved_depth = self.stack.len();
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = loan_env!(self, let_saves_len());
         let body_start = *ip + 1;
         let catch_begin = catch_start as usize;
         let control_begin = control_start as usize;
@@ -2690,7 +2690,7 @@ impl VM {
             Ok(()) => {
                 // Successful try resets $! to Nil
                 self.env_mut().insert("!".to_string(), Value::Nil);
-                self.interpreter.discard_let_saves(let_mark);
+                loan_env!(self, discard_let_saves(let_mark));
                 // A `try` that completes normally but yields a soft Failure value
                 // (e.g. the result of an expression that returned a Failure rather
                 // than throwing) handles that Failure: its value is now "caught",
@@ -2704,14 +2704,14 @@ impl VM {
                 Ok(())
             }
             Err(e) if e.is_return => {
-                self.interpreter.discard_let_saves(let_mark);
+                loan_env!(self, discard_let_saves(let_mark));
                 if control_begin < end {
                     self.stack.truncate(saved_depth);
                     let saved_topic = self.env().get("_").cloned();
                     if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
                         self.env_mut().insert("_".to_string(), signal_topic);
                     }
-                    let saved_when = self.interpreter.when_matched();
+                    let saved_when = loan_env!(self, when_matched());
                     loan_env!(self, set_when_matched(false));
                     match self.run_range(code, control_begin, end, compiled_fns) {
                         Ok(()) => {
@@ -2743,7 +2743,7 @@ impl VM {
                     && !e.is_take
                     && !e.is_emit =>
             {
-                self.interpreter.discard_let_saves(let_mark);
+                loan_env!(self, discard_let_saves(let_mark));
                 Err(e)
             }
             // Control signals (warn, last, next, redo, etc.) without a CONTROL
@@ -2761,7 +2761,7 @@ impl VM {
                     || e.is_react_done)
                     && control_begin >= end =>
             {
-                self.interpreter.discard_let_saves(let_mark);
+                loan_env!(self, discard_let_saves(let_mark));
                 Err(e)
             }
             Err(e)
@@ -2777,10 +2777,10 @@ impl VM {
                     || e.is_react_done)
                     && control_begin < end =>
             {
-                self.interpreter.discard_let_saves(let_mark);
+                loan_env!(self, discard_let_saves(let_mark));
                 self.stack.truncate(saved_depth);
                 let saved_topic = self.env().get("_").cloned();
-                let saved_when = self.interpreter.when_matched();
+                let saved_when = loan_env!(self, when_matched());
                 let mut pending_err = e;
                 loop {
                     if let Some(signal_topic) = Self::control_signal_topic_value(&pending_err) {
@@ -2794,8 +2794,8 @@ impl VM {
                         // Re-throwing a CX::Warn from CONTROL acts like the
                         // default warn handler: print to stderr and resume.
                         Err(ce) if ce.is_warn => {
-                            if !self.interpreter.warning_suppressed() {
-                                self.interpreter.write_warn_to_stderr(&ce.message);
+                            if !loan_env!(self, warning_suppressed()) {
+                                loan_env!(self, write_warn_to_stderr(&ce.message));
                             }
                             self.resume_ip.take()
                         }
@@ -2880,7 +2880,7 @@ impl VM {
             }
             Err(e) => {
                 // Exception — restore let saves
-                self.interpreter.restore_let_saves(let_mark);
+                loan_env!(self, restore_let_saves(let_mark));
                 self.env_dirty = true;
                 if catch_begin >= control_begin {
                     return Err(e);
@@ -2909,12 +2909,12 @@ impl VM {
                 let saved_topic = self.env().get("_").cloned();
                 self.env_mut().insert("!".to_string(), err_val.clone());
                 self.env_mut().insert("_".to_string(), err_val);
-                let saved_when = self.interpreter.when_matched();
+                let saved_when = loan_env!(self, when_matched());
                 loan_env!(self, set_when_matched(false));
                 let catch_stack_base = self.stack.len();
                 let when_handled =
                     match self.run_range(code, catch_begin, control_begin, compiled_fns) {
-                        Ok(()) => self.interpreter.when_matched(),
+                        Ok(()) => loan_env!(self, when_matched()),
                         // succeed from `when` inside CATCH means exception was handled
                         Err(catch_err) if catch_err.is_succeed => {
                             // Truncate values left by default body, then push Nil
@@ -2949,8 +2949,7 @@ impl VM {
                 // Propagate when_handled upward so an enclosing CATCH region
                 // can detect that this nested CATCH (e.g., a CATCH inside a
                 // CATCH) handled the exception.
-                self.interpreter
-                    .set_when_matched(saved_when || when_handled);
+                loan_env!(self, set_when_matched(saved_when || when_handled));
                 if let Some(v) = saved_topic {
                     self.env_mut().insert("_".to_string(), v);
                 } else {

@@ -4,9 +4,9 @@ use crate::symbol::Symbol;
 
 impl VM {
     /// Record a deprecation event for a compiled function if it has deprecation info.
-    fn record_cf_deprecation(&self, cf: &CompiledFunction) {
+    fn record_cf_deprecation(&mut self, cf: &CompiledFunction) {
         if let Some((ref kind, ref name, ref package, ref msg)) = cf.deprecated_info {
-            let cl = self.interpreter.pending_callsite_line();
+            let cl = loan_env!(self, pending_callsite_line());
             let file = self
                 .env()
                 .get("*PROGRAM-NAME")
@@ -90,9 +90,8 @@ impl VM {
         // Use the pending callsite line for deprecation tracking,
         // since ?LINE in env may not reflect the call site yet.
         let callsite_line = crate::runtime::Interpreter::peek_callsite_line(&args)
-            .or_else(|| self.interpreter.pending_callsite_line());
-        self.interpreter
-            .check_deprecation_for_def_with_line(def, callsite_line);
+            .or_else(|| loan_env!(self, pending_callsite_line()));
+        loan_env!(self, check_deprecation_for_def_with_line(def, callsite_line));
         let name = def.name.resolve();
         let pkg = def.package.resolve();
 
@@ -171,14 +170,14 @@ impl VM {
 
         // Set up samewith and multi-dispatch context that call_compiled_function_named
         // expects the caller to manage (mirrors exec_call_fn_op).
-        self.interpreter.push_samewith_context(&name, None);
-        let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(&name, &args);
+        loan_env!(self, push_samewith_context(&name, None));
+        let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(&name, &args));
 
         let result = self.call_compiled_function_named(&cf, args, compiled_fns, &pkg, &name);
 
-        self.interpreter.pop_samewith_context();
+        loan_env!(self, pop_samewith_context());
         if pushed_dispatch {
-            self.interpreter.pop_multi_dispatch();
+            loan_env!(self, pop_multi_dispatch());
         }
 
         result
@@ -188,9 +187,9 @@ impl VM {
     /// rather than by compiling its AST body. This includes test functions
     /// (implemented in runtime/test_functions.rs), internal `__mutsu_*` functions,
     /// and pseudo-package qualified names that need special resolution.
-    pub(super) fn is_interpreter_handled_function(&self, name: &str) -> bool {
+    pub(super) fn is_interpreter_handled_function(&mut self, name: &str) -> bool {
         // Test functions are implemented as Rust methods, not via AST
-        if self.interpreter.test_mode_active()
+        if loan_env!(self, test_mode_active())
             && crate::runtime::Interpreter::is_test_function_name(name)
         {
             return true;
@@ -541,7 +540,7 @@ impl VM {
             }
         }
 
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = loan_env!(self, let_saves_len());
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -554,27 +553,26 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter
-                        .resolve_let_saves_on_success(let_mark, true);
+                    loan_env!(self, resolve_let_saves_on_success(let_mark, true));
                     result = Ok(());
                     break;
                 }
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
-                    let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    let failure = loan_env!(self, fail_error_to_failure_value(&e));
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -896,7 +894,7 @@ impl VM {
             }
         }
 
-        let saved_readonly = self.interpreter.save_readonly_vars();
+        let saved_readonly = loan_env!(self, save_readonly_vars());
         // Bind params to slots. Also write the param into the overlay when a
         // name-based reader needs it (reflective access anywhere / GetGlobal /
         // closure capture via needs_env_sync), or when it is `Nil` (the GetLocal
@@ -936,8 +934,7 @@ impl VM {
                 if needs_env {
                     self.env_mut().insert(param_name.clone(), val);
                 }
-                self.interpreter
-                    .mark_readonly(&cf.param_defs[param_idx].name);
+                loan_env!(self, mark_readonly(&cf.param_defs[param_idx].name));
             }
         }
         // Bind-time param values that a name-based reader can observe were
@@ -948,7 +945,7 @@ impl VM {
         // the SetLocal path (`flush_local_to_env`).
 
         let saved_stack_depth = self.stack.len();
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = loan_env!(self, let_saves_len());
 
         let mut ip = 0;
         let mut result = Ok(());
@@ -962,27 +959,26 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter
-                        .resolve_let_saves_on_success(let_mark, true);
+                    loan_env!(self, resolve_let_saves_on_success(let_mark, true));
                     result = Ok(());
                     break;
                 }
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
-                    let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    let failure = loan_env!(self, fail_error_to_failure_value(&e));
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -1276,7 +1272,7 @@ impl VM {
 
         // Mark parameters as readonly (by default, params are immutable in Raku).
         // Save existing readonly state so we can restore it after the call.
-        let saved_readonly = self.interpreter.save_readonly_vars();
+        let saved_readonly = loan_env!(self, save_readonly_vars());
         for pd in &cf.param_defs {
             if !pd.name.is_empty()
                 && !pd.sigilless
@@ -1288,7 +1284,7 @@ impl VM {
                     .iter()
                     .any(|t| t == "rw" || t == "copy" || t == "raw");
                 if !has_mutable_trait {
-                    self.interpreter.mark_readonly(&pd.name);
+                    loan_env!(self, mark_readonly(&pd.name));
                 }
             }
         }
@@ -1344,7 +1340,7 @@ impl VM {
         }
 
         let saved_stack_depth = self.stack.len();
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = loan_env!(self, let_saves_len());
 
         // Execute the function body
         let mut ip = 0;
@@ -1359,27 +1355,26 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter
-                        .resolve_let_saves_on_success(let_mark, true);
+                    loan_env!(self, resolve_let_saves_on_success(let_mark, true));
                     result = Ok(());
                     break;
                 }
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
-                    let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    let failure = loan_env!(self, fail_error_to_failure_value(&e));
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -1460,7 +1455,7 @@ impl VM {
         // below), so it is reset before the body and recomputed from what the
         // merge actually wrote back to the caller env.
         let saved_env_dirty = self.env_dirty;
-        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        let (args, callsite_line) = loan_env!(self, sanitize_call_args(&args));
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
         }
@@ -1488,7 +1483,7 @@ impl VM {
             // must expose the full lexical view, not a scoped overlay.
             self.clone_env(),
         );
-        self.interpreter.push_block(sub_val);
+        loan_env!(self, push_block(sub_val));
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller now that sub_val / push_caller_env
@@ -1507,12 +1502,12 @@ impl VM {
         } else {
             fn_name.to_string()
         };
-        self.interpreter.push_routine_with_location(
+        loan_env!(self, push_routine_with_location(
             fn_package.to_string(),
             routine_push_name,
             self.current_source_line(),
             self.current_source_file(),
-        );
+        ));
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
             let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
@@ -1538,18 +1533,14 @@ impl VM {
         let is_test_assertion = if fn_name.is_empty() {
             false
         } else {
-            self.interpreter
-                .routine_is_test_assertion_by_name(fn_name, &args)
+            loan_env!(self, routine_is_test_assertion_by_name(fn_name, &args))
         };
-        let pushed_assertion = self
-            .interpreter
-            .push_test_assertion_context(is_test_assertion);
+        let pushed_assertion = loan_env!(self, push_test_assertion_context(is_test_assertion));
 
         if cf.empty_sig && !args.is_empty() {
             self.interpreter.pop_routine();
-            self.interpreter
-                .pop_test_assertion_context(pushed_assertion);
-            self.interpreter.pop_caller_env();
+            loan_env!(self, pop_test_assertion_context(pushed_assertion));
+            loan_env!(self, pop_caller_env());
             self.stack.truncate(saved_stack_depth);
             let frame = self.pop_call_frame();
             // Drop the scoped overlay, restoring the caller env.
@@ -1598,9 +1589,8 @@ impl VM {
                 Err(e) => {
                     self.set_current_package(saved_package);
                     self.interpreter.pop_routine();
-                    self.interpreter
-                        .pop_test_assertion_context(pushed_assertion);
-                    self.interpreter.pop_caller_env();
+                    loan_env!(self, pop_test_assertion_context(pushed_assertion));
+                    loan_env!(self, pop_caller_env());
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     *self.env_mut() = frame.saved_env;
@@ -1613,8 +1603,7 @@ impl VM {
                 }
             }
         };
-        self.interpreter
-            .prepare_definite_return_slot(return_spec.as_deref());
+        loan_env!(self, prepare_definite_return_slot(return_spec.as_deref()));
 
         // Raku: $! is scoped per routine — fresh Nil on entry.
         // Only insert if $! isn't already Nil, to avoid triggering
@@ -1650,7 +1639,7 @@ impl VM {
             }
         }
 
-        let let_mark = self.interpreter.let_saves_len();
+        let let_mark = loan_env!(self, let_saves_len());
         // Body-internal env_dirty (from nested calls) concerns the callee env,
         // which the return merge reconciles; reset so the post-merge value
         // reflects only what was actually written back to the caller.
@@ -1678,12 +1667,11 @@ impl VM {
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
-                        self.interpreter
-                            .resolve_let_saves_on_success(let_mark, true);
+                        loan_env!(self, resolve_let_saves_on_success(let_mark, true));
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1693,7 +1681,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && callable_id != Some(target_id)
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -1701,28 +1689,27 @@ impl VM {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.interpreter
-                        .resolve_let_saves_on_success(let_mark, true);
+                    loan_env!(self, resolve_let_saves_on_success(let_mark, true));
                     result = Ok(());
                     break;
                 }
                 Err(e) if e.is_fail => {
                     // fail() — restore let saves and return a Failure value
                     fail_bypass = true;
-                    let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    let failure = loan_env!(self, fail_error_to_failure_value(&e));
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -1781,12 +1768,11 @@ impl VM {
 
         self.set_current_package(saved_package);
         self.interpreter.pop_routine();
-        self.interpreter
-            .pop_test_assertion_context(pushed_assertion);
-        self.interpreter.pop_block();
+        loan_env!(self, pop_test_assertion_context(pushed_assertion));
+        loan_env!(self, pop_block());
         let effective_return_spec = return_spec
             .as_deref()
-            .map(|spec| self.interpreter.resolved_type_capture_name(spec));
+            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
 
         let frame = self.pop_call_frame();
         let restored_env = frame.saved_env;
@@ -1800,11 +1786,10 @@ impl VM {
         // Fast path: if the env wasn't mutated during the call (Arc still shared),
         // we can skip the expensive env merge and just restore directly.
         if restored_env.ptr_eq(self.env()) {
-            self.interpreter.pop_caller_env();
+            loan_env!(self, pop_caller_env());
         } else {
             let mut restored_env = restored_env;
-            self.interpreter
-                .pop_caller_env_with_writeback(&mut restored_env);
+            loan_env!(self, pop_caller_env_with_writeback(&mut restored_env));
             loan_env!(
                 self,
                 apply_rw_bindings_to_env(&rw_bindings, &mut restored_env)
@@ -1868,8 +1853,7 @@ impl VM {
                 } else {
                     Ok(ret_val)
                 };
-                self.interpreter
-                    .finalize_return_with_spec(base_result, effective_return_spec.as_deref())
+                loan_env!(self, finalize_return_with_spec(base_result, effective_return_spec.as_deref()))
             }
             Err(e) => Err(e),
         }

@@ -477,9 +477,7 @@ impl VM {
             let is_exception = cn == "Exception"
                 || cn.starts_with("X::")
                 || cn.starts_with("CX::")
-                || self
-                    .interpreter
-                    .mro_readonly(&cn)
+                || loan_env!(self, mro_readonly(&cn))
                     .iter()
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
             if is_exception {
@@ -687,7 +685,7 @@ impl VM {
                 h.add_bytes_written(byte_count);
             }
         }
-        let subtest_active = self.interpreter.subtest_active();
+        let subtest_active = loan_env!(self, subtest_active());
         self.output_sink_mut().emit(text, subtest_active);
     }
 
@@ -695,7 +693,7 @@ impl VM {
     /// `write_to_handle_value_trying` (immediate real-stderr flush or the stderr
     /// buffer; no `bytes_written` scan, no `output_emitted`).
     pub(crate) fn vm_emit_stderr(&mut self, text: &str) {
-        let subtest_active = self.interpreter.subtest_active();
+        let subtest_active = loan_env!(self, subtest_active());
         self.output_sink_mut().emit_stderr(text, subtest_active);
     }
 
@@ -738,7 +736,7 @@ impl VM {
     #[inline]
     fn restore_env_to_interp(&mut self) {
         let env = std::mem::take(&mut self.env);
-        self.interpreter.set_env(env);
+        loan_env!(self, set_env(env));
     }
 
     /// Build a catchable `X::AdHoc` error from a caught panic message.
@@ -771,8 +769,8 @@ impl VM {
             }
         }
         self.load_state_locals(code);
-        let root_once_scope = self.interpreter.next_once_scope_id();
-        self.interpreter.push_once_scope(root_once_scope);
+        let root_once_scope = loan_env!(self, next_once_scope_id());
+        loan_env!(self, push_once_scope(root_once_scope));
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -784,8 +782,8 @@ impl VM {
                     continue;
                 }
                 if e.is_warn && self.interpreter.control_handler_depth == 0 {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                    if !loan_env!(self, warning_suppressed()) {
+                        loan_env!(self, write_warn_to_stderr(&e.message));
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -794,7 +792,7 @@ impl VM {
                     continue;
                 }
                 self.sync_state_locals(code);
-                self.interpreter.pop_once_scope();
+                loan_env!(self, pop_once_scope());
                 // An uncaught CX::Return signal that escapes the top-level
                 // VM loop means the lexical target routine was not on the
                 // dynamic call stack when `return` executed, so it surfaces
@@ -815,12 +813,12 @@ impl VM {
                 }
                 return Err(e);
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
         self.sync_state_locals(code);
-        self.interpreter.pop_once_scope();
+        loan_env!(self, pop_once_scope());
         // Sync local variables back to the interpreter's env so that
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
@@ -860,8 +858,8 @@ impl VM {
             }
         }
         self.load_state_locals(code);
-        let root_once_scope = self.interpreter.next_once_scope_id();
-        self.interpreter.push_once_scope(root_once_scope);
+        let root_once_scope = loan_env!(self, next_once_scope_id());
+        loan_env!(self, push_once_scope(root_once_scope));
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -873,8 +871,8 @@ impl VM {
                     continue;
                 }
                 if e.is_warn && self.interpreter.control_handler_depth == 0 {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                    if !loan_env!(self, warning_suppressed()) {
+                        loan_env!(self, write_warn_to_stderr(&e.message));
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -883,15 +881,15 @@ impl VM {
                     continue;
                 }
                 self.sync_state_locals(code);
-                self.interpreter.pop_once_scope();
+                loan_env!(self, pop_once_scope());
                 return Err(e);
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
         self.sync_state_locals(code);
-        self.interpreter.pop_once_scope();
+        loan_env!(self, pop_once_scope());
         Ok(())
     }
 
@@ -920,7 +918,7 @@ impl VM {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            loan_env!(self, set_state_var(key.clone(), val));
         }
     }
 
@@ -956,7 +954,7 @@ impl VM {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            loan_env!(self, set_state_var(key.clone(), val));
         }
     }
 
@@ -1191,8 +1189,8 @@ impl VM {
                 }
                 // Handle warn signals inline when no CONTROL handler is active.
                 if e.is_warn && self.interpreter.control_handler_depth == 0 {
-                    if !self.interpreter.warning_suppressed() {
-                        self.interpreter.write_warn_to_stderr(&e.message);
+                    if !loan_env!(self, warning_suppressed()) {
+                        loan_env!(self, write_warn_to_stderr(&e.message));
                     }
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -1210,7 +1208,7 @@ impl VM {
                 }
                 return Err(e);
             }
-            if self.interpreter.is_halted() {
+            if loan_env!(self, is_halted()) {
                 break;
             }
         }
@@ -1332,7 +1330,7 @@ impl VM {
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if name == "?CALLER::LINE" {
-                    let line = self.interpreter.get_caller_line(1).unwrap_or(Value::Nil);
+                    let line = loan_env!(self, get_caller_line(1)).unwrap_or(Value::Nil);
                     self.stack.push(line);
                     *ip += 1;
                     return Ok(());
@@ -1347,14 +1345,14 @@ impl VM {
                 // storage has been registered. Skip the whole check (a `format!`
                 // plus two `var_type_constraint` lookups) on the hot read path when
                 // no atomics exist, which is the overwhelmingly common case.
-                if self.interpreter.atomic_var_seen() {
+                if loan_env!(self, atomic_var_seen()) {
                     let atomic_name = name.strip_prefix('$').unwrap_or(name);
                     let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
                     let is_atomic_int = loan_env!(self, var_type_constraint(name)).as_deref()
                         == Some("atomicint")
                         || loan_env!(self, var_type_constraint(atomic_name)).as_deref()
                             == Some("atomicint")
-                        || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+                        || loan_env!(self, get_shared_var(&atomic_name_key)).is_some();
                     if is_atomic_int {
                         let fetched = self.vm_call_function(
                             "__mutsu_atomic_fetch_var",
@@ -1543,9 +1541,7 @@ impl VM {
                     } else if let Some(constraint) =
                         self.interpreter.var_type_constraint_fast(name).cloned()
                     {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     } else {
                         val
@@ -1683,7 +1679,7 @@ impl VM {
                 }
                 // %?RESOURCES — build from the current package's distribution context
                 if name == "%?RESOURCES" {
-                    let resources = self.interpreter.build_resources_for_package();
+                    let resources = loan_env!(self, build_resources_for_package());
                     self.stack.push(resources);
                     *ip += 1;
                     return Ok(());
@@ -1789,7 +1785,7 @@ impl VM {
                         .interpreter
                         .var_type_constraint_fast(name_str)
                         .is_none()
-                    && !self.interpreter.is_readonly(name_str)
+                    && !loan_env!(self, is_readonly(name_str))
                     && !matches!(self.stack.last(), Some(Value::Capture { .. }))
                     && !matches!(self.env().get(name_str), Some(Value::ContainerRef(_)))
                 {
@@ -1836,7 +1832,7 @@ impl VM {
                 // Skip readonly check for SetGlobalRaw which is used for constant
                 // declarations — the constant will be re-marked readonly after this.
                 if !raw_mode {
-                    self.interpreter.check_readonly_for_modify(&name)?;
+                    loan_env!(self, check_readonly_for_modify(&name))?;
                 } else {
                     // Clear any previous readonly marking so this constant
                     // redeclaration can proceed (e.g., `constant sym` followed
@@ -1846,7 +1842,7 @@ impl VM {
                         .next()
                         .unwrap_or(&name)
                         .trim_start_matches(['$', '@', '%', '&']);
-                    self.interpreter.unmark_readonly(bare);
+                    loan_env!(self, unmark_readonly(bare));
                 }
                 // Prevent re-assignment of immutable containers (Mix, Set, Bag)
                 // Only when the variable has an explicit immutable type constraint
@@ -1881,7 +1877,7 @@ impl VM {
                     && !name.starts_with('&')
                     && !name.contains("::")
                     && matches!(self.env().get(&name), Some(Value::Package(_)))
-                    && self.interpreter.has_class(&name)
+                    && loan_env!(self, has_class(&name))
                 {
                     return Err(RuntimeError::new(format!(
                         "Cannot modify an immutable '{}' type object",
@@ -1934,9 +1930,7 @@ impl VM {
                                     | "buf8"
                                     | "buf16"
                                     | "buf32"
-                            ) || self
-                                .interpreter
-                                .class_composed_roles(&cn)
+                            ) || loan_env!(self, class_composed_roles(&cn))
                                 .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
                             if does_positional {
                                 raw_val
@@ -1986,7 +1980,7 @@ impl VM {
                             && class_name.resolve() == "Failure"
                             && !val.is_failure_handled()
                             && let Some(err) =
-                                self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                                loan_env!(self, failure_to_runtime_error_if_unhandled(&val))
                         {
                             return Err(err);
                         }
@@ -1997,16 +1991,14 @@ impl VM {
                         ));
                     }
                     if !matches!(val, Value::Nil) {
-                        val = self
-                            .interpreter
-                            .try_coerce_value_for_constraint(&constraint, val)?;
+                        val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
                     }
                     // Wrap native integer values on assignment (overflow wrapping)
                     val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                 }
                 if self.interpreter.fatal_mode
                     && !name.contains("__mutsu_")
-                    && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                    && let Some(err) = loan_env!(self, failure_to_runtime_error_if_unhandled(&val))
                 {
                     return Err(err);
                 }
@@ -2032,11 +2024,11 @@ impl VM {
                     // Propagate readonly status from the source variable.
                     // Binding to a readonly parameter should make the target
                     // readonly as well (persisted in env for cross-scope survival).
-                    let source_readonly = self.interpreter.is_readonly(&source_name);
+                    let source_readonly = loan_env!(self, is_readonly(&source_name));
                     self.env_mut()
                         .insert(readonly_key.clone(), Value::Bool(source_readonly));
                     if source_readonly {
-                        self.interpreter.mark_readonly(&name);
+                        loan_env!(self, mark_readonly(&name));
                     }
                     // Create a shared ContainerRef for cross-scope binding persistence.
                     if !name.starts_with('@')
@@ -2105,7 +2097,7 @@ impl VM {
                         // for bare "x" in class K) so GetGlobal fallback can find
                         // the binding. Only match the exact class from the method
                         // class stack to avoid clobbering unrelated package vars.
-                        if let Some(method_class) = self.interpreter.method_class_stack_top() {
+                        if let Some(method_class) = loan_env!(self, method_class_stack_top()) {
                             let qualified = format!("{}::{}", method_class, name);
                             if self.interpreter.get_our_var(&qualified).is_some() {
                                 self.interpreter
@@ -2235,11 +2227,11 @@ impl VM {
                 let raw_constraint = Self::const_str(code, *tc_idx).to_string();
                 // Resolve type capture variables (e.g., `T` → `Int` when `::T`
                 // was captured earlier in the signature).
-                let constraint = self.interpreter.resolved_type_capture_name(&raw_constraint);
+                let constraint = loan_env!(self, resolved_type_capture_name(&raw_constraint));
                 // Clear stale atomic CAS state when an @-variable is
                 // (re-)declared with a type constraint like atomicint.
                 if name.starts_with('@') && constraint == "atomicint" {
-                    self.interpreter.clear_atomic_array_state(&name);
+                    loan_env!(self, clear_atomic_array_state(&name));
                 }
                 self.vm_set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
@@ -2278,7 +2270,7 @@ impl VM {
                     };
                     // Hashes embed metadata in `HashData`; write the tagged value
                     // back (no-op Arc for array/instance side-table containers).
-                    let tagged = self.interpreter.tag_container_metadata(value, info);
+                    let tagged = loan_env!(self, tag_container_metadata(value, info));
                     self.set_env_with_main_alias(&name, tagged.clone());
                     self.update_local_if_exists(code, &name, &tagged);
                 }
@@ -2840,9 +2832,7 @@ impl VM {
             OpCode::Sequence { exclude_end } => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let out = self
-                    .interpreter
-                    .eval_sequence_values(left, right, *exclude_end)?;
+                let out = loan_env!(self, eval_sequence_values(left, right, *exclude_end))?;
                 self.stack.push(out);
                 self.env_dirty = true;
                 *ip += 1;
@@ -2920,7 +2910,7 @@ impl VM {
                 };
                 let has_user_defined = class_name
                     .as_ref()
-                    .is_some_and(|cn| self.interpreter.has_user_method(&cn.resolve(), "defined"));
+                    .is_some_and(|cn| loan_env!(self, has_user_method(&cn.resolve(), "defined")));
                 let defined = if has_user_defined {
                     // Call user method directly, bypassing native method dispatch
                     let cn = class_name.unwrap();
@@ -3008,9 +2998,7 @@ impl VM {
                                 | "buf8"
                                 | "buf16"
                                 | "buf32"
-                        ) || self
-                            .interpreter
-                            .class_composed_roles(&cn)
+                        ) || loan_env!(self, class_composed_roles(&cn))
                             .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
                         if does_positional {
                             val
@@ -3100,13 +3088,13 @@ impl VM {
                             // Sinking a lazy IO lines iterator must drain the
                             // underlying handle so that side effects (read
                             // position, .eof) are observable.
-                            self.interpreter.force_lazy_io_lines(handle, *words)?;
+                            loan_env!(self, force_lazy_io_lines(handle, *words))?;
                             self.env_dirty = true;
                         }
                         _ => {
                             // Sinking an unhandled Failure always throws (Raku behavior)
                             if let Some(err) =
-                                self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                                loan_env!(self, failure_to_runtime_error_if_unhandled(&val))
                             {
                                 return Err(err);
                             }
@@ -4124,7 +4112,7 @@ impl VM {
                 self.update_local_if_exists(code, &name, &pkg_val);
                 // Mark as my-scoped so the package is hidden from global
                 // lookups and package stash resolution outside its scope.
-                self.interpreter.mark_my_scoped_package_item(name.clone());
+                loan_env!(self, mark_my_scoped_package_item(name.clone()));
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
                 if let Some(set) = self.block_declared_vars.last_mut() {
@@ -4483,11 +4471,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PushImportScope => {
-                self.interpreter.push_import_scope();
+                loan_env!(self, push_import_scope());
                 *ip += 1;
             }
             OpCode::PopImportScope => {
-                self.interpreter.pop_import_scope();
+                loan_env!(self, pop_import_scope());
                 *ip += 1;
             }
             OpCode::RegisterEnum(idx) => {
@@ -4563,8 +4551,7 @@ impl VM {
             OpCode::SetCallerVar { name_idx, depth } => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let name = Self::const_str(code, *name_idx);
-                self.interpreter
-                    .set_caller_var(name, *depth as usize, val)?;
+                loan_env!(self, set_caller_var(name, *depth as usize, val))?;
                 *ip += 1;
             }
             OpCode::BindCallerVar {
@@ -4574,8 +4561,7 @@ impl VM {
             } => {
                 let target = Self::const_str(code, *target_idx);
                 let source = Self::const_str(code, *source_idx);
-                self.interpreter
-                    .bind_caller_var(target, source, *depth as usize)?;
+                loan_env!(self, bind_caller_var(target, source, *depth as usize))?;
                 *ip += 1;
             }
             OpCode::GetOuterVar { name_idx, depth } => {
@@ -4599,7 +4585,7 @@ impl VM {
             }
             OpCode::CheckReadOnly(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                self.interpreter.check_readonly_for_modify(name)?;
+                loan_env!(self, check_readonly_for_modify(name))?;
                 // Also check env-based readonly status set by cross-scope
                 // `:=` binding (e.g. binding to a readonly sub parameter
                 // in a closure).  The readonly_vars set is scope-local
@@ -4612,7 +4598,7 @@ impl VM {
             }
             OpCode::MarkVarReadonly(name_idx) => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.interpreter.mark_readonly(&name);
+                loan_env!(self, mark_readonly(&name));
                 *ip += 1;
             }
 
