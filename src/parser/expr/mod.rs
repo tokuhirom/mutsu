@@ -719,10 +719,14 @@ fn count_whatever(expr: &Expr) -> usize {
                     ..
                 },
             ) = (left.as_ref(), right.as_ref())
-                && is_whatever(lr)
-                && is_whatever(rl)
+                && exprs_structurally_eq(lr, rl)
+                && count_whatever(lr) > 0
             {
-                return count_whatever(ll) + 1 + count_whatever(rr);
+                // Chained comparison `a OP m OP b` is expanded to
+                // `(a OP m) && (m OP b)` with the middle `m` duplicated. Count the
+                // shared middle's placeholders once so the WhateverCode arity is
+                // the number of distinct operands, not double the middle.
+                return count_whatever(ll) + count_whatever(lr) + count_whatever(rr);
             }
             count_whatever(left) + count_whatever(right)
         }
@@ -787,6 +791,14 @@ fn count_whatever(expr: &Expr) -> usize {
     }
 }
 
+/// Structural equality of two expressions, used to detect the shared middle
+/// term of an expanded chained comparison (`a OP m OP b` => `(a OP m) && (m OP
+/// b)`). `Expr` cannot derive `PartialEq` (it embeds `Value`), and this only runs
+/// while wrapping a WhateverCode, so a `Debug`-string comparison is sufficient.
+fn exprs_structurally_eq(a: &Expr, b: &Expr) -> bool {
+    format!("{a:?}") == format!("{b:?}")
+}
+
 /// Replace Whatever expressions with numbered parameter variables.
 /// `counter` tracks the next parameter index to assign.
 fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
@@ -813,22 +825,27 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
                     right: rr,
                 },
             ) = (left.as_ref(), right.as_ref())
-                && is_whatever(lr)
-                && is_whatever(rl)
+                && exprs_structurally_eq(lr, rl)
+                && count_whatever(lr) > 0
             {
-                let shared = format!("__wc_{}", counter);
-                *counter += 1;
+                // Chained comparison expanded to `(ll OP m) && (m OP rr)`: assign
+                // params left-to-right (ll, then the shared middle once, then rr)
+                // and reuse the same replaced middle in both comparisons so each
+                // distinct operand maps to its own positional argument.
+                let new_ll = replace_whatever_numbered(ll, counter);
+                let new_mid = replace_whatever_numbered(lr, counter);
+                let new_rr = replace_whatever_numbered(rr, counter);
                 return Expr::Binary {
                     left: Box::new(Expr::Binary {
-                        left: Box::new(replace_whatever_numbered(ll, counter)),
+                        left: Box::new(new_ll),
                         op: lop.clone(),
-                        right: Box::new(Expr::Var(shared.clone())),
+                        right: Box::new(new_mid.clone()),
                     }),
                     op: TokenKind::AndAnd,
                     right: Box::new(Expr::Binary {
-                        left: Box::new(Expr::Var(shared)),
+                        left: Box::new(new_mid),
                         op: rop.clone(),
-                        right: Box::new(replace_whatever_numbered(rr, counter)),
+                        right: Box::new(new_rr),
                     }),
                 };
             }
