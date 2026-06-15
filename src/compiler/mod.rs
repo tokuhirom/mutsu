@@ -536,14 +536,9 @@ impl Compiler {
         // binding it first would clobber the source array before other params
         // can read from it.  Defer the `$_` binding to the end.
         let mut deferred_topic = None;
-        let mut sigilless_names = Vec::new();
         for (i, p) in params.iter().enumerate() {
             // Sigilless params are prefixed with \\ by the parser.
-            let (actual_name, is_sigilless) = if let Some(name) = p.strip_prefix('\\') {
-                (name.to_string(), true)
-            } else {
-                (p.clone(), false)
-            };
+            let actual_name = p.strip_prefix('\\').unwrap_or(p).to_string();
             // A param with a default value (`-> $a, $b = 7`) binds to the source
             // element when the chunk has one at this slot, else to the default.
             // Use an explicit `_.elems > i` test (not `// default`) so a present
@@ -571,17 +566,16 @@ impl Compiler {
             } else {
                 bind_stmts.push(stmt);
             }
-            if is_sigilless {
-                sigilless_names.push(actual_name);
-            }
         }
         if let Some(stmt) = deferred_topic {
             bind_stmts.push(stmt);
         }
-        // Mark sigilless params as readonly (e.g. `-> \k, \v`).
-        for name in sigilless_names {
-            bind_stmts.push(Stmt::MarkSigillessReadonly(name));
-        }
+        // Sigilless multi-params (`-> \k, \v`) are raw bindings that alias the
+        // source element directly; in Raku they are writable and modifications
+        // propagate back to the source (`for @a -> \k, \v { v = ... }` mutates
+        // @a, `for %h.kv -> \k, \v { v = ... }` writes back through the value).
+        // The caller treats any sigilless for-param as rw (see `has_sigilless`
+        // in `compile_stmt`), so they must NOT be marked readonly here.
         bind_stmts
     }
 
