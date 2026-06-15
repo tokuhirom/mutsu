@@ -1712,6 +1712,24 @@ impl Compiler {
                     topic_readonly = false;
                 } else {
                     self.compile_expr(topic);
+                    // `given my $x = EXPR` (a scalar declaration used as the topic)
+                    // aliases the freshly-declared `$x` rw, exactly like `given $x`,
+                    // so `$_ = ...` / `s///` inside the block write back to `$x`.
+                    // The declaration is wrapped in a `DoStmt`; the VarDecl name has
+                    // no sigil for scalars (arrays/hashes carry `@`/`%`).
+                    let topic_decl_scalar = match topic {
+                        Expr::DoStmt(inner) => match inner.as_ref() {
+                            Stmt::VarDecl { name, .. }
+                                if !name.starts_with('@')
+                                    && !name.starts_with('%')
+                                    && !name.starts_with('&') =>
+                            {
+                                Some(name.clone())
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    };
                     // `is copy` makes a detached copy, so suppress the
                     // source-writeback tag even for a bare-variable topic.
                     let source_name = if is_copy_topic {
@@ -1721,7 +1739,7 @@ impl Compiler {
                             Expr::Var(name) => Some(name.clone()),
                             Expr::ArrayVar(name) => Some(format!("@{}", name)),
                             Expr::HashVar(name) => Some(format!("%{}", name)),
-                            _ => None,
+                            _ => topic_decl_scalar.clone(),
                         }
                     };
                     if let Some(source_name) = source_name {
@@ -1729,10 +1747,13 @@ impl Compiler {
                         self.code.emit(OpCode::TagContainerRef(name_idx));
                     }
                     // The topic is read-only unless it is a bare scalar variable
-                    // (`given $x` aliases `$x` rw) or an `is copy` writable copy.
+                    // (`given $x` aliases `$x` rw), a scalar declaration topic
+                    // (`given my $x = ...`), or an `is copy` writable copy.
                     // `given @a` / `given 42` / `given expr()` are read-only (Raku
                     // errors on `$_ = ...`).
-                    topic_readonly = !is_copy_topic && !matches!(topic, Expr::Var(_));
+                    topic_readonly = !is_copy_topic
+                        && !matches!(topic, Expr::Var(_))
+                        && topic_decl_scalar.is_none();
                 }
                 // A pointy block (`given @a -> @p { ... }`) is desugared by the
                 // parser into `@p := $_` at the body head. Record that bound
