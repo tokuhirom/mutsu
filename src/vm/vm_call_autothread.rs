@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 use std::sync::Arc;
 
-impl VM {
+impl Interpreter {
     /// Check if any function call arguments are Junctions that need auto-threading.
     /// Returns Some(result) if auto-threading was performed, None if no auto-threading needed.
     pub(super) fn maybe_autothread_func_call(

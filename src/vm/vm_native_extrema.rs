@@ -1,8 +1,8 @@
-//! Native `.min` / `.max` / `.minmax` in the VM.
+//! Native `.min` / `.max` / `.minmax` in the Interpreter.
 //!
 //! `@a.min`, `@a.max`, `@a.minmax`, their `:by` block forms (`*.abs`,
 //! `{ $^a <=> $^b }`), and the `:k`/`:v`/`:kv`/`:p` adverbs (min/max only) over a
-//! plain eager list run entirely in the VM. The `:by` block (the genuine
+//! plain eager list run entirely in the Interpreter. The `:by` block (the genuine
 //! Category-B fork — the only part the pure-native layer cannot do) is invoked
 //! through `vm_call_on_value`, and the folds themselves are the *single* shared
 //! implementations [`crate::runtime::Interpreter::extrema_from_values_generic`]
@@ -17,9 +17,9 @@
 use super::*;
 use crate::value::Value;
 
-impl VM {
+impl Interpreter {
     /// Try to run `target.min(...)` / `target.max(...)` natively. Returns
-    /// `Some(result)` when handled in the VM, `None` to fall back unchanged.
+    /// `Some(result)` when handled in the Interpreter, `None` to fall back unchanged.
     ///
     /// `.min`/`.max` yield a fresh value (no rw-view concern).
     pub(super) fn try_native_extrema(
@@ -88,7 +88,7 @@ impl VM {
     }
 
     /// Try to run `target.minmax(...)` natively. Returns `Some(result)` when
-    /// handled in the VM, `None` to fall back unchanged.
+    /// handled in the Interpreter, `None` to fall back unchanged.
     pub(super) fn try_native_minmax(
         &mut self,
         target: &Value,

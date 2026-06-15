@@ -9,7 +9,7 @@ use unicode_normalization::UnicodeNormalization;
 /// afterwards (`None` when the source is already bound to that cell).
 type BindSourceCell = (Option<String>, Arc<std::sync::Mutex<Value>>);
 
-impl VM {
+impl Interpreter {
     /// Return the default fill value for a native type constraint.
     /// For `int`/`uint` variants returns `Value::Int(0)`,
     /// for `num` variants returns `Value::Num(0.0)`,
@@ -1467,7 +1467,7 @@ impl VM {
 
     /// Increment a value, calling .succ() on Instance values with custom methods.
     pub(super) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
-        // Route user-defined `.succ` through the VM's unified compiled-first
+        // Route user-defined `.succ` through the Interpreter's unified compiled-first
         // dispatch (same entry point `.Str` interpolation already uses) instead
         // of a raw interpreter tree-walk — one method-dispatch path, not two.
         if let Value::Instance { .. } = val
@@ -1550,7 +1550,7 @@ impl VM {
 
     /// Decrement a value, calling .pred() on Instance values with custom methods.
     pub(super) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
-        // Route user-defined `.pred` through the VM's unified compiled-first
+        // Route user-defined `.pred` through the Interpreter's unified compiled-first
         // dispatch (see increment_value_smart) instead of a raw interpreter
         // tree-walk — one method-dispatch path, not two.
         if let Value::Instance { .. } = val
@@ -5241,7 +5241,7 @@ impl VM {
                 return Ok(());
             }
         }
-        // Shared @/% variables may be mutated by sibling threads while this VM
+        // Shared @/% variables may be mutated by sibling threads while this Interpreter
         // still holds an old local snapshot. Prefer the shared copy so reads
         // observe the latest value without forcing array COW on every push.
         if (name.starts_with('@') || name.starts_with('%'))
@@ -6491,7 +6491,7 @@ impl VM {
         // enclosing-scoped and often read after the loop. Only record names that
         // already had a binding (a genuine shadow — there is nothing to clobber
         // otherwise), and only the first time in this loop scope so the saved
-        // value is the pre-loop one. See VM::loop_local_saved_env.
+        // value is the pre-loop one. See Interpreter::loop_local_saved_env.
         //
         // Crucially, only record names the compiler scoped to the loop body — i.e.
         // names with a local slot in `code.locals`. A `my` in a *statement
@@ -6564,7 +6564,7 @@ impl VM {
             set.insert(name.to_string());
         }
         // Track loop-body declarations so a closure created in the body can mark
-        // this name as a per-iteration `owned_capture` (see VM::loop_local_vars).
+        // this name as a per-iteration `owned_capture` (see Interpreter::loop_local_vars).
         if let Some(set) = self.loop_local_vars.last_mut() {
             set.insert(name.to_string());
         }

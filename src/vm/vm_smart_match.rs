@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use crate::runtime::Interpreter;
 use crate::value::Value;
-use crate::vm::VM;
 
 /// Normalize an IO::Path for ACCEPTS comparison: cleanup + absolute.
 /// Returns the cleaned-up absolute path string.
@@ -227,8 +226,8 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             is_buf(&a) && is_buf(&b)
         } =>
         {
-            let lb = VM::extract_buf_bytes(left);
-            let rb = VM::extract_buf_bytes(right);
+            let lb = Interpreter::extract_buf_bytes(left);
+            let rb = Interpreter::extract_buf_bytes(right);
             Some(lb == rb)
         }
 
@@ -574,7 +573,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
     }
 }
 
-impl VM {
+impl Interpreter {
     /// Perform a smart match, trying pure value matching first, falling back to
     /// the interpreter for complex cases (regex, callable, type checks, etc.).
     pub(super) fn vm_smart_match(&mut self, left: &Value, right: &Value) -> bool {
@@ -598,7 +597,7 @@ impl VM {
             )
         {
             let method_name = key.as_str();
-            // Route the key-method call through the VM's unified compiled-first
+            // Route the key-method call through the Interpreter's unified compiled-first
             // dispatch (ledger §1): user-defined methods run as compiled bytecode;
             // only native/reflective methods bottom out at the interpreter. `left`
             // is never an Array/Hash/Seq here (excluded above), so the native

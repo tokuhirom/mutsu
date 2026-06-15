@@ -6,7 +6,7 @@ use std::sync::Arc;
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 
-impl VM {
+impl Interpreter {
     pub(super) fn range_end_is_unbounded(end: i64) -> bool {
         end == i64::MAX
     }

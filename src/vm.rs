@@ -17,7 +17,7 @@ use num_traits::{Signed, Zero};
 pub(crate) type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
 
 thread_local! {
-    /// Set while execution is inside the `VM::run` catch_unwind boundary, so the
+    /// Set while execution is inside the `Interpreter::run` catch_unwind boundary, so the
     /// custom panic hook can stay quiet for panics that we are about to convert
     /// into a catchable `X::` error (instead of dumping a Rust backtrace).
     static IN_VM_PANIC_BOUNDARY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -26,7 +26,7 @@ thread_local! {
 static VM_PANIC_HOOK_INIT: std::sync::Once = std::sync::Once::new();
 
 /// Install (once) a panic hook that suppresses the default backtrace dump for
-/// panics caught at the `VM::run` boundary, unless the user opted into details
+/// panics caught at the `Interpreter::run` boundary, unless the user opted into details
 /// via `RUST_BACKTRACE`/`MUTSU_TRACE`. Panics outside the boundary (genuine
 /// internal bugs) still print normally.
 fn install_vm_panic_hook() {
@@ -72,7 +72,7 @@ pub(crate) struct FastMethodCacheEntry {
 }
 
 /// env-loan (CP-1 1e): call an interpreter carrier/helper that reads
-/// `self.env`, lending the VM-owned env for the duration.
+/// `self.env`, lending the Interpreter-owned env for the duration.
 ///
 /// Expands to: swap the real env into the interpreter's loan slot, run
 /// `$self.<call>`, swap it back. Unlike a closure-based helper, the
@@ -85,8 +85,8 @@ pub(crate) struct FastMethodCacheEntry {
 /// (those few sites are handled individually). See docs/vm-state-ownership.md.
 macro_rules! loan_env {
     ($self:ident, $($call:tt)+) => {{
-        // CP-3 collapse: the VM dissolved into the Interpreter, so env is no
-        // longer loaned across a VM->interpreter boundary — it is just `self.env`.
+        // CP-3 collapse: the Interpreter dissolved into the Interpreter, so env is no
+        // longer loaned across a Interpreter->interpreter boundary — it is just `self.env`.
         // This macro is now a thin self-call kept so the ~350 call sites need no
         // edit; it will be removed in a later cosmetic pass.
         $self.$($call)+
@@ -150,13 +150,12 @@ pub(crate) struct VmCallFrame {
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
 }
 
-/// CP-3 collapse: the bytecode VM has been dissolved into the `Interpreter`
-/// struct (the Interpreter *is* the bytecode VM now). `VM` is kept as a crate
-/// alias so the ~40 `impl VM` blocks and internal `VM::`/`vm: VM` references
-/// compile unchanged; a later cosmetic pass can rename them to `Interpreter`.
-pub(crate) type VM = crate::interpreter::Interpreter;
+// CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`
+// struct — the `Interpreter` *is* the bytecode Interpreter. The former `Interpreter` type alias is
+// gone; the `impl` blocks in `src/vm/` are `impl Interpreter`. (The `vm`/`src/vm`
+// module names are retained as the home of the bytecode-execution methods.)
 
-impl VM {
+impl Interpreter {
     /// Wrap a runtime error in X::Comp::BeginTime (used for errors inside CHECK phasers).
     fn wrap_in_begin_time(inner: RuntimeError) -> RuntimeError {
         use std::collections::HashMap;
@@ -290,7 +289,7 @@ impl VM {
         err
     }
 
-    /// VM-native Stdout emit (③後段 PR-C), mirroring `Interpreter::emit_output`:
+    /// Interpreter-native Stdout emit (③後段 PR-C), mirroring `Interpreter::emit_output`:
     /// bump the Stdout-target handle's `bytes_written`, then push to the sink
     /// (immediate real-stdout flush / buffer / thread-clone shared buffer per the
     /// sink's decision). `subtest_active` comes from the interpreter (TAP state
@@ -308,7 +307,7 @@ impl VM {
         self.output_sink_mut().emit(text, subtest_active);
     }
 
-    /// VM-native Stderr emit (③後段 PR-C), mirroring the `Stderr` branch of
+    /// Interpreter-native Stderr emit (③後段 PR-C), mirroring the `Stderr` branch of
     /// `write_to_handle_value_trying` (immediate real-stderr flush or the stderr
     /// buffer; no `bytes_written` scan, no `output_emitted`).
     pub(crate) fn vm_emit_stderr(&mut self, text: &str) {
@@ -323,7 +322,7 @@ impl VM {
     /// `panic!`/`unwrap`/index-OOB/capacity-overflow triggered by user code is
     /// converted into a catchable `X::AdHoc` `RuntimeError` (exit 1, flows through
     /// `try`/`CATCH`) instead of crashing the whole process (exit 101). This also
-    /// covers EVAL and sub-VMs, which run through `VM::run`. Stack overflow
+    /// covers EVAL and sub-VMs, which run through `Interpreter::run`. Stack overflow
     /// `abort`s rather than unwinding, so it is out of scope here.
     pub(crate) fn run_top(
         &mut self,
@@ -336,7 +335,7 @@ impl VM {
     /// Run `run_inner` inside the `catch_unwind` panic->`X::AdHoc` boundary so a
     /// Rust `panic!`/overflow/index-OOB triggered by user code becomes a
     /// catchable `RuntimeError` instead of crashing the process. This is the
-    /// boundary the old ping-pong `VM::run` provided; both `run_top` (outermost)
+    /// boundary the old ping-pong `Interpreter::run` provided; both `run_top` (outermost)
     /// and `run_nested` (re-entrant carriers like `run_compiled_block`,
     /// `eval_block_value`, `run_block_raw` invoked by `dies-ok`/`try`) route
     /// through it so nested user-code panics still flow through try/CATCH.
@@ -416,7 +415,7 @@ impl VM {
                 self.sync_state_locals(code);
                 self.pop_once_scope();
                 // An uncaught CX::Return signal that escapes the top-level
-                // VM loop means the lexical target routine was not on the
+                // Interpreter loop means the lexical target routine was not on the
                 // dynamic call stack when `return` executed, so it surfaces
                 // as `X::ControlFlow::Return` with out-of-dynamic-scope set.
                 // Only perform this conversion when the current dynamic call
@@ -449,23 +448,23 @@ impl VM {
         Ok(last_stack_value.or(fallback))
     }
 
-    /// CP-3 collapse PoC: run a compiled block re-entrantly on the *existing* VM,
-    /// without the `mem::take(self)` + `VM::new(self)` + `*self = interp`
+    /// CP-3 collapse PoC: run a compiled block re-entrantly on the *existing* Interpreter,
+    /// without the `mem::take(self)` + `Interpreter::new(self)` + `*self = interp`
     /// ping-pong that the interpreter-side carriers (`run_compiled_block`,
     /// `run_block_raw`, `eval_precompiled_block_fast`) use today.
     ///
     /// The ping-pong only exists because those carriers live on the `Interpreter`
-    /// (no live VM there), so each one spins up a fresh `VM` whose per-execution
+    /// (no live Interpreter there), so each one spins up a fresh `Interpreter` whose per-execution
     /// registers (stack/locals/call_frames/topic/…) start empty. This method
     /// reproduces that "fresh registers, shared interpreter + env" semantics in
     /// place: it saves the current per-execution registers, resets them to the
-    /// `VM::new` defaults, runs the block (sharing `self.interpreter`/`self.env`
+    /// `Interpreter::new` defaults, runs the block (sharing `self.interpreter`/`self.env`
     /// directly), then restores. This is the mechanism that replaces the
-    /// ping-pong once the `Interpreter` struct is dissolved into the VM.
+    /// ping-pong once the `Interpreter` struct is dissolved into the Interpreter.
     ///
     /// Shared state (interpreter fields, env, registry/io/output handles) is
     /// intentionally *not* reset — the nested block must observe and mutate the
-    /// same state, exactly as the inner ping-pong VM does (it shares the moved
+    /// same state, exactly as the inner ping-pong Interpreter does (it shares the moved
     /// interpreter and the loaned env). Caches are gen-counted, so keeping them
     /// across the nested run is correct and avoids churn.
     pub(crate) fn run_nested(
@@ -476,23 +475,23 @@ impl VM {
         // Use the guarded runner so a Rust panic in a re-entrant carrier
         // (run_compiled_block / eval_block_value / run_block_raw — e.g. a
         // `dies-ok { ... }` block) is caught and converted, exactly as the old
-        // ping-pong `VM::run` did. (The map/grep `run_reuse` loops call
+        // ping-pong `Interpreter::run` did. (The map/grep `run_reuse` loops call
         // `with_nested_registers` directly and keep their no-boundary behavior.)
         self.with_nested_registers(|me| me.run_inner_guarded(code, compiled_fns))
     }
 
     /// Run `f` with fresh per-execution registers (stack/locals/call_frames/topic/
-    /// context flags reset to their `VM::new` defaults), restoring the outer
+    /// context flags reset to their `Interpreter::new` defaults), restoring the outer
     /// registers afterwards and flagging `env_dirty` so the outer execution
     /// re-syncs its locals from env. This is the in-place replacement for the old
-    /// `mem::take(self)` + `VM::new` ping-pong: shared state (env, interpreter
+    /// `mem::take(self)` + `Interpreter::new` ping-pong: shared state (env, interpreter
     /// fields, registry/io/output handles, gen-counted caches) is *not* reset, so
     /// the nested work observes and mutates the same state. Used by `run_nested`
     /// (single compiled block) and by the map/sort `run_reuse` loops (many
     /// iterations sharing one fresh-register scope).
     pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-        // Save the per-execution registers (the fields `VM::new` initializes
-        // fresh) and reset them to their fresh-VM defaults for the nested run.
+        // Save the per-execution registers (the fields `Interpreter::new` initializes
+        // fresh) and reset them to their fresh-Interpreter defaults for the nested run.
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_call_frames = std::mem::take(&mut self.call_frames);
@@ -585,14 +584,14 @@ impl VM {
         // Those writes land in `env`, but the restored outer `locals` slots are
         // stale, so flag the dual-store dirty to force a reload from env before
         // the outer execution next reads a local. (The ping-pong achieved this
-        // implicitly: the inner VM's env flowed back through the interpreter and
+        // implicitly: the inner Interpreter's env flowed back through the interpreter and
         // the caller re-synced from it.)
         self.env_dirty = true;
 
         result
     }
 
-    /// Invoke a callable value using the VM fast paths when available and
+    /// Invoke a callable value using the Interpreter fast paths when available and
     /// return the interpreter state to the caller.
     pub(crate) fn call_value(
         &mut self,
@@ -603,7 +602,7 @@ impl VM {
     }
 
     /// Run compiled bytecode without consuming self.
-    /// Used by map/grep to avoid VM creation/destruction per iteration.
+    /// Used by map/grep to avoid Interpreter creation/destruction per iteration.
     pub(crate) fn run_reuse(
         &mut self,
         code: &CompiledCode,
@@ -721,19 +720,19 @@ impl VM {
         }
     }
 
-    // (CP-3 collapse) The VM's env / env_mut / clone_env / set_env / take_env
+    // (CP-3 collapse) The Interpreter's env / env_mut / clone_env / set_env / take_env
     // accessors are gone — they duplicated the canonical `Interpreter` methods
     // (env now lives on the merged struct), so callers reach those directly.
 
-    /// env-loan (CP-1 1e): swap the VM-owned env into the interpreter's loan
+    /// env-loan (CP-1 1e): swap the Interpreter-owned env into the interpreter's loan
     /// slot, run `f` (a carrier that reads `self.env`), then swap the
     /// env back. The interpreter sees the live env for the duration of the
     /// carrier; the nested ping-pong (`run_block_raw` → `mem::take(self)` →
-    /// `VM::new`) carries the loaned env into the inner VM and back, so the swap
+    /// `Interpreter::new`) carries the loaned env into the inner Interpreter and back, so the swap
     /// nests correctly. Returns whatever the carrier returns.
     #[inline]
     fn loan_env_for<R>(&mut self, f: impl FnOnce(&mut Interpreter) -> R) -> R {
-        // CP-3 collapse: the VM dissolved into the Interpreter, so there is no
+        // CP-3 collapse: the Interpreter dissolved into the Interpreter, so there is no
         // separate interpreter to lend the env to — env is just `self.env`. This
         // is now a thin self-call kept so the existing call sites need no edit.
         f(self)
@@ -745,8 +744,8 @@ impl VM {
     // call reaches the single implementation directly.
 
     // env-loan wrappers for the interpreter's tree-walk carriers (they read/
-    // write `self.env`, so the VM-owned env must be lent for the
-    // call). See [`VM::loan_env_for`] and docs/vm-state-ownership.md.
+    // write `self.env`, so the Interpreter-owned env must be lent for the
+    // call). See [`Interpreter::loan_env_for`] and docs/vm-state-ownership.md.
     #[inline]
     pub(crate) fn vm_call_function(
         &mut self,
@@ -806,9 +805,9 @@ impl VM {
             return Ok(());
         }
         // CP-3 collapse PoC: instead of bouncing to `Interpreter::run_block_raw`
-        // (which spins up a fresh sub-VM via `mem::take`/`VM::new` — the
+        // (which spins up a fresh sub-Interpreter via `mem::take`/`Interpreter::new` — the
         // ping-pong), compile the block (pure, no env) and run it in-place on
-        // this VM via `run_nested`, sharing the same interpreter + env directly.
+        // this Interpreter via `run_nested`, sharing the same interpreter + env directly.
         let (code, compiled_fns) = self.compile_block_raw(stmts);
         let result = self.run_nested(&code, &compiled_fns);
         // Mirror `run_block_raw`'s trailing DESTROY pass (may run user code, so
@@ -825,7 +824,7 @@ impl VM {
         // proto/operator declarations and no trailing-sub value), the registry +
         // code-env save/restore that `Interpreter::eval_block_value` performs is a
         // no-op, so run the block in-place via `run_nested` (no `mem::take`/
-        // `VM::new` ping-pong) and only replicate the cheap scope bookkeeping
+        // `Interpreter::new` ping-pong) and only replicate the cheap scope bookkeeping
         // (block-scope depth + let/temp restore + DESTROY pass). All current
         // callers pass a single `Stmt::Expr` (registration-time default / enum /
         // role-arg evaluation). Any other shape falls back to the interpreter.
@@ -875,7 +874,7 @@ impl VM {
         }
     }
 
-    /// Override the source variable used when mutating `$_` in VM execution.
+    /// Override the source variable used when mutating `$_` in Interpreter execution.
     pub(crate) fn set_topic_source_var(&mut self, name: Option<String>) {
         self.topic_source_var = name;
     }
@@ -3682,7 +3681,7 @@ impl VM {
                 if *lexically_in_routine {
                     // Closure/block lexically inside a routine: propagate a
                     // CX::Return signal up to the enclosing routine boundary.
-                    // If the signal escapes all frames up to the VM top-level,
+                    // If the signal escapes all frames up to the Interpreter top-level,
                     // the lexical target routine is no longer on the dynamic
                     // call stack, so it will surface as
                     // `X::ControlFlow::Return` with `out-of-dynamic-scope`.
@@ -4112,7 +4111,7 @@ impl VM {
                 let result = match val {
                     Value::LazyList(ref ll) => {
                         let items = self.force_lazy_list_vm(ll)?;
-                        // Sync interpreter env changes back to VM locals.
+                        // Sync interpreter env changes back to Interpreter locals.
                         // This ensures side effects from gather bodies propagate
                         // to outer-scope variables (e.g., `$was-lazy = 0`).
                         for (i, name) in code.locals.iter().enumerate() {

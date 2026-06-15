@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     /// Parallel map/grep for HyperSeq/RaceSeq.
     /// Each item is processed in its own thread to support concurrent
     /// operations like `await` inside the map/grep block.
@@ -47,7 +47,7 @@ impl VM {
             let block_clone = block.clone();
             let is_map_flag = is_map;
             handles.push(std::thread::spawn(move || {
-                // CP-3 collapse: the cloned per-thread Interpreter *is* the VM.
+                // CP-3 collapse: the cloned per-thread Interpreter *is* the Interpreter.
                 let mut vm = thread_interp;
                 let mut results = Vec::with_capacity(batch.len());
                 let mut error: Option<RuntimeError> = None;

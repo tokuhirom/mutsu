@@ -1,7 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     pub(super) fn exec_exec_call_op(
         &mut self,
         code: &CompiledCode,
@@ -13,7 +13,7 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
-            return Err(RuntimeError::new("VM stack underflow in ExecCall"));
+            return Err(RuntimeError::new("Interpreter stack underflow in ExecCall"));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -100,7 +100,9 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
-            return Err(RuntimeError::new("VM stack underflow in ExecCallPairs"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in ExecCallPairs",
+            ));
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
@@ -142,7 +144,9 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let total = regular_arity as usize + 1; // +1 for the slip value
         if self.stack.len() < total {
-            return Err(RuntimeError::new("VM stack underflow in ExecCallSlip"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in ExecCallSlip",
+            ));
         }
         // Pop all values from the stack in source order
         let stack_start = self.stack.len() - total;

@@ -1,7 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     pub(super) fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
         match item {
             Value::Capture { positional, named } => {

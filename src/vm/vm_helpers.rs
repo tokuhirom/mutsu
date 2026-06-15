@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     /// Build a backtrace string from the interpreter's routine stack.
     /// Each frame is formatted as "  in sub <name> at <file> line <N>".
     ///
@@ -364,7 +364,7 @@ impl VM {
         }
     }
 
-    /// Force a LazyList by running its compiled bytecode in the VM.
+    /// Force a LazyList by running its compiled bytecode in the Interpreter.
     /// Falls back to interpreter if no compiled code is available.
     pub(super) fn force_lazy_list_vm(
         &mut self,
@@ -405,7 +405,7 @@ impl VM {
             _ => return self.force_lazy_list_bridge(list),
         };
 
-        // Save current VM state. Locals are kept coherent with env by
+        // Save current Interpreter state. Locals are kept coherent with env by
         // write-through (`flush_local_to_env`), so no explicit flush is needed
         // here; we restore locals directly on return.
         crate::vm::vm_stats::record_clone_env();
@@ -476,7 +476,7 @@ impl VM {
         }
 
         // Sync locals back to env before reading the result environment.
-        // During VM execution, variable assignments go to self.locals, not
+        // During Interpreter execution, variable assignments go to self.locals, not
         // to the interpreter env. We must flush them so the merge logic below
         // can see the changes made by the gather body.
         for (i, name) in cc.locals.iter().enumerate() {
@@ -525,7 +525,7 @@ impl VM {
             })
         };
 
-        // Restore VM state
+        // Restore Interpreter state
         self.locals = saved_locals;
         self.stack = saved_stack;
         self.env_dirty = if env_actually_changed {
@@ -593,7 +593,7 @@ impl VM {
             }
         };
 
-        // Save current VM state
+        // Save current Interpreter state
         crate::vm::vm_stats::record_clone_env();
         let saved_env = self.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
@@ -774,7 +774,7 @@ impl VM {
             })
         };
 
-        // Restore VM state
+        // Restore Interpreter state
         self.locals = saved_locals;
         self.stack = saved_stack;
         self.env_dirty = if env_actually_changed {
@@ -850,8 +850,8 @@ impl VM {
                     return Ok(c[..n].to_vec());
                 }
                 Some(elem) => {
-                    // Apply the stage with VM-native dispatch so the callback
-                    // runs in *this* VM (keeping locals/env coherent and letting
+                    // Apply the stage with Interpreter-native dispatch so the callback
+                    // runs in *this* Interpreter (keeping locals/env coherent and letting
                     // side effects reach the enclosing scope). A `grep` keeps the
                     // element when the matcher is truthy; a `map` transforms it (a
                     // `Slip` result contributes multiple elements).
@@ -1077,7 +1077,7 @@ impl VM {
         &mut self,
         left: Value,
         right: Value,
-        f: fn(&mut VM, Value, Value) -> Result<Value, RuntimeError>,
+        f: fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
         // Auto-FETCH Proxy containers in binary operations
         let left = loan_env!(self, auto_fetch_proxy(&left))?;
@@ -1357,7 +1357,7 @@ impl VM {
 
     /// Extend a sequence-spec lazy list's cache to at least `needed` elements.
     /// This generates new elements using the sequence spec (arithmetic/geometric)
-    /// without needing any VM or interpreter context.
+    /// without needing any Interpreter or interpreter context.
     fn extend_sequence_cache(
         list: &LazyList,
         spec: &crate::value::SequenceSpec,

@@ -1096,9 +1096,9 @@ impl Interpreter {
                         format!("Failed to spurt '{}': file already exists", p),
                     ));
                 }
-                let is_buf = crate::vm::VM::is_buf_value(&content_value);
+                let is_buf = crate::runtime::Interpreter::is_buf_value(&content_value);
                 let write_result = if is_buf {
-                    let bytes = crate::vm::VM::extract_buf_bytes(&content_value);
+                    let bytes = crate::runtime::Interpreter::extract_buf_bytes(&content_value);
                     if append {
                         use std::io::Write;
                         fs::OpenOptions::new()
@@ -2691,9 +2691,9 @@ impl Interpreter {
                     .first()
                     .cloned()
                     .unwrap_or(Value::Str(String::new().into()));
-                let is_buf = crate::vm::VM::is_buf_value(&content_value);
+                let is_buf = crate::runtime::Interpreter::is_buf_value(&content_value);
                 if is_buf {
-                    let bytes = crate::vm::VM::extract_buf_bytes(&content_value);
+                    let bytes = crate::runtime::Interpreter::extract_buf_bytes(&content_value);
                     self.write_bytes_to_handle_value(&target_val, &bytes)?;
                 } else {
                     let content = content_value.to_string_value();

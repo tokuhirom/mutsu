@@ -1,25 +1,25 @@
-//! VM-side react/supply drive loop (Stage 2).
+//! Interpreter-side react/supply drive loop (Stage 2).
 //!
 //! These methods were moved from `impl Interpreter` (`runtime/subtest.rs`) onto
-//! `impl VM` (Stage 2 PR1) so the `whenever`-body callbacks can run **compiled
-//! bytecode** instead of the tree-walking `call_sub_value`. The VM owns the
-//! `Interpreter` by value, so a `&mut Interpreter` method cannot construct a VM
+//! `impl Interpreter` (Stage 2 PR1) so the `whenever`-body callbacks can run **compiled
+//! bytecode** instead of the tree-walking `call_sub_value`. The Interpreter owns the
+//! `Interpreter` by value, so a `&mut Interpreter` method cannot construct a Interpreter
 //! — the loop itself must live here.
 //!
 //! All `whenever`-body / `LAST` / `QUIT` / `CLOSE` callback dispatch goes through
-//! [`VM::call_react_callback`], which runs the (on-the-fly compiled) closure via
+//! [`Interpreter::call_react_callback`], which runs the (on-the-fly compiled) closure via
 //! `vm_call_map_block` with the triggering value bound as the block topic `$_`.
 //! Loop-control signals (`done` / `next` / `last`) surface as `Err` just as the
 //! old tree-walk path produced them, so the signal mapping is unchanged. Supply
-//! `QUIT` handlers now dispatch natively too, via [`VM::call_supply_quit_handler`]
+//! `QUIT` handlers now dispatch natively too, via [`Interpreter::call_supply_quit_handler`]
 //! (Stage 3 follow-up) — no drive-loop callback routes back through the
 //! Interpreter's tree-walk `call_sub_value` anymore.
 //!
 //! The `await $supply` / `$supply.Promise` path reaches this loop through a thin
 //! `Interpreter::drive_react_subscriptions` bridge (see `runtime/supply_promise.rs`)
-//! that uses the established `mem::take` / `VM::new` / `into_interpreter` dance.
+//! that uses the established `mem::take` / `Interpreter::new` / `into_interpreter` dance.
 //!
-//! See PLAN.md Track C and the react-loop row of the VM/interpreter ledger.
+//! See PLAN.md Track C and the react-loop row of the Interpreter/interpreter ledger.
 
 use super::*;
 use crate::runtime::native_methods::{
@@ -30,7 +30,7 @@ use crate::runtime::subtest::{ReactSubscription, StreamConsumer, SupplyDrivePoli
 use std::sync::mpsc;
 use std::time::Duration;
 
-impl VM {
+impl Interpreter {
     /// Dispatch a `whenever` body or one of its `LAST` / `QUIT` / `CLOSE` phaser
     /// callbacks as **compiled bytecode** (Stage 2). The first argument, when
     /// present, is the triggering value: it is bound as the block topic `$_`
@@ -45,12 +45,12 @@ impl VM {
         self.vm_call_map_block(cb, args, topic, false)
     }
 
-    /// VM-native supply `QUIT` handler dispatch. Mirrors
+    /// Interpreter-native supply `QUIT` handler dispatch. Mirrors
     /// `Interpreter::call_supply_quit_handler` but runs the `QUIT` phaser body as
     /// **compiled bytecode** via [`Self::call_react_callback`] (with `reason`
     /// bound as `$_`) instead of the tree-walking `call_sub_value`. This is the
     /// last drive-loop callback that routed back through the Interpreter; with it
-    /// gone the VM react loop dispatches every `whenever`/`LAST`/`QUIT`/`CLOSE`
+    /// gone the Interpreter react loop dispatches every `whenever`/`LAST`/`QUIT`/`CLOSE`
     /// callback natively. A `when`/`default`/`succeed` inside the body counts as
     /// handled; any other error propagates.
     pub(crate) fn call_supply_quit_handler(

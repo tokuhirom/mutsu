@@ -1436,8 +1436,8 @@ impl Interpreter {
                 is_buf(&a) && is_buf(&b)
             } =>
             {
-                let lb = crate::vm::VM::extract_buf_bytes(left);
-                let rb = crate::vm::VM::extract_buf_bytes(right);
+                let lb = crate::runtime::Interpreter::extract_buf_bytes(left);
+                let rb = crate::runtime::Interpreter::extract_buf_bytes(right);
                 lb == rb
             }
             // Instance ~~ Instance: value types (Date, DateTime) use eqv,

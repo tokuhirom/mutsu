@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     pub(super) fn exec_get_bare_word_op(
         &mut self,
         code: &CompiledCode,
@@ -202,7 +202,7 @@ impl VM {
             {
                 native_result?
             } else {
-                // Route the cold 0-arg term fallback through the VM's unified
+                // Route the cold 0-arg term fallback through the Interpreter's unified
                 // compiled-first function dispatch (ledger §2): this adds OTF
                 // compilation of simple user subs; the interpreter remains only as
                 // the terminal fallback inside call_function_compiled_first.
@@ -240,7 +240,7 @@ impl VM {
             if let Some((_pkg, short)) = name.rsplit_once("::")
                 && self.has_function(&format!("GLOBAL::{}", short))
             {
-                // Route the package-qualified term fork through the VM's unified
+                // Route the package-qualified term fork through the Interpreter's unified
                 // compiled-first function dispatch (ledger §2): interpreter remains
                 // only as the terminal fallback.
                 let result = self.call_function_compiled_first(name, Vec::new(), compiled_fns)?;

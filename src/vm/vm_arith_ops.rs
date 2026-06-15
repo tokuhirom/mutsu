@@ -3,7 +3,7 @@ use num_traits::ToPrimitive;
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
-impl VM {
+impl Interpreter {
     fn is_xx_reeval_thunk(data: &crate::value::SubData) -> bool {
         if !data.params.is_empty()
             || !data.param_defs.is_empty()
@@ -98,7 +98,7 @@ impl VM {
         Ok(Some(result.items))
     }
 
-    /// VM-native implementation of xx-repeat for thunks.
+    /// Interpreter-native implementation of xx-repeat for thunks.
     /// Compiles the thunk body once and runs it N times via `run_reuse`,
     /// avoiding the interpreter roundtrip through `eval_xx_repeat_thunk`.
     fn vm_xx_repeat_thunk(
@@ -597,9 +597,9 @@ impl VM {
     }
 
     /// String/Buf concatenation (`~`). This is the single authoritative impl,
-    /// shared by the VM's `~` op and the interpreter's reduction-operator path
-    /// (`apply_reduction_op` delegates here). It uses no VM state, so it is a
-    /// plain associated function callable as `crate::vm::VM::concat_values(...)`.
+    /// shared by the Interpreter's `~` op and the interpreter's reduction-operator path
+    /// (`apply_reduction_op` delegates here). It uses no Interpreter state, so it is a
+    /// plain associated function callable as `crate::runtime::Interpreter::concat_values(...)`.
     pub(crate) fn concat_values(left: Value, right: Value) -> Value {
         // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
@@ -1152,7 +1152,7 @@ impl VM {
         err
     }
 
-    /// VM-native `does` check. Inlines the pure `does_check` path and
+    /// Interpreter-native `does` check. Inlines the pure `does_check` path and
     /// only falls back to the interpreter for actual role composition.
     fn vm_does_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         // `does`/`but` on a type-object invocant (undefined scalars are stored
@@ -1219,7 +1219,7 @@ impl VM {
     pub(super) fn exec_does_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Sync VM locals to interpreter env so BUILD submethods can access
+        // Sync Interpreter locals to interpreter env so BUILD submethods can access
         // and modify closure variables from the enclosing scope.
         self.sync_env_from_locals(code);
         let result = self.vm_does_values(left, right)?;
@@ -1240,7 +1240,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Sync VM locals to interpreter env so BUILD submethods can access
+        // Sync Interpreter locals to interpreter env so BUILD submethods can access
         // and modify closure variables from the enclosing scope.
         self.sync_env_from_locals(code);
         let updated = self.vm_does_values(left, right)?;

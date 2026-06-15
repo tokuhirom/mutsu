@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     /// A plain, eager, list-like target — `Array`/`List`, `Seq`, `Slip`, or any
     /// `Range`. These are the shapes the native `.sort` / `.min` / `.max` /
     /// `.minmax` / `.first` paths handle without falling back to the interpreter
@@ -170,7 +170,7 @@ impl VM {
     /// Coerce an Instance operand to a numeric value via its `Numeric`/`Bridge`
     /// method. Delegates to the single authoritative implementation on the
     /// interpreter (`Interpreter::coerce_infix_operand_numeric`) so the
-    /// Instance->numeric bridge logic is not duplicated between the VM and the
+    /// Instance->numeric bridge logic is not duplicated between the Interpreter and the
     /// interpreter. Non-Instance values (the hot Int/Num/Rat path) return early
     /// inside the helper without any method dispatch.
     pub(super) fn coerce_numeric_bridge_value(
@@ -288,7 +288,7 @@ impl VM {
         )
     }
 
-    /// VM-native dispatch for calling a value (Sub, Routine, Junction, etc.).
+    /// Interpreter-native dispatch for calling a value (Sub, Routine, Junction, etc.).
     ///
     /// This avoids the interpreter's `eval_call_on_value` for common cases:
     /// - Value::Sub with compiled_code -> call_compiled_closure
@@ -325,7 +325,7 @@ impl VM {
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
 
-        // Sub without compiled_code: compile on-the-fly then dispatch via VM
+        // Sub without compiled_code: compile on-the-fly then dispatch via Interpreter
         if let Value::Sub(ref data) = target
             && !data.body.is_empty()
         {
@@ -341,7 +341,7 @@ impl VM {
         }
 
         // Routine value dispatch (ledger §2, ③ PR-1). Resolve to a function name
-        // and route through the VM's unified compiled-first entry
+        // and route through the Interpreter's unified compiled-first entry
         // (`call_function_compiled_first`): user-defined subs/multi/proto run as
         // compiled bytecode, native builtins fall through to `native_function`, and
         // only genuine carriers (EVAL/pseudo-package) reach the interpreter terminal.
@@ -380,7 +380,7 @@ impl VM {
             if !args.is_empty() && !pkg.is_empty() && pkg != "GLOBAL" && self.has_class(&pkg) {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
-                // Route through the VM's unified compiled-first dispatch (ledger §1):
+                // Route through the Interpreter's unified compiled-first dispatch (ledger §1):
                 // user-defined methods run as compiled bytecode, native fall back.
                 return self.try_compiled_method_or_interpret(invocant, &name_str, method_args);
             }

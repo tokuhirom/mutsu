@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     /// Rich :exists adverb handler supporting negation, parameterized arg,
     /// zen slice, and secondary adverbs (:kv, :!kv, :p, :!p, :!v).
     pub(super) fn exec_exists_index_adv_op(

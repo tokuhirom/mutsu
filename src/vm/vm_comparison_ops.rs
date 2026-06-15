@@ -161,7 +161,7 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
         return std::cmp::Ordering::Greater;
     }
 
-    VM::spaceship_ordering(left, right)
+    Interpreter::spaceship_ordering(left, right)
 }
 
 /// Get list elements from a value (Array, Seq, List, Slip, etc.)
@@ -220,7 +220,7 @@ fn value_to_i64(v: &Value) -> Option<i64> {
     }
 }
 
-impl VM {
+impl Interpreter {
     fn parse_numeric_string_for_spaceship(s: &str) -> Result<f64, RuntimeError> {
         s.trim().parse::<f64>().map_err(|_| {
             RuntimeError::new(format!(

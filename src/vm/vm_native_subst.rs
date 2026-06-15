@@ -5,7 +5,7 @@
 //! highest-frequency residual method fallback). The substitution *engine* —
 //! regex matching (`regex_find_first_from_with_captures`), `$0`/`$1` capture
 //! expansion (`expand_capture_refs`) and Match-object construction — already
-//! lives VM-side because the operator form `s/.../.../ ` compiles to
+//! lives Interpreter-side because the operator form `s/.../.../ ` compiles to
 //! `OpCode::Subst` and runs natively in `exec_subst_op`. This routes the common
 //! `.subst` *method* call through the same building blocks instead of the
 //! interpreter, falling back for anything that needs the interpreter's richer
@@ -22,9 +22,9 @@ use super::*;
 use crate::value::Value;
 use std::collections::HashMap;
 
-impl VM {
+impl Interpreter {
     /// Try to run `target.subst(pattern, replacement, :g?)` natively. Returns
-    /// `Some(result)` when handled in the VM, `None` to fall back to the
+    /// `Some(result)` when handled in the Interpreter, `None` to fall back to the
     /// interpreter unchanged.
     pub(super) fn try_native_subst(
         &mut self,

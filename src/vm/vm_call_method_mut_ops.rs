@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 use std::sync::Arc;
 
-impl VM {
+impl Interpreter {
     pub(super) fn exec_call_method_dynamic_op(
         &mut self,
         code: &CompiledCode,
@@ -14,7 +14,9 @@ impl VM {
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
-            return Err(RuntimeError::new("VM stack underflow in CallMethodDynamic"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in CallMethodDynamic",
+            ));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -22,14 +24,12 @@ impl VM {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, false);
         }
-        let name_val = self
-            .stack
-            .pop()
-            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic name"))?;
-        let target = self
-            .stack
-            .pop()
-            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic target"))?;
+        let name_val = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("Interpreter stack underflow in CallMethodDynamic name")
+        })?;
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("Interpreter stack underflow in CallMethodDynamic target")
+        })?;
         // Force lazy IO lines for non-lazy-preserving methods
         let method_name_str = name_val.to_string_value();
         let method = Self::rewrite_method_name(&method_name_str, modifier);
@@ -257,7 +257,7 @@ impl VM {
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new(
-                "VM stack underflow in CallMethodDynamicMut",
+                "Interpreter stack underflow in CallMethodDynamicMut",
             ));
         }
         let start = self.stack.len() - arity;
@@ -266,14 +266,12 @@ impl VM {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, false);
         }
-        let name_val = self
-            .stack
-            .pop()
-            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
-        let target = self
-            .stack
-            .pop()
-            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let name_val = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("Interpreter stack underflow in CallMethodDynamicMut")
+        })?;
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("Interpreter stack underflow in CallMethodDynamicMut")
+        })?;
         let method_name_str = name_val.to_string_value();
         let method = Self::rewrite_method_name(&method_name_str, modifier);
         // Handle .* and .+ modifiers
@@ -335,7 +333,9 @@ impl VM {
         let method = Self::rewrite_method_name(method_raw, modifier);
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
-            return Err(RuntimeError::new("VM stack underflow in CallMethodMut"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in CallMethodMut",
+            ));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -350,7 +350,7 @@ impl VM {
             raw_args
         };
         let target = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
+            RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
         // Force lazy IO lines for non-lazy-preserving methods
         let target = if matches!(&target, Value::LazyIoLines { .. })
@@ -399,7 +399,7 @@ impl VM {
                 None => self.force_lazy_list_vm(ll)?,
             };
             // A lazy map/grep pipeline runs its callback via `vm_call_on_value`
-            // in this VM, so its side effects on enclosing variables are
+            // in this Interpreter, so its side effects on enclosing variables are
             // legitimate and must persist (unlike gather coroutine corruption,
             // which the env restore undoes).
             if !matches!(method.as_str(), "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
@@ -517,7 +517,7 @@ impl VM {
             return Ok(());
         }
 
-        // .WHO on pseudo-package Package values: build the stash in the VM
+        // .WHO on pseudo-package Package values: build the stash in the Interpreter
         // where we have access to locals (which the interpreter doesn't have).
         if method == "WHO"
             && args.is_empty()
@@ -531,7 +531,7 @@ impl VM {
             return Ok(());
         }
 
-        // Fast path for Lock::Async.protect — execute block inline in current VM
+        // Fast path for Lock::Async.protect — execute block inline in current Interpreter
         if method == "protect"
             && args.len() == 1
             && let Value::Instance {
@@ -1177,8 +1177,8 @@ impl VM {
             }
             _ => {
                 // Native fast path for mutating list methods on a plain, untyped
-                // `@`-array (ledger §1: native receiver dispatch -> VM-native).
-                // Handles the common hot-loop case directly in the VM, writing the
+                // `@`-array (ledger §1: native receiver dispatch -> Interpreter-native).
+                // Handles the common hot-loop case directly in the Interpreter, writing the
                 // mutated array back to env, instead of routing through the
                 // tree-walking interpreter bridge. Falls through (returns None) for
                 // typed/shaped/lazy/shared/constrained arrays so the interpreter
@@ -1193,7 +1193,7 @@ impl VM {
                 }
                 // Native fast path for the simple (non-erroring) forms of `splice`
                 // on a plain, untyped `@`-array (ledger §1: native receiver
-                // dispatch -> VM-native).
+                // dispatch -> Interpreter-native).
                 if modifier.is_none()
                     && let Some(result) =
                         self.try_native_array_splice(&target_name, &target, &method, &args)
@@ -1203,7 +1203,7 @@ impl VM {
                     return Ok(());
                 }
                 // Native fast path for mutating Buf write methods on a mutable Buf
-                // instance (ledger §1: native receiver dispatch -> VM-native).
+                // instance (ledger §1: native receiver dispatch -> Interpreter-native).
                 if modifier.is_none()
                     && let Some(result) =
                         self.try_native_buf_mut(&target_name, &target, &method, &args)
@@ -1214,7 +1214,7 @@ impl VM {
                 }
                 // Native fast path for the Iterator protocol on a self-contained
                 // array-backed iterator (ledger §1: native receiver dispatch ->
-                // VM-native). `$it.pull-one` etc. compile to CallMethodMut, so the
+                // Interpreter-native). `$it.pull-one` etc. compile to CallMethodMut, so the
                 // index-advancing dispatch lands here.
                 if modifier.is_none()
                     && let Some(result) = self.try_native_iterator(&target, &method, &args)
@@ -1276,7 +1276,7 @@ impl VM {
                             .get("__mutsu_array_storage")
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
-                        // VM-native fast path: simple mutators on the plain
+                        // Interpreter-native fast path: simple mutators on the plain
                         // untyped backing array are performed in Rust and the
                         // updated storage written back, with no interpreter
                         // dispatch. Richer methods fall through below.
@@ -1405,7 +1405,7 @@ impl VM {
         Ok(())
     }
 
-    /// VM-native mutating list methods (`append`/`prepend`/`unshift`/`pop`/`shift`)
+    /// Interpreter-native mutating list methods (`append`/`prepend`/`unshift`/`pop`/`shift`)
     /// on a plain, untyped `@`-array stored in env. Mirrors the interpreter's
     /// primary (`env.get_mut` + `Arc::make_mut`) branch in `methods_mut.rs`
     /// exactly for this narrow case, so the result is behavior-invariant.
@@ -1516,9 +1516,9 @@ impl VM {
         Some(Ok(result))
     }
 
-    /// VM-native simple array mutators (push/pop/shift/unshift/append/prepend)
+    /// Interpreter-native simple array mutators (push/pop/shift/unshift/append/prepend)
     /// applied directly to an `is Array`-backed instance's backing storage
-    /// `Value` (ledger §1: array-backed instance dispatch -> VM-native).
+    /// `Value` (ledger §1: array-backed instance dispatch -> Interpreter-native).
     ///
     /// Mirrors the interpreter's plain, non-shared env-keyed mutator branch
     /// (`methods_mut.rs`): the `__mutsu_array_storage` value is a plain untyped
@@ -1590,7 +1590,7 @@ impl VM {
 
     /// Rebuild an `is Array`-backed instance with its `__mutsu_array_storage`
     /// attribute replaced by `storage` and write it back into `target_name`.
-    /// Shared by the VM-native mutator fast path and the interpreter fallback.
+    /// Shared by the Interpreter-native mutator fast path and the interpreter fallback.
     fn write_back_array_storage_instance(
         &mut self,
         target_name: &str,
@@ -1616,8 +1616,8 @@ impl VM {
         self.env_dirty = true;
     }
 
-    /// VM-native `splice` on a plain, untyped `@`-array bound to `target_name`
-    /// (ledger §1: native receiver dispatch -> VM-native). Mirrors the
+    /// Interpreter-native `splice` on a plain, untyped `@`-array bound to `target_name`
+    /// (ledger §1: native receiver dispatch -> Interpreter-native). Mirrors the
     /// interpreter's `splice` branch in `methods_mut.rs` exactly (`drain` +
     /// `insert`, returning the removed elements as a real array), so the result
     /// is behavior-invariant.
@@ -1716,9 +1716,9 @@ impl VM {
         Some(Ok(Value::real_array(removed)))
     }
 
-    /// VM-native mutating Buf write methods (`write-bits`/`write-ubits`/
+    /// Interpreter-native mutating Buf write methods (`write-bits`/`write-ubits`/
     /// `write-num*`/`write-int*`/`write-uint*`) on a mutable `Buf` instance bound
-    /// to `target_name` (ledger §1: native receiver dispatch -> VM-native). Mirrors
+    /// to `target_name` (ledger §1: native receiver dispatch -> Interpreter-native). Mirrors
     /// the interpreter's instance-mutate branches in `methods_mut.rs` exactly: the
     /// byte transforms are the single shared pure implementations in `builtins/`
     /// (`buf_bits`/`buf_write_num`/`buf_write_int`), and the writeback goes

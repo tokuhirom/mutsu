@@ -2,7 +2,7 @@ use super::*;
 use crate::runtime::types::unwrap_varref_value;
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     /// Record a deprecation event for a compiled function if it has deprecation info.
     fn record_cf_deprecation(&self, cf: &CompiledFunction) {
         if let Some((ref kind, ref name, ref package, ref msg)) = cf.deprecated_info {
@@ -24,7 +24,7 @@ impl VM {
         }
     }
 
-    /// Cached version of the VM-native [`Self::has_multi_candidates`].
+    /// Cached version of the Interpreter-native [`Self::has_multi_candidates`].
     /// Uses `fn_resolve_gen` for invalidation so it's O(1) on cache hit.
     pub(super) fn has_multi_candidates_cached(&mut self, name: &str) -> bool {
         if self.multi_candidates_cache_gen != self.fn_resolve_gen {
@@ -78,7 +78,7 @@ impl VM {
         self.vm_call_function(name, args)
     }
 
-    /// Compile a FunctionDef on-the-fly to bytecode and execute via the VM.
+    /// Compile a FunctionDef on-the-fly to bytecode and execute via the Interpreter.
     /// This avoids the interpreter's tree-walking execution path.
     #[allow(dead_code)]
     pub(super) fn compile_and_call_function_def(
@@ -212,7 +212,7 @@ impl VM {
 
     /// Whether a name that reaches the interpreter does so as a *carrier* rather
     /// than as a tree-walk fallback. `EVAL`/`EVALFILE` compile their source to
-    /// bytecode and run it on a sub-VM (`eval_block_value` -> `run_compiled_block`);
+    /// bytecode and run it on a sub-Interpreter (`eval_block_value` -> `run_compiled_block`);
     /// pseudo-package reads (`CALLER::`/`OUTER::`/`SETTING::`/`DYNAMIC::`) are
     /// reflective env lookups. Neither tree-walks user code, so they are counted
     /// in a separate stats bucket (lever A). The remaining coupling — that the
@@ -1869,20 +1869,22 @@ mod tests {
 
     #[test]
     fn carrier_functions_are_not_tree_walk_fallbacks() {
-        // EVAL/EVALFILE compile to bytecode and run on a sub-VM; pseudo-package
+        // EVAL/EVALFILE compile to bytecode and run on a sub-Interpreter; pseudo-package
         // reads are reflective env lookups. Both enter the interpreter as a
         // carrier, so they are classified out of the tree-walk fallback metric.
-        assert!(VM::is_interpreter_carrier_function("EVAL"));
-        assert!(VM::is_interpreter_carrier_function("EVALFILE"));
-        assert!(VM::is_interpreter_carrier_function("Foo::CALLER::bar"));
-        assert!(VM::is_interpreter_carrier_function("OUTER::x"));
-        assert!(VM::is_interpreter_carrier_function("SETTING::y"));
-        assert!(VM::is_interpreter_carrier_function("DYNAMIC::z"));
+        assert!(Interpreter::is_interpreter_carrier_function("EVAL"));
+        assert!(Interpreter::is_interpreter_carrier_function("EVALFILE"));
+        assert!(Interpreter::is_interpreter_carrier_function(
+            "Foo::CALLER::bar"
+        ));
+        assert!(Interpreter::is_interpreter_carrier_function("OUTER::x"));
+        assert!(Interpreter::is_interpreter_carrier_function("SETTING::y"));
+        assert!(Interpreter::is_interpreter_carrier_function("DYNAMIC::z"));
 
         // Genuine user/builtin subs are real fallbacks when they reach the
         // interpreter, not carriers.
-        assert!(!VM::is_interpreter_carrier_function("say"));
-        assert!(!VM::is_interpreter_carrier_function("my-sub"));
-        assert!(!VM::is_interpreter_carrier_function("evaluate"));
+        assert!(!Interpreter::is_interpreter_carrier_function("say"));
+        assert!(!Interpreter::is_interpreter_carrier_function("my-sub"));
+        assert!(!Interpreter::is_interpreter_carrier_function("evaluate"));
     }
 }

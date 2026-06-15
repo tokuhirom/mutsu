@@ -1,7 +1,7 @@
 use super::*;
 use crate::ast::{CallArg, Expr, Stmt};
 
-impl VM {
+impl Interpreter {
     fn try_eval_simple_protect_expr(
         &self,
         outer_code: &CompiledCode,
@@ -97,7 +97,7 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         // Native default construction: `Foo.new(...)` for a simple user-defined
         // class is pure data assembly (named args + attribute defaults), so the
-        // VM builds the instance directly instead of routing through the
+        // Interpreter builds the instance directly instead of routing through the
         // interpreter's generic constructor dispatch (lever A: shrink method-call
         // interpreter fallback).
         if method == "new"
@@ -111,7 +111,7 @@ impl VM {
         }
         // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/
         // `utf16` (code units), `Uni` (codepoints), `Version`/`Duration`/
-        // `StrDistance`/`Stash`/empty-instance handles — pure data builds the VM
+        // `StrDistance`/`Stash`/empty-instance handles — pure data builds the Interpreter
         // performs directly instead of routing through `dispatch_new`.
         if method == "new"
             && let Value::Package(class_name) = &target
@@ -136,10 +136,10 @@ impl VM {
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
-            // VM-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
+            // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
             // resolve `IO::Handle`'s state-only methods (close/tell/eof/seek/
             // opened/t and the Tier-1 setters/getters chomp/nl-out/out-buffer/
-            // encoding/native-descriptor) in the VM through its own `io_handles`
+            // encoding/native-descriptor) in the Interpreter through its own `io_handles`
             // handle, *before* the generic native-method fallback below would
             // otherwise pre-empt them. Returns `None` (falling through to that
             // fallback unchanged) for any receiver/method/args it cannot handle
@@ -147,19 +147,19 @@ impl VM {
             if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
                 return result;
             }
-            // VM-native text output to a File+UTF8 `IO::Handle` (print/put/say/
+            // Interpreter-native text output to a File+UTF8 `IO::Handle` (print/put/say/
             // print-nl): the write touches only handle state (PR-D Tier-2a).
             // Stdout/Stderr (need emit_output) and non-UTF8 File fall through.
             if let Some(result) = self.try_native_io_handle_output(&target, method, &args) {
                 return result;
             }
-            // VM-native raw byte output to a File `IO::Handle` (write/spurt):
+            // Interpreter-native raw byte output to a File `IO::Handle` (write/spurt):
             // raw file write, no buffering/encoding (PR-D Tier-2c). Stdout/Stderr
             // and a non-UTF8 spurt of a Str fall through.
             if let Some(result) = self.try_native_io_handle_byte_output(&target, method, &args) {
                 return result;
             }
-            // VM-native line read from a File+UTF8 `IO::Handle` (get): reads via
+            // Interpreter-native line read from a File+UTF8 `IO::Handle` (get): reads via
             // the handle's record reader (PR-D read side). ArgFiles/Stdin/non-UTF8
             // (which need @*ARGS / decode) fall through.
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
@@ -440,7 +440,7 @@ impl VM {
             }
         }
         // Native `.map` / `.grep` over a concrete array with a simple block: run
-        // the iteration loop in the VM instead of the interpreter (lever A). No
+        // the iteration loop in the Interpreter instead of the interpreter (lever A). No
         // `target_name` here (the receiver is a value, not a mutable variable),
         // so `$_`-mutating blocks fall back to the interpreter.
         if let Some(result) = self.try_native_array_map(None, &target, method, &args) {
@@ -468,7 +468,7 @@ impl VM {
         }
         // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
         // over a list-like receiver (ledger §1: native receiver dispatch ->
-        // VM-native). Pure element-folding shared with the interpreter via
+        // Interpreter-native). Pure element-folding shared with the interpreter via
         // `builtins::quanthash_coerce`. `.MixHash` falls through (it registers
         // container type metadata, which is interpreter-owned state).
         if args.is_empty()
@@ -496,12 +496,12 @@ impl VM {
         self.vm_call_method_with_values(target, method, args)
     }
 
-    /// VM-native dispatch for the pure-handle methods of an `IO::Handle`
+    /// Interpreter-native dispatch for the pure-handle methods of an `IO::Handle`
     /// (`close`/`tell`/`eof`/`seek`/`opened`/`t` plus the PR-D Tier-1
     /// setters/getters `chomp`/`nl-out`/`out-buffer`/`encoding` and
     /// `native-descriptor`) — the ones that touch only the handle's own state,
     /// with no `emit_output` / env / encoding-helper dependency.
-    /// Operates on the VM's own [`io_handles`](VM::io_handles_mut) handle and the
+    /// Operates on the Interpreter's own [`io_handles`](Interpreter::io_handles_mut) handle and the
     /// shared `IoHandleState` methods (the single authoritative impl the
     /// interpreter's `*_handle_value` wrappers also use), so behavior is identical
     /// to the interpreter's native fork.
@@ -663,19 +663,19 @@ impl VM {
         Some(result)
     }
 
-    /// VM-native text output for a `File`+UTF8 `IO::Handle` receiver
+    /// Interpreter-native text output for a `File`+UTF8 `IO::Handle` receiver
     /// (`print`/`put`/`say`/`printf`/`print-nl`): build the payload exactly as
     /// the interpreter's `native_io` handlers do — `render_str_value` for
     /// print/put, `render_gist_value` for say (byte-identical; the same helpers
-    /// the VM's own `say`/`print` ops use), the pure `sprintf` helpers for
-    /// printf — and write it through the VM's `io_handles` handle via the shared
+    /// the Interpreter's own `say`/`print` ops use), the pure `sprintf` helpers for
+    /// printf — and write it through the Interpreter's `io_handles` handle via the shared
     /// `IoHandleState::native_text_write` (PLAN.md ③ native IO PR-D Tier-2a/2b).
     ///
     /// Returns `None` (fall through to the interpreter) for any non-`IO::Handle`
     /// receiver, any other method, a junction argument (autothreading), or a
     /// handle whose target/encoding is not File+UTF8 — Stdout/Stderr need
     /// `emit_output`/`stderr_output` and a non-UTF8 File needs
-    /// `encode_with_encoding`, neither VM-reachable yet (③ 後段/④). The
+    /// `encode_with_encoding`, neither Interpreter-reachable yet (③ 後段/④). The
     /// target/encoding gate is read *before* the payload is built so a
     /// fall-through never double-runs the argument stringification.
     fn try_native_io_handle_output(
@@ -719,7 +719,7 @@ impl VM {
 
         // Resolve the target *before* building the payload, so falling through
         // (Socket / non-UTF8 File / Stdin) never runs the arg stringification
-        // twice. Stdout/Stderr emit via the VM's shared output sink (③後段 PR-C);
+        // twice. Stdout/Stderr emit via the Interpreter's shared output sink (③後段 PR-C);
         // File writes its handle state (Tier-2a).
         enum Tgt {
             File,
@@ -822,7 +822,7 @@ impl VM {
         Some(Ok(Value::Bool(true)))
     }
 
-    /// VM-native raw byte output for a `File` `IO::Handle` receiver
+    /// Interpreter-native raw byte output for a `File` `IO::Handle` receiver
     /// (`write` / `spurt`): build the bytes exactly as the interpreter's
     /// `native_io` handlers do and write them straight to the file via the
     /// shared `IoHandleState::native_write_bytes_file` (raw, `:out-buffer`- and
@@ -915,7 +915,7 @@ impl VM {
         )
     }
 
-    /// VM-native reads from a `File`+UTF8 `IO::Handle` receiver (③後段 PR-D read
+    /// Interpreter-native reads from a `File`+UTF8 `IO::Handle` receiver (③後段 PR-D read
     /// side): `get` (next line → `Str`/`Nil`), `slurp` (rest of file → `Str`),
     /// `read` (up to N bytes → `Buf`). Each delegates to the shared
     /// `IoHandleState` reader and shapes the result exactly as the interpreter's
@@ -1040,7 +1040,7 @@ impl VM {
         }
     }
 
-    /// VM-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
+    /// Interpreter-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
     /// over a list-like receiver (List/Array/Seq/Slip/Hash/Set/Bag/Mix/Pair/Range).
     /// Delegates the element folding to the single authoritative pure
     /// implementation in `builtins::quanthash_coerce`, the same one the
@@ -1097,7 +1097,7 @@ impl VM {
         Some(result)
     }
 
-    /// VM-native `.iterator` construction, mirroring
+    /// Interpreter-native `.iterator` construction, mirroring
     /// `Interpreter::dispatch_iterator_method`: an already-built `Iterator`
     /// instance returns itself; a `Seq` falls through (consumed-state tracking +
     /// `squish` env mutation are interpreter-owned); any other receiver builds an
@@ -1120,7 +1120,7 @@ impl VM {
         Some(crate::builtins::iterator_construct::build_iterator_instance(target))
     }
 
-    /// VM-native Iterator protocol over a self-contained, array-backed `Iterator`
+    /// Interpreter-native Iterator protocol over a self-contained, array-backed `Iterator`
     /// instance (`items` Array + `index` Int, no `squish_source` callbacks).
     /// Handles the index-advancing protocol methods `pull-one`/`skip-one`/
     /// `skip-at-least`/`skip-at-least-pull-one`/`sink-all`, mirroring the
@@ -1494,7 +1494,7 @@ impl VM {
         }
         if let Value::Instance { class_name, .. } = &target {
             let class = class_name.resolve();
-            // VM-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D),
+            // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D),
             // mut path: `$fh.method` on a variable receiver routes here, so the
             // same state-only `IO::Handle` methods must be intercepted before the
             // generic native-method fallback below. These methods mutate only the
@@ -1503,18 +1503,18 @@ impl VM {
             if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
                 return result;
             }
-            // VM-native text output to a File+UTF8 `IO::Handle` (print/put/say/
+            // Interpreter-native text output to a File+UTF8 `IO::Handle` (print/put/say/
             // print-nl), mut path (PR-D Tier-2a). See the non-mut twin above.
             if let Some(result) = self.try_native_io_handle_output(&target, method, &args) {
                 return result;
             }
-            // VM-native raw byte output to a File `IO::Handle` (write/spurt):
+            // Interpreter-native raw byte output to a File `IO::Handle` (write/spurt):
             // raw file write, no buffering/encoding (PR-D Tier-2c). Stdout/Stderr
             // and a non-UTF8 spurt of a Str fall through.
             if let Some(result) = self.try_native_io_handle_byte_output(&target, method, &args) {
                 return result;
             }
-            // VM-native line read from a File+UTF8 `IO::Handle` (get): reads via
+            // Interpreter-native line read from a File+UTF8 `IO::Handle` (get): reads via
             // the handle's record reader (PR-D read side). ArgFiles/Stdin/non-UTF8
             // (which need @*ARGS / decode) fall through.
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
@@ -1777,8 +1777,8 @@ impl VM {
         self.vm_call_method_mut_with_values(target_name, target, method, args)
     }
 
-    /// Execute a protect block inline in the current VM, avoiding the overhead
-    /// of creating a new VM.
+    /// Execute a protect block inline in the current Interpreter, avoiding the overhead
+    /// of creating a new Interpreter.
     pub(super) fn exec_protect_block_inline(
         &mut self,
         outer_code: &CompiledCode,
@@ -1813,7 +1813,7 @@ impl VM {
                 }
                 _ => {
                     // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
-                    // in the VM. Currently these are rare and delegate to interpreter.
+                    // in the Interpreter. Currently these are rare and delegate to interpreter.
                     return self.call_protect_block(code_val);
                 }
             };

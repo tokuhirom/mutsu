@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
-impl VM {
+impl Interpreter {
     /// Call a compiled method body (MethodDef with compiled_code).
     /// Mirrors `Interpreter::run_instance_method_resolved` but executes bytecode.
     #[allow(clippy::too_many_arguments)]

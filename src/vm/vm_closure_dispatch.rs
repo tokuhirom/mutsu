@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     /// Find the first positional argument that is a Junction and whose corresponding
     /// parameter type constraint does not accept Junction (i.e., needs auto-threading).
     /// Returns the index of that argument, or None if no auto-threading is needed.

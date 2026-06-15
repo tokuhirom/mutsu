@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     pub(super) fn try_native_method(
         &mut self,
         target: &Value,
@@ -219,7 +219,7 @@ impl VM {
             return Some(Ok(target.clone()));
         }
 
-        // Handle .Slip/.List/.Seq on scan-based LazyList by forcing elements via VM.
+        // Handle .Slip/.List/.Seq on scan-based LazyList by forcing elements via Interpreter.
         if result.is_none()
             && let Value::LazyList(ll) = target
             && ll.scan_spec.is_some()
