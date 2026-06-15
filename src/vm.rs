@@ -960,11 +960,6 @@ impl VM {
         }
     }
 
-    /// Get a reference to the interpreter (for reading env values).
-    pub(crate) fn interpreter(&self) -> &Interpreter {
-        &self.interpreter
-    }
-
     /// Read access to the variable store (env) through the VM's own seam.
     ///
     /// CP-1 (env-loan, step 1b): the env physically still lives in
