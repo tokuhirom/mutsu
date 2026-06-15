@@ -1583,7 +1583,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Proxy { .. } => "Proxy",
         Value::ParametricRole { .. } => "Package",
         Value::CustomType { .. } => "CustomType",
-        Value::CustomTypeInstance { .. } => "CustomTypeInstance",
+        Value::CustomTypeInstance(_) => "CustomTypeInstance",
         Value::Scalar(inner) => value_type_name(inner),
         Value::LazyThunk(thunk_data) => {
             let cache = thunk_data.cache.lock().unwrap();

@@ -15,7 +15,7 @@ fn gist_needs_method_dispatch(v: &Value) -> bool {
     match v {
         Value::Instance { .. }
         | Value::CustomType { .. }
-        | Value::CustomTypeInstance { .. }
+        | Value::CustomTypeInstance(_)
         | Value::Package(..) => true,
         Value::Array(items, _) => items.iter().any(gist_needs_method_dispatch),
         Value::Seq(items) | Value::Slip(items) => items.iter().any(gist_needs_method_dispatch),

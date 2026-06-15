@@ -303,7 +303,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         | Value::Channel(_)
         | Value::Proxy { .. }
         | Value::CustomType { .. }
-        | Value::CustomTypeInstance { .. }
+        | Value::CustomTypeInstance(_)
         | Value::LazyThunk(_)
         | Value::LazyIoLines { .. }
         | Value::HashSlotRef { .. }
