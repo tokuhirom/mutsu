@@ -218,6 +218,41 @@ impl Interpreter {
         None
     }
 
+    /// Compile a subset `where` predicate body to bytecode once and cache it by
+    /// subset name. The predicate is fixed for a given subset, so this replaces
+    /// the old per-check `eval_block_value` (which recompiled the predicate and
+    /// cloned the entire function/proto registry on every type check). Mirrors
+    /// `eval_block_value`'s compiler context setup so `$?PACKAGE` /
+    /// `$?DISTRIBUTION` / routine-scope naming resolve identically; the first
+    /// check's context is frozen into the cache (subset predicates are checked
+    /// from a stable package, and Raku closes `where` over the declaration
+    /// scope, so this matches or improves on the prior behavior).
+    fn compile_subset_predicate(&mut self, name: &str, body: &[Stmt]) -> SubsetPredicateCompiled {
+        if let Some(cached) = self.subset_predicate_cache.get(name) {
+            return cached.clone();
+        }
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.is_routine = !self.routine_stack.is_empty();
+        compiler.lexically_in_routine = !self.routine_stack.is_empty();
+        let scope = if let Some(frame) = self.routine_stack.last() {
+            compiler.enclosing_package = Some(frame.package.clone());
+            format!("{}::&{}", frame.package, frame.name)
+        } else {
+            self.current_package()
+        };
+        compiler.set_current_package(scope);
+        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
+            self.package_distributions
+                .get(&self.current_package())
+                .cloned()
+        });
+        let (code, compiled_fns) = compiler.compile(body);
+        let compiled = Arc::new((code, compiled_fns));
+        self.subset_predicate_cache
+            .insert(name.to_string(), compiled.clone());
+        compiled
+    }
+
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         if let Value::Scalar(inner) = value {
             return self.type_matches_value(constraint, inner.as_ref());
@@ -513,28 +548,38 @@ impl Interpreter {
             }
             let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
             let ok = if let Some(pred) = &subset.predicate {
-                // Check if the predicate is a block/lambda (AnonSub, AnonSubParams, etc.)
-                let is_callable_expr = matches!(
-                    pred,
-                    Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_)
-                );
-                if is_callable_expr {
-                    // Evaluate to get a callable, then call with the value
-                    match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
-                        Ok(callable @ Value::Sub(_)) => self
-                            .call_sub_value(callable, vec![predicate_value], false)
-                            .map(|v| v.truthy())
-                            .unwrap_or(false),
-                        Ok(v) => v.truthy(),
-                        Err(_) => false,
-                    }
-                } else {
-                    // Bare expression: set $_ and evaluate directly
+                // A predicate whose only topic is `$_` (no placeholders `$^x`, no
+                // non-`$_` signature param) is equivalent to running its body with
+                // `$_` bound to the candidate value. This covers the two dominant
+                // shapes: a bare block `where { $_ %% 2 }` and Whatever-currying
+                // `where * < 1000` (which desugars to `Lambda { param: "_" }`).
+                // Running the body inline skips creating a closure (which would
+                // flatten/capture the current env) and the extra `call_sub_value`
+                // round-trip; the closure would have captured the *same* current
+                // env, so running the body directly in it is behavior-equivalent.
+                // Anything with a named/multiple param (`where -> $x {...}`) or
+                // placeholders (`where { $^a }`) falls through to the closure path.
+                let inline_body: Option<&[Stmt]> = match pred {
+                    Expr::Block(body) => Some(body.as_slice()),
+                    Expr::AnonSub {
+                        body,
+                        is_block: true,
+                        ..
+                    } => Some(body.as_slice()),
+                    Expr::Lambda { param, body, .. } if param == "_" => Some(body.as_slice()),
+                    _ => None,
+                }
+                .filter(|body| crate::ast::collect_placeholders_shallow(body).is_empty());
+
+                if let Some(body) = inline_body {
+                    // Inline topic-bound execution: compile the block body once
+                    // (cached by subset name) and run it with `$_` bound.
+                    let compiled = self.compile_subset_predicate(constraint, body);
                     let saved = self.env.get("_").cloned();
                     self.env.insert("_".to_string(), predicate_value);
                     let result = self
-                        .eval_block_value(&[Stmt::Expr(pred.clone())])
-                        .map(|v| self.smart_match(value, &v))
+                        .eval_precompiled_block_fast(&compiled.0, &compiled.1)
+                        .map(|v| v.truthy())
                         .unwrap_or(false);
                     if let Some(old) = saved {
                         self.env.insert("_".to_string(), old);
@@ -542,6 +587,44 @@ impl Interpreter {
                         self.env.remove("_");
                     }
                     result
+                } else {
+                    // The predicate is a fixed `Expr`; compile `[Stmt::Expr(pred)]`
+                    // once (cached by subset name) and run the cached bytecode on a
+                    // sub-VM via the lean `eval_precompiled_block_fast` — no
+                    // per-check recompile and no registry clone (the old
+                    // `eval_block_value` path did both on every type check).
+                    let body = [Stmt::Expr(pred.clone())];
+                    let compiled = self.compile_subset_predicate(constraint, &body);
+                    // Check if the predicate is a block/lambda (AnonSub, AnonSubParams, etc.)
+                    let is_callable_expr = matches!(
+                        pred,
+                        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_)
+                    );
+                    if is_callable_expr {
+                        // Evaluate to get a callable, then call with the value
+                        match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
+                            Ok(callable @ Value::Sub(_)) => self
+                                .call_sub_value(callable, vec![predicate_value], false)
+                                .map(|v| v.truthy())
+                                .unwrap_or(false),
+                            Ok(v) => v.truthy(),
+                            Err(_) => false,
+                        }
+                    } else {
+                        // Bare expression: set $_ and evaluate directly
+                        let saved = self.env.get("_").cloned();
+                        self.env.insert("_".to_string(), predicate_value);
+                        let result = self
+                            .eval_precompiled_block_fast(&compiled.0, &compiled.1)
+                            .map(|v| self.smart_match(value, &v))
+                            .unwrap_or(false);
+                        if let Some(old) = saved {
+                            self.env.insert("_".to_string(), old);
+                        } else {
+                            self.env.remove("_");
+                        }
+                        result
+                    }
                 }
             } else {
                 true

@@ -935,6 +935,13 @@ pub struct Interpreter {
     /// TODO: entries are never reclaimed; acceptable as predictive Seqs are rare.
     predictive_seq_iters: HashMap<usize, Value>,
     protect_block_cache: ProtectBlockCache,
+    /// Compiled bytecode for subset `where` predicates, keyed by subset name.
+    /// A subset's predicate is a fixed `Expr`, so it is compiled once and reused
+    /// across all type checks instead of recompiling + cloning the entire
+    /// function/proto registry on every check (the old `eval_block_value` path).
+    /// Cleared per-name on subset redeclaration; starts empty per thread (the
+    /// cache is a pure recomputable optimization). See `type_matches_value`.
+    subset_predicate_cache: HashMap<String, SubsetPredicateCompiled>,
     private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
     module_load_stack: Vec<String>,
     /// The current distribution context ($?DISTRIBUTION).
@@ -1169,6 +1176,15 @@ pub(crate) struct ContainerTypeInfo {
     pub(crate) key_type: Option<String>,
     pub(crate) declared_type: Option<String>,
 }
+
+/// Compiled bytecode for a subset `where` predicate (the predicate body plus any
+/// nested compiled functions), shared via `Arc` so a single compilation is
+/// reused across every type check. Keyed by subset name in
+/// `Interpreter::subset_predicate_cache`.
+type SubsetPredicateCompiled = Arc<(
+    crate::opcode::CompiledCode,
+    HashMap<String, crate::opcode::CompiledFunction>,
+)>;
 
 /// Read a value's container type metadata. Array/Hash/Set/Bag/Mix carry it
 /// embedded in their backing data struct (travels across copy-on-write);
@@ -3151,6 +3167,7 @@ impl Interpreter {
             closure_env_overrides: HashMap::new(),
             predictive_seq_iters: HashMap::new(),
             protect_block_cache: HashMap::new(),
+            subset_predicate_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             current_distribution: None,
@@ -5598,6 +5615,7 @@ impl Interpreter {
             closure_env_overrides: self.closure_env_overrides.clone(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             protect_block_cache: HashMap::new(),
+            subset_predicate_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             current_distribution: self.current_distribution.clone(),
