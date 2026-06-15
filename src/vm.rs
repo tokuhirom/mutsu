@@ -3485,6 +3485,7 @@ impl Interpreter {
                 explicit_zero_params,
                 multi_param_names,
                 loop_var_wraps_element,
+                hash_values_mode,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -3504,6 +3505,7 @@ impl Interpreter {
                     explicit_zero_params: *explicit_zero_params,
                     multi_param_names: multi_param_names.clone(),
                     loop_var_wraps_element: *loop_var_wraps_element,
+                    hash_values_mode: *hash_values_mode,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

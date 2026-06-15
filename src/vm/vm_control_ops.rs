@@ -24,6 +24,9 @@ pub(super) struct ForLoopSpec {
     /// When true (`.pairs`/`.antipairs`), the loop variable is a `Pair` wrapping
     /// the element, so the plain per-element source writeback is suppressed.
     pub(super) loop_var_wraps_element: bool,
+    /// When true (`%h.values`), the loop variable aliases a hash value, so a
+    /// `$_ = ...` topic writeback must update the hash by key order.
+    pub(super) hash_values_mode: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -660,7 +663,11 @@ impl Interpreter {
         self.container_ref_reversed = false;
         // Capture hash key order before the loop so writeback uses the
         // original key order even after the hash is mutated during iteration.
-        let hash_keys_for_writeback: Option<Vec<String>> = if rw_writeback {
+        // Needed for the rw-param `%h.values -> $v is rw` writeback and for the
+        // plain topic `$_ = X for %h.values` writeback (hash_values_mode).
+        let hash_keys_for_writeback: Option<Vec<String>> = if rw_writeback
+            || (writes_back_loop_var && spec.hash_values_mode)
+        {
             container_binding
                 .as_ref()
                 .filter(|s| s.starts_with('%'))
@@ -813,6 +820,8 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
+                                spec.hash_values_mode,
+                                &hash_keys_for_writeback,
                             );
                         }
                         if rw_writeback {
@@ -872,6 +881,8 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
+                                spec.hash_values_mode,
+                                &hash_keys_for_writeback,
                             );
                         }
                         if rw_writeback {
@@ -932,6 +943,8 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
+                                spec.hash_values_mode,
+                                &hash_keys_for_writeback,
                             );
                         }
                         if rw_writeback {
@@ -973,6 +986,8 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
+                                spec.hash_values_mode,
+                                &hash_keys_for_writeback,
                             );
                         }
                         if rw_writeback {
@@ -1004,6 +1019,8 @@ impl Interpreter {
                                 idx,
                                 container_reversed,
                                 total_items,
+                                spec.hash_values_mode,
+                                &hash_keys_for_writeback,
                             );
                         }
                         if rw_writeback {
@@ -1946,6 +1963,7 @@ impl Interpreter {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn write_back_for_topic_item(
         &mut self,
         code: &CompiledCode,
@@ -1954,10 +1972,22 @@ impl Interpreter {
         idx: usize,
         reversed: bool,
         total_items: usize,
+        hash_values_mode: bool,
+        hash_keys: &Option<Vec<String>>,
     ) {
         let Some(source) = source_var else {
             return;
         };
+        // `$_ = X for %h.values` / `for %h.values -> $v { $v = X }`: the loop
+        // variable aliases a hash *value*, so write it back to the source hash
+        // by the pre-captured key order. Bare `for %h` (Pairs) and `.keys` do
+        // not reach here (no hash_values_mode tag).
+        if source.starts_with('%') {
+            if hash_values_mode {
+                self.write_back_hash_value_item(code, source, param_name, idx, hash_keys);
+            }
+            return;
+        }
         if !source.starts_with('@') {
             return;
         }
@@ -1995,6 +2025,45 @@ impl Interpreter {
             std::sync::Arc::new(crate::value::ArrayData::new(updated)),
             kind,
         );
+        self.set_env_with_main_alias(source, updated_value.clone());
+        self.update_local_if_exists(code, source, &updated_value);
+    }
+
+    /// Write the loop variable back to a hash value during `for %h.values`
+    /// (`$_ = X for %h.values` / `for %h.values -> $v { $v = X }`). The hash key
+    /// at iteration position `idx` comes from the pre-captured key order, so the
+    /// value lands on the same key the `.values` list yielded. Skips the rebuild
+    /// when the value is provably unchanged (read-only loops stay O(n)).
+    fn write_back_hash_value_item(
+        &mut self,
+        code: &CompiledCode,
+        source: &str,
+        param_name: &Option<String>,
+        idx: usize,
+        hash_keys: &Option<Vec<String>>,
+    ) {
+        let loop_var = param_name.as_deref().unwrap_or("_");
+        let Some(current) = self.env().get(loop_var).cloned() else {
+            return;
+        };
+        let Some(keys) = hash_keys else {
+            return;
+        };
+        let Some(key) = keys.get(idx) else {
+            return;
+        };
+        let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source) else {
+            return;
+        };
+        if hash_items
+            .get(key)
+            .is_some_and(|existing| Self::loop_var_unchanged(&current, existing))
+        {
+            return;
+        }
+        let mut updated = hash_items.as_ref().clone();
+        updated.insert(key.clone(), current);
+        let updated_value = Value::Hash(Value::hash_arc(updated));
         self.set_env_with_main_alias(source, updated_value.clone());
         self.update_local_if_exists(code, source, &updated_value);
     }

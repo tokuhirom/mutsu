@@ -657,6 +657,23 @@ impl Compiler {
         )
     }
 
+    /// Detect `%h.values` on a hash variable: the loop variable aliases a hash
+    /// value, so a plain (`$_` / named) topic writeback must update the hash by
+    /// key order (`$_ = X for %h.values` mutates `%h`). Bare `for %h` iterates
+    /// Pairs (no value writeback) and `.keys` yields read-only keys, so this is
+    /// intentionally narrow: only the `.values` transform on a `%`-source.
+    fn for_iterable_is_hash_values(iterable: &Expr) -> bool {
+        if let Expr::MethodCall {
+            target, name, args, ..
+        } = iterable
+            && args.is_empty()
+            && *name == "values"
+        {
+            return Self::for_iterable_source_name(target).is_some_and(|s| s.starts_with('%'));
+        }
+        false
+    }
+
     fn normalize_for_iterable(&self, iterable: &Expr) -> Expr {
         match iterable {
             // Scalar variables are item containers in `for` and should not be flattened.
