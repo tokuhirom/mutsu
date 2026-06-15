@@ -373,6 +373,7 @@ impl Compiler {
         param_def: &Option<crate::ast::ParamDef>,
         param_idx: Option<u32>,
         params: &[String],
+        params_def: &[crate::ast::ParamDef],
     ) -> Vec<Stmt> {
         let bind_stmt = |name: String, expr: Expr| {
             if name.starts_with('&') {
@@ -484,6 +485,53 @@ impl Compiler {
                 }
             }
         }
+        // `_.elems` on the per-iteration chunk array — the number of source
+        // elements that actually flowed into this batch.
+        let chunk_elems = || Expr::MethodCall {
+            target: Box::new(Expr::Var("_".to_string())),
+            name: Symbol::intern("elems"),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+        };
+        // Multi-param pointy blocks (`-> $a, $b = 7`) carry a full ParamDef per
+        // param. A param is *required* when it has neither an optional marker
+        // (`$x?`) nor a default (`$x = expr`). When the final chunk is shorter
+        // than the required count, Raku throws "Too few positionals passed"
+        // mid-loop (after the full chunks have run). Emit that guard so the
+        // body sees it before any bind, matching Raku's batching semantics.
+        if !params_def.is_empty() {
+            let required_arity = params_def
+                .iter()
+                .filter(|d| d.default.is_none() && !d.optional_marker)
+                .count();
+            let total = params.len();
+            if required_arity > 0 {
+                let expected = if required_arity == total {
+                    format!("expected {} arguments", total)
+                } else {
+                    format!("expected {} or {} arguments", required_arity, total)
+                };
+                let msg = Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str(format!(
+                        "Too few positionals passed; {} but got ",
+                        expected
+                    )))),
+                    op: crate::token_kind::TokenKind::Tilde,
+                    right: Box::new(chunk_elems()),
+                };
+                bind_stmts.push(Stmt::If {
+                    cond: Expr::Binary {
+                        left: Box::new(chunk_elems()),
+                        op: crate::token_kind::TokenKind::Lt,
+                        right: Box::new(Expr::Literal(Value::Int(required_arity as i64))),
+                    },
+                    then_branch: vec![Stmt::Die(msg)],
+                    else_branch: Vec::new(),
+                    binding_var: None,
+                });
+            }
+        }
         // When `$_` is one of the multi-param names (e.g. `-> $_, $name`),
         // binding it first would clobber the source array before other params
         // can read from it.  Defer the `$_` binding to the end.
@@ -496,14 +544,28 @@ impl Compiler {
             } else {
                 (p.clone(), false)
             };
-            let stmt = bind_stmt(
-                actual_name.clone(),
-                Expr::Index {
-                    target: Box::new(Expr::Var("_".to_string())),
-                    index: Box::new(Expr::Literal(Value::Int(i as i64))),
-                    is_positional: false,
+            // A param with a default value (`-> $a, $b = 7`) binds to the source
+            // element when the chunk has one at this slot, else to the default.
+            // Use an explicit `_.elems > i` test (not `// default`) so a present
+            // but undefined element is still bound, matching Raku.
+            let element_expr = Expr::Index {
+                target: Box::new(Expr::Var("_".to_string())),
+                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                is_positional: false,
+            };
+            let value_expr = match params_def.get(i).and_then(|d| d.default.as_ref()) {
+                Some(default_expr) => Expr::Ternary {
+                    cond: Box::new(Expr::Binary {
+                        left: Box::new(chunk_elems()),
+                        op: crate::token_kind::TokenKind::Gt,
+                        right: Box::new(Expr::Literal(Value::Int(i as i64))),
+                    }),
+                    then_expr: Box::new(element_expr),
+                    else_expr: Box::new(default_expr.clone()),
                 },
-            );
+                None => element_expr,
+            };
+            let stmt = bind_stmt(actual_name.clone(), value_expr);
             if actual_name == "_" {
                 deferred_topic = Some(stmt);
             } else {

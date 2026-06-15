@@ -134,6 +134,7 @@ impl Compiler {
                 param,
                 param_def,
                 params,
+                params_def,
                 body,
                 label,
                 mode,
@@ -144,6 +145,7 @@ impl Compiler {
                 param: param.clone(),
                 param_def: param_def.clone(),
                 params: params.clone(),
+                params_def: params_def.clone(),
                 body: Self::rewrite_next_targets_in_stmts(
                     body,
                     current_loop_label,

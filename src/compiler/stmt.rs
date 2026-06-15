@@ -1265,6 +1265,7 @@ impl Compiler {
                 param,
                 param_def,
                 params,
+                params_def,
                 body,
                 label,
                 mode,
@@ -1286,8 +1287,13 @@ impl Compiler {
                 let param_idx = param
                     .as_ref()
                     .map(|p| self.code.add_constant(Value::str(p.clone())));
-                let bind_stmts =
-                    Self::build_for_bind_stmts(param, param_def.as_ref(), param_idx, params);
+                let bind_stmts = Self::build_for_bind_stmts(
+                    param,
+                    param_def.as_ref(),
+                    param_idx,
+                    params,
+                    params_def,
+                );
                 // Determine if this for-loop has rw params (via `<->` or `is rw` trait)
                 let has_rw = *rw_block
                     || (**param_def)

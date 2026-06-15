@@ -492,7 +492,8 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         let (r, iterable) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, param_def, params, rw_block, explicit_zero_params)) = parse_for_params(r)?;
+        let (r, (param, param_def, params, params_def, rw_block, explicit_zero_params)) =
+            parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -502,6 +503,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 param,
                 param_def: Box::new(param_def),
                 params,
+                params_def,
                 body,
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
@@ -572,6 +574,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 param: None,
                 param_def: Box::new(None),
                 params: Vec::new(),
+                params_def: Vec::new(),
                 body,
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
@@ -592,6 +595,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 param: None,
                 param_def: Box::new(None),
                 params: Vec::new(),
+                params_def: Vec::new(),
                 body,
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
@@ -613,7 +617,14 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parsed for-loop parameter info: `(param, param_def, params, rw_block, explicit_zero_params)`.
-type ForParams = (Option<String>, Option<ParamDef>, Vec<String>, bool, bool);
+type ForParams = (
+    Option<String>,
+    Option<ParamDef>,
+    Vec<String>,
+    Vec<ParamDef>,
+    bool,
+    bool,
+);
 
 /// Parse for loop parameters: -> $param or -> $a, $b
 /// Returns `(param, param_def, params, rw_block)`.
@@ -643,7 +654,7 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
         // Zero-parameter pointy block: for @a -> { ... }
         // Explicitly declares zero params — passing any arg should throw.
         if r.starts_with('{') {
-            return Ok((r, (None, None, Vec::new(), rw_block, true)));
+            return Ok((r, (None, None, Vec::new(), Vec::new(), rw_block, true)));
         }
         // Parenthesized destructuring pointy param:
         //   -> ($a, $b) { ... }
@@ -683,6 +694,7 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                     Some(unpack_name),
                     Some(unpack_def),
                     Vec::new(),
+                    Vec::new(),
                     rw_block,
                     false,
                 ),
@@ -697,7 +709,7 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, _) = parse_char(r, ')')?;
             let (r, _) = skip_pointy_return_type(r)?;
             if sub_params.is_empty() {
-                return Ok((r, (None, None, Vec::new(), rw_block, false)));
+                return Ok((r, (None, None, Vec::new(), Vec::new(), rw_block, false)));
             }
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
@@ -726,6 +738,7 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 (
                     Some(unpack_name),
                     Some(unpack_def),
+                    Vec::new(),
                     Vec::new(),
                     rw_block,
                     false,
@@ -781,6 +794,7 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                     Some(unpack_name),
                     Some(unpack_def),
                     Vec::new(),
+                    Vec::new(),
                     rw_block,
                     false,
                 ),
@@ -817,6 +831,9 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             };
             let mut params = vec![first_param];
             let mut any_rw = rw_block || first_def.traits.iter().any(|t| t == "rw");
+            // Keep the full ParamDef per multi-param so the compiler can emit an
+            // arity check (required params) and default-value binds (`-> $a, $b = 7`).
+            let mut params_def = vec![first_def];
             let mut r = r;
             loop {
                 let (r2, _) = parse_char(r, ',')?;
@@ -830,8 +847,9 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 if next.sigilless {
                     params.push(format!("\\{}", next.name));
                 } else {
-                    params.push(next.name);
+                    params.push(next.name.clone());
                 }
+                params_def.push(next);
                 let (r2, _) = ws(r2)?;
                 if !r2.starts_with(',') {
                     r = r2;
@@ -840,16 +858,23 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 r = r2;
             }
             let (r, _) = skip_pointy_return_type(r)?;
-            Ok((r, (None, None, params, any_rw, false)))
+            Ok((r, (None, None, params, params_def, any_rw, false)))
         } else {
             let (r, _) = skip_pointy_return_type(r)?;
             Ok((
                 r,
-                (Some(first), Some(first_def), Vec::new(), rw_block, false),
+                (
+                    Some(first),
+                    Some(first_def),
+                    Vec::new(),
+                    Vec::new(),
+                    rw_block,
+                    false,
+                ),
             ))
         }
     } else {
-        Ok((input, (None, None, Vec::new(), false, false)))
+        Ok((input, (None, None, Vec::new(), Vec::new(), false, false)))
     }
 }
 
@@ -918,8 +943,15 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         r
     };
 
-    let mut rest = if r.starts_with('?') || r.starts_with('!') {
-        &r[1..]
+    // `$x?` marks an optional param, `$x!` an explicitly-required one. Track the
+    // optional marker so the compiler does not count `$x?` toward the required
+    // arity of a multi-param loop.
+    let mut optional_marker = false;
+    let mut rest = if let Some(after) = r.strip_prefix('?') {
+        optional_marker = true;
+        after
+    } else if let Some(after) = r.strip_prefix('!') {
+        after
     } else {
         r
     };
@@ -939,11 +971,13 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     }
 
     let (r, _) = ws(rest)?;
+    let mut default = None;
     if let Some(after_eq) = r.strip_prefix('=')
         && !after_eq.starts_with('>')
     {
         let (after_eq, _) = ws(after_eq)?;
-        let (after_default, _default_expr) = expression(after_eq)?;
+        let (after_default, default_expr) = expression(after_eq)?;
+        default = Some(default_expr);
         rest = after_default;
     } else {
         rest = r;
@@ -960,7 +994,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         rest,
         ParamDef {
             name: param_name,
-            default: None,
+            default,
             multi_invocant: true,
             required: false,
             named: false,
@@ -973,7 +1007,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             sub_signature: None,
             where_constraint: None,
             traits,
-            optional_marker: false,
+            optional_marker,
             outer_sub_signature: None,
             code_signature: None,
             is_invocant: false,
@@ -1200,7 +1234,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
         (r, iterable, false)
     };
     let (rest, _) = ws(rest)?;
-    let (rest, (param, param_def, params, rw_block, explicit_zero_params)) =
+    let (rest, (param, param_def, params, params_def, rw_block, explicit_zero_params)) =
         parse_for_params(rest)?;
     let rw_block = rw_block || rw_detected;
     let (rest, _) = ws(rest)?;
@@ -1271,6 +1305,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             param,
             param_def: Box::new(param_def),
             params,
+            params_def,
             body,
             label: None,
             mode,
@@ -1722,7 +1757,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params, _rw_block, _explicit_zero)) =
+        let (rest, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
             parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single while pointy parameter", rest));
@@ -1785,7 +1820,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params, _rw_block, _explicit_zero)) =
+        let (rest, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
             parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single until pointy parameter", rest));
@@ -2048,7 +2083,8 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params, _rw_block, _explicit_zero)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
+            parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
@@ -2089,7 +2125,8 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params, _rw_block, _explicit_zero)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
+            parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
@@ -2283,7 +2320,8 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // Check for optional pointy block: -> $param { ... }, -> \param { ... },
     // or -> (SIGNATURE) { ... } (sub-signature destructuring)
     let (rest, param_name, param_def) = if rest.starts_with("->") || rest.starts_with("<->") {
-        let (r, (param, param_def, _params, _rw_block, _explicit_zero)) = parse_for_params(rest)?;
+        let (r, (param, param_def, _params, _params_def, _rw_block, _explicit_zero)) =
+            parse_for_params(rest)?;
         (r, param, param_def)
     } else {
         (rest, None, None)
