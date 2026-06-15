@@ -363,6 +363,36 @@ instance_meta で判定、subset は rare）を VM-native 化** でき、41 boun
 
 ---
 
+## CP-3 collapse PoC: ping-pong 解消（`VM::run_nested`、2026-06-15）
+
+> 前提の再確認（実測）: **tree-walk 実行エンジンは既に存在しない**（`eval_expr`/`eval_stmt` 無し・全実行は
+> compile→bytecode→VM）。∴「tree-walk interpreter 削除」＝ `Interpreter` struct を VM へ溶かす構造作業で、
+> 唯一の本物の設計課題は **ping-pong**（`Interpreter` 側 carrier が `mem::take(self)`+`VM::new(self)`+`*self=interp`
+> で都度サブ VM を起こす双方向所有）。これを「VM 上で直接再入実行」へ置換できるかが完遂可否の linchpin。
+
+**PoC = `VM::run_nested(&mut self, code, fns)`**（`src/vm.rs`）。サブ VM を起こさず、既存 VM 上でコンパイル済み
+ブロックを再入実行する:
+- `VM::new` が fresh 初期化する**実行レジスタ**（stack/locals/call_frames/resume_ip/topic 系/各 context flag）を
+  save → fresh にリセット → `run_inner` → restore。**共有状態（interpreter フィールド・env・registry/io/output
+  ハンドル）はリセットしない**（nested ブロックは同じ state を観測・変異する＝ping-pong の inner VM が move された
+  interpreter と loan された env を共有するのと同じ意味論）。caches は gen 管理なので跨いで保持して正しい。
+- **配線**: `vm_run_block_raw`（deferred role-body 文の実行）を `loan_env_for(run_block_raw)`〔ping-pong〕→
+  `interpreter.compile_block_raw`（純コンパイル・env 不要）+ `self.run_nested(...)` + DESTROY pass へ。
+  `run_block_raw` の compile 部は `compile_block_raw` として抽出し共有。
+
+**PoC が surface した重要な dual-store 相互作用（campaign で必ず効く）**: ping-pong は env 変異の
+outer への再同期を**暗黙に**行っていた（inner VM の env が interpreter 経由で戻り caller が再 sync）。in-place
+再入ではこれが起きず、**nested 実行が outer lexical（`my $x`）を env で変異 → restore した outer locals が stale**
+という回帰が出た（複数 deferred 文で `$side` の変異が消失）。修正 = `run_nested` 末尾で `env_dirty = true` を立て、
+outer 実行が次に local を読む前に env から再 sync させる。**教訓: ping-pong 撤去では各サイトで「env 変異の
+locals 反映」を明示せねばならない（dual-store は永続なので）。**
+
+**結論: linchpin は解けた**。`make test` PASS・role roast 緑・A/B で挙動不変（env_dirty 修正後）。pin =
+`t/run-nested-role-body.t`。次: 他 carrier（`eval_block_value`/`call_sub_value`/subset-where eval/…）を順次
+`run_nested` 化し、最終的に `Interpreter` 側 carrier と ping-pong/loan を撤去 → struct dissolve。
+
+---
+
 ## CP-1 env-loan 設計（確定 2026-06-15・[PLAN.md](../PLAN.md) CP-1 step 1a）
 
 > 本節は CP-1 step 1a（設計確定・doc のみ）の成果。env を VM 単一所有へ移し、tree-walk carrier が

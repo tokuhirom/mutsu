@@ -840,6 +840,131 @@ impl VM {
         Ok(last_stack_value.or(fallback))
     }
 
+    /// CP-3 collapse PoC: run a compiled block re-entrantly on the *existing* VM,
+    /// without the `mem::take(self)` + `VM::new(self)` + `*self = interp`
+    /// ping-pong that the interpreter-side carriers (`run_compiled_block`,
+    /// `run_block_raw`, `eval_precompiled_block_fast`) use today.
+    ///
+    /// The ping-pong only exists because those carriers live on the `Interpreter`
+    /// (no live VM there), so each one spins up a fresh `VM` whose per-execution
+    /// registers (stack/locals/call_frames/topic/…) start empty. This method
+    /// reproduces that "fresh registers, shared interpreter + env" semantics in
+    /// place: it saves the current per-execution registers, resets them to the
+    /// `VM::new` defaults, runs the block (sharing `self.interpreter`/`self.env`
+    /// directly), then restores. This is the mechanism that replaces the
+    /// ping-pong once the `Interpreter` struct is dissolved into the VM.
+    ///
+    /// Shared state (interpreter fields, env, registry/io/output handles) is
+    /// intentionally *not* reset — the nested block must observe and mutate the
+    /// same state, exactly as the inner ping-pong VM does (it shares the moved
+    /// interpreter and the loaned env). Caches are gen-counted, so keeping them
+    /// across the nested run is correct and avoids churn.
+    pub(crate) fn run_nested(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        // Save the per-execution registers (the fields `VM::new` initializes
+        // fresh) and reset them to their fresh-VM defaults for the nested run.
+        let saved_stack = std::mem::take(&mut self.stack);
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_call_frames = std::mem::take(&mut self.call_frames);
+        let saved_resume_ip = self.resume_ip.take();
+        let saved_last_topic = self.last_topic_value.take();
+        let saved_topic_save_stack = std::mem::take(&mut self.topic_save_stack);
+        let saved_topic_source_var = self.topic_source_var.take();
+        let saved_element_source = self.element_source.take();
+        let saved_for_grep_view = self.for_grep_view.take();
+        let saved_container_ref_var = self.container_ref_var.take();
+        let saved_container_ref_reversed = self.container_ref_reversed;
+        let saved_quanthash_bind_params = std::mem::take(&mut self.quanthash_bind_params);
+        let saved_for_param_restore_stack = std::mem::take(&mut self.for_param_restore_stack);
+        let saved_local_bind_pairs = std::mem::take(&mut self.local_bind_pairs);
+        let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
+        let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
+        let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        let saved_outer_scope_locals = std::mem::take(&mut self.outer_scope_locals);
+        let saved_pending_alias_bind_names = std::mem::take(&mut self.pending_alias_bind_names);
+        let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
+        let saved_transliterate = self.transliterate_in_smartmatch;
+        let saved_substitution = self.substitution_in_smartmatch;
+        let saved_method_dispatch_pure = self.method_dispatch_pure;
+        let saved_bind_context = self.bind_context;
+        let saved_scalar_bind_context = self.scalar_bind_context;
+        let saved_bound_decont_active = self.bound_decont_active;
+        let saved_rebind_context = self.rebind_context;
+        let saved_constant_context = self.constant_context;
+        let saved_explicit_initializer_context = self.explicit_initializer_context;
+        let saved_vardecl_context = self.vardecl_context;
+        let saved_loop_cond_active = self.loop_cond_active;
+        let saved_state_scope_id = self.state_scope_id.take();
+        let saved_gather_for_loop_resume = self.gather_for_loop_resume.take();
+        let saved_rw_map_topic_capture = self.rw_map_topic_capture.take();
+
+        self.in_smartmatch_rhs = false;
+        self.transliterate_in_smartmatch = false;
+        self.substitution_in_smartmatch = false;
+        self.method_dispatch_pure = false;
+        self.container_ref_reversed = false;
+        self.bind_context = false;
+        self.scalar_bind_context = false;
+        self.bound_decont_active = false;
+        self.rebind_context = false;
+        self.constant_context = false;
+        self.explicit_initializer_context = false;
+        self.vardecl_context = false;
+        self.loop_cond_active = false;
+
+        let result = self.run_inner(code, compiled_fns);
+
+        // Restore the outer execution registers.
+        self.stack = saved_stack;
+        self.locals = saved_locals;
+        self.call_frames = saved_call_frames;
+        self.resume_ip = saved_resume_ip;
+        self.last_topic_value = saved_last_topic;
+        self.topic_save_stack = saved_topic_save_stack;
+        self.topic_source_var = saved_topic_source_var;
+        self.element_source = saved_element_source;
+        self.for_grep_view = saved_for_grep_view;
+        self.container_ref_var = saved_container_ref_var;
+        self.container_ref_reversed = saved_container_ref_reversed;
+        self.quanthash_bind_params = saved_quanthash_bind_params;
+        self.for_param_restore_stack = saved_for_param_restore_stack;
+        self.local_bind_pairs = saved_local_bind_pairs;
+        self.block_declared_vars = saved_block_declared_vars;
+        self.loop_local_vars = saved_loop_local_vars;
+        self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.outer_scope_locals = saved_outer_scope_locals;
+        self.pending_alias_bind_names = saved_pending_alias_bind_names;
+        self.in_smartmatch_rhs = saved_in_smartmatch_rhs;
+        self.transliterate_in_smartmatch = saved_transliterate;
+        self.substitution_in_smartmatch = saved_substitution;
+        self.method_dispatch_pure = saved_method_dispatch_pure;
+        self.bind_context = saved_bind_context;
+        self.scalar_bind_context = saved_scalar_bind_context;
+        self.bound_decont_active = saved_bound_decont_active;
+        self.rebind_context = saved_rebind_context;
+        self.constant_context = saved_constant_context;
+        self.explicit_initializer_context = saved_explicit_initializer_context;
+        self.vardecl_context = saved_vardecl_context;
+        self.loop_cond_active = saved_loop_cond_active;
+        self.state_scope_id = saved_state_scope_id;
+        self.gather_for_loop_resume = saved_gather_for_loop_resume;
+        self.rw_map_topic_capture = saved_rw_map_topic_capture;
+
+        // The nested run shares `self.env` and may have mutated outer lexicals
+        // (e.g. a deferred role-body statement writing an enclosing `my $x`).
+        // Those writes land in `env`, but the restored outer `locals` slots are
+        // stale, so flag the dual-store dirty to force a reload from env before
+        // the outer execution next reads a local. (The ping-pong achieved this
+        // implicitly: the inner VM's env flowed back through the interpreter and
+        // the caller re-synced from it.)
+        self.env_dirty = true;
+
+        result
+    }
+
     /// Invoke a callable value using the VM fast paths when available and
     /// return the interpreter state to the caller.
     pub(crate) fn call_value(
@@ -1106,7 +1231,19 @@ impl VM {
 
     #[inline]
     pub(crate) fn vm_run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        self.loan_env_for(|i| i.run_block_raw(stmts))
+        if stmts.is_empty() {
+            return Ok(());
+        }
+        // CP-3 collapse PoC: instead of bouncing to `Interpreter::run_block_raw`
+        // (which spins up a fresh sub-VM via `mem::take`/`VM::new` — the
+        // ping-pong), compile the block (pure, no env) and run it in-place on
+        // this VM via `run_nested`, sharing the same interpreter + env directly.
+        let (code, compiled_fns) = self.interpreter.compile_block_raw(stmts);
+        let result = self.run_nested(&code, &compiled_fns);
+        // Mirror `run_block_raw`'s trailing DESTROY pass (may run user code, so
+        // it needs the env loaned).
+        self.loan_env_for(|i| i.run_pending_instance_destroys())?;
+        result.map(|_| ())
     }
 
     #[inline]
