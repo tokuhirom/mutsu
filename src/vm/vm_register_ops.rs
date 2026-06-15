@@ -671,13 +671,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        // CP-2 eager reconcile: a module load writes imported symbols into env by
-        // name. Reconcile them into locals now rather than deferring via the
-        // env_dirty flag. GetLocal is itself a barrier (it calls
-        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
-        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
-        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
-        self.sync_locals_from_env(code);
+        // A module load writes imported symbols into env by name; flag the env so
+        // the next GetLocal barrier reconciles them into locals. (An eager
+        // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
+        // cell mutation of a local that env does not yet reflect -- see the
+        // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
+        // flag-deferred barrier pull, which runs once env is fresh, is correct.)
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -705,13 +705,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        // CP-2 eager reconcile: a module load writes imported symbols into env by
-        // name. Reconcile them into locals now rather than deferring via the
-        // env_dirty flag. GetLocal is itself a barrier (it calls
-        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
-        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
-        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
-        self.sync_locals_from_env(code);
+        // A module load writes imported symbols into env by name; flag the env so
+        // the next GetLocal barrier reconciles them into locals. (An eager
+        // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
+        // cell mutation of a local that env does not yet reflect -- see the
+        // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
+        // flag-deferred barrier pull, which runs once env is fresh, is correct.)
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -726,13 +726,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        // CP-2 eager reconcile: a module load writes imported symbols into env by
-        // name. Reconcile them into locals now rather than deferring via the
-        // env_dirty flag. GetLocal is itself a barrier (it calls
-        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
-        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
-        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
-        self.sync_locals_from_env(code);
+        // A module load writes imported symbols into env by name; flag the env so
+        // the next GetLocal barrier reconciles them into locals. (An eager
+        // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
+        // cell mutation of a local that env does not yet reflect -- see the
+        // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
+        // flag-deferred barrier pull, which runs once env is fresh, is correct.)
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -747,13 +747,13 @@ impl VM {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
-        // CP-2 eager reconcile: a module load writes imported symbols into env by
-        // name. Reconcile them into locals now rather than deferring via the
-        // env_dirty flag. GetLocal is itself a barrier (it calls
-        // ensure_locals_synced), so moving the pull earlier is behavior-preserving.
-        // sync_locals_from_env is the permanent EVAL/carrier reconcile primitive
-        // (see docs/vm-dual-store.md "CP-2 status & corrected plan").
-        self.sync_locals_from_env(code);
+        // A module load writes imported symbols into env by name; flag the env so
+        // the next GetLocal barrier reconciles them into locals. (An eager
+        // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
+        // cell mutation of a local that env does not yet reflect -- see the
+        // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
+        // flag-deferred barrier pull, which runs once env is fresh, is correct.)
+        self.env_dirty = true;
         Ok(())
     }
 

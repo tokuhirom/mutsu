@@ -24,31 +24,53 @@ map; record each slice's before/after here.
 > path (slot perf on `fib` etc.). **Therefore CP-3 (carrier removal) does NOT
 > unblock full deletion of `sync_locals_from_env` — that primitive is permanent.**
 >
-> **Achievable CP-2 (revised target).** Delete the *lazy flag* layer
-> (`env_dirty`, `ensure_locals_synced`, `saved_env_dirty`, and the `VmCallFrame`
-> dirty fields), converting every `env_dirty = true` setter (166 sites) into one
-> of:
->   1. **nothing** — the op is provably env-pure (native methods on by-value
->      targets, pure value/reflection branches). *(This file's first slice:
->      spurious pure-method marks in `vm_call_method_ops.rs`.)*
->   2. **surgical local update** — a VM-native by-name write whose name is known:
->      mirror into the matching slot (`update_local_if_exists`) instead of flagging.
->   3. **eager-precise reconcile** — a carrier (`loan_env!`) that may have written
->      arbitrary names: call `sync_locals_from_env(code)` immediately *iff a
->      carrier actually ran* (track it like `pending_local_updates` /
->      `method_dispatch_pure`), instead of the deferred flag.
-> Once every setter is converted, `env_dirty` + `ensure_locals_synced` +
-> `saved_env_dirty` are dead and deleted. **`sync_locals_from_env` is kept** as
-> the eager EVAL/carrier reconcile primitive (consider renaming to
-> `reconcile_locals_from_env`). The hot per-call paths already use the precise
-> `method_dispatch_pure` flag (Slice 6.3) and stay perf-neutral; the cold/carrier
-> sites move from lazy-flag to eager-precise.
+> **DEEPER CORRECTION (2026-06-15, after the `t/element-bind-cell.t` regression).**
+> The "delete the lazy flag" target above is **also fundamentally blocked**, for
+> the same class of reason. The flag's job is to *defer* the env→locals pull to a
+> safe barrier (every `GetLocal` calls `ensure_locals_synced`). It is NOT merely a
+> perf knob: the deferral is **load-bearing for correctness**. `sync_locals_from_env`
+> overwrites `locals[i]` with the env copy of the name; when a later op makes an
+> **in-place cell mutation** to a local (e.g. a cyclic `:=` bind, `$s[..] := $s[..]`)
+> that env does not yet reflect, pulling at the *wrong time* clobbers the fresh
+> local with the stale env value. The flag-deferred pull happens only once env is
+> fresh again, so it is safe; an **eager `sync_locals_from_env` at a carrier site is
+> NOT** (proven: converting the `exec_call_values` carriers to eager reconcile broke
+> `t/element-bind-cell.t` cyclic-bind subtests 46–47).
 >
-> **User direction (2026-06-15):** pursue CP-3 (carrier VM-native-ization) in
-> parallel where it removes whole carrier categories, but the dual-store *flag*
-> deletion above is the concrete, independently-shippable CP-2 campaign. Easy
-> `try_native_*` method/function-dispatch wins are already exhausted (benchmarks
-> show ~0% method fallback), so remaining CP-3 is the hard ③ state-ownership work.
+> Consequences:
+> - **Category 3 (carrier → eager reconcile) is unsafe and abandoned.** Carriers
+>   (EVAL / `exec_call_values` / regex `{}` / subset `where`) must keep the
+>   `env_dirty` flag.
+> - Since carriers permanently set the flag, and deleting the flag would force an
+>   unconditional pull at every `GetLocal` (the `fib` hot-path perf regression),
+>   **`env_dirty` is itself permanent** — exactly like `sync_locals_from_env`. It is
+>   already the minimal mechanism (one global "a carrier dirtied env since the last
+>   sync" bit).
+> - **CP-2 as "delete the dual-store machinery" is therefore not achievable** while
+>   slot-indexed `locals` and arbitrary-by-name carriers (EVAL) coexist. The only
+>   deletion path is eliminating `locals` as a separate store (env-only), which
+>   regresses the hottest path. This is the same wall the `sync_locals_from_env`
+>   analysis hit, now shown to also bind the flag.
+>
+> **What IS achievable — footprint reduction (perf, not deletion).** Convert only:
+>   1. **pure ops → no mark** — provably env-pure (native methods on by-value
+>      targets, pure value/reflection branches). Safe; shipped: #3080 (hyper/race),
+>      #3083 (.emit/Deprecation/hash-sentinel/Nil), and the `vm_call_exec_ops`
+>      native-call drops below.
+>   2. **redundant blanket → rely on the precise internal signal** — e.g. a blanket
+>      `env_dirty = true` right after `call_compiled_function_named` (which already
+>      sets `env_dirty` precisely from its return merge) only *defeats* that
+>      precision; drop it to match the hot `vm_call_func_ops` path.
+>   3. **surgical local update** — a VM-native by-name write whose name is known may
+>      `update_local_if_exists` instead of flagging (still TODO; lower priority).
+> These shrink spurious pulls (perf) but the flag, `ensure_locals_synced`,
+> `saved_env_dirty`, and `sync_locals_from_env` all **remain**.
+>
+> **REVERTED:** the slice-2 module-load eager-reconcile (#3081) used the now-
+> disproven category-3 pattern; it passed full roast only because module loads run
+> at scope entry, before any in-place cell mutation. Reverted to the `env_dirty`
+> flag for principled correctness (in the `vm_call_exec_ops`/`vm_register_ops`
+> follow-up).
 
 > **Correction (2026-06-05).** The slice notes below repeatedly cite
 > `t/wrap.t`, `t/placeholder.t`, and `t/tail-function.t` as "pre-existing"

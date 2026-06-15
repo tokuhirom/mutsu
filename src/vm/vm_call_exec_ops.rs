@@ -70,7 +70,10 @@ impl VM {
                 self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
             call_result?;
-            self.env_dirty = true;
+            // No blanket mark: call_compiled_function_named already signals
+            // env_dirty precisely from its return merge (matches the hot
+            // vm_call_func_ops path). A blanket `= true` here would defeat that
+            // precision. See docs/vm-dual-store.md "CP-2 status & corrected plan".
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?;
         } else {
@@ -78,6 +81,11 @@ impl VM {
             let exec_result = loan_env!(self, exec_call_values(&name, args));
             self.interpreter.set_pending_call_arg_sources(None);
             exec_result?;
+            // Carrier may write the caller env by name (e.g. EVAL'd lexicals). Keep
+            // the env_dirty flag rather than an eager sync_locals_from_env here: an
+            // eager pull at a function-call site can clobber an in-place cell
+            // mutation a later op made to a local (cyclic `:=` bind), which the
+            // flag-deferred barrier pull avoids by running only once env is fresh.
             self.env_dirty = true;
         }
         Ok(())
@@ -107,16 +115,15 @@ impl VM {
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.current_package().to_string();
             self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
-            self.env_dirty = true;
+            // call_compiled_function_named signals env_dirty precisely; no blanket.
             return Ok(());
         }
-        // Try native function
+        // Try native function (env-pure: no env_dirty mark).
         if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?;
-            self.env_dirty = true;
             return Ok(());
         }
-        // Fall back to interpreter
+        // Carrier fallback: keep the env_dirty flag (see exec_exec_call_op).
         loan_env!(self, exec_call_pairs_values(&name, args))?;
         self.env_dirty = true;
         Ok(())
@@ -161,16 +168,15 @@ impl VM {
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.current_package().to_string();
             self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
-            self.env_dirty = true;
+            // call_compiled_function_named signals env_dirty precisely; no blanket.
             return Ok(());
         }
-        // Try native function (same as non-slip call path)
+        // Try native function (env-pure: no env_dirty mark).
         if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
-            self.env_dirty = true;
             return Ok(());
         }
-        // Fall back to interpreter
+        // Carrier fallback: keep the env_dirty flag (see exec_exec_call_op).
         loan_env!(self, exec_call_pairs_values(&name, args))?;
         self.env_dirty = true;
         Ok(())
