@@ -319,15 +319,14 @@ impl Interpreter {
             let result_arc = Value::hash_arc(new_map);
             // Now fix up the circular references: set the placeholder values
             // to point to the result_arc itself.
-            let map = Arc::as_ptr(&result_arc) as *mut crate::value::HashData;
+            // SAFETY: result_arc was just created here; building a
+            // self-referential cycle requires the in-place write (a freshly
+            // created Arc cannot be made cyclic via `get_mut`). See
+            // `arc_contents_mut`; no borrow into the map is live across the write.
+            let data = unsafe { crate::value::arc_contents_mut(&result_arc) };
             for key in &circular_keys {
-                // SAFETY: We just created result_arc and hold the only reference,
-                // so no other thread can access it.
-                unsafe {
-                    (*map)
-                        .map
-                        .insert(key.clone(), Value::Hash(result_arc.clone()));
-                }
+                data.map
+                    .insert(key.clone(), Value::Hash(result_arc.clone()));
             }
             *new_arc = result_arc;
         }
@@ -402,23 +401,22 @@ impl Interpreter {
                     // Mark the new hash as seen so recursive calls don't
                     // re-enter it via self-referencing values.
                     seen_hashes.push(new_hash_ptr);
-                    // SAFETY: We just created new_hash_arc and hold the only ref.
-                    let map_ptr = Arc::as_ptr(&new_hash_arc) as *mut crate::value::HashData;
-                    unsafe {
-                        for key in &self_ref_keys {
-                            (*map_ptr)
-                                .map
-                                .insert(key.clone(), Value::Hash(new_hash_arc.clone()));
-                        }
-                        for hv in (*map_ptr).map.values_mut() {
-                            Self::replace_array_refs_in_value(
-                                hv,
-                                old_ptr,
-                                new_array,
-                                kind,
-                                seen_hashes,
-                            );
-                        }
+                    // SAFETY: new_hash_arc was just created here; the
+                    // self-reference insert and the in-place recursive fixup must
+                    // alias it. See `arc_contents_mut`.
+                    let data = unsafe { crate::value::arc_contents_mut(&new_hash_arc) };
+                    for key in &self_ref_keys {
+                        data.map
+                            .insert(key.clone(), Value::Hash(new_hash_arc.clone()));
+                    }
+                    for hv in data.map.values_mut() {
+                        Self::replace_array_refs_in_value(
+                            hv,
+                            old_ptr,
+                            new_array,
+                            kind,
+                            seen_hashes,
+                        );
                     }
                     seen_hashes.pop();
                     *map = new_hash_arc;
@@ -464,24 +462,22 @@ impl Interpreter {
                 }
             }
             let result_arc = crate::value::Value::array_arc(new_items);
-            let items_ptr = Arc::as_ptr(&result_arc) as *mut crate::value::ArrayData;
-            // SAFETY: We just created result_arc and hold the only reference,
-            // so no other thread can access it.
-            unsafe {
-                let data = &mut *items_ptr;
-                for idx in &circular_indices {
-                    data.items[*idx] = Value::Array(result_arc.clone(), *kind);
-                }
-                for idx in &hash_fixup_indices {
-                    let mut seen = Vec::new();
-                    Self::replace_array_refs_in_value(
-                        &mut data.items[*idx],
-                        *old_ptr,
-                        &result_arc,
-                        *kind,
-                        &mut seen,
-                    );
-                }
+            // SAFETY: result_arc was just created here; building a
+            // self-referential cycle and the in-place recursive fixup must alias
+            // it. See `arc_contents_mut`.
+            let data = unsafe { crate::value::arc_contents_mut(&result_arc) };
+            for idx in &circular_indices {
+                data.items[*idx] = Value::Array(result_arc.clone(), *kind);
+            }
+            for idx in &hash_fixup_indices {
+                let mut seen = Vec::new();
+                Self::replace_array_refs_in_value(
+                    &mut data.items[*idx],
+                    *old_ptr,
+                    &result_arc,
+                    *kind,
+                    &mut seen,
+                );
             }
             *new_arc = result_arc;
         }
@@ -2095,10 +2091,12 @@ impl Interpreter {
                         // Use in-place mutation when the array is shared
                         // (strong_count > 1) to preserve identity semantics,
                         // matching the behavior of index assignment.
-                        // SAFETY: mutsu is single-threaded.
                         let use_inplace = Arc::strong_count(arr) > 1 && !name.starts_with('@');
                         let a: &mut crate::value::ArrayData = if use_inplace {
-                            unsafe { &mut *(Arc::as_ptr(arr) as *mut crate::value::ArrayData) }
+                            // SAFETY: aliased in-place mutation of a shared array
+                            // (strong_count > 1, the case that needs the shared
+                            // write); see `arc_contents_mut`.
+                            unsafe { crate::value::arc_contents_mut(arr) }
                         } else {
                             Arc::make_mut(arr)
                         };
@@ -2905,11 +2903,13 @@ impl Interpreter {
                 };
                 if let Some((items, i)) = list_scalar_hit {
                     // Update the Scalar element in-place.
-                    // SAFETY: mutsu is single-threaded; we have exclusive
-                    // access to self, so no other thread can read this Arc.
-                    let arr: &mut Vec<Value> =
-                        unsafe { &mut *(std::sync::Arc::as_ptr(&items) as *mut _) };
-                    arr[i] = Value::Scalar(Box::new(val.clone()));
+                    // SAFETY: aliased in-place mutation of a shared list backing;
+                    // see `arc_contents_mut`. No borrow into the items is live
+                    // across the write. (The old code cast the `ArrayData` pointer
+                    // straight to `*mut Vec<Value>`, assuming `items` sits at
+                    // offset 0; this types it properly as `&mut ArrayData`.)
+                    let data = unsafe { crate::value::arc_contents_mut(&items) };
+                    data.items[i] = Value::Scalar(Box::new(val.clone()));
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -3527,7 +3527,9 @@ impl Interpreter {
                             // object-hash original keys) so the original-key map
                             // travels with the hash through copy-on-write.
                             let hd: &mut crate::value::HashData = if use_inplace {
-                                unsafe { &mut *(Arc::as_ptr(hash) as *mut crate::value::HashData) }
+                                // SAFETY: aliased in-place mutation of a shared
+                                // hash; see `arc_contents_mut`.
+                                unsafe { crate::value::arc_contents_mut(hash) }
                             } else {
                                 Arc::make_mut(hash)
                             };
@@ -3598,14 +3600,12 @@ impl Interpreter {
                                     // Use in-place mutation when the array is shared
                                     // (strong_count > 1) to preserve identity semantics
                                     // and support shared `ContainerRef` cell binding.
-                                    // SAFETY: mutsu is single-threaded.
                                     let use_inplace =
                                         Arc::strong_count(items) > 1 && !var_name.starts_with('@');
                                     let arr: &mut crate::value::ArrayData = if use_inplace {
-                                        unsafe {
-                                            &mut *(Arc::as_ptr(items)
-                                                as *mut crate::value::ArrayData)
-                                        }
+                                        // SAFETY: aliased in-place mutation of a
+                                        // shared array; see `arc_contents_mut`.
+                                        unsafe { crate::value::arc_contents_mut(items) }
                                     } else {
                                         Arc::make_mut(items)
                                     };
@@ -4111,14 +4111,13 @@ impl Interpreter {
                         // Use interior mutation when the inner array is shared
                         // (e.g., by a `ContainerRef` cell from := binding).
                         if Arc::strong_count(inner_arr) > 1 {
-                            let ptr = Arc::as_ptr(inner_arr) as *mut crate::value::ArrayData;
-                            unsafe {
-                                let v = &mut (*ptr).items;
-                                while v.len() <= j {
-                                    v.push(Value::Nil);
-                                }
-                                Value::assign_element_slot(&mut v[j], val.clone());
+                            // SAFETY: aliased in-place mutation of a shared array
+                            // (strong_count > 1); see `arc_contents_mut`.
+                            let v = &mut unsafe { crate::value::arc_contents_mut(inner_arr) }.items;
+                            while v.len() <= j {
+                                v.push(Value::Nil);
                             }
+                            Value::assign_element_slot(&mut v[j], val.clone());
                         } else {
                             let inner = Arc::make_mut(inner_arr);
                             if j >= inner.len() {
@@ -4131,14 +4130,10 @@ impl Interpreter {
                 }
                 Value::Hash(inner_hash) => {
                     if Arc::strong_count(inner_hash) > 1 {
-                        let ptr = Arc::as_ptr(inner_hash) as *mut crate::value::HashData;
-                        unsafe {
-                            Value::hash_insert_through(
-                                &mut (*ptr).map,
-                                outer_key.clone(),
-                                val.clone(),
-                            );
-                        }
+                        // SAFETY: aliased in-place mutation of a shared hash
+                        // (strong_count > 1); see `arc_contents_mut`.
+                        let hd = unsafe { crate::value::arc_contents_mut(inner_hash) };
+                        Value::hash_insert_through(&mut hd.map, outer_key.clone(), val.clone());
                     } else {
                         let h = Arc::make_mut(inner_hash);
                         Value::hash_insert_through(h, outer_key.clone(), val.clone());
@@ -4168,9 +4163,11 @@ impl Interpreter {
             // `.WHICH` pointer identity. When shared, keep the make_mut COW
             // detach. The cast MUST target `HashData` (not its inner map) —
             // see docs/hashdata-migration-plan.md "Latent UB found & fixed".
-            // SAFETY: single strong holder and mutsu is single-threaded.
             let oh: &mut crate::value::HashData = if Arc::strong_count(outer_hash) == 1 {
-                unsafe { &mut *(Arc::as_ptr(outer_hash) as *mut crate::value::HashData) }
+                // SAFETY: single strong holder; in-place avoids the make_mut
+                // relocation that would break `.WHICH` identity. See
+                // `arc_contents_mut`.
+                unsafe { crate::value::arc_contents_mut(outer_hash) }
             } else {
                 Arc::make_mut(outer_hash)
             };
@@ -4206,15 +4203,13 @@ impl Interpreter {
             Value::Array(arr, _) => {
                 if let Ok(i) = outer_key.parse::<usize>() {
                     if Arc::strong_count(arr) > 1 {
-                        // SAFETY: mutsu is single-threaded.
-                        let ptr = Arc::as_ptr(arr) as *mut crate::value::ArrayData;
-                        unsafe {
-                            let v = &mut (*ptr).items;
-                            while v.len() <= i {
-                                v.push(Value::Nil);
-                            }
-                            Value::assign_element_slot(&mut v[i], val);
+                        // SAFETY: aliased in-place mutation of a shared array
+                        // (strong_count > 1); see `arc_contents_mut`.
+                        let v = &mut unsafe { crate::value::arc_contents_mut(arr) }.items;
+                        while v.len() <= i {
+                            v.push(Value::Nil);
                         }
+                        Value::assign_element_slot(&mut v[i], val);
                     } else {
                         let a = Arc::make_mut(arr);
                         if i >= a.len() {
@@ -4669,10 +4664,10 @@ impl Interpreter {
                     Some((_, cell)) => Value::ContainerRef(cell.clone()),
                     None => val.clone(),
                 };
-                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
-                unsafe {
-                    Value::hash_insert_through(&mut (*ptr).map, key.clone(), stored);
-                }
+                // SAFETY: aliased in-place mutation of a shared hash so the change
+                // is visible to all holders of the same Arc; see `arc_contents_mut`.
+                let hd = unsafe { crate::value::arc_contents_mut(arc) };
+                Value::hash_insert_through(&mut hd.map, key.clone(), stored);
                 // For a fresh-cell bind, write the cell back to the source var
                 // so both sides alias the same container.
                 if let Some((Some(src), cell)) = &bind_cell {
@@ -4687,28 +4682,28 @@ impl Interpreter {
                 // Interior mutation: write into the array via raw pointer
                 // so the change is visible to all holders of the same Arc.
                 if let Ok(i) = key.parse::<usize>() {
-                    let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
-                    unsafe {
-                        let v = &mut (*ptr).items;
-                        while v.len() <= i {
-                            v.push(Value::Nil);
-                        }
-                        match &bind_cell {
-                            // Bind mode installs the shared cell at the element;
-                            // the same cell is written back to the source var
-                            // below so both sides alias.
-                            Some((_, cell)) => v[i] = Value::ContainerRef(cell.clone()),
-                            // An element source (`:= @b[j]`) not promoted to a
-                            // cell installs the payload directly (rare; left to a
-                            // later slice).
-                            None if bind_source.is_some() => v[i] = val.clone(),
-                            None => {
-                                // Write THROUGH an existing `:=`-bound cell so an
-                                // assignment reached via a stack target (e.g.
-                                // `get()<subkey>[1] = …`) updates the shared cell
-                                // instead of clobbering it (nested.t 11-12).
-                                Value::assign_element_slot(&mut v[i], val.clone());
-                            }
+                    // SAFETY: aliased in-place mutation of a shared array so the
+                    // change is visible to all holders of the same Arc; see
+                    // `arc_contents_mut`.
+                    let v = &mut unsafe { crate::value::arc_contents_mut(arc) }.items;
+                    while v.len() <= i {
+                        v.push(Value::Nil);
+                    }
+                    match &bind_cell {
+                        // Bind mode installs the shared cell at the element;
+                        // the same cell is written back to the source var
+                        // below so both sides alias.
+                        Some((_, cell)) => v[i] = Value::ContainerRef(cell.clone()),
+                        // An element source (`:= @b[j]`) not promoted to a
+                        // cell installs the payload directly (rare; left to a
+                        // later slice).
+                        None if bind_source.is_some() => v[i] = val.clone(),
+                        None => {
+                            // Write THROUGH an existing `:=`-bound cell so an
+                            // assignment reached via a stack target (e.g.
+                            // `get()<subkey>[1] = …`) updates the shared cell
+                            // instead of clobbering it (nested.t 11-12).
+                            Value::assign_element_slot(&mut v[i], val.clone());
                         }
                     }
                     // For a fresh-cell bind, write the cell back to the source var.
@@ -4775,23 +4770,20 @@ impl Interpreter {
         match target {
             Value::Hash(arc) => {
                 let k = Value::hash_key_encode(key);
-                // SAFETY: mutsu is single-threaded; no live borrow into the map.
-                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
-                unsafe {
-                    Value::hash_insert_through(&mut (*ptr).map, k, val);
-                }
+                // SAFETY: aliased in-place mutation of a shared hash; see
+                // `arc_contents_mut`. No live borrow into the map.
+                let hd = unsafe { crate::value::arc_contents_mut(arc) };
+                Value::hash_insert_through(&mut hd.map, k, val);
             }
             Value::Array(arc, _) => {
                 if let Some(i) = Self::index_to_usize(key) {
-                    // SAFETY: mutsu is single-threaded.
-                    let ptr = Arc::as_ptr(arc) as *mut crate::value::ArrayData;
-                    unsafe {
-                        let v = &mut (*ptr).items;
-                        while v.len() <= i {
-                            v.push(Value::Nil);
-                        }
-                        Value::assign_element_slot(&mut v[i], val);
+                    // SAFETY: aliased in-place mutation of a shared array; see
+                    // `arc_contents_mut`.
+                    let v = &mut unsafe { crate::value::arc_contents_mut(arc) }.items;
+                    while v.len() <= i {
+                        v.push(Value::Nil);
                     }
+                    Value::assign_element_slot(&mut v[i], val);
                 }
             }
             _ => {}
@@ -4818,15 +4810,14 @@ impl Interpreter {
         let cell = match &self.locals[idx] {
             Value::HashSlotRef { hash, key } => {
                 let cell = Arc::new(std::sync::Mutex::new(val));
-                // SAFETY: mutsu is single-threaded; no live borrow into the map.
-                let ptr = Arc::as_ptr(hash) as *mut crate::value::HashData;
-                unsafe {
-                    Value::hash_insert_through(
-                        &mut (*ptr).map,
-                        key.clone(),
-                        Value::ContainerRef(cell.clone()),
-                    );
-                }
+                // SAFETY: aliased in-place mutation of a shared hash; see
+                // `arc_contents_mut`. No live borrow into the map.
+                let hd = unsafe { crate::value::arc_contents_mut(hash) };
+                Value::hash_insert_through(
+                    &mut hd.map,
+                    key.clone(),
+                    Value::ContainerRef(cell.clone()),
+                );
                 cell
             }
             Value::DeferredHashAccess { parent_slot, key } => {
@@ -4843,15 +4834,10 @@ impl Interpreter {
                 };
                 let cell = Arc::new(std::sync::Mutex::new(val));
                 if let Value::Hash(arc) = &inner_hash {
-                    // SAFETY: mutsu is single-threaded; no live borrow into the map.
-                    let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
-                    unsafe {
-                        Value::hash_insert_through(
-                            &mut (*ptr).map,
-                            key,
-                            Value::ContainerRef(cell.clone()),
-                        );
-                    }
+                    // SAFETY: aliased in-place mutation of a shared hash; see
+                    // `arc_contents_mut`. No live borrow into the map.
+                    let hd = unsafe { crate::value::arc_contents_mut(arc) };
+                    Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(cell.clone()));
                 }
                 cell
             }

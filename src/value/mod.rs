@@ -456,11 +456,13 @@ impl PartialEq for MixData {
     }
 }
 
+mod aliased_mut;
 mod display;
 mod error;
 mod serde_support;
 pub(crate) mod signature;
 pub(crate) mod types;
+pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use types::what_type_name;
 
 /// Get current time as seconds since UNIX epoch (returns 0.0 on WASM).
@@ -2948,14 +2950,12 @@ impl Value {
     /// Returns `None` if `self` is not a `Value::Hash`.
     pub fn hash_autovivify(&self, key: &str) -> Option<Value> {
         if let Value::Hash(arc) = self {
-            // SAFETY: mutsu is single-threaded.  We ensure no immutable
-            // references into the HashMap are alive when we mutate.
-            let ptr = Arc::as_ptr(arc) as *mut HashData;
-            unsafe {
-                if !(*ptr).map.contains_key(key) {
-                    let new_hash = Value::hash(HashMap::new());
-                    (*ptr).map.insert(key.to_string(), new_hash);
-                }
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the map is live across the write.
+            let data = unsafe { arc_contents_mut(arc) };
+            if !data.map.contains_key(key) {
+                let new_hash = Value::hash(HashMap::new());
+                data.map.insert(key.to_string(), new_hash);
             }
             Some(Value::HashSlotRef {
                 hash: arc.clone(),
@@ -2979,23 +2979,21 @@ impl Value {
     ///   behavior) and returned by value (shared Arc).
     pub fn hash_autovivify_cell(&self, key: &str) -> Option<Value> {
         if let Value::Hash(arc) = self {
-            // SAFETY: mutsu is single-threaded; no immutable borrow into the map
-            // is alive across this mutation.
-            let ptr = Arc::as_ptr(arc) as *mut HashData;
-            unsafe {
-                match (*ptr).map.get_mut(key) {
-                    Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
-                    Some(elem @ (Value::Array(..) | Value::Hash(..))) => Some(elem.clone()),
-                    Some(elem) => {
-                        let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
-                        *elem = Value::ContainerRef(cell.clone());
-                        Some(Value::ContainerRef(cell))
-                    }
-                    None => {
-                        let new_hash = Value::hash(HashMap::new());
-                        (*ptr).map.insert(key.to_string(), new_hash.clone());
-                        Some(new_hash)
-                    }
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the map is live across the write.
+            let data = unsafe { arc_contents_mut(arc) };
+            match data.map.get_mut(key) {
+                Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
+                Some(elem @ (Value::Array(..) | Value::Hash(..))) => Some(elem.clone()),
+                Some(elem) => {
+                    let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                    *elem = Value::ContainerRef(cell.clone());
+                    Some(Value::ContainerRef(cell))
+                }
+                None => {
+                    let new_hash = Value::hash(HashMap::new());
+                    data.map.insert(key.to_string(), new_hash.clone());
+                    Some(new_hash)
                 }
             }
         } else {
@@ -3037,30 +3035,28 @@ impl Value {
     /// writes go through `hash_insert_through` (Stage 0).
     pub fn hash_slot_ref(&self, key: &str, terminal: bool) -> Option<Value> {
         if let Value::Hash(arc) = self {
-            // SAFETY: mutsu is single-threaded; no immutable borrow into the
-            // map is alive across this mutation.
-            let ptr = Arc::as_ptr(arc) as *mut HashData;
-            unsafe {
-                match (*ptr).map.get_mut(key) {
-                    Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
-                    Some(elem @ (Value::Array(..) | Value::Hash(..))) if !terminal => {
-                        // Intermediate container: return the element value
-                        // itself — it shares the inner Arc, so the eventual
-                        // leaf promotion by the next index op lands in the
-                        // physical map the entry points to (Stage 2: no
-                        // `HashSlotRef` back-reference needed).
-                        Some(elem.clone())
-                    }
-                    Some(elem) => {
-                        let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
-                        *elem = Value::ContainerRef(cell.clone());
-                        Some(Value::ContainerRef(cell))
-                    }
-                    None => Some(Value::HashSlotRef {
-                        hash: arc.clone(),
-                        key: key.to_string(),
-                    }),
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the map is live across the write.
+            let data = unsafe { arc_contents_mut(arc) };
+            match data.map.get_mut(key) {
+                Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
+                Some(elem @ (Value::Array(..) | Value::Hash(..))) if !terminal => {
+                    // Intermediate container: return the element value
+                    // itself — it shares the inner Arc, so the eventual
+                    // leaf promotion by the next index op lands in the
+                    // physical map the entry points to (Stage 2: no
+                    // `HashSlotRef` back-reference needed).
+                    Some(elem.clone())
                 }
+                Some(elem) => {
+                    let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                    *elem = Value::ContainerRef(cell.clone());
+                    Some(Value::ContainerRef(cell))
+                }
+                None => Some(Value::HashSlotRef {
+                    hash: arc.clone(),
+                    key: key.to_string(),
+                }),
             }
         } else {
             None
@@ -3073,10 +3069,10 @@ impl Value {
     /// Uses the same interior-mutation approach as `hash_autovivify`.
     pub fn hash_assign_at(&self, key: &str, val: Value) -> Option<Value> {
         if let Value::Hash(arc) = self {
-            let ptr = Arc::as_ptr(arc) as *mut HashData;
-            unsafe {
-                Value::hash_insert_through(&mut (*ptr).map, key.to_string(), val.clone());
-            }
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the map is live across the write.
+            let data = unsafe { arc_contents_mut(arc) };
+            Value::hash_insert_through(&mut data.map, key.to_string(), val.clone());
             Some(val)
         } else {
             None
@@ -3103,10 +3099,10 @@ impl Value {
     /// Uses interior mutation (same as hash_autovivify).
     pub fn hash_slot_write(&self, val: Value) {
         if let Value::HashSlotRef { hash, key } = self {
-            let ptr = Arc::as_ptr(hash) as *mut HashData;
-            unsafe {
-                Value::hash_insert_through(&mut (*ptr).map, key.clone(), val);
-            }
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the map is live across the write.
+            let data = unsafe { arc_contents_mut(hash) };
+            Value::hash_insert_through(&mut data.map, key.clone(), val);
         }
     }
 
@@ -3117,10 +3113,10 @@ impl Value {
     /// concurrent reads/writes to the same Arc.
     pub fn array_push_in_place(&self, val: Value) -> bool {
         if let Value::Array(arc, _) = self {
-            let ptr = Arc::as_ptr(arc) as *mut ArrayData;
-            unsafe {
-                (&mut *ptr).items.push(val);
-            }
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the items is live across the push.
+            let data = unsafe { arc_contents_mut(arc) };
+            data.items.push(val);
             true
         } else {
             false
@@ -3159,30 +3155,30 @@ impl Value {
     /// element at the single read chokepoint (`resolve_array_entry`).
     pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
         if let Value::Array(arc, _kind) = self {
-            // SAFETY: mutsu is single-threaded.
-            let ptr = Arc::as_ptr(arc) as *mut ArrayData;
-            unsafe {
-                while (&(*ptr)).len() <= idx {
-                    (&mut (*ptr)).push(Value::Nil);
-                }
-                let elem = &mut (&mut (*ptr))[idx];
-                if let Value::ContainerRef(cell) = elem {
-                    return Some(Value::ContainerRef(cell.clone()));
-                }
-                // Only promote a *scalar* leaf to a cell. A container element
-                // (Array/Hash) is an intermediate level of a deeper path
-                // (`$s[1][1]`, `$s[1]<k>`); return the element value itself —
-                // it shares the inner Arc, so the eventual leaf promotion by
-                // the next index op lands in the same physical Vec/HashMap the
-                // stored element points to (Stage 2: no `ArraySlotRef`
-                // back-reference needed).
-                if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
-                    return Some(elem.clone());
-                }
-                let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
-                *elem = Value::ContainerRef(cell.clone());
-                Some(Value::ContainerRef(cell))
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the items is live across the
+            // growth/promotion below.
+            let data = unsafe { arc_contents_mut(arc) };
+            while data.len() <= idx {
+                data.push(Value::Nil);
             }
+            let elem = &mut data[idx];
+            if let Value::ContainerRef(cell) = elem {
+                return Some(Value::ContainerRef(cell.clone()));
+            }
+            // Only promote a *scalar* leaf to a cell. A container element
+            // (Array/Hash) is an intermediate level of a deeper path
+            // (`$s[1][1]`, `$s[1]<k>`); return the element value itself —
+            // it shares the inner Arc, so the eventual leaf promotion by
+            // the next index op lands in the same physical Vec/HashMap the
+            // stored element points to (Stage 2: no `ArraySlotRef`
+            // back-reference needed).
+            if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
+                return Some(elem.clone());
+            }
+            let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+            *elem = Value::ContainerRef(cell.clone());
+            Some(Value::ContainerRef(cell))
         } else {
             None
         }

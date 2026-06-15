@@ -2313,16 +2313,13 @@ impl Interpreter {
                         match self.deepmap_leaf_call(block, item) {
                             Ok((v, new_src)) => {
                                 if new_src != *item {
-                                    // Write the mutated leaf back into the
-                                    // source array in place so all holders of
-                                    // the Arc see it (Raku container
-                                    // semantics). SAFETY: mutsu is
-                                    // single-threaded; same pattern as the
-                                    // other interior-mutation sites.
-                                    let ptr = std::sync::Arc::as_ptr(items)
-                                        as *mut crate::value::ArrayData;
+                                    // Write the mutated leaf back into the source
+                                    // array in place so all holders of the Arc see
+                                    // it (Raku container semantics).
+                                    // SAFETY: aliased in-place mutation of a shared
+                                    // container; see `arc_contents_mut`.
                                     unsafe {
-                                        (&mut *ptr).items[idx] = new_src;
+                                        crate::value::arc_contents_mut(items).items[idx] = new_src;
                                     }
                                 }
                                 result.push(v);
@@ -2394,13 +2391,14 @@ impl Interpreter {
                             Ok((Value::Slip(items), _)) if items.is_empty() => continue,
                             Ok((val, new_src)) => {
                                 if new_src != *v {
-                                    // Write the mutated leaf back into the
-                                    // source hash in place (see the Array arm).
-                                    // SAFETY: mutsu is single-threaded.
-                                    let ptr =
-                                        std::sync::Arc::as_ptr(map) as *mut crate::value::HashData;
+                                    // Write the mutated leaf back into the source
+                                    // hash in place (see the Array arm).
+                                    // SAFETY: aliased in-place mutation of a shared
+                                    // container; see `arc_contents_mut`.
                                     unsafe {
-                                        (&mut *ptr).map.insert(k.clone(), new_src);
+                                        crate::value::arc_contents_mut(map)
+                                            .map
+                                            .insert(k.clone(), new_src);
                                     }
                                 }
                                 result.insert(k.clone(), val);

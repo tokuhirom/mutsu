@@ -212,14 +212,15 @@ pub(crate) fn mark_shaped_array_items(
     if items.shape.as_deref() == Some(shape) {
         return;
     }
-    // SAFETY: mutsu is single-threaded. The shape is metadata about this one
-    // logical array, shared by every holder of the `Arc` — matching the prior
-    // pointer-keyed side-table semantics (any holder of the same pointer saw
-    // the shape). Interior mutation preserves "mark after the array Value is
-    // already placed" without requiring a write-back through the caller.
-    let ptr = Arc::as_ptr(items) as *mut crate::value::ArrayData;
+    // The shape is metadata about this one logical array, shared by every holder
+    // of the `Arc` — matching the prior pointer-keyed side-table semantics (any
+    // holder of the same pointer saw the shape). Interior mutation preserves
+    // "mark after the array Value is already placed" without a write-back through
+    // the caller.
+    // SAFETY: aliased in-place mutation of a shared container; see
+    // `arc_contents_mut`. No borrow into the array is live across this write.
     unsafe {
-        (*ptr).shape = Some(shape.to_vec());
+        crate::value::arc_contents_mut(items).shape = Some(shape.to_vec());
     }
 }
 

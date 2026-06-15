@@ -1069,45 +1069,47 @@ impl Interpreter {
             };
             // Check if we can mutate in-place (shared reference)
             if Arc::strong_count(arc) > 1 {
-                let ptr = Arc::as_ptr(arc) as *mut crate::value::HashData;
-                unsafe {
-                    for arg in args {
-                        match arg {
-                            Value::Pair(k, v) => {
-                                let key = k.as_str().to_string();
-                                let map = &mut (*ptr).map;
-                                if let Some(existing) = map.get(&key) {
-                                    // Key exists: create itemized array
-                                    let arr = Value::Array(
-                                        Arc::new(crate::value::ArrayData::new(vec![
-                                            existing.clone(),
-                                            *v,
-                                        ])),
-                                        crate::value::ArrayKind::ItemArray,
-                                    );
-                                    map.insert(key, arr);
-                                } else {
-                                    map.insert(key, *v);
-                                }
+                // SAFETY: aliased in-place mutation of a shared hash (guarded by
+                // strong_count > 1, the exact case that needs the shared write);
+                // see `arc_contents_mut`. No borrow into the map is live across
+                // each insert.
+                let data = unsafe { crate::value::arc_contents_mut(arc) };
+                for arg in args {
+                    match arg {
+                        Value::Pair(k, v) => {
+                            let key = k.as_str().to_string();
+                            let map = &mut data.map;
+                            if let Some(existing) = map.get(&key) {
+                                // Key exists: create itemized array
+                                let arr = Value::Array(
+                                    Arc::new(crate::value::ArrayData::new(vec![
+                                        existing.clone(),
+                                        *v,
+                                    ])),
+                                    crate::value::ArrayKind::ItemArray,
+                                );
+                                map.insert(key, arr);
+                            } else {
+                                map.insert(key, *v);
                             }
-                            Value::ValuePair(k, v) => {
-                                let key = k.to_string_value();
-                                let map = &mut (*ptr).map;
-                                if let Some(existing) = map.get(&key) {
-                                    let arr = Value::Array(
-                                        Arc::new(crate::value::ArrayData::new(vec![
-                                            existing.clone(),
-                                            *v,
-                                        ])),
-                                        crate::value::ArrayKind::ItemArray,
-                                    );
-                                    map.insert(key, arr);
-                                } else {
-                                    map.insert(key, *v);
-                                }
-                            }
-                            _ => {}
                         }
+                        Value::ValuePair(k, v) => {
+                            let key = k.to_string_value();
+                            let map = &mut data.map;
+                            if let Some(existing) = map.get(&key) {
+                                let arr = Value::Array(
+                                    Arc::new(crate::value::ArrayData::new(vec![
+                                        existing.clone(),
+                                        *v,
+                                    ])),
+                                    crate::value::ArrayKind::ItemArray,
+                                );
+                                map.insert(key, arr);
+                            } else {
+                                map.insert(key, *v);
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 return Ok(target);

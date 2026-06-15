@@ -403,13 +403,11 @@ impl Interpreter {
                 // mutation on a *nested* element reaches it (the read shares the
                 // inner Arc with the slot holding it), plus the by-identity scan
                 // for any top-level binding that COW-detached.
-                // SAFETY: mutsu is single-threaded; no immutable borrow into
-                // this ArrayData is alive across the write.
-                {
-                    let ptr = std::sync::Arc::as_ptr(existing) as *mut crate::value::ArrayData;
-                    unsafe {
-                        (*ptr).items = items.clone();
-                    }
+                // SAFETY: aliased in-place mutation of a shared container; see
+                // `arc_contents_mut`. No borrow into this ArrayData is live
+                // across the write.
+                unsafe {
+                    crate::value::arc_contents_mut(existing).items = items.clone();
                 }
                 loan_env!(
                     self,
@@ -778,12 +776,11 @@ impl Interpreter {
         if let Value::Array(existing, kind) = &target {
             // In-place write back through the target's `Arc<ArrayData>` so a
             // nested-element hyper mutation reaches the element (see the twin
-            // site in `exec_hyper_method_call_op`). SAFETY: single-threaded.
-            {
-                let ptr = std::sync::Arc::as_ptr(existing) as *mut crate::value::ArrayData;
-                unsafe {
-                    (*ptr).items = items.clone();
-                }
+            // site in `exec_hyper_method_call_op`).
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`.
+            unsafe {
+                crate::value::arc_contents_mut(existing).items = items.clone();
             }
             loan_env!(
                 self,
