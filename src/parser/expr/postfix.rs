@@ -1872,7 +1872,16 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 // Detect illegal space between method name and parens
                 if (r.starts_with(' ') || r.starts_with('\t')) && !r.starts_with('\\') {
                     let after_ws = r.trim_start_matches([' ', '\t']);
-                    if after_ws.starts_with('(') {
+                    // A `(...)`-delimited set/baggy infix operator after a method
+                    // call (`@a.Set (|) @b.Set`, `$x.Bag (+) $y.Bag`) is an
+                    // *operator*, not a space-separated call-arg list. Leave it
+                    // for the infix parser instead of erroring on the space.
+                    const SET_INFIX_OPS: &[&str] = &[
+                        "(elem)", "(cont)", "(<=)", "(>=)", "(==)", "(&)", "(+)", "(-)", "(.)",
+                        "(<)", "(>)", "(^)", "(|)",
+                    ];
+                    let is_set_infix_op = SET_INFIX_OPS.iter().any(|op| after_ws.starts_with(op));
+                    if after_ws.starts_with('(') && !is_set_infix_op {
                         return Err(PError::expected_at(
                             "Confused. no space allowed between method name and the left parenthesis",
                             r,
