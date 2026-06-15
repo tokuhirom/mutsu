@@ -1647,14 +1647,8 @@ pub enum Value {
         id: u64,
     },
     /// An instance of a custom type (created by .CREATE on a CustomType).
-    CustomTypeInstance {
-        type_id: u64,
-        how: Box<Value>,
-        repr: String,
-        type_name: Symbol,
-        attributes: Arc<HashMap<String, Value>>,
-        id: u64,
-    },
+    /// Boxed payload to keep `Value` small (this variant has six fields).
+    CustomTypeInstance(Box<CustomTypeInstanceData>),
     /// A Scalar container wrapping a value (from `.item` or `$()`).
     /// Prevents one level of flattening in list/array context.
     Scalar(Box<Value>),
@@ -1691,6 +1685,18 @@ pub enum Value {
         /// The key for the nested access
         key: String,
     },
+}
+
+/// Boxed payload of [`Value::CustomTypeInstance`] (an instance of a type created
+/// via Metamodel::Primitives.create_type + `.CREATE`). Boxed to keep `Value` small.
+#[derive(Debug, Clone)]
+pub struct CustomTypeInstanceData {
+    pub type_id: u64,
+    pub how: Box<Value>,
+    pub repr: String,
+    pub type_name: Symbol,
+    pub attributes: Arc<HashMap<String, Value>>,
+    pub id: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -2752,6 +2758,41 @@ impl Value {
     /// stores them behind `Box` to keep `Value` small).
     pub fn bigrat(num: NumBigInt, den: NumBigInt) -> Self {
         Value::BigRat(Box::new(num), Box::new(den))
+    }
+    /// The HOW (meta-object) of a `CustomType` or `CustomTypeInstance`, if this
+    /// is one. Centralizes access now that `CustomTypeInstance` is a boxed payload.
+    pub fn custom_how(&self) -> Option<&Value> {
+        match self {
+            Value::CustomType { how, .. } => Some(how),
+            Value::CustomTypeInstance(d) => Some(&d.how),
+            _ => None,
+        }
+    }
+    /// The REPR name of a `CustomType` or `CustomTypeInstance`, if this is one.
+    pub fn custom_repr(&self) -> Option<&str> {
+        match self {
+            Value::CustomType { repr, .. } => Some(repr),
+            Value::CustomTypeInstance(d) => Some(&d.repr),
+            _ => None,
+        }
+    }
+    /// Create a CustomTypeInstance value (boxed payload).
+    pub fn custom_type_instance(
+        type_id: u64,
+        how: Box<Value>,
+        repr: String,
+        type_name: Symbol,
+        attributes: Arc<HashMap<String, Value>>,
+        id: u64,
+    ) -> Self {
+        Value::CustomTypeInstance(Box::new(CustomTypeInstanceData {
+            type_id,
+            how,
+            repr,
+            type_name,
+            attributes,
+            id,
+        }))
     }
     /// Create a true Array value (from [...] literals).
     pub fn real_array(items: Vec<Value>) -> Self {
@@ -3939,13 +3980,14 @@ mod value_size_guard {
     use super::*;
     #[test]
     fn value_stays_small() {
-        // `Capture` and `BigRat` previously held their large payloads inline,
-        // making `Value` 72 bytes. Boxing them dropped it to 64. Guard against
-        // regressing the layout (every `Value` clone/move pays for the largest
-        // variant). Remaining 64-byte variants (CustomTypeInstance, ...) are
-        // boxed in follow-up steps to shrink this further.
+        // Oversized variants used to hold their payloads inline, making `Value`
+        // 72 bytes (every clone/move pays for the largest variant). Boxing the
+        // big payloads shrank it: Capture+BigRat (72->64), CustomTypeInstance
+        // (64->56). Remaining 48-byte variants (Uni, RegexWithAdverbs,
+        // CustomType) + their missing niche are boxed in follow-up steps to
+        // reach the next tier. Guard against layout regressions.
         let sz = std::mem::size_of::<Value>();
-        assert!(sz <= 64, "size_of::<Value>() = {sz}, expected <= 64");
+        assert!(sz <= 56, "size_of::<Value>() = {sz}, expected <= 56");
     }
 }
 

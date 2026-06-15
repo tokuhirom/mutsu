@@ -463,7 +463,7 @@ impl Value {
             }
             Value::Proxy { .. } => true,
             Value::CustomType { .. } => false,
-            Value::CustomTypeInstance { .. } => true,
+            Value::CustomTypeInstance(_) => true,
             Value::Scalar(inner) => inner.truthy(),
             Value::ContainerRef(_) => self.with_deref(Value::truthy),
             Value::LazyThunk(thunk_data) => {
@@ -594,8 +594,8 @@ impl Value {
             Value::CustomType { name, .. } => {
                 return name.resolve() == type_name;
             }
-            Value::CustomTypeInstance { type_name: tn, .. } => {
-                return tn.resolve() == type_name;
+            Value::CustomTypeInstance(d) => {
+                return d.type_name.resolve() == type_name;
             }
             Value::Scalar(inner) => return inner.isa_check(type_name),
             Value::ContainerRef(_) => return self.with_deref(|inner| inner.isa_check(type_name)),

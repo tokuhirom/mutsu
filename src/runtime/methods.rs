@@ -2091,7 +2091,7 @@ impl Interpreter {
                     // through `.gist` would add a spurious paren layer.)
                     Value::Instance { .. }
                     | Value::CustomType { .. }
-                    | Value::CustomTypeInstance { .. }
+                    | Value::CustomTypeInstance(_)
                     | Value::Package(..) => true,
                     _ if value.as_list_items().is_some() => value
                         .as_list_items()
@@ -3158,10 +3158,9 @@ impl Interpreter {
                 | "put"
                 | "note"
                 | "new"
-        ) && let Value::CustomType { ref how, .. } | Value::CustomTypeInstance { ref how, .. } =
-            target
+        ) && let Some(how) = target.custom_how()
         {
-            let how_clone = *how.clone();
+            let how_clone = how.clone();
             let found = self.call_method_with_values(
                 how_clone,
                 "find_method",

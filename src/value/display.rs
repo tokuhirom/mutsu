@@ -950,7 +950,7 @@ impl Value {
                     format!("({})", name)
                 }
             }
-            Value::CustomTypeInstance { type_name, .. } => format!("{}()", type_name),
+            Value::CustomTypeInstance(d) => format!("{}()", d.type_name),
             Value::Scalar(inner) => inner.to_string_value(),
             Value::ContainerRef(_) => self.with_deref(Value::to_string_value),
             Value::LazyThunk(thunk_data) => {

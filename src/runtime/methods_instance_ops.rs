@@ -1437,15 +1437,15 @@ impl Interpreter {
                     self.class_mro(&pkg_name).contains(&target_name),
                 ))
             }
-            "REPR" if args.is_empty() => match target {
-                Value::CustomType { repr, .. } | Value::CustomTypeInstance { repr, .. } => {
-                    Ok(Value::str(repr))
-                }
-                Value::Package(name) if self.registry().classes.contains_key(&name.resolve()) => {
+            "REPR" if args.is_empty() => {
+                // CustomType/CustomTypeInstance report their stored REPR; every
+                // other type is P6opaque.
+                if let Some(repr) = target.custom_repr() {
+                    Ok(Value::str_from(repr))
+                } else {
                     Ok(Value::str_from("P6opaque"))
                 }
-                _ => Ok(Value::str_from("P6opaque")),
-            },
+            }
             "Str" | "Stringy" if args.is_empty() => match &target {
                 Value::Package(_) => Ok(Value::str(String::new())),
                 Value::Instance { class_name, .. } => {

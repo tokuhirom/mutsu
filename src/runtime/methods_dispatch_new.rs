@@ -713,14 +713,14 @@ impl Interpreter {
                 name,
                 id,
                 ..
-            } => Some(Ok(Value::CustomTypeInstance {
-                type_id: *id,
-                how: how.clone(),
-                repr: repr.clone(),
-                type_name: *name,
-                attributes: std::sync::Arc::new(HashMap::new()),
-                id: crate::value::next_instance_id(),
-            })),
+            } => Some(Ok(Value::custom_type_instance(
+                *id,
+                how.clone(),
+                repr.clone(),
+                *name,
+                std::sync::Arc::new(HashMap::new()),
+                crate::value::next_instance_id(),
+            ))),
             Value::Package(class_name) => {
                 Some(Ok(Value::make_instance(*class_name, HashMap::new())))
             }

@@ -144,9 +144,9 @@ impl Interpreter {
         let target_type = &args[1];
 
         match (obj, target_type) {
-            (Value::CustomTypeInstance { id, .. }, Value::CustomType { how, .. }) => {
+            (Value::CustomTypeInstance(d), Value::CustomType { how, .. }) => {
                 // Store the new HOW in the rebless map so .HOW returns the new type
-                self.rebless_map.insert(*id, *how.clone());
+                self.rebless_map.insert(d.id, *how.clone());
                 Ok(obj.clone())
             }
             _ => Ok(args[0].clone()),

@@ -123,8 +123,8 @@ impl Interpreter {
             Value::CustomType { name, .. } => {
                 return Ok(Value::Package(*name));
             }
-            Value::CustomTypeInstance { type_name: tn, .. } => {
-                return Ok(Value::Package(*tn));
+            Value::CustomTypeInstance(d) => {
+                return Ok(Value::Package(d.type_name));
             }
             Value::ParametricRole {
                 base_name,
@@ -194,13 +194,13 @@ impl Interpreter {
         }
         // Return custom HOW for CustomType/CustomTypeInstance
         // Check rebless map first for reblessed instances
-        if let Value::CustomTypeInstance { id, .. } = target
-            && let Some(new_how) = self.rebless_map.get(id).cloned()
+        if let Value::CustomTypeInstance(d) = target
+            && let Some(new_how) = self.rebless_map.get(&d.id).cloned()
         {
             return Ok(new_how);
         }
-        if let Value::CustomType { how, .. } | Value::CustomTypeInstance { how, .. } = target {
-            return Ok(*how.clone());
+        if let Some(how) = target.custom_how() {
+            return Ok(how.clone());
         }
         // Return CurriedRoleHOW for parameterized roles
         if let Value::ParametricRole {
