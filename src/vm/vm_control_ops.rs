@@ -2312,9 +2312,9 @@ impl VM {
             }
             this.interpreter.set_when_matched(saved_when);
             if let Some(v) = saved_topic.clone() {
-                this.interpreter.env_mut().insert("_".to_string(), v);
+                this.env_mut().insert("_".to_string(), v);
             } else {
-                this.interpreter.env_mut().remove("_");
+                this.env_mut().remove("_");
             }
             // A pointy parameter (`-> @p`) is block-scoped in Raku, but mutsu
             // desugars it to a global `@p := $_` whose alias/bound markers would

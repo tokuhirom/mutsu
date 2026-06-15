@@ -1321,13 +1321,13 @@ impl VM {
                         for p in &data.params {
                             sub_env.insert(p.to_string(), Value::Int(len));
                         }
-                        let saved_env = std::mem::take(vm.interpreter.env_mut());
-                        *vm.interpreter.env_mut() = sub_env;
+                        let saved_env = std::mem::take(vm.env_mut());
+                        *vm.env_mut() = sub_env;
                         let result = vm
                             .interpreter
                             .eval_block_value(&data.body)
                             .unwrap_or(Value::Nil);
-                        *vm.interpreter.env_mut() = saved_env;
+                        *vm.env_mut() = saved_env;
                         match result {
                             Value::Int(i) => i,
                             _ => 0,
@@ -5245,9 +5245,10 @@ impl VM {
                         == Some("atomicint")
                     || self.interpreter.get_shared_var(&atomic_name_key).is_some());
             if is_atomic_int {
-                let fetched = self
-                    .interpreter
-                    .builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])?;
+                let fetched = loan_env!(
+                    self,
+                    builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])
+                )?;
                 self.locals[idx] = fetched.clone();
                 self.stack.push(fetched);
                 return Ok(());
