@@ -959,10 +959,19 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(crate) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        if stmts.is_empty() {
-            return Ok(());
-        }
+    /// Compile a raw statement block with the same compiler context as
+    /// `run_block_raw` (mainline placeholder scope, current package,
+    /// distribution), without executing it. Pure compilation — touches no `env`
+    /// and runs no user code — so the VM can call it without an env loan and then
+    /// execute the result in-place via `VM::run_nested` (CP-3 collapse PoC),
+    /// avoiding the `mem::take`/`VM::new` ping-pong.
+    pub(crate) fn compile_block_raw(
+        &self,
+        stmts: &[Stmt],
+    ) -> (
+        crate::opcode::CompiledCode,
+        std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+    ) {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
@@ -978,7 +987,14 @@ impl Interpreter {
                 .get(&self.current_package())
                 .cloned()
         });
-        let (code, compiled_fns) = compiler.compile(stmts);
+        compiler.compile(stmts)
+    }
+
+    pub(crate) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        if stmts.is_empty() {
+            return Ok(());
+        }
+        let (code, compiled_fns) = self.compile_block_raw(stmts);
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
         let (interp, result) = vm.run(&code, &compiled_fns);
