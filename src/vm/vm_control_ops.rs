@@ -583,7 +583,7 @@ impl Interpreter {
         let arity = spec.arity.max(1) as usize;
         let writes_back_topic =
             spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
-        let rw_writeback = spec.do_writeback;
+        let mut rw_writeback = spec.do_writeback;
         // A plain (non-rw, non-copy) named loop variable aliases the source
         // element in Raku: `for @m -> @row { @row.push(9) }` and
         // `for @m -> $row { $row.push(9) }` both mutate `@m` (a scalar binding a
@@ -637,6 +637,24 @@ impl Interpreter {
             self.for_grep_view = None;
             None
         };
+        // A sigilless/`is rw` for-param aliases the source element, but an
+        // *immutable* Mix/Set/Bag yields immutable weights — assigning to the
+        // alias must throw X::Assignment::RO, and no writeback may run (it would
+        // corrupt the immutable collection). Mutable MixHash/BagHash/SetHash and
+        // arrays/hashes are unaffected. Detect the immutable-QuantHash source at
+        // runtime (the compiler cannot know mutability) and force the params
+        // read-only with writeback suppressed.
+        let source_immutable_quant = container_binding.as_ref().is_some_and(|name| {
+            matches!(
+                self.get_env_with_main_alias(name),
+                Some(Value::Mix(_, false))
+                    | Some(Value::Set(_, false))
+                    | Some(Value::Bag(_, false))
+            )
+        });
+        if source_immutable_quant {
+            rw_writeback = false;
+        }
         let mut grep_view_writes: Vec<(usize, Value)> = Vec::new();
         let container_reversed = self.container_ref_reversed;
         self.container_ref_reversed = false;
@@ -763,7 +781,23 @@ impl Interpreter {
                 self.env_mut().insert(key, Value::Bool(false));
             }
             'body_redo: loop {
-                match self.run_range(code, body_start, loop_end, compiled_fns) {
+                let mut body_result = self.run_range(code, body_start, loop_end, compiled_fns);
+                // An immutable Mix/Set/Bag source yields immutable weights: if the
+                // body modified a sigilless/rw alias, Raku throws X::Assignment::RO.
+                // Detect it here (writeback is already suppressed above) and convert
+                // a successful body into the same error, so the shared Err arm runs
+                // its readonly/topic cleanup before propagating.
+                if body_result.is_ok()
+                    && source_immutable_quant
+                    && let Some(err) = self.immutable_quant_param_mutation(
+                        &param_name,
+                        &spec.multi_param_names,
+                        &item,
+                    )
+                {
+                    body_result = Err(err);
+                }
+                match body_result {
                     Ok(()) => {
                         // Sync state variables modified in this iteration so
                         // that StateVarInit in the next iteration sees the
@@ -1876,6 +1910,40 @@ impl Interpreter {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             _ => false,
         }
+    }
+
+    /// When iterating an immutable Mix/Set/Bag via `.values`/`.kv`/`.pairs` with
+    /// a writable (sigilless / `is rw`) alias, the aliased weight is immutable —
+    /// modifying it must raise X::Assignment::RO (matching Raku). Compare each
+    /// alias param against the value it was bound to this iteration; return the
+    /// error if any was changed. The topic (`$_`) case is handled separately by
+    /// `topic_readonly`, so this only needs the named/multi-param forms.
+    fn immutable_quant_param_mutation(
+        &self,
+        param_name: &Option<String>,
+        multi_param_names: &[String],
+        item: &Value,
+    ) -> Option<RuntimeError> {
+        let changed =
+            |name: &str, bound: &Value| self.env().get(name).is_some_and(|cur| cur != bound);
+        if !multi_param_names.is_empty() {
+            if let Value::Array(chunk, _) = item {
+                for (i, name) in multi_param_names.iter().enumerate() {
+                    if let Some(bound) = chunk.items.get(i)
+                        && changed(name, bound)
+                    {
+                        return Some(RuntimeError::assignment_ro(Some(name)));
+                    }
+                }
+            }
+            return None;
+        }
+        if let Some(name) = param_name
+            && changed(name, item)
+        {
+            return Some(RuntimeError::assignment_ro(Some(name)));
+        }
+        None
     }
 
     fn write_back_for_topic_item(
