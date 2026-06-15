@@ -3146,7 +3146,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    return Ok(if has_non_str_keys {
+                    let result = if has_non_str_keys {
                         if base_class_name == "BagHash" {
                             Value::bag_hash_typed(counts, original_keys)
                         } else {
@@ -3156,7 +3156,22 @@ impl Interpreter {
                         Value::bag_hash(counts)
                     } else {
                         Value::bag(counts)
-                    });
+                    };
+                    // Embed type metadata for parameterized Bag[T]/BagHash[T] so
+                    // later element binding (`$b{42} = 1`) can type-check the key.
+                    let result = if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                    {
+                        let info = crate::runtime::ContainerTypeInfo {
+                            value_type: constraint.clone(),
+                            key_type: Some(constraint.clone()),
+                            declared_type: Some(class_name.resolve()),
+                        };
+                        self.tag_container_metadata(result, info)
+                    } else {
+                        result
+                    };
+                    return Ok(result);
                 }
                 "Mix" | "MixHash" => {
                     let args = Self::strip_named_pair_args(args);
@@ -3260,7 +3275,10 @@ impl Interpreter {
                             }
                         }
                     }
-                    let is_hash_variant = class_name.resolve() == "MixHash";
+                    // Use `base_class_name` (not `class_name.resolve()`) so a
+                    // parameterized `MixHash[T]` is still recognized as the mutable
+                    // variant — `class_name.resolve()` would be "MixHash[T]".
+                    let is_hash_variant = base_class_name == "MixHash";
                     let result = if has_non_str_keys {
                         if is_hash_variant {
                             Value::mix_hash_with_original_keys(weights, original_keys)
@@ -3272,7 +3290,25 @@ impl Interpreter {
                     } else {
                         Value::mix(weights)
                     };
-                    let result = if is_hash_variant {
+                    // For a parameterized Mix[T]/MixHash[T] embed the element type so
+                    // later element binding (`$m{42} = 1`) can type-check the key.
+                    let param_constraint = type_args
+                        .as_ref()
+                        .and_then(|ta| ta.first())
+                        .filter(|c| c.starts_with(char::is_uppercase) && *c != "Any" && *c != "Mu");
+                    let result = if let Some(constraint) = param_constraint {
+                        // keyof is the element (key) type; the weight value type is
+                        // always Real, so keep `value_type` as "Real" and carry the
+                        // parameterized element type in `key_type`.
+                        self.tag_container_metadata(
+                            result,
+                            ContainerTypeInfo {
+                                value_type: "Real".to_string(),
+                                key_type: Some(constraint.clone()),
+                                declared_type: Some(class_name.resolve()),
+                            },
+                        )
+                    } else if is_hash_variant {
                         self.tag_container_metadata(
                             result,
                             ContainerTypeInfo {
