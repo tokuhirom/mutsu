@@ -501,9 +501,10 @@ impl VM {
                     self.stack.push(Value::Bool(false));
                 }
             } else {
-                let found = self
-                    .interpreter
-                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                let found = loan_env!(
+                    self,
+                    regex_find_first_from_with_captures(&pattern, &text, 0)
+                );
                 if let Some((start, end, captures)) = found {
                     let out = if has_code_block {
                         self.apply_substitutions_dynamic(
@@ -551,7 +552,7 @@ impl VM {
         // For Raku regex with capture references, collect per-match captures
         // so each match can expand $0, $1 etc. independently.
         let (ranges, per_match_captures) = if perl5 {
-            let all_matches = self.interpreter.regex_find_all_p5(&pattern, &text);
+            let all_matches = loan_env!(self, regex_find_all_p5(&pattern, &text));
             let selected = if global && nth_spec.is_none() && x_count.is_none() {
                 all_matches
             } else {
@@ -562,10 +563,10 @@ impl VM {
             // Find all matches with captures using iterative find_first_from
             let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
             let mut pos = 0;
-            while let Some((start, end, caps)) = self
-                .interpreter
-                .regex_find_first_from_with_captures(&pattern, &text, pos)
-            {
+            while let Some((start, end, caps)) = loan_env!(
+                self,
+                regex_find_first_from_with_captures(&pattern, &text, pos)
+            ) {
                 matches_with_caps.push((start, end, caps));
                 pos = if end > start { end } else { start + 1 };
             }
@@ -727,9 +728,10 @@ impl VM {
                     self.stack.push(Value::str(text));
                 }
             } else {
-                let found = self
-                    .interpreter
-                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                let found = loan_env!(
+                    self,
+                    regex_find_first_from_with_captures(&pattern, &text, 0)
+                );
                 if let Some((start, end, captures)) = found {
                     let out = if has_code_block {
                         self.apply_substitutions_dynamic(
@@ -766,7 +768,7 @@ impl VM {
         }
 
         let (ranges, per_match_captures) = if perl5 {
-            let all_matches = self.interpreter.regex_find_all_p5(&pattern, &text);
+            let all_matches = loan_env!(self, regex_find_all_p5(&pattern, &text));
             let selected = if global && nth_spec.is_none() && x_count.is_none() {
                 all_matches
             } else {
@@ -776,10 +778,10 @@ impl VM {
         } else {
             let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
             let mut pos = 0;
-            while let Some((start, end, caps)) = self
-                .interpreter
-                .regex_find_first_from_with_captures(&pattern, &text, pos)
-            {
+            while let Some((start, end, caps)) = loan_env!(
+                self,
+                regex_find_first_from_with_captures(&pattern, &text, pos)
+            ) {
                 matches_with_caps.push((start, end, caps));
                 pos = if end > start { end } else { start + 1 };
             }
@@ -2013,8 +2015,7 @@ impl VM {
             "R" => {
                 if op == "..." || op == "...^" {
                     let exclude_end = op == "...^";
-                    self.interpreter
-                        .eval_sequence_values(right, left, exclude_end)?
+                    loan_env!(self, eval_sequence_values(right, left, exclude_end))?
                 } else if op == "~~" {
                     Value::Bool(self.vm_smart_match(&right, &left))
                 } else {

@@ -496,7 +496,7 @@ impl VM {
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -527,7 +527,7 @@ impl VM {
                             {
                                 e.return_target_callable_id = Some(*id as u64);
                             }
-                            self.interpreter.restore_let_saves(let_mark);
+                            loan_env!(self, restore_let_saves(let_mark));
                             result = Err(e);
                             break;
                         }
@@ -538,7 +538,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && target_id != data.id
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -553,14 +553,14 @@ impl VM {
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -860,8 +860,10 @@ impl VM {
             Ok(()) => {
                 // For closures, absorb `return` — don't re-propagate as error.
                 let base_val = explicit_return.unwrap_or(ret_val);
-                self.interpreter
-                    .finalize_return_with_spec(Ok(base_val), effective_return_spec.as_deref())
+                loan_env!(
+                    self,
+                    finalize_return_with_spec(Ok(base_val), effective_return_spec.as_deref())
+                )
             }
             Err(e) => Err(e),
         }

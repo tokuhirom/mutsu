@@ -1502,9 +1502,8 @@ impl VM {
                     if constraint == "Mu" {
                         val
                     } else {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal =
+                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     }
                 } else {
@@ -2737,9 +2736,10 @@ impl VM {
             ));
         }
         if !matches!(value, Value::Nil) {
-            let coerced = self
-                .interpreter
-                .try_coerce_value_for_constraint(constraint, value.clone())?;
+            let coerced = loan_env!(
+                self,
+                try_coerce_value_for_constraint(constraint, value.clone())
+            )?;
             *self.stack.last_mut().unwrap() = coerced;
         }
         Ok(())
@@ -3315,9 +3315,7 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let scope = self
-            .interpreter
-            .current_once_scope()
+        let scope = loan_env!(self, current_once_scope())
             .unwrap_or_else(|| self.interpreter.next_once_scope_id());
         let site_key = Self::const_str(code, key_idx);
         let cache_key = format!("{scope}::{site_key}");
@@ -3413,7 +3411,7 @@ impl VM {
                 self.env_dirty = true;
             }
             Err(e) => {
-                self.interpreter.restore_let_saves(mark);
+                loan_env!(self, restore_let_saves(mark));
                 self.env_dirty = true;
                 return Err(e);
             }

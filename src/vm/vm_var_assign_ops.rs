@@ -1149,8 +1149,10 @@ impl VM {
                         let coerced = if self.type_matches_value(&target_type, val) {
                             val.clone()
                         } else {
-                            self.interpreter
-                                .try_coerce_value_for_constraint(constraint, val.clone())?
+                            loan_env!(
+                                self,
+                                try_coerce_value_for_constraint(constraint, val.clone())
+                            )?
                         };
                         if !self.type_matches_value(&target_type, &coerced) {
                             return Err(runtime::utils::type_check_element_typed_error(
@@ -1267,22 +1269,26 @@ impl VM {
                             Value::Array(items.clone(), crate::value::ArrayKind::Array)
                         }
                         Value::Array(..) => inner.as_ref().clone(),
-                        _ if is_coercion => self
-                            .interpreter
-                            .try_coerce_value_for_constraint("Array()", item.clone())?,
+                        _ if is_coercion => loan_env!(
+                            self,
+                            try_coerce_value_for_constraint("Array()", item.clone())
+                        )?,
                         _ => item.clone(),
                     },
-                    _ if is_coercion => self
-                        .interpreter
-                        .try_coerce_value_for_constraint("Array()", item.clone())?,
+                    _ if is_coercion => loan_env!(
+                        self,
+                        try_coerce_value_for_constraint("Array()", item.clone())
+                    )?,
                     _ => item.clone(),
                 }
             } else if matches!(target_type.as_str(), "Array" | "List" | "Hash") && is_coercion {
                 self.interpreter
                     .try_coerce_value_for_constraint(&format!("{target_type}()"), item.clone())?
             } else {
-                self.interpreter
-                    .try_coerce_value_for_constraint(constraint, item.clone())?
+                loan_env!(
+                    self,
+                    try_coerce_value_for_constraint(constraint, item.clone())
+                )?
             };
             if !self.type_matches_value(&target_type, &coerced) {
                 return Err(runtime::utils::type_check_element_typed_error(
@@ -1614,7 +1620,7 @@ impl VM {
         name: &str,
         new_val: Value,
     ) -> Result<Value, RuntimeError> {
-        let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
+        let new_val = self.maybe_wrap_native_int(name, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
@@ -2842,9 +2848,7 @@ impl VM {
             if let Some(default) = self.interpreter.var_default(&var_name) {
                 default.clone()
             } else if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name)) {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 Value::Package(Symbol::intern(&nominal))
             } else {
                 val
@@ -3950,9 +3954,8 @@ impl VM {
             {
                 if matches!(val, Value::Nil) {
                     if constraint != "Mu" {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal =
+                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         val = Value::Package(Symbol::intern(&nominal));
                     }
                 } else if !self.type_matches_value(&constraint, &val) {
@@ -3963,9 +3966,7 @@ impl VM {
                     ));
                 }
                 if !matches!(val, Value::Nil | Value::Package(_)) {
-                    val = self
-                        .interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?;
+                    val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
                 }
             }
 
@@ -5344,9 +5345,7 @@ impl VM {
                 return Ok(());
             }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(&name).cloned() {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 // Nil type constraint: the type object for Nil is Value::Nil itself,
                 // not Value::Package("Nil").
                 if nominal == "Nil" {
@@ -5536,8 +5535,7 @@ impl VM {
                     ));
                 }
                 let val = if !matches!(val, Value::Nil) {
-                    self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                    loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
                 };
@@ -6060,9 +6058,7 @@ impl VM {
                 ));
             }
             if !matches!(val, Value::Nil) {
-                val = self
-                    .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
             // Wrap native integer values on assignment (overflow wrapping)
             val = Self::wrap_native_int_by_constraint(&constraint, val)?;
@@ -6677,9 +6673,8 @@ impl VM {
                     if constraint == "Mu" {
                         val
                     } else {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal =
+                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     }
                 } else if !self.type_matches_value(&constraint, &val) {
@@ -6689,8 +6684,7 @@ impl VM {
                         &val,
                     ));
                 } else if !matches!(val, Value::Nil | Value::Package(_)) {
-                    self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                    loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
                 };
@@ -6778,9 +6772,8 @@ impl VM {
             if matches!(val, Value::Nil) {
                 if constraint != "Mu" {
                     // Assigning Nil to a typed variable resets it to the type object
-                    let nominal = self
-                        .interpreter
-                        .nominal_type_object_name_for_constraint(&constraint);
+                    let nominal =
+                        loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                     val = Value::Package(Symbol::intern(&nominal));
                 }
             } else if !self.type_matches_value(&constraint, &val) {
@@ -6791,9 +6784,7 @@ impl VM {
                 ));
             }
             if !matches!(val, Value::Nil | Value::Package(_)) {
-                val = self
-                    .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);

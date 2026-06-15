@@ -270,10 +270,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
-                && self
-                    .interpreter
-                    .resolve_method_with_owner(&cn, "Bool", &[])
-                    .is_some()
+                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
             {
                 let t = self.eval_truthy(&target);
                 self.stack

@@ -1068,10 +1068,9 @@ impl VM {
                     source_items[src_idx] = val;
                 }
             }
-            self.interpreter.overwrite_array_items_by_identity_for_vm(
-                &source,
-                source_items,
-                source_kind,
+            loan_env!(
+                self,
+                overwrite_array_items_by_identity_for_vm(&source, source_items, source_kind,)
             );
             self.env_dirty = true;
         }
@@ -2880,7 +2879,7 @@ impl VM {
             }
             Err(e) => {
                 // Exception — restore let saves
-                self.interpreter.restore_let_saves(let_mark);
+                loan_env!(self, restore_let_saves(let_mark));
                 self.env_dirty = true;
                 if catch_begin >= control_begin {
                     return Err(e);

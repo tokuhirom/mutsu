@@ -240,11 +240,10 @@ impl VM {
                                     consumer_cb: callback.clone(),
                                     done: false,
                                 });
-                            let (od_res, emitted, body_ran_done) =
-                                self.interpreter.run_on_demand_body(
-                                    on_demand_cb.clone(),
-                                    Some(emitter_supplier_id),
-                                );
+                            let (od_res, emitted, body_ran_done) = loan_env!(
+                                self,
+                                run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
+                            );
                             let streamed_done = self
                                 .interpreter
                                 .supply_stream_consumers

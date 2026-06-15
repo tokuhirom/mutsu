@@ -172,7 +172,7 @@ impl VM {
         // Set up samewith and multi-dispatch context that call_compiled_function_named
         // expects the caller to manage (mirrors exec_call_fn_op).
         self.interpreter.push_samewith_context(&name, None);
-        let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(&name, &args);
+        let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(&name, &args));
 
         let result = self.call_compiled_function_named(&cf, args, compiled_fns, &pkg, &name);
 
@@ -562,14 +562,14 @@ impl VM {
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -970,14 +970,14 @@ impl VM {
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1367,14 +1367,14 @@ impl VM {
                 Err(e) if e.is_fail => {
                     fail_bypass = true;
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1538,8 +1538,7 @@ impl VM {
         let is_test_assertion = if fn_name.is_empty() {
             false
         } else {
-            self.interpreter
-                .routine_is_test_assertion_by_name(fn_name, &args)
+            loan_env!(self, routine_is_test_assertion_by_name(fn_name, &args))
         };
         let pushed_assertion = self
             .interpreter
@@ -1683,7 +1682,7 @@ impl VM {
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1693,7 +1692,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && callable_id != Some(target_id)
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -1710,14 +1709,14 @@ impl VM {
                     // fail() — restore let saves and return a Failure value
                     fail_bypass = true;
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1868,8 +1867,10 @@ impl VM {
                 } else {
                     Ok(ret_val)
                 };
-                self.interpreter
-                    .finalize_return_with_spec(base_result, effective_return_spec.as_deref())
+                loan_env!(
+                    self,
+                    finalize_return_with_spec(base_result, effective_return_spec.as_deref())
+                )
             }
             Err(e) => Err(e),
         }

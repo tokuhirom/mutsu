@@ -467,16 +467,12 @@ impl VM {
 
     /// If the variable has a native int type constraint, wrap the value.
     /// Used by increment/decrement to implement overflow/underflow wrapping.
-    pub(super) fn maybe_wrap_native_int(
-        interp: &crate::runtime::Interpreter,
-        var_name: &str,
-        value: Value,
-    ) -> Value {
+    pub(super) fn maybe_wrap_native_int(&mut self, var_name: &str, value: Value) -> Value {
         use crate::runtime::native_types;
         use num_bigint::BigInt as NumBigInt;
         use num_traits::ToPrimitive;
 
-        let constraint = match interp.var_type_constraint(var_name) {
+        let constraint = match loan_env!(self, var_type_constraint(var_name)) {
             Some(c) => c,
             None => return value,
         };

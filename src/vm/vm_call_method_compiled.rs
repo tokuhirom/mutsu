@@ -104,9 +104,7 @@ impl VM {
         // interpreter fallback).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(result) = self
-                .interpreter
-                .try_native_default_construct(*class_name, &args)
+            && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
             // Native construction is pure data assembly: it returns a fresh
             // instance and writes nothing to the caller env (Slice 6.3).
@@ -194,9 +192,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name {
-                let resolved = self
-                    .interpreter
-                    .resolve_private_method_for_vm(&cn, method, &args);
+                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
                     let caller_allowed = self
                         .interpreter
@@ -220,11 +216,9 @@ impl VM {
                         } else {
                             target.clone()
                         };
-                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                            &cn,
-                            method,
-                            &args,
-                            invocant_for_dispatch,
+                        let pushed_dispatch = loan_env!(
+                            self,
+                            push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
                         );
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
@@ -370,9 +364,10 @@ impl VM {
                         {
                             hit.clone()
                         } else {
-                            let resolved = self
-                                .interpreter
-                                .resolve_method_with_owner_invocant(cn, method, &args, &target);
+                            let resolved = loan_env!(
+                                self,
+                                resolve_method_with_owner_invocant(cn, method, &args, &target)
+                            );
                             let resolved_arc =
                                 resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
                             if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
@@ -780,7 +775,7 @@ impl VM {
             Kind::Say => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_gist_value(arg));
+                    c.push_str(&loan_env!(self, render_gist_value(arg)));
                 }
                 (c, true, method)
             }
@@ -788,14 +783,14 @@ impl VM {
             Kind::Print => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_str_value(arg));
+                    c.push_str(&loan_env!(self, render_str_value(arg)));
                 }
                 (c, false, method)
             }
             Kind::Put => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&self.interpreter.render_str_value(arg));
+                    c.push_str(&loan_env!(self, render_str_value(arg)));
                 }
                 (c, true, method)
             }
@@ -910,7 +905,7 @@ impl VM {
                 if Self::is_buf_value(arg) {
                     out.extend(self.interpreter.supply_chunk_to_bytes(arg, "utf-8"));
                 } else {
-                    out.extend(self.interpreter.render_str_value(arg).into_bytes());
+                    out.extend(loan_env!(self, render_str_value(arg)).into_bytes());
                 }
             }
             out
@@ -1279,9 +1274,10 @@ impl VM {
         // so the registry re-entrancy discipline (②) is respected.
         self.interpreter.compile_class_methods(owner_class);
         self.interpreter.compile_role_methods(owner_class);
-        let (owner, def) = self
-            .interpreter
-            .resolve_method_with_owner_invocant(cn, method, args, target)?;
+        let (owner, def) = loan_env!(
+            self,
+            resolve_method_with_owner_invocant(cn, method, args, target)
+        )?;
         if def.compiled_code.is_some() {
             Some((owner, std::sync::Arc::new(def)))
         } else {
@@ -1321,11 +1317,9 @@ impl VM {
             } else {
                 target.clone()
             };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                cn,
-                method,
-                &args,
-                invocant_for_dispatch,
+            let pushed_dispatch = loan_env!(
+                self,
+                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
             );
             let result = self.call_compiled_method_fast(
                 cn,
@@ -1350,11 +1344,9 @@ impl VM {
             } else {
                 target.clone()
             };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                cn,
-                method,
-                &args,
-                invocant_for_dispatch,
+            let pushed_dispatch = loan_env!(
+                self,
+                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
             );
             let invocant = Some(target);
             let result = self.call_compiled_method(
@@ -1489,9 +1481,7 @@ impl VM {
         // Native default construction (see `try_compiled_method_or_interpret`).
         if method == "new"
             && let Value::Package(class_name) = &target
-            && let Some(result) = self
-                .interpreter
-                .try_native_default_construct(*class_name, &args)
+            && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
             // Pure construction: fresh instance, no caller-env write (Slice 6.3).
             self.method_dispatch_pure = true;
@@ -1590,9 +1580,7 @@ impl VM {
                 _ => None,
             };
             if let Some(cn) = class_name {
-                let resolved = self
-                    .interpreter
-                    .resolve_private_method_for_vm(&cn, method, &args);
+                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
                     let caller_allowed = self
                         .interpreter
@@ -1616,11 +1604,9 @@ impl VM {
                         } else {
                             target.clone()
                         };
-                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                            &cn,
-                            method,
-                            &args,
-                            invocant_for_dispatch,
+                        let pushed_dispatch = loan_env!(
+                            self,
+                            push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
                         );
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
@@ -1680,9 +1666,10 @@ impl VM {
             _ => None,
         };
         if let Some(cn) = class_name
-            && let Some((owner_class, method_def)) = self
-                .interpreter
-                .resolve_method_with_owner_invocant(&cn, method, &args, &target)
+            && let Some((owner_class, method_def)) = loan_env!(
+                self,
+                resolve_method_with_owner_invocant(&cn, method, &args, &target)
+            )
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
@@ -1733,11 +1720,9 @@ impl VM {
                 } else {
                     target.clone()
                 };
-                let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                    &cn,
-                    method,
-                    &args,
-                    invocant_for_dispatch,
+                let pushed_dispatch = loan_env!(
+                    self,
+                    push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
                 );
                 let invocant = Some(target);
                 let empty_fns = HashMap::new();
@@ -1962,9 +1947,10 @@ impl VM {
             .get_method_wrap_chain(owner_class, method, cand_idx)?
             .clone();
         let invocant_for_dispatch = target.clone();
-        let pushed_dispatch =
-            self.interpreter
-                .push_method_dispatch_frame(cn, method, args, invocant_for_dispatch);
+        let pushed_dispatch = loan_env!(
+            self,
+            push_method_dispatch_frame(cn, method, args, invocant_for_dispatch)
+        );
         let mut orig_env = crate::env::Env::new();
         orig_env.insert(
             "__mutsu_method_wrap_original".to_string(),

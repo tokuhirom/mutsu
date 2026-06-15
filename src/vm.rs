@@ -1543,9 +1543,8 @@ impl VM {
                     } else if let Some(constraint) =
                         self.interpreter.var_type_constraint_fast(name).cloned()
                     {
-                        let nominal = self
-                            .interpreter
-                            .nominal_type_object_name_for_constraint(&constraint);
+                        let nominal =
+                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                         Value::Package(Symbol::intern(&nominal))
                     } else {
                         val
@@ -1997,9 +1996,7 @@ impl VM {
                         ));
                     }
                     if !matches!(val, Value::Nil) {
-                        val = self
-                            .interpreter
-                            .try_coerce_value_for_constraint(&constraint, val)?;
+                        val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
                     }
                     // Wrap native integer values on assignment (overflow wrapping)
                     val = Self::wrap_native_int_by_constraint(&constraint, val)?;
@@ -2840,9 +2837,7 @@ impl VM {
             OpCode::Sequence { exclude_end } => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let out = self
-                    .interpreter
-                    .eval_sequence_values(left, right, *exclude_end)?;
+                let out = loan_env!(self, eval_sequence_values(left, right, *exclude_end))?;
                 self.stack.push(out);
                 self.env_dirty = true;
                 *ip += 1;
@@ -3100,7 +3095,7 @@ impl VM {
                             // Sinking a lazy IO lines iterator must drain the
                             // underlying handle so that side effects (read
                             // position, .eof) are observable.
-                            self.interpreter.force_lazy_io_lines(handle, *words)?;
+                            loan_env!(self, force_lazy_io_lines(handle, *words))?;
                             self.env_dirty = true;
                         }
                         _ => {

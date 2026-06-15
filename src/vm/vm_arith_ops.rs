@@ -978,19 +978,19 @@ impl VM {
                 if self.interpreter.has_role(name)
                     && matches!(boxed.as_ref(), Value::Array(..)) =>
             {
-                Some(
-                    self.interpreter
-                        .eval_does_values(left.clone(), right.clone()),
-                )
+                Some(loan_env!(
+                    self,
+                    eval_does_values(left.clone(), right.clone())
+                ))
             }
-            Value::Package(name) if self.interpreter.has_role(&name.resolve()) => Some(
-                self.interpreter
-                    .eval_does_values(left.clone(), right.clone()),
-            ),
-            Value::Str(name) if self.interpreter.has_role(name) => Some(
-                self.interpreter
-                    .eval_does_values(left.clone(), right.clone()),
-            ),
+            Value::Package(name) if self.interpreter.has_role(&name.resolve()) => Some(loan_env!(
+                self,
+                eval_does_values(left.clone(), right.clone())
+            )),
+            Value::Str(name) if self.interpreter.has_role(name) => Some(loan_env!(
+                self,
+                eval_does_values(left.clone(), right.clone())
+            )),
             _ => None,
         };
         if let Some(composed) = role_composed {
@@ -1182,7 +1182,7 @@ impl VM {
             if let Some(tn) = &left_type_object {
                 return Err(Self::does_type_object_error("does", tn));
             }
-            return self.interpreter.eval_does_values(left, right);
+            return loan_env!(self, eval_does_values(left, right));
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
         if matches!(&right, Value::Enum { .. }) {

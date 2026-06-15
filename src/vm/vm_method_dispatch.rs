@@ -267,10 +267,11 @@ impl VM {
                         };
                         let expected = coercion_target.unwrap_or(constraint.as_str());
                         if coercion_target.is_some() {
-                            let mut candidate = self
-                                .interpreter
-                                .try_coerce_value_for_constraint(constraint, base.clone())
-                                .unwrap_or_else(|_| base.clone());
+                            let mut candidate = loan_env!(
+                                self,
+                                try_coerce_value_for_constraint(constraint, base.clone())
+                            )
+                            .unwrap_or_else(|_| base.clone());
                             if !self.type_matches_value(expected, &candidate)
                                 && let Ok(coerced) = self.try_compiled_method_or_interpret(
                                     base.clone(),
@@ -285,9 +286,10 @@ impl VM {
                                 self.env_mut().insert("self".to_string(), base.clone());
                             }
                         } else if !self.type_matches_value(constraint, &base)
-                            && let Ok(coerced) = self
-                                .interpreter
-                                .try_coerce_value_for_constraint(constraint, base.clone())
+                            && let Ok(coerced) = loan_env!(
+                                self,
+                                try_coerce_value_for_constraint(constraint, base.clone())
+                            )
                         {
                             base = coerced;
                             self.env_mut().insert("self".to_string(), base.clone());
@@ -485,7 +487,7 @@ impl VM {
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -495,7 +497,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && target_id != method_callable_id
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -509,14 +511,14 @@ impl VM {
                 }
                 Err(e) if e.is_fail => {
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1131,7 +1133,7 @@ impl VM {
                         result = Ok(());
                         break;
                     }
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }
@@ -1139,7 +1141,7 @@ impl VM {
                     if let Some(target_id) = e.return_target_callable_id
                         && target_id != method_callable_id
                     {
-                        self.interpreter.restore_let_saves(let_mark);
+                        loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
                         break;
                     }
@@ -1153,14 +1155,14 @@ impl VM {
                 }
                 Err(e) if e.is_fail => {
                     let failure = self.interpreter.fail_error_to_failure_value(&e);
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
-                    self.interpreter.restore_let_saves(let_mark);
+                    loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;
                 }

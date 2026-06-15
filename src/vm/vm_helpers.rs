@@ -252,7 +252,7 @@ impl VM {
             words,
         } = val
         {
-            let forced = self.interpreter.force_lazy_io_lines(handle, words)?;
+            let forced = loan_env!(self, force_lazy_io_lines(handle, words))?;
             if kv {
                 // Apply .kv transformation on the forced array
                 let items = crate::runtime::utils::value_to_list(&forced);

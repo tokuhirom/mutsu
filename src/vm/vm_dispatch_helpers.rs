@@ -177,7 +177,7 @@ impl VM {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        self.interpreter.coerce_infix_operand_numeric(value)
+        loan_env!(self, coerce_infix_operand_numeric(value))
     }
 
     pub(super) fn coerce_numeric_bridge_pair(
@@ -213,10 +213,7 @@ impl VM {
         match val {
             Value::Package(name) => {
                 let class_name = name.resolve().to_string();
-                if self
-                    .interpreter
-                    .resolve_method_with_owner(&class_name, "Bool", &[])
-                    .is_some()
+                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[])).is_some()
                     && let Ok(result) =
                         self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {
@@ -226,10 +223,7 @@ impl VM {
             }
             Value::Instance { class_name, .. } => {
                 let cn = class_name.resolve().to_string();
-                if self
-                    .interpreter
-                    .resolve_method_with_owner(&cn, "Bool", &[])
-                    .is_some()
+                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
                     && let Ok(result) =
                         self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {

@@ -111,9 +111,8 @@ impl VM {
         // the same iterative walk the operator form uses in `exec_subst_op`.
         let mut matches: Vec<(usize, usize, Vec<String>)> = Vec::new();
         let mut pos = 0usize;
-        while let Some((start, end, caps)) = self
-            .interpreter
-            .regex_find_first_from_with_captures(pat, text, pos)
+        while let Some((start, end, caps)) =
+            loan_env!(self, regex_find_first_from_with_captures(pat, text, pos))
         {
             pos = if end > start { end } else { start + 1 };
             matches.push((start, end, caps));

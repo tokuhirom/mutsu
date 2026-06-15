@@ -616,9 +616,10 @@ impl VM {
                         self.clone_env(),
                     );
                     let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
-                    let result = self
-                        .interpreter
-                        .call_function("trait_mod:<is>", vec![sub_val, named_arg])?;
+                    let result = loan_env!(
+                        self,
+                        call_function("trait_mod:<is>", vec![sub_val, named_arg])
+                    )?;
                     // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
                     // store it in the env so function dispatch can find it.
                     if matches!(result, Value::Mixin(..)) {
@@ -693,7 +694,7 @@ impl VM {
                 _ => None,
             })
             .unwrap_or_default();
-        self.interpreter.import_module(module, &tags)?;
+        loan_env!(self, import_module(module, &tags))?;
         self.fn_resolve_gen += 1;
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
@@ -1401,7 +1402,7 @@ impl VM {
             if *is_role {
                 return Err(self.interpreter.augment_role_error(&name_str));
             }
-            self.interpreter.augment_class(&name_str, body)?;
+            loan_env!(self, augment_class(&name_str, body))?;
             // Recompile augmented class methods for the fast path
             self.interpreter.compile_class_methods(&name_str);
             Ok(())
@@ -1443,12 +1444,9 @@ impl VM {
             // If the short name was suppressed by an earlier lexical type with
             // the same name, re-enable it before registering the new role.
             self.interpreter.unsuppress_name(&name_str);
-            self.interpreter.register_role_decl(
-                &qualified_name,
-                type_params,
-                type_param_defs,
-                body,
-                *is_rw,
+            loan_env!(
+                self,
+                register_role_decl(&qualified_name, type_params, type_param_defs, body, *is_rw,)
             )?;
             if *is_export && !self.interpreter.suppress_exports {
                 // The compiler may have pre-qualified the role name

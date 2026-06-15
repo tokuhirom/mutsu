@@ -219,7 +219,7 @@ impl VM {
                             let pkg = self.current_package().to_string();
                             self.interpreter.push_samewith_context(name_str, None);
                             let pushed_dispatch =
-                                self.interpreter.push_multi_dispatch_frame(name_str, &args);
+                                loan_env!(self, push_multi_dispatch_frame(name_str, &args));
                             let r = self.call_compiled_function_named(
                                 &cf,
                                 args,
@@ -289,9 +289,7 @@ impl VM {
             if use_cache
                 && self.fn_resolve_cache_gen == self.fn_resolve_gen
                 && self.interpreter.wrap_sub_id_for_name(name_str).is_none()
-                && !self
-                    .interpreter
-                    .routine_is_test_assertion_by_name(name_str, &[])
+                && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
                 && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key.as_str())
                 && cf.fingerprint == *cached_fp
@@ -515,7 +513,7 @@ impl VM {
                 .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
             // Slice 6.3 step 2: precise env_dirty from the named-call merge.
-        } else if self.interpreter.user_function_matches_call(&name, &args) {
+        } else if loan_env!(self, user_function_matches_call(&name, &args)) {
             // A user-defined sub shadows a same-named builtin (③ PR-2). OTF-compile
             // the resolved def to bytecode when it is a plain single candidate and
             // simple enough; otherwise keep tree-walking. Restricted to genuine
@@ -734,9 +732,7 @@ impl VM {
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
                 if Self::is_positional_light_call_eligible(cf, name)
                     && !self.has_multi_candidates_cached(name)
-                    && !self
-                        .interpreter
-                        .routine_is_test_assertion_by_name(name, &args)
+                    && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.interpreter.wrap_sub_id_for_name(name).is_none()
                 {
                     let name_sym = Symbol::intern(name);
@@ -756,9 +752,7 @@ impl VM {
                 // Try light call path for simple functions in tight loops.
                 // This avoids the expensive env clone/restore cycle.
                 if Self::is_light_call_eligible(cf, name)
-                    && !self
-                        .interpreter
-                        .routine_is_test_assertion_by_name(name, &args)
+                    && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.interpreter.wrap_sub_id_for_name(name).is_none()
                 {
                     // Populate light-call cache so subsequent calls skip resolution
@@ -778,7 +772,7 @@ impl VM {
                 }
                 self.interpreter
                     .set_pending_call_arg_sources(arg_sources.clone());
-                let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(name, &args);
+                let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(name, &args));
                 self.interpreter.push_samewith_context(name, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.
@@ -858,7 +852,7 @@ impl VM {
                         self.interpreter.set_pending_call_arg_sources(None);
                         self.interpreter.maybe_fetch_rw_proxy(result?, true)
                     }
-                } else if self.interpreter.user_function_matches_call(name, &args) {
+                } else if loan_env!(self, user_function_matches_call(name, &args)) {
                     // A user-defined sub shadows a same-named builtin (③ PR-2). When
                     // the resolved def is a plain single candidate that is
                     // OTF-compilable, run it as compiled bytecode — but resolve it
