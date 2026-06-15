@@ -615,7 +615,8 @@ impl VM {
         self.interpreter.set_pending_call_arg_sources(arg_sources);
         let result = self.vm_call_on_value(target, args, Some(compiled_fns));
         self.interpreter.set_pending_call_arg_sources(None);
-        let result = loan_env!(self, maybe_fetch_rw_proxy(result?, sub_is_rw))?;
+        let result = result?;
+        let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
@@ -673,7 +674,8 @@ impl VM {
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.vm_call_on_value(target, args, Some(compiled_fns));
             self.interpreter.set_pending_call_arg_sources(None);
-            self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?
+            let result = result?;
+            loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
         } else if !self.has_proto(&name)
@@ -685,8 +687,8 @@ impl VM {
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
-            self.interpreter
-                .maybe_fetch_rw_proxy(result?, cf_auto_fetch)?
+            let result = result?;
+            loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))?
         } else {
             // Sync VM locals to env before spawning threads so closures capture them
             if name == "start" {
@@ -717,7 +719,8 @@ impl VM {
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             self.env_dirty = true;
-            self.interpreter.maybe_fetch_rw_proxy(result?, true)
+            let result = result?;
+            loan_env!(self, maybe_fetch_rw_proxy(result, true))
         } else {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
@@ -747,7 +750,8 @@ impl VM {
                     }
                     let result =
                         self.call_compiled_function_positional_light(cf, &args, compiled_fns, name);
-                    return loan_env!(self, maybe_fetch_rw_proxy(result?, true));
+                    let result = result?;
+                    return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }
                 // Try light call path for simple functions in tight loops.
                 // This avoids the expensive env clone/restore cycle.
@@ -768,7 +772,8 @@ impl VM {
                         }
                     }
                     let result = self.call_compiled_function_light(cf, args, compiled_fns);
-                    return loan_env!(self, maybe_fetch_rw_proxy(result?, true));
+                    let result = result?;
+                    return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }
                 self.interpreter
                     .set_pending_call_arg_sources(arg_sources.clone());
@@ -803,8 +808,8 @@ impl VM {
                 // wrote a caller-aliasing value. A pure heavy-signature call (default
                 // param, return type, where-constraint) no longer forces a per-call
                 // O(caller-locals) pull.
-                self.interpreter
-                    .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
+                let result = result?;
+                loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))
             } else {
                 // Interpreter / native fallback paths route through the
                 // tree-walking interpreter, which can mutate the shared env by
@@ -850,7 +855,8 @@ impl VM {
                         self.interpreter.set_pending_call_arg_sources(arg_sources);
                         let result = self.vm_call_function_fallback(name, &args);
                         self.interpreter.set_pending_call_arg_sources(None);
-                        self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                        let result = result?;
+                        loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
                 } else if loan_env!(self, user_function_matches_call(name, &args)) {
                     // A user-defined sub shadows a same-named builtin (③ PR-2). When
@@ -882,7 +888,8 @@ impl VM {
                         self.interpreter.set_pending_call_arg_sources(arg_sources);
                         let result = self.vm_call_function_fallback(name, &args);
                         self.interpreter.set_pending_call_arg_sources(None);
-                        self.interpreter.maybe_fetch_rw_proxy(result?, true)
+                        let result = result?;
+                        loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
                 } else if let Some(native_result) =
                     self.try_native_function(Symbol::intern(name), &args)
@@ -934,7 +941,8 @@ impl VM {
                     self.fn_resolve_gen += 1;
                     // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
                     let auto_fetch = name != "substr-rw";
-                    self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, auto_fetch))
                 }
             }
         }

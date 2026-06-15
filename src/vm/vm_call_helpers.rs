@@ -111,7 +111,7 @@ impl VM {
     ) -> Result<Vec<Value>, RuntimeError> {
         let mut out = Vec::with_capacity(args.len());
         for arg in args {
-            out.push(loan_env!(self, auto_fetch_proxy(&arg)?));
+            out.push(loan_env!(self, auto_fetch_proxy(&arg))?);
         }
         Ok(out)
     }
