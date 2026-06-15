@@ -55,12 +55,12 @@ impl Interpreter {
             },
         );
 
-        Ok(Value::CustomType {
-            how: Box::new(how),
+        Ok(Value::custom_type(
+            Box::new(how),
             repr,
-            name: Symbol::intern(""),
+            Symbol::intern(""),
             id,
-        })
+        ))
     }
 
     /// Metamodel::Primitives.configure_type_checking($type, @cache, :$authoritative, :$call_accepts)
@@ -71,7 +71,7 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("configure_type_checking requires a type argument"))?;
 
         let id = match &type_val {
-            Value::CustomType { id, .. } => *id,
+            Value::CustomType(c) => c.id,
             _ => {
                 return Err(RuntimeError::new(
                     "configure_type_checking: first argument must be a custom type",
@@ -119,7 +119,7 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("compose_type requires a type argument"))?;
 
         let id = match &type_val {
-            Value::CustomType { id, .. } => *id,
+            Value::CustomType(c) => c.id,
             _ => {
                 return Err(RuntimeError::new(
                     "compose_type: first argument must be a custom type",
@@ -144,9 +144,9 @@ impl Interpreter {
         let target_type = &args[1];
 
         match (obj, target_type) {
-            (Value::CustomTypeInstance(d), Value::CustomType { how, .. }) => {
+            (Value::CustomTypeInstance(d), Value::CustomType(c)) => {
                 // Store the new HOW in the rebless map so .HOW returns the new type
-                self.rebless_map.insert(d.id, *how.clone());
+                self.rebless_map.insert(d.id, (*c.how).clone());
                 Ok(obj.clone())
             }
             _ => Ok(args[0].clone()),

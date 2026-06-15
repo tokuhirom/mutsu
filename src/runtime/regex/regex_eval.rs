@@ -50,7 +50,7 @@ impl Interpreter {
         };
         match val {
             Value::Regex(pat) => Some(pat.to_string()),
-            Value::RegexWithAdverbs { pattern, .. } => Some(pattern.to_string()),
+            Value::RegexWithAdverbs(a) => Some(a.pattern.to_string()),
             Value::Routine {
                 is_regex: true,
                 name,
@@ -69,7 +69,7 @@ impl Interpreter {
                     .iter()
                     .map(|v| match v {
                         Value::Regex(pat) => pat.to_string(),
-                        Value::RegexWithAdverbs { pattern, .. } => pattern.to_string(),
+                        Value::RegexWithAdverbs(a) => a.pattern.to_string(),
                         other => {
                             let s = other.to_string_value();
                             // Quote as regex literal using single quotes
@@ -88,7 +88,7 @@ impl Interpreter {
                     .iter()
                     .map(|v| match v {
                         Value::Regex(pat) => pat.to_string(),
-                        Value::RegexWithAdverbs { pattern, .. } => pattern.to_string(),
+                        Value::RegexWithAdverbs(a) => a.pattern.to_string(),
                         other => {
                             let s = other.to_string_value();
                             // Quote as regex literal using single quotes

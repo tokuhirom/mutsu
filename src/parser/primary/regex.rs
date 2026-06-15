@@ -740,7 +740,7 @@ fn adverbs_need_value(adverbs: &MatchAdverbs) -> bool {
 
 /// Build a RegexWithAdverbs Value from parsed adverbs.
 fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
-    Value::RegexWithAdverbs {
+    Value::RegexWithAdverbs(Box::new(crate::value::RegexAdverbs {
         pattern: Arc::new(pattern),
         global: adverbs.global,
         exhaustive: adverbs.exhaustive,
@@ -754,7 +754,7 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
         sigspace: adverbs.sigspace,
         samecase: adverbs.samecase,
         samespace: adverbs.samespace,
-    }
+    }))
 }
 
 /// Parse comma-separated call arguments inside parens.

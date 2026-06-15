@@ -3711,9 +3711,7 @@ impl Interpreter {
                                     };
                                     let pat_str = match &value {
                                         Value::Regex(pat) => pat.to_string(),
-                                        Value::RegexWithAdverbs { pattern, .. } => {
-                                            pattern.to_string()
-                                        }
+                                        Value::RegexWithAdverbs(a) => a.pattern.to_string(),
                                         other => other.to_string_value(),
                                     };
                                     // Check for longname alias first
@@ -3781,9 +3779,7 @@ impl Interpreter {
                                     for elt in &elements {
                                         let pat_str = match elt {
                                             Value::Regex(pat) => pat.to_string(),
-                                            Value::RegexWithAdverbs { pattern, .. } => {
-                                                pattern.to_string()
-                                            }
+                                            Value::RegexWithAdverbs(a) => a.pattern.to_string(),
                                             other => other.to_string_value(),
                                         };
                                         if let Some(parsed) =
@@ -5064,9 +5060,7 @@ impl Interpreter {
                         for elt in &elements {
                             match elt {
                                 Value::Regex(pat) => alts.push(pat.to_string()),
-                                Value::RegexWithAdverbs { pattern, .. } => {
-                                    alts.push(pattern.to_string())
-                                }
+                                Value::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
                                 other => alts.push(Self::escape_regex_scalar_literal(
                                     &other.to_string_value(),
                                 )),
@@ -5100,9 +5094,7 @@ impl Interpreter {
                     for elt in &elements {
                         match elt {
                             Value::Regex(pat) => alts.push(pat.to_string()),
-                            Value::RegexWithAdverbs { pattern, .. } => {
-                                alts.push(pattern.to_string())
-                            }
+                            Value::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
                             other => alts
                                 .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
                         }
@@ -5135,9 +5127,7 @@ impl Interpreter {
                     for elt in elements.iter() {
                         match elt {
                             Value::Regex(pat) => alts.push(pat.to_string()),
-                            Value::RegexWithAdverbs { pattern, .. } => {
-                                alts.push(pattern.to_string())
-                            }
+                            Value::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
                             other => alts
                                 .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
                         }
@@ -5202,7 +5192,7 @@ impl Interpreter {
         match value {
             Value::Nil => out.push_str("<!>"),
             Value::Regex(pat) => out.push_str(pat),
-            Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
+            Value::RegexWithAdverbs(a) => out.push_str(&a.pattern),
             Value::Junction { values, .. } => {
                 // Expand junction values as alternation [v1|v2|...]
                 out.push('[');
@@ -5212,7 +5202,7 @@ impl Interpreter {
                     }
                     match v {
                         Value::Regex(pat) => out.push_str(pat),
-                        Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
+                        Value::RegexWithAdverbs(a) => out.push_str(&a.pattern),
                         other => out
                             .push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
                     }

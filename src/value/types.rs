@@ -453,7 +453,7 @@ impl Value {
             Value::Whatever => true,
             Value::HyperWhatever => true,
             Value::Capture { positional, named } => !positional.is_empty() || !named.is_empty(),
-            Value::Uni { text, .. } => !text.is_empty(),
+            Value::Uni(u) => !u.text.is_empty(),
             Value::Mixin(inner, mixins) => {
                 if let Some(bool_val) = mixins.get("Bool") {
                     bool_val.truthy()
@@ -567,7 +567,7 @@ impl Value {
             Value::Whatever => "Whatever",
             Value::HyperWhatever => "HyperWhatever",
             Value::Capture { .. } => "Capture",
-            Value::Uni { form, .. } => form.as_str(),
+            Value::Uni(u) => u.form.as_str(),
             Value::Mixin(inner, mixins) => {
                 // Check allomorphic type names (IntStr, NumStr, RatStr, ComplexStr, Allomorph)
                 if matches!(
@@ -591,8 +591,8 @@ impl Value {
             Value::ParametricRole { base_name, .. } => {
                 return base_name.resolve() == type_name;
             }
-            Value::CustomType { name, .. } => {
-                return name.resolve() == type_name;
+            Value::CustomType(c) => {
+                return c.name.resolve() == type_name;
             }
             Value::CustomTypeInstance(d) => {
                 return d.type_name.resolve() == type_name;
@@ -909,8 +909,8 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Regex(_) => "Regex".to_string(),
         Value::Junction { .. } => "Junction".to_string(),
         Value::Slip(_) => "Slip".to_string(),
-        Value::Uni { form, .. } if !form.is_empty() => form.clone(),
-        Value::Uni { .. } => "Uni".to_string(),
+        Value::Uni(u) if !u.form.is_empty() => u.form.clone(),
+        Value::Uni(_) => "Uni".to_string(),
         Value::Mixin(inner, mixins) => {
             allomorph_type_name(inner, mixins).unwrap_or_else(|| what_type_name(inner))
         }

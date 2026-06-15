@@ -566,26 +566,16 @@ mod tests {
         assert_eq!(rest1, "");
         assert!(matches!(
             expr1,
-            Expr::MatchRegex(Value::RegexWithAdverbs {
-                pattern: ref s,
-                exhaustive: false,
-                repeat: Some(2),
-                perl5: false,
-                ..
-            }) if s.as_str() == "ab"
+            Expr::MatchRegex(Value::RegexWithAdverbs(ref a))
+                if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2) && !a.perl5
         ));
 
         let (rest2, expr2) = primary("m:x(2)/ab/").unwrap();
         assert_eq!(rest2, "");
         assert!(matches!(
             expr2,
-            Expr::MatchRegex(Value::RegexWithAdverbs {
-                pattern: ref s,
-                exhaustive: false,
-                repeat: Some(2),
-                perl5: false,
-                ..
-            }) if s.as_str() == "ab"
+            Expr::MatchRegex(Value::RegexWithAdverbs(ref a))
+                if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2) && !a.perl5
         ));
     }
 
@@ -621,22 +611,16 @@ mod tests {
         assert_eq!(rest1, "");
         assert!(matches!(
             expr1,
-            Expr::MatchRegex(Value::RegexWithAdverbs {
-                pattern: ref s,
-                perl5: true,
-                ..
-            }) if s.as_str() == "(?<name>.+)"
+            Expr::MatchRegex(Value::RegexWithAdverbs(ref a))
+                if a.pattern.as_str() == "(?<name>.+)" && a.perl5
         ));
 
         let (rest2, expr2) = primary("rx:P5/a/").unwrap();
         assert_eq!(rest2, "");
         assert!(matches!(
             expr2,
-            Expr::Literal(Value::RegexWithAdverbs {
-                pattern: ref s,
-                perl5: true,
-                ..
-            }) if s.as_str() == "a"
+            Expr::Literal(Value::RegexWithAdverbs(ref a))
+                if a.pattern.as_str() == "a" && a.perl5
         ));
     }
 
@@ -646,11 +630,8 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::MatchRegex(Value::RegexWithAdverbs {
-                pattern: ref s,
-                sigspace: true,
-                ..
-            }) if s.as_str() == ":s ab cd"
+            Expr::MatchRegex(Value::RegexWithAdverbs(ref a))
+                if a.pattern.as_str() == ":s ab cd" && a.sigspace
         ));
     }
 
@@ -660,13 +641,8 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::MatchRegex(Value::RegexWithAdverbs {
-                pattern: ref s,
-                exhaustive: true,
-                repeat: None,
-                perl5: false,
-                ..
-            }) if s.as_str() == " s o+ "
+            Expr::MatchRegex(Value::RegexWithAdverbs(ref a))
+                if a.pattern.as_str() == " s o+ " && a.exhaustive && a.repeat.is_none() && !a.perl5
         ));
     }
 

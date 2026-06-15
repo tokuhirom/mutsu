@@ -1490,16 +1490,16 @@ impl VM {
                 Value::array(slice)
             }
             // Uni/NFC/NFD/NFKC/NFKD indexing: returns integer codepoint values
-            (Value::Uni { ref text, .. }, Value::Int(i)) => {
-                let chars: Vec<char> = text.chars().collect();
+            (Value::Uni(u), Value::Int(i)) => {
+                let chars: Vec<char> = u.text.chars().collect();
                 if i < 0 || (i as usize) >= chars.len() {
                     Value::Nil
                 } else {
                     Value::Int(chars[i as usize] as i64)
                 }
             }
-            (Value::Uni { ref text, .. }, Value::Sub(ref data)) => {
-                let chars: Vec<char> = text.chars().collect();
+            (Value::Uni(u), Value::Sub(ref data)) => {
+                let chars: Vec<char> = u.text.chars().collect();
                 let len = chars.len() as i64;
                 let mut sub_env = data.env.clone();
                 for p in &data.params {
@@ -1524,8 +1524,8 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
-            (Value::Uni { ref text, .. }, Value::Array(indices, ..)) => {
-                let chars: Vec<char> = text.chars().collect();
+            (Value::Uni(u), Value::Array(indices, ..)) => {
+                let chars: Vec<char> = u.text.chars().collect();
                 Value::array(
                     indices
                         .iter()
@@ -1543,8 +1543,8 @@ impl VM {
                         .collect(),
                 )
             }
-            (Value::Uni { ref text, .. }, Value::Range(a, b)) => {
-                let chars: Vec<char> = text.chars().collect();
+            (Value::Uni(u), Value::Range(a, b)) => {
+                let chars: Vec<char> = u.text.chars().collect();
                 let start = a.max(0) as usize;
                 let end = if Self::range_end_is_unbounded(b) {
                     chars.len().saturating_sub(1)
@@ -1559,8 +1559,8 @@ impl VM {
                     .collect();
                 Value::array(slice)
             }
-            (Value::Uni { ref text, .. }, Value::RangeExcl(a, b)) => {
-                let chars: Vec<char> = text.chars().collect();
+            (Value::Uni(u), Value::RangeExcl(a, b)) => {
+                let chars: Vec<char> = u.text.chars().collect();
                 let start = a.max(0) as usize;
                 let end_excl = if Self::range_end_is_unbounded(b) {
                     chars.len()

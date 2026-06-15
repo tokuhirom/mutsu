@@ -707,17 +707,11 @@ impl Interpreter {
     /// Dispatch the CREATE method for CustomType and Package targets.
     pub(super) fn dispatch_create(&self, target: &Value) -> Option<Result<Value, RuntimeError>> {
         match target {
-            Value::CustomType {
-                how,
-                repr,
-                name,
-                id,
-                ..
-            } => Some(Ok(Value::custom_type_instance(
-                *id,
-                how.clone(),
-                repr.clone(),
-                *name,
+            Value::CustomType(c) => Some(Ok(Value::custom_type_instance(
+                c.id,
+                c.how.clone(),
+                c.repr.clone(),
+                c.name,
                 std::sync::Arc::new(HashMap::new()),
                 crate::value::next_instance_id(),
             ))),

@@ -921,13 +921,7 @@ fn parse_nf_form<'a>(rest_after_nf: &'a str, nf_name: &str) -> PResult<'a, Expr>
         "NFKC" => content.nfkc().collect(),
         _ => content.nfkd().collect(),
     };
-    Ok((
-        rest,
-        Expr::Literal(Value::Uni {
-            form: form_upper,
-            text: normalized,
-        }),
-    ))
+    Ok((rest, Expr::Literal(Value::uni(form_upper, normalized))))
 }
 
 /// Parse heredoc with flags (supports :c, :w adverbs on heredoc).

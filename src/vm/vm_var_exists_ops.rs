@@ -508,8 +508,8 @@ impl VM {
         };
 
         // Uni: check exists based on codepoint count
-        if let Value::Uni { text, .. } = &target {
-            let len = text.chars().count() as i64;
+        if let Value::Uni(u) = &target {
+            let len = u.text.chars().count() as i64;
             if indices.len() == 1 && !is_zen {
                 let i = indices[0];
                 let exists = i >= 0 && i < len;

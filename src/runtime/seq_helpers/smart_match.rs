@@ -235,15 +235,10 @@ impl Interpreter {
                 }
             }
             // :nth(...) and ordinal forms (:1st, :2nd, :3rd, :4th, ...)
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern,
-                    nth: Some(raw_nth),
-                    perl5,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a)) if a.nth.is_some() => {
+                let pattern = &a.pattern;
+                let raw_nth = a.nth.as_ref().unwrap();
+                let perl5 = &a.perl5;
                 let text = left.to_string_value();
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
@@ -367,17 +362,10 @@ impl Interpreter {
                 true
             }
             // :c/:continue -- search from $/.to (or 0) onwards (non-anchored)
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern: pat,
-                    continue_: true,
-                    global: false,
-                    exhaustive: false,
-                    overlap: false,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a))
+                if a.continue_ && !a.global && !a.exhaustive && !a.overlap =>
+            {
+                let pat = &a.pattern;
                 let text = left.to_string_value();
                 let pat = pat.to_string();
                 let start_pos = self.get_match_to_position();
@@ -390,17 +378,10 @@ impl Interpreter {
                 false
             }
             // :pos/:p anchored match (non-exhaustive/non-global) -- match at $/.to (or 0)
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern: pat,
-                    pos: true,
-                    global: false,
-                    exhaustive: false,
-                    overlap: false,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a))
+                if a.pos && !a.global && !a.exhaustive && !a.overlap =>
+            {
+                let pat = &a.pattern;
                 let text = left.to_string_value();
                 let pat = pat.to_string();
                 let start_pos = self.get_match_to_position();
@@ -413,18 +394,12 @@ impl Interpreter {
             }
             // :x(N) without :g/:ex/:ov -- require at least N non-overlapping matches,
             // return first N in $/.
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern,
-                    global: false,
-                    exhaustive: false,
-                    overlap: false,
-                    repeat: Some(needed),
-                    perl5,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a))
+                if !a.global && !a.exhaustive && !a.overlap && a.repeat.is_some() =>
+            {
+                let pattern = &a.pattern;
+                let needed = &a.repeat.unwrap();
+                let perl5 = &a.perl5;
                 let text = left.to_string_value();
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
@@ -454,18 +429,10 @@ impl Interpreter {
                 true
             }
             // :g (global) -- find all non-overlapping matches
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern,
-                    global: true,
-                    overlap: false,
-                    exhaustive: false,
-                    repeat,
-                    perl5,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a)) if a.global && !a.overlap && !a.exhaustive => {
+                let pattern = &a.pattern;
+                let repeat = &a.repeat;
+                let perl5 = &a.perl5;
                 let text = left.to_string_value();
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
@@ -522,15 +489,9 @@ impl Interpreter {
                 true
             }
             // :ov (overlap) -- find longest match at each starting position
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern,
-                    overlap: true,
-                    perl5,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a)) if a.overlap => {
+                let pattern = &a.pattern;
+                let perl5 = &a.perl5;
                 let text = left.to_string_value();
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
@@ -570,16 +531,10 @@ impl Interpreter {
                 true
             }
             // :ex (exhaustive) -- find ALL possible matches
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern,
-                    exhaustive: true,
-                    repeat,
-                    perl5,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a)) if a.exhaustive => {
+                let pattern = &a.pattern;
+                let repeat = &a.repeat;
+                let perl5 = &a.perl5;
                 let text = left.to_string_value();
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
@@ -617,7 +572,7 @@ impl Interpreter {
                 true
             }
             // Array/List ~~ Regex: iterate elements, match each individually
-            (Value::Array(items, ..), Value::Regex(_) | Value::RegexWithAdverbs { .. }) => {
+            (Value::Array(items, ..), Value::Regex(_) | Value::RegexWithAdverbs(_)) => {
                 for item in items.iter() {
                     if self.smart_match(item, right) {
                         return true;
@@ -628,7 +583,7 @@ impl Interpreter {
             }
             (
                 Value::Seq(items) | Value::Slip(items),
-                Value::Regex(_) | Value::RegexWithAdverbs { .. },
+                Value::Regex(_) | Value::RegexWithAdverbs(_),
             ) => {
                 for item in items.iter() {
                     if self.smart_match(item, right) {
@@ -639,7 +594,7 @@ impl Interpreter {
                 false
             }
             // Hash ~~ Regex: iterate keys, match each individually
-            (Value::Hash(map), Value::Regex(_) | Value::RegexWithAdverbs { .. }) => {
+            (Value::Hash(map), Value::Regex(_) | Value::RegexWithAdverbs(_)) => {
                 for key in map.keys() {
                     let key_val = Value::str(key.clone());
                     if self.smart_match(&key_val, right) {
@@ -650,18 +605,19 @@ impl Interpreter {
                 false
             }
             // Single match: plain Regex or RegexWithAdverbs without multi-match flags
-            (_, Value::Regex(pat))
-            | (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern: pat,
-                    global: false,
-                    exhaustive: false,
-                    overlap: false,
-                    perl5: false,
-                    ..
-                },
-            ) => {
+            (_, Value::Regex(_)) | (_, Value::RegexWithAdverbs(_))
+                if matches!(right, Value::Regex(_))
+                    || matches!(
+                        right,
+                        Value::RegexWithAdverbs(a)
+                            if !a.global && !a.exhaustive && !a.overlap && !a.perl5
+                    ) =>
+            {
+                let pat: &str = match right {
+                    Value::Regex(p) => p,
+                    Value::RegexWithAdverbs(a) => &a.pattern,
+                    _ => unreachable!(),
+                };
                 let text = left.to_string_value();
                 let pat = pat.to_string();
                 // Set $_ to the match target so $( $_ ) works inside regex
@@ -778,17 +734,10 @@ impl Interpreter {
                 false
             }
             // P5 regex single match
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern: pat,
-                    global: false,
-                    exhaustive: false,
-                    overlap: false,
-                    perl5: true,
-                    ..
-                },
-            ) => {
+            (_, Value::RegexWithAdverbs(a))
+                if !a.global && !a.exhaustive && !a.overlap && a.perl5 =>
+            {
+                let pat = &a.pattern;
                 let text = left.to_string_value();
                 let pat = self.interpolate_regex_pattern(pat);
                 #[cfg(feature = "pcre2")]
@@ -986,10 +935,12 @@ impl Interpreter {
                 map.contains_key(&key)
             }),
             // Regex ~~ Hash: check if any key matches the regex
-            (
-                Value::Regex(pat) | Value::RegexWithAdverbs { pattern: pat, .. },
-                Value::Hash(map),
-            ) => {
+            (Value::Regex(_) | Value::RegexWithAdverbs(_), Value::Hash(map)) => {
+                let pat: &str = match left {
+                    Value::Regex(p) => p,
+                    Value::RegexWithAdverbs(a) => &a.pattern,
+                    _ => unreachable!(),
+                };
                 for key in map.keys() {
                     if self.regex_find_first(pat, key).is_some() {
                         return true;
@@ -1198,9 +1149,11 @@ impl Interpreter {
                     .all(|(lhs, rhs)| self.parametric_arg_subtypes(lhs, rhs))
             }
             // When RHS is a CustomType, use Raku type checking protocol
-            (_, Value::CustomType { id, how, .. }) => self.custom_type_check(left, *id, how),
+            (_, Value::CustomType(c)) => self.custom_type_check(left, c.id, &c.how),
             // When LHS is a CustomType (type object), check type cache or HOW.type_check
-            (Value::CustomType { how, id, .. }, _) => {
+            (Value::CustomType(c), _) => {
+                let how = &c.how;
+                let id = &c.id;
                 if let Value::Package(_) = right {
                     // After compose: check the type check cache
                     let data = self.custom_type_data.get(id).cloned();
@@ -1415,10 +1368,10 @@ impl Interpreter {
                     Value::Junction { .. }
                         | Value::Sub(_)
                         | Value::Regex(_)
-                        | Value::RegexWithAdverbs { .. }
+                        | Value::RegexWithAdverbs(_)
                         | Value::Routine { .. }
                         | Value::Package(_)
-                        | Value::CustomType { .. }
+                        | Value::CustomType(_)
                         | Value::ParametricRole { .. }
                 ) =>
             {

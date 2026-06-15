@@ -478,7 +478,8 @@ pub(crate) fn native_method_0arg(
         return Some(raku_repr::native_int_coerce_method(target, method));
     }
     // Uni types: override .chars, .codes, .comb to work on codepoints
-    if let Value::Uni { text, .. } = target {
+    if let Value::Uni(u) = target {
+        let text = &u.text;
         match method {
             "chars" | "codes" => {
                 return Some(Ok(Value::Int(text.chars().count() as i64)));
@@ -523,10 +524,7 @@ pub(crate) fn native_method_0arg(
                     "NFKC" => text.nfkc().collect(),
                     _ => text.nfkd().collect(),
                 };
-                return Some(Ok(Value::Uni {
-                    form: method.to_string(),
-                    text: normalized,
-                }));
+                return Some(Ok(Value::uni(method.to_string(), normalized)));
             }
             _ => {}
         }

@@ -929,10 +929,7 @@ impl Interpreter {
                 char::from_u32(cp)
             })
             .collect();
-        Value::Uni {
-            form: String::new(),
-            text,
-        }
+        Value::uni(String::new(), text)
     }
 
     /// Coerce one `Complex.new` positional argument to its `f64` component

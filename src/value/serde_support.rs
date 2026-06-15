@@ -185,34 +185,20 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             index: *index,
         }),
         Value::Regex(s) => Ok(SerValue::Regex((**s).clone())),
-        Value::RegexWithAdverbs {
-            pattern,
-            global,
-            exhaustive,
-            overlap,
-            repeat,
-            nth,
-            perl5,
-            pos,
-            continue_,
-            ignore_case,
-            sigspace,
-            samecase,
-            samespace,
-        } => Ok(SerValue::RegexWithAdverbs {
-            pattern: (**pattern).clone(),
-            global: *global,
-            exhaustive: *exhaustive,
-            overlap: *overlap,
-            repeat: *repeat,
-            nth: nth.as_ref().map(|v| (**v).clone()),
-            perl5: *perl5,
-            pos: *pos,
-            continue_: *continue_,
-            ignore_case: *ignore_case,
-            sigspace: *sigspace,
-            samecase: *samecase,
-            samespace: *samespace,
+        Value::RegexWithAdverbs(a) => Ok(SerValue::RegexWithAdverbs {
+            pattern: (*a.pattern).clone(),
+            global: a.global,
+            exhaustive: a.exhaustive,
+            overlap: a.overlap,
+            repeat: a.repeat,
+            nth: a.nth.as_ref().map(|v| (**v).clone()),
+            perl5: a.perl5,
+            pos: a.pos,
+            continue_: a.continue_,
+            ignore_case: a.ignore_case,
+            sigspace: a.sigspace,
+            samecase: a.samecase,
+            samespace: a.samespace,
         }),
         Value::Junction { kind, values } => {
             let ser_kind = match kind {
@@ -277,9 +263,9 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 named: ser_named?,
             })
         }
-        Value::Uni { form, text } => Ok(SerValue::Uni {
-            form: form.clone(),
-            text: text.clone(),
+        Value::Uni(u) => Ok(SerValue::Uni {
+            form: u.form.clone(),
+            text: u.text.clone(),
         }),
         Value::ParametricRole {
             base_name,
@@ -394,7 +380,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             sigspace,
             samecase,
             samespace,
-        } => Value::RegexWithAdverbs {
+        } => Value::RegexWithAdverbs(Box::new(crate::value::RegexAdverbs {
             pattern: Arc::new(pattern),
             global,
             exhaustive,
@@ -408,7 +394,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             sigspace,
             samecase,
             samespace,
-        },
+        })),
         SerValue::Junction { kind, values } => {
             let jk = match kind {
                 SerJunctionKind::Any => JunctionKind::Any,
@@ -459,7 +445,7 @@ fn ser_to_value(sv: SerValue) -> Value {
                 .map(|(k, v)| (k, ser_to_value(v)))
                 .collect(),
         ),
-        SerValue::Uni { form, text } => Value::Uni { form, text },
+        SerValue::Uni { form, text } => Value::uni(form, text),
         SerValue::ParametricRole {
             base_name,
             type_args,

@@ -447,7 +447,7 @@ impl Value {
             }
             Value::LazyList(_) => "LazyList".to_string(),
             Value::LazyIoLines { .. } => "(...)".to_string(),
-            Value::Uni { text, .. } => text.clone(),
+            Value::Uni(u) => u.text.clone(),
             Value::Hash(items) => {
                 // Cycle detection for recursive hash structures
                 thread_local! {
@@ -844,20 +844,18 @@ impl Value {
                 format!("{}({})", kind_str, elems)
             }
             Value::Regex(pattern) => format!("/{}/", pattern),
-            Value::RegexWithAdverbs {
-                pattern,
-                global,
-                exhaustive,
-                overlap,
-                repeat,
-                nth,
-                perl5,
-                ignore_case,
-                sigspace,
-                samecase,
-                samespace,
-                ..
-            } => {
+            Value::RegexWithAdverbs(a) => {
+                let pattern = &a.pattern;
+                let global = &a.global;
+                let exhaustive = &a.exhaustive;
+                let overlap = &a.overlap;
+                let repeat = &a.repeat;
+                let nth = &a.nth;
+                let perl5 = &a.perl5;
+                let ignore_case = &a.ignore_case;
+                let sigspace = &a.sigspace;
+                let samecase = &a.samecase;
+                let samespace = &a.samespace;
                 let mut prefix = String::new();
                 if *ignore_case {
                     prefix.push_str(":i");
@@ -943,11 +941,11 @@ impl Value {
                 }
             }
             Value::Proxy { .. } => "Proxy".to_string(),
-            Value::CustomType { name, .. } => {
-                if name.is_empty() {
+            Value::CustomType(c) => {
+                if c.name.is_empty() {
                     "(CustomType)".to_string()
                 } else {
-                    format!("({})", name)
+                    format!("({})", c.name)
                 }
             }
             Value::CustomTypeInstance(d) => format!("{}()", d.type_name),

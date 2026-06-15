@@ -150,16 +150,8 @@ impl Compiler {
         };
         matches!(
             regex,
-            Value::RegexWithAdverbs { global: true, .. }
-                | Value::RegexWithAdverbs { overlap: true, .. }
-                | Value::RegexWithAdverbs {
-                    exhaustive: true,
-                    ..
-                }
-                | Value::RegexWithAdverbs {
-                    repeat: Some(_),
-                    ..
-                }
+            Value::RegexWithAdverbs(a)
+                if a.global || a.overlap || a.exhaustive || a.repeat.is_some()
         )
     }
 

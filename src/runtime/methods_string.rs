@@ -651,15 +651,20 @@ impl Interpreter {
         };
 
         match pattern {
-            Value::Regex(pat) | Value::RegexWithAdverbs { pattern: pat, .. } => {
-                let is_p5 = matches!(pattern, Value::RegexWithAdverbs { perl5: true, .. });
+            Value::Regex(_) | Value::RegexWithAdverbs(_) => {
+                let pat: &str = match pattern {
+                    Value::Regex(p) => p,
+                    Value::RegexWithAdverbs(a) => &a.pattern,
+                    _ => unreachable!(),
+                };
+                let is_p5 = matches!(pattern, Value::RegexWithAdverbs(a) if a.perl5);
                 let pat = if is_p5 {
                     self.interpolate_regex_pattern(pat)
                 } else {
                     pat.to_string()
                 };
                 let pat_global =
-                    matches!(pattern, Value::RegexWithAdverbs { global: true, .. }) || global;
+                    matches!(pattern, Value::RegexWithAdverbs(a) if a.global) || global;
                 let all_captures = if is_p5 {
                     #[cfg(feature = "pcre2")]
                     {

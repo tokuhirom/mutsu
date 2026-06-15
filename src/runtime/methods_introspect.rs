@@ -100,11 +100,11 @@ impl Interpreter {
             Value::Whatever => "Whatever",
             Value::HyperWhatever => "HyperWhatever",
             Value::Capture { .. } => "Capture",
-            Value::Uni { form, .. } => {
-                if form.is_empty() {
+            Value::Uni(u) => {
+                if u.form.is_empty() {
                     "Uni"
                 } else {
-                    form.as_str()
+                    u.form.as_str()
                 }
             }
             Value::Mixin(inner, mixins) => {
@@ -120,8 +120,8 @@ impl Interpreter {
                 return Ok(Value::Package(*name));
             }
             Value::Proxy { .. } => "Proxy",
-            Value::CustomType { name, .. } => {
-                return Ok(Value::Package(*name));
+            Value::CustomType(c) => {
+                return Ok(Value::Package(c.name));
             }
             Value::CustomTypeInstance(d) => {
                 return Ok(Value::Package(d.type_name));
@@ -308,8 +308,8 @@ impl Interpreter {
         if let Value::Instance { class_name, .. } = target {
             return Ok(self.package_stash_value(&class_name.resolve()));
         }
-        if let Value::CustomType { name, .. } = target {
-            return Ok(self.package_stash_value(&name.resolve()));
+        if let Value::CustomType(c) = target {
+            return Ok(self.package_stash_value(&c.name.resolve()));
         }
         Ok(Value::Hash(Value::hash_arc(HashMap::new())))
     }
