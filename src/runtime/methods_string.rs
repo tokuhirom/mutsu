@@ -604,6 +604,13 @@ impl Interpreter {
                 positional.push(arg.clone());
             }
         }
+        // The `:x` adverb must be an Int/Range (or Whatever); anything else
+        // (e.g. a class instance) is an X::Str::Match::x error, mirroring `.match`.
+        if let Some(x) = &x_count
+            && !Self::is_valid_match_x_arg(x)
+        {
+            return Err(Self::str_match_x_error("subst", x));
+        }
         let pattern = positional
             .first()
             .ok_or_else(|| RuntimeError::new("subst requires a pattern argument"))?;
