@@ -234,7 +234,7 @@ impl VM {
     /// returning a fresh native array; slices of ordinary arrays decontainerize to
     /// a `List` (real-array kind) or `Seq` (non-real kind), matching Raku.
     fn slice_result_value(&mut self, source: &Value, items: Vec<Value>) -> Value {
-        if let Some(meta) = loan_env!(self, container_type_metadata(source))
+        if let Some(meta) = self.container_type_metadata(source)
             && crate::runtime::native_types::is_native_array_element_type(&meta.value_type)
         {
             let result = Value::real_array(items);

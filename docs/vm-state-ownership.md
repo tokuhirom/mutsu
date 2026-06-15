@@ -333,6 +333,23 @@ closure 内の任意の「caller 変数が保持する instance/配列/ハッシ
 これを VM-readable handle 化すれば、`type_matches_value` の **非 subset パス（簡単型名 = registry + value_type +
 instance_meta で判定、subset は rare）を VM-native 化** でき、41 bounce の大半を除去（subset のみ carrier fallback）。
 
+#### DONE: cool side-table `instance_type_metadata` を handle 化 + `container_type_metadata` を VM-native 読みに（CP-3 Track 1）
+
+- **PR-1（#3068, 既存）**: `instance_type_metadata` を `Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>` へ shaping
+  （`current_package`/`io_handles` の共有ハンドル playbook）。`clone_for_thread` は明示スナップショット（map deep-copy）。
+- **PR-2（本スライス）**: `container_type_metadata`（**Instance 値の型メタ read**）を VM-native 化。
+  - READ ロジックを module-level free 関数 **`container_type_metadata_with(value, instance_meta)`** へ抽出し、
+    `Interpreter::container_type_metadata` と VM の peer-handle 読みが**単一実装を共有**（1 操作 = 1 実装）。
+    container 値（Array/Hash/Set/Bag/Mix）は埋め込みメタを読み、Instance 値だけ共有 map を id で引く。
+  - VM に peer field `instance_type_metadata`（`instance_type_metadata_handle()` で `VM::new` 時に clone・
+    registry/io_handles と同型の安定ハンドル）+ `VM::container_type_metadata(&self, value)` を追加。
+  - VM の **~29 サイト**の `loan_env!(self, container_type_metadata(...))` を `self.container_type_metadata(...)`
+    へ置換。**この read は env を一切触らない**ので env-loan も interpreter バウンスも不要だった（loan は本来
+    不要なオーバーヘッド/結合）。write（`register_container_type_metadata`）は interpreter 経由のまま＝共有 lock で
+    VM-native 読みから可視。挙動不変（typed array/hash/native-int/num・subset・declare whitelist 緑、make test PASS）。
+  - **次の cool side-table 候補**: `var_type_constraint`/`var_default`/`var_hash_key_constraint`（型/デフォルト副テーブル・
+    env-bound 型名部分が残課題）/ `state_vars`/`shared_vars`（専用 HashMap・env sync 経路が残課題）。
+
 ### Phase II の現実的な進め方（実測で確定。PLAN.md「Critical path」が正準）
 
 - **critical path（本体）= carrier の env-loan 機構**: env を VM 所有にし、EVAL/subset-where/regex-`{}`/Promise-`.then`

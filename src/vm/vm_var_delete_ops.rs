@@ -199,7 +199,7 @@ impl VM {
             .env()
             .get(&var_name)
             .cloned()
-            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
+            .and_then(|v| self.container_type_metadata(&v))
             .and_then(|info| info.declared_type);
         let _target_is_mixhash = declared_type_del.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type_del.as_deref().is_some_and(|t| t == "BagHash");
@@ -264,7 +264,7 @@ impl VM {
             .env()
             .get(&var_name)
             .cloned()
-            .and_then(|v| loan_env!(self, container_type_metadata(&v)));
+            .and_then(|v| self.container_type_metadata(&v));
         // Save container default (pointer-keyed) before delete so we can
         // re-apply it after `Arc::make_mut` changes the pointer. Only
         // trust this when a name-based `var_default` is also registered
@@ -372,7 +372,7 @@ impl VM {
         // (no-op Arc for array/instance side-table containers).
         if let Some(info) = saved_meta
             && let Some(container) = self.env().get(&var_name).cloned()
-            && loan_env!(self, container_type_metadata(&container)).is_none()
+            && self.container_type_metadata(&container).is_none()
         {
             let container = container.clone();
             let tagged = self.interpreter.tag_container_metadata(container, info);

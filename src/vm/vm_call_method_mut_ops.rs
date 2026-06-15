@@ -876,8 +876,7 @@ impl VM {
                 };
                 match inner_target {
                     Value::Hash(_) => {
-                        let old_meta =
-                            loan_env!(self, container_type_metadata(inner_target)).clone();
+                        let old_meta = self.container_type_metadata(inner_target).clone();
                         let mut hash = match inner_target {
                             Value::Hash(map) => map.map.clone(),
                             _ => std::collections::HashMap::new(),
@@ -966,8 +965,7 @@ impl VM {
                 };
                 match inner_target {
                     Value::Hash(map) => {
-                        let old_meta =
-                            loan_env!(self, container_type_metadata(inner_target)).clone();
+                        let old_meta = self.container_type_metadata(inner_target).clone();
                         let old_value = if map.contains_key(&key) {
                             self.resolve_hash_entry(map, &key)
                         } else {
@@ -1046,8 +1044,7 @@ impl VM {
                 };
                 match inner_target {
                     Value::Hash(map) => {
-                        let old_meta =
-                            loan_env!(self, container_type_metadata(inner_target)).clone();
+                        let old_meta = self.container_type_metadata(inner_target).clone();
                         let key = args[0].to_string_value();
                         let value = args[1].clone();
                         let source_var = arg_sources
@@ -1458,7 +1455,7 @@ impl VM {
         // metadata-bearing containers need element checks / typed empty Failures.
         if self.interpreter.shared_vars_active
             || loan_env!(self, var_type_constraint(target_name)).is_some()
-            || loan_env!(self, container_type_metadata(target)).is_some()
+            || self.container_type_metadata(target).is_some()
         {
             return None;
         }
@@ -1662,7 +1659,7 @@ impl VM {
         // sharing; let it own those.
         if self.interpreter.shared_vars_active
             || loan_env!(self, var_type_constraint(target_name)).is_some()
-            || loan_env!(self, container_type_metadata(target)).is_some()
+            || self.container_type_metadata(target).is_some()
         {
             return None;
         }

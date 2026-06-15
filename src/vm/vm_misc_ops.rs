@@ -1450,7 +1450,7 @@ impl VM {
                     crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
                     // Preserve container type metadata from old array
                     if let Some(ref cv) = current_val
-                        && let Some(info) = loan_env!(self, container_type_metadata(cv))
+                        && let Some(info) = self.container_type_metadata(cv)
                     {
                         assigned = self.interpreter.tag_container_metadata(assigned, info);
                     }

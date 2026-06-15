@@ -179,6 +179,15 @@ pub(crate) struct VM {
     /// Stable for the VM's lifetime (same `clone_for_thread` reasoning as
     /// `registry`).
     current_package: Arc<RwLock<String>>,
+    /// The VM's clone of the shared `instance_type_metadata` handle (same
+    /// `RwLock` as the interpreter's), so the VM reads container type metadata
+    /// for `Instance` values natively (`VM::container_type_metadata`) instead of
+    /// bouncing through `self.interpreter` (CP-3 Track 1). The read touches no
+    /// env, so it needs no env loan. Writes (`register_container_type_metadata`)
+    /// still go through the interpreter and are visible here via the shared lock.
+    /// Stable for the VM's lifetime (same `clone_for_thread` reasoning as
+    /// `registry`).
+    instance_type_metadata: Arc<RwLock<HashMap<u64, crate::runtime::ContainerTypeInfo>>>,
     /// The variable store (env), owned by the VM during opcode execution
     /// (CP-1 env-loan, step 1e). On `VM::new` the env is pulled out of the
     /// interpreter into here; `run`/`into_interpreter` push it back so the
@@ -512,6 +521,7 @@ impl VM {
         let io_handles = interpreter.io_handles_handle();
         let output_sink = interpreter.output_sink_handle();
         let current_package = interpreter.current_package_handle();
+        let instance_type_metadata = interpreter.instance_type_metadata_handle();
         // env-loan (CP-1 step 1e): pull the env out of the interpreter so the VM
         // owns it during opcode execution. The interpreter's env field is left
         // *poisoned* (a loan-slot sentinel) so any VM->interpreter call that
@@ -524,6 +534,7 @@ impl VM {
             io_handles,
             output_sink,
             current_package,
+            instance_type_metadata,
             env,
             stack: Vec::new(),
             locals: Vec::new(),
@@ -1022,6 +1033,19 @@ impl VM {
     #[inline]
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         self.loan_env_for(|i| i.type_matches_value(constraint, value))
+    }
+
+    /// Read a value's container type metadata natively through the VM's peer
+    /// handle, with no interpreter bounce or env loan (CP-3 Track 1). Shares the
+    /// single implementation (`container_type_metadata_with`) with
+    /// `Interpreter::container_type_metadata`; container values read embedded
+    /// metadata, `Instance` values read the shared `instance_type_metadata` map.
+    #[inline]
+    pub(crate) fn container_type_metadata(
+        &self,
+        value: &Value,
+    ) -> Option<crate::runtime::ContainerTypeInfo> {
+        crate::runtime::container_type_metadata_with(value, &self.instance_type_metadata)
     }
 
     // env-loan wrappers for the interpreter's tree-walk carriers (they read/
