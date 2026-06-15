@@ -1947,6 +1947,16 @@ impl Interpreter {
                         self.update_local_if_exists(code, &target_var, &val);
                     }
                 }
+                // Phase 3 Stage 2b: mirror a whole-container assign to an
+                // array/hash attribute (`@!a = (...)`, `%!h = (...)`, and the
+                // public `@.a`/`%.h` twigils) into self's shared cell. A scalar
+                // attribute is parsed sigil-stripped to the local `!x` and mirrors
+                // via the SetLocal path; an array/hash attribute keeps its `@`/`%`
+                // sigil and is stored here through SetGlobal, which otherwise never
+                // reaches the cell — so the write was silently lost (a same-method
+                // `@!a` read goes cell-direct and saw the unchanged default). This
+                // is a cheap prefix-check no-op for every non-attribute name.
+                self.mirror_array_hash_attr_to_cell(code, *name_idx, None);
                 *ip += 1;
             }
             OpCode::SetVarType { name_idx, tc_idx } => {
