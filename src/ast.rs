@@ -574,6 +574,11 @@ pub(crate) enum Stmt {
         param: Option<String>,
         param_def: Box<Option<ParamDef>>,
         params: Vec<String>,
+        /// Full ParamDef list for multi-param pointy blocks (`-> $a, $b = 7`),
+        /// aligned 1:1 with `params`. Empty for single-param / non-pointy loops.
+        /// Carries per-param optionality and default expressions so the compiler
+        /// can emit an arity check and default-value binds.
+        params_def: Vec<ParamDef>,
         body: Vec<Stmt>,
         label: Option<String>,
         mode: ForMode,

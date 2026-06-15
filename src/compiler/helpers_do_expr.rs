@@ -239,7 +239,10 @@ impl Compiler {
         let param_idx = param
             .as_ref()
             .map(|p| self.code.add_constant(Value::str(p.clone())));
-        let bind_stmts = Self::build_for_bind_stmts(param, param_def, param_idx, params);
+        // No params_def available on the lazy-for path; pass empty so all params
+        // are treated as required (the pre-feature behavior). See the TODO at the
+        // `inner_for` construction below.
+        let bind_stmts = Self::build_for_bind_stmts(param, param_def, param_idx, params, &[]);
         if !bind_stmts.is_empty() {
             let mut merged = bind_stmts;
             merged.extend(loop_body);
@@ -331,6 +334,10 @@ impl Compiler {
             param: param.clone(),
             param_def: Box::new(param_def.clone()),
             params: params.to_vec(),
+            // TODO: thread params_def through compile_lazy_for_expr so a
+            // `lazy for ... -> $a, $b = 7 { }` gets the same arity/default
+            // handling; empty here just preserves the pre-feature behavior.
+            params_def: Vec::new(),
             body: take_body,
             label: label.clone(),
             mode: crate::ast::ForMode::Normal,
