@@ -46,12 +46,37 @@ impl Interpreter {
             .param_defs
             .iter()
             .any(|pd| pd.traits.iter().any(|t| t == "rw"));
-        let can_skip_merge = !has_rw_params && !cc.has_env_writes;
+        // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
+        // container by alias (Raku readonly-container semantics): `.push`,
+        // element assign, and whole-container `=` all propagate to the caller.
+        // mutsu realizes this via the same exit-time writeback as `is rw`
+        // (`bind_function_args_values` adds it to `rw_bindings`,
+        // `apply_rw_bindings_to_env`/the merge writes it back). That writeback
+        // lives only on the full path's `else` (merge) branch — so a method with
+        // such a param must NOT take the fast path, and must NOT be allowed to
+        // `can_skip_merge` (a `.push` mutation is not a static env write, so
+        // `cc.has_env_writes` can be false while the container still changed).
+        // Subs already route through their writeback; only the method fast path
+        // dropped this. Excludes slurpy/named/`is copy`/attr-twigil params.
+        let has_aliasable_container_params = method_def.param_defs.iter().any(|pd| {
+            !pd.is_invocant
+                && !pd.traits.iter().any(|t| t == "invocant")
+                && !pd.slurpy
+                && !pd.double_slurpy
+                && !pd.named
+                && !pd.traits.iter().any(|t| t == "copy")
+                && pd.sub_signature.is_none()
+                && pd.name.len() > 1
+                && (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                && !pd.name[1..].starts_with(['!', '.'])
+        });
+        let can_skip_merge =
+            !has_rw_params && !has_aliasable_container_params && !cc.has_env_writes;
 
         // Fast path: bypass env entirely and populate locals directly from
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
         // first env_mut() call triggers.
-        if !has_rw_params {
+        if !has_rw_params && !has_aliasable_container_params {
             let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
                 (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                     && pd.type_constraint.is_some()
