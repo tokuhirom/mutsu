@@ -239,7 +239,7 @@ impl VM {
             if let Some(buf) = self.interpreter.supply_emit_buffer.last_mut() {
                 buf.push(target);
                 self.stack.push(Value::Nil);
-                self.env_dirty = true;
+                // Buffering into the supply emit buffer touches no env: no mark.
                 return Ok(());
             }
             return Err(RuntimeError::emit_signal(target));
@@ -341,7 +341,7 @@ impl VM {
                 None => Value::Nil,
             };
             self.stack.push(result);
-            self.env_dirty = true;
+            // Reads/clears global deprecation state, not env: no mark.
             return Ok(());
         }
 
@@ -864,8 +864,9 @@ impl VM {
                             && let Some(native_result) =
                                 self.try_native_method(&storage, Symbol::intern(method), &args)
                         {
+                            // Native method on the by-value backing storage is
+                            // env-pure: no env_dirty mark needed.
                             self.stack.push(native_result?);
-                            self.env_dirty = true;
                             return Ok(());
                         }
                         let result =
@@ -968,8 +969,8 @@ impl VM {
                             ));
                         }
                         _ => {
+                            // Nil-absorbing method returns Nil and touches no env.
                             self.stack.push(Value::Nil);
-                            self.env_dirty = true;
                             return Ok(());
                         }
                     }
@@ -1061,14 +1062,15 @@ impl VM {
                             self.try_native_method(&resolved, Symbol::intern(method), &args)
                         {
                             let result = native_result;
+                            // Native method on a by-value resolved hash is env-pure
+                            // (see the sibling native-method branches below that set
+                            // method_dispatch_pure): no env_dirty mark needed.
                             match modifier {
                                 Some("?") => {
                                     self.stack.push(result.unwrap_or(Value::Nil));
-                                    self.env_dirty = true;
                                 }
                                 _ => {
                                     self.stack.push(result?);
-                                    self.env_dirty = true;
                                 }
                             }
                             return Ok(());
