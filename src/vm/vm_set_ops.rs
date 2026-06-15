@@ -113,7 +113,7 @@ impl VM {
         needle: &Value,
         whole: &Value,
     ) -> bool {
-        if let Some(info) = loan_env!(self, container_type_metadata(whole)) {
+        if let Some(info) = self.container_type_metadata(whole) {
             if let Some(key_type) = info.key_type {
                 if (key_type == "Any" || key_type == "Mu")
                     && matches!(needle, Value::Str(s) if s.parse::<i128>().is_ok())

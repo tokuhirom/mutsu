@@ -537,7 +537,8 @@ impl VM {
             return Ok(());
         }
         // The bound container's element type (defaults to Mu when untyped).
-        let rhs_value_type = loan_env!(self, container_type_metadata(value))
+        let rhs_value_type = self
+            .container_type_metadata(value)
             .map(|info| info.value_type)
             .filter(|vt| !vt.is_empty())
             .unwrap_or_else(|| "Mu".to_string());
@@ -1968,7 +1969,7 @@ impl VM {
             .env()
             .get(&name)
             .cloned()
-            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
+            .and_then(|v| self.container_type_metadata(&v))
             .and_then(|info| info.declared_type);
         let _target_is_mixhash_incdec = declared_type_incdec
             .as_deref()
@@ -2656,7 +2657,7 @@ impl VM {
             .env()
             .get(&save_var_name)
             .cloned()
-            .and_then(|v| loan_env!(self, container_type_metadata(&v)));
+            .and_then(|v| self.container_type_metadata(&v));
         // Guard against stale pointer-keyed defaults (Arc reuse across
         // allocations): only trust the saved default when a name-based
         // var_default is also registered.
@@ -2680,7 +2681,7 @@ impl VM {
         // entry silently degrades them to string-keyed lookups returning Nil.
         if let Some(info) = saved_type_meta_outer
             && let Some(container) = self.env().get(&save_var_name).cloned()
-            && loan_env!(self, container_type_metadata(&container)).as_ref() != Some(&info)
+            && self.container_type_metadata(&container).as_ref() != Some(&info)
         {
             // Hashes embed metadata in `HashData`, so the re-tagged value must
             // be written back into both env and the fast-path local slot
@@ -2748,7 +2749,7 @@ impl VM {
             .env()
             .get(&var_name)
             .cloned()
-            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
+            .and_then(|v| self.container_type_metadata(&v))
             .and_then(|info| info.declared_type);
         let _target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
@@ -2772,7 +2773,7 @@ impl VM {
         let ct_native = index_target
             .as_ref()
             .cloned()
-            .and_then(|v| loan_env!(self, container_type_metadata(&v)))
+            .and_then(|v| self.container_type_metadata(&v))
             .is_some_and(|info| {
                 crate::runtime::native_types::is_native_array_element_type(&info.value_type)
             });
@@ -3403,7 +3404,7 @@ impl VM {
                     .filter(|v| matches!(v, Value::Set(..)))
                     .cloned();
                 if let Some(set_val) = set_val_clone
-                    && let Some(info) = loan_env!(self, container_type_metadata(&set_val))
+                    && let Some(info) = self.container_type_metadata(&set_val)
                     && info
                         .declared_type
                         .as_deref()
@@ -5966,7 +5967,7 @@ impl VM {
                 );
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(&shape));
                 // Preserve container type metadata
-                if let Some(info) = loan_env!(self, container_type_metadata(&self.locals[idx])) {
+                if let Some(info) = self.container_type_metadata(&self.locals[idx]) {
                     assigned = self.interpreter.tag_container_metadata(assigned, info);
                 }
             }
@@ -6144,7 +6145,7 @@ impl VM {
                 // the early return below skips).
                 if name.starts_with('@') || name.starts_with('%') {
                     let inner = cell.lock().unwrap().clone();
-                    if let Some(info) = loan_env!(self, container_type_metadata(&inner))
+                    if let Some(info) = self.container_type_metadata(&inner)
                         && !info.value_type.is_empty()
                     {
                         let constraint_str = if name.starts_with('%') {
@@ -6344,7 +6345,7 @@ impl VM {
             && !name.contains('.')
             && !name.contains('!')
             && loan_env!(self, var_type_constraint(name)).is_none()
-            && loan_env!(self, container_type_metadata(&val)).is_some()
+            && self.container_type_metadata(&val).is_some()
         {
             // Clear the embedded container type metadata in place so an
             // untyped variable never reports a typed element/key constraint.
@@ -6359,7 +6360,7 @@ impl VM {
         // are type-checked (e.g. `my %h := Hash[Int].new; %h<a> = "b"` should die).
         if is_bind
             && (name.starts_with('%') || name.starts_with('@'))
-            && let Some(info) = loan_env!(self, container_type_metadata(&val))
+            && let Some(info) = self.container_type_metadata(&val)
             && !info.value_type.is_empty()
         {
             // Build the constraint string that set_var_type_constraint expects.

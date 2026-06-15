@@ -286,7 +286,7 @@ impl VM {
             .env()
             .get(&var_name)
             .cloned()
-            .and_then(|v| loan_env!(self, container_type_metadata(&v)));
+            .and_then(|v| self.container_type_metadata(&v));
 
         // Get mutable reference to the target variable
         if let Some(container) = self.env_mut().get_mut(&var_name) {

@@ -182,7 +182,7 @@ impl VM {
         if matches!(target, Value::Hash(_)) && args.is_empty() {
             let mn = method_name.as_str();
             if (mn == "raku" || mn == "perl" || mn == "keyof")
-                && loan_env!(self, container_type_metadata(target)).is_some()
+                && self.container_type_metadata(target).is_some()
             {
                 return None;
             }
@@ -194,7 +194,8 @@ impl VM {
         if matches!(target, Value::Array(..))
             && args.is_empty()
             && matches!(method_name.as_str(), "raku" | "perl")
-            && loan_env!(self, container_type_metadata(target))
+            && self
+                .container_type_metadata(target)
                 .is_some_and(|info| info.value_type != "Any" && info.value_type != "Mu")
         {
             return None;
@@ -258,7 +259,8 @@ impl VM {
         // to use Map.new((...)) format instead of {...} format.
         if let Value::Hash(map) = target {
             let is_map = matches!(method_name.as_str(), "gist" | "raku" | "perl")
-                && loan_env!(self, container_type_metadata(target))
+                && self
+                    .container_type_metadata(target)
                     .and_then(|info| info.declared_type)
                     .is_some_and(|dt| dt == "Map");
             if is_map {
@@ -312,7 +314,7 @@ impl VM {
         // preserves the type constraint (e.g. %h.clone ~~ Hash[Int,Int]).
         if method_name == "clone"
             && matches!(&result, Some(Ok(_)))
-            && let Some(info) = loan_env!(self, container_type_metadata(target))
+            && let Some(info) = self.container_type_metadata(target)
             && let Some(Ok(v)) = result.take()
         {
             // Hashes embed metadata in `HashData`; re-tag the cloned value

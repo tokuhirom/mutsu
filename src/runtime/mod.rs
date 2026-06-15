@@ -1170,6 +1170,43 @@ pub(crate) struct ContainerTypeInfo {
     pub(crate) declared_type: Option<String>,
 }
 
+/// Read a value's container type metadata. Array/Hash/Set/Bag/Mix carry it
+/// embedded in their backing data struct (travels across copy-on-write);
+/// `Instance` values look it up in the shared `instance_type_metadata` side
+/// table by id. This free function is the single implementation shared by
+/// `Interpreter::container_type_metadata` and the VM's peer-handle native read
+/// (CP-3 Track 1: removes the interpreter bounce for `Instance` type-meta
+/// reads). It touches no `env`, so neither caller needs an env loan.
+pub(crate) fn container_type_metadata_with(
+    value: &Value,
+    instance_meta: &Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>,
+) -> Option<ContainerTypeInfo> {
+    // Embedded-metadata readers for Set/Bag/Mix (mirrors `hashdata_type_info`).
+    macro_rules! embedded_type_info {
+        ($data:ident) => {
+            if $data.has_type_meta() {
+                Some(ContainerTypeInfo {
+                    value_type: $data.value_type.clone().unwrap_or_default(),
+                    key_type: $data.key_type.clone(),
+                    declared_type: $data.declared_type.clone(),
+                })
+            } else {
+                None
+            }
+        };
+    }
+    match value {
+        Value::Array(items, ..) => embedded_type_info!(items),
+        Value::Mix(items, _) => embedded_type_info!(items),
+        Value::Set(items, _) => embedded_type_info!(items),
+        Value::Bag(items, _) => embedded_type_info!(items),
+        Value::Hash(items) => Interpreter::hashdata_type_info(items),
+        Value::Instance { id, .. } => instance_meta.read().unwrap().get(id).cloned(),
+        Value::Mixin(inner, _) => container_type_metadata_with(inner, instance_meta),
+        _ => None,
+    }
+}
+
 /// An entry in the encoding registry.
 #[derive(Debug, Clone)]
 pub(crate) struct EncodingEntry {
@@ -4784,32 +4821,19 @@ impl Interpreter {
     }
 
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
-        // Embedded-metadata readers for Set/Bag/Mix (mirrors `hashdata_type_info`).
-        macro_rules! embedded_type_info {
-            ($data:ident) => {
-                if $data.has_type_meta() {
-                    Some(ContainerTypeInfo {
-                        value_type: $data.value_type.clone().unwrap_or_default(),
-                        key_type: $data.key_type.clone(),
-                        declared_type: $data.declared_type.clone(),
-                    })
-                } else {
-                    None
-                }
-            };
-        }
-        match value {
-            Value::Array(items, ..) => embedded_type_info!(items),
-            Value::Mix(items, _) => embedded_type_info!(items),
-            Value::Set(items, _) => embedded_type_info!(items),
-            Value::Bag(items, _) => embedded_type_info!(items),
-            Value::Hash(items) => Self::hashdata_type_info(items),
-            Value::Instance { id, .. } => {
-                self.instance_type_metadata.read().unwrap().get(id).cloned()
-            }
-            Value::Mixin(inner, _) => self.container_type_metadata(inner),
-            _ => None,
-        }
+        container_type_metadata_with(value, &self.instance_type_metadata)
+    }
+
+    /// Clone the shared instance-type-metadata handle so the VM can read
+    /// container type metadata for `Instance` values through its own peer handle
+    /// (same reasoning as [`Self::registry_handle`]) rather than bouncing through
+    /// `self.interpreter`. Container values (Array/Hash/Set/Bag/Mix) carry their
+    /// metadata embedded in the backing data struct, so this handle only covers
+    /// the `Instance` arm of [`container_type_metadata_with`].
+    pub(crate) fn instance_type_metadata_handle(
+        &self,
+    ) -> Arc<RwLock<HashMap<u64, ContainerTypeInfo>>> {
+        self.instance_type_metadata.clone()
     }
 
     // Object-hash original keys are embedded in `HashData.original_keys`

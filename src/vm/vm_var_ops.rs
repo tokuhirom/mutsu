@@ -316,7 +316,7 @@ impl VM {
         if let Some(def) = self.interpreter.container_default(target) {
             return def.clone();
         }
-        if let Some(info) = loan_env!(self, container_type_metadata(target)) {
+        if let Some(info) = self.container_type_metadata(target) {
             // Native typed arrays default their elements to the native type's
             // zero value rather than the (uninstantiable) type object:
             // int -> 0, num -> 0e0, str -> "".
