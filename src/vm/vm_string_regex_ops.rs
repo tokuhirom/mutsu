@@ -87,21 +87,25 @@ pub(crate) fn apply_subst_case_transforms(
     sigspace: bool,
     samespace: bool,
 ) -> String {
-    let mut repl = if samecase {
-        if sigspace {
-            samecase_per_word(replacement, matched)
+    // `:samecase` and `:samemark` are independent transforms and can be combined
+    // (e.g. `s:ii:mm///`). Apply case first, then transfer marks onto the
+    // case-adjusted text. Using `else if` here would silently drop samemark
+    // whenever samecase was also requested.
+    let mut repl = replacement.to_string();
+    if samecase {
+        repl = if sigspace {
+            samecase_per_word(&repl, matched)
         } else {
-            crate::builtins::samecase_string(replacement, matched)
-        }
-    } else if samemark {
-        if matched.contains(char::is_whitespace) && replacement.contains(char::is_whitespace) {
-            samemark_per_word(replacement, matched)
+            crate::builtins::samecase_string(&repl, matched)
+        };
+    }
+    if samemark {
+        repl = if matched.contains(char::is_whitespace) && repl.contains(char::is_whitespace) {
+            samemark_per_word(&repl, matched)
         } else {
-            crate::builtins::samemark_string(replacement, matched)
-        }
-    } else {
-        replacement.to_string()
-    };
+            crate::builtins::samemark_string(&repl, matched)
+        };
+    }
     if samespace {
         repl = samespace_replace(&repl, matched);
     }
@@ -960,26 +964,14 @@ impl VM {
             let end_b = runtime::char_idx_to_byte(text, *end);
             out.push_str(&text[prev_end_b..start_b]);
             let matched_text = &text[start_b..end_b];
-            let mut repl = if samecase {
-                if sigspace {
-                    samecase_per_word(replacement, matched_text)
-                } else {
-                    crate::builtins::samecase_string(replacement, matched_text)
-                }
-            } else if samemark {
-                if matched_text.contains(char::is_whitespace)
-                    && replacement.contains(char::is_whitespace)
-                {
-                    samemark_per_word(replacement, matched_text)
-                } else {
-                    crate::builtins::samemark_string(replacement, matched_text)
-                }
-            } else {
-                replacement.to_string()
-            };
-            if samespace {
-                repl = samespace_replace(&repl, matched_text);
-            }
+            let repl = apply_subst_case_transforms(
+                replacement,
+                matched_text,
+                samecase,
+                samemark,
+                sigspace,
+                samespace,
+            );
             out.push_str(&repl);
             prev_end_b = end_b;
         }
@@ -1012,26 +1004,14 @@ impl VM {
             } else {
                 replacement.to_string()
             };
-            let mut repl = if samecase {
-                if sigspace {
-                    samecase_per_word(&expanded, matched_text)
-                } else {
-                    crate::builtins::samecase_string(&expanded, matched_text)
-                }
-            } else if samemark {
-                if matched_text.contains(char::is_whitespace)
-                    && expanded.contains(char::is_whitespace)
-                {
-                    samemark_per_word(&expanded, matched_text)
-                } else {
-                    crate::builtins::samemark_string(&expanded, matched_text)
-                }
-            } else {
-                expanded
-            };
-            if samespace {
-                repl = samespace_replace(&repl, matched_text);
-            }
+            let repl = apply_subst_case_transforms(
+                &expanded,
+                matched_text,
+                samecase,
+                samemark,
+                sigspace,
+                samespace,
+            );
             out.push_str(&repl);
             prev_end_b = end_b;
         }
@@ -1102,26 +1082,14 @@ impl VM {
             } else {
                 expand_capture_refs(&interpolated, caps)
             };
-            let mut repl = if samecase {
-                if sigspace {
-                    samecase_per_word(&expanded, matched_text)
-                } else {
-                    crate::builtins::samecase_string(&expanded, matched_text)
-                }
-            } else if samemark {
-                if matched_text.contains(char::is_whitespace)
-                    && expanded.contains(char::is_whitespace)
-                {
-                    samemark_per_word(&expanded, matched_text)
-                } else {
-                    crate::builtins::samemark_string(&expanded, matched_text)
-                }
-            } else {
-                expanded
-            };
-            if samespace {
-                repl = samespace_replace(&repl, matched_text);
-            }
+            let repl = apply_subst_case_transforms(
+                &expanded,
+                matched_text,
+                samecase,
+                samemark,
+                sigspace,
+                samespace,
+            );
             out.push_str(&repl);
             prev_end_b = end_b;
         }
