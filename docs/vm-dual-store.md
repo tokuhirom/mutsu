@@ -5,6 +5,51 @@ Tracking design for the highest-leverage VM-decoupling task
 so it is staged into small, individually-shippable slices. This file is the
 map; record each slice's before/after here.
 
+> ## CP-2 status & corrected plan (2026-06-15) — READ FIRST
+>
+> **CP-1 done**: `env` is now VM-owned (`VM.env`, PR #3075); carriers borrow it
+> via `loan_env!`. PLAN.md then lists **CP-2 = delete the dual-store machinery**
+> (`env_dirty` / `saved_env_dirty` / `ensure_locals_synced` / `sync_locals_from_env`
+> + the `VmCallFrame` dirty/bind group), estimated "2–4 PR, before CP-3".
+>
+> **Correction after a full dependency survey (this session).** That estimate and
+> ordering were optimistic. The machinery survives because **carriers write the
+> caller `env` by arbitrary name**, after which the slot-indexed `locals` are
+> stale and must be reconciled name→slot (`sync_locals_from_env`). The decisive
+> finding: **`EVAL` is a permanent, spec-mandated by-name lexical writer** — it
+> compiles+runs a sub-program that can assign any caller lexical. So as long as
+> slot-indexed `locals` and `EVAL` coexist, the env→locals name→slot reconcile is
+> *fundamentally required* and cannot be deleted. Deleting it outright would mean
+> eliminating `locals` as a separate store (env-only), which regresses the hottest
+> path (slot perf on `fib` etc.). **Therefore CP-3 (carrier removal) does NOT
+> unblock full deletion of `sync_locals_from_env` — that primitive is permanent.**
+>
+> **Achievable CP-2 (revised target).** Delete the *lazy flag* layer
+> (`env_dirty`, `ensure_locals_synced`, `saved_env_dirty`, and the `VmCallFrame`
+> dirty fields), converting every `env_dirty = true` setter (166 sites) into one
+> of:
+>   1. **nothing** — the op is provably env-pure (native methods on by-value
+>      targets, pure value/reflection branches). *(This file's first slice:
+>      spurious pure-method marks in `vm_call_method_ops.rs`.)*
+>   2. **surgical local update** — a VM-native by-name write whose name is known:
+>      mirror into the matching slot (`update_local_if_exists`) instead of flagging.
+>   3. **eager-precise reconcile** — a carrier (`loan_env!`) that may have written
+>      arbitrary names: call `sync_locals_from_env(code)` immediately *iff a
+>      carrier actually ran* (track it like `pending_local_updates` /
+>      `method_dispatch_pure`), instead of the deferred flag.
+> Once every setter is converted, `env_dirty` + `ensure_locals_synced` +
+> `saved_env_dirty` are dead and deleted. **`sync_locals_from_env` is kept** as
+> the eager EVAL/carrier reconcile primitive (consider renaming to
+> `reconcile_locals_from_env`). The hot per-call paths already use the precise
+> `method_dispatch_pure` flag (Slice 6.3) and stay perf-neutral; the cold/carrier
+> sites move from lazy-flag to eager-precise.
+>
+> **User direction (2026-06-15):** pursue CP-3 (carrier VM-native-ization) in
+> parallel where it removes whole carrier categories, but the dual-store *flag*
+> deletion above is the concrete, independently-shippable CP-2 campaign. Easy
+> `try_native_*` method/function-dispatch wins are already exhausted (benchmarks
+> show ~0% method fallback), so remaining CP-3 is the hard ③ state-ownership work.
+
 > **Correction (2026-06-05).** The slice notes below repeatedly cite
 > `t/wrap.t`, `t/placeholder.t`, and `t/tail-function.t` as "pre-existing"
 > failures used to validate "my change didn't break anything." That framing was

@@ -146,8 +146,14 @@ VM→interpreter 委譲は carrier / concurrency(Track C) / niche のみ。**env
 
 #### 後続（CP-1 後・逐次）
 
-- [ ] **CP-2: dual-store 機構の削除**（**2〜4 PR**）— env が VM 単一所有になったら `env_dirty`/`saved_env_dirty`/
-      `ensure_locals_synced`/`sync_locals_from_env`（現状 **241 参照**）+ `VmCallFrame` の dirty/bind 群を撤去。
+- [~] **CP-2: dual-store *遅延フラグ* 機構の削除**（多 PR キャンペーン）— **スコープ訂正 (2026-06-15、依存調査の結論。
+      詳細 = [docs/vm-dual-store.md](docs/vm-dual-store.md) 冒頭「CP-2 status & corrected plan」)**: `sync_locals_from_env`
+      は **`EVAL`（仕様上の永続 by-name lexical writer）が存在する限り削除不可**＝env→locals name→slot 再構築は本質的に必須。
+      よって達成可能 CP-2 = **遅延フラグ層**（`env_dirty` / `saved_env_dirty` / `ensure_locals_synced` + `VmCallFrame` の
+      dirty フィールド）の撤去。166 個の `env_dirty = true` setter を ①pure→無マーク ②native by-name→surgical local 更新
+      ③carrier→eager-precise reconcile に変換しきってから削除。`sync_locals_from_env` は eager reconcile primitive として残す。
+      - [x] **slice 1**: `vm_call_method_ops.rs` の pure な hyper/race wrap + reflection 分岐の spurious mark を撤去
+            （pin = `t/hyper-reflection-env.t` / `t/say-env-roundtrip.t`）。
 - [ ] **CP-3: Interpreter を carrier-only へ縮退 → 撤去**（**4〜8 PR**）— 残る **86 フィールド**を VM へ畳むか撤去、
       ping-pong 撤去、carrier（subset-where/regex-`{}`）を VM-native 化して carrier 面を縮小 → **Interpreter 削除**。
 

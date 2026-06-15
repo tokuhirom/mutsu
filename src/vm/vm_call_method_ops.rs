@@ -609,7 +609,7 @@ impl VM {
                 Value::RaceSeq(arc)
             };
             self.stack.push(result);
-            self.env_dirty = true;
+            // Pure value wrap (no env write): no env_dirty mark needed.
             return Ok(());
         }
         // HyperSeq/RaceSeq delegation: unwrap, dispatch on inner list, wrap back for map/grep
@@ -621,7 +621,7 @@ impl VM {
                         _ => unreachable!(),
                     };
                     self.stack.push(Value::HyperSeq(items_arc));
-                    self.env_dirty = true;
+                    // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "race" => {
@@ -630,12 +630,12 @@ impl VM {
                         _ => unreachable!(),
                     };
                     self.stack.push(Value::RaceSeq(items_arc));
-                    self.env_dirty = true;
+                    // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "is-lazy" => {
                     self.stack.push(Value::Bool(false));
-                    self.env_dirty = true;
+                    // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "^name" => {
@@ -645,7 +645,7 @@ impl VM {
                         "RaceSeq"
                     };
                     self.stack.push(Value::str(name.to_string()));
-                    self.env_dirty = true;
+                    // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "WHAT" => {
@@ -655,7 +655,7 @@ impl VM {
                         "RaceSeq"
                     };
                     self.stack.push(Value::Package(Symbol::intern(name)));
-                    self.env_dirty = true;
+                    // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "isa" | "does" => {
@@ -671,12 +671,12 @@ impl VM {
                     // Delegate to isa_check which handles the full type hierarchy
                     let result = target.isa_check(&type_name);
                     self.stack.push(Value::Bool(result));
-                    self.env_dirty = true;
+                    // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "defined" => {
                     self.stack.push(Value::Bool(true));
-                    self.env_dirty = true;
+                    // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "map" | "grep" => {
