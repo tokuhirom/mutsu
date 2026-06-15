@@ -548,43 +548,47 @@ impl Interpreter {
             }
             let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
             let ok = if let Some(pred) = &subset.predicate {
-                // A predicate whose only topic is `$_` (no placeholders `$^x`, no
-                // non-`$_` signature param) is equivalent to running its body with
-                // `$_` bound to the candidate value. This covers the two dominant
-                // shapes: a bare block `where { $_ %% 2 }` and Whatever-currying
-                // `where * < 1000` (which desugars to `Lambda { param: "_" }`).
-                // Running the body inline skips creating a closure (which would
-                // flatten/capture the current env) and the extra `call_sub_value`
-                // round-trip; the closure would have captured the *same* current
-                // env, so running the body directly in it is behavior-equivalent.
-                // Anything with a named/multiple param (`where -> $x {...}`) or
-                // placeholders (`where { $^a }`) falls through to the closure path.
-                let inline_body: Option<&[Stmt]> = match pred {
-                    Expr::Block(body) => Some(body.as_slice()),
+                // A predicate that takes its candidate value through a single
+                // simple variable is equivalent to running its body with that
+                // variable bound — no closure, no `call_sub_value` round-trip.
+                // The bind target is `$_` for a bare block `where { $_ %% 2 }`,
+                // and the param name for a single-param pointy / Whatever-curry
+                // (`where -> $x {...}` and `where * < 1000` both desugar to
+                // `Lambda { param }` — `Lambda` only carries a plain name, so it
+                // is always an untyped single param; any type/default/trait/
+                // sub-signature pointy parses to `AnonSubParams` and falls
+                // through below). Running the body inline skips creating a
+                // closure (which would flatten/capture the current env) and the
+                // extra ping-pong; the closure would have captured the *same*
+                // current env, so this is behavior-equivalent. Placeholder blocks
+                // (`where { $^a }`) and multi/typed params fall through too.
+                let inline: Option<(&[Stmt], &str)> = match pred {
+                    Expr::Block(body) => Some((body.as_slice(), "_")),
                     Expr::AnonSub {
                         body,
                         is_block: true,
                         ..
-                    } => Some(body.as_slice()),
-                    Expr::Lambda { param, body, .. } if param == "_" => Some(body.as_slice()),
+                    } => Some((body.as_slice(), "_")),
+                    Expr::Lambda { param, body, .. } => Some((body.as_slice(), param.as_str())),
                     _ => None,
                 }
-                .filter(|body| crate::ast::collect_placeholders_shallow(body).is_empty());
+                .filter(|(body, _)| crate::ast::collect_placeholders_shallow(body).is_empty());
 
-                if let Some(body) = inline_body {
-                    // Inline topic-bound execution: compile the block body once
-                    // (cached by subset name) and run it with `$_` bound.
+                if let Some((body, bind_name)) = inline {
+                    // Inline execution: compile the block body once (cached by
+                    // subset name) and run it with the candidate bound to the
+                    // topic / param variable.
                     let compiled = self.compile_subset_predicate(constraint, body);
-                    let saved = self.env.get("_").cloned();
-                    self.env.insert("_".to_string(), predicate_value);
+                    let saved = self.env.get(bind_name).cloned();
+                    self.env.insert(bind_name.to_string(), predicate_value);
                     let result = self
                         .eval_precompiled_block_fast(&compiled.0, &compiled.1)
                         .map(|v| v.truthy())
                         .unwrap_or(false);
                     if let Some(old) = saved {
-                        self.env.insert("_".to_string(), old);
+                        self.env.insert(bind_name.to_string(), old);
                     } else {
-                        self.env.remove("_");
+                        self.env.remove(bind_name);
                     }
                     result
                 } else {
