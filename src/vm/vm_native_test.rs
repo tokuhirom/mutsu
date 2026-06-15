@@ -1,4 +1,4 @@
-//! VM-side dispatch for `Test` / `Test::Util` functions.
+//! Interpreter-side dispatch for `Test` / `Test::Util` functions.
 //!
 //! `is`/`ok`/`plan`/`is-deeply`/`subtest`/… are the bulk of the residual
 //! function-dispatch fallback when running the roast suite (see
@@ -6,11 +6,11 @@
 //! (`Interpreter::call_test_function`) rather than user AST, and are routed to
 //! the interpreter on purpose (`is_interpreter_handled_function`).
 //!
-//! Until now the VM reached them only by delegating to `Interpreter::call_function`
+//! Until now the Interpreter reached them only by delegating to `Interpreter::call_function`
 //! — the generic, giant-`match` function dispatcher — which re-runs argument
 //! sanitisation and name resolution before finally landing on
-//! `call_test_function`. This routes the VM straight to the typed Test handler
-//! instead, the same "VM owns the native dispatch table" pattern already used
+//! `call_test_function`. This routes the Interpreter straight to the typed Test handler
+//! instead, the same "Interpreter owns the native dispatch table" pattern already used
 //! for `sprintf` and the pure builtins.
 //!
 //! Scope note: the *bodies* of these functions are inherently interpreter
@@ -19,7 +19,7 @@
 //! spawning. So this decouples the *dispatch layer*, not the bodies; moving the
 //! TAP state itself out of the interpreter is the separate lever-B work.
 //!
-//! Safety: both call sites that invoke this run *after* the VM's user-function /
+//! Safety: both call sites that invoke this run *after* the Interpreter's user-function /
 //! proto / multi-candidate / on-the-fly-compile resolution has already failed to
 //! match, so a user-defined `sub ok { … }` still shadows the Test routine (it is
 //! resolved earlier and never reaches here).
@@ -27,7 +27,7 @@
 use super::*;
 use crate::value::Value;
 
-impl VM {
+impl Interpreter {
     /// Dispatch a `Test` module function straight to its typed handler when the
     /// name is a known Test function and test mode is active. Returns
     /// `Some(result)` when handled, `None` to let the caller fall back to

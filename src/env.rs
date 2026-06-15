@@ -129,10 +129,6 @@ pub struct Env {
     /// recursion) stays O(1) while shallow nesting (methods, ~2-5 deep) pays no
     /// flatten.
     depth: u16,
-    /// env-loan guard (CP-1 1e, interim). `true` only for the sentinel left in
-    /// `Interpreter.env` while the VM owns the real env. Accessors `debug_assert!`
-    /// it is `false`. See [`Env::poisoned`].
-    poisoned: bool,
 }
 
 /// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
@@ -147,28 +143,6 @@ impl Env {
             parent: None,
             tombstones: None,
             depth: 0,
-            poisoned: false,
-        }
-    }
-
-    #[inline(always)]
-    fn assert_not_poisoned(&self) {
-        // env-loan (CP-1 1e) diagnostic: the interpreter's env field is a poisoned
-        // sentinel while the VM owns the real env. Reading it means a VM→interpreter
-        // call reached env without a loan wrapper. By default this is *benign* (an
-        // empty env read; the loan grind has wrapped every test-covered carrier, and
-        // CI's release roast is the authoritative safety net) — so do NOT panic.
-        // Opt in with `MUTSU_POISON_DIAG=1` to print the first such site (with a
-        // backtrace) when hunting a remaining unwrapped carrier. Remove the whole
-        // poison mechanism once env-reading interpreter helpers are all VM-native.
-        if self.poisoned && std::env::var_os("MUTSU_POISON_DIAG").is_some() {
-            static SEEN: AtomicBool = AtomicBool::new(false);
-            if !SEEN.swap(true, Ordering::Relaxed) {
-                eprintln!(
-                    "POISON-DIAG: env accessed while loaned out to the VM (first hit):\n{}",
-                    std::backtrace::Backtrace::force_capture()
-                );
-            }
         }
     }
 
@@ -192,7 +166,6 @@ impl Env {
             depth: parent.depth + 1,
             parent: Some(Arc::new(parent)),
             tombstones: None,
-            poisoned: false,
         }
     }
 
@@ -238,7 +211,6 @@ impl Env {
                     parent: None,
                     tombstones: None,
                     depth: 0,
-                    poisoned: false,
                 }
             }
         }
@@ -267,7 +239,6 @@ impl Env {
 
     #[inline]
     pub fn get_sym(&self, key: Symbol) -> Option<&Value> {
-        self.assert_not_poisoned();
         if let Some(v) = self.inner.get(&key) {
             return Some(v);
         }
@@ -292,7 +263,6 @@ impl Env {
 
     #[inline]
     pub fn contains_key_sym(&self, key: Symbol) -> bool {
-        self.assert_not_poisoned();
         if self.inner.contains_key(&key) {
             return true;
         }
@@ -311,7 +281,6 @@ impl Env {
     /// cost; see docs/vm-dual-store.md and `vm_stats::record_env_deep_copy`).
     #[inline]
     fn cow_mut(&mut self) -> &mut HashMap<Symbol, Value> {
-        self.assert_not_poisoned();
         if crate::vm::vm_stats::enabled() && Arc::strong_count(&self.inner) > 1 {
             crate::vm::vm_stats::record_env_deep_copy();
         }
@@ -406,17 +375,14 @@ impl Env {
     }
 
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
-        self.assert_not_poisoned();
         self.inner.iter()
     }
 
     pub fn keys(&self) -> std::collections::hash_map::Keys<'_, Symbol, Value> {
-        self.assert_not_poisoned();
         self.inner.keys()
     }
 
     pub fn values(&self) -> std::collections::hash_map::Values<'_, Symbol, Value> {
-        self.assert_not_poisoned();
         self.inner.values()
     }
 
@@ -509,7 +475,6 @@ impl From<HashMap<String, Value>> for Env {
             parent: None,
             tombstones: None,
             depth: 0,
-            poisoned: false,
         }
     }
 }
@@ -521,7 +486,6 @@ impl From<HashMap<Symbol, Value>> for Env {
             parent: None,
             tombstones: None,
             depth: 0,
-            poisoned: false,
         }
     }
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     /// Names of builtin listops/functions that a same-named user-defined
     /// subroutine may shadow. When both exist, the user sub wins.
     ///
@@ -26,7 +26,7 @@ impl VM {
     }
 
     /// Control-flow / dispatch-control names that must never be taken over by
-    /// the lexical `&`-var VM dispatch: the interpreter's call_function match
+    /// the lexical `&`-var Interpreter dispatch: the interpreter's call_function match
     /// implements their non-local semantics (loop control, gather/take,
     /// multi-dispatch redirection), and a lexical `&return`-style binding
     /// dispatched as a plain closure would lose them (or recurse infinitely).
@@ -61,7 +61,7 @@ impl VM {
         )
     }
 
-    /// Resolve a *pure* lexical `&name` callable for VM-native dispatch
+    /// Resolve a *pure* lexical `&name` callable for Interpreter-native dispatch
     /// (Track A): a `&code` parameter binding (local slot) or a `my &f = ...`
     /// env binding, for a name with NO same-named package sub / proto / multi
     /// (the shadow case is handled separately via `lexical_override` in
@@ -320,7 +320,7 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
-            return Err(RuntimeError::new("VM stack underflow in CallFunc"));
+            return Err(RuntimeError::new("Interpreter stack underflow in CallFunc"));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -409,7 +409,7 @@ impl VM {
 
         // Lexical `&name` binding (e.g. from `sub callit(&foo) { foo(1) }`)
         // takes precedence over package-level compiled subs. Dispatch
-        // VM-natively via `vm_call_on_value` (same as the pure-lexical case in
+        // Interpreter-natively via `vm_call_on_value` (same as the pure-lexical case in
         // `dispatch_func_call_inner`, Track A): `call_compiled_closure` roots
         // the closure frame at the live caller env (scoped_child) so dynamic
         // vars (`my $*ERR` in the caller) stay visible, and first-class
@@ -457,7 +457,9 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let total = regular_arity as usize + 1; // +1 for the slip value
         if self.stack.len() < total {
-            return Err(RuntimeError::new("VM stack underflow in CallFuncSlip"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in CallFuncSlip",
+            ));
         }
         // When slip_pos is known, args are in source order on the stack.
         // Pop all values, expand the slip at its position.
@@ -540,7 +542,7 @@ impl VM {
             self.stack.push(native_result?);
         } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), &name) {
             // Pure lexical `&name` callable invoked with a slip (`op(|@args)`):
-            // dispatch VM-natively via vm_call_on_value, same as the non-slip
+            // dispatch Interpreter-natively via vm_call_on_value, same as the non-slip
             // case in `dispatch_func_call_inner` (Track A). Builtin priority is
             // preserved because try_native_function already ran above, and
             // lexical_amp_var_callable excludes builtin / package-sub names.
@@ -548,7 +550,7 @@ impl VM {
             self.stack.push(result);
             self.env_dirty = true;
         } else {
-            // Sync VM locals to env before spawning threads so closures capture them
+            // Sync Interpreter locals to env before spawning threads so closures capture them
             if name == "start" {
                 self.sync_env_from_locals(code);
             }
@@ -570,7 +572,9 @@ impl VM {
         crate::vm::vm_stats::record_function_dispatch();
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
-            return Err(RuntimeError::new("VM stack underflow in CallOnValue"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in CallOnValue",
+            ));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -586,7 +590,7 @@ impl VM {
             arg_sources
         };
         let target = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("VM stack underflow in CallOnValue target".to_string())
+            RuntimeError::new("Interpreter stack underflow in CallOnValue target".to_string())
         })?;
 
         // Resolve slot refs to their underlying values before dispatch
@@ -632,7 +636,9 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
-            return Err(RuntimeError::new("VM stack underflow in CallOnCodeVar"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in CallOnCodeVar",
+            ));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -686,7 +692,7 @@ impl VM {
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))?
         } else {
-            // Sync VM locals to env before spawning threads so closures capture them
+            // Sync Interpreter locals to env before spawning threads so closures capture them
             if name == "start" {
                 self.sync_env_from_locals(code);
             }
@@ -814,7 +820,7 @@ impl VM {
                 self.env_dirty = true;
                 if self.has_multi_candidates_cached(name) && !self.has_proto(name) {
                     // User-defined multi candidates take priority over builtins.
-                    // Resolve the winning candidate VM-side via the same resolver
+                    // Resolve the winning candidate Interpreter-side via the same resolver
                     // call_function_fallback uses (③ PR-3, ledger §2). When the
                     // winner is unambiguous and OTF-compilable, run it as compiled
                     // bytecode instead of tree-walking through the interpreter.
@@ -902,7 +908,7 @@ impl VM {
                 } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), name) {
                     // Pure lexical `&name` callable (a `&code` parameter or
                     // `my &f = ...` with no same-named package sub): dispatch
-                    // VM-natively via vm_call_on_value instead of the interpreter
+                    // Interpreter-natively via vm_call_on_value instead of the interpreter
                     // terminal (Track A, ledger §2). Builtin priority is preserved
                     // because try_native_function already ran above. Dynamic vars
                     // (`my $*ERR` in the caller) stay visible because
@@ -911,11 +917,11 @@ impl VM {
                     // or_insert (parent-chain aware), so it never shadows them.
                     self.vm_call_on_value(callable, args, Some(compiled_fns))
                 } else {
-                    // Sync VM locals to env before spawning threads so closures capture them
+                    // Sync Interpreter locals to env before spawning threads so closures capture them
                     if name == "start" {
                         self.sync_env_from_locals(code);
                     }
-                    // EVAL/EVALFILE compile to bytecode and run on a sub-VM, and
+                    // EVAL/EVALFILE compile to bytecode and run on a sub-Interpreter, and
                     // pseudo-package reads are reflective env lookups: the
                     // interpreter is a carrier here, not a tree-walk fallback.
                     // CARRIER (is_interpreter_carrier_function) vs TODO: compile to
@@ -942,7 +948,7 @@ impl VM {
     }
 
     /// Whether a resolved `FunctionDef` is simple enough to compile on-the-fly to
-    /// bytecode and run via the VM (instead of tree-walking it through the
+    /// bytecode and run via the Interpreter (instead of tree-walking it through the
     /// interpreter): a plain body and no default/where/code-signature/`&`-code
     /// params. Shared by the non-shadow OTF branch and the builtin-shadow forks
     /// (③ PR-2) so the same compilability gate is applied consistently.

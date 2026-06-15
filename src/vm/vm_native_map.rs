@@ -2,9 +2,9 @@
 //!
 //! `@a.map({ ... })` previously always fell back to the interpreter's
 //! `dispatch_map_method` orchestration (see docs/vm-decoupling.md, lever A). The
-//! block *body* already runs compiled on the VM (`vm_call_on_value` ->
+//! block *body* already runs compiled on the Interpreter (`vm_call_on_value` ->
 //! `call_compiled_closure`); only the surrounding iteration loop lived in the
-//! interpreter. This runs that loop in the VM for the common, simple case
+//! interpreter. This runs that loop in the Interpreter for the common, simple case
 //! (including multi-arity blocks like `-> $a, $b { ... }`, which consume the
 //! source in `arity`-sized chunks) and falls back for anything that needs the
 //! interpreter's richer orchestration (Slip/phaser/lazy-`return` handling,
@@ -21,9 +21,9 @@ use super::*;
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 
-impl VM {
+impl Interpreter {
     /// Try to run `target.map(block)` natively. Returns `Some(result)` when
-    /// handled in the VM, `None` to fall back to the interpreter unchanged.
+    /// handled in the Interpreter, `None` to fall back to the interpreter unchanged.
     ///
     /// Only `.map` is handled here, not `.grep`: `.grep` returns a subset of the
     /// *original* elements that must stay rw-view-bound to the source array

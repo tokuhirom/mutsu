@@ -1,9 +1,9 @@
-//! Lightweight VM -> Interpreter fallback instrumentation.
+//! Lightweight Interpreter -> Interpreter fallback instrumentation.
 //!
-//! The bytecode VM is intended to execute everything natively, but today it
+//! The bytecode Interpreter is intended to execute everything natively, but today it
 //! still delegates a large fraction of method dispatch to the tree-walking
 //! `Interpreter` (see `ANALYSIS.md` section 1). This module counts how often
-//! that delegation happens so progress on decoupling the VM can be measured
+//! that delegation happens so progress on decoupling the Interpreter can be measured
 //! per change instead of guessed at.
 //!
 //! Disabled by default (a single relaxed atomic load guards every counter).
@@ -20,7 +20,7 @@ static FUNCTION_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FUNCTION_FALLBACK: AtomicU64 = AtomicU64::new(0);
 /// Dispatches that enter the interpreter purely as a *carrier*, not as a
 /// tree-walk fallback. `EVAL`/`EVALFILE` compile the supplied source to
-/// bytecode and run it on a sub-VM (`run_compiled_block`); pseudo-package reads
+/// bytecode and run it on a sub-Interpreter (`run_compiled_block`); pseudo-package reads
 /// (`CALLER::`/`OUTER::`/`SETTING::`/`DYNAMIC::`) are reflective env lookups.
 /// Neither tree-walks user code, so counting them as fallbacks overstates the
 /// real decoupling gap. They are tracked separately here (lever A). See
@@ -160,7 +160,7 @@ pub(crate) fn record_locals_pull() {
     }
 }
 
-/// Print a one-line summary of VM fallback statistics to stderr.
+/// Print a one-line summary of Interpreter fallback statistics to stderr.
 ///
 /// No-op unless `MUTSU_VM_STATS` is set. Counts aggregate across worker threads
 /// (Promise/Proc::Async/hyper) because the counters are process-global.

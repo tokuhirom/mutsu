@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::Compiler;
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     /// Get the current source line number from the interpreter env.
     pub(super) fn current_source_line(&self) -> Option<u32> {
         self.env().get("?LINE").and_then(|v| match v {
@@ -31,7 +31,7 @@ impl VM {
                 "__mutsu_lazylist_from_gather".to_string(),
                 Value::Bool(true),
             );
-            // Compile the gather body to bytecode for VM-native forcing
+            // Compile the gather body to bytecode for Interpreter-native forcing
             let compiler = Compiler::new();
             let (compiled_code, compiled_fns) = compiler.compile(body);
             let list = LazyList {
@@ -183,7 +183,7 @@ impl VM {
     }
 
     /// Free variables of a closure being created that were declared in an
-    /// enclosing loop body (see `VM::loop_local_vars`). These become the
+    /// enclosing loop body (see `Interpreter::loop_local_vars`). These become the
     /// closure's `owned_captures`: read at call time from its own frozen captured
     /// env so each loop iteration's closure sees its own value (Raku
     /// per-iteration binding), immune to the dual-store slot re-injection.
@@ -1608,7 +1608,7 @@ impl VM {
         let body_start = *ip + 1;
 
         // `whenever` callbacks run as compiled bytecode (the drive loop lives on
-        // `impl VM`, see `vm_react_loop.rs`) but still capture their lexicals from
+        // `impl Interpreter`, see `vm_react_loop.rs`) but still capture their lexicals from
         // env. First pull any pending env updates into locals (e.g. instance
         // attribute mutations written into the shared cell after bind-stdin), then
         // flush all locals to env so captured vars are visible/mutable from the
@@ -1625,9 +1625,9 @@ impl VM {
         // If `done;` was called in the react body, skip the event loop —
         // the body already signaled that no further events should be processed.
         let body_done = matches!(&run_result, Err(e) if e.is_react_done);
-        // The react/supply drive loop runs VM-side and dispatches every
+        // The react/supply drive loop runs Interpreter-side and dispatches every
         // whenever / LAST / QUIT / CLOSE callback as compiled bytecode
-        // (Stage 2 #3038/#3039; QUIT handlers VM-native in the Stage 3 follow-up).
+        // (Stage 2 #3038/#3039; QUIT handlers Interpreter-native in the Stage 3 follow-up).
         // No drive-loop callback routes back through the tree-walk interpreter.
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak

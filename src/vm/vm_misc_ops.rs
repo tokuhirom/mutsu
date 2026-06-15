@@ -100,7 +100,7 @@ fn is_parameterized_core_type(name: &str) -> bool {
 /// For arrays/lists: returns (min_element, max_element), recursing into elements.
 /// For ranges: returns (start, end).
 ///
-/// Single authoritative impl shared by the VM's `minmax` reduction and the
+/// Single authoritative impl shared by the Interpreter's `minmax` reduction and the
 /// interpreter's `apply_reduction_op` `minmax` arm (which delegates here).
 pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
     match v {
@@ -149,7 +149,7 @@ pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
     }
 }
 
-impl VM {
+impl Interpreter {
     fn is_builtin_reduction_op(op: &str) -> bool {
         if let Some(inner) = op
             .strip_prefix('R')
@@ -2979,7 +2979,7 @@ impl VM {
             // Package-qualified names (e.g. Test1::ns, Foo::Bar) are package-global
             // and must propagate out of any block scope where they were declared.
             // Sigils may appear before the qualifier (e.g. &Test1::ns, $Foo::var).
-            // Skip internal VM metadata keys (which contain `::` but are not
+            // Skip internal Interpreter metadata keys (which contain `::` but are not
             // user-visible package names, e.g. `__mutsu_var_meta::x`).
             let is_package_qualified = k.with_str(|s| {
                 let stripped = s.trim_start_matches(['$', '@', '%', '&']);

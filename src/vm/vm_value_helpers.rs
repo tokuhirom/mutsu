@@ -2,7 +2,7 @@ use super::*;
 use crate::runtime::{current_mutsu_thread_id, is_initial_thread};
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     /// Create a Thread instance with the current thread's mutsu ID.
     pub(super) fn make_thread_instance() -> Value {
         let numeric_id = current_mutsu_thread_id();

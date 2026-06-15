@@ -411,7 +411,7 @@ fn normalize_subst_replacement(template: &str) -> String {
     out
 }
 
-impl VM {
+impl Interpreter {
     fn canonical_infix_lookup_name(name: &str) -> std::borrow::Cow<'_, str> {
         if name == "(+)" {
             return std::borrow::Cow::Borrowed("+");
@@ -1569,7 +1569,7 @@ impl VM {
         };
         // Resolve a concrete code-ref value when `name` refers to a lexical
         // `&name` variable (e.g. the `&op`/`&metaop` loop variables in
-        // S03-metaops/infix.t). Such calls must go through the VM closure
+        // S03-metaops/infix.t). Such calls must go through the Interpreter closure
         // dispatch (`vm_call_on_value`) so sigilless `rw` binding and the
         // return value behave the same as a named-sub call; the interpreter
         // fallback mishandles both for mutating sigilless subs.
@@ -1906,7 +1906,7 @@ impl VM {
     }
 
     /// Dispatch a single per-element call of a hyper function-op. Lexical
-    /// code-refs (`func_value`) go through the VM closure dispatch; named subs
+    /// code-refs (`func_value`) go through the Interpreter closure dispatch; named subs
     /// go through the compiled-first path.
     fn dispatch_hyper_func_call(
         &mut self,

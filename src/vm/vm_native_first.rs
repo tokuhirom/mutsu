@@ -1,7 +1,7 @@
-//! Native `.first` in the VM (no-adverb forms).
+//! Native `.first` in the Interpreter (no-adverb forms).
 //!
 //! `@a.first`, `@a.first({ .foo })`, `@a.first(* > 3)`, `@a.first(/rx/)`,
-//! `%h.first({ .value > 1 })` run entirely in the VM. The `Sub` matcher block
+//! `%h.first({ .value > 1 })` run entirely in the Interpreter. The `Sub` matcher block
 //! (the genuine Category-B fork) is invoked through `vm_call_on_value`; non-block
 //! patterns use the interpreter's single shared `smart_match`. The scan itself
 //! (iteration, `pair_as_positional`) is the shared
@@ -17,8 +17,8 @@ use crate::runtime::resolution::{FirstMatcher, find_first_match_generic};
 use crate::runtime::utils::pair_as_positional;
 use crate::value::Value;
 
-/// [`FirstMatcher`] backed by the bytecode VM.
-struct VmFirstMatcher<'a>(&'a mut VM);
+/// [`FirstMatcher`] backed by the bytecode Interpreter.
+struct VmFirstMatcher<'a>(&'a mut Interpreter);
 
 impl FirstMatcher for VmFirstMatcher<'_> {
     fn item_matches(&mut self, pattern: &Value, item: &Value) -> Result<bool, RuntimeError> {
@@ -34,13 +34,13 @@ impl FirstMatcher for VmFirstMatcher<'_> {
     }
 }
 
-impl VM {
+impl Interpreter {
     /// Test a `grep`/`first`-style matcher against a single `item` using
-    /// VM-native dispatch (a `Sub` block via `vm_call_on_value`, any other
+    /// Interpreter-native dispatch (a `Sub` block via `vm_call_on_value`, any other
     /// pattern via the shared `smart_match`). Used by the lazy map/grep
-    /// pipeline (`force_lazy_pipe`) so the matcher runs in this VM and keeps
+    /// pipeline (`force_lazy_pipe`) so the matcher runs in this Interpreter and keeps
     /// locals/env coherent (the interpreter's `eval_grep_over_items` spins up a
-    /// nested VM via `mem::take`, which would discard the surrounding frame).
+    /// nested Interpreter via `mem::take`, which would discard the surrounding frame).
     pub(super) fn vm_grep_item_matches(
         &mut self,
         pattern: &Value,
@@ -50,7 +50,7 @@ impl VM {
     }
 
     /// Try to run `target.first(...)` natively. Returns `Some(result)` when
-    /// handled in the VM, `None` to fall back unchanged.
+    /// handled in the Interpreter, `None` to fall back unchanged.
     pub(super) fn try_native_first(
         &mut self,
         target: &Value,

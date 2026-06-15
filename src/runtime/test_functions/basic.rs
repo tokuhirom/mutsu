@@ -72,9 +72,11 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                 ) {
                     crate::runtime::value_to_list(left) == crate::runtime::value_to_list(right)
-                } else if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
-                    crate::vm::VM::extract_buf_bytes(left)
-                        == crate::vm::VM::extract_buf_bytes(right)
+                } else if crate::runtime::Interpreter::is_buf_value(left)
+                    && crate::runtime::Interpreter::is_buf_value(right)
+                {
+                    crate::runtime::Interpreter::extract_buf_bytes(left)
+                        == crate::runtime::Interpreter::extract_buf_bytes(right)
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }

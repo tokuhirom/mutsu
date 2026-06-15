@@ -3021,7 +3021,7 @@ impl Interpreter {
             // Neither forces the (possibly infinite) pipeline.
             && !(ll.lazy_pipe.is_some()
                 && (matches!(method, "map" | "grep")
-                    || crate::vm::VM::lazy_pipe_preserving_coercion(method)))
+                    || crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method)))
         {
             let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(ll)?;

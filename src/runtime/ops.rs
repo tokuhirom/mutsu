@@ -1014,7 +1014,10 @@ impl Interpreter {
             }
             "%" | "mod" => crate::builtins::arith_mod(left.clone(), right.clone()),
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
-            "~" => Ok(crate::vm::VM::concat_values(left.clone(), right.clone())),
+            "~" => Ok(crate::runtime::Interpreter::concat_values(
+                left.clone(),
+                right.clone(),
+            )),
             "&&" | "and" => {
                 if !left.truthy() {
                     Ok(left.clone())

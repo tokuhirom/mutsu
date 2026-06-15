@@ -42,7 +42,7 @@ pub(super) struct CStyleLoopSpec {
     pub(super) collect: bool,
 }
 
-impl VM {
+impl Interpreter {
     fn collect_loop_value(coll: &mut Vec<Value>, value: Value) {
         match value {
             Value::Slip(items) => coll.extend(items.iter().cloned()),
@@ -107,7 +107,7 @@ impl VM {
     }
 
     /// Push a fresh loop-body declaration scope so `my` declarations inside the
-    /// body register as loop-local (see `VM::loop_local_vars`). A closure created
+    /// body register as loop-local (see `Interpreter::loop_local_vars`). A closure created
     /// in the body marks such free variables as `owned_captures`, giving Raku's
     /// per-iteration binding semantics. Must be balanced by `pop_loop_local_scope`
     /// on every exit path.
@@ -2825,7 +2825,7 @@ impl VM {
                             // the call's result in place. Gate strictly on `is_warn`:
                             // other control signals (take/emit/done) also carry a
                             // `return_value` for their own machinery, which must NOT
-                            // land on the VM operand stack here.
+                            // land on the Interpreter operand stack here.
                             if pending_err.is_warn
                                 && let Some(rv) = pending_err.return_value.take()
                             {

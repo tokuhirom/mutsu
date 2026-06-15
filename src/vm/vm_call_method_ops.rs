@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 use std::sync::Arc;
 
-impl VM {
+impl Interpreter {
     /// Build an X::Multi::NoMatch error for a `print`/`say`/`put`/`note` call
     /// made with a positional argument on an invocant whose only candidate is
     /// the default `(Mu: *%_)` one. The `capture` attribute carries the full
@@ -177,7 +177,9 @@ impl VM {
         let method = &*method_cow;
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
-            return Err(RuntimeError::new("VM stack underflow in CallMethod"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in CallMethod",
+            ));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -192,7 +194,7 @@ impl VM {
             raw_args
         };
         let target = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("VM stack underflow in CallMethod target".to_string())
+            RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
         })?;
         // Force LazyIoLines into an eager array when calling methods on it,
         // unless the method preserves laziness (e.g., .kv).
@@ -342,7 +344,7 @@ impl VM {
             return Ok(());
         }
 
-        // Fast path for Lock::Async.protect — execute block inline in current VM
+        // Fast path for Lock::Async.protect — execute block inline in current Interpreter
         if method == "protect"
             && args.len() == 1
             && let Value::Instance {
@@ -540,7 +542,7 @@ impl VM {
             };
             // Restoring the pre-force env undoes captured-variable corruption
             // from gather coroutine forcing. A lazy map/grep pipeline runs its
-            // callback via `vm_call_on_value` in this VM, so its side effects on
+            // callback via `vm_call_on_value` in this Interpreter, so its side effects on
             // enclosing variables are legitimate and must persist.
             if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
@@ -736,7 +738,7 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
-        // .WHO on pseudo-package Package values: build the stash in the VM
+        // .WHO on pseudo-package Package values: build the stash in the Interpreter
         // where we have access to locals (which the interpreter doesn't have).
         if method == "WHO"
             && args.is_empty()
@@ -872,7 +874,7 @@ impl VM {
                 }
                 // Nil method fallback: in Raku, calling most methods on Nil returns Nil.
                 // Certain mutating methods throw exceptions.
-                // This must be in the VM path (not the interpreter's call_method_with_values)
+                // This must be in the Interpreter path (not the interpreter's call_method_with_values)
                 // to avoid affecting internal dispatch (e.g. max :by comparators).
                 if matches!(&target, Value::Nil) {
                     match method {

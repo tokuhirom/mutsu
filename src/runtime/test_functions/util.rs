@@ -151,8 +151,8 @@ impl Interpreter {
 
         if let Some(c) = content {
             // If content is a Buf/Blob, write raw bytes instead of string representation
-            if crate::vm::VM::is_buf_value(&c) {
-                let raw_bytes = crate::vm::VM::extract_buf_bytes(&c);
+            if crate::runtime::Interpreter::is_buf_value(&c) {
+                let raw_bytes = crate::runtime::Interpreter::extract_buf_bytes(&c);
                 std::fs::write(&path, &raw_bytes).map_err(|e| {
                     RuntimeError::new(format!("make-temp-file: cannot write: {}", e))
                 })?;

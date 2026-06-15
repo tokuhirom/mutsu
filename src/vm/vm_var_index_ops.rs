@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::Arc;
 
-impl VM {
+impl Interpreter {
     /// Wrap a value in item (scalar) context if it's a List/Array,
     /// following Raku's rule that hash slot access returns values in item context.
     /// A List stored in a hash slot becomes an ItemList when accessed.
@@ -1772,7 +1772,7 @@ fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
     }
 }
 
-impl VM {
+impl Interpreter {
     /// When indexing an array with a multi-index list (e.g. `@a[0..2, 0..2]`),
     /// check if an individual index element is a Range and, if so, resolve it
     /// to a sublist (slice). Returns `None` if the index is not a range.
@@ -1781,7 +1781,7 @@ impl VM {
         items: &std::sync::Arc<crate::value::ArrayData>,
         kind: crate::value::ArrayKind,
         _len: i64,
-        vm: &mut VM,
+        vm: &mut Interpreter,
     ) -> Option<Vec<Value>> {
         let (start, end, excl_end) = match idx {
             Value::Range(a, b) => (*a, *b, false),

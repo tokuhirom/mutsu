@@ -73,7 +73,7 @@ fn check_rat_divide_by_zero(v: &Value) -> Result<(), RuntimeError> {
     }
 }
 
-impl VM {
+impl Interpreter {
     pub(super) fn exec_make_array_op(&mut self, n: u32, is_real_array: bool) {
         let n = n as usize;
         let start = self.stack.len() - n;
@@ -396,7 +396,7 @@ impl VM {
     }
 }
 
-impl VM {
+impl Interpreter {
     /// Fast path for @arr.push(val) — directly appends to the array Arc.
     pub(super) fn exec_array_push_op(
         &mut self,
@@ -416,7 +416,7 @@ impl VM {
             return Ok(());
         }
         // TODO: compile to bytecode — shaped-array push, blocked-by: shaped
-        // dimension metadata check in VM. See ledger §1.
+        // dimension metadata check in Interpreter. See ledger §1.
         // Check for shaped arrays — must fall back to interpreter
         // (push is illegal on fixed-dimension arrays)
         if let Some(Value::Array(_, kind)) = self.env().get(target_name)

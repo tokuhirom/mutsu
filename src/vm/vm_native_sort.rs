@@ -1,8 +1,8 @@
-//! Native `.sort` in the VM.
+//! Native `.sort` in the Interpreter.
 //!
 //! `@a.sort` and every comparator/mapper form — `@a.sort({ $^a <=> $^b })`,
 //! `@a.sort(*.abs)`, `@a.sort({ $^a.foo <=> $^b.foo })`, `%h.sort`, `.sort(:k)`,
-//! a `Routine` comparator — now run entirely in the VM. User callables are
+//! a `Routine` comparator — now run entirely in the Interpreter. User callables are
 //! invoked through [`VmSortCaller`] (a [`SortCaller`] backed by
 //! `vm_call_on_value`), and the orchestration itself (arity dispatch, merge
 //! sort, Schwartzian transform, simple-comparator inlining, `:k` index mode) is
@@ -21,8 +21,8 @@ use crate::runtime::methods_collection_ops::sort::{SortCaller, sort_value_generi
 use crate::runtime::utils::pair_as_positional;
 use crate::value::{ArrayKind, Value};
 
-/// [`SortCaller`] backed by the bytecode VM.
-struct VmSortCaller<'a>(&'a mut VM);
+/// [`SortCaller`] backed by the bytecode Interpreter.
+struct VmSortCaller<'a>(&'a mut Interpreter);
 
 impl SortCaller for VmSortCaller<'_> {
     fn call_callable(&mut self, callable: &Value, args: Vec<Value>) -> Value {
@@ -46,9 +46,9 @@ impl SortCaller for VmSortCaller<'_> {
     }
 }
 
-impl VM {
+impl Interpreter {
     /// Try to run `target.sort(...)` natively. Returns `Some(result)` when
-    /// handled in the VM, `None` to fall back to the interpreter unchanged.
+    /// handled in the Interpreter, `None` to fall back to the interpreter unchanged.
     ///
     /// `.sort` has no rw-view concern (it always yields a fresh `Seq`), so a
     /// freshly-built sorted array is a faithful result.

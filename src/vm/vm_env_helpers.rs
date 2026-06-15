@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     /// Sync locals from env if the dirty flag is set, then clear the flag.
     /// If locals are also dirty, flush them to env first so we don't lose
     /// values that were only written to the locals array (fast-path SetLocal).

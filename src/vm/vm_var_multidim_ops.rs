@@ -1,6 +1,6 @@
 use super::*;
 
-impl VM {
+impl Interpreter {
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: [target, dim0, dim1, ..., dimN-1] → [result]
     pub(super) fn exec_multi_dim_index_op(&mut self, ndims: u32) -> Result<(), RuntimeError> {
@@ -297,7 +297,7 @@ impl VM {
                 Self::multi_dim_assign(container, &dims, value.clone())?;
             }
         }
-        // Also sync the updated container into the VM locals slot (if any)
+        // Also sync the updated container into the Interpreter locals slot (if any)
         // so that a later locals write-through does not restore the stale
         // pre-assignment copy from locals into env. Without this, shaped
         // array element writes like `@a[i;j] = v` can be silently lost

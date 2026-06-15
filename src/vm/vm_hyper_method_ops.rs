@@ -1,7 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     /// Write a mutating hyper's result back to its *named* `@`/`%` target
     /// variable precisely. If the variable is bound (holds a shared
     /// `ContainerRef` cell, e.g. `$b := @a`), write through the cell so all
@@ -40,7 +40,9 @@ impl VM {
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
-            return Err(RuntimeError::new("VM stack underflow in HyperMethodCall"));
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in HyperMethodCall",
+            ));
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
@@ -49,10 +51,9 @@ impl VM {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, false);
         }
-        let target = self
-            .stack
-            .pop()
-            .ok_or_else(|| RuntimeError::new("VM stack underflow in HyperMethodCall target"))?;
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("Interpreter stack underflow in HyperMethodCall target")
+        })?;
         // Mark Seq as consumed (single-use semantics).
         if let Value::Seq(ref arc) = target {
             crate::value::seq_consume(arc)?;
@@ -657,16 +658,16 @@ impl VM {
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new(
-                "VM stack underflow in HyperMethodCallDynamic",
+                "Interpreter stack underflow in HyperMethodCallDynamic",
             ));
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         let name_val = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("VM stack underflow in HyperMethodCallDynamic name")
+            RuntimeError::new("Interpreter stack underflow in HyperMethodCallDynamic name")
         })?;
         let target = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("VM stack underflow in HyperMethodCallDynamic target")
+            RuntimeError::new("Interpreter stack underflow in HyperMethodCallDynamic target")
         })?;
         let mut items = crate::runtime::value_to_list(&target);
         let mut results = Vec::with_capacity(items.len());

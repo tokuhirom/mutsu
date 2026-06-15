@@ -1,7 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 
-impl VM {
+impl Interpreter {
     fn integral_bigint(value: &Value) -> Option<num_bigint::BigInt> {
         match value {
             Value::Int(i) => Some(num_bigint::BigInt::from(*i)),

@@ -1041,7 +1041,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // Buf/Blob.Str throws X::Buf::AsStr
     if (method == "Str" || method == "Stringy")
         && let Value::Instance { class_name, .. } = target
-        && crate::vm::VM::is_buf_value(target)
+        && crate::runtime::Interpreter::is_buf_value(target)
     {
         let cn = class_name.resolve();
         let mut err = RuntimeError::new(format!(
@@ -1060,7 +1060,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // Buf/Blob .values and .list return the byte values as integers
     if (method == "values" || method == "list")
         && let Value::Instance { attributes, .. } = target
-        && crate::vm::VM::is_buf_value(target)
+        && crate::runtime::Interpreter::is_buf_value(target)
     {
         if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
             return Some(Ok(Value::array(bytes.to_vec())));

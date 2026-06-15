@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::Arc;
 
-impl VM {
+impl Interpreter {
     /// Resolve WhateverCode indices for array deletion.
     /// Converts `*-N` style closures to concrete integer indices.
     fn resolve_delete_index_for_array(&mut self, idx: Value, container: &Value) -> Value {

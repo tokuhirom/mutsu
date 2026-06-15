@@ -97,7 +97,7 @@ impl Compiler {
                 // stripped share the same key in local_map but must NOT shadow type
                 // names, so they go through GetBareWord which checks the type registry.
                 if let Some(&slot) = self.local_map.get(name.as_str()) {
-                    if crate::vm::VM::is_builtin_type(name) {
+                    if crate::runtime::Interpreter::is_builtin_type(name) {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     } else if self.sigilless_locals.contains(name.as_str())
