@@ -1294,8 +1294,17 @@ impl Compiler {
                     params,
                     params_def,
                 );
+                // A sigilless raw binding (`-> \v`) aliases the source element
+                // directly; in Raku it is writable and modifications propagate
+                // back to the source container (`for @a -> \v { v = 99 }` mutates
+                // @a, and `for %h.kv -> \k, \v { v = 9 }` / `for %h.values -> \v`
+                // write back through the value alias). Treat it like an rw param:
+                // don't mark it readonly, and write modifications back.
+                let has_sigilless = (**param_def).as_ref().is_some_and(|def| def.sigilless)
+                    || params_def.iter().any(|def| def.sigilless);
                 // Determine if this for-loop has rw params (via `<->` or `is rw` trait)
                 let has_rw = *rw_block
+                    || has_sigilless
                     || (**param_def)
                         .as_ref()
                         .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
