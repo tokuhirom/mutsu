@@ -1,8 +1,12 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn dispatch_to_set(&self, target: Value) -> Result<Value, RuntimeError> {
-        crate::builtins::quanthash_coerce::to_set(target)
+    pub(super) fn dispatch_to_set_with_what(
+        &self,
+        target: Value,
+        what: &str,
+    ) -> Result<Value, RuntimeError> {
+        crate::builtins::quanthash_coerce::to_set(target, what)
     }
 
     /// Check if a value is lazy/infinite and cannot be coerced to a QuantHash.
@@ -118,7 +122,15 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
-        crate::builtins::quanthash_coerce::to_mix(target)
+        crate::builtins::quanthash_coerce::to_mix(target, "Mix")
+    }
+
+    pub(super) fn dispatch_to_mix_with_what(
+        &self,
+        target: Value,
+        what: &str,
+    ) -> Result<Value, RuntimeError> {
+        crate::builtins::quanthash_coerce::to_mix(target, what)
     }
 
     pub(super) fn dispatch_to_map(&self, target: Value) -> Result<Value, RuntimeError> {

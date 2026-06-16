@@ -30,7 +30,7 @@ impl Interpreter {
             }
             "List" if args.is_empty() => Some(self.dispatch_list_coercion(target)),
             "Set" | "SetHash" if args.is_empty() => {
-                let result = match self.dispatch_to_set(target) {
+                let result = match self.dispatch_to_set_with_what(target, method) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
@@ -94,7 +94,7 @@ impl Interpreter {
                 None
             }
             "Mix" | "MixHash" if args.is_empty() => {
-                let result = match self.dispatch_to_mix(target) {
+                let result = match self.dispatch_to_mix_with_what(target, method) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
