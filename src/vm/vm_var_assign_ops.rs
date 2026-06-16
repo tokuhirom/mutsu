@@ -630,30 +630,13 @@ impl Interpreter {
         // scalar containers (`$h`) are NOT pre-flattened, so they appear as
         // opaque items (triggering the odd-number check when expected).
         let hash_val = match value {
-            Value::Array(ref items, kind) => {
-                // When a hash variable (%h) appears in a list being assigned to
-                // another hash (%m = %h, a => 42), the hash should be flattened
-                // into its pairs. However, a hash in a scalar ($hashitem) should
-                // stay opaque. We can distinguish: if the array has >1 element
-                // and contains Hash values alongside Pair values, flatten them.
-                let needs_flatten = !kind.is_itemized()
-                    && items.len() > 1
-                    && items.iter().any(|v| matches!(v, Value::Hash(_)));
-                if needs_flatten {
-                    let mut flattened = Vec::new();
-                    for item in items.iter() {
-                        if let Value::Hash(h) = item {
-                            for (k, v) in h.as_ref().iter() {
-                                flattened.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                            }
-                        } else {
-                            flattened.push(item.clone());
-                        }
-                    }
-                    runtime::utils::build_hash_from_items(flattened)?
-                } else {
-                    runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
-                }
+            Value::Array(ref items, _) => {
+                // `build_hash_from_items` flattens a bare `%h` element into its
+                // pairs (`%m = %h, a => 42` and the single-element `%m = (%h,)`),
+                // while a hash sourced from a `$` scalar carries
+                // `HashData.itemized` and stays opaque (`%m = ($hashitem,)` →
+                // "Odd number") — matching Raku.
+                runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
             }
             Value::Seq(ref items) | Value::Slip(ref items) => {
                 runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
