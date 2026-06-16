@@ -1182,6 +1182,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     if cn == "Exception" {
                         return Some(Ok(Value::str(format!("Something went wrong in ({})", cn))));
                     }
+                    // X::AdHoc carries its text in `payload`, not `message`
+                    // (`die "..."` builds one). `.Str` returns that payload,
+                    // mirroring `.gist`/`.message`.
+                    if cn == "X::AdHoc" {
+                        if let Some(payload) = attributes.as_map().get("payload") {
+                            let payload_str = payload.to_string_value();
+                            if !payload_str.is_empty() {
+                                return Some(Ok(Value::str(payload_str)));
+                            }
+                        }
+                        return Some(Ok(Value::str("Unexplained error".to_string())));
+                    }
                     // Construct message from typed exception attributes
                     if let Some(formatted) =
                         crate::builtins::exception_message::format_exception_message(
@@ -1357,10 +1369,33 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         // composed roles (e.g. X::Control) to decide whether the throw
         // should raise a control exception.
         if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" {
+            // Derive the human message the same way `.message`/`.gist`/`.Str`
+            // do — an X::AdHoc carries its text in `payload` (not `message`),
+            // and a typed exception's message is built from its attributes —
+            // rather than the type repr (`X::AdHoc()`) that
+            // `target.to_string_value()` would yield.
             let msg = attributes
                 .as_map()
                 .get("message")
                 .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    if cn == "X::AdHoc" {
+                        attributes
+                            .as_map()
+                            .get("payload")
+                            .map(|v| v.to_string_value())
+                            .filter(|s| !s.is_empty())
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    crate::builtins::exception_message::format_exception_message(
+                        &cn,
+                        &attributes.as_map(),
+                    )
+                })
                 .unwrap_or_else(|| target.to_string_value());
             let mut err = RuntimeError::new(&msg);
             err.exception = Some(Box::new(target.clone()));

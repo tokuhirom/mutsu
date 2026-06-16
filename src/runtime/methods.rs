@@ -1910,11 +1910,26 @@ impl Interpreter {
                     .iter()
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
             if is_exception {
-                let msg = attributes
+                // Derive the human message via `.message` (X::AdHoc → `payload`,
+                // a typed exception → its formatted message) rather than the
+                // type repr (`X::AdHoc()`), which `target.to_string_value()`
+                // would yield for an exception built without a `message` attr.
+                let has_message = attributes
                     .as_map()
                     .get("message")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| target.to_string_value());
+                    .map(|v| !v.to_string_value().is_empty())
+                    .unwrap_or(false);
+                let msg = if has_message {
+                    attributes
+                        .as_map()
+                        .get("message")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default()
+                } else {
+                    self.call_method_with_values(target.clone(), "message", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| target.to_string_value())
+                };
                 let mut err = RuntimeError::new(&msg);
                 err.exception = Some(Box::new(target.clone()));
                 return Err(err);
