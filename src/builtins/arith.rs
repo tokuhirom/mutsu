@@ -1226,6 +1226,35 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 Value::Complex(0.0, 0.0)
             };
         }
+        // Integer real exponent: compute by repeated multiplication
+        // (exponentiation by squaring) so the result stays exact, matching
+        // raku. The polar `exp(b*ln a)` form below introduces floating-point
+        // noise (e.g. `(0+1i)**2` would be `-1+1.2e-16i` instead of `-1+0i`).
+        if bi == 0.0 && br.fract() == 0.0 && br.abs() <= 1024.0 {
+            let cmul = |xr: f64, xi: f64, yr: f64, yi: f64| -> (f64, f64) {
+                (xr * yr - xi * yi, xr * yi + xi * yr)
+            };
+            let mut e = br.abs() as u64;
+            let (mut rr, mut ri) = (1.0_f64, 0.0_f64);
+            let (mut pr, mut pi) = (ar, ai);
+            while e > 0 {
+                if e & 1 == 1 {
+                    let (nr, ni) = cmul(rr, ri, pr, pi);
+                    rr = nr;
+                    ri = ni;
+                }
+                let (sr, si) = cmul(pr, pi, pr, pi);
+                pr = sr;
+                pi = si;
+                e >>= 1;
+            }
+            if br < 0.0 {
+                // Reciprocal: 1 / (rr + ri·i) = (rr - ri·i) / (rr² + ri²).
+                let denom = rr * rr + ri * ri;
+                return Value::Complex(rr / denom, -ri / denom);
+            }
+            return Value::Complex(rr, ri);
+        }
         let ln_r = (ar * ar + ai * ai).sqrt().ln();
         let ln_i = ai.atan2(ar);
         let wr = br * ln_r - bi * ln_i;
