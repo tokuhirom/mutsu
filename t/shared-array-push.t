@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # Concurrent `@a.push` from `start` blocks must not lose updates: each thread's
 # push has to land in the single shared array, not clobber a stale snapshot.
@@ -57,4 +57,26 @@ plan 8;
     my @c = 1, 2, 3;
     @c.unshift(0);
     is-deeply @c, [0, 1, 2, 3], 'unshift prepends in shared context';
+}
+
+# An instance-attribute array (`@!x`) pushed to while a `start` block is live
+# must NOT funnel into the name-keyed atomic store: each instance has its own
+# attribute, so they must not accumulate across objects (roles-6e.t DESTROY).
+{
+    my class Holder {
+        has @.items;
+        method add($v) { @!items.push: $v }
+    }
+    my @results;
+    my @p;
+    for 1..3 -> $i {
+        @p.push: start {
+            my $h = Holder.new;
+            $h.add($i);
+            $h.add($i * 10);
+            $h.items.elems;
+        }
+    }
+    my @counts = await @p;
+    is @counts.sort.join(','), '2,2,2', 'per-instance attribute arrays do not accumulate across objects';
 }

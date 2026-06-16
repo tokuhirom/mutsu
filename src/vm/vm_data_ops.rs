@@ -427,7 +427,12 @@ impl Interpreter {
         if self.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
-            if matches!(target, Value::Array(..) | Value::Nil) {
+            // Only a plain lexical `@name` (not an attribute `@!x`/`@.x` or other
+            // twigil'd form) has a single shared identity across threads, so only
+            // it may funnel into the name-keyed atomic shared store.
+            if matches!(target, Value::Array(..) | Value::Nil)
+                && Self::is_plain_lexical_array_name(target_name)
+            {
                 let items = match val {
                     Value::Slip(items) => items.to_vec(),
                     other => vec![other],

@@ -575,16 +575,33 @@ impl Interpreter {
             && matches!(&target, Value::Array(..))
             && self.shared_vars_active
         {
-            // Route through the atomic shared store. The base-key
-            // `push_to_existing_shared_array`/`push_to_shared_var` write the
-            // plain `@a` shared entry, which `set_shared_var` can clobber with a
-            // stale empty snapshot during env sync — losing concurrent `start {
-            // @a.push(...) }` updates from sibling threads. (The base-key path
-            // also `extend`ed for `unshift`, appending instead of prepending.)
-            // The `__mutsu_atomic_arr::` store is exempt from that clobber, so
-            // concurrent push/unshift serialize under its lock and all land.
-            let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.clone());
-            let result = self.shared_array_extend(&target_name, norm, method == "unshift");
+            // Only a plain *lexical* `@name` is a single variable shared across
+            // threads. Instance-attribute arrays (`@!order` / `@.order`) and
+            // other twigil'd forms (`@*dyn`) have per-instance / per-context
+            // identity, so they must NOT funnel into the global atomic store
+            // keyed by name — that would accumulate pushes across every object
+            // (roles-6e.t DESTROY: each `C1` instance's `@!order` doubled). They
+            // keep the original base-key / interior-mutation path.
+            if Self::is_plain_lexical_array_name(&target_name) {
+                // Route through the atomic shared store. The base-key
+                // `push_to_existing_shared_array`/`push_to_shared_var` write the
+                // plain `@a` shared entry, which `set_shared_var` can clobber with
+                // a stale empty snapshot during env sync — losing concurrent
+                // `start { @a.push(...) }` updates from sibling threads. (The
+                // base-key path also `extend`ed for `unshift`, appending instead
+                // of prepending.) The `__mutsu_atomic_arr::` store is exempt from
+                // that clobber, so concurrent push/unshift serialize and all land.
+                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.clone());
+                let result = self.shared_array_extend(&target_name, norm, method == "unshift");
+                self.stack.push(result);
+                self.env_dirty = true;
+                return Ok(());
+            }
+            let result = loan_env!(
+                self,
+                push_to_existing_shared_array(&target_name, args.clone())
+            )
+            .unwrap_or_else(|| loan_env!(self, push_to_shared_var(&target_name, args, &target)));
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -1426,6 +1443,17 @@ impl Interpreter {
     /// lazy arrays, type-constrained or metadata-bearing containers, shared
     /// arrays, and any receiver that is not the exact array currently bound to
     /// `target_name` in env. Those richer semantics stay owned by the interpreter.
+    /// Is `name` a plain lexical `@array` variable (sigil `@` immediately
+    /// followed by an identifier char), as opposed to an attribute (`@!x` /
+    /// `@.x`), a dynamic (`@*x`), or other twigil'd form? Only plain lexicals
+    /// have a single shared identity across threads, so only they may be routed
+    /// through the name-keyed atomic shared store.
+    pub(crate) fn is_plain_lexical_array_name(name: &str) -> bool {
+        let mut bytes = name.bytes();
+        bytes.next() == Some(b'@')
+            && matches!(bytes.next(), Some(c) if c.is_ascii_alphabetic() || c == b'_')
+    }
+
     fn try_native_array_mut(
         &mut self,
         target_name: &str,
