@@ -51,8 +51,15 @@ pub(super) fn dispatch(
                 // raku -- while a top-level real Array still itemizes its `[..]`
                 // children. The old per-method `flatten_deep_value` passed
                 // `false` for Seq children and so left them un-flattened.
+                // De-itemize the top-level receiver first: `$(1,2,3).flat`
+                // un-itemizes to `(1,2,3)` and then flattens (Raku semantics);
+                // nested itemized items stay single (handled by `flat_val`).
                 let mut result = Vec::new();
-                crate::builtins::flat_val(target, &mut result, true);
+                crate::builtins::flat_val(
+                    &crate::builtins::deitemize_flat_operand(target),
+                    &mut result,
+                    true,
+                );
                 Some(Ok(Value::Seq(Arc::new(result))))
             }
         }),

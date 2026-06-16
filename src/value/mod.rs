@@ -2869,6 +2869,16 @@ impl Value {
         }
     }
 
+    pub(crate) fn hash_arc_deitemized(h: Arc<HashData>) -> Arc<HashData> {
+        if h.itemized {
+            let mut data = (*h).clone();
+            data.itemized = false;
+            Arc::new(data)
+        } else {
+            h
+        }
+    }
+
     /// Read through a `ContainerRef` and apply `f` to the inner value WITHOUT
     /// cloning it. Non-ContainerRef values are passed to `f` as-is. This is the
     /// canonical non-cloning ContainerRef-read chokepoint (the ContainerRef axis of
