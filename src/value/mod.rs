@@ -1279,6 +1279,15 @@ pub struct HashData {
     /// table broke whenever the backing `Arc` was rebuilt. Mirrors the array
     /// `ArrayData::default` field.
     pub default: Option<Box<Value>>,
+    /// Itemization flag: `true` when this hash came from a `$` scalar container
+    /// (`$(%h)` / `$hashitem` placed in a list / `.item`). Mirrors
+    /// `ArrayKind::ItemList`/`ItemArray` for arrays — value operations IGNORE it
+    /// (the value is still a plain `Value::Hash`, so it never leaks), but
+    /// list-context hash flattening (`build_hash_from_items`) treats an itemized
+    /// hash as a single opaque element instead of spilling its pairs. This is
+    /// what distinguishes `%m = (%h,)` (flattens) from `%m = ($hashitem,)`
+    /// (stays opaque → "Odd number"). Excluded from `PartialEq` (see below).
+    pub itemized: bool,
 }
 
 impl HashData {
@@ -1290,6 +1299,7 @@ impl HashData {
             declared_type: None,
             original_keys: None,
             default: None,
+            itemized: false,
         }
     }
 
@@ -2834,12 +2844,28 @@ impl Value {
     }
 
     /// Coerce a value into item context (`.item` method).
-    /// Arrays get their kind itemized, other values get wrapped in Scalar.
+    /// Arrays get their kind itemized, hashes get their itemization flag set
+    /// (mirroring `ArrayKind` — the value stays a `Value::Hash` so it never
+    /// leaks a wrapper to value operations), other values get wrapped in Scalar.
     pub fn item(self) -> Self {
         match self {
             Value::Array(items, kind) => Value::Array(items, kind.itemize()),
-            Value::Hash(_) => Value::Scalar(Box::new(self)),
+            Value::Hash(h) => Value::Hash(Self::hash_arc_itemized(h)),
             other => other,
+        }
+    }
+
+    /// Return a `Value::Hash` Arc with its itemization flag set (copy-on-write
+    /// only when the flag actually changes, so `.WHICH` identity is preserved
+    /// for an already-itemized hash). Used by the `Itemize`/`ItemizeVar` opcodes
+    /// and `.item` to mark a `$`-sourced hash as a single list-context element.
+    pub(crate) fn hash_arc_itemized(h: Arc<HashData>) -> Arc<HashData> {
+        if h.itemized {
+            h
+        } else {
+            let mut data = (*h).clone();
+            data.itemized = true;
+            Arc::new(data)
         }
     }
 

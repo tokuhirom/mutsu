@@ -1035,7 +1035,23 @@ impl Interpreter {
         })
     }
 
-    /// Execute one opcode at *ip, advancing ip for the next instruction.
+    /// Itemize a value read from a `$` scalar container so it behaves as a
+    /// single element in list context. Arrays/Lists flip to their itemized
+    /// `ArrayKind`; a Hash sets its `itemized` flag (mirroring `ArrayKind` — the
+    /// value stays a `Value::Hash`, so value operations never see a wrapper and
+    /// nothing leaks); a Seq is wrapped in a `Value::Scalar`. Already-itemized
+    /// values and non-container scalars pass through unchanged. (Set/Bag/Mix are
+    /// only itemized in the `@a = $var` path — see `ItemizeVar` — not in general
+    /// `$(...)` itemization, to avoid leaking a `Scalar` wrapper into set ops.)
+    fn itemize_value(val: Value) -> Value {
+        match val {
+            Value::Array(items, kind) if !kind.is_itemized() => Value::Array(items, kind.itemize()),
+            Value::Hash(h) => Value::Hash(Value::hash_arc_itemized(h)),
+            Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
+            other => other,
+        }
+    }
+
     fn exec_one(
         &mut self,
         code: &CompiledCode,
@@ -2081,20 +2097,8 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::Itemize => {
-                // Wrap Array/List values in their itemized (Scalar-container)
-                // variant so they are treated as single items in list context.
-                // Hash is already an item (not flattened in list context), so
-                // it is left unchanged.
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                let itemized = match val {
-                    Value::Array(items, kind) if !kind.is_itemized() => {
-                        Value::Array(items, kind.itemize())
-                    }
-                    // Itemize a Seq by wrapping it in a scalar container
-                    Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
-                    other => other,
-                };
-                self.stack.push(itemized);
+                self.stack.push(Self::itemize_value(val));
                 *ip += 1;
             }
             OpCode::ItemizeVar(name_idx) => {
@@ -2116,23 +2120,17 @@ impl Interpreter {
                     val
                 } else {
                     match val {
-                        Value::Array(items, kind) if !kind.is_itemized() => {
-                            Value::Array(items, kind.itemize())
+                        // A scalar holding a Set/Bag/Mix assigned to an `@`
+                        // variable stays a single item (`my $h = set(...); my @a
+                        // = $h` -> `@a.elems == 1`). These have no itemized
+                        // container kind, so wrap them in a Scalar — but ONLY on
+                        // this `@`-assignment path, not in general `$(...)`
+                        // itemization (which must not leak the wrapper into set
+                        // ops). A Hash uses its `itemized` flag (no wrapper).
+                        v @ (Value::Set(..) | Value::Bag(..) | Value::Mix(..)) => {
+                            Value::Scalar(Box::new(v))
                         }
-                        Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
-                        // A scalar holding a Hash/Set/Bag/Mix assigned to an `@`
-                        // variable stays a single item (Raku: `my $h = %(...);
-                        // my @a = $h` -> `@a.elems == 1`). These types have no
-                        // "itemized" container kind, so wrap them in a Scalar
-                        // (like Seq) so the `@`-coercion does not flatten them
-                        // into pairs. (A *bare* Hash/Set assigned directly,
-                        // `my @a = set(...)`, has no scalar container and DOES
-                        // flatten -- it never reaches this opcode.)
-                        other @ (Value::Hash(_)
-                        | Value::Set(..)
-                        | Value::Bag(..)
-                        | Value::Mix(..)) => Value::Scalar(Box::new(other)),
-                        other => other,
+                        other => Self::itemize_value(other),
                     }
                 };
                 self.stack.push(result);

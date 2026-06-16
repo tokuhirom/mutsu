@@ -654,6 +654,18 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             Value::Pair(key, boxed_val) => {
                 map.insert(key, *boxed_val);
             }
+            // A bare (non-itemized) hash in list context flattens into its
+            // key=>value pairs (`%m = (%h,)` / `%(%h,)`). A hash sourced from a
+            // `$` scalar carries `HashData.itemized` (set by `itemize_value`) and
+            // stays an opaque single element — matching Raku, where `%m =
+            // ($hashitem,)` dies "Odd number". Keys are the source hash's string
+            // keys: flattening an object hash into a plain Hash/Map stringifies
+            // them (the target re-tags via its own key-type metadata).
+            Value::Hash(ref h) if !h.itemized => {
+                for (k, v) in h.iter() {
+                    map.insert(k.clone(), v.clone());
+                }
+            }
             Value::ValuePair(key, boxed_val) => {
                 let str_key = Value::hash_key_encode(&key);
                 if !matches!(key.as_ref(), Value::Str(_)) {
@@ -1893,6 +1905,9 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         Value::Array(items, ..) => items.to_vec(),
         Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => items.to_vec(),
         Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+        // An itemized hash (`item %h` / `$(%h)`) is a single list element and does
+        // NOT flatten to its pairs (mirrors the itemized-Array arm above).
+        Value::Hash(items) if items.itemized => vec![val.clone()],
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| items.typed_pair(k, v.clone()))
