@@ -377,6 +377,11 @@ impl Compiler {
         let target_name_idx = match target {
             Expr::ArrayVar(n) => Some(self.code.add_constant(Value::str(format!("@{}", n)))),
             Expr::HashVar(n) => Some(self.code.add_constant(Value::str(format!("%{}", n)))),
+            // A scalar holding a QuantHash (`$b>>--`, `$b := <...>.BagHash`) also
+            // needs its name for precise weight writeback. The `@`/`%` writeback
+            // paths below are sigil-guarded so a bare scalar name only drives the
+            // QuantHash postfix path, leaving Array/Hash behavior unchanged.
+            Expr::Var(n) => Some(self.code.add_constant(Value::str(n.clone()))),
             _ => None,
         };
         self.code.emit(OpCode::HyperMethodCall {
