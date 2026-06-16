@@ -135,8 +135,7 @@ impl Interpreter {
             // user code becomes a catchable broken-Promise error (X::AdHoc)
             // instead of silently killing the thread (hanging `await`) or
             // aborting the process.
-            let result =
-                crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
+            let result = crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
             // Transfer any handles opened by this thread back to the awaiter.
             let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
             let new_ids: Vec<usize> = thread_interp
