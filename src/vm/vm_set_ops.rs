@@ -137,6 +137,11 @@ impl Interpreter {
     }
 
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
+        // A `$`-scalar holding a hash/array is itemized as `Value::Scalar`
+        // (see `Interpreter::itemize_value`); the container is transparent to
+        // membership, so decontainerize before matching on the inner type.
+        let container = container.descalarize();
+        let needle = needle.descalarize();
         let key = needle.to_string_value();
         match container {
             Value::Set(s, _) => s.contains(&key),
