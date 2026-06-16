@@ -419,12 +419,29 @@ impl Interpreter {
         value_source_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let target_name = Self::const_str(code, target_name_idx);
-        // TODO: compile to bytecode — shared-array push, blocked-by: lever B
-        // (threaded shared-cell ownership). See ledger §1.
-        // Fall back to interpreter for shared arrays (threaded context)
+        // Shared (threaded) context: route an Array push through the atomic
+        // shared store so concurrent `@a.push` from multiple threads serialize
+        // under the shared_vars write lock instead of clobbering each other's
+        // stale local snapshots (lost update). Non-Array targets keep the
+        // interpreter fallback.
         if self.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            // Only a plain lexical `@name` (not an attribute `@!x`/`@.x` or other
+            // twigil'd form) has a single shared identity across threads, so only
+            // it may funnel into the name-keyed atomic shared store.
+            if matches!(target, Value::Array(..) | Value::Nil)
+                && Self::is_plain_lexical_array_name(target_name)
+            {
+                let items = match val {
+                    Value::Slip(items) => items.to_vec(),
+                    other => vec![other],
+                };
+                let result = self.shared_array_extend(target_name, items, false);
+                self.stack.push(result);
+                self.env_dirty = true;
+                return Ok(());
+            }
             let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
             self.env_dirty = true;
