@@ -94,6 +94,10 @@ impl Interpreter {
                     Err(_) => continue,
                 }
             } else if let Value::LazyList(ll) = &val
+                && ll.coroutine.is_some()
+                && ll.sequence_spec.is_none()
+                && ll.scan_spec.is_none()
+                && ll.lazy_pipe.is_none()
                 && !matches!(
                     ll.env.get("__mutsu_preserve_lazy_on_array_assign"),
                     Some(Value::Bool(true))
@@ -102,8 +106,11 @@ impl Interpreter {
                 // Array literals (`[...]`) are eager: a gather/take LazyList must
                 // run now so its side effects happen (e.g. `take shift @array`
                 // mutating an outer array a surrounding `while` loops on) and its
-                // elements materialize. A `lazy`-marked list is left lazy (it may
-                // be infinite); so is one that fails a strict force.
+                // elements materialize. Only a plain gather (coroutine, no
+                // sequence/scan/pipe spec) is forced — an infinite `...` sequence
+                // or a lazy map/grep pipe must stay lazy (forcing a sequence_spec
+                // would truncate it to its finite cache). A `lazy`-marked list is
+                // likewise left lazy; so is one that fails a strict force.
                 match self.force_lazy_list_vm(ll) {
                     Ok(items) => Value::Seq(std::sync::Arc::new(items)),
                     Err(_) => val,
