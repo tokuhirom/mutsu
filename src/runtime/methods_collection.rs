@@ -199,7 +199,7 @@ impl Interpreter {
                 let mut original_keys = HashMap::new();
                 let mut has_typed = false;
                 for (k, v) in b.iter() {
-                    map.insert(k.clone(), Value::Int(*v));
+                    map.insert(k.clone(), Value::from_bigint(v.clone()));
                     let typed = b.typed_key(k);
                     if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
                         has_typed = true;

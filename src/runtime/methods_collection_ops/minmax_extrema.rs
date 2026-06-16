@@ -86,11 +86,11 @@ impl Interpreter {
                 if bag.is_empty() {
                     Value::Seq(Arc::new(Vec::new()))
                 } else {
-                    let mut best_count: Option<i64> = None;
+                    let mut best_count: Option<num_bigint::BigInt> = None;
                     let mut out: Vec<Value> = Vec::new();
                     for (key, count) in bag.iter() {
-                        let ord = if let Some(current) = best_count {
-                            count.cmp(&current)
+                        let ord = if let Some(ref current) = best_count {
+                            count.cmp(current)
                         } else {
                             std::cmp::Ordering::Equal
                         };
@@ -98,11 +98,17 @@ impl Interpreter {
                             || (want_max && ord == std::cmp::Ordering::Greater)
                             || (!want_max && ord == std::cmp::Ordering::Less);
                         if replace {
-                            best_count = Some(*count);
+                            best_count = Some(count.clone());
                             out.clear();
-                            out.push(Value::Pair(key.clone(), Box::new(Value::Int(*count))));
+                            out.push(Value::Pair(
+                                key.clone(),
+                                Box::new(Value::from_bigint(count.clone())),
+                            ));
                         } else if ord == std::cmp::Ordering::Equal {
-                            out.push(Value::Pair(key.clone(), Box::new(Value::Int(*count))));
+                            out.push(Value::Pair(
+                                key.clone(),
+                                Box::new(Value::from_bigint(count.clone())),
+                            ));
                         }
                     }
                     Value::Seq(Arc::new(out))

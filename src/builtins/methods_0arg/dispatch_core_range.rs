@@ -252,7 +252,10 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, count) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::Pair(key.clone(), Box::new(Value::Int(*count)))))
+                    Some(Ok(Value::Pair(
+                        key.clone(),
+                        Box::new(Value::from_bigint(count.clone())),
+                    )))
                 }
             }
             Value::Set(items, _) => {

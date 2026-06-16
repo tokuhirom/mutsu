@@ -1114,11 +1114,17 @@ impl Interpreter {
             (Value::Set(s, _), idx) => Value::Bool(s.contains(&idx.to_string_value())),
             (Value::Bag(b, _), Value::Array(keys, ..)) => Value::array(
                 keys.iter()
-                    .map(|k| Value::Int(*b.get(&k.to_string_value()).unwrap_or(&0)))
+                    .map(|k| {
+                        Value::from_bigint(b.get(&k.to_string_value()).cloned().unwrap_or_default())
+                    })
                     .collect(),
             ),
-            (Value::Bag(b, _), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
-            (Value::Bag(b, _), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
+            (Value::Bag(b, _), Value::Str(key)) => {
+                Value::from_bigint(b.get(key.as_str()).cloned().unwrap_or_default())
+            }
+            (Value::Bag(b, _), idx) => {
+                Value::from_bigint(b.get(&idx.to_string_value()).cloned().unwrap_or_default())
+            }
             (Value::Mix(m, _), Value::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| {

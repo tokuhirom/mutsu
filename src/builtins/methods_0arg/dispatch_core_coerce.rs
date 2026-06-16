@@ -156,7 +156,7 @@ pub(super) fn dispatch(
                     format!("Set|{:016X}", hasher.finish())
                 }
                 Value::Bag(bag, _) => {
-                    let mut pairs: Vec<(&String, &i64)> = bag.iter().collect();
+                    let mut pairs: Vec<(&String, &num_bigint::BigInt)> = bag.iter().collect();
                     pairs.sort_by(|a, b| a.0.cmp(b.0));
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();

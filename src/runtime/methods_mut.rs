@@ -3041,7 +3041,8 @@ impl Interpreter {
                         if method == "grabpairs" {
                             bag.len()
                         } else {
-                            bag.values().sum::<i64>() as usize
+                            crate::runtime::utils::bigint_to_i128_sat(&bag.values().sum::<BigInt>())
+                                .max(0) as usize
                         }
                     }
                     v => v.to_f64().max(0.0) as usize,
@@ -3065,8 +3066,8 @@ impl Interpreter {
                     let ks: Vec<String> = remaining.keys().cloned().collect();
                     let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
                     let key = ks[idx].clone();
-                    let val = remaining.remove(&key).unwrap_or(0);
-                    grabbed.push(Value::Pair(key, Box::new(Value::Int(val))));
+                    let val = remaining.remove(&key).unwrap_or_default();
+                    grabbed.push(Value::Pair(key, Box::new(Value::from_bigint(val))));
                 }
             } else {
                 // grab: pick weighted random elements one at a time
@@ -3074,23 +3075,26 @@ impl Interpreter {
                     if remaining.is_empty() {
                         break;
                     }
-                    let total: i64 = remaining.values().sum();
+                    let total: i128 = remaining
+                        .values()
+                        .map(crate::runtime::utils::bigint_to_i128_sat)
+                        .sum();
                     if total <= 0 {
                         break;
                     }
-                    let r = (builtin_rand() * total as f64) as i64;
-                    let mut cumulative = 0i64;
+                    let r = (builtin_rand() * total as f64) as i128;
+                    let mut cumulative = 0i128;
                     let mut chosen_key = String::new();
                     for (k, v) in &remaining {
-                        cumulative += v;
+                        cumulative += crate::runtime::utils::bigint_to_i128_sat(v);
                         if r < cumulative {
                             chosen_key = k.clone();
                             break;
                         }
                     }
                     if let Some(c) = remaining.get_mut(&chosen_key) {
-                        *c -= 1;
-                        if *c <= 0 {
+                        *c -= BigInt::from(1);
+                        if !c.is_positive() {
                             remaining.remove(&chosen_key);
                         }
                     }

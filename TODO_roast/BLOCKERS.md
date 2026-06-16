@@ -175,10 +175,10 @@ files occasionally).
 **Builtin / type / coercion (low conflict):**
 
 - **S02-types/generics.t** — **Medium**. Nominalizable generic type.
-- **S02-types/bag.t** — **Hard**, 2/255. Test 215 needs BigInt-capable bag weights
-  (`200000000000000000019`; mutsu stores `BagData` counts as `i64`); test 252 needs
-  Bag-union to preserve a `my class Foo is Bag` subclass type (Bag is a `Value`,
-  not a subclassable Instance).
+- **S02-types/bag.t** — 254/255. Test 215 (BigInt bag weights) FIXED: `BagData.counts`
+  is now `HashMap<String,BigInt>` (baghash.t whitelisted 344/344 by the same change).
+  REMAINING test 252: Bag-union must preserve a `my class Foo is Bag` subclass type
+  (Bag is a `Value`, not a subclassable Instance) — orthogonal, not BigInt-related.
 - **S32-list/skip.t** — **Medium**. Plan mismatch (planned 55, ran 206 — loops more
   than planned; subtest counting/laziness off); 29 fail.
 - **S03-operators/inplace.t** — **Medium**, 6/38 (from test 318 "constants"): `.=`

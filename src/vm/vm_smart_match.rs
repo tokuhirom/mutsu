@@ -300,9 +300,10 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // Set ~~ Bag: all set elements must exist in Bag with count 1
         (Value::Set(set, _), Value::Bag(bag, _)) => Some(
             set.len() == bag.len()
-                && set
-                    .iter()
-                    .all(|key| bag.get(key).is_some_and(|count| *count == 1)),
+                && set.iter().all(|key| {
+                    bag.get(key)
+                        .is_some_and(|count| *count == num_bigint::BigInt::from(1))
+                }),
         ),
 
         // Bag ~~ Set: keys must match (counts are ignored)

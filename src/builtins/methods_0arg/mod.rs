@@ -89,11 +89,13 @@ fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
         .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
-fn sample_weighted_bag_key(items: &HashMap<String, i64>) -> Option<Value> {
+fn sample_weighted_bag_key(items: &HashMap<String, num_bigint::BigInt>) -> Option<Value> {
+    use crate::runtime::utils::bigint_to_i128_sat;
     let mut total: i128 = 0;
     for count in items.values() {
-        if *count > 0 {
-            total += *count as i128;
+        let count = bigint_to_i128_sat(count);
+        if count > 0 {
+            total = total.saturating_add(count);
         }
     }
     if total <= 0 {
@@ -105,17 +107,18 @@ fn sample_weighted_bag_key(items: &HashMap<String, i64>) -> Option<Value> {
         needle = total - 1;
     }
     for (key, count) in items {
-        if *count <= 0 {
+        let count = bigint_to_i128_sat(count);
+        if count <= 0 {
             continue;
         }
-        if needle < *count as i128 {
+        if needle < count {
             return Some(Value::str(key.clone()));
         }
-        needle -= *count as i128;
+        needle -= count;
     }
     items
         .iter()
-        .find_map(|(key, count)| (*count > 0).then(|| Value::str(key.clone())))
+        .find_map(|(key, count)| count.is_positive().then(|| Value::str(key.clone())))
 }
 
 /// Normalize Unicode Nd (decimal digit) characters to their ASCII equivalents.

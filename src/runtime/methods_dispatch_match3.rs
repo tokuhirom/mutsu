@@ -405,15 +405,20 @@ impl Interpreter {
     /// Helper for BagHash.grab (works on a clone, does not mutate the original).
     fn dispatch_bag_grab(
         &mut self,
-        bag: &std::collections::HashMap<String, i64>,
+        bag: &std::collections::HashMap<String, num_bigint::BigInt>,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         use crate::builtins::rng::builtin_rand;
+        use crate::runtime::utils::bigint_to_i128_sat;
+        use num_bigint::BigInt;
+        use num_traits::Signed;
         let count = if args.is_empty() {
             1usize
         } else {
             match &args[0] {
-                Value::Whatever => bag.values().sum::<i64>() as usize,
+                Value::Whatever => {
+                    bigint_to_i128_sat(&bag.values().sum::<BigInt>()).max(0) as usize
+                }
                 v => v.to_f64().max(0.0) as usize,
             }
         };
@@ -429,23 +434,23 @@ impl Interpreter {
             if remaining.is_empty() {
                 break;
             }
-            let total: i64 = remaining.values().sum();
+            let total: i128 = remaining.values().map(bigint_to_i128_sat).sum();
             if total <= 0 {
                 break;
             }
-            let r = (builtin_rand() * total as f64) as i64;
-            let mut cumulative = 0i64;
+            let r = (builtin_rand() * total as f64) as i128;
+            let mut cumulative = 0i128;
             let mut chosen_key = String::new();
             for (k, v) in &remaining {
-                cumulative += v;
+                cumulative += bigint_to_i128_sat(v);
                 if r < cumulative {
                     chosen_key = k.clone();
                     break;
                 }
             }
             if let Some(c) = remaining.get_mut(&chosen_key) {
-                *c -= 1;
-                if *c <= 0 {
+                *c -= BigInt::from(1);
+                if !c.is_positive() {
                     remaining.remove(&chosen_key);
                 }
             }
@@ -461,7 +466,7 @@ impl Interpreter {
     /// Helper for BagHash.grabpairs (works on a clone, does not mutate the original).
     fn dispatch_bag_grabpairs(
         &mut self,
-        bag: &std::collections::HashMap<String, i64>,
+        bag: &std::collections::HashMap<String, num_bigint::BigInt>,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         use crate::builtins::rng::builtin_rand;
@@ -485,8 +490,8 @@ impl Interpreter {
             let ks: Vec<String> = remaining.keys().cloned().collect();
             let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
             let key = ks[idx].clone();
-            let val = remaining.remove(&key).unwrap_or(0);
-            grabbed.push(Value::Pair(key, Box::new(Value::Int(val))));
+            let val = remaining.remove(&key).unwrap_or_default();
+            grabbed.push(Value::Pair(key, Box::new(Value::from_bigint(val))));
         }
         Ok(Value::Seq(Arc::new(grabbed)))
     }

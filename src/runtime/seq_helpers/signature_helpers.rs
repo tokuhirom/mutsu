@@ -91,7 +91,7 @@ impl Interpreter {
                 Vec::new(),
                 items
                     .iter()
-                    .map(|(k, v)| (k.clone(), Value::Int(*v)))
+                    .map(|(k, v)| (k.clone(), Value::from_bigint(v.clone())))
                     .collect(),
             )),
             Value::Mix(items, _) => Some((

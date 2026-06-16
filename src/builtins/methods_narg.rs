@@ -15,7 +15,7 @@ fn out_of_range_failure(message: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 use num_bigint::BigInt;
-use num_traits::{ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -478,11 +478,13 @@ fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
         .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
-fn sample_weighted_bag_key(items: &HashMap<String, i64>) -> Option<Value> {
+fn sample_weighted_bag_key(items: &HashMap<String, BigInt>) -> Option<Value> {
+    use crate::runtime::utils::bigint_to_i128_sat;
     let mut total: i128 = 0;
     for count in items.values() {
-        if *count > 0 {
-            total += *count as i128;
+        let count = bigint_to_i128_sat(count);
+        if count > 0 {
+            total = total.saturating_add(count);
         }
     }
     if total <= 0 {
@@ -494,17 +496,18 @@ fn sample_weighted_bag_key(items: &HashMap<String, i64>) -> Option<Value> {
         needle = total - 1;
     }
     for (key, count) in items {
-        if *count <= 0 {
+        let count = bigint_to_i128_sat(count);
+        if count <= 0 {
             continue;
         }
-        if needle < *count as i128 {
+        if needle < count {
             return Some(Value::str(key.clone()));
         }
-        needle -= *count as i128;
+        needle -= count;
     }
     items
         .iter()
-        .find_map(|(key, count)| (*count > 0).then(|| Value::str(key.clone())))
+        .find_map(|(key, count)| (*count > BigInt::zero()).then(|| Value::str(key.clone())))
 }
 
 fn int_to_superscript(n: i64) -> String {
@@ -714,8 +717,7 @@ pub(crate) fn native_method_1arg(
         "ACCEPTS" if matches!(target, Value::Bag(..)) => {
             let result = match (target, arg) {
                 (Value::Bag(bag1, _), Value::Bag(bag2, _)) => {
-                    bag1.len() == bag2.len()
-                        && bag1.iter().all(|(k, v)| bag2.get(k).copied() == Some(*v))
+                    bag1.len() == bag2.len() && bag1.iter().all(|(k, v)| bag2.get(k) == Some(v))
                 }
                 _ => false,
             };
@@ -744,8 +746,8 @@ pub(crate) fn native_method_1arg(
             };
             let result = match arg {
                 Value::Bag(data, _) => {
-                    let count = data.counts.get(&pk).copied().unwrap_or(0);
-                    Value::Int(count) == pv
+                    let count = data.counts.get(&pk).cloned().unwrap_or_else(BigInt::zero);
+                    Value::from_bigint(count) == pv
                 }
                 Value::Mix(data, _) => {
                     let w = data.weights.get(&pk).copied().unwrap_or(0.0);
@@ -1427,7 +1429,10 @@ pub(crate) fn native_method_1arg(
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
-                        runtime::format_sprintf_args(&fmt, &[Value::str(k.clone()), Value::Int(*v)])
+                        runtime::format_sprintf_args(
+                            &fmt,
+                            &[Value::str(k.clone()), Value::from_bigint(v.clone())],
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -1754,7 +1759,10 @@ pub(crate) fn native_method_1arg(
                 {
                     return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
                 }
-                let total_items: i128 = bag.values().map(|c| *c as i128).sum();
+                let total_items: i128 = bag
+                    .values()
+                    .map(crate::runtime::utils::bigint_to_i128_sat)
+                    .sum();
                 let count: i128 = match arg {
                     Value::Whatever => total_items,
                     Value::Num(f) if f.is_infinite() && f.is_sign_positive() => total_items,
@@ -1769,8 +1777,8 @@ pub(crate) fn native_method_1arg(
                 // Build a mutable copy of counts for without-replacement picking
                 let mut counts: Vec<(String, i128)> = bag
                     .iter()
-                    .filter(|(_, c)| **c > 0)
-                    .map(|(k, c)| (k.clone(), *c as i128))
+                    .filter(|(_, c)| c.is_positive())
+                    .map(|(k, c)| (k.clone(), crate::runtime::utils::bigint_to_i128_sat(c)))
                     .collect();
                 let mut total: i128 = counts.iter().map(|(_, c)| *c).sum();
                 let pick_count = (count as usize).min(total as usize);
@@ -1964,8 +1972,8 @@ pub(crate) fn native_method_1arg(
                 if count == 0 || bag.is_empty() {
                     return Some(Ok(Value::array(Vec::new())));
                 }
-                let mut pairs: Vec<(String, i64)> =
-                    bag.iter().map(|(k, v)| (k.clone(), *v)).collect();
+                let mut pairs: Vec<(String, BigInt)> =
+                    bag.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 let pick_count = count.min(pairs.len());
                 let mut result = Vec::with_capacity(pick_count);
                 for _ in 0..pick_count {
@@ -1975,7 +1983,7 @@ pub(crate) fn native_method_1arg(
                     let idx = (crate::builtins::rng::builtin_rand() * pairs.len() as f64) as usize
                         % pairs.len();
                     let (key, count) = pairs.swap_remove(idx);
-                    result.push(Value::Pair(key, Box::new(Value::Int(count))));
+                    result.push(Value::Pair(key, Box::new(Value::from_bigint(count))));
                 }
                 return Some(Ok(Value::array(result)));
             }
@@ -2394,8 +2402,8 @@ pub(crate) fn native_method_1arg(
             }
             Value::Bag(data, _) => {
                 let key = arg.to_string_value();
-                let count = data.counts.get(&key).copied().unwrap_or(0);
-                Some(Ok(Value::Int(count)))
+                let count = data.counts.get(&key).cloned().unwrap_or_else(BigInt::zero);
+                Some(Ok(Value::from_bigint(count)))
             }
             Value::Mix(data, _) => {
                 let key = arg.to_string_value();
@@ -2868,7 +2876,7 @@ pub(crate) fn native_method_2arg(
                     .map(|(k, v)| {
                         runtime::format_sprintf_args(
                             &fmt_str,
-                            &[Value::str(k.clone()), Value::Int(*v)],
+                            &[Value::str(k.clone()), Value::from_bigint(v.clone())],
                         )
                     })
                     .collect::<Vec<_>>()

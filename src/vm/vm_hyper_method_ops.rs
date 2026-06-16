@@ -57,12 +57,12 @@ impl Interpreter {
             Value::Bag(bag, _) => {
                 let mut counts = std::collections::HashMap::new();
                 for (k, c) in bag.counts.iter() {
-                    let n = c + delta;
-                    if n > 0 {
+                    let n = c + num_bigint::BigInt::from(delta);
+                    if num_traits::Signed::is_positive(&n) {
                         counts.insert(k.clone(), n);
                     }
                 }
-                Value::bag_hash(counts)
+                Value::bag_hash_big(counts)
             }
             Value::Mix(mix, _) => {
                 let mut weights = std::collections::HashMap::new();

@@ -146,7 +146,7 @@ fn invert_value(target: &Value) -> Option<Value> {
         Value::Bag(items, _) => {
             for (k, count) in items.iter() {
                 result.push(make_inverted_pair(
-                    Value::Int(*count),
+                    Value::from_bigint(count.clone()),
                     Value::str(k.clone()),
                 ));
             }
@@ -313,7 +313,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut original_keys = std::collections::HashMap::new();
                 let mut has_typed = false;
                 for (k, v) in b.iter() {
-                    map.insert(k.clone(), Value::Int(*v));
+                    map.insert(k.clone(), Value::from_bigint(v.clone()));
                     let typed = b.typed_key(k);
                     if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
                         has_typed = true;
@@ -445,7 +445,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     s.iter().map(|_| Value::Bool(true)).collect(),
                 ))),
                 Value::Bag(b, _) => Some(Ok(Value::array(
-                    b.values().map(|v| Value::Int(*v)).collect(),
+                    b.values().map(|v| Value::from_bigint(v.clone())).collect(),
                 ))),
                 Value::Mix(m, _) => Some(Ok(Value::array(
                     m.values()
@@ -511,7 +511,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     let mut kv = Vec::new();
                     for (k, v) in b.iter() {
                         kv.push(Value::str(k.clone()));
-                        kv.push(Value::Int(*v));
+                        kv.push(Value::from_bigint(v.clone()));
                     }
                     Some(Ok(Value::array(kv)))
                 }
@@ -588,7 +588,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ))),
                 Value::Bag(b, _) => Some(Ok(Value::array(
                     b.iter()
-                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
+                        .map(|(k, v)| {
+                            Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone())))
+                        })
                         .collect(),
                 ))),
                 Value::Mix(m, _) => Some(Ok(Value::array(
@@ -676,7 +678,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         .iter()
                         .map(|(k, v)| {
                             Value::ValuePair(
-                                Box::new(Value::Int(*v)),
+                                Box::new(Value::from_bigint(v.clone())),
                                 Box::new(Value::str(k.clone())),
                             )
                         })
@@ -738,7 +740,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Bag(items, _) => {
                 let mut result = Vec::new();
                 for (k, count) in items.iter() {
-                    for _ in 0..*count {
+                    let count = crate::runtime::utils::bigint_to_i64_sat(count);
+                    for _ in 0..count {
                         result.push(Value::str(k.clone()));
                     }
                 }
@@ -809,7 +812,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "total" => match target {
             Value::Set(s, _) => Some(Ok(Value::Int(s.len() as i64))),
-            Value::Bag(b, _) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
+            Value::Bag(b, _) => Some(Ok(Value::from_bigint(
+                b.values().sum::<num_bigint::BigInt>(),
+            ))),
             Value::Mix(m, _) => {
                 // Sort values before summing to ensure deterministic results
                 // regardless of HashMap iteration order, avoiding f64
