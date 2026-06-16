@@ -43,6 +43,27 @@ impl Compiler {
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
+            && let Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } = &args[0]
+            && let Some(then_assign) = Self::assign_expr_for_lvalue(then_expr, &args[2])
+            && let Some(else_assign) = Self::assign_expr_for_lvalue(else_expr, &args[2])
+        {
+            // `(cond ?? $a !! $b) = rhs`: the ternary yields whichever branch is
+            // the selected lvalue, then the assignment writes through to it.
+            // Desugar to `cond ?? ($a = rhs) !! ($b = rhs)` so only the taken
+            // branch is assigned (and rhs is evaluated once, in that branch).
+            let desugared = Expr::Ternary {
+                cond: cond.clone(),
+                then_expr: Box::new(then_assign),
+                else_expr: Box::new(else_assign),
+            };
+            self.compile_expr(&desugared);
+            return;
+        } else if name == "__mutsu_assign_callable_lvalue"
+            && args.len() == 3
             && let Expr::ArrayLiteral(targets) = &args[0]
             && targets.iter().all(|t| {
                 matches!(
