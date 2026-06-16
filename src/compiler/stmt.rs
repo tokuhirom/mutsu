@@ -1114,6 +1114,7 @@ impl Compiler {
                     self.code.emit(OpCode::CheckReadOnly(name_idx));
                 }
                 if matches!(op, AssignOp::Bind) {
+                    let mut scalar_elem_bind = false;
                     if effective_name.starts_with('@') {
                         self.code.emit(OpCode::MarkBindContext);
                     } else if !effective_name.starts_with('%') && !effective_name.starts_with('&') {
@@ -1124,10 +1125,24 @@ impl Compiler {
                         // assignment and clears the marker, so `$r.VAR.^name`
                         // would wrongly report Scalar and `@a = $r` would itemize.
                         self.code.emit(OpCode::MarkScalarBindContext);
+                        // A bound array/hash element (`$x := @a[1]`) must share a
+                        // cell with the source slot so a later `$x = v` writes
+                        // through to `@a[1]`, exactly like the `my $x := @a[1]`
+                        // VarDecl path. Without cell promotion the rebind just
+                        // snapshots the element value.
+                        scalar_elem_bind = matches!(expr, Expr::Index { .. });
                     }
                     // Signal rebind context for cleanup of old bind pairs.
                     self.code.emit(OpCode::MarkRebindContext);
-                    self.compile_call_arg(expr);
+                    if scalar_elem_bind {
+                        self.scalar_bind_autovivify = true;
+                        self.bind_terminal = true;
+                        self.compile_call_arg(expr);
+                        self.scalar_bind_autovivify = false;
+                        self.bind_terminal = false;
+                    } else {
+                        self.compile_call_arg(expr);
+                    }
                 } else {
                     // Fuse `$x OP= rhs` (parsed as `$x = $x OP rhs`) into an
                     // atomic RMW for plain env-named scalars (Track C). The fused
