@@ -659,7 +659,7 @@ impl Interpreter {
                             named_with_hash.insert(hash_name.clone(), Vec::new());
                         }
                     }
-                    let mut match_obj = Value::make_match_object_full(
+                    let mut match_obj = Value::make_match_object_full_q(
                         captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
@@ -669,6 +669,7 @@ impl Interpreter {
                         &captures.positional_subcaps,
                         &captures.positional_quantified,
                         Some(&text),
+                        &captures.named_quantified,
                     );
                     // Apply hash captures: set named entries to Hash values
                     if !captures.hash_captures.is_empty()

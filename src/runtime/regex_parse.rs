@@ -4574,23 +4574,29 @@ impl Interpreter {
                 };
             // When both a user alias ($<name>=) and a builtin class name are pending,
             // the alias becomes the primary capture and the builtin name becomes secondary.
-            let primary_named = pending_named_capture.take();
-            let secondary_named = if primary_named.is_some() {
+            let user_alias = pending_named_capture.take();
+            let primary_is_user_alias = user_alias.is_some();
+            let secondary_named = if primary_is_user_alias {
                 // Alias takes precedence; builtin name (if any) becomes secondary capture.
                 pending_builtin_named_capture.take()
             } else {
                 None
             };
-            let primary_named = primary_named.or_else(|| pending_builtin_named_capture.take());
+            let primary_named = user_alias.or_else(|| pending_builtin_named_capture.take());
             let hash_capture = pending_hash_capture.take();
-            // A named capture on a *quantified* atom (`$<x>=<[a..z]>*`, `$<x>=\w+`)
+            // A USER alias on a *quantified* atom (`$<x>=<[a..z]>*`, `$<x>=\w+`)
             // captures the WHOLE quantified span as a single Match (e.g. "abc"),
             // and a zero-width match still produces an (empty) capture — matching
             // Raku. mutsu's quantifier loop otherwise applies the named capture
             // per-iteration (yielding `[a, b, c]`) and drops the zero-match case.
             // Wrap the quantified atom in a non-capturing group so the named
             // capture sits on a `quant: One` token spanning the entire run.
-            let wrap_named_quant = primary_named.is_some()
+            //
+            // A *builtin subrule* (`<alpha>+`, `<digit>**3`) is the opposite: Raku
+            // quantifies the subrule itself, producing a LIST with one Match per
+            // repetition. So only wrap when the primary name is a user alias; a
+            // bare builtin keeps its per-iteration captures via the quantifier loop.
+            let wrap_named_quant = primary_is_user_alias
                 && hash_capture.is_none()
                 && token_separator.is_none()
                 && matches!(
