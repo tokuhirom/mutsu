@@ -195,8 +195,6 @@ files occasionally).
 
 - **S04-statements/for.t** — **Medium**, 22/111. No exception on bad loop-var
   binding (`for 1,2 -> $a, $b, $c`) + topic-aliasing edge cases (VM control ops).
-- **S06-advanced/return_function.t** — **Medium**. Aborts at test 1: `return` via
-  named-argument binding to a routine returns the wrong value.
 - **S06-signature/slurpy-params.t** — **Medium (multi-feature)**. Aborts at test 43:
   `+@`/`+foo` single-argument rule over ranges/lists + a Junction `*@a` slurpy that
   must not autothread (34/35).
@@ -269,9 +267,17 @@ Interpreter-removal / first-class-container tracks advance.
 
 **Object-hash `%{Mu}`** (non-Str-keyed hashes):
 
-- **S32-list/classify.t** — 39/40; only "classify works with Junctions" remains
-  (Junction mapper → object hash keyed by `.WHICH`, retrieve without autothreading).
-- **S09-hashes/objecthash.t** — **Hard**, 8/36 then aborts (planned 62).
+- **S32-list/classify.t** — 39/40 under FUDGE (tests 28-30 `(:@even,:@odd) := classify`
+  are `#?rakudo skip`ped); only test 40 "classify works with Junctions" blocks the
+  whitelist. **Subtle/implementation-dependent junction semantics** (verified
+  2026-06-16): classify with a Junction-returning mapper stores the *junction itself*
+  as the key (`$m.keys` = `any(True,False)` etc. — SAME in mutsu and rakudo). The gap
+  is the *retrieve*: rakudo's `$m{ any(False,False) }` does NOT autothread — it returns
+  the flat list `(cbd xyz)` by matching the stored junction key directly, whereas mutsu
+  autothreads the subscript junction into per-eigenstate lookups → `any((Any),(Any))`.
+  (Plain-hash junction subscripts DO autothread in both; classify result hashes are
+  special.) Not a clean lever — defer until junction-key hash identity is modeled.
+- **S09-hashes/objecthash.t** — **DONE**, whitelisted 62/62 (PR #3159, 2026-06-16).
 - **S02-types/set.t** — last 2 failures ("coercion of object Hash to Set 1/2",
   `:{ }.Set`) need object-hash semantics. (Test 226 typed-hash bind type-check is
   already FIXED.)
@@ -350,6 +356,11 @@ motivate.
   runnable pass.
 - S06-advanced/caller.t — `@_` in a method (rakudo: "Placeholder variables cannot
   be used in a method").
+- S06-advanced/return_function.t — rakudo on this box **fails to compile** (line 19
+  `($rv1,$rv2) := |(t2)`: "Cannot use bind operator with this left-hand side"), and
+  even the test-1 expectation is stale: `my $x := |(f)` where `f` returns `:x<1>`
+  binds a **Slip** `(x => 1)` (rakudo), not `1` as the test asserts; `g(|(f))` dies
+  "Too few positionals". Roast-vs-rakudo version skew. (Verified 2026-06-16.)
 - S06-advanced/return-prioritization.t — rakudo also dies at test 5 (LEAVE +
   return). 2/11 fail in mutsu.
 - S06-operator-overloading/infix.t — "Code items cannot be rebound" (rebinding
