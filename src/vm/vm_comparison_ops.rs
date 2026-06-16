@@ -1251,6 +1251,10 @@ impl Interpreter {
             }
             return Err(RuntimeError::assignment_ro(Some("Str")));
         }
+        // When the LHS alias *is* the topic itself (`$_ ~~ s///`), the
+        // substitution-modified topic must persist — restoring `saved_topic`
+        // below would clobber it. Skip the restore in that case.
+        let lhs_is_topic = lhs_var.as_deref() == Some("_");
         if let Some(var_name) = lhs_var {
             let modified_topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
             self.env_mut()
@@ -1260,10 +1264,12 @@ impl Interpreter {
             // caller sees it without an O(locals) sync_locals_from_env pull.
             self.update_local_if_exists(code, var_name, &modified_topic);
         }
-        if let Some(v) = saved_topic {
-            self.env_mut().insert("_".to_string(), v);
-        } else {
-            self.env_mut().remove("_");
+        if !lhs_is_topic {
+            if let Some(v) = saved_topic {
+                self.env_mut().insert("_".to_string(), v);
+            } else {
+                self.env_mut().remove("_");
+            }
         }
         // When RHS was a transliterate (tr///), return the result directly.
         // In Raku, $x ~~ tr/a/b/ returns a StrDistance that stringifies to the after-string.
