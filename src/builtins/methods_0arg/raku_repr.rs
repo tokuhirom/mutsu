@@ -640,7 +640,69 @@ pub fn raku_value(v: &Value) -> String {
             }
             format!("\\({})", parts.join(", "))
         }
+        Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+            setbagmix_raku(v).unwrap_or_else(|| v.to_string_value())
+        }
         other => other.to_string_value(),
+    }
+}
+
+/// Render the `.raku`/`.perl` form of a Set/Bag/Mix (and their mutable `*Hash`
+/// variants): `Set.new(1,2,3)`, `("a"=>2,"b"=>1).Bag`, `(:a(1.5)=>1).Mix`.
+/// Each element is rendered with its original type (via `typed_key`), not the
+/// internal string key. Returns `None` for any other value. Shared by
+/// `raku_value` (recursive element rendering) and the `.raku` method dispatch
+/// so both render identically.
+pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
+    match v {
+        // An empty *immutable* Set/Bag/Mix renders via its lowercase coercer
+        // (`set()`/`bag()`/`mix()`) in Raku, not the non-empty form. The empty
+        // mutable variants keep their non-empty form (`SetHash.new()` /
+        // `().BagHash` / `().MixHash`), so only special-case the immutable ones.
+        Value::Set(s, false) if s.is_empty() => Some("set()".to_string()),
+        Value::Bag(b, false) if b.is_empty() => Some("bag()".to_string()),
+        Value::Mix(m, false) if m.is_empty() => Some("mix()".to_string()),
+        Value::Set(s, mutable) => {
+            let type_name = if *mutable { "SetHash" } else { "Set" };
+            let mut keys: Vec<&String> = s.iter().collect();
+            keys.sort();
+            let elems = keys
+                .iter()
+                .map(|k| raku_value(&s.typed_key(k)))
+                .collect::<Vec<_>>()
+                .join(",");
+            Some(format!("{}.new({})", type_name, elems))
+        }
+        Value::Bag(b, mutable) => {
+            let type_name = if *mutable { "BagHash" } else { "Bag" };
+            let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
+            keys.sort_by_key(|(k, _)| (*k).clone());
+            let pairs = keys
+                .iter()
+                .map(|(k, w)| format!("{}=>{}", raku_value(&b.typed_key(k)), w))
+                .collect::<Vec<_>>()
+                .join(",");
+            Some(format!("({}).{}", pairs, type_name))
+        }
+        Value::Mix(m, mutable) => {
+            let type_name = if *mutable { "MixHash" } else { "Mix" };
+            let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+            keys.sort_by_key(|(k, _)| (*k).clone());
+            let pairs = keys
+                .iter()
+                .map(|(k, w)| {
+                    let w_str = if w.fract() == 0.0 {
+                        format!("{}", **w as i64)
+                    } else {
+                        format!("{}", w)
+                    };
+                    format!("{}=>{}", raku_value(&m.typed_key(k)), w_str)
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            Some(format!("({}).{}", pairs, type_name))
+        }
+        _ => None,
     }
 }
 

@@ -336,23 +336,11 @@ pub(super) fn dispatch(
                 ))))
             }
         }
-        Value::Bag(b, mutable) => {
+        Value::Bag(_, _) => {
             if method == "raku" || method == "perl" {
-                let type_name = if *mutable { "BagHash" } else { "Bag" };
-                let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
-                keys.sort_by_key(|(k, _)| (*k).clone());
-                let pairs = keys
-                    .iter()
-                    .map(|(k, v)| {
-                        format!(
-                            "\"{}\"=>{}",
-                            k.replace('\\', "\\\\").replace('"', "\\\""),
-                            v
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
+                Some(Ok(Value::str(
+                    super::raku_repr::setbagmix_raku(target).unwrap(),
+                )))
             } else {
                 // gist: Bag(key(count) ...) or BagHash(key(count) ...)
                 Some(Ok(Value::str(
@@ -360,22 +348,11 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        Value::Set(s, mutable) => {
+        Value::Set(_, _) => {
             if method == "raku" || method == "perl" {
-                let type_name = if *mutable { "SetHash" } else { "Set" };
-                let mut keys: Vec<&String> = s.iter().collect();
-                keys.sort();
-                let pairs = keys
-                    .iter()
-                    .map(|k| {
-                        format!(
-                            "\"{}\"=>Bool::True",
-                            k.replace('\\', "\\\\").replace('"', "\\\"")
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
+                Some(Ok(Value::str(
+                    super::raku_repr::setbagmix_raku(target).unwrap(),
+                )))
             } else {
                 // gist: Set(a b c) or SetHash(a b c)
                 Some(Ok(Value::str(
@@ -383,28 +360,11 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        Value::Mix(m, mutable) => {
+        Value::Mix(_, _) => {
             if method == "raku" || method == "perl" {
-                let type_name = if *mutable { "MixHash" } else { "Mix" };
-                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
-                keys.sort_by_key(|(k, _)| (*k).clone());
-                let pairs = keys
-                    .iter()
-                    .map(|(k, v)| {
-                        let v_str = if v.fract() == 0.0 {
-                            format!("{}", **v as i64)
-                        } else {
-                            format!("{}", v)
-                        };
-                        format!(
-                            "\"{}\"=>{}",
-                            k.replace('\\', "\\\\").replace('"', "\\\""),
-                            v_str
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
+                Some(Ok(Value::str(
+                    super::raku_repr::setbagmix_raku(target).unwrap(),
+                )))
             } else {
                 // gist: Mix(key(weight) ...) or MixHash(key(weight) ...)
                 Some(Ok(Value::str(
