@@ -20,6 +20,28 @@ impl Interpreter {
             id: target_id,
         } = &target
         {
+            // `Duration` does `Real`: delegate numeric methods (e.g.
+            // `(now - now).abs`) to its underlying numeric value. `.Str` / `.gist`
+            // / `.raku` and other identity methods keep Duration's own behaviour.
+            if class_name.resolve() == "Duration"
+                && matches!(
+                    method,
+                    "abs"
+                        | "floor"
+                        | "ceiling"
+                        | "round"
+                        | "truncate"
+                        | "sign"
+                        | "Int"
+                        | "Rat"
+                        | "FatRat"
+                        | "Real"
+                        | "sqrt"
+                )
+            {
+                let num = crate::runtime::utils::coerce_to_numeric(target.clone());
+                return self.call_method_with_values(num, method, args);
+            }
             if let Some(private_rest) = method.strip_prefix('!') {
                 let caller_class = self
                     .method_class_stack
