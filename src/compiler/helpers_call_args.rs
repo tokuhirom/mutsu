@@ -194,6 +194,18 @@ impl Compiler {
             // Anonymous scalar assignment (`$ = value`) produces a writable
             // container, so wrap it with VarRef so `is rw` dispatch can match.
             Expr::AssignExpr { name, .. } => Some(name.clone()),
+            // An inline declaration used as an argument (`$y := my $x`,
+            // `f(my $z)`) parses to `DoStmt(VarDecl { .. })`. Compiling it
+            // declares the variable in the enclosing scope and leaves its value
+            // on the stack; wrap that with a VarRef to the freshly-declared
+            // variable so a `:=` bind (or an `is rw` parameter) can alias the
+            // new container rather than snapshotting its value. The `VarDecl`
+            // `name` already carries the sigil convention WrapVarRef expects
+            // ("x" for `$x`, "@x" for `@x`, "%y" for `%y`).
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { name, .. } => Some(name.clone()),
+                _ => None,
+            },
             _ => None,
         };
         // For Index expressions, create temp variables for `is rw` writeback
