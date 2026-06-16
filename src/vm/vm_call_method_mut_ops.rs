@@ -575,11 +575,16 @@ impl Interpreter {
             && matches!(&target, Value::Array(..))
             && self.shared_vars_active
         {
-            let result = loan_env!(
-                self,
-                push_to_existing_shared_array(&target_name, args.clone())
-            )
-            .unwrap_or_else(|| loan_env!(self, push_to_shared_var(&target_name, args, &target)));
+            // Route through the atomic shared store. The base-key
+            // `push_to_existing_shared_array`/`push_to_shared_var` write the
+            // plain `@a` shared entry, which `set_shared_var` can clobber with a
+            // stale empty snapshot during env sync — losing concurrent `start {
+            // @a.push(...) }` updates from sibling threads. (The base-key path
+            // also `extend`ed for `unshift`, appending instead of prepending.)
+            // The `__mutsu_atomic_arr::` store is exempt from that clobber, so
+            // concurrent push/unshift serialize under its lock and all land.
+            let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.clone());
+            let result = self.shared_array_extend(&target_name, norm, method == "unshift");
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -1448,6 +1453,8 @@ impl Interpreter {
         // Shared arrays keep their interior-mutation (Arc>1) semantics in the
         // interpreter so bound aliases observe the change; type-constrained or
         // metadata-bearing containers need element checks / typed empty Failures.
+        // (Shared `push`/`unshift` are intercepted earlier by the shared-array
+        // fast path in `exec_call_method_mut_op`.)
         if self.shared_vars_active
             || loan_env!(self, var_type_constraint(target_name)).is_some()
             || self.container_type_metadata(target).is_some()
