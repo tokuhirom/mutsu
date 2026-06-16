@@ -355,7 +355,9 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
                 // gist: Bag(key(count) ...) or BagHash(key(count) ...)
-                Some(Ok(Value::str(runtime::utils::setbagmix_gist(target).unwrap())))
+                Some(Ok(Value::str(
+                    runtime::utils::setbagmix_gist(target).unwrap(),
+                )))
             }
         }
         Value::Set(s, mutable) => {
@@ -376,7 +378,9 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
                 // gist: Set(a b c) or SetHash(a b c)
-                Some(Ok(Value::str(runtime::utils::setbagmix_gist(target).unwrap())))
+                Some(Ok(Value::str(
+                    runtime::utils::setbagmix_gist(target).unwrap(),
+                )))
             }
         }
         Value::Mix(m, mutable) => {
@@ -403,7 +407,9 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
                 // gist: Mix(key(weight) ...) or MixHash(key(weight) ...)
-                Some(Ok(Value::str(runtime::utils::setbagmix_gist(target).unwrap())))
+                Some(Ok(Value::str(
+                    runtime::utils::setbagmix_gist(target).unwrap(),
+                )))
             }
         }
         Value::Package(name) => {
