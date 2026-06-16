@@ -307,6 +307,17 @@ fn bind_source_name(expr: &Expr) -> Option<String> {
             };
             Some(format!("{}\x00idx\x00{}", target_name, idx_str))
         }
+        // Inline declaration on the RHS of a bind, e.g. `@a[1] := my $x` or
+        // `$y := my $x`. The `my $x` parses to a `DoStmt(VarDecl { .. })` whose
+        // `name` already carries the sigil convention used by bind metadata
+        // ("x" for `$x`, "@x" for `@x`, "%y" for `%y`). The declaration itself
+        // runs in the enclosing scope when the bind value is evaluated; here we
+        // only need to surface the declared variable's name so the bind sets up
+        // cell sharing between the target and the freshly-declared variable.
+        Expr::DoStmt(stmt) => match stmt.as_ref() {
+            Stmt::VarDecl { name, .. } => Some(name.clone()),
+            _ => None,
+        },
         _ => None,
     }
 }
