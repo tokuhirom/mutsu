@@ -496,6 +496,20 @@ impl Interpreter {
         } else {
             target
         };
+        // gist/Str/raku of a *genuinely* lazy list (an infinite sequence or a
+        // lazy map/grep pipeline) renders as raku's placeholder rather than
+        // reifying the (possibly infinite) sequence: `(...)` for gist/raku,
+        // `...` for Str. An eager gather has neither `sequence_spec` nor
+        // `lazy_pipe` and is forced & rendered normally below.
+        if let Value::LazyList(ref ll) = target
+            && matches!(method, "gist" | "Str" | "raku" | "perl")
+            && (ll.lazy_pipe.is_some() || ll.sequence_spec.is_some())
+        {
+            self.stack.push(Value::str(
+                if method == "Str" { "..." } else { "(...)" }.to_string(),
+            ));
+            return Ok(());
+        }
         // Force gather-sourced LazyList before method dispatch for methods that need
         // element access. This must happen before the native method fast path, because
         // builtins don't have access to the interpreter for forcing.
