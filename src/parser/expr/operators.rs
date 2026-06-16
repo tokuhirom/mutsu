@@ -532,16 +532,31 @@ pub(super) fn parse_junction_infix_op(input: &str) -> Option<(JunctionInfixOp, u
             return None;
         }
         Some((JunctionInfixOp::All, 1))
-    // ^ but not ^.. or ^^ or ^=
+    // ^ but not ^.. or ^^ or ^= or a start-excluding flip-flop (^ff / ^fff …)
     } else if input.starts_with('^')
         && !input.starts_with("^.")
         && !input.starts_with("^^")
         && !input.starts_with("^=")
+        && !starts_with_caret_flipflop(input)
     {
         Some((JunctionInfixOp::One, 1))
     } else {
         None
     }
+}
+
+/// True when `input` begins with a start-excluding flip-flop operator
+/// (`^ff`, `^ff^`, `^fff`, `^fff^`). These must not be mis-parsed as the
+/// one-junction infix `^` followed by a bare `ff`/`fff`.
+fn starts_with_caret_flipflop(input: &str) -> bool {
+    for op in ["^fff^", "^fff", "^ff^", "^ff"] {
+        if let Some(rest) = input.strip_prefix(op)
+            && !is_ident_char(rest.as_bytes().first().copied())
+        {
+            return true;
+        }
+    }
+    false
 }
 
 pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {

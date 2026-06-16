@@ -912,7 +912,42 @@ fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             },
         ));
     }
-    or_or_expr_mode(input, mode)
+    flipflop_expr_mode(input, mode)
+}
+
+/// Flip-flop operators (`ff`/`fff` and the endpoint-excluding forms) at
+/// Raku's *conditional* precedence (`?? !!` level): looser than tight-or
+/// (`||`), tight-and (`&&`), and the chaining comparisons (`==` etc.), but
+/// tighter than item assignment (`=`) and the comma/list-infix operators. So
+/// `$n == 3 ff $n == 6` parses as `($n == 3) ff ($n == 6)`.
+fn flipflop_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = or_or_expr_mode(input, mode)?;
+    let mut current_assoc_key: Option<String> = None;
+    loop {
+        let (r, _) = ws(rest)?;
+        let Some((name, len)) = parse_flipflop_infix(r) else {
+            break;
+        };
+        if let Some(prev) = current_assoc_key.as_deref()
+            && prev != name
+        {
+            return Err(non_list_associative_error(prev, &name));
+        }
+        let r = &r[len..];
+        let (r, _) = ws(r)?;
+        let (r, right) = or_or_expr_mode(r, mode).map_err(|err| {
+            enrich_expected_error(err, "expected expression after flip-flop operator", r.len())
+        })?;
+        left = Expr::InfixFunc {
+            name: name.clone(),
+            left: Box::new(left),
+            right: vec![right],
+            modifier: None,
+        };
+        current_assoc_key = Some(name);
+        rest = r;
+    }
+    Ok((rest, left))
 }
 
 /// || , ^^ , and //
@@ -1583,28 +1618,6 @@ fn parse_list_infix_loop<'a>(
             rest = r;
             continue;
         }
-        // Flip-flop operators: ff/fff and endpoint-excluding forms.
-        if let Some((name, len)) = parse_flipflop_infix(r) {
-            if let Some(prev) = current_assoc_key.as_deref()
-                && prev != name
-            {
-                return Err(non_list_associative_error(prev, &name));
-            }
-            let r = &r[len..];
-            let (r, _) = ws(r)?;
-            let (r, right) = range_expr(r).map_err(|err| {
-                enrich_expected_error(err, "expected expression after flip-flop operator", r.len())
-            })?;
-            *left = Expr::InfixFunc {
-                name: name.clone(),
-                left: Box::new(left.clone()),
-                right: vec![right],
-                modifier: None,
-            };
-            *current_assoc_key = Some(name);
-            rest = r;
-            continue;
-        }
         // User-defined infix words (typically via my &infix:<...> = ...),
         // e.g. `42 same-in-Int "42"`.
         // Do not span statement boundaries across newlines.
@@ -2051,6 +2064,8 @@ fn is_reserved_infix_word(name: &str) -> bool {
             | "le"
             | "ge"
             | "eqv"
+            | "ff"
+            | "fff"
             | "after"
             | "before"
             | "gcd"
