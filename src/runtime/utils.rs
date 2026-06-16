@@ -139,14 +139,19 @@ pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<HashMap<String
     None
 }
 
+/// Whether reading this hash's entries should yield typed (original) keys
+/// rather than `Str` keys. See [`crate::value::HashData::has_typed_keys`].
+pub(crate) fn hash_uses_typed_keys(hash: &Value) -> bool {
+    matches!(hash, Value::Hash(arc) if arc.has_typed_keys())
+}
+
 /// Retrieve the original (typed) key value for a hash entry, if available.
-/// Falls back to the string key if no original key is embedded.
+/// Falls back to the string key if no original key is embedded. Honors the
+/// object-hash gate (see [`HashData::typed_key`]): a plain hash always yields a
+/// `Str` key.
 pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
-    if let Value::Hash(arc) = hash
-        && let Some(orig_keys) = arc.original_keys.as_ref()
-        && let Some(orig) = orig_keys.get(str_key)
-    {
-        return orig.clone();
+    if let Value::Hash(arc) = hash {
+        return arc.typed_key(str_key);
     }
     Value::str(str_key.to_string())
 }

@@ -1323,13 +1323,28 @@ impl HashData {
         self.declared_type = None;
     }
 
+    /// Whether reading this hash's entries should yield typed (original) keys
+    /// rather than plain `Str` keys. Only object hashes (`my %h{KeyType}`,
+    /// marked by `key_type`) and hashes coerced from a Set/Bag/Mix (tagged with
+    /// the `__mutsu_setty_origin` marker) preserve typed keys. A *plain* hash
+    /// always reports `Str` keys even if construction speculatively recorded a
+    /// typed key (e.g. the `Int` 1 from `my %h = 1..6`), because Raku hash keys
+    /// are always stringified.
+    pub fn has_typed_keys(&self) -> bool {
+        self.original_keys.as_ref().is_some_and(|orig| {
+            !orig.is_empty()
+                && (self.key_type.is_some() || orig.contains_key("__mutsu_setty_origin"))
+        })
+    }
+
     /// Get the original (typed) key Value for a stored string key. For object
     /// hashes (`my %h{Int}`) the stored key is a `.WHICH` string (e.g.
     /// `"Int|1"`); this returns the real key object (`Int(1)`). Plain hashes
-    /// have no `original_keys`, so this returns a `Str`. Mirrors
-    /// `BagData::typed_key`.
+    /// report a `Str`. Mirrors `BagData::typed_key`. Honors [`Self::has_typed_keys`]:
+    /// a plain hash's speculative `original_keys` is ignored.
     pub fn typed_key(&self, str_key: &str) -> Value {
-        if let Some(ref orig) = self.original_keys
+        if self.has_typed_keys()
+            && let Some(ref orig) = self.original_keys
             && let Some(v) = orig.get(str_key)
         {
             return v.clone();
