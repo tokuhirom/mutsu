@@ -1,8 +1,20 @@
 use super::*;
 
 pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) -> Vec<Value> {
+    // A variable passed by reference (e.g. `f(@a)` / `f($items)`) arrives as a
+    // varref Capture wrapping the real value; unwrap before destructuring.
+    if let Some((_, inner)) = varref_from_value(value) {
+        return positional_values_from_unpack_target(&inner);
+    }
     match value {
         Value::Capture { positional, .. } => (**positional).clone(),
+        // For sub-signature destructuring, a list is always taken apart
+        // element-wise even when itemized — e.g. `$(3, 4)` or an array variable
+        // bound to a single destructuring positional via the single-argument
+        // rule. `value_to_list` would otherwise return an itemized list as a
+        // single opaque element, which fails the destructuring arity check.
+        Value::Array(data, _) => data.items.clone(),
+        Value::Seq(items) | Value::Slip(items) => (**items).clone(),
         other => crate::runtime::value_to_list(other),
     }
 }
@@ -170,9 +182,32 @@ pub(in crate::runtime) fn sigilless_readonly_key(name: &str) -> String {
     format!("__mutsu_sigilless_readonly::{}", name)
 }
 
+/// Collect the `Pair`/`ValuePair` elements of a list into a named map. Used
+/// when a list of pairs is destructured by named sub-signature params.
+fn pairs_in_list_to_named(items: &[Value]) -> std::collections::HashMap<String, Value> {
+    let mut out = std::collections::HashMap::new();
+    for item in items {
+        match item {
+            Value::Pair(key, val) => {
+                out.insert(key.clone(), val.as_ref().clone());
+            }
+            Value::ValuePair(key, val) => {
+                out.insert(key.to_string_value(), val.as_ref().clone());
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 pub(in crate::runtime) fn named_values_from_unpack_target(
     value: &Value,
 ) -> std::collections::HashMap<String, Value> {
+    // Unwrap a varref Capture (a by-reference variable argument) to the real
+    // value before extracting named entries.
+    if let Some((_, inner)) = varref_from_value(value) {
+        return named_values_from_unpack_target(&inner);
+    }
     match value {
         Value::Capture { named, .. } => (**named).clone(),
         Value::Hash(map) => map.map.clone(),
@@ -183,6 +218,10 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
             out.insert("value".to_string(), *val.clone());
             out
         }
+        // A list of Pairs (e.g. `(a => 1, b => 2)`) destructured by named
+        // params `(:$a, :$b)` binds each pair's key to its value.
+        Value::Array(data, _) => pairs_in_list_to_named(&data.items),
+        Value::Seq(items) | Value::Slip(items) => pairs_in_list_to_named(items),
         Value::Instance { attributes, .. } => attributes.to_map(),
         _ => std::collections::HashMap::new(),
     }
