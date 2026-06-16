@@ -2120,6 +2120,18 @@ impl Interpreter {
                             Value::Array(items, kind.itemize())
                         }
                         Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
+                        // A scalar holding a Hash/Set/Bag/Mix assigned to an `@`
+                        // variable stays a single item (Raku: `my $h = %(...);
+                        // my @a = $h` -> `@a.elems == 1`). These types have no
+                        // "itemized" container kind, so wrap them in a Scalar
+                        // (like Seq) so the `@`-coercion does not flatten them
+                        // into pairs. (A *bare* Hash/Set assigned directly,
+                        // `my @a = set(...)`, has no scalar container and DOES
+                        // flatten -- it never reaches this opcode.)
+                        other @ (Value::Hash(_)
+                        | Value::Set(..)
+                        | Value::Bag(..)
+                        | Value::Mix(..)) => Value::Scalar(Box::new(other)),
                         other => other,
                     }
                 };
