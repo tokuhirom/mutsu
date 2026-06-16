@@ -811,14 +811,20 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             )
         }
         Value::LazyList(_) => value,
-        Value::Hash(ref map) => {
-            // Hash assigned to @-var: flatten into pairs
+        // A bare Hash assigned to an @-var flattens into its pairs
+        // (`my @a = %h`). An *itemized* hash (`my $h = %(...); my @a = $h`)
+        // stays a single element — `ItemizeVar` now tags it with
+        // `HashData.itemized` rather than the old `Scalar(Hash)` wrapper, so it
+        // must be handled here too (the `Scalar(inner)` arm below covers the
+        // Set/Bag/Mix itemized forms, which still use the wrapper).
+        Value::Hash(ref map) if !map.itemized => {
             let pairs: Vec<Value> = map
                 .iter()
                 .map(|(k, v)| map.typed_pair(k, v.clone()))
                 .collect();
             Value::real_array(pairs)
         }
+        Value::Hash(map) => Value::real_array(vec![Value::Hash(map)]),
         // A scalar holding a Hash/Set/Bag/Mix (itemized by `ItemizeVar` as
         // `Scalar(container)`) stays a single element, but unwrap the Scalar so
         // `@a[0]` is the bare container (preserving its `.gist`/`.raku`/type),
