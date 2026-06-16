@@ -166,7 +166,10 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
 /// (e.g. an explicitly itemized `$[1, 2]`) are not double-itemized.
 fn raku_hash_value(v: &Value) -> String {
     let base = raku_value(v);
-    if base.starts_with('$') {
+    // Don't double-itemize a value whose repr already carries a sigil: an
+    // explicitly itemized `$[...]`, or a cycle-reference placeholder for a
+    // recursive structure (`%hash_<ptr>` / `@Array_<ptr>`).
+    if base.starts_with(['$', '@', '%']) {
         return base;
     }
     match v {
