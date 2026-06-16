@@ -96,6 +96,13 @@ impl Interpreter {
                 }
                 // Scalar-wrapped values (.item / $()) are never flattened.
                 Value::Scalar(inner) => elems.push(Value::Scalar(inner)),
+                // Set/Bag/Mix are Iterable but NOT Positional, so they do not
+                // flatten in list context (unlike a List/Array/Seq/Range, and
+                // unlike a Hash, which does flatten to its pairs). A single
+                // `[set(1,2)]` therefore keeps the Set whole as one element.
+                // (Matches raku and `flat(set(...))`; `value_to_list` would
+                // otherwise decompose it into its key/True pairs.)
+                v @ (Value::Set(..) | Value::Bag(..) | Value::Mix(..)) => elems.push(v),
                 // In bracket-array literals (`[...]`), a single element is in
                 // list context and should flatten one level (e.g. `[2..6]`,
                 // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each
