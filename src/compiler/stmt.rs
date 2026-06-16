@@ -1407,8 +1407,7 @@ impl Compiler {
                 // (rw aliases), so we only add them to the set, not mark them.
                 let sigilless_param_names: Vec<String> = if has_sigilless {
                     let mut names = Vec::new();
-                    let single_sigilless =
-                        (**param_def).as_ref().is_some_and(|def| def.sigilless);
+                    let single_sigilless = (**param_def).as_ref().is_some_and(|def| def.sigilless);
                     if let Some(p) = param.as_ref().filter(|_| single_sigilless) {
                         names.push(p.strip_prefix('\\').unwrap_or(p).to_string());
                     }
