@@ -3033,18 +3033,26 @@ impl Interpreter {
         }
         match body_result {
             Ok(()) => {
-                // Successful try resets $! to Nil
-                self.env_mut().insert("!".to_string(), Value::Nil);
                 self.discard_let_saves(let_mark);
                 // A `try` that completes normally but yields a soft Failure value
                 // (e.g. the result of an expression that returned a Failure rather
                 // than throwing) handles that Failure: its value is now "caught",
-                // so subsequent uses must not re-throw the stored exception.
+                // so subsequent uses must not re-throw the stored exception. Per
+                // Raku semantics `$!` is then set to that Failure's exception
+                // (a successful try with a non-Failure result resets `$!` to Nil).
+                let mut failure_exception = None;
                 if let Some(top) = self.stack.last()
                     && matches!(top, Value::Instance { class_name, .. } if class_name == "Failure")
                 {
                     top.mark_failure_handled();
+                    if let Value::Instance { attributes, .. } = top
+                        && let Some(exc) = attributes.as_map().get("exception")
+                    {
+                        failure_exception = Some(exc.clone());
+                    }
                 }
+                self.env_mut()
+                    .insert("!".to_string(), failure_exception.unwrap_or(Value::Nil));
                 *ip = end;
                 Ok(())
             }
