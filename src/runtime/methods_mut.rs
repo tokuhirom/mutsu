@@ -3952,6 +3952,12 @@ impl Interpreter {
                     let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
                     pairs.extend(inner_pairs);
                 }
+                Value::Seq(items) | Value::Slip(items) => {
+                    // A Seq/Slip of pairs (e.g. from `%h.push: %x.invert`) is
+                    // flattened like an array, not stringified as one key.
+                    let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
+                    pairs.extend(inner_pairs);
+                }
                 Value::Hash(h, ..) => {
                     for (k, v) in h.iter() {
                         pairs.push((k.clone(), v.clone()));
@@ -3984,6 +3990,9 @@ impl Interpreter {
                     pairs.push((*k, *v));
                 }
                 Value::Array(items, ..) => {
+                    pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
+                }
+                Value::Seq(items) | Value::Slip(items) => {
                     pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
                 }
                 Value::Hash(h, ..) => {
