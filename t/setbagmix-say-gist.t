@@ -26,8 +26,8 @@ is (a => 1, b => 3).Mix.gist, 'Mix(a b(3))', 'Mix weight 1 omits the suffix';
 # --- nested inside a Hash value: the element gists with its wrapper ---
 is { x => set(1, 2) }.gist, '{x => Set(1 2)}', 'Set nested in a Hash value';
 
-# --- .raku is unaffected (still the pair-list form) ---
-is set("a").raku, '("a"=>Bool::True).Set', 'Set.raku unchanged';
+# --- .raku renders the proper constructor form (see t/setbagmix-raku-repr.t) ---
+is set("a").raku, 'Set.new("a")', 'Set.raku uses Set.new(...)';
 
 # --- empty collections ---
 is set().gist, 'Set()', 'empty Set.gist';

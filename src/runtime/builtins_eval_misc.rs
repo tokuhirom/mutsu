@@ -324,6 +324,10 @@ impl Interpreter {
                 let inner: Vec<String> = items.iter().map(Self::dd_format).collect();
                 format!("$[{}]", inner.join(", "))
             }
+            Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+                crate::builtins::methods_0arg::raku_repr::setbagmix_raku(val)
+                    .unwrap_or_else(|| format!("{:?}", val))
+            }
             _ => format!("{:?}", val),
         }
     }
