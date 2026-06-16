@@ -2600,6 +2600,21 @@ impl Interpreter {
         {
             return self.dispatch_tail(target, &args);
         }
+        // `.head(&callable)` / `.head(*)` — WhateverCode/Whatever argument. The
+        // native fast path only handles plain numeric counts; resolve the
+        // callable here against a finite, materializable target.
+        if method == "head"
+            && args.len() == 1
+            && matches!(
+                &args[0],
+                Value::Whatever | Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+            && !bypass_native_fastpath
+            && !matches!(&target, Value::Instance { .. })
+            && !Self::is_lazy_tail_target(&target)
+        {
+            return self.dispatch_head(target, &args[0]);
+        }
         // .raku/.perl on constrained Hash
         if matches!(method, "raku" | "perl")
             && args.is_empty()
