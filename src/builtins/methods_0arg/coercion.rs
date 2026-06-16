@@ -380,121 +380,132 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Array(..) | Value::Seq(..) | Value::Slip(..) => Some(Ok(target.clone())),
             _ => Some(Ok(target.clone())),
         },
-        "list" | "Array" => match target {
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Supply" => {
-                let items = match attributes.as_map().get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
-                    _ => Vec::new(),
-                };
-                Some(Ok(Value::array(items)))
-            }
-            Value::Range(a, b) => {
-                if *b == i64::MAX || *a == i64::MIN {
-                    // Infinite range → convert to lazy array (supports indexing + .Capture throws)
-                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+        "list" | "Array" => {
+            // `.Array` yields a real `@`-sigiled Array; `.list` yields a List.
+            let want_array = method == "Array";
+            let wrap = |items: Vec<Value>| {
+                if want_array {
+                    Value::real_array(items)
                 } else {
-                    Some(Ok(Value::array((*a..=*b).map(Value::Int).collect())))
+                    Value::array(items)
                 }
-            }
-            Value::RangeExcl(a, b) => {
-                if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                } else {
-                    Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
+            };
+            match target {
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Supply" => {
+                    let items = match attributes.as_map().get("values") {
+                        Some(Value::Array(items, ..)) => items.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    Some(Ok(wrap(items)))
                 }
-            }
-            Value::RangeExclStart(a, b) => {
-                if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                } else {
-                    Some(Ok(Value::array((a + 1..=*b).map(Value::Int).collect())))
+                Value::Range(a, b) => {
+                    if *b == i64::MAX || *a == i64::MIN {
+                        // Infinite range → convert to lazy array (supports indexing + .Capture throws)
+                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+                    } else {
+                        Some(Ok(wrap((*a..=*b).map(Value::Int).collect())))
+                    }
                 }
-            }
-            Value::RangeExclBoth(a, b) => {
-                if *b == i64::MAX || *a == i64::MIN {
-                    Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                } else {
-                    Some(Ok(Value::array((a + 1..*b).map(Value::Int).collect())))
+                Value::RangeExcl(a, b) => {
+                    if *b == i64::MAX || *a == i64::MIN {
+                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+                    } else {
+                        Some(Ok(wrap((*a..*b).map(Value::Int).collect())))
+                    }
                 }
-            }
-            Value::GenericRange { .. } => {
-                let items = crate::runtime::utils::value_to_list(target);
-                Some(Ok(Value::array(items)))
-            }
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if {
-                let cn = class_name.resolve();
-                cn == "Buf"
-                    || cn == "Blob"
-                    || cn == "utf8"
-                    || cn == "utf16"
-                    || cn.starts_with("Buf[")
-                    || cn.starts_with("Blob[")
-                    || cn.starts_with("buf")
-                    || cn.starts_with("blob")
-            } =>
-            {
-                let bytes = match attributes.as_map().get("bytes") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
-                    _ => Vec::new(),
-                };
-                Some(Ok(Value::array(bytes)))
-            }
-            Value::Array(items, kind) => {
-                if method == "Array" && !kind.is_real_array() {
-                    Some(Ok(Value::real_array(items.to_vec())))
-                } else if method == "list" && kind.is_itemized() {
-                    // .list on an itemized array/list strips the itemization,
-                    // returning the contents as a plain List (de-itemized).
-                    Some(Ok(Value::Array(items.clone(), kind.decontainerize())))
-                } else {
-                    Some(Ok(target.clone()))
+                Value::RangeExclStart(a, b) => {
+                    if *b == i64::MAX || *a == i64::MIN {
+                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+                    } else {
+                        Some(Ok(wrap((a + 1..=*b).map(Value::Int).collect())))
+                    }
                 }
-            }
-            Value::Seq(items) if method == "list" || method == "Array" => {
-                // Consumed Seq check: throw X::Seq::Consumed if not cached
-                if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
-                    return Some(Err(crate::value::seq_consumed_error()));
+                Value::RangeExclBoth(a, b) => {
+                    if *b == i64::MAX || *a == i64::MIN {
+                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+                    } else {
+                        Some(Ok(wrap((a + 1..*b).map(Value::Int).collect())))
+                    }
                 }
-                // Mark as cached so the Seq remains reusable (e.g. when the Seq is
-                // bound to an @-sigil parameter, Raku implicitly caches it).
-                // TODO: implement proper @-sigil parameter caching separately, and
-                // change this back to seq_consume for strict Raku semantics where
-                // .List on an uncached Seq consumes it.
-                crate::value::seq_mark_cached(items);
-                if method == "Array" {
-                    Some(Ok(Value::real_array(items.to_vec())))
-                } else {
-                    Some(Ok(Value::array(items.to_vec())))
+                Value::GenericRange { .. } => {
+                    let items = crate::runtime::utils::value_to_list(target);
+                    Some(Ok(wrap(items)))
                 }
-            }
-            Value::Slip(items) if method == "list" || method == "Array" => {
-                if method == "Array" {
-                    Some(Ok(Value::real_array(items.to_vec())))
-                } else {
-                    Some(Ok(Value::array(items.to_vec())))
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if {
+                    let cn = class_name.resolve();
+                    cn == "Buf"
+                        || cn == "Blob"
+                        || cn == "utf8"
+                        || cn == "utf16"
+                        || cn.starts_with("Buf[")
+                        || cn.starts_with("Blob[")
+                        || cn.starts_with("buf")
+                        || cn.starts_with("blob")
+                } =>
+                {
+                    let bytes = match attributes.as_map().get("bytes") {
+                        Some(Value::Array(items, ..)) => items.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    Some(Ok(wrap(bytes)))
                 }
+                Value::Array(items, kind) => {
+                    if method == "Array" && !kind.is_real_array() {
+                        Some(Ok(Value::real_array(items.to_vec())))
+                    } else if method == "list" && kind.is_itemized() {
+                        // .list on an itemized array/list strips the itemization,
+                        // returning the contents as a plain List (de-itemized).
+                        Some(Ok(Value::Array(items.clone(), kind.decontainerize())))
+                    } else {
+                        Some(Ok(target.clone()))
+                    }
+                }
+                Value::Seq(items) if method == "list" || method == "Array" => {
+                    // Consumed Seq check: throw X::Seq::Consumed if not cached
+                    if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                        return Some(Err(crate::value::seq_consumed_error()));
+                    }
+                    // Mark as cached so the Seq remains reusable (e.g. when the Seq is
+                    // bound to an @-sigil parameter, Raku implicitly caches it).
+                    // TODO: implement proper @-sigil parameter caching separately, and
+                    // change this back to seq_consume for strict Raku semantics where
+                    // .List on an uncached Seq consumes it.
+                    crate::value::seq_mark_cached(items);
+                    if method == "Array" {
+                        Some(Ok(Value::real_array(items.to_vec())))
+                    } else {
+                        Some(Ok(Value::array(items.to_vec())))
+                    }
+                }
+                Value::Slip(items) if method == "list" || method == "Array" => {
+                    if method == "Array" {
+                        Some(Ok(Value::real_array(items.to_vec())))
+                    } else {
+                        Some(Ok(Value::array(items.to_vec())))
+                    }
+                }
+                Value::Channel(_) => None, // fall through to runtime for drain
+                Value::Hash(map) => {
+                    let pairs: Vec<Value> = map
+                        .iter()
+                        .map(|(k, v)| map.typed_pair(k, v.clone()))
+                        .collect();
+                    Some(Ok(wrap(pairs)))
+                }
+                Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => {
+                    Some(Ok(wrap(crate::runtime::utils::value_to_list(target))))
+                }
+                _ => Some(Ok(wrap(vec![target.clone()]))),
             }
-            Value::Channel(_) => None, // fall through to runtime for drain
-            Value::Hash(map) => {
-                let pairs: Vec<Value> = map
-                    .iter()
-                    .map(|(k, v)| map.typed_pair(k, v.clone()))
-                    .collect();
-                Some(Ok(Value::array(pairs)))
-            }
-            Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => Some(Ok(Value::array(
-                crate::runtime::utils::value_to_list(target),
-            ))),
-            _ => Some(Ok(Value::array(vec![target.clone()]))),
-        },
+        }
         "Range" => match target {
             Value::Array(items, ..) => Some(Ok(Value::RangeExcl(0, items.len() as i64))),
             Value::Str(s) => Some(Ok(Value::RangeExcl(0, s.chars().count() as i64))),
