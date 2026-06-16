@@ -1303,8 +1303,57 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     }
 }
 
+/// Scan a raw `s///`/`S///` pattern or replacement *string* for placeholder
+/// variables (`$^a`, `@^a`, `%^a`, `&^a`). The substitution stores its pattern
+/// and replacement as un-parsed strings, so the normal expression walk never
+/// sees the placeholders inside `S/5/$^a/`; this recovers them in the same name
+/// format the `Expr::Var`/`ArrayVar`/… arms produce (`$`→`^a`, `@`→`@^a`, …).
+fn collect_placeholders_in_str(src: &str, out: &mut Vec<String>) {
+    let bytes = src.as_bytes();
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        let sigil = bytes[i];
+        if matches!(sigil, b'$' | b'@' | b'%' | b'&')
+            && bytes[i + 1] == b'^'
+            && bytes[i + 2].is_ascii_alphabetic()
+        {
+            let start = i + 2;
+            let mut j = start;
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                j += 1;
+            }
+            let name = &src[start..j];
+            let entry = match sigil {
+                b'$' => format!("^{}", name),
+                b'@' => format!("@^{}", name),
+                b'%' => format!("%^{}", name),
+                _ => format!("&^{}", name),
+            };
+            if !out.contains(&entry) {
+                out.push(entry);
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+}
+
 fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
     match expr {
+        Expr::Subst {
+            pattern,
+            replacement,
+            ..
+        }
+        | Expr::NonDestructiveSubst {
+            pattern,
+            replacement,
+            ..
+        } => {
+            collect_placeholders_in_str(pattern, out);
+            collect_placeholders_in_str(replacement, out);
+        }
         Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
             if !out.contains(name) {
                 out.push(name.clone());
@@ -1596,6 +1645,19 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
 /// own placeholder scope.
 fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
     match expr {
+        Expr::Subst {
+            pattern,
+            replacement,
+            ..
+        }
+        | Expr::NonDestructiveSubst {
+            pattern,
+            replacement,
+            ..
+        } => {
+            collect_placeholders_in_str(pattern, out);
+            collect_placeholders_in_str(replacement, out);
+        }
         Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
             if !out.contains(name) {
                 out.push(name.clone());
