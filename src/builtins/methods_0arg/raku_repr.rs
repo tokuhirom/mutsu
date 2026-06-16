@@ -157,6 +157,25 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
 /// Render a value for `.raku` but strip itemization (Scalar container).
 /// In Raku, `@a.raku` renders itemized elements without the `$` prefix:
 ///   my @a = $[1,2,3]; @a.raku  # [[1, 2, 3],]  (not $[1, 2, 3])
+/// Render a value that is stored as a *hash value* for `.raku`/`.perl`.
+///
+/// In Raku, every hash value lives in a `Scalar` container, so an aggregate
+/// (Array/List/Hash/Seq) value is itemized: `{:a($[1, 2])}`, `{:a(${:b(1)})}`,
+/// `{:a($(1, 2, 3))}`, `{:a($((1, 2).Seq))}`. Scalars (Int/Str/Range/Pair/Set…)
+/// are rendered as-is. Values whose own repr already carries the `$` sigil
+/// (e.g. an explicitly itemized `$[1, 2]`) are not double-itemized.
+fn raku_hash_value(v: &Value) -> String {
+    let base = raku_value(v);
+    if base.starts_with('$') {
+        return base;
+    }
+    match v {
+        Value::Array(..) | Value::Hash(_) => format!("${base}"),
+        Value::Seq(_) => format!("$({base})"),
+        _ => base,
+    }
+}
+
 fn raku_value_as_element(v: &Value) -> String {
     match v {
         Value::Array(items, kind) => {
@@ -521,7 +540,7 @@ pub fn raku_value(v: &Value) -> String {
                             let repr = if matches!(v, Value::Nil) {
                                 "Any".to_string()
                             } else {
-                                raku_value(v)
+                                raku_hash_value(v)
                             };
                             format!(":{}({})", k, repr)
                         }
@@ -530,7 +549,7 @@ pub fn raku_value(v: &Value) -> String {
                         let repr = if matches!(v, Value::Nil) {
                             "Any".to_string()
                         } else {
-                            raku_value(v)
+                            raku_hash_value(v)
                         };
                         format!("{} => {}", raku_value(&typed), repr)
                     }
