@@ -17,6 +17,13 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // dispatch; `render_gist_value`/`render_str_value` fall back to the
         // default `(TypeName)` rendering when no such method exists.
         Value::Package(..) => true,
+        // A LazyList (gather/take, infinite sequence, lazy map/grep pipeline)
+        // must be rendered via `.gist`/`.Str` method dispatch: an eager gather
+        // is forced to its elements, while a genuinely lazy/infinite one
+        // renders as raku's placeholder (`(...)` / `...`). The pure
+        // `gist_value`/`to_str_context` fast paths would print the bare type
+        // name "LazyList" instead.
+        Value::LazyList(..) => true,
         // A collection whose gist embeds an element's gist must be rendered via
         // method dispatch when any element needs it (e.g. an instance/type-object
         // with a custom `method gist`), so the per-element gist is honored.

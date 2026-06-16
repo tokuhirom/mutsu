@@ -3014,6 +3014,22 @@ impl Interpreter {
             }
         }
 
+        // gist/Str/raku of a *genuinely* lazy list (an infinite sequence or a
+        // lazy map/grep pipeline) cannot reify the whole sequence, so raku
+        // renders a placeholder instead of materializing: `(...)` for gist/raku,
+        // `...` for Str. (An eager gather has neither `sequence_spec` nor
+        // `lazy_pipe` and falls through to the force-and-render path below,
+        // which materializes its elements.)
+        if let Value::LazyList(ll) = &target
+            && matches!(method, "gist" | "Str" | "raku" | "perl")
+            && (ll.lazy_pipe.is_some() || ll.sequence_spec.is_some())
+        {
+            return Ok(Value::str(if method == "Str" {
+                "...".to_string()
+            } else {
+                "(...)".to_string()
+            }));
+        }
         // Force LazyList and re-dispatch as Seq
         if let Value::LazyList(ll) = &target
             && Self::should_force_lazy_list(method)
