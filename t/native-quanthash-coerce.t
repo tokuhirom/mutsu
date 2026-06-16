@@ -10,7 +10,9 @@ plan 26;
 
 # --- .Set ---
 is (1, 2, 2, 3).Set.elems, 3, 'List.Set dedups';
-is (1, 2, 2, 3).Set.sort, (1, 2, 3), 'Set membership';
+# `.Set.sort` yields sorted `key => True` pairs (per Raku); sort the keys to
+# check membership.
+is (1, 2, 2, 3).Set.keys.sort, (1, 2, 3), 'Set membership';
 ok <a b c> (<) <a b c d>.Set, 'Set subset op after coercion';
 is (1, [2, 3]).Set.elems, 3, 'List flattens in .Set';
 is [1, [2, 3]].Set.elems, 2, 'Array takes elements whole in .Set';

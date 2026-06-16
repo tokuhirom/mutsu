@@ -597,6 +597,43 @@ pub(crate) fn sort_value_generic(
                 .collect();
             sort_value_generic(caller, Value::array(items), args)
         }
+        // Set/Bag/Mix sort their decomposition into `key => weight` pairs (a
+        // Set yields `key => True`), with the original key type preserved so the
+        // ordering and `.gist` match Raku. Without this they fell through to
+        // `other => Ok(other)` and `.sort` wrongly returned the container itself.
+        Value::Set(ref s, _) => {
+            let items: Vec<Value> = s
+                .iter()
+                .map(|k| setty_typed_pair(s.typed_key(k), k, Value::Bool(true)))
+                .collect();
+            sort_value_generic(caller, Value::array(items), args)
+        }
+        Value::Bag(ref b, _) => {
+            let items: Vec<Value> = b
+                .iter()
+                .map(|(k, v)| setty_typed_pair(b.typed_key(k), k, Value::from_bigint(v.clone())))
+                .collect();
+            sort_value_generic(caller, Value::array(items), args)
+        }
+        Value::Mix(ref m, _) => {
+            let items: Vec<Value> = m
+                .iter()
+                .map(|(k, v)| {
+                    setty_typed_pair(m.typed_key(k), k, crate::value::mix_weight_to_value(*v))
+                })
+                .collect();
+            sort_value_generic(caller, Value::array(items), args)
+        }
         other => Ok(other),
+    }
+}
+
+/// Build a `key => weight` pair for a Set/Bag/Mix element, preserving the
+/// original key type (`ValuePair`) when it is not a plain string key.
+fn setty_typed_pair(typed_key: Value, str_key: &str, weight: Value) -> Value {
+    if matches!(&typed_key, Value::Str(sv) if sv.as_ref() == str_key) {
+        Value::Pair(str_key.to_string(), Box::new(weight))
+    } else {
+        Value::ValuePair(Box::new(typed_key), Box::new(weight))
     }
 }
