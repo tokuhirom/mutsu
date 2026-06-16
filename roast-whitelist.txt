@@ -1229,6 +1229,8 @@ roast/integration/advent2009-day01.t
 roast/integration/advent2009-day02.t
 roast/integration/advent2009-day03.t
 roast/integration/advent2009-day04.t
+roast/integration/advent2009-day05.t
+roast/integration/advent2009-day06.t
 roast/integration/advent2009-day07.t
 roast/integration/advent2009-day08.t
 roast/integration/advent2009-day13.t
@@ -1239,6 +1241,7 @@ roast/integration/advent2009-day19.t
 roast/integration/advent2009-day22.t
 roast/integration/advent2010-day06.t
 roast/integration/advent2010-day08.t
+roast/integration/advent2010-day10.t
 roast/integration/advent2010-day21.t
 roast/integration/advent2010-day23.t
 roast/integration/advent2011-day03.t
