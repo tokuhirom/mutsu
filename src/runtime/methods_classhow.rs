@@ -37,6 +37,11 @@ impl Interpreter {
                 "__mutsu_callable_type".to_string(),
                 Value::str_from(callable_type),
             );
+            // Carry the declared return type so `.signature.returns` / `.returns`
+            // reflect a `--> Type` declaration on the method.
+            if let Some(rt) = &def.return_type {
+                env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
+            }
             if has_multi {
                 env.insert(
                     "__mutsu_lookup_class".to_string(),
@@ -83,6 +88,11 @@ impl Interpreter {
                 "__mutsu_callable_type".to_string(),
                 Value::str_from(callable_type),
             );
+            // Carry the declared return type so `.signature.returns` / `.returns`
+            // reflect a `--> Type` declaration on the role method.
+            if let Some(rt) = &def.return_type {
+                env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
+            }
             if has_multi {
                 env.insert(
                     "__mutsu_lookup_class".to_string(),
@@ -1925,9 +1935,11 @@ impl Interpreter {
         attrs.insert("name".to_string(), Value::str(display_name));
         attrs.insert("is_dispatcher".to_string(), Value::Bool(is_dispatcher));
 
-        // Build a Signature object for this method
+        // Build a Signature object for this method, threading the return type
+        // so that `.signature.returns` reflects a `--> Type` declaration.
         let param_defs = &method_def.param_defs;
-        let sig_info = crate::value::signature::param_defs_to_sig_info(param_defs, None);
+        let sig_info =
+            crate::value::signature::param_defs_to_sig_info(param_defs, return_type.clone());
         attrs.insert(
             "signature".to_string(),
             crate::value::signature::make_signature_value(sig_info),

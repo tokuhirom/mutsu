@@ -204,6 +204,13 @@ pub(crate) fn make_signature_value_with_owner(info: SigInfo, owner_key: Option<S
         "params".to_string(),
         make_params_value_with_owner(&info.params, &owner_key),
     );
+    // `.returns` yields the return-type type object, defaulting to `Mu` when
+    // the signature declares no explicit return type. (Signature has no `.of`.)
+    let return_type = info.return_type.clone().unwrap_or_else(|| "Mu".to_string());
+    attrs.insert(
+        "returns".to_string(),
+        Value::Package(Symbol::intern(&return_type)),
+    );
     let val = Value::make_instance(Symbol::intern("Signature"), attrs);
     // Register the SigInfo for later lookup (smartmatch, etc.)
     if let Value::Instance { id, .. } = &val {
