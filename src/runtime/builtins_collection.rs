@@ -1098,8 +1098,15 @@ impl Interpreter {
         // `native_function("flat", ..)` path uses). The previous `flat_into`
         // copy unconditionally flattened nested `[...]`, which over-flattened
         // `flat(1, [2, [3, 4]], (5, 6))` (raku keeps the inner `[3 4]`).
+        // Onearg rule: `flat($(1,2,3))` un-itemizes its sole argument and
+        // descends, but `flat(0, $(1,2,3))` keeps each itemized arg single.
+        let items: Vec<Value> = if args.len() == 1 {
+            vec![crate::builtins::deitemize_flat_operand(&args[0])]
+        } else {
+            args.to_vec()
+        };
         let list = Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(args.to_vec())),
+            std::sync::Arc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         );
         let mut result = Vec::new();

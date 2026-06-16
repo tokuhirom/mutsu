@@ -79,6 +79,38 @@ fn is_infinite_range(value: &Value) -> bool {
 /// distinguishes List context (flatten `[...]` children one level) from Array
 /// context (preserve nested `[...]`), matching raku — the interpreter's old
 /// `flat_into` lacked this and over-flattened nested arrays in `flat(a, b, c)`.
+/// Strip ONE level of itemization from a `flat` operand. Raku's `flat`
+/// un-itemizes its (top-level) argument — `$(1,2,3).flat` yields `(1,2,3)`,
+/// `$[1,2,3].flat` yields `(1,2,3)` — and then flattens. Nested itemized items
+/// (e.g. `$[1,2]` *inside* the operand) stay single; that is handled by
+/// `flat_val` (which keeps `kind.is_itemized()` arrays opaque). Only the
+/// immediate operand is de-itemized here.
+pub(crate) fn deitemize_flat_operand(v: &Value) -> Value {
+    match v {
+        Value::Array(items, kind) if kind.is_itemized() => {
+            Value::Array(items.clone(), kind.decontainerize())
+        }
+        Value::Scalar(inner) => (**inner).clone(),
+        // A top-level hash operand of `flat` flattens to its pairs
+        // (`%h.flat` / `$hash.flat` / `flat(%h)` all yield the pairs). This is
+        // done ONLY here, for the top-level operand — a hash that is merely an
+        // element of a multi-arg flat list (`flat $hash, <a b>`) stays single
+        // (mutsu cannot tell a scalar-held `$hash` from a `%h` at the value
+        // level, so flat_val must not flatten hashes in nested positions). The
+        // returned `List` lets flat_val descend into the pairs.
+        Value::Hash(h) => {
+            let pairs = crate::runtime::utils::value_to_list(&Value::Hash(
+                crate::value::Value::hash_arc_deitemized(h.clone()),
+            ));
+            Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(pairs)),
+                crate::value::ArrayKind::List,
+            )
+        }
+        _ => v.clone(),
+    }
+}
+
 pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match v {
         // Lists, Seqs, and Slips are always flattened; their children
@@ -982,7 +1014,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             // Flatten the argument with flatten_arrays=true so that
             // top-level arrays (including @a in `flat (6, @a)`) are
             // flattened, while nested arrays inside [...] are preserved.
-            flat_val(arg, &mut flat, true);
+            // The top-level operand is de-itemized first so `$(1,2,3).flat`
+            // descends (Raku un-itemizes the receiver before flattening).
+            flat_val(&deitemize_flat_operand(arg), &mut flat, true);
             Some(Ok(Value::Seq(std::sync::Arc::new(flat))))
         }
         "first" => Some(Ok(match arg {
@@ -1650,9 +1684,17 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             if args.len() == 1 && is_infinite_range(&args[0]) {
                 return Some(Ok(args[0].clone()));
             }
+            // Onearg rule: `flat($(1,2,3))` un-itemizes its sole argument (the
+            // slurpy `**@list` treats a single container arg as the list), but
+            // `flat(0, $(1,2,3))` keeps each itemized arg as a single element.
+            let single = args.len() == 1;
             let mut result = Vec::new();
             for arg in args {
-                flat_val(arg, &mut result, true);
+                if single {
+                    flat_val(&deitemize_flat_operand(arg), &mut result, true);
+                } else {
+                    flat_val(arg, &mut result, true);
+                }
             }
             Some(Ok(Value::Seq(std::sync::Arc::new(result))))
         }
