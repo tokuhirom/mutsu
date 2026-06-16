@@ -122,12 +122,15 @@ impl Compiler {
         samespace: bool,
         global: bool,
         nth: &Option<String>,
-        x: &Option<usize>,
+        x: &Option<String>,
         perl5: bool,
     ) {
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth
+            .as_ref()
+            .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+        let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
         self.code.emit(OpCode::Subst {
@@ -139,7 +142,7 @@ impl Compiler {
             samespace,
             global,
             nth_idx,
-            x_count: x.map(|n| n as u32),
+            x_idx,
             perl5,
         });
     }
@@ -156,12 +159,15 @@ impl Compiler {
         samespace: bool,
         global: bool,
         nth: &Option<String>,
-        x: &Option<usize>,
+        x: &Option<String>,
         perl5: bool,
     ) {
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth
+            .as_ref()
+            .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+        let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
         self.code.emit(OpCode::NonDestructiveSubst {
@@ -173,7 +179,7 @@ impl Compiler {
             samespace,
             global,
             nth_idx,
-            x_count: x.map(|n| n as u32),
+            x_idx,
             perl5,
         });
     }

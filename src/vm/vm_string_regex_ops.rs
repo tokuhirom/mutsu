@@ -456,7 +456,7 @@ impl Interpreter {
         samespace: bool,
         global: bool,
         nth_idx: Option<u32>,
-        x_count: Option<u32>,
+        x_idx: Option<u32>,
         perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
@@ -472,11 +472,11 @@ impl Interpreter {
         };
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let x_count = x_count.map(|n| n as usize);
+        let x_spec = x_idx.map(|idx| Self::const_str(code, idx).to_string());
         let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
         let text = target.to_string_value();
 
-        if nth_spec.is_none() && x_count.is_none() && !global {
+        if nth_spec.is_none() && x_spec.is_none() && !global {
             if perl5 {
                 let found = self.regex_find_first_p5(&pattern, &text);
                 if let Some((start, end)) = found {
@@ -551,10 +551,14 @@ impl Interpreter {
         // so each match can expand $0, $1 etc. independently.
         let (ranges, per_match_captures) = if perl5 {
             let all_matches = loan_env!(self, regex_find_all_p5(&pattern, &text));
-            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+            let selected = if global && nth_spec.is_none() && x_spec.is_none() {
                 all_matches
             } else {
-                Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+                Self::select_substitution_ranges(
+                    &all_matches,
+                    nth_spec.as_deref(),
+                    x_spec.as_deref(),
+                )?
             };
             (selected, Vec::new())
         } else {
@@ -570,10 +574,14 @@ impl Interpreter {
             }
             let all_ranges: Vec<(usize, usize)> =
                 matches_with_caps.iter().map(|(s, e, _)| (*s, *e)).collect();
-            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+            let selected = if global && nth_spec.is_none() && x_spec.is_none() {
                 all_ranges
             } else {
-                Self::select_substitution_ranges(&all_ranges, nth_spec.as_deref(), x_count)?
+                Self::select_substitution_ranges(
+                    &all_ranges,
+                    nth_spec.as_deref(),
+                    x_spec.as_deref(),
+                )?
             };
             // Extract captures for selected ranges
             let captures: Vec<Vec<String>> = selected
@@ -593,7 +601,7 @@ impl Interpreter {
         // Match even when combined with :g (e.g. `s:2nd:g/./Z/` yields a Match).
         let single_nth = nth_spec.as_deref().is_some_and(|s| !s.contains(','));
         let nth_is_multi = nth_spec.as_deref().is_some_and(|s| s.contains(','));
-        let result_is_list = !single_nth && (global || x_count.is_some() || nth_is_multi);
+        let result_is_list = !single_nth && (global || x_spec.is_some() || nth_is_multi);
         if ranges.is_empty() {
             if result_is_list {
                 // :g / :x with no match: result is an empty List (falsy).
@@ -702,7 +710,7 @@ impl Interpreter {
         samespace: bool,
         global: bool,
         nth_idx: Option<u32>,
-        x_count: Option<u32>,
+        x_idx: Option<u32>,
         perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
@@ -718,11 +726,11 @@ impl Interpreter {
         };
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let x_count = x_count.map(|n| n as usize);
+        let x_spec = x_idx.map(|idx| Self::const_str(code, idx).to_string());
         let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
         let text = target.to_string_value();
 
-        if nth_spec.is_none() && x_count.is_none() && !global {
+        if nth_spec.is_none() && x_spec.is_none() && !global {
             if perl5 {
                 let found = self.regex_find_first_p5(&pattern, &text);
                 if let Some((start, end)) = found {
@@ -785,10 +793,14 @@ impl Interpreter {
 
         let (ranges, per_match_captures) = if perl5 {
             let all_matches = loan_env!(self, regex_find_all_p5(&pattern, &text));
-            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+            let selected = if global && nth_spec.is_none() && x_spec.is_none() {
                 all_matches
             } else {
-                Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+                Self::select_substitution_ranges(
+                    &all_matches,
+                    nth_spec.as_deref(),
+                    x_spec.as_deref(),
+                )?
             };
             (selected, Vec::new())
         } else {
@@ -803,10 +815,14 @@ impl Interpreter {
             }
             let all_ranges: Vec<(usize, usize)> =
                 matches_with_caps.iter().map(|(s, e, _)| (*s, *e)).collect();
-            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+            let selected = if global && nth_spec.is_none() && x_spec.is_none() {
                 all_ranges
             } else {
-                Self::select_substitution_ranges(&all_ranges, nth_spec.as_deref(), x_count)?
+                Self::select_substitution_ranges(
+                    &all_ranges,
+                    nth_spec.as_deref(),
+                    x_spec.as_deref(),
+                )?
             };
             let captures: Vec<Vec<String>> = selected
                 .iter()
@@ -823,7 +839,7 @@ impl Interpreter {
         // or a multi-value :nth yields a List of Matches in $/.
         let single_nth = nth_spec.as_deref().is_some_and(|s| !s.contains(','));
         let nth_is_multi = nth_spec.as_deref().is_some_and(|s| s.contains(','));
-        let result_is_list = !single_nth && (global || x_count.is_some() || nth_is_multi);
+        let result_is_list = !single_nth && (global || x_spec.is_some() || nth_is_multi);
         if ranges.is_empty() {
             let slash = if result_is_list {
                 Value::array(Vec::new())
@@ -887,8 +903,11 @@ impl Interpreter {
     fn select_substitution_ranges(
         all_matches: &[(usize, usize)],
         nth_spec: Option<&str>,
-        x_count: Option<usize>,
+        x_spec: Option<&str>,
     ) -> Result<Vec<(usize, usize)>, RuntimeError> {
+        // `:x(N)` requires exactly N matches; `:x(lo..hi)` requires at least
+        // `lo` and keeps at most `hi`. Returns `(lo, hi)`.
+        let x_bounds = x_spec.map(Self::parse_subst_x_spec);
         if let Some(raw) = nth_spec {
             // :nth may carry a comma-separated list of 1-based indices, e.g.
             // `:nth(1,3)`. Indices must be >= 1 and monotonically increasing.
@@ -902,25 +921,59 @@ impl Interpreter {
                     }
                 }
             }
-            // When combined with :x(N), keep only the first N selected matches.
-            if let Some(n) = x_count {
-                if selected.len() < n {
+            // When combined with :x(lo..hi), require at least `lo` and keep up
+            // to `hi` of the selected matches.
+            if let Some((lo, hi)) = x_bounds {
+                if selected.len() < lo {
                     return Ok(Vec::new());
                 }
-                selected.truncate(n);
+                selected.truncate(hi);
             }
             return Ok(selected);
         }
-        if let Some(n) = x_count {
-            if n == 0 {
+        if let Some((lo, hi)) = x_bounds {
+            if hi == 0 || all_matches.len() < lo {
                 return Ok(Vec::new());
             }
-            if all_matches.len() < n {
-                return Ok(Vec::new());
-            }
-            return Ok(all_matches.iter().copied().take(n).collect());
+            return Ok(all_matches.iter().copied().take(hi).collect());
         }
         Ok(all_matches.first().copied().into_iter().collect())
+    }
+
+    /// Parse a `:x` adverb spec into `(lo, hi)` match-count bounds. A bare count
+    /// `"3"` is `(3, 3)`; a range `"1..3"` / `"1..^3"` maps to its endpoints;
+    /// `"*"`/`"Inf"` is unbounded `(0, usize::MAX)`.
+    fn parse_subst_x_spec(raw: &str) -> (usize, usize) {
+        let token = raw.trim();
+        if token == "*" || token.eq_ignore_ascii_case("Inf") {
+            return (0, usize::MAX);
+        }
+        let parse_bound = |s: &str| s.trim().parse::<i64>().ok();
+        if let Some(idx) = token.find("..") {
+            let lo_s = &token[..idx];
+            let mut rest = &token[idx + 2..];
+            let excl = rest.starts_with('^');
+            if excl {
+                rest = &rest[1..];
+            }
+            let lo = parse_bound(lo_s).unwrap_or(0).max(0) as usize;
+            let hi = if rest.trim() == "*" || rest.trim().eq_ignore_ascii_case("Inf") {
+                usize::MAX
+            } else {
+                match parse_bound(rest) {
+                    Some(h) if h >= 0 => {
+                        let h = h as usize;
+                        if excl { h.saturating_sub(1) } else { h }
+                    }
+                    _ => usize::MAX,
+                }
+            };
+            return (lo, hi);
+        }
+        match parse_bound(token) {
+            Some(n) if n >= 0 => (n as usize, n as usize),
+            _ => (0, usize::MAX),
+        }
     }
 
     /// Parse an `:nth` spec into a list of 1-based indices. Accepts a single

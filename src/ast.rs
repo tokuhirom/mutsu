@@ -160,7 +160,9 @@ pub(crate) enum Expr {
         samespace: bool,
         global: bool,
         nth: Option<String>,
-        x: Option<usize>,
+        /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
+        /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
+        x: Option<String>,
         perl5: bool,
     },
     NonDestructiveSubst {
@@ -172,7 +174,9 @@ pub(crate) enum Expr {
         samespace: bool,
         global: bool,
         nth: Option<String>,
-        x: Option<usize>,
+        /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
+        /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
+        x: Option<String>,
         perl5: bool,
     },
     Transliterate {

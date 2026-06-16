@@ -853,7 +853,9 @@ pub(crate) enum OpCode {
         samespace: bool,
         global: bool,
         nth_idx: Option<u32>,
-        x_count: Option<u32>,
+        /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
+        /// or `None` when `:x` is absent.
+        x_idx: Option<u32>,
         perl5: bool,
     },
 
@@ -867,7 +869,9 @@ pub(crate) enum OpCode {
         samespace: bool,
         global: bool,
         nth_idx: Option<u32>,
-        x_count: Option<u32>,
+        /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
+        /// or `None` when `:x` is absent.
+        x_idx: Option<u32>,
         perl5: bool,
     },
 

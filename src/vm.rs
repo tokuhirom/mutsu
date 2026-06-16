@@ -3798,7 +3798,7 @@ impl Interpreter {
                 samespace,
                 global,
                 nth_idx,
-                x_count,
+                x_idx,
                 perl5,
             } => {
                 self.exec_subst_op(
@@ -3811,7 +3811,7 @@ impl Interpreter {
                     *samespace,
                     *global,
                     *nth_idx,
-                    *x_count,
+                    *x_idx,
                     *perl5,
                 )?;
                 *ip += 1;
@@ -3825,7 +3825,7 @@ impl Interpreter {
                 samespace,
                 global,
                 nth_idx,
-                x_count,
+                x_idx,
                 perl5,
             } => {
                 self.exec_non_destructive_subst_op(
@@ -3838,7 +3838,7 @@ impl Interpreter {
                     *samespace,
                     *global,
                     *nth_idx,
-                    *x_count,
+                    *x_idx,
                     *perl5,
                 )?;
                 *ip += 1;
