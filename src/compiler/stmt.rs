@@ -294,6 +294,95 @@ impl Compiler {
         }
     }
 
+    /// Does `expr` ultimately root at a variable, so an `Index` over it is an
+    /// assignable lvalue (e.g. `%h<k>`, `@a[i]`, `%h<a><b>`)? Function-call and
+    /// other non-lvalue roots are excluded so we never synthesize a writeback
+    /// assignment into a temporary (which would error where Raku is silent).
+    fn for_element_container_is_lvalue(expr: &Expr) -> bool {
+        match expr {
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_) => true,
+            Expr::Index { target, .. } => Self::for_element_container_is_lvalue(target),
+            _ => false,
+        }
+    }
+
+    /// Rewrite `for <ELEM>.values { ... }`, where `<ELEM>` is a var-rooted
+    /// `Index` lvalue (`%h<k>` / `@a[i]` / `%h<a><b>`), into:
+    ///
+    ///   my @tmp = <ELEM>;          # copy the element array into a temp
+    ///   for @tmp.values { ... };   # reuse the array-source per-element writeback
+    ///   <ELEM> = @tmp;             # write the temp back into the element
+    ///
+    /// Returns `None` for anything but this exact shape (plain `@a`/`%h` sources
+    /// are already handled by `for_iterable_source_name`).
+    fn desugar_for_element_source(&mut self, stmt: &Stmt) -> Option<Vec<Stmt>> {
+        let Stmt::For { iterable, .. } = stmt else {
+            return None;
+        };
+        let Expr::MethodCall {
+            target, name, args, ..
+        } = iterable
+        else {
+            return None;
+        };
+        if !args.is_empty() || name.resolve() != "values" {
+            return None;
+        }
+        let Expr::Index {
+            target: container,
+            index,
+            is_positional,
+        } = target.as_ref()
+        else {
+            return None;
+        };
+        if !Self::for_element_container_is_lvalue(container) {
+            return None;
+        }
+
+        let tmp = format!("__for_elem_src_{}", self.code.constants.len());
+        let element = target.as_ref().clone();
+
+        let decl = Stmt::VarDecl {
+            name: format!("@{}", tmp),
+            expr: element,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__has_initializer".to_string(), None)],
+            where_constraint: None,
+        };
+
+        // The rewritten for-loop iterates `@tmp.values`; cloning the original
+        // For and swapping only its iterable preserves params/body/label/mode.
+        let mut for_stmt = stmt.clone();
+        if let Stmt::For {
+            iterable: new_iterable,
+            ..
+        } = &mut for_stmt
+        {
+            *new_iterable = Expr::MethodCall {
+                target: Box::new(Expr::ArrayVar(tmp.clone())),
+                name: crate::symbol::Symbol::intern("values"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            };
+        }
+
+        let writeback = Stmt::Expr(Expr::IndexAssign {
+            target: container.clone(),
+            index: index.clone(),
+            value: Box::new(Expr::ArrayVar(tmp)),
+            is_positional: *is_positional,
+        });
+
+        Some(vec![decl, for_stmt, writeback])
+    }
+
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
@@ -1293,6 +1382,18 @@ impl Compiler {
                 rw_block,
                 explicit_zero_params,
             } => {
+                // Element-source writeback: `for %h<k>.values { $_ *= 2 }` /
+                // `for @a[i].values { ... }`. The plain @/%-source writeback only
+                // handles named container variables, so an element source (an
+                // Index expression) is rewritten to copy the element into a temp
+                // array, iterate that (reusing the array-source writeback), then
+                // write the temp back into the element after the loop.
+                if let Some(desugared) = self.desugar_for_element_source(stmt) {
+                    for s in &desugared {
+                        self.compile_stmt(s);
+                    }
+                    return;
+                }
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
                 let non_setline_count = body
