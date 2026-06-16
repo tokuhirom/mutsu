@@ -77,7 +77,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b, _) => Ok(b.counts.clone()),
+            Value::Bag(b, _) => Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
             Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
@@ -103,7 +103,10 @@ impl Interpreter {
         }
         match value {
             Value::Mix(m, _) => Ok(m.weights.clone()),
-            Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Bag(b, _) => Ok(b
+                .iter()
+                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                .collect()),
             other => {
                 let set = Self::union_set_keys(other)?;
                 Ok(set.into_iter().map(|k| (k, 1.0)).collect())
@@ -413,7 +416,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b, _) => Ok(b.counts.clone()),
+            Value::Bag(b, _) => Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
             Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
@@ -482,7 +485,10 @@ impl Interpreter {
         }
         match value {
             Value::Mix(m, _) => Ok(m.weights.clone()),
-            Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Bag(b, _) => Ok(b
+                .iter()
+                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                .collect()),
             Value::Set(s, _) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
             Value::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
@@ -838,7 +844,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
             match value {
-                Value::Bag(items, _) => Some(items.counts.clone()),
+                Value::Bag(items, _) => {
+                    Some(crate::runtime::utils::bag_counts_as_i64(&items.counts))
+                }
                 Value::Set(items, _) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
                 Value::Hash(items) => Some({
                     let mut counts = std::collections::HashMap::new();
@@ -1566,7 +1574,7 @@ impl Interpreter {
                 .collect(),
             Value::Bag(items, _) => items
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone()))))
                 .collect(),
             Value::Mix(items, _) => items
                 .iter()

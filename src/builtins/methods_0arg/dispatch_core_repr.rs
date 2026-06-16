@@ -339,7 +339,7 @@ pub(super) fn dispatch(
         Value::Bag(b, mutable) => {
             if method == "raku" || method == "perl" {
                 let type_name = if *mutable { "BagHash" } else { "Bag" };
-                let mut keys: Vec<(&String, &i64)> = b.iter().collect();
+                let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 let pairs = keys
                     .iter()

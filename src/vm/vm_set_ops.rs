@@ -140,7 +140,7 @@ impl Interpreter {
         let key = needle.to_string_value();
         match container {
             Value::Set(s, _) => s.contains(&key),
-            Value::Bag(b, _) => b.get(&key).is_some_and(|count| *count > 0),
+            Value::Bag(b, _) => b.get(&key).is_some_and(num_traits::Signed::is_positive),
             Value::Mix(m, _) => m.get(&key).is_some_and(|weight| *weight != 0.0),
             Value::Hash(h) => self.hash_contains(h, needle, container),
             v if v.as_list_items().is_some() => v
@@ -156,7 +156,10 @@ impl Interpreter {
     fn quant_hash_weights(value: &Value) -> HashMap<String, f64> {
         match runtime::coerce_value_to_quanthash(value) {
             Value::Set(items, _) => items.iter().map(|k| (k.clone(), 1.0)).collect(),
-            Value::Bag(items, _) => items.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+            Value::Bag(items, _) => items
+                .iter()
+                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                .collect(),
             Value::Mix(items, _) => items.iter().map(|(k, v)| (k.clone(), *v)).collect(),
             _ => HashMap::new(),
         }
@@ -224,7 +227,7 @@ impl Interpreter {
             }
             Value::Bag(items, _) => {
                 for (k, v) in items.iter() {
-                    if *v > 0 {
+                    if num_traits::Signed::is_positive(v) {
                         elems.insert(k.clone());
                     }
                 }
@@ -325,7 +328,7 @@ impl Interpreter {
             return Err(Self::lazy_list_error());
         }
         match value {
-            Value::Bag(b, _) => Ok(b.counts.clone()),
+            Value::Bag(b, _) => Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
             Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
@@ -349,7 +352,10 @@ impl Interpreter {
         }
         match value {
             Value::Mix(m, _) => Ok(m.weights.clone()),
-            Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Bag(b, _) => Ok(b
+                .iter()
+                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                .collect()),
             other => {
                 let set = Self::value_to_set_keys(other)?;
                 Ok(set.into_iter().map(|k| (k, 1.0)).collect())
@@ -402,10 +408,12 @@ impl Interpreter {
             (Value::Bag(a, _), Value::Bag(b, _)) => {
                 let mut result = a.counts.clone();
                 for (k, v) in b.iter() {
-                    let e = result.entry(k.clone()).or_insert(0);
-                    *e = (*e).max(*v);
+                    let e = result.entry(k.clone()).or_default();
+                    if *v > *e {
+                        *e = v.clone();
+                    }
                 }
-                Value::bag(result)
+                Value::bag_big(result)
             }
             (Value::Set(a, _), Value::Set(b, _)) => {
                 let mut result = a.elements.clone();
@@ -570,7 +578,7 @@ impl Interpreter {
     /// Coerce a value to a Bag (HashMap<String, i64>)
     fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
         match val {
-            Value::Bag(b, _) => b.counts.clone(),
+            Value::Bag(b, _) => crate::runtime::utils::bag_counts_as_i64(&b.counts),
             Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
             Value::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
             Value::Hash(map) => {
@@ -611,7 +619,10 @@ impl Interpreter {
     fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
         match val {
             Value::Mix(m, _) => m.weights.clone(),
-            Value::Bag(b, _) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+            Value::Bag(b, _) => b
+                .iter()
+                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                .collect(),
             Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
             Value::Hash(map) => {
                 let mut result = HashMap::new();

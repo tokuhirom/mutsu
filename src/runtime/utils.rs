@@ -10,6 +10,42 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 pub(crate) const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// Saturating conversion of an arbitrary-precision BigInt to i64.
+/// Bag/Set arithmetic helpers operate on i64 maps (min/max/diff semantics
+/// don't need arbitrary precision); a count that overflows i64 saturates.
+pub(crate) fn bigint_to_i64_sat(n: &BigInt) -> i64 {
+    n.to_i64()
+        .unwrap_or(if n.is_negative() { i64::MIN } else { i64::MAX })
+}
+
+/// Saturating conversion of an arbitrary-precision BigInt to i128.
+pub(crate) fn bigint_to_i128_sat(n: &BigInt) -> i128 {
+    n.to_i128().unwrap_or(if n.is_negative() {
+        i128::MIN
+    } else {
+        i128::MAX
+    })
+}
+
+/// Saturating conversion of an arbitrary-precision BigInt to f64
+/// (out-of-range magnitudes become +/- infinity).
+pub(crate) fn bigint_to_f64_sat(n: &BigInt) -> f64 {
+    n.to_f64().unwrap_or(if n.is_negative() {
+        f64::NEG_INFINITY
+    } else {
+        f64::INFINITY
+    })
+}
+
+/// Saturating clone of a Bag's BigInt count map into an i64 count map, used by
+/// the set-arithmetic helpers that operate on native i64 weights.
+pub(crate) fn bag_counts_as_i64(counts: &HashMap<String, BigInt>) -> HashMap<String, i64> {
+    counts
+        .iter()
+        .map(|(k, v)| (k.clone(), bigint_to_i64_sat(v)))
+        .collect()
+}
+
 /// Strip a leading UTF-8 BOM (U+FEFF) from a string, as Raku does when reading files.
 pub(crate) fn strip_utf8_bom(s: String) -> String {
     if let Some(stripped) = s.strip_prefix('\u{FEFF}') {
@@ -522,7 +558,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut has_typed = false;
             for (key, count) in items.iter() {
-                map.insert(key.clone(), Value::Int(*count));
+                map.insert(key.clone(), Value::from_bigint(count.clone()));
                 let typed = items.typed_key(key);
                 if !matches!(&typed, Value::Str(sv) if sv.as_ref() == key) {
                     has_typed = true;
@@ -799,12 +835,12 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
         }
         Value::Bag(b, mutable) => {
             let type_name = if *mutable { "BagHash" } else { "Bag" };
-            let mut keys: Vec<(&String, &i64)> = b.iter().collect();
+            let mut keys: Vec<(&String, &BigInt)> = b.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             let inner = keys
                 .iter()
                 .map(|(k, v)| {
-                    if **v == 1 {
+                    if **v == BigInt::from(1) {
                         (*k).clone()
                     } else {
                         format!("{}({})", k, v)
@@ -2122,7 +2158,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .collect(),
         Value::Bag(items, _) => items
             .iter()
-            .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
+            .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone()))))
             .collect(),
         Value::Mix(items, _) => items
             .iter()
@@ -2300,7 +2336,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         _ if val.as_list_items().is_some() => Value::Int(val.as_list_items().unwrap().len() as i64),
         Value::Hash(items) => Value::Int(items.len() as i64),
         Value::Set(items, _) => Value::Int(items.len() as i64),
-        Value::Bag(items, _) => Value::Int(items.values().sum()),
+        Value::Bag(items, _) => Value::from_bigint(items.values().sum::<BigInt>()),
         Value::Mix(items, _) => {
             // Sort values before summing for deterministic results
             // regardless of HashMap iteration order.
@@ -2384,7 +2420,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
             }
             Value::Bag(items, _) => {
                 for (k, v) in items.iter() {
-                    if *v > 0 {
+                    if v.is_positive() {
                         elems.insert(k.clone());
                     }
                 }
@@ -2600,9 +2636,10 @@ fn to_mix_map(v: &Value) -> HashMap<String, f64> {
 
 /// Resolve Bag entries that use the internal "key\tweight" tab format
 /// into plain key→weight entries.
-pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, i64>) -> HashMap<String, i64> {
+pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, BigInt>) -> HashMap<String, i64> {
     let mut result = HashMap::new();
     for (k, c) in bag.iter() {
+        let c = bigint_to_i64_sat(c);
         if let Some((base, raw_weight)) = k.split_once('\t') {
             let weight = match raw_weight {
                 "True" => 1i64,

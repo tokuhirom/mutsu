@@ -534,14 +534,16 @@ impl Interpreter {
                     let b = Arc::make_mut(bag);
                     let removed = keys
                         .iter()
-                        .map(|key| Value::Int(b.remove(&key.to_string_value()).unwrap_or(0)))
+                        .map(|key| {
+                            Value::from_bigint(b.remove(&key.to_string_value()).unwrap_or_default())
+                        })
                         .collect();
                     Value::array(removed)
                 }
-                _ => Value::Int(
+                _ => Value::from_bigint(
                     Arc::make_mut(bag)
                         .remove(&idx.to_string_value())
-                        .unwrap_or(0),
+                        .unwrap_or_default(),
                 ),
             },
             Value::Mix(mix, _) => match idx {

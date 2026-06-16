@@ -2124,7 +2124,7 @@ impl Interpreter {
                 // A Bag holds positive integer counts: a weight of 0 *or below*
                 // removes the element (negative counts are not representable),
                 // unlike a Mix where a negative weight is retained.
-                if count <= 0 {
+                if !num_traits::Signed::is_positive(&count) {
                     b.counts.remove(&key);
                 } else {
                     b.counts.insert(key, count);

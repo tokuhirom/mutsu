@@ -700,7 +700,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         Value::Bag(b, _) => {
             let mut named = HashMap::new();
             for (k, v) in b.iter() {
-                named.insert(k.clone(), Value::Int(*v));
+                named.insert(k.clone(), Value::from_bigint(v.clone()));
             }
             Ok(Value::capture(vec![], named))
         }

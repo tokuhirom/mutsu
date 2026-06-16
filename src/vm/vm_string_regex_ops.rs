@@ -1480,7 +1480,7 @@ impl Interpreter {
             Value::Bag(d, _) => d
                 .counts
                 .iter()
-                .map(|(k, c)| (k.clone(), Value::Int(*c)))
+                .map(|(k, c)| (k.clone(), Value::from_bigint(c.clone())))
                 .collect(),
             Value::Mix(d, _) => d
                 .weights

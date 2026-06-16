@@ -18,6 +18,8 @@
 use crate::runtime::Interpreter;
 use crate::runtime::utils::value_to_list;
 use crate::value::{RuntimeError, Value};
+use num_bigint::BigInt;
+use num_traits::Signed;
 use std::collections::{HashMap, HashSet};
 
 /// Coerce `target` to a `Set` (immutable). The caller flips the mutable flag for
@@ -186,9 +188,12 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
 /// Bag weight of a pair value: a non-positive weight drops the key, a fractional
 /// or string weight is coerced to an `Int`. `what` only affects which lazy error
 /// is raised by the caller.
-fn pair_weight(v: &Value) -> Result<i64, RuntimeError> {
+fn pair_weight(v: &Value) -> Result<BigInt, RuntimeError> {
     match v {
-        Value::Int(i) => Ok(*i),
+        Value::Int(i) => Ok(BigInt::from(*i)),
+        // Weights can exceed i64::MAX (e.g. `{a => 10**20}.Bag`); a BigInt weight
+        // is preserved verbatim rather than truncated.
+        Value::BigInt(n) => Ok((**n).clone()),
         Value::Num(n) => {
             if n.is_nan() || n.is_infinite() {
                 return Err(RuntimeError::new(format!(
@@ -196,17 +201,17 @@ fn pair_weight(v: &Value) -> Result<i64, RuntimeError> {
                     v.to_string_value()
                 )));
             }
-            Ok(*n as i64)
+            Ok(BigInt::from(*n as i64))
         }
-        Value::Rat(n, d) if *d != 0 => Ok(n / d),
-        Value::FatRat(n, d) if *d != 0 => Ok(n / d),
-        Value::Bool(b) => Ok(i64::from(*b)),
+        Value::Rat(n, d) if *d != 0 => Ok(BigInt::from(n / d)),
+        Value::FatRat(n, d) if *d != 0 => Ok(BigInt::from(n / d)),
+        Value::Bool(b) => Ok(BigInt::from(i64::from(*b))),
         Value::Complex(_, _) => Err(RuntimeError::new(
             "X::Numeric::CannotConvert: Cannot convert Complex to Int".to_string(),
         )),
         Value::Str(s) => {
             // Strings must be numeric to be valid bag weights
-            match s.parse::<i64>() {
+            match s.parse::<BigInt>() {
                 Ok(i) => Ok(i),
                 Err(_) => Err(RuntimeError::new(format!(
                     "X::Str::Numeric: Cannot convert string '{}' to a number",
@@ -214,7 +219,7 @@ fn pair_weight(v: &Value) -> Result<i64, RuntimeError> {
                 ))),
             }
         }
-        _ => Ok(i64::from(v.truthy())),
+        _ => Ok(BigInt::from(i64::from(v.truthy()))),
     }
 }
 
@@ -226,12 +231,12 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     if Interpreter::is_lazy_for_coerce(&target) {
         return Err(RuntimeError::cannot_lazy_what(what));
     }
-    let mut counts: HashMap<String, i64> = HashMap::new();
+    let mut counts: HashMap<String, BigInt> = HashMap::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
     let mut has_non_str_keys = false;
 
     fn add_item(
-        counts: &mut HashMap<String, i64>,
+        counts: &mut HashMap<String, BigInt>,
         original_keys: &mut HashMap<String, Value>,
         has_non_str_keys: &mut bool,
         item: &Value,
@@ -239,8 +244,8 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         match item {
             Value::Pair(k, v) => {
                 let weight = pair_weight(v)?;
-                if weight > 0 {
-                    *counts.entry(k.clone()).or_insert(0) += weight;
+                if weight.is_positive() {
+                    *counts.entry(k.clone()).or_default() += weight;
                 }
             }
             Value::ValuePair(k, v) => {
@@ -252,8 +257,8 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                         .or_insert_with(|| k.as_ref().clone());
                 }
                 let weight = pair_weight(v)?;
-                if weight > 0 {
-                    *counts.entry(str_key).or_insert(0) += weight;
+                if weight.is_positive() {
+                    *counts.entry(str_key).or_default() += weight;
                 }
             }
             _ => {
@@ -264,7 +269,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                         .entry(str_key.clone())
                         .or_insert_with(|| item.clone());
                 }
-                *counts.entry(str_key).or_insert(0) += 1;
+                *counts.entry(str_key).or_default() += 1;
             }
         }
         Ok(())
@@ -277,7 +282,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     /// invocant) the value is taken whole as a single key (matches Raku:
     /// `[1,[2,3]].Bag` has two keys, `(1,[2,3]).Bag` has three).
     fn flatten_into(
-        counts: &mut HashMap<String, i64>,
+        counts: &mut HashMap<String, BigInt>,
         original_keys: &mut HashMap<String, Value>,
         has_non_str_keys: &mut bool,
         value: &Value,
@@ -297,24 +302,24 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
             Value::Hash(h) if flatten => {
                 for (k, v) in h.iter() {
                     let weight = pair_weight(v)?;
-                    if weight > 0 {
-                        *counts.entry(k.clone()).or_insert(0) += weight;
+                    if weight.is_positive() {
+                        *counts.entry(k.clone()).or_default() += weight;
                     }
                 }
             }
             Value::Set(s, _) if flatten => {
                 for k in s.iter() {
-                    counts.insert(k.clone(), 1);
+                    counts.insert(k.clone(), BigInt::from(1));
                 }
             }
             Value::Mix(m, _) if flatten => {
                 for (k, v) in m.iter() {
-                    counts.insert(k.clone(), *v as i64);
+                    counts.insert(k.clone(), BigInt::from(*v as i64));
                 }
             }
             Value::Bag(b, _) if flatten => {
                 for (k, v) in b.iter() {
-                    *counts.entry(k.clone()).or_insert(0) += *v;
+                    *counts.entry(k.clone()).or_default() += v.clone();
                 }
             }
             other => {
@@ -343,7 +348,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                         .entry(str_key.clone())
                         .or_insert_with(|| item.clone());
                 }
-                *counts.entry(str_key).or_insert(0) += 1;
+                *counts.entry(str_key).or_default() += 1;
             }
         }
         // A List `(...)` invocant flattens its elements in list context; an
@@ -408,9 +413,9 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         }
     }
     if has_non_str_keys {
-        Ok(Value::bag_typed(counts, original_keys))
+        Ok(Value::bag_typed_big(counts, original_keys))
     } else {
-        Ok(Value::bag(counts))
+        Ok(Value::bag_big(counts))
     }
 }
 
@@ -592,7 +597,8 @@ fn mix_add_item_with_keys(
                 {
                     orig.entry(k.clone()).or_insert(typed);
                 }
-                *weights.entry(k.clone()).or_insert(0.0) += *v as f64;
+                *weights.entry(k.clone()).or_insert(0.0) +=
+                    crate::runtime::utils::bigint_to_f64_sat(v);
             }
         }
         Value::Mix(m, _) if flatten => {

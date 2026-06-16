@@ -914,14 +914,14 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_typename("Int", "1"));
                     }
                     Value::Bag(data, true) => {
-                        let count = crate::runtime::to_int(&value);
+                        let count = value.to_bigint();
                         let mut new_counts = data.counts.clone();
-                        if count > 0 {
+                        if num_traits::Signed::is_positive(&count) {
                             new_counts.insert(key, count);
                         } else {
                             new_counts.remove(&key);
                         }
-                        let new_val = Value::bag_hash(new_counts);
+                        let new_val = Value::bag_hash_big(new_counts);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
                         self.env_dirty = true;
@@ -1005,12 +1005,12 @@ impl Interpreter {
                         return Err(RuntimeError::immutable("Bag", "DELETE-KEY"));
                     }
                     Value::Bag(data, true) => {
-                        let old_count = data.counts.get(&key).copied().unwrap_or(0);
+                        let old_count = data.counts.get(&key).cloned().unwrap_or_default();
                         let mut new_counts = data.counts.clone();
                         new_counts.remove(&key);
-                        let new_val = Value::bag_hash(new_counts);
+                        let new_val = Value::bag_hash_big(new_counts);
                         self.env_mut().insert(target_name.to_string(), new_val);
-                        self.stack.push(Value::Int(old_count));
+                        self.stack.push(Value::from_bigint(old_count));
                         self.env_dirty = true;
                         return Ok(());
                     }

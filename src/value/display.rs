@@ -554,11 +554,11 @@ impl Value {
                     .join(" ")
             }
             Value::Bag(b, _) => {
-                let mut keys: Vec<(&String, &i64)> = b.iter().collect();
+                let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 keys.iter()
                     .map(|(k, v)| {
-                        if **v == 1 {
+                        if **v == num_bigint::BigInt::from(1) {
                             (*k).clone()
                         } else {
                             format!("{}({})", k, v)

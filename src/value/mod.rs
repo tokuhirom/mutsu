@@ -222,11 +222,12 @@ pub(crate) fn seq_sink(arc_ptr: &Arc<Vec<Value>>) {
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
-/// Bag data: wraps HashMap<String, i64> with optional original-typed keys.
-/// Implements Deref to HashMap<String, i64> so existing code works unchanged.
+/// Bag data: wraps HashMap<String, NumBigInt> with optional original-typed keys.
+/// Implements Deref to HashMap<String, NumBigInt> so existing code works unchanged.
+/// Weights are arbitrary-precision so a BagHash weight can exceed i64::MAX.
 #[derive(Debug, Clone)]
 pub(crate) struct BagData {
-    pub counts: HashMap<String, i64>,
+    pub counts: HashMap<String, NumBigInt>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Bag is created from mixed-type data.
     pub original_keys: Option<HashMap<String, Value>>,
@@ -242,7 +243,7 @@ pub(crate) struct BagData {
 }
 
 impl BagData {
-    pub fn new(counts: HashMap<String, i64>) -> Self {
+    pub fn new(counts: HashMap<String, NumBigInt>) -> Self {
         BagData {
             counts,
             original_keys: None,
@@ -253,7 +254,7 @@ impl BagData {
     }
 
     pub fn with_original_keys(
-        counts: HashMap<String, i64>,
+        counts: HashMap<String, NumBigInt>,
         original_keys: HashMap<String, Value>,
     ) -> Self {
         BagData {
@@ -282,7 +283,7 @@ impl BagData {
 }
 
 impl Deref for BagData {
-    type Target = HashMap<String, i64>;
+    type Target = HashMap<String, NumBigInt>;
     fn deref(&self) -> &Self::Target {
         &self.counts
     }
@@ -3259,14 +3260,41 @@ impl Value {
             true,
         )
     }
+    /// Convert an i64 count map to the arbitrary-precision BigInt map BagData uses.
+    fn bag_counts_from_i64(m: HashMap<String, i64>) -> HashMap<String, NumBigInt> {
+        m.into_iter()
+            .map(|(k, v)| (k, NumBigInt::from(v)))
+            .collect()
+    }
     pub fn bag(m: HashMap<String, i64>) -> Self {
-        Value::Bag(Arc::new(BagData::new(m)), false)
+        Value::Bag(Arc::new(BagData::new(Self::bag_counts_from_i64(m))), false)
     }
     pub fn bag_hash(m: HashMap<String, i64>) -> Self {
+        Value::Bag(Arc::new(BagData::new(Self::bag_counts_from_i64(m))), true)
+    }
+    /// Create a Bag from an arbitrary-precision BigInt count map.
+    pub fn bag_big(m: HashMap<String, NumBigInt>) -> Self {
+        Value::Bag(Arc::new(BagData::new(m)), false)
+    }
+    /// Create a BagHash from an arbitrary-precision BigInt count map.
+    pub fn bag_hash_big(m: HashMap<String, NumBigInt>) -> Self {
         Value::Bag(Arc::new(BagData::new(m)), true)
     }
     /// Create a Bag with preserved original key types.
     pub fn bag_typed(counts: HashMap<String, i64>, original_keys: HashMap<String, Value>) -> Self {
+        Value::Bag(
+            Arc::new(BagData::with_original_keys(
+                Self::bag_counts_from_i64(counts),
+                original_keys,
+            )),
+            false,
+        )
+    }
+    /// Create a Bag with preserved original key types from a BigInt count map.
+    pub fn bag_typed_big(
+        counts: HashMap<String, NumBigInt>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
         Value::Bag(
             Arc::new(BagData::with_original_keys(counts, original_keys)),
             false,
@@ -3275,6 +3303,19 @@ impl Value {
     /// Create a BagHash with preserved original key types.
     pub fn bag_hash_typed(
         counts: HashMap<String, i64>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        Value::Bag(
+            Arc::new(BagData::with_original_keys(
+                Self::bag_counts_from_i64(counts),
+                original_keys,
+            )),
+            true,
+        )
+    }
+    /// Create a BagHash with preserved original key types from a BigInt count map.
+    pub fn bag_hash_typed_big(
+        counts: HashMap<String, NumBigInt>,
         original_keys: HashMap<String, Value>,
     ) -> Self {
         Value::Bag(

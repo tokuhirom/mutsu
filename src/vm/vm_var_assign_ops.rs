@@ -836,17 +836,21 @@ impl Interpreter {
     /// Coerce a value assigned to a Bag/BagHash weight to an `i64` count, with
     /// the same numeric validation as Mix: a non-numeric `Str` raises
     /// X::Str::Numeric rather than being silently treated as truthy (1).
-    pub(super) fn bag_assignment_count(value: &Value) -> Result<i64, RuntimeError> {
+    pub(super) fn bag_assignment_count(value: &Value) -> Result<num_bigint::BigInt, RuntimeError> {
+        use num_bigint::BigInt;
         match value {
-            Value::Int(i) => Ok(*i),
-            Value::Num(n) => Ok(*n as i64),
-            Value::Rat(n, d) if *d != 0 => Ok(*n / *d),
-            Value::Bool(flag) => Ok(i64::from(*flag)),
+            Value::Int(i) => Ok(BigInt::from(*i)),
+            // Weights can exceed i64::MAX (e.g. `%h<k> = 10**19`), so a BigInt
+            // weight is preserved verbatim rather than truncated to a native int.
+            Value::BigInt(n) => Ok((**n).clone()),
+            Value::Num(n) => Ok(BigInt::from(*n as i64)),
+            Value::Rat(n, d) if *d != 0 => Ok(BigInt::from(*n / *d)),
+            Value::Bool(flag) => Ok(BigInt::from(i64::from(*flag))),
             Value::Str(s) => {
-                if let Ok(n) = s.parse::<i64>() {
+                if let Ok(n) = s.parse::<BigInt>() {
                     Ok(n)
                 } else if let Ok(n) = s.parse::<f64>() {
-                    Ok(n as i64)
+                    Ok(BigInt::from(n as i64))
                 } else {
                     Err(RuntimeError::str_numeric(
                         s,
@@ -856,9 +860,9 @@ impl Interpreter {
             }
             _ => {
                 if value.truthy() {
-                    Ok(1)
+                    Ok(BigInt::from(1))
                 } else {
-                    Ok(0)
+                    Ok(BigInt::from(0))
                 }
             }
         }
@@ -2013,7 +2017,9 @@ impl Interpreter {
                         Value::Bool(false)
                     }
                 }
-                Value::Bag(bag, _) => Value::Int(*bag.get(&key).unwrap_or(&0)),
+                Value::Bag(bag, _) => {
+                    Value::from_bigint(bag.get(&key).cloned().unwrap_or_default())
+                }
                 _ => Value::Nil,
             }
         } else {
@@ -2164,10 +2170,11 @@ impl Interpreter {
                     }
                     let b = Arc::make_mut(bag);
                     let n = match &new_val {
-                        Value::Int(i) => *i,
-                        _ => 0,
+                        Value::Int(i) => num_bigint::BigInt::from(*i),
+                        Value::BigInt(big) => (**big).clone(),
+                        _ => num_bigint::BigInt::from(0),
                     };
-                    if n > 0 {
+                    if num_traits::Signed::is_positive(&n) {
                         b.insert(key.clone(), n);
                     } else {
                         b.remove(&key);
@@ -3743,7 +3750,7 @@ impl Interpreter {
                             }
                             let b = Arc::make_mut(bag);
                             let count = Self::bag_assignment_count(&val)?;
-                            if count == 0 {
+                            if count == num_bigint::BigInt::from(0) {
                                 b.remove(&key);
                             } else {
                                 b.insert(key.clone(), count);
@@ -3781,10 +3788,10 @@ impl Interpreter {
                                 "BagHash" => {
                                     let mut counts = HashMap::new();
                                     let count = Self::bag_assignment_count(&val)?;
-                                    if count > 0 {
+                                    if num_traits::Signed::is_positive(&count) {
                                         counts.insert(key.clone(), count);
                                     }
-                                    *container = Value::bag_hash(counts);
+                                    *container = Value::bag_hash_big(counts);
                                 }
                                 "SetHash" => {
                                     let mut items = std::collections::HashSet::new();

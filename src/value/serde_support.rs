@@ -37,7 +37,7 @@ enum SerValue {
     BigRat(NumBigInt, NumBigInt),
     Complex(f64, f64),
     Set(HashSet<String>),
-    Bag(HashMap<String, i64>),
+    Bag(HashMap<String, NumBigInt>),
     Mix(HashMap<String, f64>),
     CompUnitDepSpec {
         short_name: Symbol,
@@ -337,7 +337,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::BigRat(n, d) => Value::bigrat(n, d),
         SerValue::Complex(r, i) => Value::Complex(r, i),
         SerValue::Set(s) => Value::set(s),
-        SerValue::Bag(b) => Value::bag(b),
+        SerValue::Bag(b) => Value::bag_big(b),
         SerValue::Mix(m) => Value::mix(m),
         SerValue::CompUnitDepSpec { short_name } => Value::CompUnitDepSpec { short_name },
         SerValue::Package(s) => Value::Package(s),
