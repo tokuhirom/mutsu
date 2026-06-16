@@ -1036,6 +1036,21 @@ impl Interpreter {
     }
 
     /// Execute one opcode at *ip, advancing ip for the next instruction.
+    /// Itemize a value read from a `$` scalar container so it behaves as a
+    /// single element in list context. Arrays/Lists flip to their itemized
+    /// `ArrayKind`; Seq and Hash are wrapped in a `Value::Scalar` container so a
+    /// `$`-sourced hash stays opaque (it must not flatten into pairs on
+    /// hash-assignment the way a bare `%h` does). Already-itemized values and
+    /// non-container scalars pass through unchanged.
+    fn itemize_value(val: Value) -> Value {
+        match val {
+            Value::Array(items, kind) if !kind.is_itemized() => Value::Array(items, kind.itemize()),
+            Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
+            Value::Hash(_) => Value::Scalar(Box::new(val)),
+            other => other,
+        }
+    }
+
     fn exec_one(
         &mut self,
         code: &CompiledCode,
@@ -2083,18 +2098,11 @@ impl Interpreter {
             OpCode::Itemize => {
                 // Wrap Array/List values in their itemized (Scalar-container)
                 // variant so they are treated as single items in list context.
-                // Hash is already an item (not flattened in list context), so
-                // it is left unchanged.
+                // A Hash from a `$` scalar container is itemized by wrapping it in
+                // a Scalar so it stays opaque in list context (`%m = ($h,)` must
+                // NOT flatten it into pairs, unlike a bare `%h` which does).
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                let itemized = match val {
-                    Value::Array(items, kind) if !kind.is_itemized() => {
-                        Value::Array(items, kind.itemize())
-                    }
-                    // Itemize a Seq by wrapping it in a scalar container
-                    Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
-                    other => other,
-                };
-                self.stack.push(itemized);
+                self.stack.push(Self::itemize_value(val));
                 *ip += 1;
             }
             OpCode::ItemizeVar(name_idx) => {
@@ -2115,13 +2123,7 @@ impl Interpreter {
                 let result = if is_bound_decont {
                     val
                 } else {
-                    match val {
-                        Value::Array(items, kind) if !kind.is_itemized() => {
-                            Value::Array(items, kind.itemize())
-                        }
-                        Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
-                        other => other,
-                    }
+                    Self::itemize_value(val)
                 };
                 self.stack.push(result);
                 *ip += 1;

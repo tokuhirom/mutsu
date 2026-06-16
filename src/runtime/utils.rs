@@ -654,6 +654,21 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             Value::Pair(key, boxed_val) => {
                 map.insert(key, *boxed_val);
             }
+            // A bare hash in list context flattens into its key=>value pairs
+            // (`%m = (%h,)` / `%(%h,)`). A hash sourced from a `$` scalar is
+            // itemized as `Value::Scalar(Hash)` (see `Interpreter::itemize_value`)
+            // and does NOT match here, so it stays an opaque single element —
+            // matching Raku, where `%m = ($hashitem,)` dies "Odd number".
+            // Object-hash keys are preserved via `typed_key`.
+            Value::Hash(h) => {
+                for (k, v) in h.iter() {
+                    let key_obj = h.typed_key(k);
+                    if !matches!(&key_obj, Value::Str(_)) {
+                        original_keys.insert(k.clone(), key_obj);
+                    }
+                    map.insert(k.clone(), v.clone());
+                }
+            }
             Value::ValuePair(key, boxed_val) => {
                 let str_key = Value::hash_key_encode(&key);
                 if !matches!(key.as_ref(), Value::Str(_)) {
