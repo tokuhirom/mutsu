@@ -1399,7 +1399,36 @@ impl Compiler {
                     loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                     values_mode: Self::for_iterable_is_values_alias(iterable),
                 });
+                // Register sigilless for-params (`-> \v`, `-> \k, \v`) as
+                // sigilless locals while compiling the body so postfix/prefix
+                // `++`/`--` on the bare word (`v--`, `++v`) resolve to an
+                // in-place PostDecrement/etc. on the bound env var rather than
+                // the `__mutsu_incdec_nomatch` fallback. They are NOT readonly
+                // (rw aliases), so we only add them to the set, not mark them.
+                let sigilless_param_names: Vec<String> = if has_sigilless {
+                    let mut names = Vec::new();
+                    let single_sigilless = (**param_def).as_ref().is_some_and(|def| def.sigilless);
+                    if let Some(p) = param.as_ref().filter(|_| single_sigilless) {
+                        names.push(p.strip_prefix('\\').unwrap_or(p).to_string());
+                    }
+                    for (p, def) in params.iter().zip(params_def.iter()) {
+                        if def.sigilless {
+                            names.push(p.strip_prefix('\\').unwrap_or(p).to_string());
+                        }
+                    }
+                    names
+                } else {
+                    Vec::new()
+                };
+                let newly_registered: Vec<String> = sigilless_param_names
+                    .iter()
+                    .filter(|n| self.sigilless_locals.insert((*n).clone()))
+                    .cloned()
+                    .collect();
                 self.compile_body_with_implicit_try(&loop_body);
+                for n in &newly_registered {
+                    self.sigilless_locals.remove(n);
+                }
                 self.code.patch_loop_end(loop_idx);
                 for s in &post_stmts {
                     self.compile_stmt(s);

@@ -4,7 +4,7 @@ use Test;
 # alias the source element directly. In Raku they are writable, and
 # modifications propagate back to the source container.
 
-plan 11;
+plan 17;
 
 # Single sigilless param over an array writes back.
 {
@@ -71,4 +71,34 @@ plan 11;
     my @a = 7, 8, 9;
     for @a -> \v { my $x = v + 1 };
     is-deeply @a, [7, 8, 9], 'unmodified sigilless param does not mutate the source';
+}
+
+# Postfix/prefix ++/-- on a sigilless param writes back to the array.
+{
+    my @a = 1, 2, 3;
+    for @a -> \v { v-- };
+    is-deeply @a, [0, 1, 2], 'postfix -- on sigilless param writes back';
+}
+{
+    my @a = 1, 2, 3;
+    for @a -> \v { v++ };
+    is-deeply @a, [2, 3, 4], 'postfix ++ on sigilless param writes back';
+}
+{
+    my @a = 1, 2, 3;
+    for @a -> \v { ++v };
+    is-deeply @a, [2, 3, 4], 'prefix ++ on sigilless param writes back';
+}
+{
+    my @a = 1, 2, 3;
+    for @a -> \v { --v };
+    is-deeply @a, [0, 1, 2], 'prefix -- on sigilless param writes back';
+}
+
+# ++/-- on the value of a `%h.kv -> \k, \v` binding writes back to the hash.
+{
+    my %h = a => 1, b => 2;
+    for %h.kv -> \k, \v { v++ };
+    is %h<a>, 2, 'kv sigilless v++ updates value a';
+    is %h<b>, 3, 'kv sigilless v++ updates value b';
 }

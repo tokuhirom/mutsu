@@ -10,6 +10,18 @@ impl Compiler {
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::PostIncrement(name_idx));
+        } else if let Expr::BareWord(name) = expr {
+            if self.sigilless_locals.contains(name.as_str()) {
+                // Sigilless rw binding (e.g. for-loop `-> \v { v++ }`): the bare
+                // word IS the env var, so increment it in place by name.
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                self.code.emit(OpCode::PostIncrement(name_idx));
+            } else {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("__mutsu_incdec_nomatch"),
+                    args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
+                });
+            }
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
             // state/my declarator in expression position: `state $x++`, `my $x.++`
             self.compile_expr(expr);
@@ -89,6 +101,17 @@ impl Compiler {
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::PostDecrement(name_idx));
+        } else if let Expr::BareWord(name) = expr {
+            if self.sigilless_locals.contains(name.as_str()) {
+                // Sigilless rw binding (e.g. for-loop `-> \v { v-- }`).
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                self.code.emit(OpCode::PostDecrement(name_idx));
+            } else {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("__mutsu_incdec_nomatch"),
+                    args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
+                });
+            }
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
             self.compile_expr(expr);
             self.code.emit(OpCode::Pop);

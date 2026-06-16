@@ -39,6 +39,16 @@ impl Compiler {
                     }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PreIncrement(name_idx));
+                } else if let Expr::BareWord(name) = expr {
+                    if self.sigilless_locals.contains(name.as_str()) {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.code.emit(OpCode::PreIncrement(name_idx));
+                    } else {
+                        self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("__mutsu_incdec_nomatch"),
+                            args: vec![Expr::Literal(Value::str_from("prefix:<++>"))],
+                        });
+                    }
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::Pop);
@@ -67,6 +77,16 @@ impl Compiler {
                     }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PreDecrement(name_idx));
+                } else if let Expr::BareWord(name) = expr {
+                    if self.sigilless_locals.contains(name.as_str()) {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.code.emit(OpCode::PreDecrement(name_idx));
+                    } else {
+                        self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("__mutsu_incdec_nomatch"),
+                            args: vec![Expr::Literal(Value::str_from("prefix:<-->"))],
+                        });
+                    }
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::Pop);
