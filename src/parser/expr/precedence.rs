@@ -184,15 +184,16 @@ pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
 /// Also handles item assignment (`=`, `~=`, `+=`, etc.) within a single
 /// argument so that `f $a ~= $b, $c` parses as `f(($a ~= $b), $c)`.
 pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, expr) = or_or_expr_mode(input, ExprMode::NoSequenceNoFeed)?;
+    let (rest, expr) = call_arg_ternary_expr(input)?;
     let (r, _) = ws(rest)?;
 
     // Handle compound assignment operators (+=, ~=, //=, etc.) in call-arg context.
     // The RHS is a single expression (no comma collection) since commas separate
-    // function arguments at this level.
+    // function arguments at this level. Item assignment is looser than the
+    // conditional `?? !!`, so the RHS parses a ternary too.
     if let Some((after_op, op)) = parse_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
-        if let Ok((r2, rhs)) = or_or_expr_mode(after_ws, ExprMode::NoSequenceNoFeed)
+        if let Ok((r2, rhs)) = call_arg_ternary_expr(after_ws)
             && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs)
         {
             return Ok((r2, result));
@@ -203,12 +204,45 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
     if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
         let r_eq = &r[1..];
         let (r_eq, _) = ws(r_eq)?;
-        if let Ok((r2, rhs)) = or_or_expr_mode(r_eq, ExprMode::NoSequenceNoFeed) {
+        if let Ok((r2, rhs)) = call_arg_ternary_expr(r_eq) {
             return Ok((r2, assign_to_target_expr(expr, rhs)));
         }
     }
 
     Ok((rest, expr))
+}
+
+/// Parse a single call argument at *conditional* (`?? !!`) precedence: an
+/// `or_or` expression optionally followed by a ternary. The comma operator
+/// separates arguments at a looser level, so `f $cond ?? $a !! $b` binds the
+/// ternary inside the argument (matching Raku) rather than wrapping the whole
+/// call as `(f $cond) ?? $a !! $b`.
+fn call_arg_ternary_expr(input: &str) -> PResult<'_, Expr> {
+    let (rest, cond) = or_or_expr_mode(input, ExprMode::NoSequenceNoFeed)?;
+    let (r, _) = ws(rest)?;
+    let Ok((r, _)) = parse_tag(r, "??") else {
+        return Ok((rest, cond));
+    };
+    let (r, _) = ws(r)?;
+    let (r, then_expr) = call_arg_ternary_expr(r).map_err(|err| {
+        enrich_expected_error(err, "expected then-expression after '??'", r.len())
+    })?;
+    let (r, _) = ws(r)?;
+    let (r, _) = parse_tag(r, "!!").map_err(|err| {
+        enrich_expected_error(err, "expected '!!' in ternary expression", r.len())
+    })?;
+    let (r, _) = ws(r)?;
+    let (r, else_expr) = call_arg_ternary_expr(r).map_err(|err| {
+        enrich_expected_error(err, "expected else-expression after '!!'", r.len())
+    })?;
+    Ok((
+        r,
+        Expr::Ternary {
+            cond: Box::new(cond),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+        },
+    ))
 }
 
 pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
