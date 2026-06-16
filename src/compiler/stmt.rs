@@ -761,16 +761,22 @@ impl Compiler {
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
-                } else if scalar_bind_decont && matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
+                } else if scalar_bind_decont
+                    && (matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
+                        || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. })))
                 {
                     // A scalar `:=` bind to a *whole* container variable
                     // (`my $ref := @a` / `my $ref := %h`) must alias the same
                     // container, not snapshot it (so `$ref.push` mutates `@a`).
+                    // Likewise a bind to an inline declaration (`my $a := my $b`,
+                    // which the parser leaves as a bare `VarDecl` with the
+                    // `__scalar_bind` trait rather than wrapping it in the
+                    // MarkBind SyntheticBlock that `my $a := $b` gets) must alias
+                    // the freshly-declared variable's container.
                     // Route through compile_call_arg so WrapVarRef is emitted and
-                    // SetLocal's whole-container bind path shares one cell, just
-                    // like `my @b := @a`. (Scalar binds normally take the
-                    // assignment path below, which only Arc-shares — a COW push
-                    // would then detach the alias.)
+                    // SetLocal's bind path shares one cell. (Scalar binds normally
+                    // take the assignment path below, which only Arc-shares — a
+                    // COW push would then detach the alias.)
                     self.scalar_bind_autovivify = true;
                     self.bind_terminal = true;
                     self.compile_call_arg(expr);
