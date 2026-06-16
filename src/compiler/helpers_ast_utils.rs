@@ -68,6 +68,57 @@ impl Compiler {
         }
     }
 
+    /// Build an assignment expression that writes `value` into the lvalue
+    /// `target`. Used to desugar a ternary (or other selector) on the LHS of an
+    /// assignment, e.g. `(cond ?? $a !! $b) = v` becomes a ternary whose
+    /// branches are `$a = v` and `$b = v`. Returns `None` when `target` is not a
+    /// supported lvalue shape.
+    pub(super) fn assign_expr_for_lvalue(target: &Expr, value: &Expr) -> Option<Expr> {
+        match target {
+            Expr::Var(name) => Some(Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(value.clone()),
+                is_bind: false,
+            }),
+            Expr::ArrayVar(name) => Some(Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(value.clone()),
+                is_bind: false,
+            }),
+            Expr::HashVar(name) => Some(Expr::AssignExpr {
+                name: format!("%{}", name),
+                expr: Box::new(value.clone()),
+                is_bind: false,
+            }),
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+            } => Some(Expr::IndexAssign {
+                target: target.clone(),
+                index: index.clone(),
+                value: Box::new(value.clone()),
+                is_positional: *is_positional,
+            }),
+            Expr::Grouped(inner) => Self::assign_expr_for_lvalue(inner, value),
+            // Nested selector on a branch, e.g. `cond1 ?? (cond2 ?? $a !! $b) !! $c`.
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                let then_assign = Self::assign_expr_for_lvalue(then_expr, value)?;
+                let else_assign = Self::assign_expr_for_lvalue(else_expr, value)?;
+                Some(Expr::Ternary {
+                    cond: cond.clone(),
+                    then_expr: Box::new(then_assign),
+                    else_expr: Box::new(else_assign),
+                })
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn postfix_index_name(target: &Expr) -> Option<String> {
         match target {
             Expr::HashVar(name) => Some(format!("%{}", name)),
