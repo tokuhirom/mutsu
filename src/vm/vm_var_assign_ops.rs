@@ -2041,6 +2041,25 @@ impl Interpreter {
         } else {
             self.decrement_value_smart(&effective)?
         };
+        // A Bag/BagHash holds non-negative integer counts: decrementing a weight
+        // below 0 clamps the *returned* (and stored) value to 0 (the element is
+        // then removed), so `--$bh<k>` on an absent key returns 0, not -1. Mix
+        // weights are unbounded and keep their negative value.
+        let target_is_bag = matches!(container.as_ref(), Some(Value::Bag(..)))
+            || matches!(
+                container.as_ref(),
+                Some(Value::Package(sym)) if sym.resolve() == "BagHash"
+            )
+            || declared_type_incdec.as_deref() == Some("BagHash")
+            || declared_constraint_incdec.as_deref() == Some("BagHash");
+        let new_val = if target_is_bag {
+            match &new_val {
+                Value::Int(n) if *n < 0 => Value::Int(0),
+                _ => new_val,
+            }
+        } else {
+            new_val
+        };
         // Type-check the incremented value against the element constraint of a
         // typed array/hash, e.g. `subset Y of Int where 1..10; my Y @x; @x[0]=10;
         // @x[0]++` must throw when the new value (11) falls outside the subset.

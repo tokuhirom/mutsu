@@ -5,7 +5,7 @@ use Test;
 # Weight 0 (or False for Set) removes the key; a non-numeric Str raises
 # X::Str::Numeric. Immutable Bag/Mix/Set remain read-only.
 
-plan 18;
+plan 23;
 
 # --- Parser: `.value--` is `.value` then postfix `--`, not a method `value--` ---
 {
@@ -95,4 +95,21 @@ plan 18;
     throws-like { .value = 0 for $s.pairs },
       X::Assignment::RO,
       'immutable Set .pairs .value is read-only';
+}
+
+# --- Typed BagHash element autovivification clamps at 0 ---
+{
+    my BagHash $bh;
+    is $bh<poinc>++, 0, 'BagHash $bh<k>++ returns 0 on autoviv';
+    is $bh<poinc>, 1, 'BagHash $bh<k>++ leaves 1';
+}
+{
+    my BagHash $bh;
+    is $bh<podec>--, 0, 'BagHash $bh<k>-- returns 0 on autoviv';
+    is $bh<podec>, 0, 'BagHash $bh<k>-- stays at 0 (no negative counts)';
+}
+{
+    my BagHash $bh;
+    # Prefix -- on an absent key returns the clamped new value (0), not -1.
+    is --$bh<prdec>, 0, 'BagHash --$bh<k> returns 0 (clamped), not -1';
 }
