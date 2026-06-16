@@ -142,7 +142,9 @@ struct MatchAdverbs {
     global: bool,
     exhaustive: bool,
     overlap: bool,
-    repeat: Option<usize>,
+    /// Raw `:x` adverb argument spec: a count (`"3"`) or a range (`"1..3"`),
+    /// kept as a string so the substitution can support range arguments.
+    repeat: Option<String>,
     ignore_case: bool,
     ignore_mark: bool,
     samemark: bool,
@@ -338,23 +340,19 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
                 adverbs.nth = Some(raw.trim().to_string());
             }
         } else if name == "x" {
+            // `:x(N)` (exact count) or `:x(1..3)` (range): keep the raw argument
+            // string for the substitution to parse. `:Nx` carries the count in
+            // `leading_digits`.
             if let Some(raw) = arg {
                 let trimmed = raw.trim();
-                if !trimmed.is_empty()
-                    && let Ok(count) = trimmed.parse::<usize>()
-                {
-                    adverbs.repeat = Some(count);
+                if !trimmed.is_empty() {
+                    adverbs.repeat = Some(trimmed.to_string());
                 }
-            } else if !leading_digits.is_empty()
-                && let Ok(count) = leading_digits.parse::<usize>()
-            {
-                adverbs.repeat = Some(count);
+            } else if !leading_digits.is_empty() {
+                adverbs.repeat = Some(leading_digits.clone());
             }
-        } else if !leading_digits.is_empty()
-            && name == "x"
-            && let Ok(count) = leading_digits.parse::<usize>()
-        {
-            adverbs.repeat = Some(count);
+        } else if !leading_digits.is_empty() && name == "x" {
+            adverbs.repeat = Some(leading_digits.clone());
         } else {
             return Err(regex_adverb_error(
                 &name,
@@ -751,7 +749,12 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
         global: adverbs.global,
         exhaustive: adverbs.exhaustive,
         overlap: adverbs.overlap,
-        repeat: adverbs.repeat,
+        // The `m//` match form keeps `:x` as an exact count; range `:x(1..3)`
+        // support lives in the substitution path (parsed from the AST string).
+        repeat: adverbs
+            .repeat
+            .as_ref()
+            .and_then(|s| s.parse::<usize>().ok()),
         nth: adverbs.nth.as_ref().map(|s| Arc::new(s.clone())),
         perl5: adverbs.perl5,
         pos: adverbs.pos,
