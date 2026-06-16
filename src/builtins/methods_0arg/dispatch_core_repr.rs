@@ -337,21 +337,10 @@ pub(super) fn dispatch(
             }
         }
         Value::Bag(b, mutable) => {
-            let type_name = if *mutable { "BagHash" } else { "Bag" };
-            let mut keys: Vec<(&String, &i64)> = b.iter().collect();
-            keys.sort_by_key(|(k, _)| (*k).clone());
-            let inner = keys
-                .iter()
-                .map(|(k, v)| {
-                    if **v == 1 {
-                        (*k).clone()
-                    } else {
-                        format!("{}({})", k, v)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
             if method == "raku" || method == "perl" {
+                let type_name = if *mutable { "BagHash" } else { "Bag" };
+                let mut keys: Vec<(&String, &i64)> = b.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
                 let pairs = keys
                     .iter()
                     .map(|(k, v)| {
@@ -366,14 +355,16 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
                 // gist: Bag(key(count) ...) or BagHash(key(count) ...)
-                Some(Ok(Value::str(format!("{}({})", type_name, inner))))
+                Some(Ok(Value::str(
+                    runtime::utils::setbagmix_gist(target).unwrap(),
+                )))
             }
         }
         Value::Set(s, mutable) => {
-            let type_name = if *mutable { "SetHash" } else { "Set" };
-            let mut keys: Vec<&String> = s.iter().collect();
-            keys.sort();
             if method == "raku" || method == "perl" {
+                let type_name = if *mutable { "SetHash" } else { "Set" };
+                let mut keys: Vec<&String> = s.iter().collect();
+                keys.sort();
                 let pairs = keys
                     .iter()
                     .map(|k| {
@@ -387,19 +378,16 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
                 // gist: Set(a b c) or SetHash(a b c)
-                let inner = keys
-                    .iter()
-                    .map(|k| k.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                Some(Ok(Value::str(format!("{}({})", type_name, inner))))
+                Some(Ok(Value::str(
+                    runtime::utils::setbagmix_gist(target).unwrap(),
+                )))
             }
         }
         Value::Mix(m, mutable) => {
-            let type_name = if *mutable { "MixHash" } else { "Mix" };
-            let mut keys: Vec<(&String, &f64)> = m.iter().collect();
-            keys.sort_by_key(|(k, _)| (*k).clone());
             if method == "raku" || method == "perl" {
+                let type_name = if *mutable { "MixHash" } else { "Mix" };
+                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
                 let pairs = keys
                     .iter()
                     .map(|(k, v)| {
@@ -419,20 +407,9 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
                 // gist: Mix(key(weight) ...) or MixHash(key(weight) ...)
-                let inner = keys
-                    .iter()
-                    .map(|(k, v)| {
-                        if (**v - 1.0).abs() < f64::EPSILON {
-                            (*k).clone()
-                        } else if v.fract() == 0.0 {
-                            format!("{}({})", k, **v as i64)
-                        } else {
-                            format!("{}({})", k, v)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                Some(Ok(Value::str(format!("{}({})", type_name, inner))))
+                Some(Ok(Value::str(
+                    runtime::utils::setbagmix_gist(target).unwrap(),
+                )))
             }
         }
         Value::Package(name) => {

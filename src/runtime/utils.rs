@@ -779,6 +779,64 @@ pub(crate) fn coerce_to_str(value: &Value) -> String {
     value.to_str_context()
 }
 
+/// Render the `.gist` form of a Set/Bag/Mix (and their mutable `*Hash`
+/// variants): `Set(a b c)`, `Bag(a b(2))`, `Mix(a(1.5) b)`. Keys are sorted
+/// for deterministic output. Returns `None` for any other value. Shared by
+/// `gist_value` (the fast say/gist path) and the `.gist` method dispatch so
+/// both render identically.
+pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
+    match value {
+        Value::Set(s, mutable) => {
+            let type_name = if *mutable { "SetHash" } else { "Set" };
+            let mut keys: Vec<&String> = s.iter().collect();
+            keys.sort();
+            let inner = keys
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            Some(format!("{}({})", type_name, inner))
+        }
+        Value::Bag(b, mutable) => {
+            let type_name = if *mutable { "BagHash" } else { "Bag" };
+            let mut keys: Vec<(&String, &i64)> = b.iter().collect();
+            keys.sort_by_key(|(k, _)| (*k).clone());
+            let inner = keys
+                .iter()
+                .map(|(k, v)| {
+                    if **v == 1 {
+                        (*k).clone()
+                    } else {
+                        format!("{}({})", k, v)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            Some(format!("{}({})", type_name, inner))
+        }
+        Value::Mix(m, mutable) => {
+            let type_name = if *mutable { "MixHash" } else { "Mix" };
+            let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+            keys.sort_by_key(|(k, _)| (*k).clone());
+            let inner = keys
+                .iter()
+                .map(|(k, v)| {
+                    if (**v - 1.0).abs() < f64::EPSILON {
+                        (*k).clone()
+                    } else if v.fract() == 0.0 {
+                        format!("{}({})", k, **v as i64)
+                    } else {
+                        format!("{}({})", k, v)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            Some(format!("{}({})", type_name, inner))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn gist_value(value: &Value) -> String {
     // Cycle detection for recursive data structures (shared hash/array Arcs).
     thread_local! {
@@ -846,6 +904,11 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 .collect();
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             format!("{{{}}}", parts.join(", "))
+        }
+        Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+            // Set/Bag/Mix gist shows the type-name wrapper, e.g. `Set(a b c)`;
+            // their `.Str` (the `_` fall-through) shows only the bare elements.
+            setbagmix_gist(value).unwrap_or_else(|| value.to_string_value())
         }
         Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
         Value::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
