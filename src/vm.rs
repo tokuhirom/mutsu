@@ -59,6 +59,36 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
+/// Run a worker-thread body under the same panic->`X::AdHoc` boundary that
+/// `run_inner_guarded`/`run_range_guarded` install for the main thread.
+///
+/// `start{}`/`Promise` bodies execute on a freshly spawned thread via
+/// `call_value`, which does NOT route through `run_top` — so the main thread's
+/// outer boundary does not cover them. Without this, a Rust panic
+/// (overflow/index-OOB/capacity-overflow) raised by user code in a worker
+/// terminates only that thread, leaving its `Promise` forever unresolved and
+/// hanging the awaiter (or, under `panic=abort`, crashing the whole process).
+/// Wrapping the body here converts such a panic into a catchable
+/// `RuntimeError` (X::AdHoc) the caller can `break_with`, so `await` rethrows
+/// it as a normal `X::Await::Died` instead of hanging.
+pub(crate) fn guard_worker_panic<T>(
+    body: impl FnOnce() -> Result<T, RuntimeError>,
+) -> Result<T, RuntimeError> {
+    install_vm_panic_hook();
+    // The worker is a distinct thread, so its thread-local starts `false`;
+    // setting it suppresses the default backtrace dump for the panic we are
+    // about to convert (the panic hook reads the panicking thread's local).
+    let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+    IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
+    match caught {
+        Ok(r) => r,
+        Err(payload) => Err(Interpreter::vm_panic_error(panic_payload_message(
+            payload.as_ref(),
+        ))),
+    }
+}
+
 /// Pre-computed fast dispatch entry for compiled methods.
 /// Caches all the information needed to skip intermediate dispatch steps
 /// (wrap chain check, compiled_code extraction, fast-path eligibility checks).
