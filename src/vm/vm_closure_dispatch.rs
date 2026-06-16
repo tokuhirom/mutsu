@@ -383,8 +383,19 @@ impl Interpreter {
             }
         }
 
-        // Raku: routines get their own $_ initialized to (Any).
-        if cc.is_routine && !data.param_defs.iter().any(|pd| pd.name == "_") {
+        // Raku: routines get their own $_ initialized to (Any). A *block* with
+        // placeholder params (`{ $^a }`) is still a block, not a routine, so it
+        // keeps the enclosing lexical `$_` (mutsu compiles such a bare block as a
+        // routine for `return`/`&?ROUTINE` purposes, but its topic must still be
+        // the outer `$_`). Skip the reset when an explicit `$_` param is present
+        // or when the signature is made of placeholder params (`$^x`).
+        let has_placeholder_param = data.param_defs.iter().any(|pd| {
+            pd.name.starts_with('^') || pd.name.starts_with("@^") || pd.name.starts_with("%^")
+        });
+        if cc.is_routine
+            && !has_placeholder_param
+            && !data.param_defs.iter().any(|pd| pd.name == "_")
+        {
             self.env_mut().insert(
                 "_".to_string(),
                 Value::Package(crate::symbol::Symbol::intern("Any")),
