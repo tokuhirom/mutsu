@@ -81,9 +81,20 @@ impl Compiler {
             for arg in args {
                 self.compile_method_arg(arg);
             }
+            // When the pushed argument is a bare container variable (`@a.push(@b)`
+            // / `@a.push(%h)`), record its name so the VM can share a cell with
+            // the source (Raku stores the container by reference, not a snapshot).
+            let value_source_idx = match &args[0] {
+                Expr::ArrayVar(n) => Some(self.code.add_constant(Value::str(format!("@{}", n)))),
+                Expr::HashVar(n) => Some(self.code.add_constant(Value::str(format!("%{}", n)))),
+                _ => None,
+            };
             let target_name_idx = self.code.add_constant(Value::str(target_name));
             self.emit_source_line_if_known();
-            self.code.emit(OpCode::ArrayPush { target_name_idx });
+            self.code.emit(OpCode::ArrayPush {
+                target_name_idx,
+                value_source_idx,
+            });
             return;
         }
         self.compile_expr(target);
