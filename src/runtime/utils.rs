@@ -807,6 +807,43 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
                 .collect();
             Value::real_array(pairs)
         }
+        // A scalar holding a Hash/Set/Bag/Mix (itemized by `ItemizeVar` as
+        // `Scalar(container)`) stays a single element, but unwrap the Scalar so
+        // `@a[0]` is the bare container (preserving its `.gist`/`.raku`/type),
+        // rather than an opaque `$(...)`-wrapped value.
+        Value::Scalar(inner)
+            if matches!(
+                inner.as_ref(),
+                Value::Hash(_) | Value::Set(..) | Value::Bag(..) | Value::Mix(..)
+            ) =>
+        {
+            Value::real_array(vec![*inner])
+        }
+        // Set/Bag/Mix assigned to an @-var flatten into their `key => weight`
+        // pairs in list context, exactly like a Hash (Raku: `my @a = set(1,2,3)`
+        // yields three `* => True` pairs, so `@a.elems == 3`). This mirrors
+        // `value_to_list`. (Note: an array *literal* `[set(...)]` does NOT
+        // flatten — that path is handled separately in `exec_make_array_op`.)
+        Value::Set(ref items, _) => Value::real_array(
+            items
+                .iter()
+                .map(|s| Value::Pair(s.clone(), Box::new(Value::Bool(true))))
+                .collect(),
+        ),
+        Value::Bag(ref items, _) => Value::real_array(
+            items
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone()))))
+                .collect(),
+        ),
+        Value::Mix(ref items, _) => Value::real_array(
+            items
+                .iter()
+                .map(|(k, v)| {
+                    Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v)))
+                })
+                .collect(),
+        ),
         other => Value::real_array(vec![other]),
     }
 }
