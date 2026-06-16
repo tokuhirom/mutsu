@@ -378,13 +378,39 @@ pub(super) fn dispatch(
                     })
                 }
                 Value::Complex(re, im) => {
-                    // sign of a Complex number is the number divided by its absolute value
-                    let abs = (re * re + im * im).sqrt();
-                    if abs == 0.0 {
-                        Value::Complex(0.0, 0.0)
-                    } else {
-                        Value::Complex(re / abs, im / abs)
+                    // `sign` requires a Real. A Complex with a non-zero imaginary
+                    // part cannot be coerced to Real, so it throws X::Numeric::Real
+                    // (matching `.Int`/`.Real` coercion). A purely real Complex
+                    // yields the Int sign of its real part.
+                    if *im != 0.0 {
+                        let mut attrs = std::collections::HashMap::new();
+                        let rendered = if *im >= 0.0 {
+                            format!("{re}+{im}i")
+                        } else {
+                            format!("{re}{im}i")
+                        };
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Cannot convert {rendered} to Real: imaginary part not zero"
+                            )),
+                        );
+                        attrs.insert("target".to_string(), Value::Package(Symbol::intern("Real")));
+                        attrs.insert("source".to_string(), target.clone());
+                        let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
+                        let mut err = RuntimeError::new(
+                            "Cannot convert Complex to Real: imaginary part not zero",
+                        );
+                        err.exception = Some(Box::new(ex));
+                        return Some(Some(Err(err)));
                     }
+                    Value::Int(if *re > 0.0 {
+                        1
+                    } else if *re < 0.0 {
+                        -1
+                    } else {
+                        0
+                    })
                 }
                 Value::Enum { value, .. } => Value::Int(value.as_i64().signum()),
                 _ => return Some(None),

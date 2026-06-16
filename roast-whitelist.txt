@@ -6,6 +6,7 @@ roast/6.d/S02-literals/version.t
 roast/6.d/S05-capture/match-object.t
 roast/6.d/S32-num/atanh.t
 roast/6.d/S32-num/log.t
+roast/6.d/S32-num/sign.t
 roast/6.d/S32-num/sqrt.t
 roast/6.d/S32-str/sprintf-b.t
 roast/6.d/S32-str/sprintf-c.t
