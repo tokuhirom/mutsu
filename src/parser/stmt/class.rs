@@ -700,11 +700,19 @@ fn inject_separator_ws(pattern: &str) -> String {
             i += 1;
             continue;
         }
-        // Look for `%` followed by a separator expression
+        // Look for `%` (or `%%`) followed by a separator expression
         if c == '%' {
             out.push('%');
             i += 1;
-            // Skip whitespace after %
+            // `%%` (trailing-separator-allowed) is a single operator: emit its
+            // second `%` too, otherwise the second `%` is mistaken for the
+            // separator atom and the operator is destroyed (e.g.
+            // `\d+ %% "+"` would become `\d+ % [<.ws>? % <.ws>?] "+"`).
+            if i < chars.len() && chars[i] == '%' {
+                out.push('%');
+                i += 1;
+            }
+            // Skip whitespace after % / %%
             while i < chars.len() && chars[i].is_whitespace() {
                 out.push(chars[i]);
                 i += 1;
