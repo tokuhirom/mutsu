@@ -93,6 +93,21 @@ impl Interpreter {
                     Ok(v) => v,
                     Err(_) => continue,
                 }
+            } else if let Value::LazyList(ll) = &val
+                && !matches!(
+                    ll.env.get("__mutsu_preserve_lazy_on_array_assign"),
+                    Some(Value::Bool(true))
+                )
+            {
+                // Array literals (`[...]`) are eager: a gather/take LazyList must
+                // run now so its side effects happen (e.g. `take shift @array`
+                // mutating an outer array a surrounding `while` loops on) and its
+                // elements materialize. A `lazy`-marked list is left lazy (it may
+                // be infinite); so is one that fails a strict force.
+                match self.force_lazy_list_vm(ll) {
+                    Ok(items) => Value::Seq(std::sync::Arc::new(items)),
+                    Err(_) => val,
+                }
             } else {
                 val
             };
