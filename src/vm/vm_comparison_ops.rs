@@ -1263,6 +1263,19 @@ impl Interpreter {
             // mirror the (possibly substitution-modified) topic into it so the
             // caller sees it without an O(locals) sync_locals_from_env pull.
             self.update_local_if_exists(code, var_name, &modified_topic);
+            // When the topic itself was modified (`$_ ~~ s///` inside a
+            // `given $x` / `with $x` block), `$_` aliases the source scalar
+            // variable, so the in-place substitution must propagate back to it —
+            // mirroring the whole-topic writeback the `$_ = ...` assign path does.
+            if lhs_is_topic
+                && let Some(ref source_var) = self.topic_source_var
+                && !source_var.starts_with('@')
+                && !source_var.starts_with('%')
+            {
+                let sv = source_var.clone();
+                self.set_env_with_main_alias(&sv, modified_topic.clone());
+                self.update_local_if_exists(code, &sv, &modified_topic);
+            }
         }
         if !lhs_is_topic {
             if let Some(v) = saved_topic {
