@@ -55,12 +55,6 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 ### C. roast backlog（BLOCKERS.md 駆動・インパクト順）
 
-- [ ] **【クラッシュ】無限 Range の `.Supply` 化が worker thread で abort**（ANALYSIS rev2 §8.7）—
-      `my $s = (1..Inf).Supply; $s.tap({...})` が `capacity overflow` でプロセス abort（exit 0 に偽装）。二重の穴:
-      ① `builtins/methods_0arg/coercion.rs:536-537` の Supply coercion が無限 Range を `i64::MAX` 無ガードで
-      `(a..=b).map(Value::Int).collect()`（§8.2 の掃討漏れ）→ `materialize_capped` 経由へ。
-      ② `.tap`/`start{}` のワーカースレッド本体に panic→`X::` 変換境界が無い（#3045 はメインスレッドのみ）→
-      worker の panic を親 Promise/Supply の失敗として伝播させる。
 - [ ] **残りの型付き例外**（X::Str::Numeric / X::Method::NotFound / X::Undeclared / X::Cannot::Lazy /
       X::EXPORTHOW::InvalidDirective 等）。詳細は BLOCKERS.md "throws-like / Exception Types"。
 - [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる

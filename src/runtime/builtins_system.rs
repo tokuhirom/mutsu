@@ -130,7 +130,13 @@ impl Interpreter {
             // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
             // block on it directly instead of wrapping it in a sub-VM.
             let mut thread_interp = thread_interp;
-            let result = thread_interp.call_value(block, vec![]);
+            // Worker bodies run via `call_value` without the main thread's
+            // `run_top` panic boundary, so guard them here: a Rust panic in
+            // user code becomes a catchable broken-Promise error (X::AdHoc)
+            // instead of silently killing the thread (hanging `await`) or
+            // aborting the process.
+            let result =
+                crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
             // Transfer any handles opened by this thread back to the awaiter.
             let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
             let new_ids: Vec<usize> = thread_interp
