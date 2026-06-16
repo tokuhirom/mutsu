@@ -522,6 +522,13 @@ pub(super) fn dispatch(
                     } if class_name == "Match" => {
                         crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
                     }
+                    Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+                        // A Set/Bag/Mix nested in a list/array gist keeps its
+                        // type-name wrapper (`Set(a b c)`), like the say/gist
+                        // fast path, rather than its bare-element `.Str` form.
+                        crate::runtime::utils::setbagmix_gist(v)
+                            .unwrap_or_else(|| v.to_string_value())
+                    }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
@@ -580,6 +587,13 @@ pub(super) fn dispatch(
                         ..
                     } if class_name == "Match" => {
                         crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
+                    }
+                    Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+                        // A Set/Bag/Mix nested in a list/array gist keeps its
+                        // type-name wrapper (`Set(a b c)`), like the say/gist
+                        // fast path, rather than its bare-element `.Str` form.
+                        crate::runtime::utils::setbagmix_gist(v)
+                            .unwrap_or_else(|| v.to_string_value())
                     }
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
