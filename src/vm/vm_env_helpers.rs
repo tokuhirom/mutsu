@@ -37,6 +37,7 @@ impl Interpreter {
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
             saved_readonly: Some(self.save_readonly_vars()),
+            readonly_added: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
@@ -53,6 +54,7 @@ impl Interpreter {
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
             saved_readonly: None,
+            readonly_added: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
@@ -72,7 +74,13 @@ impl Interpreter {
         self.locals = std::mem::take(&mut frame.saved_locals);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
+            // Slow path: restore the whole snapshot (covers any `:=` marking).
             self.restore_readonly_vars(readonly);
+        } else if !frame.readonly_added.is_empty() {
+            // Light-frame method path: drop only the param names this frame added.
+            for name in &frame.readonly_added {
+                self.unmark_readonly(name);
+            }
         }
         self.env_dirty = frame.saved_env_dirty;
         frame

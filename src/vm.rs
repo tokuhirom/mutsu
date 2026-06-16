@@ -176,6 +176,11 @@ pub(crate) struct VmCallFrame {
     pub saved_stack_depth: usize,
     /// None when using light call frame (simple methods that don't use `:=` binding).
     pub saved_readonly: Option<HashSet<String>>,
+    /// Read-only var names this frame *newly* added to `readonly_vars` (used by
+    /// the light-frame method path, which marks `$` scalar params read-only
+    /// without cloning the whole set). Removed on `pop_call_frame`. Empty for the
+    /// slow path, which restores the full set via `saved_readonly` instead.
+    pub readonly_added: Vec<String>,
     pub saved_env_dirty: bool,
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
 }
