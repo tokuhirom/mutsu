@@ -119,8 +119,15 @@ impl Interpreter {
         }
 
         if matches.is_empty() {
-            // No match: `$/` becomes Nil and the original string is returned.
-            self.env_mut().insert("/".to_string(), Value::Nil);
+            // No match: the original string is returned. `$/` becomes an empty
+            // List for a global subst (Rakudo: `$/` is always a List under `:g`),
+            // or Nil for a non-global subst.
+            let empty = if global {
+                Value::array(Vec::new())
+            } else {
+                Value::Nil
+            };
+            self.env_mut().insert("/".to_string(), empty);
             return Ok(Value::str(text.to_string()));
         }
 
@@ -150,21 +157,34 @@ impl Interpreter {
         }
         result.extend(chars[last_end..].iter());
 
-        if !global {
-            let (start, end, caps) = &matches[0];
-            let matched: String = chars[*start..*end].iter().collect();
-            let match_obj = Value::make_match_object_full(
+        // `$/` policy: a non-global `.subst` sets it to the single (first) Match;
+        // a global `.subst` sets it to a List of every Match object (matching
+        // `s:g///` and Rakudo's `.subst(:g)` — `$/` is always a List, even for a
+        // single match).
+        let make_match = |start: usize, end: usize, caps: &[String]| {
+            let matched: String = chars[start..end].iter().collect();
+            Value::make_match_object_full(
                 matched,
-                *start as i64,
-                *end as i64,
+                start as i64,
+                end as i64,
                 caps,
                 &HashMap::new(),
                 &HashMap::new(),
                 &[],
                 &[],
                 Some(text),
-            );
-            self.env_mut().insert("/".to_string(), match_obj);
+            )
+        };
+        if global {
+            let list: Vec<Value> = matches
+                .iter()
+                .map(|(start, end, caps)| make_match(*start, *end, caps))
+                .collect();
+            self.env_mut().insert("/".to_string(), Value::array(list));
+        } else {
+            let (start, end, caps) = &matches[0];
+            self.env_mut()
+                .insert("/".to_string(), make_match(*start, *end, caps));
         }
 
         Ok(Value::str(result))

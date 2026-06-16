@@ -15,6 +15,17 @@ impl Interpreter {
             // a bare Hash into pairs before wrapping in a Slip. A Hash that is already
             // inside a Slip (e.g. from a Capture's positional list) should stay as-is.
             Value::Hash(_) => args.push(item.clone()),
+            // A `(:key(val))` positional-pair slipped via `|(...)` flattens back
+            // to a *named* argument in Raku (e.g. `.subst(|(:g), ...)` passes `:g`
+            // as the named `:g` adverb). Mirror `append_slip_value`'s ValuePair
+            // arm so the slipped pair is recognized as a named argument.
+            Value::ValuePair(key, val) => {
+                if let Value::Str(name) = key.as_ref() {
+                    args.push(Value::Pair(name.to_string(), val.clone()));
+                } else {
+                    args.push(item.clone());
+                }
+            }
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)

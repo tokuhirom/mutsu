@@ -205,13 +205,19 @@ fn is_boolean_flag_adverb(name: &str) -> bool {
     )
 }
 
-/// True when an adverb argument source references a dynamic variable
-/// (a `*` twigil: `$*foo`, `@*ARGS`, `%*ENV`, `&*bar`).
+/// True when a boolean-flag adverb argument is not a compile-time constant.
+/// These adverbs (`:i`, `:m`, `:s`, ...) are compile-time switches, so their
+/// value must be a literal (`:i(1)`, `:i(True)`) — any variable reference
+/// (`:i($i)`, `:i(@*ARGS[0])`, `:i($obj.attr)`) is X::Value::Dynamic. We detect
+/// non-constness by the presence of a sigil that begins a variable name (a
+/// regular or twigil'd lexical/dynamic/attribute variable).
 fn contains_dynamic_var(src: &str) -> bool {
     let bytes = src.as_bytes();
-    bytes
-        .windows(2)
-        .any(|w| matches!(w[0], b'$' | b'@' | b'%' | b'&') && w[1] == b'*')
+    bytes.windows(2).any(|w| {
+        matches!(w[0], b'$' | b'@' | b'%' | b'&')
+            && (w[1].is_ascii_alphabetic()
+                || matches!(w[1], b'_' | b'*' | b'!' | b'.' | b'^' | b':' | b'<'))
+    })
 }
 
 fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
