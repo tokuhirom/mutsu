@@ -2249,7 +2249,10 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     } else {
         (r, None)
     };
-    let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    // Parse the method name with the proper Raku hyphen rule: a `-` is part of
+    // the identifier only when followed by another identifier char, so `.value--`
+    // is `.value` followed by postfix `--`, not a method named `value--`.
+    let (rest, name) = crate::parser::primary::var::parse_ident_with_hyphens(r)?;
     let name = Symbol::intern(name);
     // Detect illegal space between method name and parens: .method (args) is Confused
     // Raku requires no space between method name and opening paren.
