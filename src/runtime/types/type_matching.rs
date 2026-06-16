@@ -937,6 +937,14 @@ impl Interpreter {
                     }
                 }
             }
+            // An instance's type identity is fully determined by its class name,
+            // parents, MRO, and composed roles (all checked above). Do NOT fall
+            // through to the generic `value_type_name` fallback, which reports
+            // every instance as "Any" — that wrongly accepts a `Mu.new` instance
+            // for an `Any` constraint (`Mu` is a direct subtype of `Mu`, not
+            // `Any`). The checks above already match `Any`/`Mu`/`Cool`/... via
+            // the MRO for ordinary classes.
+            return false;
         }
         // Mixin allomorphic types: check both inner type and mixin type keys
         if let Value::Mixin(inner, mixins) = value {

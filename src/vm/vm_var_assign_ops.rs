@@ -3210,9 +3210,52 @@ impl Interpreter {
             }
             _ => {
                 // For object hashes, use .WHICH as the internal key.
-                let is_object_hash = var_name.starts_with('%')
-                    && loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
-                let key = if is_object_hash {
+                let key_constraint = if var_name.starts_with('%') {
+                    loan_env!(self, var_hash_key_constraint(&var_name))
+                } else {
+                    None
+                };
+                let is_object_hash = key_constraint.is_some();
+                // A coercion key type (`my %h{Int(Str)}`) coerces the key to the
+                // target type before it is stored / `.WHICH`-keyed. A failed
+                // coercion (e.g. a non-numeric string into Int) throws, matching
+                // raku (`X::Str::Numeric`).
+                let idx = if let Some(kc) = &key_constraint
+                    && let Some(open) = kc.find('(')
+                    && kc.ends_with(')')
+                    && open > 0
+                    && !self.type_matches_value(&kc[..open], &idx)
+                {
+                    // A numeric coercion target rejects a non-numeric string the
+                    // raku way (`X::Str::Numeric`) rather than silently coercing
+                    // it to 0, since the lenient `coerce_value` fast path does not
+                    // throw.
+                    if matches!(
+                        &kc[..open],
+                        "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real" | "Numeric" | "Complex"
+                    ) {
+                        runtime::utils::check_str_numeric(&idx)?;
+                    }
+                    loan_env!(self, try_coerce_value_for_constraint(kc, idx.clone()))?
+                } else {
+                    idx
+                };
+                // Determine the keying mode for an object hash. A freshly created
+                // or already-`.WHICH`-keyed hash (one carrying `original_keys`) is
+                // keyed by `.WHICH`. A *plain-built* object hash — e.g. one bulk
+                // assigned from a pair list (`my %h{Mu} = :42a, ...`), whose keys
+                // were stringified during hash construction and which carries no
+                // `original_keys` — must keep using plain string keys here so that
+                // a follow-up element assignment (`%h<c> = ...`) overwrites the
+                // existing entry instead of inserting a duplicate under a `.WHICH`
+                // key. (Fully unifying object-hash keying across construction,
+                // flatten, gist and comparison is a larger change.)
+                let use_which = is_object_hash
+                    && match &index_target {
+                        Some(Value::Hash(h)) => h.original_keys.is_some() || h.map.is_empty(),
+                        _ => true,
+                    };
+                let key = if use_which {
                     runtime::utils::value_which_key(&idx)
                 } else {
                     idx.to_string_value()
@@ -3596,8 +3639,10 @@ impl Interpreter {
                                 Value::hash_insert_through(&mut hd.map, key.clone(), val.clone());
                             }
                             // For object hashes, store the original key object in
-                            // the embedded `original_keys` map (COW-stable).
-                            if is_object_hash {
+                            // the embedded `original_keys` map (COW-stable). Skip
+                            // for a plain-keyed object hash (see `use_which`) so it
+                            // is not flipped into `.WHICH` keying mid-stream.
+                            if use_which {
                                 hd.original_keys
                                     .get_or_insert_with(std::collections::HashMap::new)
                                     .insert(key.clone(), idx.clone());
@@ -3803,7 +3848,7 @@ impl Interpreter {
                                 let mut hash = std::collections::HashMap::new();
                                 hash.insert(key.clone(), val.clone());
                                 let mut hash_val = Value::hash(hash);
-                                if is_object_hash {
+                                if use_which {
                                     let mut orig = HashMap::new();
                                     orig.insert(key.clone(), idx.clone());
                                     hash_val =
@@ -3826,7 +3871,7 @@ impl Interpreter {
                         let mut hash = std::collections::HashMap::new();
                         hash.insert(key.clone(), val.clone());
                         let mut hash_val = Value::hash(hash);
-                        if is_object_hash {
+                        if use_which {
                             let mut orig = HashMap::new();
                             orig.insert(key.clone(), idx.clone());
                             hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
