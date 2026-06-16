@@ -879,7 +879,11 @@ impl Interpreter {
             {
                 continue;
             }
-            if pd.traits.iter().any(|t| t == "rw" || t == "copy" || t == "raw") {
+            if pd
+                .traits
+                .iter()
+                .any(|t| t == "rw" || t == "copy" || t == "raw")
+            {
                 continue;
             }
             if self.readonly_vars().contains(pd.name.as_str()) {
