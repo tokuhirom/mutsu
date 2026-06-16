@@ -437,6 +437,13 @@ pub(crate) enum OpCode {
     /// bypassing full method dispatch. Stack: [val] -> [array].
     ArrayPush {
         target_name_idx: u32,
+        /// When the pushed argument is a bare container variable (`@a.push(@b)` /
+        /// `@a.push(%h)`), this carries that source variable's name. The pushed
+        /// element then shares a `ContainerRef` cell with the source, so later
+        /// mutations of the source (`@b.push(4)`, `@b = (...)`) propagate to the
+        /// stored element — Raku's non-flattening `**@` slurpy stores the
+        /// container itself, not a snapshot. `None` for scalar / expression args.
+        value_source_idx: Option<u32>,
     },
     CallMethodMut {
         name_idx: u32,

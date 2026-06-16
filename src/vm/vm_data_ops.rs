@@ -416,6 +416,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         target_name_idx: u32,
+        value_source_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let target_name = Self::const_str(code, target_name_idx);
         // TODO: compile to bytecode — shared-array push, blocked-by: lever B
@@ -443,7 +444,37 @@ impl Interpreter {
             self.env_dirty = true;
             return Ok(());
         }
-        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let mut val = self.stack.pop().unwrap_or(Value::Nil);
+
+        // Reference push (`@a.push(@b)` / `@a.push(%h)`): Raku's non-flattening
+        // `**@` slurpy stores the container itself, so later mutations of the
+        // source (`@b.push(4)`, `@b[0]=v`, `@b=(...)`) must propagate to the
+        // stored element. Share a `ContainerRef` cell between the source variable
+        // and the pushed element (the same mechanism as a whole-container `:=`
+        // bind). Reuse the source's existing cell if it already has one.
+        if let Some(src_idx) = value_source_idx
+            && matches!(val, Value::Array(..) | Value::Hash(..))
+        {
+            let src_name = Self::const_str(code, src_idx).to_string();
+            let existing_cell = self
+                .get_env_with_main_alias(&src_name)
+                .or_else(|| {
+                    self.find_local_slot(code, &src_name)
+                        .map(|s| self.locals[s].clone())
+                })
+                .and_then(|v| match v {
+                    Value::ContainerRef(cell) => Some(cell),
+                    _ => None,
+                });
+            let cell = existing_cell.unwrap_or_else(|| {
+                let cell = std::sync::Arc::new(std::sync::Mutex::new(val.clone()));
+                let cell_val = Value::ContainerRef(cell.clone());
+                self.set_env_with_main_alias(&src_name, cell_val.clone());
+                self.update_local_if_exists(code, &src_name, &cell_val);
+                cell
+            });
+            val = Value::ContainerRef(cell);
+        }
 
         // Empty (empty Slip) means nothing to push -- return the array as-is.
         if let Value::Slip(ref items) = val

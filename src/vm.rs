@@ -3097,9 +3097,12 @@ impl Interpreter {
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
-            OpCode::ArrayPush { target_name_idx } => {
+            OpCode::ArrayPush {
+                target_name_idx,
+                value_source_idx,
+            } => {
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
-                self.exec_array_push_op(code, *target_name_idx)?;
+                self.exec_array_push_op(code, *target_name_idx, *value_source_idx)?;
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
