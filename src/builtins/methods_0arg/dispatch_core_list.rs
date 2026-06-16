@@ -130,6 +130,17 @@ pub(super) fn dispatch(
                 }
             }
             Value::Str(s) => Some(Ok(Value::str(s.chars().rev().collect()))),
+            Value::Seq(items) | Value::Slip(items) => {
+                // A non-lazy Seq/Slip reverses its materialized elements. (Lazy
+                // Seqs are deferred-materialized by the slow path before reaching
+                // here, so `items` already holds the pulled values.)
+                let mut reversed = items.to_vec();
+                reversed.reverse();
+                Some(Ok(Value::Array(
+                    std::sync::Arc::new(crate::value::ArrayData::new(reversed)),
+                    crate::value::ArrayKind::List,
+                )))
+            }
             Value::Instance {
                 class_name,
                 attributes,
