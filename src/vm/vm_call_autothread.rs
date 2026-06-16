@@ -138,6 +138,12 @@ impl Interpreter {
                 let positional_pds: Vec<&crate::ast::ParamDef> =
                     pds.iter().filter(|pd| !pd.named).collect();
                 if let Some(pd) = positional_pds.get(idx) {
+                    // A slurpy param (`*@a`, `+@a`, `**@a`) collects its elements
+                    // as raw Mu values, so a Junction argument is captured as-is
+                    // rather than auto-threaded.
+                    if pd.slurpy || pd.onearg || pd.double_slurpy {
+                        return false;
+                    }
                     // Don't auto-thread if param accepts Mu or Junction
                     if let Some(tc) = &pd.type_constraint {
                         if matches!(tc.as_str(), "Mu" | "Junction") {
