@@ -2307,14 +2307,19 @@ impl Interpreter {
 
     fn flip_flop_operand_truthy(&mut self, value: &Value, is_rhs: bool) -> bool {
         match value {
+            // `*` means "always" on the LHS and "never" on the RHS.
             Value::Whatever => !is_rhs,
-            Value::Regex(_)
-            | Value::RegexWithAdverbs { .. }
-            | Value::Routine { is_regex: true, .. } => {
+            // A boolean operand is used directly (the common
+            // `$n == 3 ff $n == 5` comparison form).
+            Value::Bool(b) => *b,
+            // Every other operand (a regex, or a constant such as `2 ff 4`)
+            // is smart-matched against the topic `$_` — the sed-style line
+            // matching where `2 ff 4` means "from when `$_ ~~ 2` until
+            // `$_ ~~ 4`".
+            _ => {
                 let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 self.vm_smart_match(&topic, value)
             }
-            _ => value.truthy(),
         }
     }
 
