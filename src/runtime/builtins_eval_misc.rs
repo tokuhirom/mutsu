@@ -306,29 +306,44 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned().unwrap_or(Value::Nil);
-        let repr = Self::dd_format(&val);
-        self.emit_stderr(&format!("{}\n", repr));
-        Ok(val)
+        let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
+        for (i, val) in args.iter().enumerate() {
+            let source_name = arg_sources.get(i).and_then(|entry| entry.as_deref());
+            let repr = Self::dd_format(val, source_name);
+            self.emit_stderr(&format!("{}\n", repr));
+        }
+        Ok(args.first().cloned().unwrap_or(Value::Nil))
     }
 
     /// Format a value for `dd` output (Raku-style debug representation).
-    fn dd_format(val: &Value) -> String {
-        match val {
-            Value::Bool(true) => "Bool::True".to_string(),
-            Value::Bool(false) => "Bool::False".to_string(),
-            Value::Nil => "Nil".to_string(),
-            Value::Int(n) => n.to_string(),
-            Value::Str(s) => format!("\"{}\"", s),
-            Value::Array(items, _) => {
-                let inner: Vec<String> = items.iter().map(Self::dd_format).collect();
-                format!("$[{}]", inner.join(", "))
+    ///
+    /// The value part is the value's `.raku` representation. When the argument
+    /// is a plain variable (e.g. `dd %h`), Raku prefixes it with the runtime
+    /// type and the variable name: `Hash %h = {:a(1)}`. Literals and complex
+    /// expressions render as just the value.
+    fn dd_format(val: &Value, source_name: Option<&str>) -> String {
+        let value_repr = crate::builtins::methods_0arg::raku_repr::raku_value(val);
+        match source_name {
+            Some(name) if Self::dd_is_plain_var(name) => {
+                let ty = crate::runtime::utils::value_type_name(val);
+                format!("{} {} = {}", ty, name, value_repr)
             }
-            Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
-                crate::builtins::methods_0arg::raku_repr::setbagmix_raku(val)
-                    .unwrap_or_else(|| format!("{:?}", val))
-            }
-            _ => format!("{:?}", val),
+            _ => value_repr,
         }
+    }
+
+    /// A `dd` argument source counts as a named variable only when it is a bare
+    /// sigil + identifier (`$x`, `@a`, `%h`, `&c`) — not an index/expression.
+    fn dd_is_plain_var(name: &str) -> bool {
+        let mut chars = name.chars();
+        match chars.next() {
+            Some('$') | Some('@') | Some('%') | Some('&') => {}
+            _ => return false,
+        }
+        let rest = &name[1..];
+        !rest.is_empty()
+            && rest
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
     }
 }

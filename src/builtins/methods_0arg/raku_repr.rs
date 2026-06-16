@@ -428,7 +428,7 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         Value::FatRat(n, d) => format!("FatRat.new({}, {})", n, d),
-        Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+        Value::Bool(b) => if *b { "Bool::True" } else { "Bool::False" }.to_string(),
         Value::Num(f) => {
             if f.is_nan() {
                 "NaN".to_string()
@@ -453,6 +453,7 @@ pub fn raku_value(v: &Value) -> String {
             if ident_like {
                 match value.as_ref() {
                     Value::Bool(true) => format!(":{}", key),
+                    Value::Bool(false) => format!(":!{}", key),
                     _ => format!(":{}({})", key, raku_value(value)),
                 }
             } else {
@@ -472,6 +473,7 @@ pub fn raku_value(v: &Value) -> String {
                 if ident_like {
                     return match value.as_ref() {
                         Value::Bool(true) => format!(":{}", key_str),
+                        Value::Bool(false) => format!(":!{}", key_str),
                         _ => format!(":{}({})", key_str, raku_value(value)),
                     };
                 }
@@ -534,19 +536,16 @@ pub fn raku_value(v: &Value) -> String {
                                 .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
                     });
                     if is_ident {
+                        // Raku's `.raku` renders every value in the colon-pair
+                        // form `:key(value.raku)` — including Bool, which shows
+                        // as `:a(Bool::True)`, not the adverbial `:a` / `:!a`.
                         let k = key_str.as_deref().unwrap();
-                        if let Value::Bool(true) = v {
-                            format!(":{}", k)
-                        } else if let Value::Bool(false) = v {
-                            format!(":!{}", k)
+                        let repr = if matches!(v, Value::Nil) {
+                            "Any".to_string()
                         } else {
-                            let repr = if matches!(v, Value::Nil) {
-                                "Any".to_string()
-                            } else {
-                                raku_hash_value(v)
-                            };
-                            format!(":{}({})", k, repr)
-                        }
+                            raku_hash_value(v)
+                        };
+                        format!(":{}({})", k, repr)
                     } else {
                         // Non-identifier keys: use "key" => value format
                         let repr = if matches!(v, Value::Nil) {
