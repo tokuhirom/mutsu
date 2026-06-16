@@ -717,6 +717,81 @@ impl Interpreter {
         updated
     }
 
+    /// Thread-safe `@arr[$i] = $v` in shared (threaded) context.
+    ///
+    /// Mirrors `shared_array_extend`: a single lock-protected read-modify-write
+    /// through the `__mutsu_atomic_arr::` shared store, so concurrent
+    /// `start { @a[...] = ... }` blocks each writing a different index all land
+    /// instead of clobbering a stale snapshot via `set_shared_var`. Grows the
+    /// array with `Nil` holes up to `idx`. Returns the assigned element value.
+    pub(crate) fn shared_array_elem_set(
+        &mut self,
+        arr_name: &str,
+        idx: usize,
+        value: Value,
+    ) -> Value {
+        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        let updated = {
+            let mut shared = self.shared_vars.write().unwrap();
+            let mut elements: Vec<Value> = match shared.get(&atomic_key) {
+                Some(Value::Array(elems, _)) => elems.to_vec(),
+                _ => match shared.get(arr_name).or_else(|| self.env.get(arr_name)) {
+                    Some(Value::Array(elems, _)) => elems.to_vec(),
+                    _ => Vec::new(),
+                },
+            };
+            if idx >= elements.len() {
+                elements.resize(idx + 1, Value::Nil);
+            }
+            elements[idx] = value.clone();
+            let new_arr = Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(elements)),
+                crate::value::ArrayKind::Array,
+            );
+            shared.insert(atomic_key, new_arr.clone());
+            new_arr
+        };
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(arr_name.to_string());
+        }
+        self.env.insert(arr_name.to_string(), updated);
+        value
+    }
+
+    /// Thread-safe `%h{$k} = $v` in shared (threaded) context.
+    ///
+    /// The hash analogue of `shared_array_elem_set`: a single lock-protected
+    /// read-modify-write through the `__mutsu_atomic_hash::` shared store, so
+    /// concurrent `start { %h{...} = ... }` blocks each writing a different key
+    /// all land. Returns the assigned element value.
+    pub(crate) fn shared_hash_elem_set(
+        &mut self,
+        hash_name: &str,
+        elem_key: String,
+        value: Value,
+    ) -> Value {
+        let atomic_key = format!("__mutsu_atomic_hash::{hash_name}");
+        let updated = {
+            let mut shared = self.shared_vars.write().unwrap();
+            let mut map = match shared.get(&atomic_key) {
+                Some(Value::Hash(h)) => h.as_ref().clone(),
+                _ => match shared.get(hash_name).or_else(|| self.env.get(hash_name)) {
+                    Some(Value::Hash(h)) => h.as_ref().clone(),
+                    _ => crate::value::HashData::default(),
+                },
+            };
+            Value::hash_insert_through(&mut map.map, elem_key, value.clone());
+            let new_hash = Value::Hash(std::sync::Arc::new(map));
+            shared.insert(atomic_key, new_hash.clone());
+            new_hash
+        };
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(hash_name.to_string());
+        }
+        self.env.insert(hash_name.to_string(), updated);
+        value
+    }
+
     /// CAS on a multi-dimensional array element: cas(@arr[d1;d2;...], $expected, $new)
     /// Args: [array_name_str, dimensions_list, expected, new_val]
     pub(super) fn builtin_cas_array_multidim(

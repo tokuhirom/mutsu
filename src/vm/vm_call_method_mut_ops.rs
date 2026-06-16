@@ -1454,6 +1454,18 @@ impl Interpreter {
             && matches!(bytes.next(), Some(c) if c.is_ascii_alphabetic() || c == b'_')
     }
 
+    /// Sigil-agnostic form of `is_plain_lexical_array_name`: a plain lexical
+    /// container variable (`@name` / `%name`) whose second character is an
+    /// identifier start — i.e. not a twigil'd attribute (`@!`, `%.`), dynamic
+    /// (`@*`), or other special form. Used to gate atomic-shared-store routing
+    /// (those non-plain forms share a name across instances and must not funnel
+    /// into the global name-keyed store).
+    pub(crate) fn is_plain_lexical_name(name: &str) -> bool {
+        let mut bytes = name.bytes();
+        matches!(bytes.next(), Some(b'@') | Some(b'%'))
+            && matches!(bytes.next(), Some(c) if c.is_ascii_alphabetic() || c == b'_')
+    }
+
     fn try_native_array_mut(
         &mut self,
         target_name: &str,

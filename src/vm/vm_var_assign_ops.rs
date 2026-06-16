@@ -6572,6 +6572,8 @@ impl Interpreter {
         // (e.g. when `my @arr[N]` is declared inside a loop body).
         if name.starts_with('@') {
             self.clear_atomic_array_state(name);
+        } else if name.starts_with('%') {
+            self.clear_atomic_hash_state(name);
         }
         // Before this loop-body-local declaration overwrites the env entry for
         // `name`, record the outer value it shadows so the enclosing same-named
