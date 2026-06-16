@@ -25,6 +25,77 @@ impl Interpreter {
         self.env_dirty = true;
     }
 
+    /// `$b>>++` / `$b>>--` on a Bag/Mix/Set: apply the postfix op to each weight,
+    /// return the *original* QuantHash, and write the in/decremented weights back
+    /// to the source variable. A Bag count that reaches <= 0 (a Mix weight that
+    /// reaches 0.0) removes the element; an immutable Bag/Mix/Set has read-only
+    /// weights and errors like Raku ("postfix:<--> requires mutable arguments").
+    fn exec_hyper_quant_postfix(
+        &mut self,
+        code: &CompiledCode,
+        target: &Value,
+        target_var: Option<&str>,
+        increment: bool,
+    ) -> Result<(), RuntimeError> {
+        let is_mutable = matches!(
+            target,
+            Value::Bag(_, true) | Value::Mix(_, true) | Value::Set(_, true)
+        );
+        if !is_mutable {
+            let opname = if increment {
+                "postfix:<++>"
+            } else {
+                "postfix:<-->"
+            };
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller {}(Int:D); the parameter requires mutable arguments",
+                opname
+            )));
+        }
+        let delta: i64 = if increment { 1 } else { -1 };
+        let new_value = match target {
+            Value::Bag(bag, _) => {
+                let mut counts = std::collections::HashMap::new();
+                for (k, c) in bag.counts.iter() {
+                    let n = c + delta;
+                    if n > 0 {
+                        counts.insert(k.clone(), n);
+                    }
+                }
+                Value::bag_hash(counts)
+            }
+            Value::Mix(mix, _) => {
+                let mut weights = std::collections::HashMap::new();
+                for (k, w) in mix.iter() {
+                    let n = w + delta as f64;
+                    if n != 0.0 {
+                        weights.insert(k.clone(), n);
+                    }
+                }
+                Value::mix_hash(weights)
+            }
+            Value::Set(set, _) => {
+                // Set membership is weight 1: `++` keeps the element (weight 2 is
+                // still "present"), `--` drops it (weight 0).
+                let mut elems = std::collections::HashSet::new();
+                if increment {
+                    for k in set.elements.iter() {
+                        elems.insert(k.clone());
+                    }
+                }
+                Value::set_hash(elems)
+            }
+            _ => unreachable!(),
+        };
+        if let Some(var) = target_var {
+            self.write_back_hyper_target_var(code, var, new_value);
+        }
+        // Postfix returns the original QuantHash unchanged (the source var now
+        // holds the mutated copy; `target` still points at the original backing).
+        self.stack.push(target.clone());
+        Ok(())
+    }
+
     pub(super) fn exec_hyper_method_call_op(
         &mut self,
         code: &CompiledCode,
@@ -57,6 +128,21 @@ impl Interpreter {
         // Mark Seq as consumed (single-use semantics).
         if let Value::Seq(ref arc) = target {
             crate::value::seq_consume(arc)?;
+        }
+        // `$b>>++` / `$b>>--` on a Bag/Mix/Set applies the postfix op to each
+        // *weight* (treating the QuantHash like a Hash of weights): it returns
+        // the *original* QuantHash and writes the in/decremented weights back to
+        // the source variable. Handled here because the generic value_to_list path
+        // below expands a QuantHash to its elements, not its keyed weights.
+        if matches!(method_raw, "postfix:<++>" | "postfix:<-->")
+            && matches!(&target, Value::Bag(..) | Value::Mix(..) | Value::Set(..))
+        {
+            return self.exec_hyper_quant_postfix(
+                code,
+                &target,
+                target_var.as_deref(),
+                method_raw == "postfix:<++>",
+            );
         }
         // Hyper method/postfix on a Hash applies to each *value*, preserving the
         // keys: `%h>>.uc` and `%h>>!` yield a Hash, not a list of pairs.
@@ -385,7 +471,10 @@ impl Interpreter {
             }
         }
         if let Value::Array(existing, kind) = &target {
-            if let Some(var) = &target_var {
+            if let Some(var) = target_var
+                .as_ref()
+                .filter(|v| v.starts_with('@') || v.starts_with('%'))
+            {
                 // Precise writeback to the *named* `@`-variable's binding only.
                 // A bound variable holds a shared `ContainerRef` cell (e.g.
                 // `$b := @a`): write the new array through the cell so aliases
@@ -444,7 +533,10 @@ impl Interpreter {
                 map.insert(key.clone(), item.clone());
             }
             let new_hash = Value::Hash(Value::hash_arc(map));
-            if let Some(var) = &target_var {
+            if let Some(var) = target_var
+                .as_ref()
+                .filter(|v| v.starts_with('@') || v.starts_with('%'))
+            {
                 // Precise writeback to the named `%`-variable (see the Array
                 // arm); avoids corrupting a COW copy `my %g = %h`.
                 self.write_back_hyper_target_var(code, var, new_hash);
