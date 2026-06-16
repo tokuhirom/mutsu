@@ -3200,14 +3200,7 @@ impl Interpreter {
                     // Check for lazy iterables
                     for arg in &args {
                         if Self::is_lazy_for_set_ops(arg) {
-                            let mut err = RuntimeError::new("Cannot .Mix a lazy list");
-                            err.exception = Some(Box::new(Value::make_instance(
-                                Symbol::intern("X::Cannot::Lazy"),
-                                [("what".to_string(), Value::str_from("Mix"))]
-                                    .into_iter()
-                                    .collect(),
-                            )));
-                            return Err(err);
+                            return Err(RuntimeError::cannot_lazy_what(base_class_name));
                         }
                     }
                     if args.len() == 1 {

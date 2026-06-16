@@ -22,10 +22,10 @@ use std::collections::{HashMap, HashSet};
 
 /// Coerce `target` to a `Set` (immutable). The caller flips the mutable flag for
 /// `.SetHash`.
-pub(crate) fn to_set(target: Value) -> Result<Value, RuntimeError> {
+pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // Check for lazy/infinite values
     if Interpreter::is_lazy_for_coerce(&target) {
-        return Err(RuntimeError::cannot_lazy_what("Set"));
+        return Err(RuntimeError::cannot_lazy_what(what));
     }
     let mut elems = HashSet::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
@@ -152,7 +152,7 @@ pub(crate) fn to_set(target: Value) -> Result<Value, RuntimeError> {
         // Instance types composing Baggy: delegate to internal bag data
         Value::Instance { ref attributes, .. } if attributes.contains_key("__baggy_data__") => {
             let bag_data = attributes.as_map().get("__baggy_data__").unwrap().clone();
-            return to_set(bag_data);
+            return to_set(bag_data, what);
         }
         other if other.is_range() => {
             for item in value_to_list(&other) {
@@ -621,13 +621,13 @@ fn mix_add_item_with_keys(
 
 /// Coerce `target` to a `Mix` (immutable). The caller flips the mutable flag (and
 /// registers `MixHash` type metadata) for `.MixHash`.
-pub(crate) fn to_mix(target: Value) -> Result<Value, RuntimeError> {
+pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // Check for lazy iterables
     if Interpreter::is_lazy_for_set_ops(&target) {
-        let mut err = RuntimeError::new("Cannot .Mix a lazy list");
+        let mut err = RuntimeError::new(format!("Cannot .{} a lazy list", what));
         err.exception = Some(Box::new(Value::make_instance(
             crate::symbol::Symbol::intern("X::Cannot::Lazy"),
-            [("what".to_string(), Value::str_from("Mix"))]
+            [("what".to_string(), Value::str_from(what))]
                 .into_iter()
                 .collect(),
         )));
