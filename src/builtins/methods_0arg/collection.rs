@@ -478,8 +478,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(items) => {
-                    let has_orig = crate::runtime::utils::hash_original_keys_snapshot(target)
-                        .is_some_and(|m| !m.is_empty());
+                    let has_orig = crate::runtime::utils::hash_uses_typed_keys(target);
                     let mut kv = Vec::new();
                     for (k, v) in items.iter() {
                         if has_orig {
@@ -563,8 +562,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(items) => {
-                    let has_orig = crate::runtime::utils::hash_original_keys_snapshot(target)
-                        .is_some_and(|m| !m.is_empty());
+                    let has_orig = crate::runtime::utils::hash_uses_typed_keys(target);
                     let pairs: Vec<Value> = if has_orig {
                         items
                             .iter()

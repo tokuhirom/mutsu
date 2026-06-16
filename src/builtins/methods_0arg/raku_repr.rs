@@ -126,6 +126,33 @@ fn is_self_array_ref_marker(v: &Value) -> bool {
     matches!(v, Value::Pair(name, _) if name == "__mutsu_self_array_ref")
 }
 
+/// Whether a string key may be rendered in the adverbial pair form
+/// `:key(value)`. Mirrors Raku's `<.ident>`: the key must start with a letter
+/// or `_`, continue with word chars, and may contain `-`/`'` only when each is
+/// immediately followed by another word char. A digit-leading key (`"1"`), a
+/// dotted key (`"1.5"`), or a key with a trailing/doubled `-`/`'` (`"x-"`,
+/// `"a--b"`) is NOT an identifier and renders as `"key" => value`.
+fn is_adverbial_pair_key(s: &str) -> bool {
+    let mut chars = s.chars().peekable();
+    match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    while let Some(c) = chars.next() {
+        if c.is_alphanumeric() || c == '_' {
+            continue;
+        }
+        if c == '-' || c == '\'' {
+            match chars.peek() {
+                Some(&n) if n.is_alphanumeric() || n == '_' => continue,
+                _ => return false,
+            }
+        }
+        return false;
+    }
+    true
+}
+
 fn raku_array_wrap_counted(inner: &str, kind: ArrayKind, count: usize) -> String {
     match kind {
         ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy => format!("[{}]", inner),
@@ -446,10 +473,7 @@ pub fn raku_value(v: &Value) -> String {
         }
         Value::Complex(r, i) => format!("<{}>", crate::value::format_complex(*r, *i)),
         Value::Pair(key, value) => {
-            let ident_like = !key.is_empty()
-                && key
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+            let ident_like = is_adverbial_pair_key(key);
             if ident_like {
                 match value.as_ref() {
                     Value::Bool(true) => format!(":{}", key),
@@ -466,10 +490,7 @@ pub fn raku_value(v: &Value) -> String {
         }
         Value::ValuePair(key, value) => {
             if let Value::Str(key_str) = key.as_ref() {
-                let ident_like = !key_str.is_empty()
-                    && key_str
-                        .chars()
-                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                let ident_like = is_adverbial_pair_key(key_str);
                 if ident_like {
                     return match value.as_ref() {
                         Value::Bool(true) => format!(":{}", key_str),
@@ -529,12 +550,7 @@ pub fn raku_value(v: &Value) -> String {
                         Value::Str(s) => Some((**s).clone()),
                         _ => None,
                     };
-                    let is_ident = key_str.as_deref().is_some_and(|k| {
-                        !k.is_empty()
-                            && k.starts_with(|c: char| c.is_alphabetic() || c == '_')
-                            && k.chars()
-                                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-                    });
+                    let is_ident = key_str.as_deref().is_some_and(is_adverbial_pair_key);
                     if is_ident {
                         // Raku's `.raku` renders every value in the colon-pair
                         // form `:key(value.raku)` — including Bool, which shows
