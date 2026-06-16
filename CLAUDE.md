@@ -19,7 +19,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
   - Example: `cargo run -- -I lib script.raku`
   - Example: `MUTSULIB=/path/to/lib1:/path/to/lib2 cargo run -- script.raku`
 - Help: `cargo run -- --help`
-- Environment variables: secrets (e.g. `GH_TOKEN`) are stored in `.env` and loaded via `dotenvx run --`. Use `dotenvx run -- <command>` to run commands that need these secrets (e.g. `dotenvx run -- bash scripts/ai-supervisor.sh --list`).
+- Environment variables: secrets (e.g. `GH_TOKEN`) are stored in `.env` and loaded via `dotenvx run --`. Use `dotenvx run -- <command>` to run commands that need these secrets.
 
 ## Architecture
 
@@ -209,7 +209,6 @@ Per-type method documentation — consult when implementing methods on specific 
 - **Task selection: PLAN.md and BLOCKERS.md driven.** Do NOT randomly pick roast tests. Instead:
   1. Check **PLAN.md** for the current quarter's priorities and work on those first.
   2. Check **TODO_roast/BLOCKERS.md** for feature-level blocker analysis — implement the highest-impact missing feature to unblock the most tests at once.
-  3. `pick-next-roast.sh` is a fallback for AI fleet workers, not the primary way to choose work.
 - `roast/` is read-only; never modify files under `roast/`.
 - `TODO_roast/` tracks per-file pass/fail status (split by synopsis number). Mark a test `[x]` only when **all** subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
@@ -246,7 +245,6 @@ The project is in its final stretch. Work should be driven by strategic prioriti
      - `tmp/roast-fail.txt` — some subtests failing
      - `tmp/roast-pass.txt` — fully passing
    - After making changes, run `roast-history.sh` to check for newly passing tests.
-4. **`pick-next-roast.sh`** is available as a fallback for AI fleet workers or when all PLAN.md/BLOCKERS.md tasks are in progress. It is NOT the primary way to choose work.
 
 - Do NOT skip a task because it looks hard. Tackle difficult features head-on.
 - Do NOT cherry-pick easy tests to game the pass count. The goal is implementing missing features that have broad impact.
@@ -353,73 +351,6 @@ Before cleanup, check which agents are still running and exclude their worktrees
 
 This development environment runs inside a dedicated mutsu LXC container. The container may be destroyed at any time — always commit important changes and push PRs promptly.
 
-- **codex can run in YOLO mode** (`codex exec --dangerously-bypass-approvals-and-sandbox`) since the container itself provides isolation. No bwrap sandbox is needed.
-- **`pick-next-roast-easy.sh`** — Picks easy (fail-only, short) roast tests suitable for codex. Used by codex workers to avoid timeout/parse-error tests that are too hard.
-- **codex worker**: Run via `tmp/codex-loop.sh` which uses `pick-next-roast-easy.sh` + codex YOLO mode.
-
-## AI fleet operations
-
-Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI (or human) launches workers and a supervisor, then monitors their progress.
-
-### Scripts
-
-- **`ai-sandbox.sh`** — Creates an isolated sandbox (via `bwrap`) with a fresh git clone of the repo per branch. Runs `claude`, `codex`, or `bash` inside the sandbox. Copies parent repo's `target/` as build cache on first clone. Sandboxes persist across runs (no `--recreate` by default) so interrupted agents can resume.
-- **`ai-run-roast.sh`** — Takes a single roast test file path, builds a prompt with investigation steps, and runs an agent in a sandbox to fix it. If the sandbox has uncommitted changes from a previous interrupted session, the prompt instructs the agent to continue from where it left off. Retries up to 3 times on failure.
-- **`ai-next-roast.sh`** — Continuously picks random failing roast tests (via `pick-next-roast.sh`), coordinates with other instances via `wip.txt` to avoid duplicate work, and delegates each test to `ai-run-roast.sh`.
-- **`ai-supervisor.sh`** — Monitors open PRs for merge conflicts and CI failures. Dispatches agents to rebase/fix them. When idle, triggers roast history updates. Polls every 10 minutes.
-- **`ai-fleet.sh`** — Fleet manager. Monitors tmux windows with the `fleet:` prefix and automatically restarts dead workers. Fleet composition is configured via CLI options.
-- **`tmux-status.sh`** — Quick status display of all tmux windows (pid, alive/dead, last N lines of output). Usage: `./scripts/tmux-status.sh [lines]`
-
-### Fleet manager
-
-`ai-fleet.sh` manages the fleet automatically. It monitors tmux windows with the `fleet:` prefix and restarts dead workers.
-
-```bash
-# Start with defaults (codex x2, claude x1, supervisor using codex)
-./scripts/ai-fleet.sh
-
-# Custom fleet composition
-./scripts/ai-fleet.sh --codex 3 --claude 2 --supervisor claude
-
-# No supervisor
-./scripts/ai-fleet.sh --codex 2 --claude 1 --no-supervisor
-
-# Check status once without looping
-./scripts/ai-fleet.sh --once
-
-# Dry-run: show what would be launched
-./scripts/ai-fleet.sh --once --dry-run
-
-# Gracefully stop specific workers (fleet manager will restart them)
-./scripts/ai-fleet.sh --stop supervisor
-./scripts/ai-fleet.sh --stop codex        # stops all codex workers
-./scripts/ai-fleet.sh --stop all
-```
-
-Default fleet composition (override with CLI options):
-- `--codex 2` — 2 codex workers
-- `--claude 1` — 1 claude worker
-- `--supervisor codex` — supervisor using codex agent
-
-### Monitoring
-
-- **Fleet status**: `./scripts/ai-fleet.sh --once`
-- **Read worker output**: `tmux capture-pane -t "fleet:codex:1" -p -S -30`
-- **PR progress**: `gh pr list --state open`
-- **Supervisor status**: `dotenvx run -- ./scripts/ai-supervisor.sh --list`
-
-### Stopping
-
-```bash
-# Stop all agents (fleet manager also exits)
-touch tmp/.stop
-
-# Stop a specific agent by PID
-touch tmp/.stop.<PID>
-```
-
-All scripts check for `tmp/.stop` (all agents) and `tmp/.stop.<PID>` (specific agent) and exit gracefully. PID-specific stop files are automatically cleaned up on exit.
-
 ## Test::Util function workout
 
 When the user says **"Test::Util workout"** (or similar), execute this workflow:
@@ -486,4 +417,3 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
   1. PLAN.md current quarter priorities
   2. BLOCKERS.md highest-impact missing features
   3. Roast tests related to in-progress features
-  4. `pick-next-roast.sh` only as a last resort
