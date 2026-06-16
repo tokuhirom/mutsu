@@ -336,30 +336,31 @@ impl Interpreter {
                         Value::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
                         Value::Slip(arr) => arr.to_vec(),
                         Value::Seq(arr) => arr.to_vec(),
+                        single @ (Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. }) => {
+                            // A single iterable argument is used as the argument
+                            // list: a finite range flattens to its elements.
+                            let mut items = Vec::new();
+                            flatten_into_slurpy(&[single], &mut items);
+                            items
+                        }
                         other => vec![other],
                     }
                 } else {
-                    // Multiple args: collect like *@ (flattening slurpy)
+                    // Multiple top-level args: the single-argument rule does NOT
+                    // flatten them — each top-level argument becomes one element
+                    // (e.g. `f(1..3, 4)` is a 2-element list, the range is not
+                    // expanded). Only Slips flatten, since slips always flatten.
                     let mut items = Vec::new();
                     for val in remaining_positional {
                         let val = unwrap_varref_value(val);
                         match val {
                             Value::Pair(..) => {} // skip named args
-                            Value::Array(arr, kind) => {
-                                if kind.is_itemized() {
-                                    items.push(Value::Array(arr, kind));
-                                } else {
-                                    flatten_into_slurpy(&arr, &mut items);
-                                }
-                            }
-                            val @ (Value::Range(..)
-                            | Value::RangeExcl(..)
-                            | Value::RangeExclStart(..)
-                            | Value::RangeExclBoth(..)
-                            | Value::GenericRange { .. }
-                            | Value::Seq(..)
-                            | Value::Slip(..)) => {
-                                flatten_into_slurpy(&[val], &mut items);
+                            Value::Slip(arr) => {
+                                flatten_into_slurpy(&arr, &mut items);
                             }
                             other => {
                                 items.push(other);
@@ -370,7 +371,16 @@ impl Interpreter {
                 };
                 positional_idx = args.len(); // consume all remaining args
                 let slurpy_value = Value::real_array(items);
-                if !pd.name.is_empty() {
+                if pd.sigilless {
+                    // Sigilless single-argument rule slurpy (`+foo`): bind a
+                    // read-only List under the bare name, with no `@` sigil.
+                    if !pd.name.is_empty() {
+                        self.env
+                            .insert(sigilless_readonly_key(&pd.name), Value::Bool(true));
+                        self.env.remove(&sigilless_alias_key(&pd.name));
+                        self.bind_param_value(&pd.name, slurpy_value.clone());
+                    }
+                } else if !pd.name.is_empty() {
                     let key = if pd.name.starts_with('@') {
                         pd.name.clone()
                     } else {
