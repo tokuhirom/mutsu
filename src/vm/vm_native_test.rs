@@ -53,6 +53,19 @@ impl Interpreter {
         // synthetic `__test_callsite_line` argument and stash it so TAP
         // diagnostics report the right source line.
         let (clean_args, callsite_line) = self.sanitize_call_args(args);
+        // `skip` collides with the core list routine `skip(Int $n, *@list)`.
+        // Test's `skip($reason?, $count = 1)` always takes a Str (or no) first
+        // arg, so a numeric first arg followed by a list operand means the core
+        // routine was intended (a file may selectively import Test without
+        // `&skip`). Decline here and let the normal `call_function` path apply
+        // the same disambiguation (builtins.rs `"skip"` arm) and dispatch the
+        // list-skip builtin.
+        if name == "skip"
+            && clean_args.len() >= 2
+            && matches!(clean_args[0], Value::Int(..) | Value::Num(..))
+        {
+            return None;
+        }
         loan_env!(self, set_pending_callsite_line(callsite_line));
         match loan_env!(self, call_test_function(name, &clean_args)) {
             // Matched and handled by the typed Test dispatcher.
