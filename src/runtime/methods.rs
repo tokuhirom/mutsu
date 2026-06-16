@@ -415,6 +415,21 @@ impl Interpreter {
                 return Err(crate::value::seq_consumed_error());
             }
         }
+        // A non-lazy Seq is a materialized list; numeric aggregation/coercion
+        // methods (`.sum`/`.min`/`.max`/`.Int`) are only wired up for `Array`
+        // (and `.min`/`.max` route through `builtin_min`/`builtin_max`, which
+        // treat a bare Seq as a single element), so a `.map(...).sum` chain
+        // either threw "No such method" or returned the Seq itself. Re-dispatch
+        // these on the Seq's elements as a List so they behave like an Array.
+        if let Value::Seq(items) = &target
+            && matches!(method, "sum" | "min" | "max" | "Int")
+        {
+            let arr = Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(items.to_vec())),
+                crate::value::ArrayKind::List,
+            );
+            return self.call_method_with_values(arr, method, args);
+        }
         // User-defined ^method (metamethod) dispatch.
         // `method ^foo(Mu) { ... }` in a class body defines a metamethod.
         // The caller (VM) already prepends the type object to args.

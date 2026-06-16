@@ -341,6 +341,10 @@ pub(super) fn dispatch(
             }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
+            // A Seq/Slip is a materialized list; defer to the interpreter,
+            // which re-dispatches its elements as an Array so min/max compute
+            // over them. (The `_` arm below would return the Seq itself.)
+            Value::Seq(..) | Value::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
         "max" => Some(match target {
@@ -380,6 +384,10 @@ pub(super) fn dispatch(
             }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
+            // A Seq/Slip is a materialized list; defer to the interpreter,
+            // which re-dispatches its elements as an Array so min/max compute
+            // over them. (The `_` arm below would return the Seq itself.)
+            Value::Seq(..) | Value::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
         "excludes-min" => Some(match target {
