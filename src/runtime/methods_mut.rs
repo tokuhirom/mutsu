@@ -2695,6 +2695,141 @@ impl Interpreter {
                 "push" | "append" => {
                     let is_push = method == "push";
 
+                    // Typed / object hashes (`my Int %h{Rat}`) must type-check both
+                    // the pushed key (against the object-hash key type) and value
+                    // (against the element type), and reject a push that would turn a
+                    // scalar-typed value into an array (duplicate key). Read the
+                    // constraints off the hash's own metadata (authoritative,
+                    // travels with COW) falling back to the variable's declared
+                    // constraints.
+                    let (key_constraint, value_constraint, is_object_hash) =
+                        match self.env.get(&key) {
+                            Some(Value::Hash(h)) => (
+                                h.key_type
+                                    .clone()
+                                    .or_else(|| self.var_hash_key_constraint(&key)),
+                                h.value_type
+                                    .clone()
+                                    .or_else(|| self.var_type_constraint(&key)),
+                                h.key_type.is_some()
+                                    || self.var_hash_key_constraint(&key).is_some(),
+                            ),
+                            _ => (
+                                self.var_hash_key_constraint(&key),
+                                self.var_type_constraint(&key),
+                                self.var_hash_key_constraint(&key).is_some(),
+                            ),
+                        };
+                    let needs_typed_push = is_object_hash
+                        || value_constraint
+                            .as_deref()
+                            .is_some_and(|c| !matches!(c, "" | "Any" | "Mu"));
+                    if needs_typed_push {
+                        let kv_pairs = Self::hash_push_collect_pairs_kv(args);
+                        // Snapshot the existing stored value for each pushed key so
+                        // the duplicate-key array-conflict check can run before the
+                        // mutable borrow (type_matches_value needs `&mut self`).
+                        let existing: Vec<Option<Value>> = {
+                            let h = match self.env.get(&key) {
+                                Some(Value::Hash(h)) => Some(h),
+                                _ => None,
+                            };
+                            kv_pairs
+                                .iter()
+                                .map(|(k, _)| {
+                                    let wk = if is_object_hash {
+                                        crate::runtime::utils::value_which_key(k)
+                                    } else {
+                                        k.to_string_value()
+                                    };
+                                    h.and_then(|h| h.map.get(&wk).cloned())
+                                })
+                                .collect()
+                        };
+                        for (i, (k, v)) in kv_pairs.iter().enumerate() {
+                            if let Some(kc) = &key_constraint
+                                && !matches!(kc.as_str(), "" | "Any" | "Mu")
+                                && !self.type_matches_value(kc, k)
+                            {
+                                return Err(crate::runtime::utils::type_check_element_typed_error(
+                                    &key, kc, k,
+                                ));
+                            }
+                            if let Some(vc) = &value_constraint
+                                && !matches!(vc.as_str(), "" | "Any" | "Mu")
+                            {
+                                if !matches!(v, Value::Nil) && !self.type_matches_value(vc, v) {
+                                    return Err(
+                                        crate::runtime::utils::type_check_element_typed_error(
+                                            &key, vc, v,
+                                        ),
+                                    );
+                                }
+                                // A duplicate key turns the scalar value into an
+                                // array; reject it when the element type does not
+                                // accept that array.
+                                if let Some(ex) = &existing[i] {
+                                    let resulting = match ex {
+                                        Value::Array(arr, ..) => {
+                                            let mut items = arr.to_vec();
+                                            items.push(v.clone());
+                                            Value::real_array(items)
+                                        }
+                                        other => Value::real_array(vec![other.clone(), v.clone()]),
+                                    };
+                                    if !self.type_matches_value(vc, &resulting) {
+                                        return Err(
+                                            crate::runtime::utils::type_check_element_typed_error(
+                                                &key, vc, &resulting,
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(Value::Hash(arc_hash)) = self.env.get_mut(&key) {
+                            let hash = Arc::make_mut(arc_hash);
+                            for (k, v) in kv_pairs {
+                                let wk = if is_object_hash {
+                                    crate::runtime::utils::value_which_key(&k)
+                                } else {
+                                    k.to_string_value()
+                                };
+                                if is_object_hash {
+                                    hash.original_keys
+                                        .get_or_insert_with(std::collections::HashMap::new)
+                                        .insert(wk.clone(), k);
+                                }
+                                Self::hash_push_insert(hash, wk, v, is_push);
+                            }
+                            return Ok(Value::Hash(Arc::clone(arc_hash)));
+                        }
+                        // No existing hash in the variable: build a fresh typed
+                        // hash from the pushed pairs (preserving the constraints).
+                        let mut map = std::collections::HashMap::new();
+                        let mut orig = std::collections::HashMap::new();
+                        for (k, v) in kv_pairs {
+                            let wk = if is_object_hash {
+                                crate::runtime::utils::value_which_key(&k)
+                            } else {
+                                k.to_string_value()
+                            };
+                            if is_object_hash {
+                                orig.insert(wk.clone(), k);
+                            }
+                            Self::hash_push_insert(&mut map, wk, v, is_push);
+                        }
+                        let mut hd = crate::value::HashData::new(map);
+                        if is_object_hash {
+                            hd.original_keys = Some(orig);
+                            hd.key_type = key_constraint;
+                        }
+                        hd.value_type = value_constraint;
+                        let result = Value::Hash(Arc::new(hd));
+                        self.env.insert(key, result.clone());
+                        return Ok(result);
+                    }
+
                     // Fast path: COW via Arc::make_mut (O(1) when refcount=1)
                     if let Some(Value::Hash(arc_hash)) = self.env.get_mut(&key) {
                         let hash = Arc::make_mut(arc_hash);
@@ -3827,6 +3962,43 @@ impl Interpreter {
                     let key = arg.to_string_value();
                     let val = iter.next().unwrap_or(Value::Nil);
                     pairs.push((key, val));
+                }
+            }
+        }
+        pairs
+    }
+
+    /// Like [`hash_push_collect_pairs`] but preserves the original key *value*
+    /// (not its stringification), so typed object hashes can type-check the key
+    /// and store it under its `.WHICH` key. The first element of each tuple is
+    /// the key value, the second the value.
+    fn hash_push_collect_pairs_kv(args: Vec<Value>) -> Vec<(Value, Value)> {
+        let mut pairs = Vec::new();
+        let mut iter = args.into_iter().peekable();
+        while let Some(arg) = iter.next() {
+            match arg {
+                Value::Pair(k, v) => {
+                    pairs.push((Value::str(k), *v));
+                }
+                Value::ValuePair(k, v) => {
+                    pairs.push((*k, *v));
+                }
+                Value::Array(items, ..) => {
+                    pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
+                }
+                Value::Hash(h, ..) => {
+                    for (k, v) in h.map.iter() {
+                        let key = h
+                            .original_keys
+                            .as_ref()
+                            .and_then(|o| o.get(k).cloned())
+                            .unwrap_or_else(|| Value::str(k.clone()));
+                        pairs.push((key, v.clone()));
+                    }
+                }
+                other => {
+                    let val = iter.next().unwrap_or(Value::Nil);
+                    pairs.push((other, val));
                 }
             }
         }
