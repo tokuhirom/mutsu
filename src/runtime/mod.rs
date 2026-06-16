@@ -5950,6 +5950,36 @@ impl Interpreter {
         if !key.starts_with('%') || !self.shared_vars_active {
             return None;
         }
+        // A genuinely-shared plain lexical `%name` is routed through the
+        // `__mutsu_atomic_hash::` shared store, the same way concurrent `.push`
+        // is (see `shared_array_extend`). Writing the base key directly lets a
+        // sibling thread's `set_shared_var` clobber it with a stale empty
+        // snapshot during env sync (lost update). The atomic store is exempt
+        // from that clobber. Attribute / dynamic / twigil'd hashes (`%!`, `%.`,
+        // `%*`) share a name across instances, so they keep the base-key path;
+        // a thread-local `my %h` (not present in shared_vars) also falls through
+        // to the normal local assignment.
+        if Self::is_plain_lexical_name(key) {
+            let atomic_key = format!("__mutsu_atomic_hash::{key}");
+            let is_shared = {
+                let sv = self.shared_vars.read().unwrap();
+                sv.contains_key(&atomic_key) || sv.contains_key(key)
+            };
+            if is_shared {
+                return Some(self.shared_hash_elem_set(key, elem_key, value));
+            }
+        }
+        // Only a genuinely-shared base-key hash takes the write-through path; a
+        // thread-local `my %h` or an attribute hash (`%!data`, not stored under
+        // its own name in shared_vars) must fall through to the normal local
+        // assignment — and crucially must NOT have its env copy dropped, which
+        // would discard accumulated element writes.
+        {
+            let sv = self.shared_vars.read().unwrap();
+            if !matches!(sv.get(key), Some(Value::Hash(_))) {
+                return None;
+            }
+        }
         let is_thread_clone = self.is_thread_clone();
         if is_thread_clone {
             // Drop env's private copy so the shared cell holds the only Arc and
@@ -5996,6 +6026,31 @@ impl Interpreter {
     ) -> Option<Value> {
         if !key.starts_with('@') || !self.shared_vars_active {
             return None;
+        }
+        // A genuinely-shared plain lexical `@name` routes through the
+        // `__mutsu_atomic_arr::` shared store (same as concurrent `.push`, see
+        // `shared_array_extend`) so a sibling thread's stale `set_shared_var`
+        // cannot clobber the merged array. Attribute / dynamic / twigil'd arrays
+        // keep the base-key path; a thread-local `my @a` (not present in
+        // shared_vars) falls through to the normal local assignment.
+        if Self::is_plain_lexical_name(key) {
+            let atomic_key = format!("__mutsu_atomic_arr::{key}");
+            let is_shared = {
+                let sv = self.shared_vars.read().unwrap();
+                sv.contains_key(&atomic_key) || sv.contains_key(key)
+            };
+            if is_shared {
+                return Some(self.shared_array_elem_set(key, idx, value));
+            }
+        }
+        // See `assign_hash_elem_to_shared_var`: only a genuinely-shared base-key
+        // array takes the write-through path; otherwise fall through without
+        // dropping the local env copy.
+        {
+            let sv = self.shared_vars.read().unwrap();
+            if !matches!(sv.get(key), Some(Value::Array(..))) {
+                return None;
+            }
         }
         let is_thread_clone = self.is_thread_clone();
         if is_thread_clone {
@@ -6084,6 +6139,14 @@ impl Interpreter {
                 if sv.contains_key(&atomic_key) {
                     return;
                 }
+            } else if key.starts_with('%') {
+                // Symmetric to the array case: a hash with an active atomic
+                // entry (concurrent element assignment) must not be clobbered
+                // by a stale local snapshot during env sync.
+                let atomic_key = format!("__mutsu_atomic_hash::{key}");
+                if sv.contains_key(&atomic_key) {
+                    return;
+                }
             }
             if sv.contains_key(key) {
                 sv.insert(key.to_string(), value);
@@ -6101,6 +6164,20 @@ impl Interpreter {
             return;
         }
         let atomic_key = format!("__mutsu_atomic_arr::{key}");
+        if let Ok(mut sv) = self.shared_vars.write() {
+            sv.remove(&atomic_key);
+        }
+    }
+
+    /// Hash analogue of `clear_atomic_array_state`: drop the
+    /// `__mutsu_atomic_hash::` shared-store entry when a `%`-variable is
+    /// (re-)declared, so a fresh `my %h` does not seed from a previous lexical's
+    /// concurrent element writes (e.g. inside a loop body).
+    pub(crate) fn clear_atomic_hash_state(&self, key: &str) {
+        if !key.starts_with('%') {
+            return;
+        }
+        let atomic_key = format!("__mutsu_atomic_hash::{key}");
         if let Ok(mut sv) = self.shared_vars.write() {
             sv.remove(&atomic_key);
         }
