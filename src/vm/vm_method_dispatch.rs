@@ -858,6 +858,40 @@ impl Interpreter {
         }
     }
 
+    /// Mark a compiled method's `$` scalar parameters read-only, mirroring
+    /// `bind_function_args_values`. Routine params are read-only by default
+    /// unless `is rw`/`is copy`/`is raw`; `@`/`%` params and attribute-binding
+    /// params (`$!x`/`$.x`) stay writable. Sigilless (`\x`) params are raw
+    /// aliases. The light-frame fast path skips the slow path's readonly
+    /// snapshot, so each newly-marked name is recorded on the current call frame
+    /// and dropped in `pop_call_frame`.
+    fn mark_fast_method_params_readonly(&mut self, method_def: &crate::runtime::MethodDef) {
+        for pd in &method_def.param_defs {
+            if pd.name.is_empty()
+                || pd.name == "__type_only__"
+                || pd.name == "__subsig__"
+                || pd.sigilless
+                || pd.is_invocant
+                || pd.name.starts_with('!')
+                || pd.name.starts_with('.')
+                || pd.name.starts_with('@')
+                || pd.name.starts_with('%')
+            {
+                continue;
+            }
+            if pd.traits.iter().any(|t| t == "rw" || t == "copy" || t == "raw") {
+                continue;
+            }
+            if self.readonly_vars().contains(pd.name.as_str()) {
+                continue; // already read-only (e.g. caller-owned same name)
+            }
+            self.mark_readonly(&pd.name);
+            if let Some(frame) = self.call_frames.last_mut() {
+                frame.readonly_added.push(pd.name.clone());
+            }
+        }
+    }
+
     /// Fast path for read-only compiled methods. Bypasses all env_mut() calls
     /// to avoid the ~12μs Arc::make_mut deep clone. Populates locals directly
     /// from source data (attributes, args, special variables).
@@ -1012,6 +1046,11 @@ impl Interpreter {
                 env.insert(param_name.to_string(), param_val.clone());
             }
         }
+
+        // Raku: routine parameters are read-only by default (`method m($x) { $x = 5 }`
+        // dies). The slow path does this in `bind_function_args_values`; the fast
+        // path binds params directly, so mark `$` scalar params read-only here.
+        self.mark_fast_method_params_readonly(method_def);
 
         // Populate locals directly
         self.locals = vec![Value::Nil; cc.locals.len()];
