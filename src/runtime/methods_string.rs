@@ -563,6 +563,48 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Expand a `:nth`/`:st`/`:nd`/`:rd`/`:th` adverb argument into a list of
+    /// 1-based match indices. Accepts an Int, an Array of Ints, or any Range
+    /// variant (`:nth(1..3)`).
+    fn subst_nth_indices(value: &Value) -> Vec<i64> {
+        match value {
+            Value::Int(n) => vec![*n],
+            Value::Array(items, _) => items.iter().map(|v: &Value| v.to_f64() as i64).collect(),
+            Value::Range(lo, hi) => (*lo..=*hi).collect(),
+            Value::RangeExcl(lo, hi) => (*lo..*hi).collect(),
+            Value::RangeExclStart(lo, hi) => ((*lo + 1)..=*hi).collect(),
+            Value::RangeExclBoth(lo, hi) => ((*lo + 1)..*hi).collect(),
+            _ => vec![value.to_f64() as i64],
+        }
+    }
+
+    /// Build the `$/` value after a multi-match substitution. With a List-result
+    /// adverb (`:g`/`:x`/multi-`:nth`) `$/` is a (possibly empty) List of Match
+    /// objects; otherwise it is the single first Match, or Nil when nothing
+    /// matched.
+    fn subst_match_var(selected: &[RegexCaptures], text: &str, result_is_list: bool) -> Value {
+        let to_match = |c: &RegexCaptures| {
+            Value::make_match_object_full(
+                c.matched.clone(),
+                c.from as i64,
+                c.to as i64,
+                &c.positional,
+                &c.named,
+                &c.named_subcaps,
+                &c.positional_subcaps,
+                &c.positional_quantified,
+                Some(text),
+            )
+        };
+        if result_is_list {
+            Value::array(selected.iter().map(to_match).collect())
+        } else if let Some(c) = selected.first() {
+            to_match(c)
+        } else {
+            Value::Nil
+        }
+    }
+
     pub(super) fn dispatch_subst(
         &mut self,
         target: Value,
@@ -581,13 +623,13 @@ impl Interpreter {
                 match key.as_str() {
                     "g" | "global" => global = value.truthy(),
                     "x" => x_count = Some(*value.clone()),
-                    "nth" => match value.as_ref() {
-                        Value::Int(n) => nth = Some(vec![*n]),
-                        Value::Array(items, _) => {
-                            nth = Some(items.iter().map(|v: &Value| v.to_f64() as i64).collect());
-                        }
-                        _ => nth = Some(vec![value.to_f64() as i64]),
-                    },
+                    // `:nth`, plus the ordinal aliases `:st`/`:nd`/`:rd`/`:th`, all
+                    // select 1-based match indices. The argument may be an Int, a
+                    // list of Ints, or a Range (`:nth(1..3)`).
+                    "nth" | "st" | "nd" | "rd" | "th" => {
+                        let idxs = Self::subst_nth_indices(value);
+                        nth.get_or_insert_with(Vec::new).extend(idxs);
+                    }
                     "1st" | "first" if value.truthy() => nth = Some(vec![1]),
                     "2nd" | "second" if value.truthy() => nth = Some(vec![2]),
                     "3rd" | "third" if value.truthy() => nth = Some(vec![3]),
@@ -684,8 +726,25 @@ impl Interpreter {
                 } else {
                     self.regex_match_all_with_captures(&pat, &text)
                 };
+                // After a multi-match substitution `$/` is a List of Match objects
+                // for `:g`/`:x`/multi-`:nth`, but a single Match for a single-index
+                // `:nth` (even when combined with `:g`, e.g. `s:2nd:g/./Z/`).
+                let nth_len = nth.as_ref().map(|v| v.len());
+                let single_nth = nth_len == Some(1);
+                let nth_is_multi = nth_len.is_some_and(|n| n > 1);
+                let result_is_list =
+                    !single_nth && (pat_global || x_count.is_some() || nth_is_multi);
+                let empty_match_var = |me: &mut Self| {
+                    let v = if result_is_list {
+                        Value::array(Vec::new())
+                    } else {
+                        Value::Nil
+                    };
+                    me.env.insert("/".to_string(), v);
+                };
+
                 if all_captures.is_empty() {
-                    self.env.insert("/".to_string(), Value::Nil);
+                    empty_match_var(self);
                     return Ok(Value::str(text));
                 }
                 let chars: Vec<char> = text.chars().collect();
@@ -710,7 +769,7 @@ impl Interpreter {
                         selected.retain(|cap| cap.from >= p);
                         // The first remaining match must be exactly at p
                         if selected.is_empty() || selected[0].from != p {
-                            self.env.insert("/".to_string(), Value::Nil);
+                            empty_match_var(self);
                             return Ok(Value::str(text));
                         }
                     }
@@ -741,7 +800,7 @@ impl Interpreter {
                     if let Some((lo, hi)) = resolve_x_count(&x_count) {
                         let count = selected.len();
                         if count < lo {
-                            self.env.insert("/".to_string(), Value::Nil);
+                            empty_match_var(self);
                             return Ok(Value::str(text));
                         }
                         if count > hi {
@@ -750,7 +809,7 @@ impl Interpreter {
                     }
 
                     if selected.is_empty() {
-                        self.env.insert("/".to_string(), Value::Nil);
+                        empty_match_var(self);
                         return Ok(Value::str(text));
                     }
 
@@ -773,6 +832,8 @@ impl Interpreter {
                     }
                     let suffix: String = chars[last_end..].iter().collect();
                     result.push_str(&suffix);
+                    let match_var = Self::subst_match_var(&selected, &text, result_is_list);
+                    self.env.insert("/".to_string(), match_var);
                     Ok(Value::str(result))
                 } else if let Some(captures) = {
                     if is_p5 {
