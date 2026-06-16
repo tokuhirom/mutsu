@@ -3238,6 +3238,43 @@ impl Interpreter {
                     &index_target,
                     Some(Value::Mix(..) | Value::Bag(..) | Value::Set(..))
                 );
+                // A parameterized QuantHash (`BagHash[Int]`, `MixHash[Str]`, ...)
+                // constrains its *keys*: `%bh<foo> = 42` on a `BagHash[Int]` must
+                // throw because the key "foo" is not an Int. The bracketed key type
+                // is carried in the container metadata's `value_type` (e.g.
+                // "BagHash[Int]") for Bag/Mix/Set, falling back to `declared_type`.
+                if target_is_quanthash
+                    && let Some(meta) = index_target
+                        .as_ref()
+                        .and_then(|c| self.container_type_metadata(c))
+                    && let Some(declared) = meta
+                        .declared_type
+                        .as_deref()
+                        .filter(|d| d.contains('['))
+                        .or(Some(meta.value_type.as_str()))
+                    && let Some(open) = declared.find('[')
+                    && declared.ends_with(']')
+                {
+                    let key_type = &declared[open + 1..declared.len() - 1];
+                    // A numeric-looking string key (`%bh<7>`) is an allomorph
+                    // (IntStr in Raku) that satisfies a numeric key type, so only a
+                    // string that does NOT coerce to the numeric type (`%bh<foo>`)
+                    // is rejected.
+                    let allomorph_ok = matches!(&idx, Value::Str(s)
+                        if crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_some())
+                        && matches!(
+                            key_type,
+                            "Int" | "UInt" | "Num" | "Rat" | "Real" | "Numeric" | "Cool"
+                        );
+                    if !matches!(key_type, "" | "Any" | "Mu" | "Str")
+                        && !allomorph_ok
+                        && !self.type_matches_value(key_type, &idx)
+                    {
+                        return Err(runtime::utils::type_check_binding_typed_error(
+                            key_type, &idx,
+                        ));
+                    }
+                }
                 if let Some(constraint) = array_elem_constraint
                     && !target_is_quanthash
                     && !matches!(val, Value::Nil)
