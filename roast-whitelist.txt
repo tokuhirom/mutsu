@@ -1225,6 +1225,7 @@ roast/S32-trig/sin.t
 roast/S32-trig/sinh.t
 roast/S32-trig/tan.t
 roast/S32-trig/tanh.t
+roast/integration/99problems-01-to-10.t
 roast/integration/99problems-11-to-20.t
 roast/integration/advent2009-day01.t
 roast/integration/advent2009-day02.t
@@ -1246,6 +1247,7 @@ roast/integration/advent2010-day10.t
 roast/integration/advent2010-day21.t
 roast/integration/advent2010-day23.t
 roast/integration/advent2011-day03.t
+roast/integration/advent2011-day05.t
 roast/integration/advent2011-day16.t
 roast/integration/advent2011-day20.t
 roast/integration/advent2011-day22.t
