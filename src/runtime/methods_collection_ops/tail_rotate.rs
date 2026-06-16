@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    fn is_lazy_tail_target(target: &Value) -> bool {
+    pub(in crate::runtime) fn is_lazy_tail_target(target: &Value) -> bool {
         match target {
             Value::LazyList(_) => true,
             Value::Range(_, end)
@@ -152,6 +152,38 @@ impl Interpreter {
         let tail_count = self.resolve_supply_tail_count(args.first(), items.len())?;
         let start = items.len().saturating_sub(tail_count);
         Ok(Value::array(items[start..].to_vec()))
+    }
+
+    /// Handle `.head(&callable)` / `.head(*)` where the argument is a
+    /// WhateverCode/Callable or a bare Whatever. Raku invokes the callable with
+    /// `0` and uses the result `n` as an offset from the end: the number of
+    /// leading elements to keep is `len + n` (clamped to `0..=len`). A bare
+    /// `*` (Whatever) keeps the whole list. Plain numeric counts are handled by
+    /// the native fast path, not here.
+    pub(in crate::runtime) fn dispatch_head(
+        &mut self,
+        target: Value,
+        arg: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let items = crate::runtime::utils::value_to_list(&target);
+        let len = items.len() as i64;
+        let count = match arg {
+            Value::Whatever => len,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                let computed = self.eval_call_on_value(arg.clone(), vec![Value::Int(0)])?;
+                let n = match &computed {
+                    Value::Whatever => len,
+                    Value::Int(i) => *i,
+                    Value::Num(f) => *f as i64,
+                    Value::Rat(num, den) if *den != 0 => *num / *den,
+                    other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                };
+                (len + n).clamp(0, len)
+            }
+            _ => len,
+        };
+        let count = count.clamp(0, len) as usize;
+        Ok(Value::array(items[..count].to_vec()))
     }
 
     pub(in crate::runtime) fn callback_uses_supply_list(callback: &Value) -> bool {
