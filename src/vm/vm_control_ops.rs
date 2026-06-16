@@ -2110,7 +2110,7 @@ impl Interpreter {
     /// does: Int for Bag, Real for Mix, truthiness for Set. A non-numeric `Str`
     /// raises X::Str::Numeric, and a zero weight removes the key (Raku semantics).
     /// No-op (and Ok) if `source` does not hold a mutable QuantHash.
-    fn quanthash_set_weight(
+    pub(crate) fn quanthash_set_weight(
         &mut self,
         code: &CompiledCode,
         source: &str,
@@ -2121,7 +2121,10 @@ impl Interpreter {
             Some(Value::Bag(bag, true)) => {
                 let count = Self::bag_assignment_count(value)?;
                 let mut b = (*bag).clone();
-                if count == 0 {
+                // A Bag holds positive integer counts: a weight of 0 *or below*
+                // removes the element (negative counts are not representable),
+                // unlike a Mix where a negative weight is retained.
+                if count <= 0 {
                     b.counts.remove(&key);
                 } else {
                     b.counts.insert(key, count);

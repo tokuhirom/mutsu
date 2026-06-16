@@ -909,6 +909,27 @@ impl Interpreter {
                     *cell.lock().unwrap() = value.clone();
                     return Ok(value);
                 }
+                // `.value = X` / `.value--` on a Pair yielded by a mutable
+                // QuantHash's `.pairs` (`for $b.pairs { .value = 42 }`,
+                // `$b` a BagHash/MixHash/SetHash) writes the new weight back to
+                // the source container. `topic_source_var` names that container
+                // (set by the for-loop). Weight 0 removes the key; a non-numeric
+                // Str coercion raises X::Str::Numeric. Immutable Bag/Mix/Set fall
+                // through to the read-only Bool guard below.
+                if let Some(source) = self.topic_source_var.clone()
+                    && matches!(
+                        self.env.get(&source),
+                        Some(Value::Bag(_, true) | Value::Mix(_, true) | Value::Set(_, true))
+                    )
+                {
+                    // The current bytecode isn't threaded into this builtin path,
+                    // so pass an empty code: `quanthash_set_weight` then updates
+                    // env (and main-alias) only, which is what the post-loop read
+                    // of `$b` resolves through here.
+                    let code = crate::opcode::CompiledCode::new();
+                    self.quanthash_set_weight(&code, &source, key, &value)?;
+                    return Ok(value);
+                }
                 let mut selected_hash: Option<std::sync::Arc<crate::value::HashData>> = None;
                 let mut selected_array: Option<std::sync::Arc<crate::value::ArrayData>> = None;
 
