@@ -863,9 +863,12 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
             let type_name = if *mutable { "SetHash" } else { "Set" };
             let mut keys: Vec<&String> = s.iter().collect();
             keys.sort();
+            // Render each element via its original type's gist (so a Pair element
+            // is `a => 1`, not the internal `a\t1` string key); a plain Str/Int
+            // element gists bare, identical to the raw key.
             let inner = keys
                 .iter()
-                .map(|k| k.as_str())
+                .map(|k| gist_value(&s.typed_key(k)))
                 .collect::<Vec<_>>()
                 .join(" ");
             Some(format!("{}({})", type_name, inner))
@@ -877,10 +880,11 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
             let inner = keys
                 .iter()
                 .map(|(k, v)| {
+                    let key = gist_value(&b.typed_key(k));
                     if **v == BigInt::from(1) {
-                        (*k).clone()
+                        key
                     } else {
-                        format!("{}({})", k, v)
+                        format!("{}({})", key, v)
                     }
                 })
                 .collect::<Vec<_>>()
@@ -894,12 +898,13 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
             let inner = keys
                 .iter()
                 .map(|(k, v)| {
+                    let key = gist_value(&m.typed_key(k));
                     if (**v - 1.0).abs() < f64::EPSILON {
-                        (*k).clone()
+                        key
                     } else if v.fract() == 0.0 {
-                        format!("{}({})", k, **v as i64)
+                        format!("{}({})", key, **v as i64)
                     } else {
-                        format!("{}({})", k, v)
+                        format!("{}({})", key, v)
                     }
                 })
                 .collect::<Vec<_>>()
