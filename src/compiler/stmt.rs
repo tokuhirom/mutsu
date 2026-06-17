@@ -2340,6 +2340,16 @@ impl Compiler {
                 custom_traits,
                 ..
             } => {
+                // Reject overriding a reserved special-form operator
+                // (`infix:<=>`, `infix:<:=>`, `infix:<::=>`, `infix:<~~>`,
+                // `prefix:<|>`) — these are handled directly by the compiler and
+                // cannot be user-defined (X::Syntax::Extension::SpecialForm).
+                if let Some(err_val) = Self::check_special_form_override(&name.resolve()) {
+                    let idx = self.code.add_constant(err_val);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
                 // Validate placeholder conflicts for subs with implicit params
                 if param_defs.is_empty()
                     && !params.is_empty()
