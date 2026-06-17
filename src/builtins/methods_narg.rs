@@ -1772,7 +1772,7 @@ pub(crate) fn native_method_1arg(
                     _ => 0i128,
                 };
                 if count == 0 || bag.is_empty() {
-                    return Some(Ok(Value::array(Vec::new())));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
                 // Build a mutable copy of counts for without-replacement picking
                 let mut counts: Vec<(String, i128)> = bag
@@ -1808,7 +1808,7 @@ pub(crate) fn native_method_1arg(
                         counts.swap_remove(picked_idx);
                     }
                 }
-                return Some(Ok(Value::array(result)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(result))));
             }
             // For Set, pick returns keys (strings) without replacement
             if let Value::Set(set, _) = target {
@@ -1847,7 +1847,7 @@ pub(crate) fn native_method_1arg(
             if matches!(arg, Value::HyperWhatever) {
                 let pool = runtime::value_to_list(target);
                 if pool.is_empty() {
-                    return Some(Ok(Value::array(Vec::new())));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
                 // Pre-generate several cycles of shuffled picks
                 let num_cycles = 4;
@@ -1882,7 +1882,7 @@ pub(crate) fn native_method_1arg(
                             % (i + 1);
                         items.swap(i, j);
                     }
-                    Value::array(items)
+                    Value::Seq(std::sync::Arc::new(items))
                 }
                 Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                     // .pick(Inf) — same as .pick(*)
@@ -1892,13 +1892,13 @@ pub(crate) fn native_method_1arg(
                             % (i + 1);
                         items.swap(i, j);
                     }
-                    Value::array(items)
+                    Value::Seq(std::sync::Arc::new(items))
                 }
                 Value::Num(f) => {
                     // .pick(<num>) — truncate to int
                     let count = (*f as i64).max(0) as usize;
                     if count == 0 || items.is_empty() {
-                        Value::array(Vec::new())
+                        Value::Seq(std::sync::Arc::new(Vec::new()))
                     } else {
                         let mut result = Vec::with_capacity(count.min(items.len()));
                         for _ in 0..count.min(items.len()) {
@@ -1907,14 +1907,14 @@ pub(crate) fn native_method_1arg(
                                 % items.len();
                             result.push(items.swap_remove(idx));
                         }
-                        Value::array(result)
+                        Value::Seq(std::sync::Arc::new(result))
                     }
                 }
                 Value::Rat(n, d) if *d != 0 => {
                     // .pick(<rat>) — truncate to int
                     let count = (*n / *d).max(0) as usize;
                     if count == 0 || items.is_empty() {
-                        Value::array(Vec::new())
+                        Value::Seq(std::sync::Arc::new(Vec::new()))
                     } else {
                         let mut result = Vec::with_capacity(count.min(items.len()));
                         for _ in 0..count.min(items.len()) {
@@ -1923,13 +1923,13 @@ pub(crate) fn native_method_1arg(
                                 % items.len();
                             result.push(items.swap_remove(idx));
                         }
-                        Value::array(result)
+                        Value::Seq(std::sync::Arc::new(result))
                     }
                 }
                 Value::Int(n) => {
                     let count = (*n).max(0) as usize;
                     if count == 0 || items.is_empty() {
-                        Value::array(Vec::new())
+                        Value::Seq(std::sync::Arc::new(Vec::new()))
                     } else {
                         let mut result = Vec::with_capacity(count.min(items.len()));
                         for _ in 0..count.min(items.len()) {
@@ -1938,13 +1938,13 @@ pub(crate) fn native_method_1arg(
                                 % items.len();
                             result.push(items.swap_remove(idx));
                         }
-                        Value::array(result)
+                        Value::Seq(std::sync::Arc::new(result))
                     }
                 }
                 Value::Str(s) => {
                     let count = s.trim().parse::<i64>().unwrap_or(0).max(0) as usize;
                     if count == 0 || items.is_empty() {
-                        Value::array(Vec::new())
+                        Value::Seq(std::sync::Arc::new(Vec::new()))
                     } else {
                         let mut result = Vec::with_capacity(count.min(items.len()));
                         for _ in 0..count.min(items.len()) {
@@ -1953,7 +1953,7 @@ pub(crate) fn native_method_1arg(
                                 % items.len();
                             result.push(items.swap_remove(idx));
                         }
-                        Value::array(result)
+                        Value::Seq(std::sync::Arc::new(result))
                     }
                 }
                 _ => return None,
@@ -1970,7 +1970,7 @@ pub(crate) fn native_method_1arg(
                     _ => return None,
                 };
                 if count == 0 || bag.is_empty() {
-                    return Some(Ok(Value::array(Vec::new())));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
                 let mut pairs: Vec<(String, BigInt)> =
                     bag.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -1985,7 +1985,7 @@ pub(crate) fn native_method_1arg(
                     let (key, count) = pairs.swap_remove(idx);
                     result.push(Value::Pair(key, Box::new(Value::from_bigint(count))));
                 }
-                return Some(Ok(Value::array(result)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(result))));
             }
             None
         }
@@ -2034,7 +2034,7 @@ pub(crate) fn native_method_1arg(
                 }
                 let count = count.unwrap_or(0);
                 if count == 0 {
-                    return Some(Ok(Value::array(Vec::new())));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
                 let mut result = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -2042,7 +2042,7 @@ pub(crate) fn native_method_1arg(
                         result.push(v);
                     }
                 }
-                return Some(Ok(Value::array(result)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(result))));
             }
             if let Value::Bag(items, _) = target {
                 if count.is_none() {
@@ -2059,7 +2059,7 @@ pub(crate) fn native_method_1arg(
                 }
                 let count = count.unwrap_or(0);
                 if count == 0 {
-                    return Some(Ok(Value::array(Vec::new())));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
                 let mut result = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -2067,7 +2067,7 @@ pub(crate) fn native_method_1arg(
                         result.push(v);
                     }
                 }
-                return Some(Ok(Value::array(result)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(result))));
             }
             if let Value::Set(items, _) = target {
                 let keys: Vec<&String> = items.iter().collect();
@@ -2102,7 +2102,7 @@ pub(crate) fn native_method_1arg(
                     }
                     result.push(Value::str(keys[idx].clone()));
                 }
-                return Some(Ok(Value::array(result)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(result))));
             }
             let sample_from_range = |range: &Value| -> Option<Value> {
                 let random_i64 = |lo: i64, hi: i64| -> Value {
@@ -2180,7 +2180,7 @@ pub(crate) fn native_method_1arg(
             };
             if count.is_none() {
                 if !target.is_range() && items.is_empty() {
-                    return Some(Ok(Value::array(Vec::new())));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
                 let generated = 1024usize;
                 let mut out = Vec::with_capacity(generated);
@@ -2204,7 +2204,7 @@ pub(crate) fn native_method_1arg(
             }
             let count = count.unwrap_or(0);
             if count == 0 || (!target.is_range() && items.is_empty()) {
-                return Some(Ok(Value::array(Vec::new())));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
             }
             let mut result = Vec::with_capacity(count);
             for _ in 0..count {
@@ -2221,7 +2221,7 @@ pub(crate) fn native_method_1arg(
                     result.push(items[idx].clone());
                 }
             }
-            Some(Ok(Value::array(result)))
+            Some(Ok(Value::Seq(std::sync::Arc::new(result))))
         }
         "log" => {
             let base_complex = match arg {
