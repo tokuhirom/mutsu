@@ -109,32 +109,44 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 > 内部に着手順序があり、前段が終わるまで後段に着手できないもの。
 
-### 二重ストア統合 — 単一権威ストア再設計（locals 権威化・env を derived view 化）
+### ★ 二重ストア統合 ＋ 第一級コンテナ — **Slice F で収束する 1 本のキャンペーン**（2026-06-18 再編）
 
-ユーザー本命。設計＝[docs/vm-single-store.md](docs/vm-single-store.md)（履歴・撤回試行は [docs/vm-dual-store.md](docs/vm-dual-store.md)）。
-要旨: reverse sync を**削除せず**、per-`GetLocal` の coarse な `env_dirty`+全 locals スキャンから
-**carrier 境界での精密な書き込み名のみ writeback** へ再配置 → hot path から同期ロジックを消す。スライス順:
+ユーザー本命。設計＝[docs/vm-single-store.md](docs/vm-single-store.md)（履歴・撤回試行は [docs/vm-dual-store.md](docs/vm-dual-store.md)）+
+[docs/container-identity.md](docs/container-identity.md)。
 
-- [x] **Slice A** — invariant guard + 計測（#3219, MERGED）。
-- [x] **Slice B** — `EVAL` 精密 writeback（#3222, MERGED）+ EVAL carrier env_dirty drop（#3227）。
+**2026-06-18 の深掘りで判明した収束**: 当初は「二重ストア統合」と「第一級コンテナ」を別キャンペーンとして並べていたが、
+**両者は single-store の最終 Slice F（`env_dirty` 削除＝`locals` を真の単一権威化）で同一の壁に収束する**:
+
+> Slice F の真の前提は **`env` と `locals` がコンテナで乖離しないこと**（cell-linked container で env と locals が別 Arc を
+> 持たないこと）。これは第一級コンテナ campaign が解いている問題そのもの。ContainerRef cell（Phase 2・`:=` bind は大幅 landed・
+> `element-bind-cell.t` 31ケース）は **1 ストア内の COW 跨ぎ生存**を解決済みだが、**dual-store の env↔locals 乖離は別レイヤ**で残る。
+> pairs/slip carrier-drop が `element-bind-cell` を壊すのは正にこの dual-store 乖離（cell があっても carrier が env_dirty を
+> 落とすと locals 側コンテナが stale 経路で読まれる）。**∴ blanket 削除/carrier-drop の小細工では Slice F に到達不可。**
+
+**現状（blanket-removal / carrier-drop 路線は価値枯渇）**:
+- [x] **Slice A** — invariant guard + 計測（#3219）。
+- [x] **Slice B** — `EVAL` 精密 writeback（#3222）+ EVAL carrier env_dirty drop（#3227）。
 - [~] **Slice C** — R1 reverse write-through。**実測で SUPERSEDED**（our/dynamic/push/call は既に pull 1–2・effective=0）。
 - [~] **Slice C′** — open-q#2 の regex 経路 + bareword carrier 一般化（#3231）+ EVAL内 `$x ~~ s///` writeback 穴修正（#3237）。
-      **残: `pairs`/`slip` 一般化 = deep `:=` bind-cell coherence（CP-2 壁）の解決が前提＝延期。**
-- [x] **Slice D** — R3 blanket-mark 撲滅。**監査で完了確認（2026-06-18）**: 明確な冗長は #2709/method_dispatch_pure で既に除去済。
-      残る ≈140 の `env_dirty=true` は ①精密ゲート本体 ②正当な mutation（push/mut-method/registration）③carrier/block net（精密化＝carrier-drop 領域）で、安全に削除できる冗長は無し。測定でも spurious は全ベンチ 1〜4 pull。詳細＝docs/vm-single-store.md。
-- [ ] **Slice E** — closure upvalue 化（prereq①・`compute_needs_env_sync` 撤去・最高リスク・最後）。
-- [ ] **Slice F** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。**真の前提＝deep `:=` cell coherence の env↔locals 乖離解決（CP-2 壁）。**
+      `pairs`/`slip` 一般化は下記収束（env↔locals コンテナ coherence）が前提＝延期。
+- [x] **Slice D** — R3 blanket-mark 撲滅 = **監査で完了確認（#3238）**。安全に削除できる冗長 blanket は無し（残る ≈140 の
+      `env_dirty=true` は精密ゲート本体／正当 mutation／carrier-block net のいずれか・spurious は全ベンチ 1〜8 pull）。
+
+**ここから先（収束点へ向かう 2 本柱・順序あり）**:
+- [ ] **Slice E — closure upvalue 化（次の独立前進）**: free-var を indexed upvalue cell 化し `compute_needs_env_sync`
+      whole-frame writeback + per-call captured-env loop を撤去。**container 壁に当たらない唯一の独立 single-store 前進**。
+      env サイズ自体を削減 → method-call/bench-class の env deep-clone（残 perf ボトルネック・~9μs/call）にも効く。最高リスクなので
+      Slice A の invariant guard + 193 closure/block/sort/gather roast で固める。
+- [ ] **第一級コンテナ Phase 2 残 → Phase 3（Slice F の substrate）**: env↔locals がコンテナ Arc を共有する終状態へ。
+      - Phase 0.5 第2段（実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線（**Phase 2 と同一 PR**）。
+      - Phase 2 残: hash 要素 edge / LHS bind（nested.t 11-12）/ element-element bind（32-37）/ take-rw（gather.t 38）/
+        深い `>>++`・`deepmap(++*)`（hyper.t 330-333）/ object-hash / S12 accessors。`HashSlotRef`/`ArraySlotRef` の場当たり +
+        name-based writeback reconcile を削除。
+      - Phase 3: 属性コンテナ + 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
+- [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
+      **前提 = Slice E（upvalue）+ 第一級コンテナ Phase 2/3（env↔locals コンテナ coherence）の両方。** ここで初めて pairs/slip
+      carrier-drop も安全化し、`locals` が単一権威・`env` は派生ビューになる。
 - [ ] **Slice G**（後続・任意）— env の on-demand materialization（per-call `clone_env` を lazy overlay 化）。
-
-### 第一級コンテナ Phase 2 → Phase 3（要素セル → 属性セル）
-
-最ホットな表現に触るので段階導入（big-bang 回帰を避ける）。設計の鍵・撤回した試行は [docs/container-identity.md](docs/container-identity.md)。
-
-- [ ] **Phase 0.5 第2段（実挙動変化）**: `GetArrayVar`/`Index` の auto-decont（＝値スタック「常に decont 済み」不変条件）+
-      新 lvalue opcode（`GetLocalContainer`/`IndexContainer` 等）の本配線。push 内容が変わるため **Phase 2 と同一 PR** で入れる。
-- [ ] **Phase 2 — 配列/ハッシュ要素のコンテナ化（COW セル）**: take-rw（gather.t 38）/ `@a[0] :=` / 深い `>>++`・`deepmap(++*)`
-      （hyper.t 330-333）/ object-hash / S12 accessors・instance。`HashSlotRef`/`ArraySlotRef` の場当たり + name-based writeback reconcile を削除。
-- [ ] **Phase 3 — 属性コンテナ + 属性束縛**: `$!x :=` / per-attribute container template（S03-binding/attributes・S14-traits/attributes 5-8）。
 
 速度の担保（設計内蔵）: (a) escape 解析でセル省略（捕捉/エイリアス/`.VAR` されないローカルは裸値）、(b) 配列は COW、
 (c) decont は単一分岐、(d) 中期の NaN-boxing で payload 8byte 化。各 Phase は重量級 roast を timed 確認（#2746 の教訓: perf 回帰は

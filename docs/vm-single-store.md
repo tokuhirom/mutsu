@@ -430,13 +430,26 @@ for wall-clock.
   files (vm-dual-store.md Slice 3 set), `t/closure-captured-state.t`,
   `bench-array`/`array-ops` `env_deep_copies` → target 0.
 
-- **Slice F — delete the coarse machinery.**
+- **Slice F — delete the coarse machinery. THE CONVERGENCE POINT (2026-06-18).**
   With every setter precise (A–E), remove `env_dirty`, `saved_env_dirty`,
   `ensure_locals_synced`, `sync_locals_from_env`, and the `ensure_locals_synced`
   call at `GetLocal`. `env` is now materialized only on carrier/closure/dynamic
   demand. Gate: full roast; metric `MUTSU_VM_STATS` `locals_pulls` = 0 on all
   `benchmarks/*.raku` with output unchanged; wall-clock no-regression on
   `method-call` / `bench-class` / `fib` (release).
+
+  > **This is where the single-store campaign and the first-class-container
+  > campaign converge (the 2026-06-18 finding).** Deleting `env_dirty` makes
+  > `locals` the *single authority*, which is only safe if `env` and `locals`
+  > never hold a *divergent representation of the same container* — exactly the
+  > guarantee `docs/container-identity.md` Phase 2/3 is building. The ContainerRef
+  > cell mechanism (Phase 2, largely landed for `:=` binds) solves COW-survival
+  > *within one store*; the **dual-store env↔locals divergence** is the remaining
+  > layer (it is why dropping the `pairs`/`slip` carrier blanket corrupts
+  > `t/element-bind-cell.t` even with the cell mechanism present). So Slice F's
+  > real prerequisite is **Slice E (upvalues) + container-identity Phase 2/3
+  > (env↔locals container-Arc sharing)**, not more blanket/carrier surgery. The
+  > `pairs`/`slip` carrier-drop becomes safe at the *same* moment Slice F does.
 
 - **Slice G (follow-on, optional) — env materialization on demand.**
   Replace the per-call `clone_env()` snapshot with a frame-local overlay built
