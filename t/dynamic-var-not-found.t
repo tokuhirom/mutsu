@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 12;
 
 # Assigning to an undeclared dynamic variable throws X::Dynamic::NotFound
 # (Raku semantics: a dynamic var must be declared with `my $*x` first).
@@ -49,4 +49,24 @@ plan 9;
 {
     lives-ok { my $v = $*never_declared_read; },
         'reading an undeclared $*var does not throw';
+}
+
+# A destructured signature parameter introduces a fresh dynamic var — binding it
+# must NOT trip the not-found guard (regression: open.t/main.t).
+{
+    lives-ok {
+        for (a => 1,) -> (:key(&*OPEN), :value($*PATH)) { my $x = $*PATH }
+    }, 'destructured dynamic-twigil signature param binds without throwing';
+}
+
+# A dynamic var declared via `(my %*H)` then element-assigned works.
+{
+    (my %*OPTS)<flag> = True;
+    is %*OPTS<flag>, True, 'element assign on a (my %*H)-declared dynamic hash';
+}
+
+# A plain dynamic-twigil sub param binds.
+{
+    sub takes(:value($*V)) { $*V }
+    is takes(:value(7)), 7, 'dynamic-twigil named sub param binds';
 }

@@ -46,6 +46,10 @@ impl Compiler {
             });
             self.code.emit(OpCode::Pop); // discard the accessor result
         }
+        // A genuine assignment to a never-declared dynamic var (`$*x = ...` in
+        // expression context) throws X::Dynamic::NotFound. The `:=` bind form
+        // returns above; param binding / element auto-viv use other paths.
+        self.maybe_emit_dynamic_var_check(name);
         // Fuse `$x OP= rhs` (parsed as `$x = $x OP rhs`) into an atomic RMW for
         // plain env-named scalars; the fused op leaves the new value on the
         // stack, exactly what expression context wants.
