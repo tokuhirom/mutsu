@@ -1770,7 +1770,11 @@ impl Interpreter {
                     let core = if alts.len() == 1 {
                         alts.into_iter().next().unwrap_or_default()
                     } else {
-                        format!("({})", alts.join("|"))
+                        // Non-capturing `[...]`: a plain `**N..M` on a
+                        // non-capturing atom must not introduce a positional
+                        // capture (`(...)` would). Capture-bearing atoms never
+                        // reach this string-expansion path.
+                        format!("[{}]", alts.join("|"))
                     };
                     if min == 0 { format!("[{core}]?") } else { core }
                 }
