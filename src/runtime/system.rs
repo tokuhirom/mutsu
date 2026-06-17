@@ -95,6 +95,7 @@ impl Interpreter {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_trusts(&stmts)?;
+                self.check_eval_undeclared_type_args(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
                 self.check_eval_param_type_constraints(&stmts)?;
