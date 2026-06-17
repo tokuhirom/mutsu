@@ -992,30 +992,37 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 let leaves = crate::runtime::utils::shaped_array_leaves(arg);
                 let len = leaves.len();
                 if len == 0 {
-                    return Some(Ok(Value::array(Vec::new())));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
                 let n = 1usize % len;
                 let mut rotated = Vec::with_capacity(len);
                 rotated.extend_from_slice(&leaves[n..]);
                 rotated.extend_from_slice(&leaves[..n]);
-                return Some(Ok(Value::array(rotated)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(rotated))));
             }
-            Some(Ok(match arg {
-                Value::Array(items, ..) => {
-                    // rotate with no count defaults to 1
-                    let n = 1usize;
-                    let len = items.len();
-                    if len == 0 {
-                        Value::array(Vec::new())
-                    } else {
-                        let n = n % len;
-                        let mut rotated = Vec::with_capacity(len);
-                        rotated.extend_from_slice(&items[n..]);
-                        rotated.extend_from_slice(&items[..n]);
-                        Value::array(rotated)
-                    }
+            // rotate with no count defaults to 1; returns a Seq (raku semantics).
+            let items: Option<Vec<Value>> = match arg {
+                Value::Array(items, ..) => Some(items.iter().cloned().collect()),
+                Value::Seq(items) | Value::Slip(items) => Some((**items).clone()),
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. } => {
+                    Some(crate::runtime::Interpreter::value_to_list(arg))
                 }
-                _ => Value::Nil,
+                _ => None,
+            };
+            Some(Ok(match items {
+                Some(items) if !items.is_empty() => {
+                    let n = 1usize % items.len();
+                    let mut rotated = Vec::with_capacity(items.len());
+                    rotated.extend_from_slice(&items[n..]);
+                    rotated.extend_from_slice(&items[..n]);
+                    Value::Seq(std::sync::Arc::new(rotated))
+                }
+                Some(_) => Value::Seq(std::sync::Arc::new(Vec::new())),
+                None => Value::Nil,
             }))
         }
         "flat" => {

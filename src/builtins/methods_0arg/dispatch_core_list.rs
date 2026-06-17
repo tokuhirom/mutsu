@@ -164,7 +164,7 @@ pub(super) fn dispatch(
                         result.push(item.clone());
                     }
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(Value::Seq(Arc::new(result))))
             }
             Value::Seq(items) | Value::Slip(items) => {
                 let mut seen: Vec<Value> = Vec::new();
@@ -178,7 +178,7 @@ pub(super) fn dispatch(
                         result.push(item.clone());
                     }
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(Value::Seq(Arc::new(result))))
             }
             Value::LazyList(_) => None,
             // Supply.unique is handled by native_supply
@@ -199,7 +199,7 @@ pub(super) fn dispatch(
                         seen.push(item.clone());
                     }
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(Value::Seq(Arc::new(result))))
             }
             Value::Seq(items) | Value::Slip(items) => {
                 let mut seen: Vec<Value> = Vec::new();
@@ -214,10 +214,10 @@ pub(super) fn dispatch(
                         seen.push(item.clone());
                     }
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(Value::Seq(Arc::new(result))))
             }
             Value::LazyList(_) => None,
-            _ => Some(Ok(Value::array(Vec::new()))),
+            _ => Some(Ok(Value::Seq(Arc::new(Vec::new())))),
         }),
         "floor" => Some(match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),

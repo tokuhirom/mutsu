@@ -88,7 +88,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::array(unique_items))
+        Ok(Value::Seq(std::sync::Arc::new(unique_items)))
     }
 
     pub(in crate::runtime) fn dispatch_repeated(
@@ -177,7 +177,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::array(repeated_items))
+        Ok(Value::Seq(std::sync::Arc::new(repeated_items)))
     }
 
     pub(crate) fn dispatch_squish(
