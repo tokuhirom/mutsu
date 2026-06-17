@@ -924,18 +924,18 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 // 1D shaped array: reverse the leaves
                 let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
                 leaves.reverse();
-                return Some(Ok(Value::array(leaves)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
             }
             Some(Ok(match arg {
                 Value::Array(items, ..) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::array(reversed.items)
+                    Value::Seq(std::sync::Arc::new(reversed.items))
                 }
                 Value::Seq(items) | Value::Slip(items) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::array(reversed)
+                    Value::Seq(std::sync::Arc::new(reversed))
                 }
                 Value::Range(..)
                 | Value::RangeExcl(..)
@@ -944,10 +944,10 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 | Value::GenericRange { .. } => {
                     let mut items = crate::runtime::Interpreter::value_to_list(arg);
                     items.reverse();
-                    Value::array(items)
+                    Value::Seq(std::sync::Arc::new(items))
                 }
-                // reverse() on a string returns a single-element list (not a flip)
-                other => Value::array(vec![other.clone()]),
+                // reverse() on a string returns a single-element Seq (not a flip)
+                other => Value::Seq(std::sync::Arc::new(vec![other.clone()])),
             }))
         }
         "sort" => {
