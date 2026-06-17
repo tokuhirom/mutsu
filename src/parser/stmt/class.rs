@@ -1681,6 +1681,8 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 param_defs,
                 body,
                 multi: false,
+                is_my: false,
+                is_our: false,
             },
         ))
     }

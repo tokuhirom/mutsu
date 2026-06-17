@@ -550,6 +550,7 @@ impl Interpreter {
                 param_defs,
                 body,
                 multi,
+                ..
             }
             | Stmt::RuleDecl {
                 name,

@@ -234,7 +234,19 @@ pub(super) fn try_keyword_dispatch(
         || keyword("token", rest).is_some()
         || keyword("rule", rest).is_some()
     {
-        let (rest, stmt) = super::super::class::token_decl(rest)?;
+        let (rest, mut stmt) = super::super::class::token_decl(rest)?;
+        // Record the `my`/`our` scope so a duplicate `my token`/`our token` in one
+        // grammar body is detected as X::Redeclaration. `my` is the default
+        // declarator here (not `state`, not `our`).
+        if let Stmt::TokenDecl {
+            is_my: tok_is_my,
+            is_our: tok_is_our,
+            ..
+        } = &mut stmt
+        {
+            *tok_is_our = is_our;
+            *tok_is_my = !_is_state && !is_our;
+        }
         if apply_modifier {
             return parse_statement_modifier(rest, stmt).map(Some);
         }
