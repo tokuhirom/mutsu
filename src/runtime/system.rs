@@ -266,36 +266,44 @@ impl Interpreter {
                     if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn")
         };
 
-        // Within one class/role/grammar body, two `my`/`our`-scoped methods of the
-        // same name are an X::Redeclaration (a plain `method foo` redeclared is the
-        // separate X::Method::Duplicate, not handled here). Mirrors Rakudo.
+        // Within one class/role/grammar body, two `my`/`our`-scoped methods (or
+        // tokens) of the same name are an X::Redeclaration (a plain `method`/`token`
+        // redeclared is the separate X::Method::Duplicate, not handled here).
+        // Mirrors Rakudo.
         let dup_scoped_method = |body: &[Stmt]| -> Option<RuntimeError> {
             let mut seen_my: HashSet<String> = HashSet::new();
             let mut seen_our: HashSet<String> = HashSet::new();
             for s in body {
-                if let Stmt::MethodDecl {
-                    name,
-                    is_my,
-                    is_our,
-                    ..
-                } = s
-                {
-                    let n = name.resolve().to_string();
-                    if n.is_empty() {
-                        continue;
-                    }
-                    let dup = (*is_my && !seen_my.insert(n.clone()))
-                        || (*is_our && !seen_our.insert(n.clone()));
-                    if dup {
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("symbol".to_string(), Value::str(n.clone()));
-                        attrs.insert("what".to_string(), Value::str("method".to_string()));
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!("Redeclaration of method '{}'", n)),
-                        );
-                        return Some(RuntimeError::typed("X::Redeclaration", attrs));
-                    }
+                let (name, is_my, is_our, what) = match s {
+                    Stmt::MethodDecl {
+                        name,
+                        is_my,
+                        is_our,
+                        ..
+                    } => (name, *is_my, *is_our, "method"),
+                    Stmt::TokenDecl {
+                        name,
+                        is_my,
+                        is_our,
+                        ..
+                    } => (name, *is_my, *is_our, "regex"),
+                    _ => continue,
+                };
+                let n = name.resolve().to_string();
+                if n.is_empty() {
+                    continue;
+                }
+                let dup = (is_my && !seen_my.insert(n.clone()))
+                    || (is_our && !seen_our.insert(n.clone()));
+                if dup {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("symbol".to_string(), Value::str(n.clone()));
+                    attrs.insert("what".to_string(), Value::str(what.to_string()));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!("Redeclaration of {} '{}'", what, n)),
+                    );
+                    return Some(RuntimeError::typed("X::Redeclaration", attrs));
                 }
             }
             None

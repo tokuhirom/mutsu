@@ -546,6 +546,10 @@ pub(crate) enum Stmt {
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         multi: bool,
+        /// `my token foo` — lexically scoped; a duplicate is X::Redeclaration.
+        is_my: bool,
+        /// `our token foo` — package scoped; a duplicate is X::Redeclaration.
+        is_our: bool,
     },
     RuleDecl {
         name: Symbol,
