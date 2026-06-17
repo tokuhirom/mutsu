@@ -495,11 +495,59 @@ impl Compiler {
                 return;
             }
         }
+        // List-associative chaining for X/Z: `a X b X c` is a single n-ary
+        // cross/zip producing flat n-tuples, not left-nested pairs. Collect a
+        // chain of identical (meta, op) MetaOps into one flat operand list and
+        // emit a single n-ary op. Only the plain general op reaches here; the
+        // special short-circuit ops above return early, so they never chain.
+        if meta == "X" || meta == "Z" {
+            let mut operands: Vec<&Expr> = Vec::new();
+            Self::collect_meta_chain(meta, op, left, right, &mut operands);
+            if operands.len() > 2 {
+                for operand in &operands {
+                    self.compile_expr(operand);
+                }
+                let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
+                let op_idx = self.code.add_constant(Value::str(op.to_string()));
+                self.code.emit(OpCode::MetaOpNary {
+                    meta_idx,
+                    op_idx,
+                    count: operands.len() as u32,
+                });
+                return;
+            }
+        }
         self.compile_expr(left);
         self.compile_expr(right);
         let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
         let op_idx = self.code.add_constant(Value::str(op.to_string()));
         self.code.emit(OpCode::MetaOp { meta_idx, op_idx });
+    }
+
+    /// Flatten a left-nested chain of identical (meta, op) MetaOps into a flat
+    /// operand list. `a X b X c` parses as `MetaOp(X, MetaOp(X, a, b), c)`; this
+    /// collects `[a, b, c]`.
+    fn collect_meta_chain<'a>(
+        meta: &str,
+        op: &str,
+        left: &'a Expr,
+        right: &'a Expr,
+        operands: &mut Vec<&'a Expr>,
+    ) {
+        if let Expr::MetaOp {
+            meta: lm,
+            op: lo,
+            left: ll,
+            right: lr,
+        } = left
+            && lm == meta
+            && lo == op
+        {
+            Self::collect_meta_chain(meta, op, ll, lr, operands);
+        } else {
+            operands.push(left);
+        }
+        operands.push(right);
     }
 
     /// Compile InfixFunc (atan2, sprintf, flip-flop, etc.).

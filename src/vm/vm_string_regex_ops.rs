@@ -2185,6 +2185,145 @@ impl Interpreter {
         Ok(())
     }
 
+    /// List-associative n-ary cross (`X`) / zip (`Z`). `a X b X c` combines all
+    /// operands at once so each result is a flat n-tuple (or an n-way reduction
+    /// when an operator is attached), matching Raku's list associativity.
+    pub(super) fn exec_meta_op_nary(
+        &mut self,
+        code: &CompiledCode,
+        meta_idx: u32,
+        op_idx: u32,
+        count: u32,
+    ) -> Result<(), RuntimeError> {
+        let n = count as usize;
+        let mut operands: Vec<Value> = Vec::with_capacity(n);
+        for _ in 0..n {
+            operands.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        operands.reverse();
+        let meta = Self::const_str(code, meta_idx).to_string();
+        let op = Self::const_str(code, op_idx).to_string();
+        let make_tuple = op.is_empty() || op == ",";
+
+        let result = match meta.as_str() {
+            "X" => {
+                let value_is_lazy = |v: &Value| match v {
+                    Value::LazyList(_) => true,
+                    Value::Range(_, end)
+                    | Value::RangeExcl(_, end)
+                    | Value::RangeExclStart(_, end)
+                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+                    Value::GenericRange { end, .. } => {
+                        let end_f = end.to_f64();
+                        end_f.is_infinite() && end_f.is_sign_positive()
+                    }
+                    _ => false,
+                };
+                let lazy_inputs = operands.iter().any(value_is_lazy);
+                let lazy_limit = 256usize;
+                let lists: Vec<Vec<Value>> = operands
+                    .iter()
+                    .map(|v| {
+                        if value_is_lazy(v) {
+                            let iter = ZipIter::from_value(v);
+                            let len = iter.len().min(lazy_limit);
+                            (0..len).map(|i| iter.nth(i)).collect()
+                        } else {
+                            runtime::value_to_list(v)
+                        }
+                    })
+                    .collect();
+                // Cartesian product: iterate combinations in row-major order,
+                // varying the last operand fastest (matches Raku's X ordering).
+                let mut results: Vec<Value> = Vec::new();
+                let mut indices = vec![0usize; n];
+                let any_empty = lists.iter().any(|l| l.is_empty());
+                if !any_empty {
+                    'outer: loop {
+                        let combo: Vec<Value> =
+                            (0..n).map(|k| lists[k][indices[k]].clone()).collect();
+                        results.push(self.combine_meta_tuple(&op, make_tuple, combo)?);
+                        // Increment the mixed-radix index from the right.
+                        let mut k = n;
+                        loop {
+                            if k == 0 {
+                                break 'outer;
+                            }
+                            k -= 1;
+                            indices[k] += 1;
+                            if indices[k] < lists[k].len() {
+                                break;
+                            }
+                            indices[k] = 0;
+                        }
+                    }
+                }
+                if lazy_inputs {
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                        results,
+                    )))
+                } else if results.is_empty() {
+                    Value::Seq(std::sync::Arc::new(Vec::new()))
+                } else {
+                    Value::array(results)
+                }
+            }
+            "Z" => {
+                let iters: Vec<ZipIter> = operands.iter().map(ZipIter::from_value).collect();
+                let all_lazy = iters.iter().all(|it| it.is_lazy());
+                let len = iters
+                    .iter()
+                    .map(|it| it.len())
+                    .min()
+                    .unwrap_or(0)
+                    .min(MAX_ZIP_EXPAND);
+                let mut results: Vec<Value> = Vec::with_capacity(len);
+                for i in 0..len {
+                    let combo: Vec<Value> = iters.iter().map(|it| it.nth(i)).collect();
+                    results.push(self.combine_meta_tuple(&op, make_tuple, combo)?);
+                }
+                if all_lazy {
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                        results,
+                    )))
+                } else {
+                    Value::array(results)
+                }
+            }
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Unknown n-ary meta operator: {}",
+                    meta
+                )));
+            }
+        };
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Combine one tuple of operands for an n-ary X/Z: either build a flat
+    /// tuple (no operator) or left-fold the operator across all elements.
+    fn combine_meta_tuple(
+        &mut self,
+        op: &str,
+        make_tuple: bool,
+        combo: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if make_tuple {
+            return Ok(Value::array(combo));
+        }
+        let mut iter = combo.into_iter();
+        let mut acc = iter.next().unwrap_or(Value::Nil);
+        for elem in iter {
+            acc = if op == "~~" {
+                Value::Bool(self.vm_smart_match(&acc, &elem))
+            } else {
+                self.eval_reduction_operator_values(op, &acc, &elem)?
+            };
+        }
+        Ok(acc)
+    }
+
     pub(super) fn exec_infix_func_op(
         &mut self,
         code: &CompiledCode,
