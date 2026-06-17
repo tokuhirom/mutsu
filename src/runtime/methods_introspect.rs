@@ -565,6 +565,11 @@ impl Interpreter {
             other => {
                 // Check container type metadata for typed Hash/Array
                 if let Some(info) = self.container_type_metadata(other) {
+                    // A declared type (e.g. an immutable `Map`) names the value
+                    // directly, mirroring `.WHAT`.
+                    if let Some(ref declared) = info.declared_type {
+                        return Ok(Value::str(declared.clone()));
+                    }
                     match other {
                         Value::Hash(_) => {
                             if let Some(ref key_type) = info.key_type {

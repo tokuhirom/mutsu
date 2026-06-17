@@ -132,7 +132,7 @@ fn is_self_array_ref_marker(v: &Value) -> bool {
 /// immediately followed by another word char. A digit-leading key (`"1"`), a
 /// dotted key (`"1.5"`), or a key with a trailing/doubled `-`/`'` (`"x-"`,
 /// `"a--b"`) is NOT an identifier and renders as `"key" => value`.
-fn is_adverbial_pair_key(s: &str) -> bool {
+pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
     let mut chars = s.chars().peekable();
     match chars.next() {
         Some(c) if c.is_alphabetic() || c == '_' => {}
@@ -511,6 +511,30 @@ pub fn raku_value(v: &Value) -> String {
             format!("{} => {}", key_repr, raku_value(value))
         }
         Value::Hash(map) => {
+            // An immutable Map renders as `Map.new((:k(v), ...))`.
+            if map.declared_type.as_deref() == Some("Map") {
+                let mut sorted_keys: Vec<&String> = map.keys().collect();
+                sorted_keys.sort();
+                let parts: Vec<String> = sorted_keys
+                    .iter()
+                    .map(|k| {
+                        let v = &map[*k];
+                        let repr = if matches!(v, Value::Nil) {
+                            "Any".to_string()
+                        } else {
+                            raku_hash_value(v)
+                        };
+                        let typed = map.typed_key(k);
+                        match &typed {
+                            Value::Str(s) if is_adverbial_pair_key(s) => {
+                                format!(":{}({})", s, repr)
+                            }
+                            _ => format!("{} => {}", raku_value(&typed), repr),
+                        }
+                    })
+                    .collect();
+                return format!("Map.new(({}))", parts.join(","));
+            }
             // Cycle detection for recursive hash structures.
             // When a self-referencing hash is found, produce Raku-style output:
             //   ((my %Hash_<ptr>) = {:a(42), :b(%Hash_<ptr>)})

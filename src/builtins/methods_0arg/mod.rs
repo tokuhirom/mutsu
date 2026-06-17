@@ -572,7 +572,10 @@ fn dispatch_capture(
             for (k, v) in named {
                 map.insert(k.clone(), v.clone());
             }
-            Some(Ok(Value::hash(map)))
+            // Capture.hash returns an immutable Map, not a mutable Hash.
+            let mut data = crate::value::HashData::new(map);
+            data.declared_type = Some("Map".to_string());
+            Some(Ok(Value::Hash(std::sync::Arc::new(data))))
         }
         "list" => Some(Ok(Value::array(positional.to_vec()))),
         "elems" => Some(Ok(Value::Int(positional.len() as i64))),
