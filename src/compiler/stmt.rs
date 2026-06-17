@@ -1195,6 +1195,13 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // A genuine `$*x = ...` assignment to a never-declared dynamic var
+                // throws X::Dynamic::NotFound. Only the plain Assign form (not `:=`)
+                // reaches here; param binding / element auto-viv / `my` decls use
+                // other paths and are intentionally exempt.
+                if matches!(op, AssignOp::Assign) {
+                    self.maybe_emit_dynamic_var_check(effective_name);
+                }
                 // Emit readonly check for assignment to potentially readonly params.
                 // Skip the check for `:=` (rebinding replaces the container).
                 let name_idx = self

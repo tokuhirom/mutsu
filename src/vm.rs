@@ -1554,6 +1554,24 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            OpCode::CheckDynamicVarDeclared(name_idx) => {
+                // A genuine assignment to a dynamic variable (`$*x = ...`) that is
+                // not present in the dynamic scope throws X::Dynamic::NotFound
+                // (Raku semantics — a dynamic var must be declared with `my $*x`
+                // first). Built-in dynamic vars (`$*OUT`, `$*CWD`, ...) are seeded
+                // into env and a caller's `my $*x` propagates into the callee env,
+                // so this only fires for a never-declared dynamic variable.
+                let name = Self::const_str(code, *name_idx);
+                if !self.env().contains_key(name) && !self.is_var_dynamic(name) {
+                    let display = if name.starts_with(['@', '%', '&']) {
+                        name.to_string()
+                    } else {
+                        format!("${}", name)
+                    };
+                    return Err(runtime::utils::dynamic_not_found_error(&display));
+                }
+                *ip += 1;
+            }
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
                 let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
                 let is_rebind = self.rebind_context;

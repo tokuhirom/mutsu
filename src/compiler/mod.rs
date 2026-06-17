@@ -271,6 +271,28 @@ impl Compiler {
         }
     }
 
+    /// For a genuine assignment (`$*x = ...`) to a dynamic variable, emit a
+    /// runtime guard that throws X::Dynamic::NotFound when the dynamic var is
+    /// not in scope (Raku requires `my $*x` first). Called ONLY from the plain
+    /// `Stmt::Assign` / `Expr::AssignExpr` paths — never from parameter binding,
+    /// element auto-vivification, or `my` declarations — so those legitimately
+    /// introduce a fresh dynamic var without tripping the guard. No-op for any
+    /// non-dynamic name (the sigil-stripped form must begin with the `*` twigil).
+    fn maybe_emit_dynamic_var_check(&mut self, name: &str) {
+        let bare = name.trim_start_matches(['$', '@', '%', '&']);
+        if let Some(rest) = bare.strip_prefix('*')
+            && !rest.is_empty()
+            && !self.local_map.contains_key(name)
+        {
+            // Use the same (possibly package-qualified) key the store uses so the
+            // runtime env lookup in CheckDynamicVarDeclared matches the declared
+            // var's env entry exactly.
+            let key = self.qualify_variable_name(name);
+            let idx = self.code.add_constant(Value::str(key));
+            self.code.emit(OpCode::CheckDynamicVarDeclared(idx));
+        }
+    }
+
     /// Push the current value of a named scalar variable, mirroring the slot
     /// resolution of `emit_set_named_var` (local slot if present, else global).
     fn emit_get_named_var(&mut self, name: &str) {
@@ -376,14 +398,22 @@ impl Compiler {
         params_def: &[crate::ast::ParamDef],
     ) -> Vec<Stmt> {
         let bind_stmt = |name: String, expr: Expr| {
-            if name.starts_with('&') {
+            // A destructured signature parameter DECLARES its target, so a
+            // dynamic-twigil target (`:value($*PATH)`) must be introduced as a
+            // fresh dynamic var (VarDecl with is_dynamic), not treated as a bare
+            // assignment to a pre-existing dynamic var (which would wrongly throw
+            // X::Dynamic::NotFound). `&` targets likewise declare.
+            let is_dynamic_target = name
+                .trim_start_matches(['$', '@', '%', '&'])
+                .starts_with('*');
+            if name.starts_with('&') || is_dynamic_target {
                 Stmt::VarDecl {
                     name,
                     expr,
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
-                    is_dynamic: false,
+                    is_dynamic: is_dynamic_target,
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),

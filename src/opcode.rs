@@ -106,6 +106,13 @@ pub(crate) enum OpCode {
     SetGlobal(u32),
     /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
     SetGlobalRaw(u32),
+    /// Verify that a dynamic variable (`$*x` / `@*x` / `%*x`) is in scope before a
+    /// genuine assignment to it. Throws X::Dynamic::NotFound when it was never
+    /// declared (`my $*x`) nor is a built-in dynamic var. Emitted only for plain
+    /// `Stmt::Assign` / `Expr::AssignExpr` to a `*`-twigil name (NOT for param
+    /// binding, element auto-viv, or `my` declarations). Operand: constant index
+    /// of the assignment target name (sigil-stripped, e.g. `*PATH` / `%*OPTS`).
+    CheckDynamicVarDeclared(u32),
     /// Load the value of an `our`-scoped variable from the persistent our_vars store.
     /// Falls back to Nil if not found. Used for `our` redeclarations without initializer.
     GetOurVar(u32),
