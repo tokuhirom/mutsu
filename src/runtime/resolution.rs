@@ -877,12 +877,21 @@ impl Interpreter {
     }
 
     pub(super) fn force_lazy_list(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
-        // A lazy map/grep pipeline is rooted at an infinite source; a strict
-        // force cannot terminate. Match raku (and the VM path) and throw
-        // X::Cannot::Lazy. Bounded pulls go through the VM's `force_lazy_pipe`.
-        // (Its cache is seeded empty, so the early cache return below would
-        // otherwise yield a wrong partial/empty result.)
+        // A lazy map/grep pipeline is rooted at an infinite source. It can still
+        // terminate when the callback runs `last`; attempt a bounded force and
+        // return the result if the pipe became `done`, otherwise throw
+        // X::Cannot::Lazy (genuinely infinite). Mirrors `force_lazy_list_vm`.
         if list.lazy_pipe.is_some() {
+            const EAGER_FORCE_CAP: usize = 1_000_000;
+            let forced = self.force_lazy_pipe(list, EAGER_FORCE_CAP)?;
+            let done = list
+                .lazy_pipe
+                .as_ref()
+                .map(|p| p.lock().unwrap().done)
+                .unwrap_or(true);
+            if done {
+                return Ok(forced);
+            }
             return Err(RuntimeError::typed_msg(
                 "X::Cannot::Lazy",
                 "Cannot coerce an infinite lazy list to a strict list",
