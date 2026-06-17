@@ -335,7 +335,7 @@ impl Interpreter {
             }
         }
         let out = self.eval_produce_over_items(callable, items)?;
-        Ok(Value::array(out))
+        Ok(Value::Seq(std::sync::Arc::new(out)))
     }
 
     /// zip:with — zip lists using a custom combining function.
