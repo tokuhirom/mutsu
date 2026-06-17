@@ -834,6 +834,41 @@ fn format_temporal_num(f: f64) -> String {
     }
 }
 
+/// Render a `Backtrace::Frame` instance as its `.Str`/`.gist` text.
+/// Shared by the frame's `.Str` handler and by `Backtrace.concise`/`.summary`
+/// so the natively-computed strings stay byte-identical to a `.grep(...).join`.
+fn backtrace_frame_str(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> String {
+    let map = attributes.as_map();
+    let subname = map
+        .get("subname")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+    let file = map
+        .get("file")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+    let line = map
+        .get("line")
+        .map(|v| v.to_string_value())
+        .unwrap_or_else(|| "0".to_string());
+    if subname == "<unit>" {
+        format!("  in block <unit> at {} line {}", file, line)
+    } else {
+        format!("  in sub {} at {} line {}", subname, file, line)
+    }
+}
+
+/// A `Backtrace::Frame` is a "routine" frame when it has a real subname
+/// (not the synthetic `<unit>` bottom frame and not an anonymous block).
+fn backtrace_frame_is_routine(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> bool {
+    let subname = attributes
+        .as_map()
+        .get("subname")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+    !subname.is_empty() && subname != "<unit>"
+}
+
 /// Re-export raku_value for backward compatibility.
 pub use raku_repr::raku_value;
 
@@ -1280,11 +1315,35 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .unwrap_or(0);
                     return Some(Ok(Value::str(format!("Backtrace({} frames)", count))));
                 }
-                "list" | "List" => {
+                "list" | "List" | "flat" | "Seq" => {
                     if let Some(frames) = attributes.as_map().get("frames") {
                         return Some(Ok(frames.clone()));
                     }
                     return Some(Ok(Value::array(vec![])));
+                }
+                "concise" | "summary" => {
+                    let frames = attributes
+                        .as_map()
+                        .get("frames")
+                        .map(crate::runtime::utils::value_to_list)
+                        .unwrap_or_default();
+                    let want_summary = method == "summary";
+                    let mut out = String::new();
+                    for frame in &frames {
+                        if let Value::Instance { attributes: fa, .. } = frame {
+                            let is_routine = backtrace_frame_is_routine(fa);
+                            // is-hidden / is-setting are always false here (mutsu
+                            // does not track hidden or CORE-setting frames).
+                            // concise: only non-hidden, non-setting routines.
+                            // summary: non-hidden items that are routines or
+                            // non-setting (i.e. everything here).
+                            let keep = if want_summary { true } else { is_routine };
+                            if keep {
+                                out.push_str(&backtrace_frame_str(fa));
+                            }
+                        }
+                    }
+                    return Some(Ok(Value::str(out)));
                 }
                 "elems" => {
                     if let Some(frames) = attributes.as_map().get("frames") {
@@ -1319,32 +1378,36 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .unwrap_or(Value::Int(0))));
                 }
                 "Str" | "gist" => {
+                    return Some(Ok(Value::str(backtrace_frame_str(attributes))));
+                }
+                "code" => {
+                    // The Code object for this frame. mutsu does not retain the
+                    // actual routine, so synthesize a Routine carrying the name
+                    // (`.code.name` is the documented use).
                     let subname = attributes
                         .as_map()
                         .get("subname")
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    let file = attributes
+                    return Some(Ok(Value::Routine {
+                        package: Symbol::intern("GLOBAL"),
+                        name: Symbol::intern(&subname),
+                        is_regex: false,
+                    }));
+                }
+                "name" => {
+                    return Some(Ok(attributes
                         .as_map()
-                        .get("file")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let line = attributes
-                        .as_map()
-                        .get("line")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|| "0".to_string());
-                    if subname == "<unit>" {
-                        return Some(Ok(Value::str(format!(
-                            "  in block <unit> at {} line {}",
-                            file, line
-                        ))));
-                    } else {
-                        return Some(Ok(Value::str(format!(
-                            "  in sub {} at {} line {}",
-                            subname, file, line
-                        ))));
-                    }
+                        .get("subname")
+                        .cloned()
+                        .unwrap_or(Value::str(String::new()))));
+                }
+                "is-routine" => {
+                    return Some(Ok(Value::Bool(backtrace_frame_is_routine(attributes))));
+                }
+                "is-hidden" | "is-setting" => {
+                    // mutsu does not track hidden or CORE-setting frames.
+                    return Some(Ok(Value::Bool(false)));
                 }
                 _ => {}
             }
