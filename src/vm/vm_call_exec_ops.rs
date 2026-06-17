@@ -90,20 +90,25 @@ impl Interpreter {
             let written = self.end_carrier(carrier_saved);
             exec_result?;
             let fully = self.writeback_carrier_writes(code, &written);
-            // EVAL writes caller lexicals exclusively through SetGlobal ->
-            // set_env_with_main_alias, so the carrier log is complete for it and
-            // the writeback above reconciled every scalar it touched (a diverged
-            // container leaves `fully` false). When the writeback was fully
-            // precise we can drop the blanket env_dirty net that the nested run
-            // (`with_nested_registers`) sets unconditionally — eliminating the
-            // spurious per-EVAL barrier pull (docs/vm-single-store.md Slice F
-            // prereq: 1001 -> ~1 pulls on an EVAL-in-a-hot-loop). Restoring the
-            // *pre-carrier* dirty (not a blind clear) preserves a dirty the
-            // caller already owed. Scoped to EVAL because other carriers (regex
-            // subrule calls, interpreter fallbacks) can write caller lexicals
-            // through paths that bypass the log (e.g. regex `:let`); they keep
-            // the net until open-question #2 (complete write logging) is closed.
-            if fully && name == "EVAL" {
+            // This bareword carrier (EVAL and other interpreter-only routines)
+            // writes caller lexicals through `set_env_with_main_alias` (EVAL's
+            // SetGlobal) or — for an embedded regex `{ }`/`:my`/`:let` block —
+            // directly into env, which now also logs into the carrier set
+            // (regex_eval.rs, Slice C' / open-question #2). The writeback above
+            // reconciled every scalar it wrote into a current-frame slot; a
+            // diverged container leaves `fully` false (cell-aware, #3227) and
+            // ancestor lexicals have no current-frame slot (read straight from
+            // env). When the writeback was fully precise we drop the blanket
+            // env_dirty net that the nested run (`with_nested_registers`) sets
+            // unconditionally, eliminating the spurious per-carrier barrier pull
+            // (docs/vm-single-store.md Slice C': 1001 -> ~1 pulls on an
+            // EVAL-in-a-hot-loop). Restoring the *pre-carrier* dirty (not a blind
+            // clear) preserves a dirty the caller already owed. Validated by the
+            // full roast whitelist (byte-identical to the EVAL-only baseline) plus
+            // the regex/`:let`/`s///` t/ pins. (The `pairs`/`slip` carriers below
+            // keep their blanket — their interpreter builtins write through
+            // unlogged paths; see there.)
+            if fully {
                 self.env_dirty = pre_dirty;
             } else {
                 self.env_dirty = true;
@@ -146,7 +151,18 @@ impl Interpreter {
             native_result?;
             return Ok(());
         }
-        // Carrier fallback: precise scalar writeback + env_dirty net (see exec_exec_call_op).
+        // Carrier fallback: precise scalar writeback + *unconditional* env_dirty
+        // net. Unlike the bareword `exec_call_values` carrier, this one keeps the
+        // blanket: it dispatches interpreter builtins (Test `is`/`ok`,
+        // topic-mutating `s///`, ...) whose caller-lexical writes do NOT all flow
+        // through `set_env_with_main_alias`/the carrier log, so the write set can
+        // be empty while the carrier still wrote a caller slot — and
+        // `writeback_carrier_writes` returns `true` (fully) for an empty set, which
+        // would wrongly license dropping the net (regressed `t/regex-m-s.t`
+        // `s/// updates $_`, `t/element-bind-cell.t`,
+        // `t/regex-declarative-modifiers.t`). Generalizing the drop here needs the
+        // full open-question-#2 audit of every interpreter env-write path
+        // (docs/vm-single-store.md Slice C').
         let carrier_saved = self.begin_carrier();
         let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
         let written = self.end_carrier(carrier_saved);
@@ -205,7 +221,18 @@ impl Interpreter {
             self.stack.push(native_result?);
             return Ok(());
         }
-        // Carrier fallback: precise scalar writeback + env_dirty net (see exec_exec_call_op).
+        // Carrier fallback: precise scalar writeback + *unconditional* env_dirty
+        // net. Unlike the bareword `exec_call_values` carrier, this one keeps the
+        // blanket: it dispatches interpreter builtins (Test `is`/`ok`,
+        // topic-mutating `s///`, ...) whose caller-lexical writes do NOT all flow
+        // through `set_env_with_main_alias`/the carrier log, so the write set can
+        // be empty while the carrier still wrote a caller slot — and
+        // `writeback_carrier_writes` returns `true` (fully) for an empty set, which
+        // would wrongly license dropping the net (regressed `t/regex-m-s.t`
+        // `s/// updates $_`, `t/element-bind-cell.t`,
+        // `t/regex-declarative-modifiers.t`). Generalizing the drop here needs the
+        // full open-question-#2 audit of every interpreter env-write path
+        // (docs/vm-single-store.md Slice C').
         let carrier_saved = self.begin_carrier();
         let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
         let written = self.end_carrier(carrier_saved);

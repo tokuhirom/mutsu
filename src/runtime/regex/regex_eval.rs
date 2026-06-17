@@ -476,7 +476,20 @@ impl Interpreter {
                 let old_repr = snapshot.get(k).map(|s| s.as_str()).unwrap_or("");
                 let new_repr = format!("{:?}", v);
                 if old_repr != new_repr {
-                    self.pending_local_updates.push((k.resolve(), v.clone()));
+                    let name = k.resolve();
+                    // Slice C' (docs/vm-single-store.md, open-question #2): an
+                    // embedded regex `{ ... }` / `:my`/`:let` block writes a caller
+                    // lexical *directly* into `env`, bypassing
+                    // `set_env_with_main_alias`. If a carrier is active (the regex
+                    // ran inside an EVAL / interpreter fallback), log the name into
+                    // the carrier write set too, so the carrier-return writeback
+                    // reconciles it precisely and the blanket `env_dirty` net can be
+                    // dropped for non-EVAL carriers as well. Logging a superset is
+                    // safe — the writeback filters by the caller's compiled slots.
+                    if let Some(set) = self.carrier_writes.as_mut() {
+                        set.insert(name.clone());
+                    }
+                    self.pending_local_updates.push((name, v.clone()));
                 }
             }
         }
