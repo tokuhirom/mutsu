@@ -352,6 +352,12 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
+        // `X::Foo.throw`/`.fail`/... on an Exception type object (compiled here
+        // because the bareword target routes through CallMethodMut) requires a
+        // concrete invocant: X::Parameter::InvalidConcreteness.
+        if let Some(err) = self.exception_concreteness_error(&method, &args, &target) {
+            return Err(err);
+        }
         // Force lazy IO lines for non-lazy-preserving methods
         let target = if matches!(&target, Value::LazyIoLines { .. })
             && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
