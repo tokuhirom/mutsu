@@ -274,6 +274,22 @@ pub(super) fn dispatch(
                     .collect::<Vec<_>>()
                     .join("");
                 Some(Some(Ok(Value::str(joined))))
+            } else if target.is_range() {
+                // A Range has no materialized backing slice, so `as_list_items`
+                // returns None. Expand it to its elements and join with the
+                // empty default separator — NOT `target.to_string_value()`,
+                // which renders the Range with space-separated gist semantics
+                // (`(1..5).join` must be "12345", not "1 2 3 4 5").
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.iter().any(|v| matches!(v, Value::Instance { .. })) {
+                    return Some(None);
+                }
+                let joined = items
+                    .iter()
+                    .map(|v| v.to_str_context())
+                    .collect::<Vec<_>>()
+                    .join("");
+                Some(Some(Ok(Value::str(joined))))
             } else {
                 Some(Some(Ok(Value::str(target.to_string_value()))))
             }
