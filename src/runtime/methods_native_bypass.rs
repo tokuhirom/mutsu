@@ -214,6 +214,38 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut sorted_keys: Vec<&String> = map.keys().collect();
         sorted_keys.sort();
+        // An immutable Map renders as `Map.new((:k(v), ...))`, not the
+        // `(my % = ...)` typed-hash form.
+        if info.declared_type.as_deref() == Some("Map") {
+            let parts: Vec<String> =
+                sorted_keys
+                    .iter()
+                    .map(|k| {
+                        let v = &map[*k];
+                        let repr = if matches!(v, Value::Nil) {
+                            "Any".to_string()
+                        } else {
+                            self.call_method_with_values(v.clone(), "raku", vec![])
+                                .map(|r| r.to_string_value())
+                                .unwrap_or_else(|_| format!("{:?}", v))
+                        };
+                        let typed = map.typed_key(k);
+                        match &typed {
+                        Value::Str(s)
+                            if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(s) =>
+                        {
+                            format!(":{}({})", s, repr)
+                        }
+                        _ => format!(
+                            "{} => {}",
+                            crate::builtins::methods_0arg::raku_value(&typed),
+                            repr
+                        ),
+                    }
+                    })
+                    .collect();
+            return Ok(Value::str(format!("Map.new(({}))", parts.join(","))));
+        }
         // When key type is non-string (e.g. Int), use `key => value` format
         // instead of colonpair `:key(value)` format.
         let use_arrow = info.key_type.is_some()
