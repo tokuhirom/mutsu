@@ -284,8 +284,10 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         }
         (r, format!("{}{}", prefix, n))
     } else {
-        return Err(PError::fatal(
-            "X::Syntax::Malformed: Malformed my variable (did you mean to declare a sigilless variable with \\?)".to_string(),
+        return Err(illegal_my_var_error(
+            "X::Syntax::Malformed",
+            "Malformed my (did you mean to declare a sigilless \\var or $var?)",
+            &[],
         ));
     };
     let term_decl_name = if sigil == b'$' {
