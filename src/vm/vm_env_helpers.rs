@@ -441,15 +441,15 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         written: &std::collections::HashSet<String>,
-    ) {
+    ) -> bool {
         if written.is_empty() {
-            return;
+            return true;
         }
+        // Tracks whether every written name with a caller slot was made coherent
+        // here (so the caller can drop the blanket `env_dirty` net). A name left
+        // to the barrier pull flips this to false.
+        let mut fully = true;
         for (i, name) in code.locals.iter().enumerate() {
-            // Only reconcile plain-scalar slots (no live cells to clobber).
-            if !Self::is_writeback_safe_scalar(&self.locals[i]) {
-                continue;
-            }
             if name.starts_with('!') {
                 continue;
             }
@@ -462,16 +462,35 @@ impl Interpreter {
             if !written.contains(name) && !bare.is_some_and(|b| written.contains(b)) {
                 continue;
             }
-            if let Some(val) = self.env().get(name).cloned() {
-                self.locals[i] = val;
+            let env_val = self
+                .env()
+                .get(name)
+                .cloned()
+                .or_else(|| bare.and_then(|b| self.env().get(b).cloned()));
+            let Some(env_val) = env_val else {
+                // The carrier logged the name but env no longer holds it (e.g. a
+                // scoped key dropped on block exit). Nothing to reconcile.
+                continue;
+            };
+            // A plain scalar is safe to copy from env: it carries no live `:=`
+            // cell, so overwriting the slot cannot clobber shared state. This is
+            // the common EVAL case (`$x = scalar`).
+            if Self::is_writeback_safe_scalar(&self.locals[i]) {
+                self.locals[i] = env_val;
                 continue;
             }
-            if let Some(bare) = bare
-                && let Some(val) = self.env().get(bare).cloned()
-            {
-                self.locals[i] = val;
+            // A container/instance slot is NEVER overwritten from env: env may
+            // hold a COW-detached copy whose write would destroy a live interior
+            // `:=` cell (regressed S03-binding/nested.t). It is coherent already
+            // iff env and the slot share the same Arc (an in-place mutation the
+            // slot observes through the shared container). If they diverge (a
+            // whole-container reassignment, or a detached copy), leave it to the
+            // `env_dirty` barrier pull and signal "not fully reconciled".
+            if !crate::vm::vm_method_dispatch::cheaply_unchanged(&self.locals[i], &env_val) {
+                fully = false;
             }
         }
+        fully
     }
 
     pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {

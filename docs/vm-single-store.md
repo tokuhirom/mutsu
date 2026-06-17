@@ -276,12 +276,61 @@ for wall-clock.
   > explicit (the bind reverse-write-throughs or sets its own precise signal),
   > plus the open-question-#2 audit that no carrier write bypasses the log.
 
-- **Slice C — R1 reverse write-through.**
-  Route the by-name var/control/register setters through
-  `set_env_through_slot(code, …)` (env write + `locals_set_by_name`). Drop their
-  `env_dirty` marks. Gate: `S02-magicals`, `S04-declarations` (our/dynamic),
-  `S10-packages`, `&sub` registration; pins `t/our-env-dirty.t`,
-  `t/dynamic-write-through.t`.
+- **Slice C — R1 reverse write-through. SUPERSEDED by measurement (2026-06-17).**
+  A `MUTSU_VM_STATS` sweep of the canonical R1 patterns in a hot loop (our-var
+  `$c=`, dynamic `$*dyn=`, by-name container `@a.push`, bareword→call) found each
+  already does **only ~1–2 reverse-sync pulls total, effective=0** — the pure
+  scalar by-name writers do **not** set `env_dirty` on the hot path, so there is
+  no standalone pull traffic for Slice C to remove. The only large spurious pull
+  source measured was the **EVAL/carrier** site (≈1001 pulls / 1000 EVALs,
+  effective=0), so the real lever moved to the Slice F prereq below. The cold R1
+  declaration/registration sites (`is Trait` handlers, class/enum/module reg)
+  still set `env_dirty`, but they are metric-neutral and several are not simple
+  R1 (module load imports an unknown name-set; enum reg writes many variant
+  names) — they convert as part of the Slice F audit, not as a standalone slice.
+
+- **Slice F prereq — EVAL carrier precise reconcile + drop its blanket. DONE (2026-06-17).**
+  The per-EVAL blanket `env_dirty` is not set at the carrier site itself but by
+  `with_nested_registers` (`src/vm.rs`), which unconditionally flags dirty after
+  *any* nested run so the restored outer locals re-pull. For EVAL this is
+  spurious: EVAL writes caller lexicals exclusively through
+  `SetGlobal → set_env_with_main_alias`, which the Slice B carrier log already
+  captures, so `writeback_carrier_writes` reconciles every scalar it wrote on
+  return. `writeback_carrier_writes` is now **cell-aware** and returns a
+  `fully_reconciled` bool: it copies plain scalars from env, **never overwrites a
+  container/instance slot** (env may hold a COW-detached copy with live interior
+  `:=` cells — the S03-binding/nested.t hazard), treating a container as coherent
+  only when env and the slot share the same `Arc` (`cheaply_unchanged`), else
+  leaving it to the barrier (`fully=false`). The EVAL carrier site
+  (`vm_call_exec_ops.rs`) then restores the *pre-carrier* `env_dirty` (preserving
+  a dirty the caller already owed) instead of the blanket when `fully && name ==
+  "EVAL"`. Result: the EVAL-in-a-hot-loop benchmark drops **1001 → 2** pulls,
+  output unchanged. Pinned by `t/eval-carrier-precise-writeback.t` (14:
+  same-frame / ancestor-bare-GetLocal / two-deep / per-iteration / whole-array &
+  whole-hash reassignment / in-place push / regex-`:let`-inside-EVAL /
+  interleaved-hot-local). Gate: `S29-context/eval.t`, `S05-modifier/my.t`,
+  `S03-binding/nested.t`, `t/eval-env-dirty.t` green.
+
+  > **Why EVAL-only (the frame-scoping + open-q#2 lesson).** `env_dirty` is
+  > **frame-scoped** (`push_call_frame` saves+resets it, `pop_call_frame`
+  > restores), so a carrier's write reaches the caller only because the caller's
+  > frame re-flags dirty after the call returns. The writeback is **local to the
+  > current frame's `code.locals`**, so it can only reconcile names the carrier
+  > wrote that the *current* frame slots — ancestor lexicals are read from env
+  > (no stale slot) and self-contained. Dropping the blanket for **all** carriers
+  > regressed `S05-modifier/my.t` / `S03-binding/nested.t` (8+1 subtests) because
+  > regex `:let $a = …` writes a caller lexical **without** going through
+  > `set_env_with_main_alias` — it bypasses the carrier log (open-question #2).
+  > So the drop is restricted to EVAL, whose write path is fully logged; the
+  > remaining carriers keep the net until open-q#2 (complete write logging) is
+  > closed, which generalizes this drop to them.
+
+- **Slice C′ (remaining) — close open-question #2, then generalize the drop.**
+  Audit every env-write path reachable from a carrier (regex `:let`/named
+  captures, `where {…}`, interpreter method/function fallbacks) and route the
+  caller-lexical writes through the carrier log (or a precise reconcile), so
+  `writeback_carrier_writes` becomes complete for non-EVAL carriers and they can
+  drop their blanket `env_dirty` too. Then convert the cold R1 declaration sites.
 
 - **Slice D — finish R3 blanket-mark removal.**
   Audit each remaining post-dispatch blanket against its tier's precise flag;

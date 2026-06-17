@@ -78,20 +78,36 @@ impl Interpreter {
         } else {
             self.set_pending_call_arg_sources(arg_sources);
             // Carrier may write the caller env by name (e.g. EVAL'd lexicals).
-            // Slice B: log those writes and *precisely* reconcile the plain-scalar
-            // ones into the caller's slots on return (so the reverse sync becomes
-            // precise — the pull finds them already coherent). `env_dirty` is kept
-            // as the safety net for non-scalar / implicit-dependency reconciles
-            // (e.g. a prior `:=` bind cell the carrier did not itself write); its
-            // removal is Slice F, once every such dependency is made explicit. See
+            // Slice B logs those writes (`begin_carrier`) and reconciles them into
+            // the caller's slots on return (`writeback_carrier_writes`), so the
+            // reverse sync is precise. For a fully-reconciled EVAL we then drop the
+            // blanket `env_dirty` net (see below); other carriers keep it. See
             // docs/vm-single-store.md.
+            let pre_dirty = self.env_dirty;
             let carrier_saved = self.begin_carrier();
             let exec_result = loan_env!(self, exec_call_values(&name, args));
             self.set_pending_call_arg_sources(None);
             let written = self.end_carrier(carrier_saved);
             exec_result?;
-            self.writeback_carrier_writes(code, &written);
-            self.env_dirty = true;
+            let fully = self.writeback_carrier_writes(code, &written);
+            // EVAL writes caller lexicals exclusively through SetGlobal ->
+            // set_env_with_main_alias, so the carrier log is complete for it and
+            // the writeback above reconciled every scalar it touched (a diverged
+            // container leaves `fully` false). When the writeback was fully
+            // precise we can drop the blanket env_dirty net that the nested run
+            // (`with_nested_registers`) sets unconditionally — eliminating the
+            // spurious per-EVAL barrier pull (docs/vm-single-store.md Slice F
+            // prereq: 1001 -> ~1 pulls on an EVAL-in-a-hot-loop). Restoring the
+            // *pre-carrier* dirty (not a blind clear) preserves a dirty the
+            // caller already owed. Scoped to EVAL because other carriers (regex
+            // subrule calls, interpreter fallbacks) can write caller lexicals
+            // through paths that bypass the log (e.g. regex `:let`); they keep
+            // the net until open-question #2 (complete write logging) is closed.
+            if fully && name == "EVAL" {
+                self.env_dirty = pre_dirty;
+            } else {
+                self.env_dirty = true;
+            }
         }
         Ok(())
     }
