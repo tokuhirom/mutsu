@@ -56,6 +56,23 @@ static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 static LOCALS_PULL: AtomicU64 = AtomicU64::new(0);
+/// Pulls that actually changed at least one local slot. The difference
+/// `LOCALS_PULL - LOCALS_PULL_EFFECTIVE` is *spurious* reverse-sync — the env
+/// was flagged dirty but no slotted lexical was genuinely stale, so the precise
+/// per-carrier-boundary model (docs/vm-single-store.md) can eliminate it.
+static LOCALS_PULL_EFFECTIVE: AtomicU64 = AtomicU64::new(0);
+/// Total individual local slots that a pull actually overwrote with a *different*
+/// value (the real reverse-sync traffic the single-store design must preserve as
+/// targeted writebacks).
+static LOCALS_PULL_STALE_SLOTS: AtomicU64 = AtomicU64::new(0);
+
+/// Per-name histogram of which slotted lexicals were genuinely stale during a
+/// pull. Tells the single-store design *which* names need reverse write-through
+/// (R1) vs carrier-boundary writeback (R2). Only populated when stats are on.
+fn stale_slot_by_name() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
@@ -160,6 +177,25 @@ pub(crate) fn record_locals_pull() {
     }
 }
 
+/// Record that a pull genuinely changed >=1 slot (an *effective* pull). Called
+/// once per pull that found any stale slot. Stats-gated by the caller.
+#[inline]
+pub(crate) fn record_locals_pull_effective() {
+    LOCALS_PULL_EFFECTIVE.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Record that one slotted lexical was genuinely stale during a pull (the env
+/// value differed from the local). Bumps the total and the per-name histogram.
+/// Stats-gated by the caller (called only when `enabled()`), so it skips the
+/// re-check that the other recorders do.
+#[inline]
+pub(crate) fn record_stale_slot(name: &str) {
+    LOCALS_PULL_STALE_SLOTS.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = stale_slot_by_name().lock() {
+        *map.entry(name.to_string()).or_insert(0) += 1;
+    }
+}
+
 /// Print a one-line summary of Interpreter fallback statistics to stderr.
 ///
 /// No-op unless `MUTSU_VM_STATS` is set. Counts aggregate across worker threads
@@ -203,6 +239,32 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots} locals_pulls={locals_pull}"
     );
+    // Reverse-sync precision (docs/vm-single-store.md Slice A): of the
+    // `locals_pulls` above, how many actually changed a slot, and how many
+    // total slots were stale. `spurious = locals_pulls - effective` is the pure
+    // waste the precise model removes.
+    let pull_effective = LOCALS_PULL_EFFECTIVE.load(Ordering::Relaxed);
+    let stale_slots = LOCALS_PULL_STALE_SLOTS.load(Ordering::Relaxed);
+    let spurious = locals_pull.saturating_sub(pull_effective);
+    eprintln!(
+        "[mutsu vm-stats] reverse-sync: locals_pulls={locals_pull} effective={pull_effective} spurious={spurious} stale_slots={stale_slots}"
+    );
+    if let Ok(map) = stale_slot_by_name().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] stale-slot by name (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
     if let Ok(map) = function_fallback_by_name().lock()
         && !map.is_empty()
     {

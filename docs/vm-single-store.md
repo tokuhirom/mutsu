@@ -187,12 +187,45 @@ on CI's release roast as the comprehensive net. Counters are opt-level
 independent — iterate on the **debug** build (`MUTSU_VM_STATS=1`), reserve release
 for wall-clock.
 
-- **Slice A — invariant guard + measurement (no behavior change).**
-  Add a debug-only assertion path: when `env_dirty` would force a pull, also
-  record (under `MUTSU_VM_STATS`) *which* name's slot was stale and *which*
-  writer dirtied it. This produces the authoritative, current list of remaining
-  coarse pulls per benchmark (the 2026-06-07 survey is 10 days stale). Gate:
-  counters compile out in release; `locals_pulls` table refreshed in this doc.
+- **Slice A — measurement (no behavior change). DONE (2026-06-17).**
+  `sync_locals_from_env` now records, under `MUTSU_VM_STATS`, how many of the
+  slots a pull overwrites were *genuinely stale* (env differed from local, via
+  the same `cheaply_unchanged` test `merge_method_env` uses) vs already coherent,
+  plus a per-name histogram of the stale lexicals. New summary line:
+  `reverse-sync: locals_pulls=N effective=E spurious=S stale_slots=T` and
+  `stale-slot by name (top …)`. The comparison short-circuits when stats are off
+  (zero release cost; the `.cloned()` was already unconditional).
+
+  **Measured (debug, `MUTSU_VM_STATS=1`, 2026-06-17 — refreshes the stale
+  2026-06-07 survey):**
+
+  | bench        | locals_pulls | effective | spurious | stale slots (names) |
+  |--------------|-------------:|----------:|---------:|---------------------|
+  | method-call  | 1 | 0 | 1 | — |
+  | bench-class  | 2 | 1 | 1 | `desc` |
+  | fib          | 0 | 0 | 0 | — |
+  | bench-string | 3 | 0 | 3 | — |
+  | bench-array  | 4 | 1 | 3 | `@arr` |
+  | array-ops    | 101 | 100 | 1 | `@data`×100 |
+
+  A carrier probe (`tmp/slicea_probe.raku`: EVAL writing `$x`, dynamic `$*dyn`,
+  `our $counter`, a closure pushing `@acc`) shows
+  `locals_pulls=104 effective=53 stale-slot: adder=51 @acc=50 *dyn=1 x=1`.
+
+  **Findings that steer the slices:**
+  1. On the hot benchmarks the reverse sync is *already* mostly **spurious** — the
+     pull runs but no slotted lexical was stale. Those vanish for free when
+     `env_dirty` is removed (Slice F); they need no per-writer work.
+  2. The **effective** pulls cluster exactly on the design's named classes:
+     closures mutating an outer aggregate (`@acc`/`@data`/`@arr` — R2 / upvalue,
+     and the `env_deep_copies` source), method attribute/local writeback (`desc`),
+     and carriers (`x` = EVAL, `*dyn` = dynamic). R1 (dynamic/our) is low volume.
+  3. **Caveat — Sub/closure values over-count.** `cheaply_unchanged` has no arm
+     for `Value::Sub`/closures (`_ => false`), so a pull that re-reads a closure
+     variable (`adder=51`) counts it stale every time even when it is the same
+     closure. Treat Sub-valued stale-slot names as noise; the aggregate/scalar
+     names are the real signal. (A future refinement could add a Sub arm keyed on
+     callable id, but it is not needed to steer the slices.)
 
 - **Slice B — `EVAL` precise writeback (R2 flagship).**
   Add a carrier-active flag + `carrier_writes: HashSet<Symbol>` filled in
