@@ -325,12 +325,44 @@ for wall-clock.
   > remaining carriers keep the net until open-q#2 (complete write logging) is
   > closed, which generalizes this drop to them.
 
-- **Slice C′ (remaining) — close open-question #2, then generalize the drop.**
-  Audit every env-write path reachable from a carrier (regex `:let`/named
-  captures, `where {…}`, interpreter method/function fallbacks) and route the
-  caller-lexical writes through the carrier log (or a precise reconcile), so
-  `writeback_carrier_writes` becomes complete for non-EVAL carriers and they can
-  drop their blanket `env_dirty` too. Then convert the cold R1 declaration sites.
+- **Slice C′ — close the regex path of open-question #2; generalize the drop to
+  the bareword carrier only. PARTIAL (2026-06-17).**
+  Two parts. (a) *Completeness (regex path):* an embedded regex
+  `{ }`/`:my`/`:let` block writes a caller lexical *directly* into `env` (via the
+  interpreter's block-eval, not `set_env_with_main_alias`), so it bypassed the
+  carrier log. `regex_eval.rs` now logs each such changed name into
+  `carrier_writes` when a carrier is active (alongside the existing
+  `pending_local_updates` push), making the log complete for the regex-scalar
+  path open-question #2 flagged. (b) *Generalization (bareword carrier only):*
+  the `fully`-reconciled blanket-`env_dirty` drop in `exec_exec_call_op`
+  (the `exec_call_values` bareword carrier) is no longer scoped to `name ==
+  "EVAL"`; any fully-reconciled bareword carrier now restores the pre-carrier
+  dirty. The cell-aware `fully` flag (#3227) leaves diverged containers to the
+  barrier and ancestor lexicals have no current-frame slot (read straight from
+  env), so the frame-scoping argument carries over. *Validated:* the full roast
+  whitelist (1281 files) is byte-identical with the bareword-carrier blanket
+  dropped vs. the EVAL-only baseline (only delta = a stale-temp-file artifact in
+  `S32-io/spurt.t`); EVAL-in-a-hot-loop stays at `locals_pulls=1`. Pinned by
+  `t/single-store-slice-c-prime.t` (11) + `t/eval-carrier-precise-writeback.t`
+  (14).
+
+  > **What is NOT done — the `pairs`/`slip` carriers keep their blanket.** The
+  > `exec_call_pairs`/`exec_call_slip` carriers dispatch interpreter builtins
+  > (Test `is`/`ok`, topic-mutating `s///`, …) whose caller-lexical writes do
+  > **not** all flow through `set_env_with_main_alias` or the carrier log. Their
+  > write set can be empty while the carrier nonetheless wrote a caller slot, and
+  > `writeback_carrier_writes` returns `true` (fully) for an empty set — so
+  > dropping the net there silently loses the write (it regressed
+  > `t/regex-m-s.t` `s/// updates $_`, `t/element-bind-cell.t`,
+  > `t/regex-declarative-modifiers.t`; these are `t/`-only, so the whitelist did
+  > not catch them — a reminder that the whitelist is necessary but not
+  > sufficient for this invariant). Generalizing the drop to `pairs`/`slip`
+  > requires the **full** open-question-#2 audit: logging *every* interpreter
+  > env-write path (general assignment inside interpreter-executed routines, not
+  > just regex), which is the substantial remaining Slice C′ work. Until then the
+  > blanket stays on those two carriers, and `env_dirty` (with the cold R1
+  > declaration sites and implicit `:=`-bind reconcile dependencies it still
+  > carries) cannot be deleted (Slice F).
 
 - **Slice D — finish R3 blanket-mark removal.**
   Audit each remaining post-dispatch blanket against its tier's precise flag;
