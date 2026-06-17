@@ -391,6 +391,7 @@ impl Interpreter {
         if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
             return Err(RuntimeError::new("Exception"));
         }
+        let result_mutable = runtime::set_result_mutability(&left);
 
         let result = match (left, right) {
             (Value::Mix(a, _), Value::Mix(b, _)) => {
@@ -452,7 +453,8 @@ impl Interpreter {
                 Value::set(left_set)
             }
         };
-        self.stack.push(result);
+        self.stack
+            .push(runtime::with_set_mutability(result, result_mutable));
         Ok(())
     }
 
@@ -489,6 +491,7 @@ impl Interpreter {
         let left_level = Self::set_type_level_full(&left);
         let right_level = Self::set_type_level_full(&right);
         let result_level = left_level.max(right_level).max(1); // minimum Bag
+        let result_mutable = runtime::set_result_mutability(&left);
 
         let result = match result_level {
             2 => {
@@ -512,7 +515,8 @@ impl Interpreter {
                 Value::bag(a)
             }
         };
-        self.stack.push(result);
+        self.stack
+            .push(runtime::with_set_mutability(result, result_mutable));
         Ok(())
     }
 
@@ -694,6 +698,7 @@ impl Interpreter {
         let left_level = Self::set_type_level(&left);
         let right_level = Self::set_type_level(&right);
         let result_level = left_level.max(right_level);
+        let result_mutable = runtime::set_result_mutability(&left);
 
         let result = match result_level {
             2 => {
@@ -727,7 +732,8 @@ impl Interpreter {
                 Value::set(a.intersection(&b).cloned().collect())
             }
         };
-        self.stack.push(result);
+        self.stack
+            .push(runtime::with_set_mutability(result, result_mutable));
         Ok(())
     }
 
@@ -750,23 +756,29 @@ impl Interpreter {
             return Err(err);
         }
 
+        let result_mutable = runtime::set_result_mutability(&left);
         let result = runtime::Interpreter::apply_reduction_op("(.)", &left, &right)?;
-        self.stack.push(result);
+        self.stack
+            .push(runtime::with_set_mutability(result, result_mutable));
         Ok(())
     }
 
     pub(super) fn exec_set_diff_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let result_mutable = runtime::set_result_mutability(&left);
         let result = runtime::set_diff_values(&left, &right);
-        self.stack.push(result);
+        self.stack
+            .push(runtime::with_set_mutability(result, result_mutable));
     }
 
     pub(super) fn exec_set_sym_diff_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let result_mutable = runtime::set_sym_diff_mutability(&left, &right);
         let result = runtime::set_sym_diff_values(&left, &right);
-        self.stack.push(result);
+        self.stack
+            .push(runtime::with_set_mutability(result, result_mutable));
     }
 
     pub(super) fn exec_set_subset_op(&mut self) {

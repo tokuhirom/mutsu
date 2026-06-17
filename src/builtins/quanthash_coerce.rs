@@ -93,7 +93,8 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
         }
     }
     match target {
-        Value::Set(_, _) => return Ok(target),
+        // Always return the immutable variant; the caller flips it for `.SetHash`.
+        Value::Set(s, _) => return Ok(Value::Set(s, false)),
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
         Value::Array(items, crate::value::ArrayKind::List) => {
@@ -330,7 +331,8 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     }
 
     match target {
-        Value::Bag(_, _) => return Ok(target),
+        // Always return the immutable variant; the caller flips it for `.BagHash`.
+        Value::Bag(b, _) => return Ok(Value::Bag(b, false)),
         Value::Pair(_, _) | Value::ValuePair(_, _) => {
             add_item(
                 &mut counts,
@@ -642,7 +644,8 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
     let mut weights: HashMap<String, f64> = HashMap::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
     match target {
-        Value::Mix(_, _) => return Ok(target),
+        // Always return the immutable variant; the caller flips it for `.MixHash`.
+        Value::Mix(m, _) => return Ok(Value::Mix(m, false)),
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
         Value::Array(items, crate::value::ArrayKind::List) => {

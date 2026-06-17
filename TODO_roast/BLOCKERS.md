@@ -288,9 +288,12 @@ Interpreter-removal / first-class-container tracks advance.
 
 **Real lazy infinite sequences:**
 
-- **S03-operators/eqv.t** — 62/64. "Throws/lives in lazy cases" needs X::Cannot::Lazy
-  for same-type lazy iterables (mutsu materializes `1…∞`); "Setty eqv Setty" needs
-  set-operator mutability tracking. (12/17/36/37 also fail in rakudo.)
+- **S03-operators/eqv.t** — 63/64. "Setty eqv Setty" FIXED (eqv now distinguishes
+  Set/SetHash, Bag/BagHash, Mix/MixHash; set operators preserve first-operand
+  mutability — PR set-op-mutability). Remaining: "Throws/lives in lazy cases" needs
+  X::Cannot::Lazy for same-type lazy iterables (blocked: mutsu materializes `1…∞`,
+  `.List`/`.Array` of an infinite Seq lose laziness — same root as lazy-arrays).
+  (12/17/36/37 also fail in rakudo.)
 - **S09-subscript/slice.t** — **Hard**, 9/39 then aborts at line 310: slices with
   infinite sequences (`@a[0..*]`).
 - **S04-declarations/constant.t** — **Medium**. Lazy-seq `fib[100]` (46) now PASSES:

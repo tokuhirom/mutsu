@@ -134,31 +134,34 @@ impl Value {
             // full type-strict eqv, because mutsu does not always retain a Set
             // element's exact numeric type (a Rat element can fall back to its
             // Str key), and a full eqv would wrongly split two equal Rat sets.
-            // NOTE: mutability (Set vs SetHash) is intentionally NOT compared
-            // here — mutsu's set operators do not yet reliably preserve SetHash
-            // mutability through `(|)`/`(&)` etc., and comparing it would
-            // spuriously split results that only differ in that flag. The
-            // remaining Set-vs-SetHash eqv distinction (eqv.t test 165) is
-            // tracked in BLOCKERS.md.
-            (Value::Set(a, _), Value::Set(b, _)) => {
+            // Mutability (Set vs SetHash) is part of the type, so eqv must
+            // distinguish them (`Set.new(42) eqv SetHash.new(42)` is False).
+            // Raku's set operators (`(|)`/`(&)` etc.) always yield an immutable
+            // Set regardless of operand mutability, so comparing the flag here
+            // matches values produced by those operators too.
+            (Value::Set(a, a_mut), Value::Set(b, b_mut)) => {
                 fn allomorph_kind(v: &Value) -> Option<String> {
                     match v {
                         Value::Mixin(inner, mixins) => allomorph_type_name(inner, mixins),
                         _ => None,
                     }
                 }
-                a.elements.len() == b.elements.len()
+                a_mut == b_mut
+                    && a.elements.len() == b.elements.len()
                     && a.elements.iter().all(|k| {
                         b.elements.contains(k)
                             && allomorph_kind(&a.typed_key(k)) == allomorph_kind(&b.typed_key(k))
                     })
             }
+            // Bag/Mix: like Set, eqv distinguishes the immutable variant from
+            // its mutable QuantHash (Bag vs BagHash, Mix vs MixHash). The data
+            // comparison is delegated to PartialEq, which ignores the flag.
+            (Value::Bag(a, a_mut), Value::Bag(b, b_mut)) => a_mut == b_mut && a == b,
+            (Value::Mix(a, a_mut), Value::Mix(b, b_mut)) => a_mut == b_mut && a == b,
             (Value::Int(_), Value::Int(_))
             | (Value::Str(_), Value::Str(_))
             | (Value::Bool(_), Value::Bool(_))
             | (Value::BigRat(_, _), Value::BigRat(_, _))
-            | (Value::Bag(_, _), Value::Bag(_, _))
-            | (Value::Mix(_, _), Value::Mix(_, _))
             | (Value::Enum { .. }, Value::Enum { .. })
             | (Value::Regex(_), Value::Regex(_))
             | (Value::RegexWithAdverbs { .. }, Value::RegexWithAdverbs { .. })

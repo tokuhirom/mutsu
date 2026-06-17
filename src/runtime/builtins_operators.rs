@@ -957,12 +957,27 @@ impl Interpreter {
                 {
                     arg0 = Value::Array(items.clone(), crate::value::ArrayKind::List);
                 }
-                if matches!(arg0, Value::Mix(_, _)) {
-                    return self.dispatch_to_mix(arg0);
-                }
-                return self.dispatch_to_bag_with_what(arg0, "Bag");
+                // Single-arg multiply preserves the operand's mutability
+                // (`[(.)] SetHash` -> BagHash); single-arg addition does not
+                // (`[(+)] SetHash` -> Bag).
+                let mutable = matches!(op, "(.)" | "⊍") && set_result_mutability(&arg0);
+                let coerced = if matches!(arg0, Value::Mix(_, _)) {
+                    self.dispatch_to_mix(arg0)?
+                } else {
+                    self.dispatch_to_bag_with_what(arg0, "Bag")?
+                };
+                return Ok(with_set_mutability(coerced, mutable));
             }
-            if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
+            if matches!(op, "(-)" | "∖") {
+                // Single-arg difference always yields the immutable variant
+                // (`[(-)] SetHash` -> Set), unlike union/intersection which
+                // preserve the operand's mutability.
+                return Ok(with_set_mutability(
+                    coerce_value_to_quanthash(&args[0]),
+                    false,
+                ));
+            }
+            if matches!(op, "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
                 return Ok(coerce_value_to_quanthash(&args[0]));
             }
             return Ok(args[0].clone());
@@ -1120,6 +1135,9 @@ impl Interpreter {
                 }
             }
         }
+        // A 3+-arg set reduction takes its result mutability from the first
+        // operand (captured before promotion below may strip it).
+        let multi_set_mutable = is_set_op && args.len() > 2 && set_result_mutability(&args[0]);
         // For set operators with 3+ args, promote all to the highest set type first.
         // In Raku, infix:<(-)>(Set, Set, Mix) promotes all to Mix before reducing.
         let args = if is_set_op && args.len() > 2 {
@@ -1159,7 +1177,10 @@ impl Interpreter {
         // Multi-arg symmetric difference is NOT a left-fold.
         // For each key, the result weight = max_weight - second_max_weight.
         if matches!(op, "(^)" | "⊖") && args.len() > 2 {
-            return Ok(crate::runtime::utils::set_sym_diff_multi(&args));
+            return Ok(with_set_mutability(
+                crate::runtime::utils::set_sym_diff_multi(&args),
+                multi_set_mutable,
+            ));
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
