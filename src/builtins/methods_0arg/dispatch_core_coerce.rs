@@ -8,6 +8,31 @@ use std::sync::Arc;
 
 use super::parse_raku_int_from_str;
 
+/// Build a lazy `Failure` wrapping an `X::Str::Numeric` exception for a string
+/// that cannot be numified — the shape raku's `.Int`/`.Num` produce on a bad
+/// string (the exception only fires when the Failure is sunk/used).
+pub(crate) fn str_numeric_failure(s: &str) -> Value {
+    let mut ex_attrs = std::collections::HashMap::new();
+    ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
+    ex_attrs.insert(
+        "reason".to_string(),
+        Value::str("base-10 number must begin with valid digits or '.'".to_string()),
+    );
+    ex_attrs.insert("pos".to_string(), Value::Int(0));
+    ex_attrs.insert(
+        "message".to_string(),
+        Value::str(format!(
+            "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+            s
+        )),
+    );
+    let ex = Value::make_instance(Symbol::intern("X::Str::Numeric"), ex_attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), ex);
+    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -564,10 +589,9 @@ pub(super) fn dispatch(
                     if let Ok(f) = normalized.parse::<f64>() {
                         Value::Num(f)
                     } else {
-                        return Some(Some(Err(RuntimeError::new(format!(
-                            "X::Str::Numeric: Cannot convert string '{}' to a number",
-                            s
-                        )))));
+                        // An invalid string yields a lazy X::Str::Numeric Failure,
+                        // mirroring `.Int` (not an eager X::AdHoc RuntimeError).
+                        return Some(Some(Ok(str_numeric_failure(s))));
                     }
                 }
                 Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),

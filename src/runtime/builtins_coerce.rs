@@ -33,7 +33,10 @@ impl Interpreter {
                 }
                 Value::FatRat(n, d) => Value::Int(n / d),
                 Value::Complex(r, _) => Value::Int(r as i64),
-                Value::Str(s) => Value::Int(s.trim().parse::<i64>().unwrap_or(0)),
+                // Delegate to `Str.Int` so an invalid string yields the same
+                // X::Str::Numeric Failure as the method form (`"abc".Int`),
+                // rather than silently coercing to 0.
+                Value::Str(s) => return self.call_method_with_values(Value::Str(s), name, vec![]),
                 Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
                 _ => Value::Int(0),
             },
@@ -88,15 +91,9 @@ impl Interpreter {
                     }
                     Value::Num(r)
                 }
-                Value::Str(s) => {
-                    if let Ok(i) = s.trim().parse::<i64>() {
-                        Value::Num(i as f64)
-                    } else if let Ok(f) = s.trim().parse::<f64>() {
-                        Value::Num(f)
-                    } else {
-                        Value::Num(0.0)
-                    }
-                }
+                // Delegate to `Str.Num` so an invalid string yields the same
+                // X::Str::Numeric Failure as the method form, not a silent 0.
+                Value::Str(s) => return self.call_method_with_values(Value::Str(s), name, vec![]),
                 Value::Bool(b) => Value::Num(if b { 1.0 } else { 0.0 }),
                 _ => Value::Num(0.0),
             },
