@@ -330,14 +330,11 @@ fn make_fat_rat(num: i64, den: i64) -> Value {
 
 /// Scale a Range by a numeric factor. Returns Some(range) if `range_val` is a Range
 /// and `factor` is numeric, None otherwise.
-fn range_scale(range_val: &Value, factor: &Value) -> Option<Value> {
-    let n = match factor {
-        Value::Int(i) => Some(*i as f64),
-        Value::Num(f) => Some(*f),
-        Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-        _ => None,
-    }?;
-    let (start, end, excl_start, excl_end) = match range_val {
+/// Extract `(start, end, excl_start, excl_end)` from any Range variant
+/// (the int-endpoint variants or a `GenericRange`). Returns `None` for
+/// non-Range values.
+fn range_bounds(range_val: &Value) -> Option<(Value, Value, bool, bool)> {
+    Some(match range_val {
         Value::Range(a, b) => (Value::Int(*a), Value::Int(*b), false, false),
         Value::RangeExcl(a, b) => (Value::Int(*a), Value::Int(*b), false, true),
         Value::RangeExclStart(a, b) => (Value::Int(*a), Value::Int(*b), true, false),
@@ -354,7 +351,42 @@ fn range_scale(range_val: &Value, factor: &Value) -> Option<Value> {
             *excl_end,
         ),
         _ => return None,
-    };
+    })
+}
+
+/// Offset both bounds of a Range by `delta` using `op` (add or subtract),
+/// preserving exclusivity. Returns `Some(range)` when `range_val` is a Range and
+/// `delta` is a real number (Int/Num/Rat/FatRat/BigInt). Collapses to a
+/// canonical integer range when both endpoints remain `Int` (so `(2..4) + 1`
+/// is `eqv` to the literal `3..5`); falls back to `GenericRange` otherwise.
+fn range_offset(
+    range_val: &Value,
+    delta: &Value,
+    op: impl Fn(Value, Value) -> Value,
+) -> Option<Value> {
+    if !matches!(
+        delta,
+        Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigInt(_)
+    ) {
+        return None;
+    }
+    let (start, end, excl_start, excl_end) = range_bounds(range_val)?;
+    Some(canonical_int_range(
+        op(start, delta.clone()),
+        op(end, delta.clone()),
+        excl_start,
+        excl_end,
+    ))
+}
+
+fn range_scale(range_val: &Value, factor: &Value) -> Option<Value> {
+    let n = match factor {
+        Value::Int(i) => Some(*i as f64),
+        Value::Num(f) => Some(*f),
+        Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+        _ => None,
+    }?;
+    let (start, end, excl_start, excl_end) = range_bounds(range_val)?;
     let scale_val = |v: Value| -> Value {
         match v {
             Value::Int(i) => {
@@ -533,25 +565,12 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     {
         return result;
     }
-    // Range + Int: shift both bounds
-    match (&left, &right) {
-        (Value::Range(a, b), Value::Int(n)) => return Ok(Value::Range(a + n, b + n)),
-        (Value::RangeExcl(a, b), Value::Int(n)) => return Ok(Value::RangeExcl(a + n, b + n)),
-        (Value::RangeExclStart(a, b), Value::Int(n)) => {
-            return Ok(Value::RangeExclStart(a + n, b + n));
-        }
-        (Value::RangeExclBoth(a, b), Value::Int(n)) => {
-            return Ok(Value::RangeExclBoth(a + n, b + n));
-        }
-        (Value::Int(n), Value::Range(a, b)) => return Ok(Value::Range(a + n, b + n)),
-        (Value::Int(n), Value::RangeExcl(a, b)) => return Ok(Value::RangeExcl(a + n, b + n)),
-        (Value::Int(n), Value::RangeExclStart(a, b)) => {
-            return Ok(Value::RangeExclStart(a + n, b + n));
-        }
-        (Value::Int(n), Value::RangeExclBoth(a, b)) => {
-            return Ok(Value::RangeExclBoth(a + n, b + n));
-        }
-        _ => {}
+    // Range + Real (commutative): shift both bounds, preserving exclusivity.
+    let add_endpoint = |a: Value, b: Value| arith_add(a, b).unwrap_or(Value::Int(0));
+    if let Some(range) = range_offset(&left, &right, add_endpoint)
+        .or_else(|| range_offset(&right, &left, add_endpoint))
+    {
+        return Ok(range);
     }
     // Date + Int: add days
     if let Some(days) = instance_days(&left)
@@ -784,27 +803,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     if let Some(result) = mixin_range_arith_val(left.clone(), right.clone(), arith_sub) {
         return result;
     }
-    match (&left, &right) {
-        (Value::Range(a, b), Value::Int(n)) => return Value::Range(a - n, b - n),
-        (Value::RangeExcl(a, b), Value::Int(n)) => return Value::RangeExcl(a - n, b - n),
-        (Value::RangeExclStart(a, b), Value::Int(n)) => return Value::RangeExclStart(a - n, b - n),
-        (Value::RangeExclBoth(a, b), Value::Int(n)) => return Value::RangeExclBoth(a - n, b - n),
-        (Value::Range(a, b), rhs)
-        | (Value::RangeExcl(a, b), rhs)
-        | (Value::RangeExclStart(a, b), rhs)
-        | (Value::RangeExclBoth(a, b), rhs)
-            if rhs.is_numeric() =>
-        {
-            let excl_start = matches!(&left, Value::RangeExclStart(..) | Value::RangeExclBoth(..));
-            let excl_end = matches!(&left, Value::RangeExcl(..) | Value::RangeExclBoth(..));
-            return Value::GenericRange {
-                start: Arc::new(arith_sub(Value::Int(*a), rhs.clone())),
-                end: Arc::new(arith_sub(Value::Int(*b), rhs.clone())),
-                excl_start,
-                excl_end,
-            };
-        }
-        _ => {}
+    // Range - Real: shift both bounds (only when the Range is on the left;
+    // `Real - Range` numifies the Range, matching Raku).
+    if let Some(range) = range_offset(&left, &right, arith_sub) {
+        return range;
     }
     let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
