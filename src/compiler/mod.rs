@@ -282,7 +282,7 @@ impl Compiler {
         let bare = name.trim_start_matches(['$', '@', '%', '&']);
         if let Some(rest) = bare.strip_prefix('*')
             && !rest.is_empty()
-            && self.local_map.get(name).is_none()
+            && !self.local_map.contains_key(name)
         {
             // Use the same (possibly package-qualified) key the store uses so the
             // runtime env lookup in CheckDynamicVarDeclared matches the declared
@@ -403,7 +403,9 @@ impl Compiler {
             // fresh dynamic var (VarDecl with is_dynamic), not treated as a bare
             // assignment to a pre-existing dynamic var (which would wrongly throw
             // X::Dynamic::NotFound). `&` targets likewise declare.
-            let is_dynamic_target = name.trim_start_matches(['$', '@', '%', '&']).starts_with('*');
+            let is_dynamic_target = name
+                .trim_start_matches(['$', '@', '%', '&'])
+                .starts_with('*');
             if name.starts_with('&') || is_dynamic_target {
                 Stmt::VarDecl {
                     name,
