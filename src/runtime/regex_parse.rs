@@ -345,6 +345,24 @@ fn make_backslash_unrecognized_error(esc: char) -> RuntimeError {
     err
 }
 
+/// A backslash directly followed by whitespace (`\ `, `\<tab>`, ...) is an
+/// "unspace" — a main-slang construct that is not allowed in a regex; Raku
+/// rejects it with X::Syntax::Regex::Unspace. `ch` is the offending whitespace
+/// character (exposed as the `.char` attribute).
+fn make_unspace_error(ch: char) -> RuntimeError {
+    let msg = format!(
+        "No unspace allowed in regex; if you meant to match the literal character, please enclose in single quotes ('{}') or use a backslashed form like \\x{:02x}",
+        ch, ch as u32
+    );
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("char".to_string(), Value::str(ch.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Unspace"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Detect a missing `+`/`-` operator between parts of a compound character
 /// class assertion (e.g. `<[abc] [def]>`, `<:Kata :Hira>`). Ported from the
 /// former validator; used only at parse time (`Validate` mode).
@@ -2986,6 +3004,16 @@ impl Interpreter {
                                 ));
                             });
                             return None;
+                        }
+                        // `\ ` (backslash + whitespace) is an "unspace", a main-slang
+                        // construct not allowed in a regex -> X::Syntax::Regex::Unspace.
+                        ws if ws.is_whitespace() => {
+                            if mode == RegexParseMode::Validate {
+                                PENDING_REGEX_ERROR
+                                    .with(|e| *e.borrow_mut() = Some(make_unspace_error(ws)));
+                                return None;
+                            }
+                            RegexAtom::Literal(ws)
                         }
                         other => {
                             // Validate mode: an unknown *alphabetic* backslash escape
