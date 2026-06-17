@@ -3633,6 +3633,19 @@ pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> Run
     RuntimeError::typed("X::TypeCheck::Binding", attrs)
 }
 
+/// Build a structured X::Dynamic::NotFound RuntimeError.
+/// Thrown when assigning to a dynamic variable (`$*x` / `@*x` / `%*x`) that is
+/// not present anywhere in the dynamic scope. `display_name` is the full
+/// sigil+twigil form (e.g. `$*an_undeclared_dynvar`).
+pub(crate) fn dynamic_not_found_error(display_name: &str) -> RuntimeError {
+    let msg = format!("Dynamic variable {} not found", display_name);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("name".to_string(), Value::str(display_name.to_string()));
+    attrs.insert("symbol".to_string(), Value::str(display_name.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    RuntimeError::typed("X::Dynamic::NotFound", attrs)
+}
+
 /// Build a structured X::TypeCheck::Assignment RuntimeError.
 /// This creates a proper exception object that `throws-like` can match.
 pub(crate) fn type_check_assignment_typed_error(

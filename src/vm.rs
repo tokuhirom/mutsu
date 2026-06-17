@@ -1620,6 +1620,28 @@ impl Interpreter {
                 if self.strict_mode && !name.contains("::") && !self.env().contains_key(&name) {
                     return Err(self.strict_undeclared_error(&name));
                 }
+                // Assigning to a dynamic variable (`$*x` / `@*x` / `%*x`) that is
+                // not present in the dynamic scope throws X::Dynamic::NotFound
+                // (Raku semantics — a dynamic var must be declared with `my $*x`
+                // first). Built-in dynamic vars (`$*OUT`, `$*CWD`, ...) are seeded
+                // into env and a caller's `my $*x` propagates into the callee env,
+                // so this only fires for a never-declared dynamic variable. The
+                // bare-name prefix check is a cheap no-op for ordinary names.
+                if !is_rebind && !raw_mode {
+                    let bare = name.trim_start_matches(['$', '@', '%', '&']);
+                    if let Some(rest) = bare.strip_prefix('*')
+                        && !rest.is_empty()
+                        && !self.env().contains_key(&name)
+                        && !self.is_var_dynamic(&name)
+                    {
+                        let display = if name.starts_with(['@', '%', '&']) {
+                            name.clone()
+                        } else {
+                            format!("${}", name)
+                        };
+                        return Err(runtime::utils::dynamic_not_found_error(&display));
+                    }
+                }
                 // Check readonly variables (e.g., $*USAGE).
                 // Skip readonly check for SetGlobalRaw which is used for constant
                 // declarations — the constant will be re-marked readonly after this.
