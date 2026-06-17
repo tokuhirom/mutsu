@@ -318,10 +318,27 @@ impl Interpreter {
         self.stack.push(Value::capture(positional, named));
     }
 
+    /// Flatten top-level `Slip` arguments into the surrounding argument list.
+    /// A `|(...)` slip passed to a list operator (say/put/print/note) spreads its
+    /// elements as individual arguments, exactly like the parenthesized-call path.
+    fn flatten_slip_args(values: Vec<Value>) -> Vec<Value> {
+        if !values.iter().any(|v| matches!(v, Value::Slip(_))) {
+            return values;
+        }
+        let mut out = Vec::with_capacity(values.len());
+        for v in values {
+            match v {
+                Value::Slip(items) => out.extend(items.iter().cloned()),
+                other => out.push(other),
+            }
+        }
+        out
+    }
+
     pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
-        let values: Vec<Value> = self.stack.drain(start..).collect();
+        let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
         let mut parts = Vec::new();
         for v in &values {
             let v = loan_env!(self, auto_fetch_proxy(v))?;
@@ -345,7 +362,7 @@ impl Interpreter {
             "Noted".to_string()
         } else {
             let start = self.stack.len() - n;
-            let values: Vec<Value> = self.stack.drain(start..).collect();
+            let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
             let mut parts = Vec::new();
             for v in &values {
                 if needs_method_dispatch(v) {
@@ -363,24 +380,39 @@ impl Interpreter {
     pub(super) fn exec_put_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
-        let values: Vec<Value> = self.stack.drain(start..).collect();
-        // put threads through Junctions: each eigenstate gets put individually
-        let mut lines = Vec::new();
+        let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+        // A lone Junction argument autothreads: each eigenstate is put on its
+        // own line (`put 1|2` => "1\n2\n").
+        if values.len() == 1 && matches!(&values[0], Value::Junction { .. }) {
+            let v = loan_env!(self, auto_fetch_proxy(&values[0]))?;
+            check_rat_divide_by_zero(&v)?;
+            let mut lines = Vec::new();
+            self.collect_put_lines(&v, &mut lines)?;
+            for line in &lines {
+                loan_env!(self, write_to_named_handle("$*OUT", line, true))?;
+            }
+            return Ok(());
+        }
+        // Otherwise concatenate every argument's `.Str` into a single line plus a
+        // trailing newline (`put 1, 2, 3` => "123\n"), like `print` with a newline.
+        let mut content = String::new();
         for v in &values {
             let v = loan_env!(self, auto_fetch_proxy(v))?;
             check_rat_divide_by_zero(&v)?;
-            self.collect_put_lines(&v, &mut lines)?;
+            if needs_method_dispatch(&v) {
+                content.push_str(&loan_env!(self, render_str_value(&v)));
+            } else {
+                content.push_str(&v.to_str_context());
+            }
         }
-        for line in &lines {
-            loan_env!(self, write_to_named_handle("$*OUT", line, true))?;
-        }
+        loan_env!(self, write_to_named_handle("$*OUT", &content, true))?;
         Ok(())
     }
 
     pub(super) fn exec_print_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
-        let values: Vec<Value> = self.stack.drain(start..).collect();
+        let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
         let mut content = String::new();
         for v in &values {
             check_rat_divide_by_zero(v)?;
