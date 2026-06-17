@@ -1383,7 +1383,7 @@ fn could_name_caller_local(name: &str) -> bool {
 /// container/string types, value compare for the immutable scalars, and id
 /// compare for instances. Any case it cannot cheaply prove returns `false`, so
 /// the caller treats it as a possible change (a redundant pull at worst).
-fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
+pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
     match (old, new) {
         (Value::Int(a), Value::Int(b)) => a == b,
         (Value::Num(a), Value::Num(b)) => a.to_bits() == b.to_bits(),

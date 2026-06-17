@@ -302,6 +302,17 @@ impl Interpreter {
 
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         crate::vm::vm_stats::record_locals_pull();
+        // Slice A (docs/vm-single-store.md): when stats are on, measure the
+        // *precision* of the reverse sync — how many of the slots this pull
+        // overwrites were genuinely stale (env differed from local) vs already
+        // coherent. The whole comparison short-circuits when stats are off, so
+        // there is zero release-build cost (the `.cloned()` below was already
+        // unconditional). `cheaply_unchanged` is the same conservative
+        // value-identity test `merge_method_env` uses (it reports "changed" on a
+        // value-equal but distinct Arc, so this slightly over-counts stale — the
+        // safe direction for a "what must the precise model preserve" survey).
+        let stats_on = crate::vm::vm_stats::enabled();
+        let mut any_stale = false;
         for (i, name) in code.locals.iter().enumerate() {
             // Don't overwrite HashSlotRef locals with env values.
             // These are live container references from `:=` binding and must
@@ -314,8 +325,14 @@ impl Interpreter {
             if name.starts_with('!') {
                 continue;
             }
-            if let Some(val) = self.env().get(name) {
-                self.locals[i] = val.clone();
+            if let Some(val) = self.env().get(name).cloned() {
+                if stats_on
+                    && !crate::vm::vm_method_dispatch::cheaply_unchanged(&self.locals[i], &val)
+                {
+                    crate::vm::vm_stats::record_stale_slot(name);
+                    any_stale = true;
+                }
+                self.locals[i] = val;
                 continue;
             }
             if let Some(bare) = name
@@ -323,10 +340,19 @@ impl Interpreter {
                 .or_else(|| name.strip_prefix('@'))
                 .or_else(|| name.strip_prefix('%'))
                 .or_else(|| name.strip_prefix('&'))
-                && let Some(val) = self.env().get(bare)
+                && let Some(val) = self.env().get(bare).cloned()
             {
-                self.locals[i] = val.clone();
+                if stats_on
+                    && !crate::vm::vm_method_dispatch::cheaply_unchanged(&self.locals[i], &val)
+                {
+                    crate::vm::vm_stats::record_stale_slot(name);
+                    any_stale = true;
+                }
+                self.locals[i] = val;
             }
+        }
+        if any_stale {
+            crate::vm::vm_stats::record_locals_pull_effective();
         }
     }
 
