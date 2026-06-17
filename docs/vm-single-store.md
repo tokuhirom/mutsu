@@ -393,11 +393,35 @@ for wall-clock.
   > `pairs`/`slip` generalization needs not just complete write-logging but a
   > solution to deep-cell env↔locals coherence — deferred.
 
-- **Slice D — finish R3 blanket-mark removal.**
-  Audit each remaining post-dispatch blanket against its tier's precise flag;
-  delete the redundant ones. Gate: method/function/closure roast; the existing
-  `t/method-env-dirty.t` / `t/named-call-env-dirty.t` / `t/zeroarg-env-dirty.t`
-  pins must stay green with `locals_pulls` unchanged or lower.
+- **Slice D — finish R3 blanket-mark removal. AUDITED COMPLETE (2026-06-18).**
+  A full audit of every `self.env_dirty = true` site (≈140 across `src/vm/`)
+  against `MUTSU_VM_STATS` reverse-sync counters found **no significant redundant
+  blanket left to remove**: the clear post-precise-dispatch redundancies were
+  already deleted in #2709 (compiled-function `changed`-merge signal) and the
+  Slice 6.3 `method_dispatch_pure` gate. The remaining marks fall into three
+  categories, **none of which is redundant**:
+  1. *The precise gate itself* — `let mark_dirty = !self.method_dispatch_pure; if
+     mark_dirty { self.env_dirty = true }` (the CallMethod/CallMethodMut tails,
+     `vm_call_method_ops.rs` / `vm_call_method_mut_ops.rs`) and the compiled-call
+     `env_dirty = saved || changed` in `call_compiled_function_named`. These *are*
+     the precision; deleting them loses correctness, not redundancy.
+  2. *Legitimate mutations* — `@a.push` and friends (`vm_data_ops.rs`), mutating
+     methods (`vm_call_method_mut_ops.rs`), declaration registration
+     (`vm_register_ops.rs`). These genuinely write a caller variable in `env`, so
+     the mark is required until the writer self-reports per-name (Slice F).
+  3. *Carrier / block nets* — bareword-resolved-to-call (`vm_var_get_ops.rs`),
+     interpreter fallbacks (`exec_call_*`), and control-flow block bodies
+     (`vm_control_ops.rs`). Making these precise is the **carrier-drop** work
+     (Slice B/C′), not a blanket *removal* — and it is gated by the same
+     completeness + deep-`:=`-cell-coherence wall that defers `pairs`/`slip`.
+  *Measurement:* `method-call` reverse-sync `locals_pulls=1`, `bench-class` 2,
+  `bench-array` 4, `bench-hash`/`bench-string` 3 — i.e. single-digit pulls per
+  *entire* benchmark, ~all one-time boundary marks, not per-iteration. The
+  spurious traffic Slice D set out to remove is already gone. **Conclusion: Slice
+  D needs no code change; advancing further means Slice E (upvalues) or the
+  deferred carrier-drop completeness work, not more blanket deletion.** Pins
+  (`t/method-env-dirty.t` / `t/named-call-env-dirty.t` / `t/zeroarg-env-dirty.t`)
+  remain the regression guard for the precise gates.
 
 - **Slice E — closure upvalues (prereq #1).**
   Capture free vars as indexed upvalue cells; remove `compute_needs_env_sync`

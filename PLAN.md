@@ -115,12 +115,15 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 要旨: reverse sync を**削除せず**、per-`GetLocal` の coarse な `env_dirty`+全 locals スキャンから
 **carrier 境界での精密な書き込み名のみ writeback** へ再配置 → hot path から同期ロジックを消す。スライス順:
 
-- [ ] **Slice A** — invariant guard + 計測（`MUTSU_VM_STATS` で stale slot / 書き手を記録、挙動不変）。
-- [ ] **Slice B** — `EVAL` 精密 writeback（R2 旗艦・CP-2 ブロッカーが解けることの証明）。
-- [ ] **Slice C** — R1 reverse write-through（our/dynamic/`&sub` 登録等の by-name 書き手を slot 経由化）。
-- [ ] **Slice D** — R3 blanket-mark 撲滅（dispatch tier の精密 flag で冗長な post-dispatch mark を削除）。
+- [x] **Slice A** — invariant guard + 計測（#3219, MERGED）。
+- [x] **Slice B** — `EVAL` 精密 writeback（#3222, MERGED）+ EVAL carrier env_dirty drop（#3227）。
+- [~] **Slice C** — R1 reverse write-through。**実測で SUPERSEDED**（our/dynamic/push/call は既に pull 1–2・effective=0）。
+- [~] **Slice C′** — open-q#2 の regex 経路 + bareword carrier 一般化（#3231）+ EVAL内 `$x ~~ s///` writeback 穴修正（#3237）。
+      **残: `pairs`/`slip` 一般化 = deep `:=` bind-cell coherence（CP-2 壁）の解決が前提＝延期。**
+- [x] **Slice D** — R3 blanket-mark 撲滅。**監査で完了確認（2026-06-18）**: 明確な冗長は #2709/method_dispatch_pure で既に除去済。
+      残る ≈140 の `env_dirty=true` は ①精密ゲート本体 ②正当な mutation（push/mut-method/registration）③carrier/block net（精密化＝carrier-drop 領域）で、安全に削除できる冗長は無し。測定でも spurious は全ベンチ 1〜4 pull。詳細＝docs/vm-single-store.md。
 - [ ] **Slice E** — closure upvalue 化（prereq①・`compute_needs_env_sync` 撤去・最高リスク・最後）。
-- [ ] **Slice F** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
+- [ ] **Slice F** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。**真の前提＝deep `:=` cell coherence の env↔locals 乖離解決（CP-2 壁）。**
 - [ ] **Slice G**（後続・任意）— env の on-demand materialization（per-call `clone_env` を lazy overlay 化）。
 
 ### 第一級コンテナ Phase 2 → Phase 3（要素セル → 属性セル）
