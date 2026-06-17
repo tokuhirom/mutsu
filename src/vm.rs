@@ -1446,6 +1446,18 @@ impl Interpreter {
                             .collect();
                         Value::real_array(pairs)
                     }
+                    // Array-contextualizing a Seq (`@$s`) reifies and caches it, so
+                    // it may be read repeatedly. If the Seq's iterator was already
+                    // taken (e.g. by `.skip`/`.iterator`) and not cached, throw.
+                    Value::Seq(ref items) => {
+                        if crate::value::seq_is_consumed(items)
+                            && !crate::value::seq_is_cached(items)
+                        {
+                            return Err(crate::value::seq_consumed_error());
+                        }
+                        crate::value::seq_mark_cached(items);
+                        val
+                    }
                     other => other,
                 };
                 self.stack.push(val);
