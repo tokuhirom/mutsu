@@ -1176,6 +1176,12 @@ pub struct Interpreter {
     pub(crate) for_param_restore_stack: Vec<(String, Option<Value>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
     pub(crate) env_dirty: bool,
+    /// When `Some`, a *carrier* (EVAL / interpreter fallback) is running and
+    /// every by-name env write through `set_env_with_main_alias` logs its name
+    /// here. On carrier return, exactly these names are written back into the
+    /// caller's slots (`writeback_carrier_writes`), replacing the blanket
+    /// `env_dirty` pull for that carrier. See docs/vm-single-store.md Slice B.
+    pub(crate) carrier_writes: Option<std::collections::HashSet<String>>,
     pub(crate) method_dispatch_pure: bool,
     pub(crate) resume_ip: Option<usize>,
     pub(crate) bind_context: bool,
@@ -3327,6 +3333,7 @@ impl Interpreter {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
+            carrier_writes: None,
             method_dispatch_pure: false,
             resume_ip: None,
             bind_context: false,
@@ -5785,6 +5792,7 @@ impl Interpreter {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
+            carrier_writes: None,
             method_dispatch_pure: false,
             resume_ip: None,
             bind_context: false,

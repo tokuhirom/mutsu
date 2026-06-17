@@ -227,12 +227,54 @@ for wall-clock.
      names are the real signal. (A future refinement could add a Sub arm keyed on
      callable id, but it is not needed to steer the slices.)
 
-- **Slice B — `EVAL` precise writeback (R2 flagship).**
-  Add a carrier-active flag + `carrier_writes: HashSet<Symbol>` filled in
-  `set_env_with_main_alias`. Around the `EVAL` op (`vm_call_exec_ops`), set the
-  flag, run, then writeback logged names into caller slots and drop the blanket
-  `env_dirty`. Gate: `t/eval-*.t`, `S29-context/eval.t`, dynamic-scope roast;
-  new pin `t/eval-env-dirty.t`. This is the proof that the CP-2 blocker yields.
+- **Slice B — `EVAL`/carrier precise *scalar* writeback (R2 flagship). DONE (2026-06-17).**
+  `Interpreter::carrier_writes: Option<HashSet<String>>`; while `Some` (set around
+  the 3 `exec_call_values`/`exec_call_pairs_values` carrier sites in
+  `vm_call_exec_ops` via `begin_carrier`/`end_carrier`),
+  `set_env_with_main_alias` logs every by-name env write. On carrier return,
+  `writeback_carrier_writes(code, written)` copies the *current* env value of each
+  logged **plain-scalar** name that has a caller slot back into that slot. The
+  carrier site **keeps `env_dirty = true`** as a safety net. Nested carriers
+  save/restore+merge the log; an erroring carrier restores the log state but skips
+  the writeback (frame unwinds).
+
+  **Why scalar-only + keep `env_dirty` (the bug the first cut hit).** The first
+  revision *removed* `env_dirty` and wrote back *all* logged names. That regressed
+  `S03-binding/nested.t` / `S05-modifier/my.t`: a slot holding a container with a
+  live `:=` cell (`$struct` with a cyclic element bind) was overwritten from a
+  COW-detached env copy, destroying the cell. Worse, the diagnosis showed the
+  reconcile a carrier needs is sometimes for a name the carrier did **not** write
+  (a prior `:=` bind whose propagation the *next* carrier's blanket `env_dirty`
+  incidentally triggered) — an implicit dependency the precise log cannot see.
+  So Slice B (a) reconciles only plain scalars precisely (`is_writeback_safe_scalar`
+  — Int/Num/Str/Bool/Rat/…; never a container/instance/cell), and (b) retains
+  `env_dirty` so the barrier pull still covers containers and implicit
+  dependencies exactly as before. Removing `env_dirty` is **Slice F**, after R1/R3
+  make those dependencies explicit.
+
+  **Measured (MUTSU_VM_STATS, Slice A counters), `EVAL '$x=$x+1'` interleaved
+  with an unrelated hot local read, 1000×:**
+
+  | | locals_pulls | effective | stale_slots |
+  |---|--:|--:|--:|
+  | before (main) | 1000 | **1000** | 1000 |
+  | after (Slice B) | 1000 | **0** | 0 |
+
+  The reconciliation *work* (effective pulls / stale slots) drops to zero: the
+  writeback reconciles the carrier's scalar writes immediately, so the
+  `env_dirty`-triggered barrier pull finds every slot already coherent. The pulls
+  themselves remain (env_dirty is retained) but now do no work — Slice F deletes
+  them. This proves the precise carrier-reconcile mechanism that Slice F builds on.
+
+  Pinned by `t/eval-env-dirty.t` (12). Gate met: `S03-binding/nested.t`,
+  `S05-modifier/my.t`, `S29-context/eval.t`, `evalfile.t`, `S01.../eval_lex.t`,
+  `S02-names/caller.t`, `S02-magicals/*` green; all env-dirty pins green.
+
+  > **Slice F prerequisites surfaced here:** removing `env_dirty` requires (1)
+  > precise reconcile for container/cell slots too (cell-aware, not a blind env
+  > overwrite), and (2) making the implicit `:=`-bind→later-pull dependency
+  > explicit (the bind reverse-write-throughs or sets its own precise signal),
+  > plus the open-question-#2 audit that no carrier write bypasses the log.
 
 - **Slice C — R1 reverse write-through.**
   Route the by-name var/control/register setters through
