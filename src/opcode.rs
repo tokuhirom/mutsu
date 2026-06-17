@@ -971,6 +971,16 @@ pub(crate) enum OpCode {
         op_idx: u32,
     },
 
+    // -- List-associative n-ary MetaOp (X/Z chained: `a X b X c`) --
+    // Pops `count` operands off the stack and combines them in a single
+    // n-ary cross (X) or zip (Z) so the result is flat n-tuples rather than
+    // left-nested pairs.
+    MetaOpNary {
+        meta_idx: u32,
+        op_idx: u32,
+        count: u32,
+    },
+
     // -- InfixFunc (atan2, sprintf) --
     InfixFunc {
         name_idx: u32,

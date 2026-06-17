@@ -4010,6 +4010,15 @@ impl Interpreter {
                 *ip += 1;
             }
 
+            OpCode::MetaOpNary {
+                meta_idx,
+                op_idx,
+                count,
+            } => {
+                self.exec_meta_op_nary(code, *meta_idx, *op_idx, *count)?;
+                *ip += 1;
+            }
+
             // -- InfixFunc --
             OpCode::InfixFunc {
                 name_idx,
