@@ -483,6 +483,7 @@ pub(crate) fn current_time_secs_f64() -> f64 {
 
 pub(crate) use display::is_internal_anon_type_name;
 pub use display::{format_complex, tclc_str, wordcase_str};
+pub(crate) use error::expected_type_object;
 pub use error::{RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)
 
