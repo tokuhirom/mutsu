@@ -1,6 +1,6 @@
 use Test;
 
-plan 7;
+plan 10;
 
 # Parameterizing a non-parametric type (a plain class / package / module) with
 # `[T]` throws X::NotParametric. Only roles and built-in container types accept
@@ -12,6 +12,14 @@ throws-like 'my module M { }; M[Int]', X::NotParametric,
     'module is not parameterizable';
 throws-like 'my class C { }; C[Int]', X::NotParametric,
     'plain class is not parameterizable';
+
+# The `of T` form on a non-parametric parameter type is equally rejected.
+throws-like 'my package P { }; sub foo(P of Int) { }', X::NotParametric,
+    'package "of" parameter is not parameterizable';
+throws-like 'my module M { }; sub foo(M of Int) { }', X::NotParametric,
+    'module "of" parameter is not parameterizable';
+throws-like 'my class C { }; sub foo(C of Int) { }', X::NotParametric,
+    'class "of" parameter is not parameterizable';
 
 # Built-in container types and roles ARE parameterizable.
 {

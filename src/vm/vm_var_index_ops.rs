@@ -1608,45 +1608,7 @@ impl Interpreter {
             // Parameterizing a user-declared class / package / module that is NOT
             // parametric throws X::NotParametric. Roles (handled above), built-in
             // container types, and subclasses of them DO accept `[T]`.
-            (Value::Package(name), _)
-                if {
-                    let nm = name.resolve();
-                    // Built-in parametric container types accept `[T]`. Some (Buf,
-                    // Blob, ...) are registered as classes, so allow-list them.
-                    let parametric_builtin = matches!(
-                        nm.as_str(),
-                        "Array"
-                            | "Hash"
-                            | "Map"
-                            | "List"
-                            | "Slip"
-                            | "Seq"
-                            | "Range"
-                            | "Set"
-                            | "Bag"
-                            | "Mix"
-                            | "SetHash"
-                            | "BagHash"
-                            | "MixHash"
-                            | "Buf"
-                            | "Blob"
-                            | "buf8"
-                            | "buf16"
-                            | "buf32"
-                            | "buf64"
-                            | "blob8"
-                            | "blob16"
-                            | "blob32"
-                            | "blob64"
-                            | "Positional"
-                            | "Associative"
-                            | "Iterable"
-                    );
-                    !parametric_builtin
-                        && !self.is_container_subclass(&nm)
-                        && (self.has_class(&nm) || self.is_declared_package(&nm))
-                } =>
-            {
+            (Value::Package(name), _) if self.is_non_parametric_type(&name.resolve()) => {
                 let nm = name.resolve();
                 return Err(RuntimeError::typed(
                     "X::NotParametric",

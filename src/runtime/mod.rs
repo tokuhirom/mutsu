@@ -5345,6 +5345,48 @@ impl Interpreter {
     /// Check if a class name refers to a user-defined class that inherits from
     /// a container type (Hash, Array, etc.). Used to skip element-level type
     /// checking for container subclasses.
+    /// True when `name` is a user-declared class / package / module that is NOT
+    /// parametric — i.e. parameterizing it with `[T]` (or `of T`) is an error
+    /// (X::NotParametric). Roles, built-in container types (Array/Hash/Buf/Blob/
+    /// ...), and subclasses of containers ARE parametric and return false.
+    pub(crate) fn is_non_parametric_type(&self, name: &str) -> bool {
+        // Built-in parametric container types accept `[T]`. Some (Buf, Blob, ...)
+        // are registered as classes, so they must be allow-listed here.
+        let parametric_builtin = matches!(
+            name,
+            "Array"
+                | "Hash"
+                | "Map"
+                | "List"
+                | "Slip"
+                | "Seq"
+                | "Range"
+                | "Set"
+                | "Bag"
+                | "Mix"
+                | "SetHash"
+                | "BagHash"
+                | "MixHash"
+                | "Buf"
+                | "Blob"
+                | "buf8"
+                | "buf16"
+                | "buf32"
+                | "buf64"
+                | "blob8"
+                | "blob16"
+                | "blob32"
+                | "blob64"
+                | "Positional"
+                | "Associative"
+                | "Iterable"
+        );
+        !parametric_builtin
+            && !self.is_role(name)
+            && !self.is_container_subclass(name)
+            && (self.has_class(name) || self.is_declared_package(name))
+    }
+
     pub(crate) fn is_container_subclass(&self, name: &str) -> bool {
         const CONTAINER_TYPES: &[&str] = &[
             "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",

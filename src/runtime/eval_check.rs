@@ -8,12 +8,20 @@ fn collect_declared_type_names(
     stmts: &[Stmt],
     out: &mut std::collections::HashSet<String>,
     packages: &mut std::collections::HashSet<String>,
+    classes: &mut std::collections::HashSet<String>,
 ) {
     for stmt in stmts {
         match stmt {
-            Stmt::ClassDecl { name, body, .. } | Stmt::RoleDecl { name, body, .. } => {
+            Stmt::ClassDecl { name, body, .. } => {
+                // A plain `class` is type-like but NOT parametric (parameterizing
+                // it with `[T]`/`of T` is X::NotParametric); roles ARE parametric.
                 out.insert(name.resolve().to_string());
-                collect_declared_type_names(body, out, packages);
+                classes.insert(name.resolve().to_string());
+                collect_declared_type_names(body, out, packages, classes);
+            }
+            Stmt::RoleDecl { name, body, .. } => {
+                out.insert(name.resolve().to_string());
+                collect_declared_type_names(body, out, packages, classes);
             }
             Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
                 out.insert(name.resolve().to_string());
@@ -31,10 +39,10 @@ fn collect_declared_type_names(
                 } else {
                     out.insert(name.resolve().to_string());
                 }
-                collect_declared_type_names(body, out, packages);
+                collect_declared_type_names(body, out, packages, classes);
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                collect_declared_type_names(body, out, packages);
+                collect_declared_type_names(body, out, packages, classes);
             }
             _ => {}
         }
@@ -49,6 +57,7 @@ fn walk_validate_sub_param_types(
     stmts: &[Stmt],
     declared: &std::collections::HashSet<String>,
     packages: &std::collections::HashSet<String>,
+    classes: &std::collections::HashSet<String>,
 ) -> Result<(), RuntimeError> {
     for stmt in stmts {
         match stmt {
@@ -58,16 +67,16 @@ fn walk_validate_sub_param_types(
                 return_type,
                 ..
             } => {
-                interp.validate_param_type_constraints(param_defs, declared, packages)?;
+                interp.validate_param_type_constraints(param_defs, declared, packages, classes)?;
                 interp.validate_return_type_constraint(
                     return_type.as_deref(),
                     param_defs,
                     declared,
                 )?;
-                walk_validate_sub_param_types(interp, body, declared, packages)?;
+                walk_validate_sub_param_types(interp, body, declared, packages, classes)?;
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-                walk_validate_sub_param_types(interp, body, declared, packages)?;
+                walk_validate_sub_param_types(interp, body, declared, packages, classes)?;
             }
             _ => {}
         }
@@ -84,8 +93,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut declared = std::collections::HashSet::new();
         let mut packages = std::collections::HashSet::new();
-        collect_declared_type_names(stmts, &mut declared, &mut packages);
-        walk_validate_sub_param_types(self, stmts, &declared, &packages)
+        let mut classes = std::collections::HashSet::new();
+        collect_declared_type_names(stmts, &mut declared, &mut packages, &mut classes);
+        walk_validate_sub_param_types(self, stmts, &declared, &packages, &classes)
     }
 
     /// Parse and run only BEGIN/CHECK phasers from EVAL'd code (`:check` mode).

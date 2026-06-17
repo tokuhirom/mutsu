@@ -123,6 +123,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         declared_types: &std::collections::HashSet<String>,
         declared_packages: &std::collections::HashSet<String>,
+        declared_classes: &std::collections::HashSet<String>,
     ) -> Result<(), RuntimeError> {
         // Type-capture names declared in this signature (e.g. `::T`) are valid
         // type names for the rest of the signature.
@@ -132,15 +133,38 @@ impl Interpreter {
             .filter_map(|tc| tc.strip_prefix("::"))
             .collect();
         for pd in param_defs {
+            let Some(tc) = pd.type_constraint.as_deref() else {
+                continue;
+            };
+            // A parameterized form `Base[...]` (also how `Base of T` is stored,
+            // including the type-only `(Base of T)` param named `__type_only__`)
+            // on a non-parametric type (a plain class or a package/module) is
+            // X::NotParametric. Built-in containers and roles are parametric and
+            // not in these statically-collected sets. (Runtime `is_non_parametric_type`
+            // can't be used here: this pre-pass runs before the type is registered.)
+            // This is checked before the synthetic-param skip below because a
+            // `(Base of T)` term param IS named `__type_only__`.
+            if let Some(base) = tc.split_once('[').map(|(b, _)| b.trim())
+                && !base.is_empty()
+                && (declared_packages.contains(base) || declared_classes.contains(base))
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("{} cannot be parameterized", base)),
+                );
+                attrs.insert(
+                    "type".to_string(),
+                    Value::Package(crate::symbol::Symbol::intern(base)),
+                );
+                return Err(RuntimeError::typed("X::NotParametric", attrs));
+            }
             // Skip synthetic params (`__type_only__`, `__literal__`): a bare
             // `(Inf)` / `(True)` term param smartmatches a value, so its
             // "constraint" is not necessarily a type name.
             if pd.name.starts_with("__") {
                 continue;
             }
-            let Some(tc) = pd.type_constraint.as_deref() else {
-                continue;
-            };
             // Only a bare identifier (letters/digits/_/-) starting uppercase is
             // considered; anything decorated is skipped as potentially valid.
             if tc.is_empty()
