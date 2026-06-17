@@ -254,6 +254,14 @@ impl Interpreter {
         _name_sym: Option<Symbol>,
         value: Value,
     ) {
+        // Slice B (docs/vm-single-store.md): while a carrier (EVAL / interpreter
+        // fallback) is active, log every by-name env write so the carrier-return
+        // writeback can reconcile exactly these names into the caller's slots
+        // (replacing the blanket `env_dirty` pull). Logging a superset is safe —
+        // the writeback filters by the caller's compiled-local slots.
+        if let Some(set) = self.carrier_writes.as_mut() {
+            set.insert(name.to_string());
+        }
         if name.starts_with("__ANON_STATE_") {
             self.env_mut().insert(name.to_string(), value);
             return;
@@ -353,6 +361,116 @@ impl Interpreter {
         }
         if any_stale {
             crate::vm::vm_stats::record_locals_pull_effective();
+        }
+    }
+
+    /// Begin a carrier region: start logging by-name env writes. Returns the
+    /// previously-active log (if a carrier was already running, e.g. nested
+    /// EVAL) so the caller can restore + merge on `end_carrier`. See Slice B.
+    pub(super) fn begin_carrier(&mut self) -> Option<std::collections::HashSet<String>> {
+        self.carrier_writes
+            .replace(std::collections::HashSet::new())
+    }
+
+    /// End a carrier region: take this carrier's logged names and restore the
+    /// outer carrier's log (merging this carrier's names into it so an enclosing
+    /// carrier also reconciles any of its own frame's slots the inner carrier
+    /// wrote). Returns the names this carrier wrote, for the caller to hand to
+    /// `writeback_carrier_writes` — but only on the success path: if the carrier
+    /// errored, the frame unwinds, so reconciling its slots is moot (yet the log
+    /// state must still be restored here so a `Some` does not leak into a CATCH).
+    pub(super) fn end_carrier(
+        &mut self,
+        saved: Option<std::collections::HashSet<String>>,
+    ) -> std::collections::HashSet<String> {
+        let written = self.carrier_writes.take().unwrap_or_default();
+        self.carrier_writes = saved.map(|mut s| {
+            s.extend(written.iter().cloned());
+            s
+        });
+        written
+    }
+
+    /// A local value that is safe to overwrite from env during a carrier
+    /// writeback: an immutable, cell-free scalar. A container (Array/Hash/...),
+    /// an Instance, or a binding cell/ref may hold *live* `:=` cells whose
+    /// authoritative state lives in the slot, not env — env may hold a
+    /// COW-detached copy (autovivified during the carrier's reads). Overwriting
+    /// such a slot from env destroys the live cell (regressed
+    /// S03-binding/nested.t). Those names fall back to the `env_dirty` barrier
+    /// pull, whose HashSlotRef skip + deferred timing handled them before. The
+    /// common EVAL case (`$x = scalar`) is a plain scalar and stays precise.
+    fn is_writeback_safe_scalar(v: &Value) -> bool {
+        matches!(
+            v,
+            Value::Int(_)
+                | Value::BigInt(_)
+                | Value::Num(_)
+                | Value::Str(_)
+                | Value::Bool(_)
+                | Value::Rat(..)
+                | Value::FatRat(..)
+                | Value::BigRat(..)
+                | Value::Complex(..)
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::Package(_)
+                | Value::Enum { .. }
+                | Value::Version { .. }
+                | Value::Uni(_)
+                | Value::Nil
+                | Value::Whatever
+        )
+    }
+
+    /// Reconcile the *plain-scalar* names a carrier wrote into the current
+    /// frame's slots (Slice B). Reads the current env value for each written
+    /// scalar name that has a slot in `code.locals`, so the subsequent
+    /// `env_dirty` barrier pull finds it already coherent (the reverse sync for
+    /// carrier scalar writes becomes precise). A slot holding a
+    /// container/instance/binding cell is left to the barrier pull — overwriting
+    /// it from a possibly COW-detached env copy would clobber a live `:=` cell
+    /// (regressed S03-binding/nested.t). `env_dirty` is still set by the carrier
+    /// site as the safety net for those (and for implicit reconcile dependencies
+    /// the carrier did not itself write, e.g. a prior `:=` bind); Slice F removes
+    /// it once those are explicit. Mirrors `sync_locals_from_env`'s per-slot
+    /// skips (HashSlotRef / `!attr`).
+    pub(super) fn writeback_carrier_writes(
+        &mut self,
+        code: &CompiledCode,
+        written: &std::collections::HashSet<String>,
+    ) {
+        if written.is_empty() {
+            return;
+        }
+        for (i, name) in code.locals.iter().enumerate() {
+            // Only reconcile plain-scalar slots (no live cells to clobber).
+            if !Self::is_writeback_safe_scalar(&self.locals[i]) {
+                continue;
+            }
+            if name.starts_with('!') {
+                continue;
+            }
+            let bare = name
+                .strip_prefix('$')
+                .or_else(|| name.strip_prefix('@'))
+                .or_else(|| name.strip_prefix('%'))
+                .or_else(|| name.strip_prefix('&'));
+            // Only reconcile slots the carrier actually wrote by name.
+            if !written.contains(name) && !bare.is_some_and(|b| written.contains(b)) {
+                continue;
+            }
+            if let Some(val) = self.env().get(name).cloned() {
+                self.locals[i] = val;
+                continue;
+            }
+            if let Some(bare) = bare
+                && let Some(val) = self.env().get(bare).cloned()
+            {
+                self.locals[i] = val;
+            }
         }
     }
 

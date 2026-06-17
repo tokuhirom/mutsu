@@ -77,14 +77,20 @@ impl Interpreter {
             native_result?;
         } else {
             self.set_pending_call_arg_sources(arg_sources);
+            // Carrier may write the caller env by name (e.g. EVAL'd lexicals).
+            // Slice B: log those writes and *precisely* reconcile the plain-scalar
+            // ones into the caller's slots on return (so the reverse sync becomes
+            // precise — the pull finds them already coherent). `env_dirty` is kept
+            // as the safety net for non-scalar / implicit-dependency reconciles
+            // (e.g. a prior `:=` bind cell the carrier did not itself write); its
+            // removal is Slice F, once every such dependency is made explicit. See
+            // docs/vm-single-store.md.
+            let carrier_saved = self.begin_carrier();
             let exec_result = loan_env!(self, exec_call_values(&name, args));
             self.set_pending_call_arg_sources(None);
+            let written = self.end_carrier(carrier_saved);
             exec_result?;
-            // Carrier may write the caller env by name (e.g. EVAL'd lexicals). Keep
-            // the env_dirty flag rather than an eager sync_locals_from_env here: an
-            // eager pull at a function-call site can clobber an in-place cell
-            // mutation a later op made to a local (cyclic `:=` bind), which the
-            // flag-deferred barrier pull avoids by running only once env is fresh.
+            self.writeback_carrier_writes(code, &written);
             self.env_dirty = true;
         }
         Ok(())
@@ -124,8 +130,12 @@ impl Interpreter {
             native_result?;
             return Ok(());
         }
-        // Carrier fallback: keep the env_dirty flag (see exec_exec_call_op).
-        loan_env!(self, exec_call_pairs_values(&name, args))?;
+        // Carrier fallback: precise scalar writeback + env_dirty net (see exec_exec_call_op).
+        let carrier_saved = self.begin_carrier();
+        let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
+        let written = self.end_carrier(carrier_saved);
+        exec_result?;
+        self.writeback_carrier_writes(code, &written);
         self.env_dirty = true;
         Ok(())
     }
@@ -179,8 +189,12 @@ impl Interpreter {
             self.stack.push(native_result?);
             return Ok(());
         }
-        // Carrier fallback: keep the env_dirty flag (see exec_exec_call_op).
-        loan_env!(self, exec_call_pairs_values(&name, args))?;
+        // Carrier fallback: precise scalar writeback + env_dirty net (see exec_exec_call_op).
+        let carrier_saved = self.begin_carrier();
+        let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
+        let written = self.end_carrier(carrier_saved);
+        exec_result?;
+        self.writeback_carrier_writes(code, &written);
         self.env_dirty = true;
         Ok(())
     }
