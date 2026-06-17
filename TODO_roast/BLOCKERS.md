@@ -388,8 +388,9 @@ motivate.
   values. See S32.md.
 
 **Broad / no single root cause (re-measure before investing):**
-- S02-types/range.t (56 failing), S03-operators/range.t (18 failing) — broad range
-  coercion/typecheck/lazy issues, well beyond a single fix.
+- S02-types/range.t (56 failing) — broad range coercion/typecheck/lazy issues, well beyond a
+  single fix. (S03-operators/range.t is now whitelisted: Range +/- Real #3209, reversed-range
+  meta-ops `R..` + precedence worry, do-stmt-modifier `;` fix #3210.)
 
 ---
 
