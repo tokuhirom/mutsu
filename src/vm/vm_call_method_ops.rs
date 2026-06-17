@@ -212,6 +212,47 @@ impl Interpreter {
             err.return_value = Some(target);
             return Err(err);
         }
+        // `.throw`/`.rethrow` on an exception instance: attach a backtrace built
+        // from the current call stack. The `die`/`fail` opcodes do this, but an
+        // explicit `ExceptionObject.throw` goes through method dispatch and would
+        // otherwise carry no frames (so `.backtrace.list` would be empty).
+        let target = if matches!(method, "throw" | "rethrow")
+            && args.is_empty()
+            && matches!(
+                &target,
+                Value::Instance { class_name, attributes, .. }
+                    if {
+                        let cn = class_name.resolve();
+                        (cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
+                            && !attributes.as_map().contains_key("backtrace")
+                    }
+            ) {
+            if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            {
+                let backtrace_val = self.build_backtrace_value();
+                let mut new_attrs = attributes.as_map().clone();
+                new_attrs.insert("backtrace".to_string(), backtrace_val);
+                if let Some(line) = self.current_source_line() {
+                    new_attrs
+                        .entry("line".to_string())
+                        .or_insert_with(|| Value::Int(line as i64));
+                }
+                if let Some(file) = self.current_source_file() {
+                    new_attrs
+                        .entry("file".to_string())
+                        .or_insert_with(|| Value::str_from(&file));
+                }
+                Value::make_instance(*class_name, new_attrs)
+            } else {
+                target
+            }
+        } else {
+            target
+        };
         // Autovivify a typed array element when a mutating array method is called
         // on its (undefined) type object, e.g. `my Array of Int @x; @x[0].push(3)`
         // reads `@x[0]` as the `Array[Int]` type object — pushing builds a fresh

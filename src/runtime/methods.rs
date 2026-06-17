@@ -339,6 +339,37 @@ impl Interpreter {
         {
             return self.call_method_with_values(target, "sum", Vec::new());
         }
+        // A Backtrace is a List of Backtrace::Frame: list-iteration methods
+        // (grep/map/first/...) operate on its frames, not the Backtrace itself.
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name.resolve() == "Backtrace"
+            && matches!(
+                method,
+                "grep"
+                    | "map"
+                    | "first"
+                    | "join"
+                    | "sort"
+                    | "reverse"
+                    | "head"
+                    | "tail"
+                    | "kv"
+                    | "pairs"
+                    | "Array"
+                    | "cache"
+            )
+        {
+            let frames = attributes
+                .as_map()
+                .get("frames")
+                .cloned()
+                .unwrap_or_else(|| Value::array(vec![]));
+            return self.call_method_with_values(frames, method, args);
+        }
         // Scalar containers are transparent for method dispatch (except .item and .VAR)
         if let Value::Scalar(inner) = target {
             if method == "VAR" {
