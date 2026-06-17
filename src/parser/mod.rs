@@ -3,6 +3,7 @@ mod helpers;
 mod memo;
 mod parse_result;
 mod primary;
+mod sink_warn;
 mod stmt;
 use std::sync::OnceLock;
 
@@ -184,6 +185,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                     col_num,
                 ))
             } else {
+                sink_warn::add_sink_warnings(&stmts);
                 Ok((stmts, finish_content))
             }
         }

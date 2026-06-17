@@ -5,7 +5,7 @@ use Test::Util;
 plan 2;
 
 is_run(
-    '1',
+    'my $n = 1',
     "foo\n",
     { out => "foo\n", err => '', status => 0 },
     '-p wraps code in a line-printing loop',
