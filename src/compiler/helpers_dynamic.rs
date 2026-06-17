@@ -88,6 +88,54 @@ impl Compiler {
         self.code.emit(OpCode::Die);
     }
 
+    /// If `name` is a `sub`/`multi sub` declaration of a reserved special-form
+    /// operator (one handled directly by the compiler grammar and not
+    /// user-overridable), return an X::Syntax::Extension::SpecialForm error value
+    /// carrying `category` and `opname`. Returns None for any normal operator
+    /// (e.g. `infix:<+>`) or non-operator sub name.
+    ///
+    /// The reserved set matches Rakudo: `infix:<=>` (assignment), `infix:<:=>`
+    /// and `infix:<::=>` (bind), `infix:<~~>` (smartmatch), `prefix:<|>` (flatten).
+    pub(super) fn check_special_form_override(name: &str) -> Option<Value> {
+        // Split `<category>:<...op...>` into the category and the delimited op.
+        let (category, rest) = name.split_once(':')?;
+        if !matches!(
+            category,
+            "prefix" | "infix" | "postfix" | "circumfix" | "postcircumfix"
+        ) {
+            return None;
+        }
+        // Strip the angle/French-quote delimiters around the operator name.
+        let opname = rest
+            .strip_prefix('<')
+            .and_then(|s| s.strip_suffix('>'))
+            .or_else(|| {
+                rest.strip_prefix('\u{ab}')
+                    .and_then(|s| s.strip_suffix('\u{bb}'))
+            })?
+            .trim();
+        let reserved = match category {
+            "infix" => matches!(opname, "=" | ":=" | "::=" | "~~"),
+            "prefix" => opname == "|",
+            _ => false,
+        };
+        if !reserved {
+            return None;
+        }
+        let msg = format!(
+            "Cannot override {} operator '{}', as it is a special form handled directly by the compiler",
+            category, opname
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("category".to_string(), Value::str(category.to_string()));
+        attrs.insert("opname".to_string(), Value::str(opname.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Some(Value::make_instance(
+            Symbol::intern("X::Syntax::Extension::SpecialForm"),
+            attrs,
+        ))
+    }
+
     /// Reconstruct the full symbol name (with sigil) from the internal name.
     pub(super) fn dynamic_var_symbol(name: &str) -> String {
         // If name starts with a sigil (@, %, &), it already has the sigil
