@@ -3773,6 +3773,9 @@ impl Interpreter {
                                         self.env.get(&env_key).cloned().unwrap_or(Value::Nil);
                                     let elements = match &value {
                                         Value::Array(arr, _) => arr.as_ref().clone(),
+                                        Value::Seq(items) | Value::Slip(items) => {
+                                            crate::value::ArrayData::new((**items).clone())
+                                        }
                                         _ => crate::value::ArrayData::new(vec![value]),
                                     };
                                     let mut alt_patterns = Vec::new();
@@ -5060,6 +5063,9 @@ impl Interpreter {
                             .unwrap_or(Value::Nil);
                         let elements = match &value {
                             Value::Array(arr, _) => arr.as_ref().clone(),
+                            Value::Seq(items) | Value::Slip(items) => {
+                                crate::value::ArrayData::new((**items).clone())
+                            }
                             _ => crate::value::ArrayData::new(vec![value]),
                         };
                         let mut alts = Vec::new();
@@ -5094,6 +5100,9 @@ impl Interpreter {
                         .unwrap_or(Value::Nil);
                     let elements = match &value {
                         Value::Array(arr, _) => arr.as_ref().clone(),
+                        Value::Seq(items) | Value::Slip(items) => {
+                            crate::value::ArrayData::new((**items).clone())
+                        }
                         _ => crate::value::ArrayData::new(vec![value]),
                     };
                     let mut alts = Vec::new();
@@ -5127,6 +5136,9 @@ impl Interpreter {
                     let val = self.eval_string_as_source(&expr_str);
                     let elements = match &val {
                         Value::Array(arr, _) => arr.as_ref().clone(),
+                        Value::Seq(items) | Value::Slip(items) => {
+                            crate::value::ArrayData::new((**items).clone())
+                        }
                         _ => crate::value::ArrayData::new(vec![val]),
                     };
                     let mut alts = Vec::new();
