@@ -8,6 +8,22 @@ use crate::value::Value;
 
 use super::super::stmt::{keyword, statement_pub};
 
+/// When `do STMT` parses its inner statement via the full statement parser, a
+/// statement modifier (`do $_ for @list`) or assignment consumes the trailing
+/// `;`. In expression context the `;` belongs to the *outer* statement, so if it
+/// were swallowed the surrounding expression parser would keep going and treat a
+/// following listop (`my @a = do $_ for 2..4; say @a`) as an infix operator on
+/// the `do` result. Give the terminator back by returning a remaining slice that
+/// starts at the consumed `;`.
+fn restore_do_stmt_terminator<'a>(orig: &'a str, after: &'a str) -> &'a str {
+    let consumed = orig.len().saturating_sub(after.len());
+    if consumed > 0 && orig.as_bytes()[consumed - 1] == b';' {
+        &orig[consumed - 1..]
+    } else {
+        after
+    }
+}
+
 fn is_superscript_digit(c: char) -> bool {
     matches!(
         c,
@@ -1745,14 +1761,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     false
                 };
                 if is_ctrl(r)
-                    && let Ok((r, stmt)) = super::super::stmt::statement_pub(r)
+                    && let Ok((r_after, stmt)) = super::super::stmt::statement_pub(r)
                 {
-                    return Ok((r, Expr::DoStmt(Box::new(stmt))));
+                    let r_after = restore_do_stmt_terminator(r, r_after);
+                    return Ok((r_after, Expr::DoStmt(Box::new(stmt))));
                 }
             }
             // do STMT — wrap an assignment or other statement
-            if let Ok((r, stmt)) = super::super::stmt::statement_pub(r) {
-                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            if let Ok((r_after, stmt)) = super::super::stmt::statement_pub(r) {
+                let r_after = restore_do_stmt_terminator(r, r_after);
+                return Ok((r_after, Expr::DoStmt(Box::new(stmt))));
             }
             // do EXPR — just evaluate the expression
             let (r, expr) = expression(r)?;
