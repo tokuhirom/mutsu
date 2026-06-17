@@ -1605,6 +1605,62 @@ impl Interpreter {
             (Value::Package(name), _) if !is_positional && name.resolve() == "Any" => {
                 Value::Package(Symbol::intern("Any"))
             }
+            // Parameterizing a user-declared class / package / module that is NOT
+            // parametric throws X::NotParametric. Roles (handled above), built-in
+            // container types, and subclasses of them DO accept `[T]`.
+            (Value::Package(name), _)
+                if {
+                    let nm = name.resolve();
+                    // Built-in parametric container types accept `[T]`. Some (Buf,
+                    // Blob, ...) are registered as classes, so allow-list them.
+                    let parametric_builtin = matches!(
+                        nm.as_str(),
+                        "Array"
+                            | "Hash"
+                            | "Map"
+                            | "List"
+                            | "Slip"
+                            | "Seq"
+                            | "Range"
+                            | "Set"
+                            | "Bag"
+                            | "Mix"
+                            | "SetHash"
+                            | "BagHash"
+                            | "MixHash"
+                            | "Buf"
+                            | "Blob"
+                            | "buf8"
+                            | "buf16"
+                            | "buf32"
+                            | "buf64"
+                            | "blob8"
+                            | "blob16"
+                            | "blob32"
+                            | "blob64"
+                            | "Positional"
+                            | "Associative"
+                            | "Iterable"
+                    );
+                    !parametric_builtin
+                        && !self.is_container_subclass(&nm)
+                        && (self.has_class(&nm) || self.is_declared_package(&nm))
+                } =>
+            {
+                let nm = name.resolve();
+                return Err(RuntimeError::typed(
+                    "X::NotParametric",
+                    [
+                        (
+                            "message".to_string(),
+                            Value::str(format!("{} cannot be parameterized", nm)),
+                        ),
+                        ("type".to_string(), Value::Package(name)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ));
+            }
             // Type parameterization: e.g. Array[Int] or Hash[Int,Str]
             (Value::Package(name), idx) => {
                 let type_args = match idx {
