@@ -3625,7 +3625,7 @@ pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> Run
     let mut attrs = std::collections::HashMap::new();
     attrs.insert(
         "expected".to_string(),
-        Value::Package(crate::symbol::Symbol::intern(expected)),
+        crate::value::expected_type_object(expected),
     );
     attrs.insert("got".to_string(), val.clone());
     attrs.insert("operation".to_string(), Value::str("bind".to_string()));
@@ -3661,7 +3661,7 @@ pub(crate) fn type_check_assignment_typed_error(
     // `expected => Int` / `got => 'foo'` succeed.
     attrs.insert(
         "expected".to_string(),
-        Value::Package(crate::symbol::Symbol::intern(expected)),
+        crate::value::expected_type_object(expected),
     );
     attrs.insert("got".to_string(), val.clone());
     attrs.insert("symbol".to_string(), Value::str(display_name));

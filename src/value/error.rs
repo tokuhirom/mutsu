@@ -71,6 +71,18 @@ pub struct RuntimeError {
     pub backtrace: Option<String>,
 }
 
+/// The runtime type-object Value for a type *name*, used as the `.expected`
+/// attribute of type-check exceptions. Most types map to `Package(name)`
+/// (`Package("Int") ~~ Int` is True), but a few core type objects have a
+/// dedicated Value representation — notably `Nil`, whose type object is
+/// `Value::Nil` (so a `Package("Nil")` would fail `~~ Nil` / `=== Nil`).
+pub(crate) fn expected_type_object(name: &str) -> Value {
+    match name {
+        "Nil" => Value::Nil,
+        _ => Value::Package(Symbol::intern(name)),
+    }
+}
+
 impl RuntimeError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
@@ -821,10 +833,7 @@ impl RuntimeError {
             )
         };
         let mut attrs = HashMap::new();
-        attrs.insert(
-            "expected".to_string(),
-            Value::Package(crate::symbol::Symbol::intern(expected)),
-        );
+        attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), got_value.clone());
         if let Some(sym) = symbol {
             attrs.insert("symbol".to_string(), Value::str(sym.to_string()));
@@ -957,7 +966,8 @@ impl RuntimeError {
         });
         let mut attrs = HashMap::new();
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
-        attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+        // raku exposes `.expected` as the expected type OBJECT.
+        attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
