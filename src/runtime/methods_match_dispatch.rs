@@ -2,7 +2,7 @@ use super::*;
 
 impl Interpreter {
     /// Dispatch .match method
-    pub(super) fn dispatch_match_method(
+    pub(crate) fn dispatch_match_method(
         &mut self,
         target: Value,
         args: &[Value],

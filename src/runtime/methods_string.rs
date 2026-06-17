@@ -605,7 +605,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn dispatch_subst(
+    pub(crate) fn dispatch_subst(
         &mut self,
         target: Value,
         args: &[Value],
