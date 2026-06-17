@@ -1614,7 +1614,10 @@ impl Interpreter {
             "message".to_string(),
             Value::str(format!("No such symbol '{name}'")),
         );
-        let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
+        // A failed symbolic lookup (`::('NoSuchName')`, `::('')`) is
+        // X::NoSuchSymbol in Raku, not a bare X::AdHoc. `symbol` carries the name.
+        ex_attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        let exception = Value::make_instance(Symbol::intern("X::NoSuchSymbol"), ex_attrs);
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
         failure_attrs.insert("handled".to_string(), Value::Bool(false));
