@@ -98,6 +98,106 @@ impl Interpreter {
         walk_validate_sub_param_types(self, stmts, &declared, &packages, &classes)
     }
 
+    /// Reject a type-parameter argument that names an undeclared type, e.g.
+    /// `my Array[Numerix] $x` -> X::Undeclared::Symbols (gist mentions `Numerix`).
+    /// Only the inner `[...]` arguments are checked here (the base type's
+    /// parametric-ness is X::NotParametric, handled elsewhere). All declared type
+    /// names are collected first so forward references are honored.
+    pub(crate) fn check_eval_undeclared_type_args(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut declared = std::collections::HashSet::new();
+        let mut packages = std::collections::HashSet::new();
+        let mut classes = std::collections::HashSet::new();
+        collect_declared_type_names(stmts, &mut declared, &mut packages, &mut classes);
+        self.walk_validate_type_args(stmts, &declared)
+    }
+
+    /// If `tc` is `Base[arg, ...]`, return the first inner argument that names an
+    /// undeclared type (an uppercase bareword that is neither declared nor a known
+    /// built-in / resolvable type). `::T` capture args and lowercase/native args
+    /// are ignored.
+    fn first_undeclared_type_arg(
+        &self,
+        tc: &str,
+        declared: &std::collections::HashSet<String>,
+    ) -> Option<String> {
+        let open = tc.find('[')?;
+        let close = tc.rfind(']')?;
+        if close <= open + 1 {
+            return None;
+        }
+        let inner = &tc[open + 1..close];
+        for raw in inner.split(',') {
+            // Strip type smileys (`:D`/`:U`/`:_`) and surrounding whitespace.
+            let arg = raw.split(':').next().unwrap_or(raw).trim();
+            if arg.is_empty() || arg.starts_with("::") {
+                continue;
+            }
+            // Only consider a bare uppercase type identifier.
+            if !arg.starts_with(|c: char| c.is_ascii_uppercase())
+                || !arg
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':')
+            {
+                continue;
+            }
+            if declared.contains(arg) || self.has_type(arg) || self.is_resolvable_type(arg) {
+                continue;
+            }
+            return Some(arg.to_string());
+        }
+        None
+    }
+
+    fn walk_validate_type_args(
+        &self,
+        stmts: &[Stmt],
+        declared: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        let check = |tc: Option<&str>| -> Option<String> {
+            tc.and_then(|t| self.first_undeclared_type_arg(t, declared))
+        };
+        for stmt in stmts {
+            let bad = match stmt {
+                Stmt::VarDecl {
+                    type_constraint, ..
+                } => check(type_constraint.as_deref()),
+                Stmt::SubDecl {
+                    param_defs,
+                    return_type,
+                    ..
+                } => param_defs
+                    .iter()
+                    .find_map(|pd| check(pd.type_constraint.as_deref()))
+                    .or_else(|| check(return_type.as_deref())),
+                _ => None,
+            };
+            if let Some(name) = bad {
+                let suggestions = self.suggest_type_names(&name);
+                return Err(RuntimeError::undeclared_type_symbols(
+                    &name,
+                    format!("Undeclared name:\n    {} used at line 1", name),
+                    suggestions,
+                ));
+            }
+            // Recurse into nested bodies.
+            match stmt {
+                Stmt::ClassDecl { body, .. }
+                | Stmt::RoleDecl { body, .. }
+                | Stmt::Package { body, .. }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body)
+                | Stmt::SubDecl { body, .. } => {
+                    self.walk_validate_type_args(body, declared)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     /// Reject a `trusts T` declaration whose target type `T` is not declared
     /// anywhere in this compilation unit (nor a known built-in type)
     /// -> X::Undeclared (symbol => T, what => "Type"). Forward references are
@@ -167,6 +267,7 @@ impl Interpreter {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_trusts(&stmts)?;
+                self.check_eval_undeclared_type_args(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
                 let mut stmts = self.inject_eval_methods_into_class(stmts);

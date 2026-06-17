@@ -73,6 +73,7 @@ impl Interpreter {
                             .check_eval_mainline_placeholders(&stmts)
                             .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_trusts(&stmts))
+                            .and_then(|()| nested.check_eval_undeclared_type_args(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
                         Err(mut e) => {
@@ -260,12 +261,15 @@ impl Interpreter {
                     None
                 }
             });
-            // Fall back to err.message for "message" attribute
+            // Fall back to err.message for the "message" and "gist" matchers:
+            // neither is stored as an attribute, and an X:: exception's `.gist`
+            // renders its message (plus suggestions), so the message text is the
+            // substring the `gist => /.../` matchers look for.
             let actual_str = actual_val
                 .as_ref()
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| {
-                    if attr_name == "message" {
+                    if attr_name == "message" || attr_name == "gist" {
                         err_message.clone()
                     } else {
                         String::new()
@@ -423,6 +427,7 @@ impl Interpreter {
                             .check_eval_mainline_placeholders(&stmts)
                             .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_trusts(&stmts))
+                            .and_then(|()| nested.check_eval_undeclared_type_args(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
                         Err(mut e) => {
