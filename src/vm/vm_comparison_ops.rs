@@ -1218,6 +1218,28 @@ impl Interpreter {
         self.pending_local_updates.clear();
         let saved_topic = self.env().get("_").cloned();
         self.env_mut().insert("_".to_string(), left.clone());
+        // While the RHS runs, `$_` is *aliased* to the LHS variable (`$x ~~ s///`
+        // topicalizes `$x`). A destructive `s///`/`tr///` checks `$_`'s readonly
+        // status, but the enclosing scope may have marked `_` readonly for an
+        // unrelated reason — e.g. a `for ^N { $x ~~ s/// }` loop marks its *topic*
+        // `_` readonly. The match's `_` must instead reflect the *aliased
+        // variable*'s mutability: mutable `my $x` allows the write, a readonly
+        // param still blocks it. Save and override `_`'s readonly flag for the
+        // duration when the LHS is an explicit variable other than the topic.
+        let topic_ro_override = match lhs_var {
+            Some(v) if v != "_" => {
+                let saved = self.is_readonly("_");
+                let bare = v.trim_start_matches(['$', '@', '%', '&']);
+                let target_ro = self.is_readonly(v) || self.is_readonly(bare);
+                if target_ro {
+                    self.mark_readonly("_");
+                } else {
+                    self.unmark_readonly("_");
+                }
+                Some(saved)
+            }
+            _ => None,
+        };
         // Sync env->locals first so that any values modified by interpreter
         // calls (e.g. EVAL modifying $GLOBAL:: variables) are picked up
         // before we overwrite env with local values for regex interpolation.
@@ -1236,6 +1258,15 @@ impl Interpreter {
         let was_substitution = self.substitution_in_smartmatch;
         self.transliterate_in_smartmatch = false;
         self.substitution_in_smartmatch = false;
+        // Restore the topic's readonly flag (overridden above for an aliased LHS
+        // variable) on every path, including the error path below.
+        if let Some(saved) = topic_ro_override {
+            if saved {
+                self.mark_readonly("_");
+            } else {
+                self.unmark_readonly("_");
+            }
+        }
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::Nil);
         // A destructive `s///`/`tr///` that actually matched against a string
