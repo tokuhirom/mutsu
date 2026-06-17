@@ -511,6 +511,16 @@ impl Interpreter {
         {
             return self.dispatch_supply_skip(&(attributes).as_map(), &args);
         }
+        // A Seq is consumed by .skip: subsequent iteration of the original Seq
+        // must throw X::Seq::Consumed (unless it was cached).
+        if let Value::Seq(seq_items) = &target {
+            if crate::value::seq_is_consumed(seq_items) && !crate::value::seq_is_cached(seq_items) {
+                return Err(crate::value::seq_consumed_error());
+            }
+            if !crate::value::seq_is_cached(seq_items) {
+                crate::value::seq_consume(seq_items).ok();
+            }
+        }
         let items = crate::runtime::utils::value_to_list(&target);
         let n = if args.is_empty() {
             1usize
