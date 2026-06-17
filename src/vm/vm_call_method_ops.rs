@@ -159,6 +159,42 @@ impl Interpreter {
         }
     }
 
+    /// `fail`/`die`/`throw`/`rethrow`/`resume` require a concrete (instance)
+    /// invocant. Calling one on an Exception *type object* (e.g. `X::NYI.throw`)
+    /// is `X::Parameter::InvalidConcreteness`, not "no such method". Shared by the
+    /// CallMethod and CallMethodMut dispatch paths (a bareword-target method call
+    /// like `X::NYI.throw` compiles to CallMethodMut).
+    pub(super) fn exception_concreteness_error(
+        &self,
+        method: &str,
+        args: &[Value],
+        target: &Value,
+    ) -> Option<RuntimeError> {
+        if !matches!(method, "fail" | "die" | "throw" | "rethrow" | "resume") || !args.is_empty() {
+            return None;
+        }
+        let Value::Package(type_name) = target else {
+            return None;
+        };
+        let name = type_name.resolve();
+        let is_exc = name == "Exception"
+            || name.starts_with("X::")
+            || name.starts_with("CX::")
+            || self.class_inherits_from_exception(&name);
+        if is_exc {
+            Some(RuntimeError::parameter_invalid_concreteness(
+                "Exception",
+                &name,
+                method,
+                "",
+                true,
+                true,
+            ))
+        } else {
+            None
+        }
+    }
+
     pub(super) fn exec_call_method_op(
         &mut self,
         code: &CompiledCode,
@@ -253,6 +289,12 @@ impl Interpreter {
         } else {
             target
         };
+        // `fail`/`die`/`throw`/`rethrow`/`resume` require a concrete (instance)
+        // invocant. Calling one on an Exception *type object* (e.g. `X::NYI.throw`)
+        // is X::Parameter::InvalidConcreteness, not "no such method".
+        if let Some(err) = self.exception_concreteness_error(method, &args, &target) {
+            return Err(err);
+        }
         // Autovivify a typed array element when a mutating array method is called
         // on its (undefined) type object, e.g. `my Array of Int @x; @x[0].push(3)`
         // reads `@x[0]` as the `Array[Int]` type object — pushing builds a fresh

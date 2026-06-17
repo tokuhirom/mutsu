@@ -5419,6 +5419,36 @@ impl Interpreter {
     }
 
     /// Check if a class inherits from an immutable Setty type (Set, Bag, Mix).
+    /// Whether a user-declared class `name` inherits (transitively) from the base
+    /// `Exception` type (or a built-in `X::`/`CX::` exception). Walks the registry
+    /// parent chain with a shared borrow.
+    pub(crate) fn class_inherits_from_exception(&self, name: &str) -> bool {
+        let parents = {
+            let reg = self.registry();
+            reg.classes
+                .get(name)
+                .or_else(|| {
+                    reg.classes
+                        .iter()
+                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+                        .map(|(_, v)| v)
+                })
+                .map(|cd| cd.parents.clone())
+        };
+        if let Some(parents) = parents {
+            for parent in &parents {
+                if parent == "Exception"
+                    || parent.starts_with("X::")
+                    || parent.starts_with("CX::")
+                    || self.class_inherits_from_exception(parent)
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     pub(crate) fn class_inherits_from_immutable_setty(&self, name: &str) -> bool {
         const IMMUTABLE_SETTY: &[&str] = &["Set", "Bag", "Mix"];
         if IMMUTABLE_SETTY.contains(&name) {
