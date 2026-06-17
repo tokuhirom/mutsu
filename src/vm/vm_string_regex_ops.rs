@@ -2375,6 +2375,19 @@ impl Interpreter {
             }
             let lookup_name = Self::canonical_infix_lookup_name(&name);
             let infix_name = format!("infix:<{}>", lookup_name.as_ref());
+            // A lexical `&infix:<op>` binding (e.g. a `&infix:<@@>` parameter)
+            // shadows the package-level operator of the same name. Guarded by the
+            // shadow-name set so the common case (no operator param) is free.
+            if !self.amp_param_shadowed_names.is_empty()
+                && self
+                    .amp_param_shadowed_names
+                    .contains(&Symbol::intern(&infix_name))
+                && let Some(callable) = self.lexical_infix_override(code, &infix_name)
+            {
+                let result = self.call_sub_value(callable, call_args, false)?;
+                self.stack.push(result);
+                return Ok(());
+            }
             let assoc = self
                 .infix_associativity(&infix_name)
                 .unwrap_or_else(|| "left".to_string());

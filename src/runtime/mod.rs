@@ -1198,6 +1198,13 @@ pub struct Interpreter {
     pub(crate) light_call_cache_gen: u64,
     pub(crate) pos_light_call_cache: HashMap<Symbol, (String, u64)>,
     pub(crate) pos_light_call_cache_gen: u64,
+    /// Bare names that appear as a `&`-sigil parameter in some registered sub
+    /// (e.g. `foo` from `sub callit(&foo) {...}`). A call to such a name may be
+    /// shadowed by a lexical `&name` binding in the current frame, so the
+    /// name-keyed light-call caches must be bypassed for it (the slow path's
+    /// `lexical_override` check resolves the correct callable). Populated at sub
+    /// registration; checked cheaply (guarded by `is_empty()`) on each call.
+    pub(crate) amp_param_shadowed_names: std::collections::HashSet<Symbol>,
     pub(crate) method_resolve_cache: HashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
     #[allow(clippy::type_complexity)]
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
@@ -3341,6 +3348,7 @@ impl Interpreter {
             light_call_cache_gen: 0,
             pos_light_call_cache: HashMap::new(),
             pos_light_call_cache_gen: 0,
+            amp_param_shadowed_names: std::collections::HashSet::new(),
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
@@ -5798,6 +5806,7 @@ impl Interpreter {
             light_call_cache_gen: 0,
             pos_light_call_cache: HashMap::new(),
             pos_light_call_cache_gen: 0,
+            amp_param_shadowed_names: std::collections::HashSet::new(),
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),

@@ -485,6 +485,18 @@ impl Interpreter {
             self.method_resolve_cache.clear();
             self.last_method_resolve = None;
             self.fast_method_cache.clear();
+            // Record `&`-sigil parameter names so calls to a same-named routine
+            // inside this sub bypass the name-keyed light-call caches (the param
+            // can shadow a package sub of the same name).
+            for pd in param_defs {
+                if let Some(bare) = pd.name.strip_prefix('&')
+                    && !bare.is_empty()
+                {
+                    // Records both plain names (`foo`) and operator categories
+                    // (`infix:<@@>`); both can shadow a same-named package routine.
+                    self.amp_param_shadowed_names.insert(Symbol::intern(bare));
+                }
+            }
             if *is_export && !self.suppress_exports {
                 let pkg = self.current_package().to_string();
                 self.register_exported_sub(pkg.clone(), resolved_name.clone(), export_tags.clone());

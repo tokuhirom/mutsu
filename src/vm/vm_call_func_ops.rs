@@ -92,6 +92,21 @@ impl Interpreter {
         candidate.filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_)))
     }
 
+    /// Resolve a lexical `&infix:<op>` override (a `&infix:<op>` parameter or a
+    /// `my &infix:<op>` binding) that shadows the package-level operator. Returns
+    /// the bound callable when present, else `None`.
+    pub(super) fn lexical_infix_override(
+        &mut self,
+        code: &CompiledCode,
+        infix_name: &str,
+    ) -> Option<Value> {
+        let ampname = format!("&{}", infix_name);
+        let candidate = self
+            .locals_get_by_name(code, &ampname)
+            .or_else(|| self.env().get(&ampname).cloned());
+        candidate.filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Mixin(..)))
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -101,8 +116,20 @@ impl Interpreter {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
+        // If this name is used as a `&`-sigil parameter anywhere, a lexical
+        // `&name` binding in the current frame may shadow a same-named package
+        // sub. The name-keyed light-call caches cannot represent that, so bypass
+        // them and let the slow path's `lexical_override` resolve correctly.
+        // Guarded by `is_empty()` so the common (no `&`-param) case is free.
+        let skip_name_caches = if self.amp_param_shadowed_names.is_empty() {
+            false
+        } else {
+            let name_str = Self::const_str(code, name_idx);
+            self.amp_param_shadowed_names
+                .contains(&Symbol::intern(name_str))
+        };
         // Ultra-fast path: positional light-call cache for positional-only functions.
-        {
+        if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = Symbol::intern(name_str);
             if self.pos_light_call_cache_gen == self.fn_resolve_gen {
@@ -147,7 +174,7 @@ impl Interpreter {
         }
 
         // Light-call cache check for named-param functions.
-        {
+        if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = Symbol::intern(name_str);
             if self.light_call_cache_gen == self.fn_resolve_gen {
@@ -182,7 +209,7 @@ impl Interpreter {
         // compiled form to avoid the expensive interpreter fallback.
         // We take() the CF from the cache to avoid holding a borrow on self,
         // then put it back after the call.
-        {
+        if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = Symbol::intern(name_str);
             if self.otf_call_cache_gen == self.fn_resolve_gen {
