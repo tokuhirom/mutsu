@@ -1946,12 +1946,123 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Expr(expr)))
 }
 
+/// Build a typed X::Syntax::Malformed error for a bad C-style loop spec.
+/// `what` is the `loop spec (...)` description matched by the roast tests.
+fn malformed_loop_spec_error(what: &str) -> PError {
+    let message = format!("X::Syntax::Malformed: Malformed {}.", what);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("what".to_string(), Value::str(what.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Syntax::Malformed"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
+/// Return the slice from just-after `loop (` up to (excluding) the matching `)`,
+/// honoring nested brackets and quotes, or None if unbalanced.
+fn loop_spec_content(after_open_paren: &str) -> Option<&str> {
+    let bytes = after_open_paren.as_bytes();
+    let mut depth = 0i32;
+    let mut quote: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if let Some(q) = quote {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+        } else {
+            match c {
+                b'\'' | b'"' => quote = Some(c),
+                b'(' | b'[' | b'{' => depth += 1,
+                b']' | b'}' => depth -= 1,
+                b')' => {
+                    if depth == 0 {
+                        return Some(&after_open_paren[..i]);
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Count the top-level `;`-separated groups in a C-style loop spec (respecting
+/// nested brackets/quotes). A valid spec has exactly 3.
+fn loop_spec_semicolon_groups(spec: &str) -> usize {
+    let bytes = spec.as_bytes();
+    let mut depth = 0i32;
+    let mut quote: Option<u8> = None;
+    let mut semis = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if let Some(q) = quote {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+        } else {
+            match c {
+                b'\'' | b'"' => quote = Some(c),
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth -= 1,
+                b';' if depth == 0 => semis += 1,
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    semis + 1
+}
+
+/// Validate a C-style loop spec: exactly 3 semicolon-separated expressions.
+/// Returns an X::Syntax::Malformed error (with the right `what`) otherwise.
+fn check_loop_spec(spec: &str) -> Option<PError> {
+    if spec.trim().is_empty() {
+        return Some(malformed_loop_spec_error(
+            "loop spec (expected 3 semicolon-separated expressions)",
+        ));
+    }
+    let groups = loop_spec_semicolon_groups(spec);
+    if groups == 3 {
+        return None;
+    }
+    let what = if groups > 3 {
+        "loop spec (expected 3 semicolon-separated expressions but got more)".to_string()
+    } else {
+        format!("loop spec (expected 3 semicolon-separated expressions but got {groups})")
+    };
+    Some(malformed_loop_spec_error(&what))
+}
+
 /// Parse C-style `loop` or infinite loop.
 pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
-    let rest = keyword("loop", input).ok_or_else(|| PError::expected("loop statement"))?;
-    let (rest, _) = ws(rest)?;
+    let after_kw = keyword("loop", input).ok_or_else(|| PError::expected("loop statement"))?;
+    let (rest, _) = ws(after_kw)?;
+    // Whitespace between `loop` and `(` marks a real C-style loop spec; `loop(`
+    // with no space is a keyword-as-function mistake handled elsewhere, so the
+    // spec validation below must NOT preempt it.
+    let had_space_before_paren = rest.len() < after_kw.len();
     if rest.starts_with('(') {
         let (rest, _) = parse_char(rest, '(')?;
+        // Reject a malformed loop spec (not exactly 3 `;`-separated expressions)
+        // with a typed X::Syntax::Malformed before the lenient parse below.
+        if had_space_before_paren
+            && let Some(spec) = loop_spec_content(rest)
+            && let Some(err) = check_loop_spec(spec)
+        {
+            return Err(err);
+        }
         let (rest, _) = ws(rest)?;
         // init: may be comma-separated list of statements
         let (rest, init) = if let Some(rest_after_semi) = rest.strip_prefix(';') {
