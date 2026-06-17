@@ -731,6 +731,46 @@ impl Interpreter {
             self.env_dirty = true;
             return Ok(());
         }
+        // `$s.subst-mutate(pattern, replacement, ...)` substitutes in place (like
+        // `s///`) and returns the value `s///` would set in `$/`: a Match for a
+        // single hit, the `Any` type object when nothing matched, or a List of
+        // Matches under `:g`. Reuses the `.subst` machinery for the new string
+        // and the `.match` machinery for the return, then writes the new string
+        // back to the variable -- mirroring the `Match.make` pattern above.
+        if method == "subst-mutate" && matches!(&target, Value::Str(_)) {
+            let new_str = self.dispatch_subst(target.clone(), &args)?;
+            // `.match` takes the pattern + adverbs but not the replacement (the
+            // 2nd positional), so drop the replacement when building its args.
+            let mut match_args: Vec<Value> = Vec::new();
+            let mut positional_seen = 0;
+            for arg in &args {
+                if matches!(arg, Value::Pair(..)) {
+                    match_args.push(arg.clone());
+                } else {
+                    positional_seen += 1;
+                    if positional_seen != 2 {
+                        match_args.push(arg.clone());
+                    }
+                }
+            }
+            let global = args.iter().any(
+                |a| matches!(a, Value::Pair(k, v) if (k == "g" || k == "global") && v.truthy()),
+            );
+            let match_result = self.dispatch_match_method(target.clone(), &match_args)?;
+            // A single failed match yields the `Any` type object (matching `$/`
+            // after a failed `s///`), where `.match` alone would yield `Nil`.
+            let ret = if !global && matches!(match_result, Value::Nil) {
+                Value::Package(crate::symbol::Symbol::intern("Any"))
+            } else {
+                match_result
+            };
+            self.env_mut()
+                .insert(target_name.to_string(), new_str.clone());
+            self.locals_set_by_name(code, &target_name, new_str);
+            self.stack.push(ret);
+            self.env_dirty = true;
+            return Ok(());
+        }
         // .hyper/.race with named arguments in mut path
         if matches!(method.as_str(), "hyper" | "race") && !args.is_empty() {
             let mut batch: Option<i64> = None;
