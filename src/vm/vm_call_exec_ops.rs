@@ -151,18 +151,10 @@ impl Interpreter {
             native_result?;
             return Ok(());
         }
-        // Carrier fallback: precise scalar writeback + *unconditional* env_dirty
-        // net. Unlike the bareword `exec_call_values` carrier, this one keeps the
-        // blanket: it dispatches interpreter builtins (Test `is`/`ok`,
-        // topic-mutating `s///`, ...) whose caller-lexical writes do NOT all flow
-        // through `set_env_with_main_alias`/the carrier log, so the write set can
-        // be empty while the carrier still wrote a caller slot — and
-        // `writeback_carrier_writes` returns `true` (fully) for an empty set, which
-        // would wrongly license dropping the net (regressed `t/regex-m-s.t`
-        // `s/// updates $_`, `t/element-bind-cell.t`,
-        // `t/regex-declarative-modifiers.t`). Generalizing the drop here needs the
-        // full open-question-#2 audit of every interpreter env-write path
-        // (docs/vm-single-store.md Slice C').
+        // Carrier fallback: precise scalar writeback + unconditional env_dirty net.
+        // Keeps the blanket: deep `:=` bind-cell mutations through interpreter
+        // builtins are not name-trackable and dropping the net corrupts cell
+        // coherence (the CP-2 wall; t/element-bind-cell.t). See docs/vm-single-store.md.
         let carrier_saved = self.begin_carrier();
         let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
         let written = self.end_carrier(carrier_saved);
@@ -221,18 +213,10 @@ impl Interpreter {
             self.stack.push(native_result?);
             return Ok(());
         }
-        // Carrier fallback: precise scalar writeback + *unconditional* env_dirty
-        // net. Unlike the bareword `exec_call_values` carrier, this one keeps the
-        // blanket: it dispatches interpreter builtins (Test `is`/`ok`,
-        // topic-mutating `s///`, ...) whose caller-lexical writes do NOT all flow
-        // through `set_env_with_main_alias`/the carrier log, so the write set can
-        // be empty while the carrier still wrote a caller slot — and
-        // `writeback_carrier_writes` returns `true` (fully) for an empty set, which
-        // would wrongly license dropping the net (regressed `t/regex-m-s.t`
-        // `s/// updates $_`, `t/element-bind-cell.t`,
-        // `t/regex-declarative-modifiers.t`). Generalizing the drop here needs the
-        // full open-question-#2 audit of every interpreter env-write path
-        // (docs/vm-single-store.md Slice C').
+        // Carrier fallback: precise scalar writeback + unconditional env_dirty net.
+        // Keeps the blanket: deep `:=` bind-cell mutations through interpreter
+        // builtins are not name-trackable and dropping the net corrupts cell
+        // coherence (the CP-2 wall; t/element-bind-cell.t). See docs/vm-single-store.md.
         let carrier_saved = self.begin_carrier();
         let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
         let written = self.end_carrier(carrier_saved);
