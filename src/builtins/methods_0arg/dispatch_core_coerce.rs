@@ -12,6 +12,14 @@ pub(super) fn dispatch(
     target: &Value,
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
+    // A Range numerifies to its element count (`.elems`): `.Int`/`.Numeric`/
+    // `.Real` yield that count as an `Int`, `.Num` as a `Num`. An infinite
+    // range yields `Inf` for the real-valued coercions and fails for `.Int`
+    // ("Cannot convert Inf to Int"). Handle this before the per-method arms,
+    // which only know how to numerify scalar types.
+    if target.is_range() && matches!(method, "Int" | "Numeric" | "Real" | "Num") {
+        return Some(Some(range_numeric_coercion(target, method)));
+    }
     match method {
         "self" => {
             // For unhandled Failures, .self throws the exception
@@ -757,4 +765,31 @@ pub(super) fn dispatch(
         }
         _ => None,
     }
+}
+
+/// Numerify a Range to its element count for `.Int`/`.Numeric`/`.Real`/`.Num`.
+/// Finite ranges yield the count (as `Num` for `.Num`, else `Int`); an infinite
+/// range yields `Inf` for the real-valued coercions and fails for `.Int`.
+/// `target` is assumed to be a Range (checked by the caller).
+fn range_numeric_coercion(target: &Value, method: &str) -> Result<Value, RuntimeError> {
+    if super::is_infinite_range(target) {
+        return if method == "Int" {
+            Err(RuntimeError::new("Cannot convert Inf to Int".to_string()))
+        } else {
+            Ok(Value::Num(f64::INFINITY))
+        };
+    }
+    let count = match target {
+        Value::Range(s, e) => (*e - *s + 1).max(0),
+        Value::RangeExcl(s, e) | Value::RangeExclStart(s, e) => (*e - *s).max(0),
+        Value::RangeExclBoth(s, e) => (*e - *s - 1).max(0),
+        // GenericRange (e.g. Rat endpoints `1.5..5.5`) has no closed-form count;
+        // materialize it the same way `.elems` does.
+        _ => crate::runtime::utils::value_to_list(target).len() as i64,
+    };
+    Ok(if method == "Num" {
+        Value::Num(count as f64)
+    } else {
+        Value::Int(count)
+    })
 }
